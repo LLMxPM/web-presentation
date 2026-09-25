@@ -1,10 +1,12 @@
 /**
  * 文件用途：为 Runtime dev server 提供健康检查与容量快照端点，供容器探针和编排层判断进程存活与负载压力。
+ * 健康体携带版本指纹（runtime_kit_version / build_id），供滚动发布排空时核对副本版本。
  */
 
 import type { ServerResponse } from 'http'
 import type { Plugin, ViteDevServer } from 'vite'
 
+import runtimeKitManifest from '../../runtime-kit/manifest/runtime-kit.manifest.json'
 import {
   collectRuntimeCapacity,
   startRuntimeEventLoopLagMonitor,
@@ -12,6 +14,14 @@ import {
 import { getRuntimeRole } from './runtime-role'
 
 export const RUNTIME_HEALTH_PATH = '/__runtime_healthz'
+
+/** Runtime 版本指纹：排空与路由核对用，不含业务数据。 */
+export interface RuntimeVersionFingerprint {
+  /** Runtime Kit 公开清单版本（同一预览不得混用不同 Runtime Kit 版本）。 */
+  runtime_kit_version: string
+  /** 部署构建标识（RUNTIME_BUILD_ID），未注入时为空串。 */
+  build_id: string
+}
 
 /**
  * 创建 Runtime 健康检查插件。
@@ -53,13 +63,26 @@ export function sendRuntimeHealthResponse(
 
 /**
  * 构建健康检查返回体。
- * @returns 健康与容量结构（含运行角色）
+ * @returns 健康与容量结构（含运行角色与版本指纹）
  */
 export function buildRuntimeHealthPayload(): Record<string, unknown> {
   return {
     status: 'ok',
     role: getRuntimeRole(),
+    ...buildRuntimeVersionFingerprint(),
     ...collectRuntimeCapacity(),
+  }
+}
+
+/**
+ * 读取当前进程版本指纹，供滚动发布时核对新旧副本与排空目标。
+ * runtime_kit_version 来自 Runtime Kit 清单；build_id 来自部署注入的 RUNTIME_BUILD_ID。
+ * @returns 版本指纹对象
+ */
+export function buildRuntimeVersionFingerprint(): RuntimeVersionFingerprint {
+  return {
+    runtime_kit_version: String(runtimeKitManifest.version || ''),
+    build_id: String(process.env.RUNTIME_BUILD_ID || ''),
   }
 }
 

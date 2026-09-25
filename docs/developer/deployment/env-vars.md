@@ -94,12 +94,27 @@ openssl rand -base64 48 | Out-File -Encoding ascii deploy/secrets/render_service
 | `RUNTIME_TARGET_FAILURE_THRESHOLD` / `RUNTIME_TARGET_COOLDOWN_SECONDS` | 选址冷却：目标连续失败达到阈值后短暂跳过，冷却到期自动恢复 |
 | `RUNTIME_BUILD_MAX_INFLIGHT` / `RUNTIME_CHECK_MAX_INFLIGHT` | 全链路准入：Backend 同时在途的 build/check 内部调用上限，超限返回 `RUNTIME_ADMISSION_FULL`；全部副本满载返回 `RUNTIME_CAPACITY_EXCEEDED`（503，可重试） |
 | `RUNTIME_BACKEND_API_BASE_URL` | Runtime 回源 Backend 的内网地址 |
+| `RUNTIME_BUILD_ID` | 部署构建标识，输出到 `/__runtime_healthz` 的 `build_id`；滚动发布时用于核对新旧副本版本指纹 |
 | `RUNTIME_PREVIEW_JWKS_URL` | Runtime 校验预览令牌的 JWKS 地址 |
 | `RUNTIME_SERVER_BASE_PATH` | Runtime Vite 资源挂载路径，同域部署通常为 `/runtime/` |
 | `RUNTIME_*_TOKEN_AUDIENCE` | 预览、构建和诊断令牌 audience |
 | `RUNTIME_ROLE` | Runtime 运行角色：`all`（单实例模板默认）或 `preview` / `build` / `check`；分角色模板 `compose.runtime-roles.yml` 按容器覆盖。角色语义由 Runtime 角色逻辑（规划 T1-1）消费 |
 
 分角色单机模板还会按角色容器覆盖 `RUNTIME_VITE_TASK_CONCURRENCY`、`RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB` 等执行预算，并为每个容器设置 `deploy.resources.limits`；取值依据见 [Compose 部署说明](./compose.md)「分角色单机」。按实测瓶颈增加 Check/Build 副本时，用 `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_CHECK_BASE_URLS` 注册全部副本地址，并按「副本数 × 单副本执行预算」上调准入上限，详见 [Compose 部署说明](./compose.md)「计算副本扩容」。
+
+## 签名身份与多 Backend
+
+| 变量 | 说明 |
+| :--- | :--- |
+| `RUNTIME_RSA_PRIVATE_KEY` | RS256 签名私钥 PEM 文本；不推荐长期写在 env 文件 |
+| `RUNTIME_RSA_PRIVATE_KEY_FILE` | RS256 签名私钥文件路径（共享路径 / secret 挂载）；多 Backend 推荐 |
+| `RUNTIME_RSA_KEY_ID` | 当前签名 `kid`，默认 `default-key-1` |
+| `RUNTIME_RSA_PREVIOUS_KEYS` | 轮换期旧钥 JSON 数组，每项 `{"kid", "private_key_file"}` 或 `{"kid", "private_key"}`；仅验签与 JWKS 公布 |
+| `RUNTIME_RSA_ALLOW_AUTO_GENERATE` | 缺省密钥时是否自动生成本地私钥，默认 `true`（仅单实例/Lite） |
+| `BACKEND_MULTI_INSTANCE` | 声明多 Backend 副本部署，默认 `false`；开启后启动期强制共享密钥与对象存储前提 |
+| `OBJECT_STORAGE_SHARED_VOLUME` | local 对象目录为跨副本共享卷时置 `true` 显式确认；多 Backend 下默认要求 `s3` |
+
+私钥读取顺序：`RUNTIME_RSA_PRIVATE_KEY` → `RUNTIME_RSA_PRIVATE_KEY_FILE` → 旧版 `data/runtime_rsa_key.pem` → 单实例自动生成。多 Backend 副本必须共享同一签名私钥与对象存储；密钥轮换时旧票据在自身 TTL 内仍有效，移出旧钥后立即失效。完整前提、轮换步骤与旧票据语义见 [多 Backend 与密钥一致性](./multi-backend.md)。
 
 ## 日志
 

@@ -8,6 +8,7 @@ import type { ViteDevServer } from 'vite'
 
 import runtimeHealth, {
   buildRuntimeHealthPayload,
+  buildRuntimeVersionFingerprint,
   sendRuntimeHealthResponse,
 } from './runtime-health'
 import {
@@ -80,6 +81,38 @@ describe('runtime health plugin', () => {
     const payload = JSON.parse(response.body)
     expect(payload.status).toBe('ok')
     expect(payload.uptimeMs).toEqual(expect.any(Number))
+    expect(payload.runtime_kit_version).toEqual(expect.any(String))
+    expect(payload.runtime_kit_version.length).toBeGreaterThan(0)
+    expect(payload.build_id).toEqual(expect.any(String))
+  })
+
+  it('版本指纹应包含 runtime_kit_version 与 RUNTIME_BUILD_ID', () => {
+    const originalBuildId = process.env.RUNTIME_BUILD_ID
+    try {
+      delete process.env.RUNTIME_BUILD_ID
+      expect(buildRuntimeVersionFingerprint()).toEqual({
+        runtime_kit_version: expect.stringMatching(/^\d+\.\d+\.\d+/),
+        build_id: '',
+      })
+
+      process.env.RUNTIME_BUILD_ID = 'preview-b1'
+      expect(buildRuntimeVersionFingerprint()).toEqual({
+        runtime_kit_version: expect.stringMatching(/^\d+\.\d+\.\d+/),
+        build_id: 'preview-b1',
+      })
+
+      const payload = buildRuntimeHealthPayload()
+      expect(payload).toMatchObject({
+        runtime_kit_version: expect.stringMatching(/^\d+\.\d+\.\d+/),
+        build_id: 'preview-b1',
+      })
+    } finally {
+      if (originalBuildId === undefined) {
+        delete process.env.RUNTIME_BUILD_ID
+      } else {
+        process.env.RUNTIME_BUILD_ID = originalBuildId
+      }
+    }
   })
 
   it('应汇总负载计数与注册的容量提供者', () => {

@@ -9,6 +9,7 @@
 | :--- | :--- |
 | [Compose 部署说明](./compose.md) | 五类 compose 模板（含分角色单机）、启动方式和访问关系 |
 | [部署环境变量](./env-vars.md) | production env 版变量分组和关键约束 |
+| [多 Backend 与密钥一致性](./multi-backend.md) | 多 Backend 共享存储/密钥前提、签名密钥轮换与旧票据语义 |
 | [CI/CD 与容器发布](./cicd.md) | 平台、Runtime、Renderer 镜像与发布策略 |
 | [备份与恢复](./backup-restore.md) | 数据库、资源、构建产物和密钥备份 |
 | [升级与回滚](./upgrade-rollback.md) | 镜像升级、数据库迁移和回滚注意事项 |
@@ -298,6 +299,8 @@ PostgreSQL 与 Redis 使用已有基础设施时，应使用对应基础设施�
 2. 在 `deploy/` 目录执行对应 compose 文件的 `docker compose pull` 拉取最新稳定镜像。
 3. 在 `deploy/` 目录执行对应 compose 文件的 `docker compose up -d`。
 4. SQLite 轻量版观察 `platform-lite` 与 `renderer` 日志；简化版观察 `platform`、`runtime`、`renderer` 日志；production env 版观察 `backend-migrate`、`backend`、`runtime`、`renderer` 和 `gateway` 日志。
+
+预览多副本部署时采用滚动发布，顺序固定为「新副本就绪 → 流量切换 → 旧副本排空 → 下线」：先启动新版预览副本并核对 `/__runtime_healthz` 的 `runtime_kit_version` / `build_id`，再把新副本加入 Gateway 预览池、把旧副本标记 `down` 或移出列表并 reload，等旧副本在途连接结束后停容器。详见 [Compose 部署说明](./compose.md)「预览多副本与滚动发布」。
 
 回滚时需要把对应 compose 文件中的 image 改为上一个可用版本标签，再执行对应 compose 文件的 `docker compose pull && docker compose up -d`。数据库迁移如已执行不可逆变更，需要按对应版本的迁移说明处理。
 

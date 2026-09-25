@@ -121,6 +121,19 @@ Docker 容器默认不施加 CPU/内存限制；只把一个 Runtime 拆成三�
 
 Runtime 本地队列（`RUNTIME_VITE_TASK_*`）仅承担单实例容量保护，不做全局公平；跨副本分摊由上述选址与准入负责。满载与准入拒绝均属可重试容量问题，不应记为业务失败。
 
+### 预览多副本与滚动发布
+
+公开预览池由 Gateway Nginx 的 `upstream runtime_preview_pool` 承载（`deploy/docker/nginx/web-presentation.conf`）。实例列表可直接编辑后 `nginx -s reload` 更新，不引入服务发现组件：
+
+1. **扩容**：复制 `runtime-preview` 服务为 `runtime-preview-2`（独立别名，见 `compose.runtime-roles.yml` 中注释示例），取消 Gateway 配置中对应 `server` 注释后 reload。每个 `server` 声明带 `max_fails` / `fail_timeout` 被动摘流，连续失败的实例在窗口内不再路由，到期自动恢复；可重试请求经 `proxy_next_upstream` 交给池内其它实例。WebSocket Upgrade 由 `$connection_upgrade` 映射透传，软亲和（如 `ip_hash`）只能作为缓存命中优化，不能成为正确性前提——任一副本必须凭当前请求和受信 Backend 独立完成预览鉴权与 artifact 读取。
+2. **版本指纹**：`GET /__runtime_healthz` 返回 `runtime_kit_version`（Runtime Kit 清单版本）与 `build_id`（部署注入的 `RUNTIME_BUILD_ID`）。滚动发布前核对新旧副本指纹，避免同一预览混用不同 HTML、Runtime Kit、转换模块和样式。
+3. **滚动发布顺序**：
+   - **新副本就绪**：启动新版预览副本，等待 healthcheck 通过，并确认 `/__runtime_healthz` 的 `runtime_kit_version` / `build_id` 为目标版本。
+   - **流量切换**：把新副本加入 `runtime_preview_pool` 并 reload；确认旧副本不再承接新请求（标记 `down` 或移出列表）。
+   - **旧副本排空**：等待旧副本在途连接与预览子请求结束（长轮询/WS 由 `proxy_read_timeout` 保证不会被立即切断），必要时核对旧副本 access 日志已无新请求。
+   - **旧副本下线**：排空完成后停止旧容器。
+4. **连接排空**：下线前先在 upstream 中将实例标记 `down`（或移出列表）并 reload，再停容器；不要先停容器导致在途请求 502。副本故障或重启后可由池内其它副本恢复，本地缓存丢失不影响正确性。
+
 ## 访问关系
 
 浏览器访问平台 Gateway。Gateway 代理 `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 到 Backend，并代理 `/runtime/` 到 Runtime。

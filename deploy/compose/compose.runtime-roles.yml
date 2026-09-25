@@ -16,6 +16,10 @@
 #   配置 RUNTIME_BUILD_BASE_URLS / RUNTIME_CHECK_BASE_URLS 注册全部副本，并按
 #   「副本数 × 单副本执行预算」上调 RUNTIME_BUILD/CHECK_MAX_INFLIGHT；
 #   详见 docs/developer/deployment/compose.md「计算副本扩容」。
+# - 预览多副本（规划 T3-3）：Gateway 预览 upstream（runtime_preview_pool）已支持多实例，
+#   复制 runtime-preview 服务为 runtime-preview-2（独立别名，不共享 runtime），
+#   取消 nginx 配置中对应 server 注释并 reload；滚动发布顺序见
+#   docs/developer/deployment/compose.md「预览多副本与滚动发布」。
 
 x-production-env: &production-env
   env_file:
@@ -130,6 +134,8 @@ services:
       RUNTIME_VITE_TASK_CONCURRENCY: "2"
       RUNTIME_VITE_TASK_QUEUE_SIZE: "16"
       RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS: "30000"
+      # 版本指纹：排空/灰度时核对副本 build_id 与 /__runtime_healthz 输出一致。
+      RUNTIME_BUILD_ID: "runtime-preview-1"
     expose:
       - "7373"
     networks:
@@ -146,6 +152,32 @@ services:
         limits:
           cpus: "2.0"
           memory: 2g
+
+  # 预览多副本示例（规划 T3-3）：取消注释后同步取消 nginx 中
+  # upstream runtime_preview_pool 的第二条 server，并 reload gateway。
+  # 注意：runtime-preview-2 不共享 runtime 别名，避免与单实例语义混淆。
+  # runtime-preview-2:
+  #   <<: *production-env
+  #   image: llmxpm/web-runtime-vue:latest
+  #   restart: unless-stopped
+  #   environment:
+  #     RUNTIME_ROLE: "preview"
+  #     RUNTIME_VITE_TASK_CONCURRENCY: "2"
+  #     RUNTIME_VITE_TASK_QUEUE_SIZE: "16"
+  #     RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS: "30000"
+  #     RUNTIME_BUILD_ID: "runtime-preview-2"
+  #   expose:
+  #     - "7373"
+  #   networks:
+  #     platform-net:
+  #       aliases:
+  #         - runtime-preview-2
+  #   healthcheck: *runtime-role-healthcheck
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: "2.0"
+  #         memory: 2g
 
   runtime-build:
     <<: *production-env
