@@ -16,13 +16,12 @@ def database_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
     from sqlalchemy import create_engine
 
-    from app.db.base import Base
+    import app.models  # noqa: F401
     from app.core.security import hash_password
+    from app.db.base import Base
     from app.models.enums import UserRole
     from app.models.user import User
     from app.schemas.preview_size_preset import build_default_preview_size_presets
-
-    import app.models  # noqa: F401
 
     template_path = tmp_path_factory.getbasetemp() / "backend-schema-template.db"
     engine = create_engine(f"sqlite:///{template_path.as_posix()}")
@@ -56,14 +55,16 @@ async def client(tmp_path: Path, database_template: Path) -> AsyncClient:
     os.environ["REDIS_URL"] = "memory://test"
     os.environ["REDIS_KEY_PREFIX"] = f"test_{database_path.stem}"
 
+    import app.models
     from app.core.config import get_settings
     from app.db.session import reset_database_state
     from app.main import create_app
+    from app.services.code_check_result_cache import reset_code_check_result_cache
     from app.services.redis_runtime_client import reset_redis_runtime_client
-    import app.models  # noqa: F401
 
     get_settings.cache_clear()
     reset_redis_runtime_client()
+    reset_code_check_result_cache()
     await reset_database_state()
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as async_client:
@@ -72,6 +73,7 @@ async def client(tmp_path: Path, database_template: Path) -> AsyncClient:
     await reset_database_state()
     get_settings.cache_clear()
     reset_redis_runtime_client()
+    reset_code_check_result_cache()
 
 
 @pytest.fixture

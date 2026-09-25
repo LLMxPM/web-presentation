@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from httpx import AsyncClient
 
 from app.db.session import get_session_factory
@@ -842,3 +843,239 @@ async def test_component_code_check_should_skip_real_render_check(
     assert str(result["candidate_hash"]).startswith("sha256:")
     artifact_id = str(result["artifact_id"])
     assert await RuntimeArtifactStore().get_manifest(artifact_id) is None
+
+
+async def test_page_code_check_should_reuse_result_for_same_input(
+    authenticated_client: AsyncClient,
+) -> None:
+    """相同输入的页面检查应命中缓存，不重复调用 Runtime。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "代码检查缓存命中工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "代码检查缓存命中项目")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "缓存命中页面",
+            "page_content": "<template><main>原页面</main></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    page_id = page_response.json()["id"]
+    fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService()
+    from app.services.code_check_result_cache import CodeCheckResultCache
+
+    cache = CodeCheckResultCache(max_entries=16, ttl_seconds=300)
+    candidate = "<template><main>候选页面</main></template>"
+
+    async with get_session_factory()() as session:
+        service = CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+            result_cache=cache,
+        )
+        first = await service.check_page_code(
+            page_id=page_id,
+            workspace_id=workspace_id,
+            user_id=1,
+            content=candidate,
+        )
+
+    async with get_session_factory()() as session:
+        service = CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+            result_cache=cache,
+        )
+        second = await service.check_page_code(
+            page_id=page_id,
+            workspace_id=workspace_id,
+            user_id=1,
+            content=candidate,
+        )
+
+    assert first["success"] is True
+    assert first["_code_check_cache"] == "miss"
+    assert second["success"] is True
+    assert second["_code_check_cache"] == "hit"
+    assert len(fake_runtime.calls) == 1
+    assert cache.snapshot_metrics()["hits"] == 1
+
+
+async def test_page_code_check_should_recheck_when_source_changes(
+    authenticated_client: AsyncClient,
+) -> None:
+    """候选源码变化应使缓存失效并重新执行检查。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "代码检查缓存失效工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "代码检查缓存失效项目")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "缓存失效页面",
+            "page_content": "<template><main>原页面</main></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    page_id = page_response.json()["id"]
+    fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService()
+    from app.services.code_check_result_cache import CodeCheckResultCache
+
+    cache = CodeCheckResultCache(max_entries=16, ttl_seconds=300)
+
+    async with get_session_factory()() as session:
+        service = CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+            result_cache=cache,
+        )
+        await service.check_page_code(
+            page_id=page_id,
+            workspace_id=workspace_id,
+            user_id=1,
+            content="<template><main>候选一</main></template>",
+        )
+        await service.check_page_code(
+            page_id=page_id,
+            workspace_id=workspace_id,
+            user_id=1,
+            content="<template><main>候选二</main></template>",
+        )
+
+    assert len(fake_runtime.calls) == 2
+    assert cache.snapshot_metrics()["hits"] == 0
+    assert cache.snapshot_metrics()["misses"] == 2
+
+
+async def test_page_code_check_should_not_cache_render_unavailable(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Renderer 不可用的瞬态失败不得作为稳定结果长期缓存。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "代码检查瞬态失败工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "代码检查瞬态失败项目")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "瞬态失败页面",
+            "page_content": "<template><main>原页面</main></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    page_id = page_response.json()["id"]
+    fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService(status="unavailable")
+    from app.services.code_check_result_cache import CodeCheckResultCache
+
+    cache = CodeCheckResultCache(max_entries=16, ttl_seconds=300)
+    candidate = "<template><main>候选页面</main></template>"
+
+    async with get_session_factory()() as session:
+        service = CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+            result_cache=cache,
+        )
+        first = await service.check_page_code(
+            page_id=page_id,
+            workspace_id=workspace_id,
+            user_id=1,
+            content=candidate,
+        )
+
+    async with get_session_factory()() as session:
+        service = CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+            result_cache=cache,
+        )
+        second = await service.check_page_code(
+            page_id=page_id,
+            workspace_id=workspace_id,
+            user_id=1,
+            content=candidate,
+        )
+
+    assert first["status"] == "unavailable"
+    assert second["status"] == "unavailable"
+    assert first["_code_check_cache"] == "miss"
+    assert second["_code_check_cache"] == "miss"
+    assert len(fake_runtime.calls) == 2
+    assert cache.snapshot_metrics()["size"] == 0
+    assert cache.snapshot_metrics()["skipped_transient"] == 2
+
+
+async def test_page_code_check_should_reject_cross_workspace_before_cache(
+    authenticated_client: AsyncClient,
+) -> None:
+    """跨工作空间鉴权失败必须发生在缓存查找之前。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "代码检查鉴权工作空间 A")
+    other_workspace_id = await _create_workspace(authenticated_client, "代码检查鉴权工作空间 B")
+    project_id = await _create_project(authenticated_client, workspace_id, "代码检查鉴权项目")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "鉴权页面",
+            "page_content": "<template><main>原页面</main></template>",
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    page_id = page_response.json()["id"]
+    fake_runtime = FakeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService()
+    from app.services.code_check_result_cache import CodeCheckResultCache
+
+    cache = CodeCheckResultCache(max_entries=16, ttl_seconds=300)
+
+    async with get_session_factory()() as session:
+        service = CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+            result_cache=cache,
+        )
+        ok = await service.check_page_code(
+            page_id=page_id,
+            workspace_id=workspace_id,
+            user_id=1,
+            content="<template><main>候选页面</main></template>",
+        )
+        assert ok["success"] is True, ok
+        assert cache.snapshot_metrics()["lookups"] == 1
+
+        from app.core.exceptions import AppException
+
+        with pytest.raises(AppException) as exc_info:
+            await service.check_page_code(
+                page_id=page_id,
+                workspace_id=other_workspace_id,
+                user_id=1,
+                content="<template><main>候选页面</main></template>",
+            )
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.code == "AI_PAGE_SCOPE_DENIED"
+        # 鉴权失败不得推进缓存查找计数
+        assert cache.snapshot_metrics()["lookups"] == 1

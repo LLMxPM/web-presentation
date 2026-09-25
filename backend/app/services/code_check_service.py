@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,21 +20,25 @@ from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.page import Page
 from app.schemas.release import PreviewEntryDescriptor
 from app.services.capture_viewport_resolver import CaptureViewport
+from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
+from app.services.code_check_result_cache import (
+    CodeCheckResultCache,
+    get_code_check_result_cache,
+)
 from app.services.component_preview_service import ComponentPreviewService
 from app.services.component_validation_profile import (
     build_component_validation_profile,
 )
 from app.services.component_validation_service import ComponentValidationService
-from app.services.page_service import PageService
 from app.services.page_render_diagnostics_service import PageRenderDiagnosticsService
+from app.services.page_service import PageService
 from app.services.preview_service import PreviewService
-from app.services.validation_result import is_validation_passed
 from app.services.project_artifact_builder import ProjectPageModuleOverride
-from app.services.runtime_diagnostics_client import RuntimeDiagnosticsClient
 from app.services.runtime_artifact_store import RuntimeArtifactStore
+from app.services.runtime_diagnostics_client import RuntimeDiagnosticsClient
 from app.services.token_service import TokenService
+from app.services.validation_result import is_validation_passed
 from app.services.workspace_component_service import WorkspaceComponentService
-
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +88,14 @@ class CodeCheckService:
         session: AsyncSession,
         runtime_client: RuntimeDiagnosticsClient | None = None,
         render_diagnostics_service: PageRenderDiagnosticsService | None = None,
+        result_cache: CodeCheckResultCache | None = None,
     ) -> None:
         self.session = session
         self.runtime_client = runtime_client or RuntimeDiagnosticsClient()
         self.render_diagnostics_service = render_diagnostics_service or PageRenderDiagnosticsService()
         self.component_validation_service = ComponentValidationService(self.runtime_client)
+        self.result_cache = result_cache if result_cache is not None else get_code_check_result_cache()
+        self.fingerprint_builder = CodeCheckFingerprintBuilder(session)
 
     async def check_page_code(
         self,
@@ -100,7 +107,10 @@ class CodeCheckService:
         content: str | None = None,
         edits: list[SourceEditPayload] | None = None,
     ) -> dict[str, object]:
-        """检查页面当前源码、完整候选源码或 edits 应用后的候选源码。"""
+        """检查页面当前源码、完整候选源码或 edits 应用后的候选源码。
+
+        鉴权与候选解析始终先于缓存查找；缓存只复用检查计算结果，不替代权限校验。
+        """
 
         if page_id is None:
             return await self._check_transient_page_code(
@@ -131,33 +141,45 @@ class CodeCheckService:
             return candidate
 
         module_path = f"src/views/{page.code}.{page.file_type}"
-        try:
-            preview = await PreviewService(self.session).create_preview_artifact(
+
+        async def execute_check() -> dict[str, object]:
+            try:
+                preview = await PreviewService(self.session).create_preview_artifact(
+                    project_id=page.project_id,
+                    entry_descriptor=PreviewEntryDescriptor(entry_type="module", module_path=module_path),
+                    tenant_id=f"tenant_{user_id}",
+                    page_module_overrides={
+                        module_path: ProjectPageModuleOverride(
+                            content=candidate.content,
+                            page_version_id=None,
+                        )
+                    },
+                    snapshot_profile="page_diagnostics",
+                )
+            except AppException as exc:
+                return self._failed_result(code=exc.code, message=exc.detail)
+            await self._release_session_before_diagnostics()
+            return await self._dispatch_diagnostics(
+                artifact_id=preview.artifact_id,
+                workspace_id=preview.workspace_id or page.workspace_id,
                 project_id=page.project_id,
-                entry_descriptor=PreviewEntryDescriptor(entry_type="module", module_path=module_path),
-                tenant_id=f"tenant_{user_id}",
-                page_module_overrides={
-                    module_path: ProjectPageModuleOverride(
-                        content=candidate.content,
-                        page_version_id=None,
-                    )
-                },
-                snapshot_profile="page_diagnostics",
+                label=f"page:{page.id}",
+                patch_repaired=candidate.patch_repaired,
+                canonical_diff=candidate.canonical_diff,
+                render_preview_url=preview.preview_url,
+                render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
+                page_id=page.id,
+                source_override=candidate.content,
             )
-        except AppException as exc:
-            return self._failed_result(code=exc.code, message=exc.detail)
-        await self._release_session_before_diagnostics()
-        return await self._dispatch_diagnostics(
-            artifact_id=preview.artifact_id,
-            workspace_id=preview.workspace_id or page.workspace_id,
+
+        return await self._run_with_cache(
+            kind="page",
+            workspace_id=page.workspace_id,
             project_id=page.project_id,
-            label=f"page:{page.id}",
-            patch_repaired=candidate.patch_repaired,
-            canonical_diff=candidate.canonical_diff,
-            render_preview_url=preview.preview_url,
-            render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
-            page_id=page.id,
-            source_override=candidate.content,
+            source=candidate.content,
+            importer_module_path=module_path,
+            candidate=candidate,
+            execute_check=execute_check,
         )
 
     async def _check_transient_page_code(
@@ -211,32 +233,44 @@ class CodeCheckService:
             project_id=project.id,
         )
         module_path = f"src/views/{draft_page.code}.{draft_page.file_type}"
-        try:
-            preview = await preview_service.create_preview_artifact(
+
+        async def execute_check() -> dict[str, object]:
+            try:
+                preview = await preview_service.create_preview_artifact(
+                    project_id=project.id,
+                    entry_descriptor=PreviewEntryDescriptor(entry_type="module", module_path=module_path),
+                    tenant_id=f"tenant_{user_id}",
+                    page_module_overrides={
+                        module_path: ProjectPageModuleOverride(
+                            content=candidate.content,
+                            page_version_id=None,
+                        )
+                    },
+                    transient_pages=[draft_page],
+                    snapshot_profile="page_diagnostics",
+                )
+            except AppException as exc:
+                return self._failed_result(code=exc.code, message=exc.detail)
+            await self._release_session_before_diagnostics()
+            return await self._dispatch_diagnostics(
+                artifact_id=preview.artifact_id,
+                workspace_id=preview.workspace_id or project.workspace_id,
                 project_id=project.id,
-                entry_descriptor=PreviewEntryDescriptor(entry_type="module", module_path=module_path),
-                tenant_id=f"tenant_{user_id}",
-                page_module_overrides={
-                    module_path: ProjectPageModuleOverride(
-                        content=candidate.content,
-                        page_version_id=None,
-                    )
-                },
-                transient_pages=[draft_page],
-                snapshot_profile="page_diagnostics",
+                label=f"page:draft:{project.id}",
+                patch_repaired=candidate.patch_repaired,
+                canonical_diff=candidate.canonical_diff,
+                render_preview_url=preview.preview_url,
+                render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
             )
-        except AppException as exc:
-            return self._failed_result(code=exc.code, message=exc.detail)
-        await self._release_session_before_diagnostics()
-        return await self._dispatch_diagnostics(
-            artifact_id=preview.artifact_id,
-            workspace_id=preview.workspace_id or project.workspace_id,
+
+        return await self._run_with_cache(
+            kind="page",
+            workspace_id=project.workspace_id,
             project_id=project.id,
-            label=f"page:draft:{project.id}",
-            patch_repaired=candidate.patch_repaired,
-            canonical_diff=candidate.canonical_diff,
-            render_preview_url=preview.preview_url,
-            render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
+            source=candidate.content,
+            importer_module_path=module_path,
+            candidate=candidate,
+            execute_check=execute_check,
         )
 
     async def check_component_code(
@@ -250,7 +284,10 @@ class CodeCheckService:
         preview_schema: str | None = None,
         component_type: WorkspaceComponentType | None = None,
     ) -> dict[str, object]:
-        """检查组件当前草稿、完整候选源码或 edits 应用后的候选源码。"""
+        """检查组件当前草稿、完整候选源码或 edits 应用后的候选源码。
+
+        组件归属校验始终先于缓存查找；缓存只复用检查计算结果。
+        """
 
         component = None
         current_content = ""
@@ -299,34 +336,98 @@ class CodeCheckService:
             component_type=resolved_component_type,
         )
 
-        try:
-            preview = await ComponentPreviewService(self.session).create_source_preview_artifact(
+        async def execute_check() -> dict[str, object]:
+            try:
+                preview = await ComponentPreviewService(self.session).create_source_preview_artifact(
+                    workspace_id=workspace_id,
+                    component_id=component_id,
+                    component_name=component_name,
+                    content=candidate.content,
+                    preview_schema=resolved_preview_schema,
+                    preview_options=preview_options,
+                    tenant_id=f"tenant_{user_id}",
+                    file_type=PageFileType.VUE,
+                )
+            except AppException as exc:
+                return ComponentValidationService.contract_failed_result(
+                    code=exc.code,
+                    message=exc.detail,
+                    canonical_diff=candidate.canonical_diff,
+                )
+            await self._release_session_before_diagnostics()
+            return await self.component_validation_service.dispatch(
+                artifact_id=preview.artifact_id,
                 workspace_id=workspace_id,
-                component_id=component_id,
-                component_name=component_name,
-                content=candidate.content,
-                preview_schema=resolved_preview_schema,
-                preview_options=preview_options,
-                tenant_id=f"tenant_{user_id}",
-                file_type=PageFileType.VUE,
-            )
-        except AppException as exc:
-            return ComponentValidationService.contract_failed_result(
-                code=exc.code,
-                message=exc.detail,
+                project_id=preview.project_id,
+                label=f"component:{component_id or 'draft'}",
+                patch_repaired=candidate.patch_repaired,
                 canonical_diff=candidate.canonical_diff,
+                profile_key=profile_key,
+                candidate_hash=candidate_hash,
             )
-        await self._release_session_before_diagnostics()
-        return await self.component_validation_service.dispatch(
-            artifact_id=preview.artifact_id,
+
+        return await self._run_with_cache(
+            kind="component",
             workspace_id=workspace_id,
-            project_id=preview.project_id,
-            label=f"component:{component_id or 'draft'}",
-            patch_repaired=candidate.patch_repaired,
-            canonical_diff=candidate.canonical_diff,
+            project_id=None,
+            source=candidate.content,
+            importer_module_path=None,
+            candidate=candidate,
+            execute_check=execute_check,
+            component_preview_schema=resolved_preview_schema,
+            component_type_value=resolved_component_type.value,
             profile_key=profile_key,
-            candidate_hash=candidate_hash,
         )
+
+    async def _run_with_cache(
+        self,
+        *,
+        kind: str,
+        workspace_id: int,
+        project_id: int | None,
+        source: str,
+        importer_module_path: str | None,
+        candidate: CandidateSource,
+        execute_check: Callable[[], Awaitable[dict[str, object]]],
+        component_preview_schema: str | None = None,
+        component_type_value: str = "",
+        profile_key: str = "",
+    ) -> dict[str, object]:
+        """鉴权之后按完整输入指纹复用检查结果，并对并发相同检查做 in-flight 合并。"""
+
+        try:
+            if kind == "component":
+                fingerprint = await self.fingerprint_builder.build_component_fingerprint(
+                    workspace_id=workspace_id,
+                    source=source,
+                    preview_schema=component_preview_schema,
+                    component_type_value=component_type_value,
+                    profile_key=profile_key,
+                )
+            else:
+                fingerprint = await self.fingerprint_builder.build_page_fingerprint(
+                    workspace_id=workspace_id,
+                    project_id=int(project_id or 0),
+                    source=source,
+                    importer_module_path=importer_module_path or "",
+                )
+        except AppException as exc:
+            if kind == "component":
+                return ComponentValidationService.contract_failed_result(
+                    code=exc.code,
+                    message=exc.detail,
+                    canonical_diff=candidate.canonical_diff,
+                )
+            return self._failed_result(code=exc.code, message=exc.detail)
+
+        result, cache_source = await self.result_cache.get_or_execute(fingerprint, execute_check)
+        # 命中/合并结果复用检查结论，但回填本次候选的 edits 元数据，避免复用别的编辑路径 diff。
+        return {
+            **result,
+            "patch_repaired": candidate.patch_repaired,
+            "canonical_diff": candidate.canonical_diff,
+            "_code_check_cache": cache_source,
+        }
 
     async def _dispatch_diagnostics(
         self,
@@ -403,7 +504,7 @@ class CodeCheckService:
             if not defer_artifact_cleanup:
                 try:
                     await RuntimeArtifactStore().delete_artifact(artifact_id)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     logger.warning(
                         "Runtime 诊断 artifact 主动清理失败，将由 TTL 清扫兜底。",
                         extra={"event": "runtime.artifact.cleanup.failed", "artifact_id": artifact_id},
