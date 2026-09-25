@@ -240,6 +240,30 @@ class RenderRepository:
         )
         return int(await self.session.scalar(stmt) or 0) > 0
 
+    async def list_unreleased_attempts_for_worker(
+        self,
+        *,
+        worker_id: str,
+    ) -> list[RenderAttempt]:
+        """列出指定 Worker（含各 epoch）仍未释放的 attempt，供摘除前排空核对。"""
+
+        result = await self.session.scalars(
+            select(RenderAttempt)
+            .where(
+                RenderAttempt.worker_id == worker_id,
+                RenderAttempt.active_occupancy == 1,
+                RenderAttempt.status.in_(tuple(ATTEMPT_OCCUPYING_STATUSES)),
+            )
+            .order_by(RenderAttempt.id.asc())
+        )
+        return list(result.all())
+
+    async def can_safely_remove_worker(self, *, worker_id: str) -> tuple[bool, list[RenderAttempt]]:
+        """摘除 Worker 前核对未释放 attempt；全部释放才允许安全下线。"""
+
+        pending = await self.list_unreleased_attempts_for_worker(worker_id=worker_id)
+        return (len(pending) == 0, pending)
+
     async def select_dispatch_candidate(
         self,
         *,

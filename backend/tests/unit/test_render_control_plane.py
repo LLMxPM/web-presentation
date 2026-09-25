@@ -860,3 +860,61 @@ def test_asset_not_ready_is_infrastructure_not_content() -> None:
     result = RenderDomainFacade._page_unavailable_result("资源未就绪")  # noqa: SLF001
     assert result["status"] == "unavailable"
     assert result["retryable"] is True
+
+
+def test_can_safely_remove_worker_requires_no_unreleased_attempt() -> None:
+    """摘除 Worker 前必须核对未释放 attempt，存在占用时不得安全下线。"""
+
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.services.rendering.repository import RenderRepository
+
+    session = MagicMock()
+    pending = MagicMock()
+    pending.all.return_value = [MagicMock(id=1), MagicMock(id=2)]
+    session.scalars = AsyncMock(return_value=pending)
+    repository = RenderRepository(session)
+
+    async def _run() -> None:
+        safe, attempts = await repository.can_safely_remove_worker(worker_id="renderer-1")
+        assert safe is False
+        assert len(attempts) == 2
+
+    asyncio.run(_run())
+
+    empty = MagicMock()
+    empty.all.return_value = []
+    session.scalars = AsyncMock(return_value=empty)
+
+    async def _run_empty() -> None:
+        safe, attempts = await repository.can_safely_remove_worker(worker_id="renderer-1")
+        assert safe is True
+        assert attempts == []
+
+    asyncio.run(_run_empty())
+
+
+def test_list_unreleased_attempts_covers_all_epochs_of_worker() -> None:
+    """排空核对按 worker_id 跨 epoch 列出占用 attempt，不只看当前 epoch。"""
+
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.services.rendering.repository import RenderRepository
+
+    session = MagicMock()
+    rows = MagicMock()
+    attempt = MagicMock(id=5, worker_epoch="e1")
+    rows.all.return_value = [attempt]
+    session.scalars = AsyncMock(return_value=rows)
+    repository = RenderRepository(session)
+
+    async def _run() -> None:
+        attempts = await repository.list_unreleased_attempts_for_worker(worker_id="renderer-1")
+        assert attempts == [attempt]
+        # 调用应按 worker_id 过滤，而不是绑定单一 epoch
+        stmt = session.scalars.await_args.args[0]
+        assert "worker_id" in str(stmt)
+
+    asyncio.run(_run())
