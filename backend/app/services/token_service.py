@@ -1,85 +1,48 @@
-"""文件功能：管理 RS256 密钥对、JWKS 输出，以及预览与 AI 场景的短期 JWT 签发与校验。"""
+"""文件功能：管理 RS256 密钥环、JWKS 输出，以及预览与 AI 场景的短期 JWT 签发与校验。"""
 
 import time
 from typing import Any
 
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 import jwt
 
 from app.core.config import get_settings
+from app.services.signing_identity import SigningKeyring, load_signing_keyring
 
 
 class TokenService:
-    """管理 RSA 密钥与其 JWKS 输出，并提供签发 JWS 方法。"""
+    """管理 RSA 签名密钥环与其 JWKS 输出，并提供签发 JWS 方法。"""
 
-    _private_key = None
-    _public_key = None
-    _kid = "default-key-1"
+    _keyring: SigningKeyring | None = None
 
     @classmethod
-    def _ensure_keys_loaded(cls):
-        if cls._private_key is not None:
-            return
+    def _ensure_keys_loaded(cls) -> SigningKeyring:
+        """加载并缓存进程内签名密钥环；密钥来源与轮换语义见 signing_identity。"""
 
-        settings = get_settings()
-        key_path = settings.page_screenshot_local_root_path / "runtime_rsa_key.pem"
-        key_path.parent.mkdir(parents=True, exist_ok=True)
+        if cls._keyring is not None:
+            return cls._keyring
 
-        if key_path.exists():
-            with open(key_path, "rb") as f:
-                pem_data = f.read()
-            cls._private_key = serialization.load_pem_private_key(pem_data, password=None, backend=default_backend())
-            cls._public_key = cls._private_key.public_key()
-        else:
-            cls._private_key = rsa.generate_private_key(
-                public_exponent=65537,
-                key_size=2048,
-                backend=default_backend()
-            )
-            cls._public_key = cls._private_key.public_key()
-            pem = cls._private_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption()
-            )
-            with open(key_path, "wb") as f:
-                f.write(pem)
+        cls._keyring = load_signing_keyring(get_settings())
+        return cls._keyring
+
+    @classmethod
+    def reset_signing_keyring(cls) -> None:
+        """清空进程内签名密钥缓存，供测试与密钥更换后重新加载使用。"""
+
+        cls._keyring = None
 
     @classmethod
     def get_jwks(cls) -> dict:
-        """获取标准的 JWKS 响应数据。"""
-        cls._ensure_keys_loaded()
-        
-        numbers = cls._public_key.public_numbers()
-        
-        def to_base64url(val: int) -> str:
-            import base64
-            # val.to_bytes gives length based on bit_length
-            byte_len = (val.bit_length() + 7) // 8
-            b = val.to_bytes(byte_len, byteorder='big')
-            return base64.urlsafe_b64encode(b).decode('ascii').rstrip('=')
+        """获取标准的 JWKS 响应数据；轮换期同时公布旧钥公钥。"""
 
-        return {
-            "keys": [
-                {
-                    "kty": "RSA",
-                    "kid": cls._kid,
-                    "use": "sig",
-                    "alg": "RS256",
-                    "n": to_base64url(numbers.n),
-                    "e": to_base64url(numbers.e)
-                }
-            ]
-        }
+        return cls._ensure_keys_loaded().jwks()
 
     @classmethod
     def get_public_pem(cls) -> str:
-        """返回 JWT 验签所需的 PEM 公钥文本。"""
+        """返回 JWT 验签所需的 PEM 公钥文本（当前签名钥）。"""
 
-        cls._ensure_keys_loaded()
-        pem_bytes = cls._public_key.public_bytes(
+        keyring = cls._ensure_keys_loaded()
+        pem_bytes = keyring.signing.public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
@@ -94,9 +57,9 @@ class TokenService:
         issuer: str = "backend",
         subject: str | None = None,
     ) -> str:
-        """使用统一 RSA 私钥签发通用短期 JWT。"""
+        """使用当前 RSA 私钥签发通用短期 JWT。"""
 
-        cls._ensure_keys_loaded()
+        keyring = cls._ensure_keys_loaded()
         now = int(time.time())
         normalized_payload = dict(payload)
         normalized_payload.setdefault("iss", issuer)
@@ -107,9 +70,9 @@ class TokenService:
 
         return jwt.encode(
             normalized_payload,
-            cls._private_key,
+            keyring.signing.private_key,
             algorithm="RS256",
-            headers={"kid": cls._kid},
+            headers={"kid": keyring.signing.kid},
         )
 
     @classmethod
@@ -120,17 +83,32 @@ class TokenService:
         audience: str | list[str] | None = None,
         verify_exp: bool = True,
     ) -> dict[str, Any]:
-        """校验并解析通用短期 JWT。"""
+        """校验并解析通用短期 JWT；轮换期旧票据按 kid 命中旧钥，在 TTL 内仍有效。"""
 
-        cls._ensure_keys_loaded()
+        keyring = cls._ensure_keys_loaded()
         decode_kwargs: dict[str, Any] = {
             "algorithms": ["RS256"],
             "options": {"verify_exp": verify_exp},
         }
         if audience is not None:
             decode_kwargs["audience"] = audience
-        decoded_payload = jwt.decode(token, cls._public_key, **decode_kwargs)
-        return dict(decoded_payload)
+
+        try:
+            header = jwt.get_unverified_header(token)
+        except jwt.PyJWTError as exc:
+            raise jwt.InvalidTokenError("令牌头无法解析。") from exc
+        candidates = keyring.verification_keys_for(header.get("kid"))
+
+        last_error: Exception | None = None
+        for candidate in candidates:
+            try:
+                decoded_payload = jwt.decode(token, candidate.public_key, **decode_kwargs)
+                return dict(decoded_payload)
+            except jwt.PyJWTError as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        raise jwt.InvalidTokenError("没有可用于验签的签名密钥。")
 
     @classmethod
     def generate_preview_context_token(
@@ -156,7 +134,7 @@ class TokenService:
     ) -> str:
         """签发统一的无状态预览上下文 Token。"""
 
-        cls._ensure_keys_loaded()
+        keyring = cls._ensure_keys_loaded()
 
         now = int(time.time())
         payload: dict[str, Any] = {
@@ -194,16 +172,15 @@ class TokenService:
 
         return jwt.encode(
             payload,
-            cls._private_key,
+            keyring.signing.private_key,
             algorithm="RS256",
-            headers={"kid": cls._kid},
+            headers={"kid": keyring.signing.kid},
         )
 
     @classmethod
     def verify_preview_context_token(cls, token: str, *, verify_exp: bool = True) -> dict[str, Any]:
         """校验并解析无状态预览上下文 Token。"""
 
-        cls._ensure_keys_loaded()
         return cls.verify_signed_token(
             token,
             audience="runtime-preview",
@@ -253,7 +230,6 @@ class TokenService:
     def verify_runtime_build_command_token(cls, token: str, *, verify_exp: bool = True) -> dict[str, Any]:
         """校验并解析 Runtime 内部整包构建命令令牌。"""
 
-        cls._ensure_keys_loaded()
         return cls.verify_signed_token(
             token,
             audience="runtime-build",
@@ -294,7 +270,6 @@ class TokenService:
     def verify_runtime_diagnostics_command_token(cls, token: str, *, verify_exp: bool = True) -> dict[str, Any]:
         """校验并解析 Runtime 内部代码诊断命令令牌。"""
 
-        cls._ensure_keys_loaded()
         return cls.verify_signed_token(
             token,
             audience="runtime-diagnostics",
@@ -328,7 +303,6 @@ class TokenService:
         """校验 Runtime 回源 Backend 内部 artifact 接口使用的短期服务令牌。"""
 
         settings = get_settings()
-        cls._ensure_keys_loaded()
         return cls.verify_signed_token(
             token,
             audience=settings.runtime_service_token_audience,

@@ -71,6 +71,7 @@ from app.services.redis_runtime_client import (
     resolve_runtime_state_profile,
     validate_runtime_state_deployment,
 )
+from app.services.signing_identity import validate_shared_identity_deployment
 from app.services.runtime_artifact_store import RuntimeArtifactStore, run_runtime_artifact_sweeper
 
 
@@ -108,6 +109,7 @@ async def lifespan(app: FastAPI):
             await AiModelCatalogService(catalog_session).ensure_minimal_catalog()
         validate_runtime_state_deployment(get_settings())
         validate_runtime_role_targets(get_settings())
+        validate_shared_identity_deployment(get_settings())
         ensure_redis_runtime_available()
         _log_runtime_state_startup(app)
         if get_settings().ai_enabled:

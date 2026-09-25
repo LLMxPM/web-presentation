@@ -98,6 +98,20 @@ class AppSettings(BaseSettings):
     runtime_public_base_url: str | None = None
     runtime_shared_secret: str = "change-me"
     runtime_service_token_audience: str = "runtime-backend"
+    # Runtime RS256 签名身份：多 Backend 必须共享同一私钥；轮换期用 previous_keys 保留旧钥验签。
+    # 读取顺序：RUNTIME_RSA_PRIVATE_KEY（PEM）→ RUNTIME_RSA_PRIVATE_KEY_FILE（共享路径/密钥挂载）
+    # → 旧版本地 data/runtime_rsa_key.pem → 单实例自动生成。
+    runtime_rsa_private_key: str = ""
+    runtime_rsa_private_key_file: str | None = None
+    runtime_rsa_key_id: str = "default-key-1"
+    # 轮换期验签旧钥：JSON 数组，每项 {"kid": "...", "private_key_file": "..."} 或 {"kid": "...", "private_key": "PEM..."}。
+    runtime_rsa_previous_keys: list[dict[str, str]] = Field(default_factory=list)
+    # 仅单实例/Lite 允许缺省时自动生成本地密钥；多副本必须显式提供共享私钥。
+    runtime_rsa_allow_auto_generate: bool = True
+    # 声明本部署运行多 Backend 副本：启动期强制共享签名密钥、AI/Renderer 凭证与对象存储前提。
+    backend_multi_instance: bool = False
+    # local 对象存储位于已验证共享卷时显式确认；多 Backend 下默认要求 s3。
+    object_storage_shared_volume: bool = False
     runtime_request_timeout_seconds: float = 10.0
     runtime_diagnostics_request_timeout_seconds: float = 180.0
     runtime_build_request_timeout_seconds: float = 900.0
@@ -481,6 +495,43 @@ class AppSettings(BaseSettings):
         if not normalized:
             raise ValueError("RUNTIME_SERVICE_TOKEN_AUDIENCE 不能为空。")
         return normalized
+
+    @field_validator("runtime_rsa_key_id")
+    @classmethod
+    def validate_runtime_rsa_key_id(cls, value: str) -> str:
+        """校验当前签名 kid 非空，避免 JWKS 与 JWT 头无法匹配。"""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("RUNTIME_RSA_KEY_ID 不能为空。")
+        return normalized
+
+    @field_validator("runtime_rsa_private_key", "runtime_rsa_private_key_file")
+    @classmethod
+    def normalize_runtime_rsa_key_source(cls, value: str | None) -> str | None:
+        """规范化签名私钥来源字符串；允许留空表示走本地/自动生成回退。"""
+
+        if value is None:
+            return None
+        return value.strip()
+
+    @field_validator("runtime_rsa_previous_keys")
+    @classmethod
+    def validate_runtime_rsa_previous_keys(cls, value: list[dict[str, str]]) -> list[dict[str, str]]:
+        """校验轮换期旧钥条目同时提供 kid 与密钥来源，避免启动后才发现轮换配置不可用。"""
+
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                raise ValueError(f"RUNTIME_RSA_PREVIOUS_KEYS 第 {index + 1} 项必须是对象。")
+            has_file = bool(str(item.get("private_key_file") or item.get("public_key_file") or "").strip())
+            has_inline = bool(str(item.get("private_key") or item.get("public_key") or "").strip())
+            if has_file and has_inline:
+                raise ValueError(f"RUNTIME_RSA_PREVIOUS_KEYS 第 {index + 1} 项只能提供文件或内联 PEM 之一。")
+            if not has_file and not has_inline:
+                raise ValueError(f"RUNTIME_RSA_PREVIOUS_KEYS 第 {index + 1} 项缺少密钥内容。")
+            if not str(item.get("kid") or "").strip() and not has_file:
+                raise ValueError(f"RUNTIME_RSA_PREVIOUS_KEYS 第 {index + 1} 项缺少 kid。")
+        return value
 
     @field_validator("ai_agent_os_id")
     @classmethod
