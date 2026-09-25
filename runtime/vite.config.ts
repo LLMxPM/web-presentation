@@ -3,7 +3,7 @@
  */
 
 import { resolve } from 'path'
-import { defineConfig, loadEnv, type Logger, type LogErrorOptions } from 'vite'
+import { defineConfig, loadEnv, type Logger, type LogErrorOptions, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 import runtimeHealth from './src/core/plugins/runtime-health'
@@ -14,6 +14,11 @@ import runtimeStandalonePreviewGate, {
   resolveStandalonePreviewEnabled,
 } from './src/core/plugins/runtime-standalone-preview-gate'
 import runtimeVisualEdit from './src/core/plugins/runtime-visual-edit'
+import {
+  resolveRuntimeRole,
+  resolveRuntimeRoleSurface,
+  type RuntimeRoleSurface,
+} from './src/core/plugins/runtime-role'
 import { logRuntimeServer } from './src/core/utils/runtime-logger'
 
 export default defineConfig(({ command, mode }) => {
@@ -38,6 +43,9 @@ export default defineConfig(({ command, mode }) => {
     env.RUNTIME_PUBLIC_BASE_URL,
     env.BACKEND_PUBLIC_BASE_URL,
   ])
+  // RUNTIME_ROLE 决定本进程开放的执行面；非法值在启动期直接抛错。
+  const runtimeRole = resolveRuntimeRole(env.RUNTIME_ROLE)
+  const roleSurface = resolveRuntimeRoleSurface(runtimeRole)
 
   return {
     define: {
@@ -52,30 +60,13 @@ export default defineConfig(({ command, mode }) => {
       allowedHosts: runtimeAllowedHosts,
     },
     customLogger: createRuntimeViteLogger(),
-    plugins: [
-      runtimeHealth(),
-      runtimeStandalonePreviewGate({
-        enabled: standalonePreviewEnabled,
-      }),
-      vue(),
-      runtimeBuildRunner({
-        jwksUrl: env.RUNTIME_PREVIEW_JWKS_URL,
-        backendApiBaseUrl: env.RUNTIME_BACKEND_API_BASE_URL,
-      }),
-      runtimeAssetRenderHintMeasurer({
-        jwksUrl: env.RUNTIME_PREVIEW_JWKS_URL,
-        serviceAudience: env.RUNTIME_SERVICE_TOKEN_AUDIENCE,
-      }),
-      runtimeVisualEdit({
-        jwksUrl: env.RUNTIME_PREVIEW_JWKS_URL,
-        serviceAudience: env.RUNTIME_SERVICE_TOKEN_AUDIENCE,
-      }),
-      runtimeSaaSPreview({
-        jwksUrl: env.RUNTIME_PREVIEW_JWKS_URL,
-        backendApiBaseUrl: env.RUNTIME_BACKEND_API_BASE_URL,
-        previewAudience: env.RUNTIME_PREVIEW_TOKEN_AUDIENCE,
-      })
-    ],
+    plugins: buildRuntimeServePlugins(roleSurface, {
+      standalonePreviewEnabled,
+      jwksUrl: env.RUNTIME_PREVIEW_JWKS_URL,
+      backendApiBaseUrl: env.RUNTIME_BACKEND_API_BASE_URL,
+      previewAudience: env.RUNTIME_PREVIEW_TOKEN_AUDIENCE,
+      serviceAudience: env.RUNTIME_SERVICE_TOKEN_AUDIENCE,
+    }),
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),
@@ -114,6 +105,62 @@ export default defineConfig(({ command, mode }) => {
     },
   }
 })
+
+interface RuntimeServePluginOptions {
+  standalonePreviewEnabled: boolean
+  jwksUrl?: string
+  backendApiBaseUrl?: string
+  previewAudience?: string
+  serviceAudience?: string
+}
+
+/**
+ * 按角色面装配 Vite serve 插件：preview 不开放构建/诊断/轻量工具入口，
+ * build 只保留整项目构建，check 只保留诊断与轻量内部工具。
+ * @param surface 角色插件面开关
+ * @param options 插件鉴权与预览配置
+ * @returns Vite 插件列表
+ */
+export function buildRuntimeServePlugins(
+  surface: RuntimeRoleSurface,
+  options: RuntimeServePluginOptions,
+): Plugin[] {
+  const plugins: Plugin[] = []
+
+  plugins.push(runtimeHealth())
+  if (surface.preview) {
+    plugins.push(
+      runtimeStandalonePreviewGate({ enabled: options.standalonePreviewEnabled }),
+      vue(),
+      runtimeSaaSPreview({
+        jwksUrl: options.jwksUrl,
+        backendApiBaseUrl: options.backendApiBaseUrl,
+        previewAudience: options.previewAudience,
+      }),
+    )
+  }
+  if (surface.projectBuild || surface.checkDiagnostics) {
+    plugins.push(runtimeBuildRunner({
+      jwksUrl: options.jwksUrl,
+      backendApiBaseUrl: options.backendApiBaseUrl,
+      enableProjectEntry: surface.projectBuild,
+      enableDiagnosticsEntry: surface.checkDiagnostics,
+    }))
+  }
+  if (surface.lightTools) {
+    plugins.push(
+      runtimeAssetRenderHintMeasurer({
+        jwksUrl: options.jwksUrl,
+        serviceAudience: options.serviceAudience,
+      }),
+      runtimeVisualEdit({
+        jwksUrl: options.jwksUrl,
+        serviceAudience: options.serviceAudience,
+      }),
+    )
+  }
+  return plugins
+}
 
 /**
  * 解析 Runtime dev server 监听地址；本地开发默认仅绑定回环地址，容器镜像通过环境变量覆盖为 0.0.0.0。

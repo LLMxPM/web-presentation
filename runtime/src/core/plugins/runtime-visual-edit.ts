@@ -17,6 +17,11 @@ import { VisualEditApplyError } from '../visual-edit/apply/errors'
 import { logRuntimeServer } from '../utils/runtime-logger'
 import { recordRuntimeWorkload } from './runtime-capacity'
 import {
+  runWithLightToolBudget,
+  RuntimeLightToolTimeoutError,
+  RuntimeViteTaskSchedulerError,
+} from './runtime-light-tool-channel'
+import {
   RuntimeServiceAuthError,
   verifyRuntimeServiceToken,
 } from './runtime-service-auth'
@@ -73,9 +78,12 @@ export default function runtimeVisualEdit(options: RuntimeVisualEditOptions = {}
             requiredScope: 'runtime-artifact-read',
           })
           const payload = await readJsonBody(req, PAGE_VISUAL_EDIT_MAX_REQUEST_BYTES)
-          const result = requestPath === endpointPath
-            ? analyzeVisualEditRequest(payload)
-            : applyVisualEditRequest(payload)
+          // 轻量工具独立通道：不与完整编译诊断共享容量，短请求不排在长编译之后。
+          const result = await runWithLightToolBudget(async () => (
+            requestPath === endpointPath
+              ? analyzeVisualEditRequest(payload)
+              : applyVisualEditRequest(payload)
+          ))
           sendJson(res, 200, result)
           recordRuntimeWorkload('light_tool', Date.now() - startedAt)
         } catch (error) {
@@ -141,6 +149,14 @@ function sendVisualEditError(res: RuntimeNodeResponse, error: unknown, action: '
     || error instanceof VisualEditApplyError
     || error instanceof VisualEditInstrumentationError
   ) {
+    sendJson(res, error.statusCode, {
+      success: false,
+      code: error.code,
+      message: error.message,
+    })
+    return
+  }
+  if (error instanceof RuntimeViteTaskSchedulerError || error instanceof RuntimeLightToolTimeoutError) {
     sendJson(res, error.statusCode, {
       success: false,
       code: error.code,

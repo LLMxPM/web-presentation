@@ -141,7 +141,7 @@ class RuntimeVisualEditClient:
         }
         try:
             async with httpx.AsyncClient(
-                base_url=self.settings.runtime_base_url.rstrip("/"),
+                base_url=self.settings.resolve_runtime_role_base_url("check"),
                 timeout=httpx.Timeout(self.settings.runtime_request_timeout_seconds),
                 transport=self.transport,
             ) as client:

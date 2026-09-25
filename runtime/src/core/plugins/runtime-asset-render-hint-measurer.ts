@@ -14,6 +14,11 @@ import {
 } from '../utils/svg-aspect-ratio'
 import { logRuntimeServer } from '../utils/runtime-logger'
 import { recordRuntimeWorkload } from './runtime-capacity'
+import {
+  runWithLightToolBudget,
+  RuntimeLightToolTimeoutError,
+  RuntimeViteTaskSchedulerError,
+} from './runtime-light-tool-channel'
 
 interface RuntimeAssetRenderHintMeasurerOptions {
   endpointPath?: string
@@ -75,7 +80,8 @@ export default function runtimeAssetRenderHintMeasurer(options: RuntimeAssetRend
             audience: options.serviceAudience || process.env.RUNTIME_SERVICE_TOKEN_AUDIENCE || DEFAULT_SERVICE_AUDIENCE,
           })
           const payload = await readJsonBody<MeasureRequestBody>(req)
-          const result = await measureAssetRenderHint(payload)
+          // 轻量工具独立通道：不与完整编译诊断共享容量，短请求不排在长编译之后。
+          const result = await runWithLightToolBudget(() => measureAssetRenderHint(payload))
           sendJson(res, 200, result)
           recordRuntimeWorkload('light_tool', Date.now() - startedAt)
         } catch (error) {
@@ -392,6 +398,14 @@ function sendJson(res: RuntimeNodeResponse, statusCode: number, payload: unknown
 
 function sendMeasureError(res: RuntimeNodeResponse, error: unknown): void {
   if (error instanceof RuntimeMeasureError) {
+    sendJson(res, error.statusCode, {
+      ok: false,
+      code: error.code,
+      message: error.message,
+    })
+    return
+  }
+  if (error instanceof RuntimeViteTaskSchedulerError || error instanceof RuntimeLightToolTimeoutError) {
     sendJson(res, error.statusCode, {
       ok: false,
       code: error.code,

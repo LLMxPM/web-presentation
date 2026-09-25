@@ -9,6 +9,7 @@ import {
   collectRuntimeCapacity,
   startRuntimeEventLoopLagMonitor,
 } from './runtime-capacity'
+import { getRuntimeRole } from './runtime-role'
 
 export const RUNTIME_HEALTH_PATH = '/__runtime_healthz'
 
@@ -52,11 +53,12 @@ export function sendRuntimeHealthResponse(
 
 /**
  * 构建健康检查返回体。
- * @returns 健康与容量结构
+ * @returns 健康与容量结构（含运行角色）
  */
 export function buildRuntimeHealthPayload(): Record<string, unknown> {
   return {
     status: 'ok',
+    role: getRuntimeRole(),
     ...collectRuntimeCapacity(),
   }
 }

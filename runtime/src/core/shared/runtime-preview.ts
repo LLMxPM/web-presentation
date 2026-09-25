@@ -409,6 +409,32 @@ export function buildRemoteModuleId(
 }
 
 /**
+ * 在已有远程模块 ID 上回填/覆盖 `ctx` 预览令牌，原样保留其余 query（Vue SFC 子请求的 `vue&type=...` 等）。
+ * 用于子请求丢失 ctx 后恢复授权：让后续请求（含跨副本）仅凭模块 ID 即可携带预览上下文。
+ * @param remoteModuleId 远程模块 ID（可含 path query）
+ * @param previewToken 预览上下文 token
+ * @returns 回填 ctx 后的远程模块 ID
+ */
+export function attachRemoteModulePreviewToken(remoteModuleId: string, previewToken: string): string {
+  const normalizedId = String(remoteModuleId || '').trim()
+  if (!normalizedId || !previewToken) {
+    return normalizedId
+  }
+  const questionIndex = normalizedId.indexOf('?')
+  const pathPart = questionIndex >= 0 ? normalizedId.slice(0, questionIndex) : normalizedId
+  const queryPart = questionIndex >= 0 ? normalizedId.slice(questionIndex + 1) : ''
+  const encodedToken = encodeURIComponent(previewToken)
+  const existingCtxPattern = /(^|&)ctx=[^&]*/
+  let nextQuery: string
+  if (existingCtxPattern.test(queryPart)) {
+    nextQuery = queryPart.replace(existingCtxPattern, (_match, prefix: string) => `${prefix}ctx=${encodedToken}`)
+  } else {
+    nextQuery = queryPart ? `${queryPart}&ctx=${encodedToken}` : `ctx=${encodedToken}`
+  }
+  return `${pathPart}?${nextQuery}`
+}
+
+/**
  * 读取浏览器侧 Runtime 公开基址；非浏览器环境返回空串以保留本地测试默认路径。
  * @returns Runtime 公开基址
  */

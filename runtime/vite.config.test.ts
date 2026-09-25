@@ -4,10 +4,48 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  buildRuntimeServePlugins,
   createRuntimeViteLogger,
   resolveRuntimeServerAllowedHosts,
   resolveRuntimeServerBasePath,
 } from './vite.config'
+import { resolveRuntimeRoleSurface } from './src/core/plugins/runtime-role'
+
+describe('runtime vite role plugin selection', () => {
+  const options = { standalonePreviewEnabled: true }
+
+  it('preview 角色不得注册构建、诊断与轻量工具插件', () => {
+    const names = buildRuntimeServePlugins(resolveRuntimeRoleSurface('preview'), options).map(plugin => plugin.name)
+    expect(names).toContain('runtime-health')
+    expect(names).toContain('runtime-saas-preview')
+    expect(names.some(name => name.includes('build-runner'))).toBe(false)
+    expect(names.some(name => name.includes('visual-edit'))).toBe(false)
+    expect(names.some(name => name.includes('asset-render-hint'))).toBe(false)
+  })
+
+  it('build 角色只注册构建入口，check 角色注册诊断与轻量工具', () => {
+    const buildNames = buildRuntimeServePlugins(resolveRuntimeRoleSurface('build'), options).map(plugin => plugin.name)
+    expect(buildNames).toContain('runtime-build-runner')
+    expect(buildNames).not.toContain('runtime-saas-preview')
+
+    const checkNames = buildRuntimeServePlugins(resolveRuntimeRoleSurface('check'), options).map(plugin => plugin.name)
+    expect(checkNames).toContain('runtime-build-runner')
+    expect(checkNames).toContain('runtime-visual-edit')
+    expect(checkNames).toContain('runtime-asset-render-hint-measurer')
+    expect(checkNames).not.toContain('runtime-saas-preview')
+  })
+
+  it('all 角色保持全量插件注册', () => {
+    const names = buildRuntimeServePlugins(resolveRuntimeRoleSurface('all'), options).map(plugin => plugin.name)
+    expect(names).toEqual(expect.arrayContaining([
+      'runtime-health',
+      'runtime-build-runner',
+      'runtime-visual-edit',
+      'runtime-asset-render-hint-measurer',
+      'runtime-saas-preview',
+    ]))
+  })
+})
 
 describe('runtime vite logger', () => {
   const originalFormat = process.env.RUNTIME_LOG_FORMAT

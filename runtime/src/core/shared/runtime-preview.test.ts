@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  attachRemoteModulePreviewToken,
   buildRemoteModuleId,
   isPreviewEntryModuleRequest,
   isBuiltinLocalViewPath,
@@ -90,6 +91,25 @@ describe('runtime preview shared helpers', () => {
       modulePath: 'src/workspace-components/CMP_DEMO/v/1.vue',
       previewToken: undefined,
     })
+  })
+
+  it('应向丢失 ctx 的 Vue 子请求回填预览令牌并原样保留子请求 query', () => {
+    const subRequestId = '/@runtime-preview/artifact_1/src/workspace-components/CMP_DEMO/v/1.vue?vue&type=style&index=0&lang.css'
+    const recovered = attachRemoteModulePreviewToken(subRequestId, 'signed-preview-token')
+
+    expect(recovered).toBe(
+      '/@runtime-preview/artifact_1/src/workspace-components/CMP_DEMO/v/1.vue?vue&type=style&index=0&lang.css&ctx=signed-preview-token',
+    )
+    const parsed = parseRemoteModuleId(recovered)
+    expect(parsed?.previewToken).toBe('signed-preview-token')
+    expect(parsed?.modulePath).toBe('src/workspace-components/CMP_DEMO/v/1.vue')
+
+    // 已有 ctx 时应覆盖而不是追加
+    const replaced = attachRemoteModulePreviewToken(
+      '/@runtime-preview/artifact_1/src/views/Page.vue?ctx=old-token',
+      'new-token',
+    )
+    expect(replaced).toBe('/@runtime-preview/artifact_1/src/views/Page.vue?ctx=new-token')
   })
 
   it('应识别 Vue SFC 子请求中的相对远程模块 importer', () => {

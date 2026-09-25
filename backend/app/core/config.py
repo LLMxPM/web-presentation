@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from functools import lru_cache
+import logging
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
@@ -44,6 +45,10 @@ class AppSettings(BaseSettings):
     session_secure: bool = False
     cors_origins: list[str] = Field(default_factory=lambda: ["http://127.0.0.1:5173", "http://localhost:5173"])
     runtime_base_url: str = "http://127.0.0.1:7373"
+    # 分角色部署时按职责指定 Runtime 内部目标；留空回退 runtime_base_url。
+    runtime_preview_base_url: str = ""
+    runtime_build_base_url: str = ""
+    runtime_check_base_url: str = ""
     runtime_public_base_url: str | None = None
     runtime_shared_secret: str = "change-me"
     runtime_service_token_audience: str = "runtime-backend"
@@ -365,6 +370,13 @@ class AppSettings(BaseSettings):
             raise ValueError("BACKEND_PUBLIC_BASE_URL 不能为空。")
         return normalized
 
+    @field_validator("runtime_preview_base_url", "runtime_build_base_url", "runtime_check_base_url")
+    @classmethod
+    def normalize_runtime_role_base_url(cls, value: str) -> str:
+        """规范化分角色 Runtime 内部目标地址；允许留空表示回退 runtime_base_url。"""
+
+        return str(value or "").strip()
+
     @field_validator("runtime_public_base_url")
     @classmethod
     def validate_runtime_public_base_url(cls, value: str | None) -> str | None:
@@ -551,6 +563,22 @@ class AppSettings(BaseSettings):
             return configured_path
         return (Path(__file__).resolve().parents[2] / configured_path).resolve()
 
+    def resolve_runtime_role_base_url(self, role: str) -> str:
+        """按职责解析 Runtime 内部目标地址，未配置角色地址时回退 runtime_base_url。
+
+        role 取 preview / build / check；返回值已去掉末尾斜杠。
+        """
+
+        mapping = {
+            "preview": self.runtime_preview_base_url,
+            "build": self.runtime_build_base_url,
+            "check": self.runtime_check_base_url,
+        }
+        configured = str(mapping.get(role) or "").strip().rstrip("/")
+        if configured:
+            return configured
+        return self.runtime_base_url.rstrip("/")
+
     @property
     def ai_llm_http_trace_dir_path(self) -> Path:
         """返回 LLM HTTP trace 文件输出目录的绝对路径。"""
@@ -587,3 +615,41 @@ def get_settings() -> AppSettings:
     """缓存配置对象，避免同一进程中重复解析环境变量。"""
 
     return AppSettings()
+
+
+def validate_runtime_role_targets(settings: AppSettings | None = None) -> None:
+    """启动期校验分角色 Runtime 目标配置。
+
+    - 各职责目标（preview/build/check）解析后必须是绝对 http(s) 地址（存在性校验）。
+    - 若显式配置了 preview 专属地址，而 build/check 回退到同一地址，输出告警：
+      preview 角色实例不开放构建/诊断入口，不应被 Backend 当作 build/check 目标。
+    """
+
+    resolved = settings or get_settings()
+    role_targets = {
+        "preview": resolved.resolve_runtime_role_base_url("preview"),
+        "build": resolved.resolve_runtime_role_base_url("build"),
+        "check": resolved.resolve_runtime_role_base_url("check"),
+    }
+    for role, target in role_targets.items():
+        if not target:
+            raise ValueError(f"Runtime {role} 内部目标地址为空：请配置 RUNTIME_BASE_URL 或对应角色地址。")
+        if not target.startswith(("http://", "https://")):
+            raise ValueError(f"Runtime {role} 内部目标地址必须是绝对 http(s) 地址：{target}")
+
+    explicit_preview = str(resolved.runtime_preview_base_url or "").strip().rstrip("/")
+    if explicit_preview and explicit_preview == role_targets["preview"]:
+        for role in ("build", "check"):
+            if role_targets[role] == explicit_preview:
+                logging.getLogger(__name__).warning(
+                    "Runtime %s 目标与 preview 专属地址相同（%s）。preview 角色不开放构建/诊断入口，"
+                    "请确认该地址不是 preview-only 实例，或改配 RUNTIME_%s_BASE_URL。",
+                    role,
+                    explicit_preview,
+                    role.upper(),
+                    extra={
+                        "event": "runtime.role_target.mismatch",
+                        "role": role,
+                        "target": explicit_preview,
+                    },
+                )

@@ -61,6 +61,10 @@ interface RuntimeBuildRunnerOptions {
   buildAudience?: string
   diagnosticsAudience?: string
   backendApiBaseUrl?: string
+  /** 是否开放整项目构建入口；build 角色为 true，check 角色为 false。 */
+  enableProjectEntry?: boolean
+  /** 是否开放编译诊断入口；check 角色为 true，build 角色为 false。 */
+  enableDiagnosticsEntry?: boolean
 }
 
 interface RuntimeBuildCommandClaims extends JWTPayload {
@@ -204,6 +208,9 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
   const endpointPath = options.endpointPath || DEFAULT_BUILD_ENDPOINT
   const diagnosticsEndpointPath = options.diagnosticsEndpointPath || DEFAULT_DIAGNOSTICS_ENDPOINT
   const serviceTokenHeaderName = (options.serviceTokenHeaderName || DEFAULT_RUNTIME_SERVICE_TOKEN_HEADER).toLowerCase()
+  // 角色裁剪：preview 不注册本插件；build 只开构建入口；check 只开诊断入口。
+  const enableProjectEntry = options.enableProjectEntry !== false
+  const enableDiagnosticsEntry = options.enableDiagnosticsEntry !== false
   const scheduler = new RuntimeViteTaskScheduler()
   let diagnosticsWorkspacePool: RuntimeDiagnosticsWorkspacePool | null = null
   let runtimeRoot = ''
@@ -241,7 +248,7 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
       })
       server.middlewares.use(async (req, res, next) => {
         const requestPath = (req.url || '').split('?')[0]
-        if (requestPath === diagnosticsEndpointPath) {
+        if (enableDiagnosticsEntry && requestPath === diagnosticsEndpointPath) {
           if (req.method !== 'POST') {
             return sendJson(res, 405, {
               success: false,
@@ -260,7 +267,7 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
           })
         }
 
-        if (requestPath !== endpointPath) {
+        if (!enableProjectEntry || requestPath !== endpointPath) {
           return next()
         }
 

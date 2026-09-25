@@ -50,6 +50,7 @@ describe('runtime health plugin', () => {
     expect(response.headers['content-type']).toBe('application/json; charset=utf-8')
     const payload = JSON.parse(response.body)
     expect(payload.status).toBe('ok')
+    expect(payload.role).toBe('all')
     expect(payload.memory).toMatchObject({
       rssBytes: expect.any(Number),
       heapUsedBytes: expect.any(Number),

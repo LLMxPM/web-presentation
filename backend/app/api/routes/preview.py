@@ -72,7 +72,7 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
     """统一代理 Runtime `/__preview`，并透传预览上下文 Token。"""
 
     settings = get_settings()
-    runtime_url = f"{settings.runtime_base_url.rstrip('/')}/__preview"
+    runtime_url = f"{settings.resolve_runtime_role_base_url('preview')}/__preview"
     runtime_public_base_url = str(settings.runtime_public_base_url or settings.runtime_base_url).strip().rstrip("/")
 
     headers = dict(request.headers)

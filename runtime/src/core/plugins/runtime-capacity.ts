@@ -4,6 +4,8 @@
 
 import { monitorEventLoopDelay, type IntervalHistogram } from 'perf_hooks'
 
+import { getRuntimeRole } from './runtime-role'
+
 export type RuntimeWorkloadKind = 'preview' | 'check' | 'build' | 'light_tool'
 
 export interface RuntimeWorkloadCounters {
@@ -176,6 +178,7 @@ export function registerRuntimeCapacityProvider(
  */
 export function collectRuntimeCapacity(): Record<string, unknown> {
   const capacity: Record<string, unknown> = {
+    role: getRuntimeRole(),
     memory: getRuntimeMemorySnapshot(),
     eventLoop: getRuntimeEventLoopSnapshot(),
     workloads: getRuntimeWorkloadSnapshot(),

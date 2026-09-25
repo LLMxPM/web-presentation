@@ -1,7 +1,8 @@
-"""文件功能：向 Runtime 提供内部 preview artifact 读取与构建产物上传接口。"""
+"""文件功能：向 Runtime 提供内部 preview artifact 读取、预览服务令牌换发与构建产物上传接口。"""
 
 from __future__ import annotations
 
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -39,6 +40,33 @@ class RuntimeModuleBatchRequest(BaseModel):
         if len(set(normalized)) != len(normalized):
             raise ValueError("模块路径不能重复。")
         return normalized
+
+
+class PreviewServiceTokenExchangeRequest(BaseModel):
+    """Runtime 用 PreviewContextToken 换取短期服务令牌的内部请求。"""
+
+    preview_token: str = Field(min_length=1)
+
+
+class PreviewServiceTokenExchangeResponse(BaseModel):
+    """换票结果：artifact 作用域的短期 Runtime 服务令牌。"""
+
+    service_token: str
+    token_type: str = "Bearer"
+    expires_in: int
+    artifact_id: str
+    scope: str = "runtime-artifact-read"
+
+
+def _resolve_runtime_service_token_ttl(preview_claims: dict[str, object]) -> int:
+    """按 PreviewContextToken 剩余有效期生成短期服务令牌 TTL，至少 60 秒。"""
+
+    now = int(time.time())
+    try:
+        preview_exp = int(preview_claims.get("exp") or now)
+    except (TypeError, ValueError):
+        preview_exp = now
+    return max(60, preview_exp - now)
 
 
 async def _get_release_or_404(session: AsyncSession, artifact_id: str) -> Release:
@@ -127,6 +155,48 @@ def _allowed_artifact_module_paths(manifest: dict[str, object]) -> set[str]:
         if entry_path:
             allowed_paths.add(entry_path)
     return allowed_paths
+
+
+@router.post(
+    "/internal/runtime/preview-service-token",
+    response_model=PreviewServiceTokenExchangeResponse,
+    response_model_exclude_none=True,
+)
+async def exchange_preview_service_token(payload: PreviewServiceTokenExchangeRequest) -> PreviewServiceTokenExchangeResponse:
+    """用已签名的 PreviewContextToken 换取 artifact 作用域的短期 Runtime 服务令牌。
+
+    授权语义：
+    - 仅接受 `aud=runtime-preview` 的有效 PreviewContextToken（验签并校验过期），过期或伪造令牌直接 401；
+    - 签发的服务令牌为 `sub=runtime-service`、`scope=runtime-artifact-read`，且绑定 `artifact_id`，只能读取该 artifact；
+    - TTL 与预览令牌剩余有效期对齐，属于短期票据，可被 Runtime 反复换发；
+    - 本端点位于 `/internal/` 前缀，不经公开 Gateway 暴露，只有受信网络内的 Runtime 可访问；
+      响应体包含服务令牌原文，仅供 Runtime 进程内使用，禁止转发给浏览器；
+    - 日志只记录 artifact_id，不记录任何令牌原文。
+    """
+
+    try:
+        claims = TokenService.verify_preview_context_token(payload.preview_token)
+    except Exception as exc:  # noqa: BLE001
+        raise AppException(
+            status_code=401,
+            code="PREVIEW_CONTEXT_INVALID",
+            detail="预览上下文令牌非法或已过期。",
+        ) from exc
+
+    artifact_id = str(claims.get("artifact_id") or "").strip()
+    if not artifact_id:
+        raise AppException(status_code=401, code="PREVIEW_CONTEXT_INVALID", detail="预览上下文缺少 artifact_id。")
+
+    expires_in = _resolve_runtime_service_token_ttl(claims)
+    service_token = TokenService.generate_runtime_service_access_token(
+        artifact_id=artifact_id,
+        expires_in_seconds=expires_in,
+    )
+    return PreviewServiceTokenExchangeResponse(
+        service_token=service_token,
+        expires_in=expires_in,
+        artifact_id=artifact_id,
+    )
 
 
 @router.get("/internal/runtime/preview-artifacts/{artifact_id}/manifest")

@@ -1,21 +1,30 @@
 /**
- * 文件用途：验证 SaaS 预览入口的资源基址选择与内联 JSON 安全序列化逻辑。
+ * 文件用途：验证 SaaS 预览入口的资源基址选择、内联 JSON 安全序列化，以及服务令牌换票恢复能力。
  */
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RuntimePreviewArtifactManifest, RuntimePreviewContext } from '../shared/runtime-preview'
 import {
   buildPreviewTailwindStylesheetHref,
   collectPreviewTailwindSources,
 } from '../tailwind/preview-tailwind'
-import {
+import runtimeSaaSPreview, {
   assertManifestMatchesContext,
   buildPreviewHtml,
   resolvePreviewAssetBase,
   serializeForInlineScript,
 } from './runtime-saas-preview'
 import { isAllowedSnapdomProxyResourceUrl } from './runtime-snapdom-resource-proxy'
+
+const joseMocks = vi.hoisted(() => ({
+  createRemoteJWKSet: vi.fn(() => vi.fn()),
+  jwtVerify: vi.fn(),
+}))
+
+vi.mock('jose', () => joseMocks)
+vi.mock('../utils/runtime-logger', () => ({ logRuntimeServer: vi.fn(), isRuntimeAccessLogEnabled: () => false }))
+vi.mock('./runtime-capacity', () => ({ recordRuntimeWorkload: vi.fn() }))
 
 describe('runtime saas preview helpers', () => {
   it('应优先使用 Backend 透传的浏览器可访问 Runtime 地址', () => {
@@ -297,5 +306,238 @@ describe('runtime saas preview helpers', () => {
       manifest,
       context,
     )).toBe(false)
+  })
+})
+
+describe('runtime saas preview 服务令牌可恢复', () => {
+  const fetchMock = vi.fn()
+  const PREVIEW_TOKEN = 'preview-token-value'
+  const SERVICE_TOKEN = 'service-token-value-should-not-leak'
+
+  /** 构造通过验签的 PreviewContextToken 声明。 */
+  function previewTokenPayload() {
+    return {
+      jti: 'preview-artifact-artifact-1-1',
+      tenant_id: 'tenant_1',
+      artifact_id: 'artifact-1',
+      preview_kind: 'page',
+      scope_type: 'project',
+      workspace_id: '1',
+      project_id: '2',
+      entry_descriptor: { entry_type: 'module', module_path: 'src/views/Foo.vue' },
+      asset_base_url: 'https://backend.example.com/assets/1',
+      trace_id: 'req-1',
+    }
+  }
+
+  /** 构造与上下文匹配的 artifact 清单。 */
+  function matchingManifest(): RuntimePreviewArtifactManifest {
+    return {
+      artifact_id: 'artifact-1',
+      tenant_id: 'tenant_1',
+      preview_kind: 'page',
+      owner_scope: { scope_type: 'project', workspace_id: '1', project_id: '2' },
+      entry_descriptor: { entry_type: 'module', module_path: 'src/views/Foo.vue' },
+      modules: { 'src/views/Foo.vue': { hash: 'entry-hash' } },
+      assets: {},
+    }
+  }
+
+  /** 构造插件实例。 */
+  function createPlugin() {
+    return runtimeSaaSPreview({
+      jwksUrl: 'https://backend.example.com/.well-known/jwks.json',
+      previewAudience: 'runtime-preview',
+      backendApiBaseUrl: 'http://backend:8000',
+    })
+  }
+
+  /** 以普通函数形式调用插件 load 钩子（测试内不依赖 Vite PluginContext）。 */
+  function callLoad(plugin: ReturnType<typeof createPlugin>, id: string): Promise<string | null> {
+    return (plugin.load as (moduleId: string) => Promise<string | null>).call({}, id)
+  }
+
+  /** 以普通函数形式调用插件 resolveId 钩子。 */
+  function callResolveId(
+    plugin: ReturnType<typeof createPlugin>,
+    source: string,
+    importer?: string,
+  ): Promise<string | null> {
+    return (plugin.resolveId as (src: string, imp?: string) => Promise<string | null>).call({}, source, importer)
+  }
+
+  /**
+   * 按 URL 分发 Backend 内部接口的 fetch 替身：
+   * 换票、manifest、模块源码各自返回稳定响应。
+   */
+  function mockBackendFetch(options: { exchangeStatus?: number; exchangeBody?: unknown } = {}) {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const target = String(url)
+      if (target.includes('/internal/runtime/preview-service-token')) {
+        if (options.exchangeStatus && options.exchangeStatus >= 400) {
+          return new Response(
+            JSON.stringify(options.exchangeBody || { code: 'PREVIEW_CONTEXT_INVALID', message: '预览上下文令牌非法或已过期。' }),
+            { status: options.exchangeStatus, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        return new Response(
+          JSON.stringify({
+            service_token: SERVICE_TOKEN,
+            token_type: 'Bearer',
+            expires_in: 300,
+            artifact_id: 'artifact-1',
+            scope: 'runtime-artifact-read',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (target.includes('/manifest')) {
+        return new Response(JSON.stringify(matchingManifest()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (target.includes('/config-bundle')) {
+        return new Response(JSON.stringify({ routes: { routes: [] }, theme: {}, styles: {} }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (target.includes('/modules')) {
+        return new Response('<template><div>foo</div></template>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain' },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    })
+    return fetchMock
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('fetch', fetchMock)
+    joseMocks.jwtVerify.mockResolvedValue({ payload: previewTokenPayload() })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('serviceTokenCache 未命中时仍应换票并加载远程模块', async () => {
+    mockBackendFetch()
+    const plugin = createPlugin()
+    const moduleSource = await callLoad(plugin, '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value')
+
+    expect(moduleSource).toBe('<template><div>foo</div></template>')
+    // 必须发生换票：说明授权来自请求 + Backend，而非进程内缓存
+    const exchangeCall = fetchMock.mock.calls.find(([url]) => String(url).includes('preview-service-token'))
+    expect(exchangeCall).toBeTruthy()
+    const exchangeBody = JSON.parse(String((exchangeCall![1] as RequestInit).body))
+    expect(exchangeBody).toEqual({ preview_token: 'preview-token-value' })
+    // 后续回源请求使用换得的服务令牌
+    const manifestCall = fetchMock.mock.calls.find(([url]) => String(url).includes('manifest'))
+    expect((manifestCall![1] as RequestInit).headers).toMatchObject({
+      Authorization: `Bearer ${SERVICE_TOKEN}`,
+    })
+  })
+
+  it('同副本缓存命中后不应重复换票', async () => {
+    mockBackendFetch()
+    const plugin = createPlugin()
+
+    await callLoad(plugin, '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value')
+    await callLoad(plugin, '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value')
+
+    const exchangeCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('preview-service-token'))
+    expect(exchangeCalls).toHaveLength(1)
+  })
+
+  it('过期 preview token 应被拒绝', async () => {
+    joseMocks.jwtVerify.mockRejectedValue(Object.assign(new Error('JWT expired'), { name: 'JWTExpired' }))
+    const plugin = createPlugin()
+
+    await expect(
+      callLoad(plugin, '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=expired-token'),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'PREVIEW_CONTEXT_INVALID',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('换票被 Backend 拒绝（过期 preview token）时模块加载失败且不缓存令牌', async () => {
+    mockBackendFetch({ exchangeStatus: 401, exchangeBody: { code: 'PREVIEW_CONTEXT_INVALID', message: '预览上下文令牌非法或已过期。' } })
+    const plugin = createPlugin()
+
+    await expect(
+      callLoad(plugin, '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value'),
+    ).rejects.toMatchObject({ statusCode: 401, code: 'PREVIEW_CONTEXT_INVALID' })
+  })
+
+  it('预览 HTML 不得包含 Runtime 服务令牌', async () => {
+    mockBackendFetch()
+    const plugin = createPlugin()
+    const middlewares: Array<(req: unknown, res: unknown, next: () => void) => Promise<void> | void> = []
+    const server = {
+      middlewares: {
+        use(handler: (req: unknown, res: unknown, next: () => void) => Promise<void> | void) {
+          middlewares.push(handler)
+        },
+      },
+    }
+    const configureServer = plugin.configureServer
+    if (typeof configureServer === 'function') {
+      configureServer.call({} as never, server as never)
+    }
+    expect(middlewares).toHaveLength(1)
+
+    const chunks: string[] = []
+    const response = {
+      statusCode: 0,
+      headers: {} as Record<string, string>,
+      setHeader(name: string, value: string) {
+        this.headers[name.toLowerCase()] = value
+        return this
+      },
+      end(chunk?: string) {
+        if (chunk) chunks.push(chunk)
+        return this
+      },
+    }
+    const request = {
+      method: 'GET',
+      url: '/__preview',
+      headers: {
+        'x-runtime-preview-context': PREVIEW_TOKEN,
+        'x-runtime-service-token': SERVICE_TOKEN,
+      },
+    }
+
+    await middlewares[0](request, response, vi.fn())
+
+    const html = chunks.join('')
+    expect(response.statusCode).toBe(200)
+    expect(html).toContain('__RUNTIME_PREVIEW_TOKEN__')
+    expect(html).toContain('preview-token-value')
+    // 浏览器只获得最小权限预览票据，绝不出现服务级令牌
+    expect(html).not.toContain(SERVICE_TOKEN)
+    expect(html).not.toContain('service-token-value-should-not-leak')
+  })
+
+  it('Vue SFC 子请求丢失 ctx 时 resolveId 应回填预览令牌', async () => {
+    const plugin = createPlugin()
+    const resolved = await callResolveId(
+      plugin,
+      '/@runtime-preview/artifact-1/src/views/Foo.vue?vue&type=style&index=0&lang.css',
+      '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value',
+    )
+
+    expect(resolved).toBe(
+      '/@runtime-preview/artifact-1/src/views/Foo.vue?vue&type=style&index=0&lang.css&ctx=preview-token-value',
+    )
+    // 回填后的子请求不依赖进程内 previewTokenCache 也能解析出 ctx
+    expect(String(resolved)).toContain('ctx=preview-token-value')
+    expect(String(resolved)).toContain('vue&type=style')
   })
 })

@@ -117,10 +117,13 @@ Backend 触发整项目构建时，Runtime 会使用专用的 `build-release-mai
 - `RUNTIME_PREVIEW_TOKEN_AUDIENCE`
 - `RUNTIME_BUILD_TOKEN_AUDIENCE`
 - `RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE`
-- `RUNTIME_VITE_TASK_CONCURRENCY`：诊断与正式构建共享并发数，lite/SQLite 建议保持 `1`，普通部署可设为 `2`。
-- `RUNTIME_VITE_TASK_QUEUE_SIZE`：等待队列上限，默认 `16`；队列满或等待超时返回结构化 HTTP 429。
-- `RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS`：排队超时，默认 `30000`。
-- `RUNTIME_VITE_DIAGNOSTICS_WEIGHT`：诊断相对正式构建的调度权重，默认 `3`，即双方均等待时按 3:1 调度。
+- `RUNTIME_ROLE`：运行角色 `all`（默认，合并部署）| `preview` | `build` | `check`。preview 不开放构建/诊断/轻量工具入口，build 只开整项目构建，check 只开诊断与轻量内部工具。
+- `RUNTIME_VITE_TASK_CONCURRENCY`：诊断与正式构建的默认并发数（各类别独立计数），lite/SQLite 建议保持 `1`，普通部署可设为 `2`。
+- `RUNTIME_VITE_TASK_QUEUE_SIZE`：各类别等待队列上限，默认 `16`；队列满或等待超时返回结构化 HTTP 429。
+- `RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS`：各类别排队超时，默认 `30000`。
+- `RUNTIME_VITE_DIAGNOSTICS_CONCURRENCY` / `RUNTIME_VITE_PROJECT_CONCURRENCY`：按类别覆盖上述预算；也可用 `RUNTIME_PREVIEW/BUILD/CHECK_VITE_TASK_*` 按角色覆盖。
+- `RUNTIME_LIGHT_TOOL_CONCURRENCY`：轻量内部工具（可视化编辑、资源比例测量）独立并发上限，默认 `2`；另有 `RUNTIME_LIGHT_TOOL_QUEUE_SIZE`（默认 `32`）、`RUNTIME_LIGHT_TOOL_QUEUE_WAIT_TIMEOUT_MS`（默认 `5000`）、`RUNTIME_LIGHT_TOOL_TIMEOUT_MS`（默认 `10000`）。短请求不排在长编译之后。
+- `RUNTIME_VITE_DIAGNOSTICS_WEIGHT`：历史兼容字段；类别隔离容量后不再参与跨类调度，仅保留在快照中供观测。
 - `RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB`：Node/Vite worker 堆内存上限，lite 默认 `1024`，资源充足部署可设为 `2048`。
 - `RUNTIME_BUILD_WORKER_TIMEOUT_MS`：正式构建 worker 超时，默认 `600000`。
 - `RUNTIME_DIAGNOSTICS_WORKER_TIMEOUT_MS`：单次诊断 worker 超时，默认 `120000`。

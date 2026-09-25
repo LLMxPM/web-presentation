@@ -421,7 +421,7 @@ class PageScreenshotService:
         # artifact_id / preview_token 必须显式下传：Runtime render-ready.v1 从 URL 查询串
         # 读取 artifact，仅放请求头会导致协议绑定失败。
         return PageScreenshotCaptureTarget(
-            preview_url=f"{settings.runtime_base_url.rstrip('/')}/__preview",
+            preview_url=f"{settings.resolve_runtime_role_base_url('preview')}/__preview",
             extra_http_headers={
                 RUNTIME_PREVIEW_CONTEXT_HEADER: preview_token,
                 RUNTIME_SERVICE_TOKEN_HEADER: runtime_service_token,
@@ -450,7 +450,7 @@ class PageScreenshotService:
         if configured:
             return configured
 
-        runtime_base_url = settings.runtime_base_url.rstrip("/")
+        runtime_base_url = settings.resolve_runtime_role_base_url("preview")
         public_path = urlsplit(str(settings.runtime_public_base_url or "")).path.strip("/")
         if public_path:
             return f"{runtime_base_url}/{public_path}"
