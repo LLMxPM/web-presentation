@@ -6,21 +6,21 @@ AI 一次创建或修改多页时，页面源码校验会同时触发 Runtime Vi
 
 ```text
 AI 页面写工具
-  → ai_page_mutation_batches / ai_page_mutation_jobs
+  → ai_page_mutation_jobs（领域执行） + ai_agent_external_tasks（续跑控制面）
   → Runtime Vite 调度器与诊断工作区池
   → render_requests / RenderCoordinator
   → 远程 Renderer（单槽 Chromium）
-  → 页面与 Job 原子提交
-  → 自动恢复 Pydantic AI run
+  → 页面与 Job 原子提交，终态写穿 AiAgentExternalTask
+  → ai-external-task-coordinator 一次性恢复 Pydantic AI run
 ```
 
-- `create_project_page` 与 `apply_page_edits` 为顺序工具。同一模型步骤中的多个调用会生成一个 Batch，Batch 序号由平台在同一 run 内持久化递增，避免 Pydantic AI continuation 重置内部步骤号后误复用已完成批次；页面源码仍只保存在原始 AI tool call 中。
-- 页面 Job 使用数据库租约、心跳和拥有者条件更新；领域 Job 终态会写穿到统一 `AiAgentExternalTask`。模型续跑只由 `ai-external-task-coordinator` 认领 `AiAgentExternalBatch`，每次认领递增 `lease_generation`，运行态写入嵌入同一条件，过期协调器即使仍拿到模型响应也不能覆盖新执行者。Backend 重启后仅重新认领租约已过期的领域任务，并把历史遗留的页面 Batch `resuming` 记录收敛为 `completed`；Run 的 `waiting_external` 恢复统一由 external coordinator 负责。
+- `create_project_page` 与 `apply_page_edits` 为顺序工具。同一模型步骤中的多个调用仍归入 `AiPageMutationBatch` 做业务分组与 `run_step` 序号，页面源码只保存在原始 AI tool call 中。页面 Batch 不再承载模型续跑。
+- 页面 Job 使用数据库租约、心跳和拥有者条件更新；领域 Job 终态会同事务写穿到统一 `AiAgentExternalTask`。模型续跑只由 `ai-external-task-coordinator` 认领 `AiAgentExternalBatch`，每次认领递增 `lease_generation`，运行态写入嵌入同一条件，过期协调器即使仍拿到模型响应也不能覆盖新执行者。Backend 重启后仅重新认领租约已过期的领域任务，并把历史遗留的页面 Batch `resuming` 记录收敛为 `completed`；Run 的 `waiting_external` 恢复统一由 external coordinator 负责。`synchronize_external_task_states` 只作崩溃对账兜底，不是主写路径。
 - 任务在 Runtime/Renderer 阶段不持有数据库事务；提交前会重新检查取消状态、权限和页面版本。
-- Job 全部结束后，后台协调器将多个 deferred result 一次性交回 Pydantic AI。用户关闭浏览器或登录会话过期不会中断已授权任务；撤销成员权限、停用用户或取消 run 会阻止后续页面写入。
+- Job 全部结束后，external coordinator 将多个 deferred result 一次性交回 Pydantic AI。用户关闭浏览器或登录会话过期不会中断已授权任务；撤销成员权限、停用用户或取消 run 会阻止后续页面写入。
 - 页面代码检查使用 `page_diagnostics` 最小快照：只注入候选入口、递归组件/页面依赖和实际引用资产；无法安全解析的依赖继续按原校验错误或完整快照语义收敛，不得跳过 Vite 与远程渲染检查。
 - Runtime 以每批最多 128 个路径读取 artifact 模块；滚动升级遇到旧 Backend 不支持批量接口时自动回退逐模块读取。
-- 页面任务提交和 Job 终态会通过进程内代次通知立即唤醒 Worker/续跑协调器，数据库轮询仍负责多实例、重启与丢通知兜底。
+- 页面任务提交会通过进程内代次通知立即唤醒领域 Worker；续跑就绪由 external coordinator 轮询 `AiAgentExternalBatch` 兜底，多实例、重启与丢通知场景不依赖进程内唤醒。
 
 截图继续使用独立的 `page_screenshot_jobs` 领域队列，执行阶段通过统一 `render_requests` 队列派发到远程 Renderer。截图任务组通过成员表关联，因此一个去重后的活跃截图任务可以属于多个批次。任务会固化页面版本、配置指纹和视口，截图对象使用不可变路径；页面或配置在捕获期间变化时任务收敛为 `skipped/PAGE_SCREENSHOT_JOB_STALE`，不会覆盖新截图指针。布局 warning 属于已完成诊断的内容结果；Renderer 离线或执行不可用时返回 `RENDER_*` 基础设施错误，不能映射为“源码有错”或“检查通过”。
 

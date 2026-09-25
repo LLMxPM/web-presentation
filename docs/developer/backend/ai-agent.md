@@ -11,7 +11,7 @@ AI Agent 由 Backend 统一承载，负责会话、run、消息、事件、工�
 5. `platform_runtime.py` 把模型流式事件、工具事件、HITL requirement 和终态事件持久化为平台运行态。
 6. Editor 通过 SSE 实时消费事件；刷新或重连时，从 `ai_agent_run_events` 按事件顺序回放。
 
-普通 Run 的后台能力以单个 Backend 进程为边界。关闭侧栏、切换路由、刷新页面或断开 SSE 只会取消订阅，不会取消执行；重新进入会话后按 `event_index` 回放。Backend 正常退出会取消仍在运行的进程内任务并写入 `AI_RUN_PROCESS_STOPPED`，异常退出则由 active-run 空闲超时收敛，不自动重跑。页面变更和图片生成等 external job 仍由各自的持久化租约队列负责，不能与进程内 Run 管理器合并。
+普通 Run 的后台能力以单个 Backend 进程为边界。关闭侧栏、切换路由、刷新页面或断开 SSE 只会取消订阅，不会取消执行；重新进入会话后按 `event_index` 回放。Backend 正常退出会取消仍在运行的进程内任务并写入 `AI_RUN_PROCESS_STOPPED`，异常退出则由 active-run 空闲超时收敛，不自动重跑。页面变更和图片生成等 external job 的领域执行仍由各自持久化租约队列负责；模型续跑统一由 `ai-external-task-coordinator` 认领 `AiAgentExternalBatch`，不能与进程内 Run 管理器合并。
 
 ## 事实源
 

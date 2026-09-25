@@ -88,13 +88,13 @@ uv run --project backend python -m app.scripts.diagnose_ai_run --session-id <ses
 
 Editor 和 Backend 只公开 `agent-coordinator` 一个内容助手，不再登记组件助手、资源助手或自委派子运行。组件移除统一使用归档语义，不得重新引入 `delete_component` AI 工具。
 
-页面创建与结构化编辑属于重资源写工具：必须通过 `ai_page_mutation_jobs` 持久化队列执行，不能在 Pydantic tool 调用中直接并发运行 Runtime/远程渲染。页面工具的 deferred result 由后台 Batch 协调器自动恢复；修改该流程时必须同时检查租约、取消、页面版本复核、SSE `waiting_external` 状态和自动续跑测试。截图任务与页面渲染诊断统一走 `render_requests` → 远程 Renderer；Backend 不安装 Playwright/Chromium，任何新增浏览器执行都必须派发到受信 Renderer Worker，不能在 Backend 进程内自行启动浏览器。
+页面创建与结构化编辑属于重资源写工具：必须通过 `ai_page_mutation_jobs` 持久化队列执行，不能在 Pydantic tool 调用中直接并发运行 Runtime/远程渲染。领域 Job 持有执行租约，终态写穿到 `AiAgentExternalTask`；页面工具的 deferred result 由统一 `ai-external-task-coordinator` 认领 `AiAgentExternalBatch` 自动恢复，不存在第二套页面 Batch 续跑路径。修改该流程时必须同时检查租约、取消、页面版本复核、SSE `waiting_external` 状态和自动续跑测试。截图任务与页面渲染诊断统一走 `render_requests` → 远程 Renderer；Backend 不安装 Playwright/Chromium，任何新增浏览器执行都必须派发到受信 Renderer Worker，不能在 Backend 进程内自行启动浏览器。
 
-页面、图片和组件重任务统一登记到 `ai_agent_external_batches` / `ai_agent_external_tasks`：同一模型 step 整批封口、全部任务终态后只续跑一次。组件创建、组件源码 edits，以及修改 `preview_schema` / `component_type` 的操作必须进入组件外部任务；名称、摘要等轻量元数据、发布和归档保持同步。`waiting_provider` 以 `next_poll_at` 为合法存活依据，不占用 Worker 租约；`resolving` Requirement 必须对应持有有效租约的 `resuming` Batch。模型历史成功消费结果后应清空 Task 完整 `result_json`，仅保留摘要和消费时间。
+页面、图片和组件重任务统一登记到 `ai_agent_external_batches` / `ai_agent_external_tasks`：同一模型 step 整批封口、全部任务终态后只续跑一次。组件创建、组件源码 edits，以及修改 `preview_schema` / `component_type` 的操作必须进入组件外部任务；名称、摘要等轻量元数据、发布和归档保持同步。页面/图片领域 Job 状态变更必须同事务写穿统一 Task，`synchronize_external_task_states` 只作崩溃对账兜底。`waiting_provider` 以 `next_poll_at` 为合法存活依据，不占用 Worker 租约；`resolving` Requirement 必须对应持有有效租约的 `resuming` Batch。模型历史成功消费结果后应清空 Task 完整 `result_json`，仅保留摘要和消费时间。
 
 后台 Batch 自动续跑必须把 `AgentRunWriteFence` 传播到 Pydantic 工具、成员委派、独立 Session 和后续持久化任务入队；任何续跑期间产生的数据库提交都必须在同一事务内复核围栏。动态工具只有在对应运行时执行器已经装配时才能向模型披露。成员页面任务必须分别保存命名空间工具调用 ID 与 Pydantic deferred 原始调用 ID，避免事件投影和结果回灌互相污染。
 
-普通智能体 Run 使用应用级进程内后台管理器执行，必须先持久化 Run，再用独立数据库 Session 执行 Pydantic AI；SSE 只允许回放和订阅事件，客户端断开不得取消 Run。该能力不承诺 Backend 重启恢复，进程退出应把仍在执行的普通 Run 收敛为 `AI_RUN_PROCESS_STOPPED`；页面变更、图片生成等 external job 继续使用各自的持久化租约队列。
+普通智能体 Run 使用应用级进程内后台管理器执行，必须先持久化 Run，再用独立数据库 Session 执行 Pydantic AI；SSE 只允许回放和订阅事件，客户端断开不得取消 Run。该能力不承诺 Backend 重启恢复，进程退出应把仍在执行的普通 Run 收敛为 `AI_RUN_PROCESS_STOPPED`；页面变更、图片生成等 external job 的领域执行走各自持久化租约队列，模型续跑统一走 `AiAgentExternalBatch`。
 
 ### editor/
 
