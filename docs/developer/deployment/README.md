@@ -7,7 +7,7 @@
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [Compose 部署说明](./compose.md) | 四类 compose 模板、启动方式和访问关系 |
+| [Compose 部署说明](./compose.md) | 五类 compose 模板（含分角色单机）、启动方式和访问关系 |
 | [部署环境变量](./env-vars.md) | production env 版变量分组和关键约束 |
 | [CI/CD 与容器发布](./cicd.md) | 平台、Runtime、Renderer 镜像与发布策略 |
 | [备份与恢复](./backup-restore.md) | 数据库、资源、构建产物和密钥备份 |
@@ -30,14 +30,15 @@ SQLite 轻量版使用 `llmxpm/web-presentation:sqlite-lite`，在 `platform-lit
 | `deploy/compose/compose.yml` | 外部 PostgreSQL/Redis 简化版，启动 `platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
 | `deploy/compose/compose.with-deps.yml` | 内置 PostgreSQL/Redis 简化版，启动 `postgres`、`redis`、`platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
 | `deploy/compose/compose.prod.yml` | production env 版，拆分 `backend-migrate`、`backend`、`runtime`、`renderer` 与 `gateway`，通过 `env_file: .env` 读取生产环境变量 |
-| `deploy/.env.example` | 仅供 production env 版复制为 `deploy/.env` 使用 |
+| `deploy/compose/compose.runtime-roles.yml` | 分角色单机版，`runtime-preview` / `runtime-build` / `runtime-check` 各一实例，附每角色 CPU/内存 limits 与执行预算，Gateway 只代理预览 |
+| `deploy/.env.example` | 仅供 production env 版与分角色单机版复制为 `deploy/.env` 使用 |
 | `deploy/docker/nginx/web-presentation.conf` | 平台镜像内置 Gateway 配置，托管 Editor 并代理 Backend 与 Runtime |
 
 简化版中，`platform` 容器同时运行 Backend 与 Gateway。`runtime` 默认只在 compose 内网访问。`platform` 容器内通过 `extra_hosts` 把 `backend:8000` 指向本机 Backend，compose 网络中通过别名把 `backend:8000` 暴露给 Runtime 回源。
 
 SQLite 轻量版中，`platform-lite` 容器同时运行 Backend、Runtime 与 Gateway，独立 `renderer` 容器执行截图。平台容器入口脚本会把 `backend` 和 `runtime` 解析到本机，复用同一份 Gateway 配置。
 
-production env 版中，访问入口是单独的 `gateway` 容器；`backend` 和 `runtime` 默认只在 compose 内网访问。
+production env 版中，访问入口是单独的 `gateway` 容器；`backend` 和 `runtime` 默认只在 compose 内网访问。分角色单机版把 `runtime` 拆为 `runtime-preview` / `runtime-build` / `runtime-check`，Gateway 只代理预览角色，详见 [Compose 部署说明](./compose.md)。
 
 ## 前置条件
 

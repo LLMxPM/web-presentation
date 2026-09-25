@@ -1,0 +1,247 @@
+# 文件功能：提供分角色单机部署编排模板，runtime-preview / runtime-build / runtime-check 各一实例，
+# 配套 Renderer、Backend 与 Gateway，并为每个角色设置显式容器 CPU/内存 limits 与 Runtime 执行预算。
+
+# 使用前请至少修改：
+# - 复制 deploy/.env.example 为 deploy/.env，替换密钥、域名和外部依赖地址（同 compose.prod.yml）。
+# - 各角色与 Renderer 的 deploy.resources.limits 以及对应的 Runtime 执行预算为示例值，
+#   必须按实测负载调整；取值依据见 docs/developer/deployment/compose.md「分角色单机」。
+# - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
+# - 暴露面约束：runtime-build / runtime-check 只挂 runtime-jobs-net，不发布宿主机端口；
+#   公开 Gateway 只挂在 platform-net，且只把主机名 runtime 解析到 runtime-preview，
+#   构建与源码检查端点不经公开 Gateway 暴露。
+# - RUNTIME_ROLE 由 Runtime 角色逻辑（规划 T1-1）消费：preview 不开放构建与诊断入口，
+#   build/check 只保留对应执行面。模板可先于角色逻辑部署；此前 Backend 的 RUNTIME_BASE_URL
+#   仍指向预览角色，构建/源码检查内部目标按发布顺序逐项切换。
+
+x-production-env: &production-env
+  env_file:
+    # 相对本文件目录 deploy/compose/，读取 deploy/.env
+    - ../.env
+
+# 三个角色容器共用的就绪探针；健康检查只看本进程，不依赖 Backend。
+x-runtime-role-healthcheck: &runtime-role-healthcheck
+  test:
+    - CMD
+    - node
+    - -e
+    - const port=process.env.RUNTIME_SERVER_PORT||'7373'; fetch('http://127.0.0.1:'+port+'/__runtime_healthz').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))
+  interval: 10s
+  timeout: 5s
+  retries: 5
+
+services:
+  backend-migrate:
+    <<: *production-env
+    image: llmxpm/web-presentation:latest
+    restart: "no"
+    working_dir: /app/backend
+    command: ["alembic", "upgrade", "head"]
+    networks:
+      - platform-net
+
+  backend:
+    <<: *production-env
+    image: llmxpm/web-presentation:latest
+    restart: unless-stopped
+    working_dir: /app/backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    environment:
+      # 旧单一内部目标：分角色拓扑下显式指向预览角色，兼容当前只读 RUNTIME_BASE_URL 的 Backend。
+      # 构建 / 源码检查内部目标在角色路由契约（T1-1/T1-2）落地后逐项切换到
+      # http://runtime-build:7373 与 http://runtime-check:7373。
+      RUNTIME_BASE_URL: "http://runtime-preview:7373"
+    volumes:
+      - backend-data:/app/backend/data
+    expose:
+      - "8000"
+    depends_on:
+      backend-migrate:
+        condition: service_completed_successfully
+      renderer:
+        condition: service_healthy
+      runtime-preview:
+        condition: service_healthy
+      runtime-build:
+        condition: service_healthy
+      runtime-check:
+        condition: service_healthy
+    secrets:
+      - render_service_credential
+    networks:
+      platform-net:
+        aliases:
+          - backend
+      runtime-jobs-net:
+        aliases:
+          - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/healthz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # 示例值：Backend 只跑控制面；AI 页面队列与渲染队列预算仍由 deploy/.env 决定。
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+
+  renderer:
+    # 不复用 *production-env：Renderer 不需要 DB/Redis/AI 等平台密钥。
+    image: llmxpm/web-presentation-renderer:latest
+    restart: unless-stopped
+    environment:
+      RENDER_WORKER_ID: "renderer-1"
+      RENDER_SERVICE_CREDENTIAL_FILE: "/run/secrets/render_service_credential"
+      RENDER_PROFILE_DIGEST: "profile.v1"
+    expose:
+      - "7400"
+    secrets:
+      - render_service_credential
+    networks:
+      platform-net:
+        aliases:
+          - renderer
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7400/livez >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # 示例值：单槽 Chromium + 页面截图；并发上限由 RENDER_GLOBAL_CONCURRENCY 等执行预算决定。
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4g
+
+  runtime-preview:
+    <<: *production-env
+    image: llmxpm/web-runtime-vue:latest
+    restart: unless-stopped
+    environment:
+      RUNTIME_ROLE: "preview"
+      # 预览执行预算：只保留轻量转换容量；构建/诊断入口应由角色逻辑拒绝。
+      RUNTIME_VITE_TASK_CONCURRENCY: "2"
+      RUNTIME_VITE_TASK_QUEUE_SIZE: "16"
+      RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS: "30000"
+    expose:
+      - "7373"
+    networks:
+      platform-net:
+        aliases:
+          # Gateway Nginx 固定代理到主机名 runtime；分角色拓扑下该名字只解析到预览角色。
+          - runtime
+          - runtime-preview
+    healthcheck: *runtime-role-healthcheck
+    # 示例值：预览以模块转换与内存中的 Vite 模块图为主，无构建 Worker；
+    # 2 CPU 保并发转换，2Gi 覆盖模块图与转换缓存。按预览请求峰值实测调整。
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+
+  runtime-build:
+    <<: *production-env
+    image: llmxpm/web-runtime-vue:latest
+    restart: unless-stopped
+    environment:
+      RUNTIME_ROLE: "build"
+      # 构建执行预算：2 并发 × 2048MB 老生代 ≈ 4GiB 堆；容器 8g 另留约 4GiB 给 Buffer、
+      # 归档（产物会整读进内存再压缩）、文件页与主进程。改并发或老生代时必须同步改 limits。
+      RUNTIME_VITE_TASK_CONCURRENCY: "2"
+      RUNTIME_VITE_TASK_QUEUE_SIZE: "8"
+      RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS: "30000"
+      RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB: "2048"
+      RUNTIME_BUILD_WORKER_TIMEOUT_MS: "600000"
+    expose:
+      - "7373"
+    networks:
+      # 只挂内部任务网络：无宿主机端口，公开 Gateway 与预览角色都不可直达。
+      runtime-jobs-net:
+        aliases:
+          - runtime-build
+    healthcheck: *runtime-role-healthcheck
+    # 示例值：CPU limits 取「可同时执行的构建 Worker 数 + 1 核主进程」；
+    # 内存 limits ≈ 并发 × 老生代 + 等量非堆开销。按大项目归档峰值 RSS 实测调整。
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8g
+
+  runtime-check:
+    <<: *production-env
+    image: llmxpm/web-runtime-vue:latest
+    restart: unless-stopped
+    environment:
+      RUNTIME_ROLE: "check"
+      # 检查执行预算：诊断走完整 Vite 构建链路（write:false），按 2 并发 × 1536MB 老生代
+      # ≈ 3GiB 堆配置；复用预热工作区并按 RSS 比例回收，控制常驻内存。
+      RUNTIME_VITE_TASK_CONCURRENCY: "2"
+      RUNTIME_VITE_TASK_QUEUE_SIZE: "32"
+      RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS: "30000"
+      RUNTIME_VITE_DIAGNOSTICS_WEIGHT: "3"
+      RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB: "1536"
+      RUNTIME_DIAGNOSTICS_WORKER_TIMEOUT_MS: "120000"
+      RUNTIME_DIAGNOSTICS_WORKER_REUSE_ENABLED: "true"
+      RUNTIME_DIAGNOSTICS_WORKER_MAX_TASKS: "25"
+      RUNTIME_DIAGNOSTICS_WORKER_MAX_AGE_MS: "1800000"
+      RUNTIME_DIAGNOSTICS_WORKER_RSS_RECYCLE_RATIO: "0.75"
+    expose:
+      - "7373"
+    networks:
+      # 只挂内部任务网络：无宿主机端口，公开 Gateway 与预览角色都不可直达。
+      runtime-jobs-net:
+        aliases:
+          - runtime-check
+    healthcheck: *runtime-role-healthcheck
+    # 示例值：与构建同一套内存换算，另留工作区文件页与工作区池复用余量。
+    # 交互诊断时延敏感，CPU 不宜低于构建单并发；按队列年龄与诊断 RSS 实测调整。
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 6g
+
+  gateway:
+    image: llmxpm/web-presentation:latest
+    restart: unless-stopped
+    command: ["nginx", "-g", "daemon off;"]
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      runtime-preview:
+        condition: service_healthy
+    networks:
+      - platform-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # 示例值：纯反向代理与静态资源托管。
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+
+secrets:
+  render_service_credential:
+    file: ../secrets/render_service_credential
+
+volumes:
+  backend-data:
+
+networks:
+  # 公开入口网络：Gateway、Backend、预览角色与 Renderer；Gateway 只能通过主机名 runtime 到达预览。
+  platform-net:
+    name: web-presentation-roles
+    driver: bridge
+  # 内部任务网络：Backend 是唯一交点；构建与源码检查角色只出现在这里。
+  runtime-jobs-net:
+    name: web-presentation-roles-jobs
+    driver: bridge

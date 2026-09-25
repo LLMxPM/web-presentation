@@ -77,7 +77,8 @@ Pre-release 只推送固定版本标签，不移动 `latest` 与 `sqlite-lite`�
 - `deploy/compose/compose.sqlite-lite.yml`：SQLite + memory runtime 轻量版，使用 `llmxpm/web-presentation:sqlite-lite` 与独立 Renderer 镜像。
 - `deploy/compose/compose.with-deps.yml`：内置 PostgreSQL/Redis 简化版，随应用一起启动 PostgreSQL 与 Redis，环境变量直接写在 compose 内。
 - `deploy/compose/compose.prod.yml`：production env 版，拆分迁移、Backend、Runtime、Renderer 与 Gateway，并通过 `env_file: ../.env` 读取 `deploy/.env`。
-- `deploy/.env.example`：仅供 production env 版复制为 `deploy/.env` 使用。
+- `deploy/compose/compose.runtime-roles.yml`：分角色单机版，`runtime-preview` / `runtime-build` / `runtime-check` 各一实例，附每角色 CPU/内存 limits 与执行预算，Gateway 只代理预览；同样读取 `deploy/.env`。
+- `deploy/.env.example`：仅供 production env 版与分角色单机版复制为 `deploy/.env` 使用。
 
 SQLite 轻量单容器版启动方式：
 
