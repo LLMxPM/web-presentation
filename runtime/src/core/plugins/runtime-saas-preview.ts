@@ -41,8 +41,15 @@ import {
   PreviewServiceTokenError,
   redactJwtForLog,
   resolveRuntimeServiceToken,
+  type ServiceTokenCache,
   type ServiceTokenCacheEntry,
 } from './runtime-preview-service-token'
+import {
+  buildPreviewCacheKey,
+  PreviewBoundedCache,
+  PREVIEW_CACHE_IDENTITY_MANIFEST,
+  PREVIEW_CACHE_IDENTITY_PREVIEW_TOKEN,
+} from './runtime-preview-cache'
 import { isRuntimeAccessLogEnabled, logRuntimeServer } from '../utils/runtime-logger'
 import { recordRuntimeWorkload } from './runtime-capacity'
 
@@ -105,11 +112,19 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
     || DEFAULT_PREVIEW_ASSET_BASE_HEADER
   ).toLowerCase()
   const serviceTokenHeaderName = (options.serviceTokenHeaderName || DEFAULT_RUNTIME_SERVICE_TOKEN_HEADER).toLowerCase()
-  const manifestCache = new Map<string, RuntimePreviewArtifactManifest>()
-  const previewTokenCache = new Map<string, string>()
+  // 预览侧进程内缓存统一有界（LRU + TTL），键为稳定内容身份，token 只作值。
+  // 缓存仅用于提速：副本丢失缓存不影响正确性，artifact 失效时必须显式清理。
+  const manifestCache = new PreviewBoundedCache<RuntimePreviewArtifactManifest>()
+  const previewTokenCache = new PreviewBoundedCache<string>()
   // 服务令牌缓存只用于加速；缓存缺失/过期时通过内部换票链路恢复，不构成正确性依赖。
-  const serviceTokenCache = new Map<string, ServiceTokenCacheEntry>()
-  const tailwindCssCache = new Map<string, string>()
+  const serviceTokenCache: ServiceTokenCache = new PreviewBoundedCache<ServiceTokenCacheEntry>()
+  const tailwindCssCache = new PreviewBoundedCache<string>()
+  const caches: PreviewCacheBundle = {
+    manifestCache,
+    previewTokenCache,
+    serviceTokenCache,
+    tailwindCssCache,
+  }
   const jwksTimeoutMs = normalizePositiveInteger(options.jwksTimeoutMs, DEFAULT_JWKS_TIMEOUT_MS)
   const backendRequestTimeoutMs = normalizePositiveInteger(options.backendRequestTimeoutMs, DEFAULT_BACKEND_REQUEST_TIMEOUT_MS)
   let basePath = ''
@@ -139,6 +154,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
             manifestCache,
             previewTokenCache,
             serviceTokenCache,
+            caches,
           })
         }
 
@@ -154,6 +170,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
             previewTokenCache,
             serviceTokenCache,
             tailwindCssCache,
+            caches,
           })
         }
 
@@ -173,7 +190,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
             audience: options.previewAudience || process.env.RUNTIME_PREVIEW_TOKEN_AUDIENCE || DEFAULT_PREVIEW_AUDIENCE,
             timeoutMs: jwksTimeoutMs,
           })
-          previewTokenCache.set(verified.publicContext.artifactId, previewToken)
+          rememberPreviewToken(previewTokenCache, verified.publicContext.artifactId, previewToken)
           // 服务令牌可从请求头种子缓存，也可在缺失时用 previewToken 向 Backend 换票恢复；
           // 任一副本不依赖其它副本的进程内缓存即可完成鉴权与回源。
           const headerServiceToken = String(req.headers[serviceTokenHeaderName] || '')
@@ -198,7 +215,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
           })
 
           const [manifest, configBundle] = await Promise.all([
-            fetchArtifactManifest(verified.publicContext.artifactId, backendClient, manifestCache),
+            fetchArtifactManifest(verified.publicContext.artifactId, backendClient, manifestCache, caches),
             backendClient.fetchConfigBundle(verified.publicContext.artifactId),
           ])
 
@@ -254,7 +271,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
         }
         const recoveredPreviewToken = recoverPreviewToken(parsedSource.artifactId, importer, previewTokenCache)
         if (recoveredPreviewToken) {
-          previewTokenCache.set(parsedSource.artifactId, recoveredPreviewToken)
+          rememberPreviewToken(previewTokenCache, parsedSource.artifactId, recoveredPreviewToken)
           return attachRemoteModulePreviewToken(source, recoveredPreviewToken)
         }
         return source
@@ -296,7 +313,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
       }
       const moduleLoadStartedAt = Date.now()
       try {
-        const effectivePreviewToken = parsed.previewToken || previewTokenCache.get(parsed.artifactId) || ''
+        const effectivePreviewToken = parsed.previewToken || readPreviewTokenCache(previewTokenCache, parsed.artifactId) || ''
         if (!effectivePreviewToken) {
           throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '远程模块请求缺少预览上下文令牌。')
         }
@@ -309,7 +326,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
         if (verified.publicContext.artifactId !== parsed.artifactId) {
           throw new PreviewGatewayError(403, 'ARTIFACT_MISMATCH', '预览 artifact 与远程模块请求不一致。')
         }
-        previewTokenCache.set(parsed.artifactId, effectivePreviewToken)
+        rememberPreviewToken(previewTokenCache, parsed.artifactId, effectivePreviewToken)
         // 服务令牌缓存仅加速：任一副本缓存未命中时凭 previewToken 向 Backend 换票恢复。
         const serviceToken = await ensureRuntimeServiceToken({
           artifactId: parsed.artifactId,
@@ -326,7 +343,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
           requestTimeoutMs: backendRequestTimeoutMs,
         })
 
-        const manifest = await fetchArtifactManifest(parsed.artifactId, backendClient, manifestCache)
+        const manifest = await fetchArtifactManifest(parsed.artifactId, backendClient, manifestCache, caches)
         assertManifestMatchesContext(manifest, verified.publicContext)
 
         const manifestEntry = manifest.modules[parsed.modulePath]
@@ -334,9 +351,17 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
           throw new PreviewGatewayError(404, 'MODULE_NOT_ALLOWED', `模块未包含在发布白名单中：${parsed.modulePath}`)
         }
 
-        const moduleSource = await backendClient.fetchModuleSource(parsed.artifactId, parsed.modulePath)
-        recordRuntimeWorkload('preview', Date.now() - moduleLoadStartedAt)
-        return moduleSource
+        try {
+          const moduleSource = await backendClient.fetchModuleSource(parsed.artifactId, parsed.modulePath)
+          recordRuntimeWorkload('preview', Date.now() - moduleLoadStartedAt)
+          return moduleSource
+        } catch (error) {
+          // 模块回源失败若是 artifact 失效，清理缓存避免旧条目继续声称可用
+          if (isArtifactGoneError(error)) {
+            invalidateArtifactCaches(caches, parsed.artifactId)
+          }
+          throw error
+        }
       } catch (error) {
         recordRuntimeWorkload('preview', Date.now() - moduleLoadStartedAt)
         throw error
@@ -390,7 +415,7 @@ async function ensureRuntimeServiceToken(options: {
   artifactId: string
   previewToken: string
   backendApiBaseUrl: string
-  serviceTokenCache: Map<string, ServiceTokenCacheEntry>
+  serviceTokenCache: ServiceTokenCache
   requestTimeoutMs: number
   headerServiceToken?: string
 }): Promise<string> {
@@ -438,13 +463,69 @@ function toLoggableError(error: unknown): Record<string, unknown> {
 function recoverPreviewToken(
   artifactId: string,
   importer: string | undefined,
-  previewTokenCache: Map<string, string>,
+  previewTokenCache: PreviewBoundedCache<string>,
 ): string {
   const importerInfo = importer ? parseRemoteModuleId(importer) : null
   if (importerInfo?.previewToken && importerInfo.artifactId === artifactId) {
     return importerInfo.previewToken
   }
-  return previewTokenCache.get(artifactId) || ''
+  return readPreviewTokenCache(previewTokenCache, artifactId)
+}
+
+/**
+ * 读取预览令牌缓存；键为稳定 artifact 身份，token 只作值。
+ * @param previewTokenCache 预览令牌缓存
+ * @param artifactId artifact 标识
+ * @returns 缓存的预览令牌；缺失时返回空串
+ */
+function readPreviewTokenCache(
+  previewTokenCache: PreviewBoundedCache<string>,
+  artifactId: string,
+): string {
+  return previewTokenCache.get(buildPreviewCacheKey(artifactId, PREVIEW_CACHE_IDENTITY_PREVIEW_TOKEN)) || ''
+}
+
+/**
+ * 写入预览令牌缓存；键为稳定 artifact 身份，换票不改变缓存身份。
+ * @param previewTokenCache 预览令牌缓存
+ * @param artifactId artifact 标识
+ * @param previewToken 预览令牌
+ */
+function rememberPreviewToken(
+  previewTokenCache: PreviewBoundedCache<string>,
+  artifactId: string,
+  previewToken: string,
+): void {
+  previewTokenCache.set(
+    buildPreviewCacheKey(artifactId, PREVIEW_CACHE_IDENTITY_PREVIEW_TOKEN),
+    previewToken,
+    { artifactId },
+  )
+}
+
+/**
+ * 在 artifact 失效（Backend 404 等）时清理对应缓存条目，避免旧缓存继续声称可用。
+ * @param caches 预览侧进程内缓存集合
+ * @param artifactId preview artifact ID
+ */
+function invalidateArtifactCaches(
+  caches: PreviewCacheBundle,
+  artifactId: string,
+): void {
+  caches.manifestCache.invalidateArtifact(artifactId)
+  caches.previewTokenCache.invalidateArtifact(artifactId)
+  caches.serviceTokenCache.invalidateArtifact(artifactId)
+  caches.tailwindCssCache.invalidateArtifact(artifactId)
+}
+
+/**
+ * 预览侧进程内缓存集合；仅用于加速，副本丢失不影响正确性。
+ */
+interface PreviewCacheBundle {
+  manifestCache: PreviewBoundedCache<RuntimePreviewArtifactManifest>
+  previewTokenCache: PreviewBoundedCache<string>
+  serviceTokenCache: ServiceTokenCache
+  tailwindCssCache: PreviewBoundedCache<string>
 }
 
 /**
@@ -909,24 +990,51 @@ function isEntryDescriptorEqual(left: RuntimePreviewEntryDescriptor, right: Runt
 
 /**
  * 按 artifact 读取清单，允许缓存不可变 manifest 以减少重复请求。
+ * 缓存键使用稳定内容身份；artifact 失效（Backend 404）时清理缓存并上抛错误。
  * @param artifactId preview artifact ID
  * @param backendClient Backend 客户端
  * @param manifestCache manifest 缓存
+ * @param caches 预览缓存集合（用于 artifact 失效清理）
  * @returns 预览清单
  */
 async function fetchArtifactManifest(
   artifactId: string,
   backendClient: ReturnType<typeof createBackendClient>,
-  manifestCache: Map<string, RuntimePreviewArtifactManifest>,
+  manifestCache: PreviewBoundedCache<RuntimePreviewArtifactManifest>,
+  caches?: PreviewCacheBundle,
 ): Promise<RuntimePreviewArtifactManifest> {
-  const cachedManifest = manifestCache.get(artifactId)
+  const cacheKey = buildPreviewCacheKey(artifactId, PREVIEW_CACHE_IDENTITY_MANIFEST)
+  const cachedManifest = manifestCache.get(cacheKey)
   if (cachedManifest) {
     return cachedManifest
   }
 
-  const manifest = await backendClient.fetchManifest(artifactId)
-  manifestCache.set(artifactId, manifest)
-  return manifest
+  try {
+    const manifest = await backendClient.fetchManifest(artifactId)
+    manifestCache.set(cacheKey, manifest, { artifactId })
+    return manifest
+  } catch (error) {
+    // artifact 失效（404 等）时不得继续声称可用，必须清理对应缓存条目
+    if (isArtifactGoneError(error) && caches) {
+      invalidateArtifactCaches(caches, artifactId)
+    }
+    throw error
+  }
+}
+
+/**
+ * 判断错误是否表示 artifact 已失效（Backend 404/失效），需要清理缓存。
+ * @param error 预览网关错误
+ * @returns 是否为 artifact 失效错误
+ */
+function isArtifactGoneError(error: unknown): boolean {
+  if (!(error instanceof PreviewGatewayError)) {
+    return false
+  }
+  if (error.statusCode === 404) {
+    return true
+  }
+  return error.code === 'ARTIFACT_NOT_FOUND' || error.code === 'PREVIEW_ARTIFACT_INVALID'
 }
 
 interface SnapdomResourceProxyRequestOptions {
@@ -936,9 +1044,10 @@ interface SnapdomResourceProxyRequestOptions {
   backendApiBaseUrl: string
   jwksTimeoutMs: number
   backendRequestTimeoutMs: number
-  manifestCache: Map<string, RuntimePreviewArtifactManifest>
-  previewTokenCache: Map<string, string>
-  serviceTokenCache: Map<string, ServiceTokenCacheEntry>
+  manifestCache: PreviewBoundedCache<RuntimePreviewArtifactManifest>
+  previewTokenCache: PreviewBoundedCache<string>
+  serviceTokenCache: ServiceTokenCache
+  caches?: PreviewCacheBundle
 }
 
 interface RuntimeNodeRequest {
@@ -986,7 +1095,7 @@ async function handleSnapdomResourceProxyRequest(
     if (verified.publicContext.artifactId !== artifactId) {
       throw new PreviewGatewayError(403, 'ARTIFACT_MISMATCH', '预览 artifact 与截图资源代理请求不一致。')
     }
-    options.previewTokenCache.set(artifactId, previewToken)
+    rememberPreviewToken(options.previewTokenCache, artifactId, previewToken)
 
     // 服务令牌缓存仅加速：未命中时凭 previewToken 换票恢复，CSS/截图代理跨副本可用。
     const serviceToken = await ensureRuntimeServiceToken({
@@ -1003,7 +1112,7 @@ async function handleSnapdomResourceProxyRequest(
       previewToken,
       requestTimeoutMs: options.backendRequestTimeoutMs,
     })
-    const manifest = await fetchArtifactManifest(artifactId, backendClient, options.manifestCache)
+    const manifest = await fetchArtifactManifest(artifactId, backendClient, options.manifestCache, options.caches)
     assertManifestMatchesContext(manifest, verified.publicContext)
 
     if (!isAllowedSnapdomProxyResourceUrl(sourceUrl, manifest, verified.publicContext)) {
@@ -1078,10 +1187,11 @@ interface PreviewTailwindCssRequestOptions {
   backendApiBaseUrl: string
   jwksTimeoutMs: number
   backendRequestTimeoutMs: number
-  manifestCache: Map<string, RuntimePreviewArtifactManifest>
-  previewTokenCache: Map<string, string>
-  serviceTokenCache: Map<string, ServiceTokenCacheEntry>
-  tailwindCssCache: Map<string, string>
+  manifestCache: PreviewBoundedCache<RuntimePreviewArtifactManifest>
+  previewTokenCache: PreviewBoundedCache<string>
+  serviceTokenCache: ServiceTokenCache
+  tailwindCssCache: PreviewBoundedCache<string>
+  caches?: PreviewCacheBundle
 }
 
 /**
@@ -1115,7 +1225,7 @@ async function handlePreviewTailwindCssRequest(
     if (verified.publicContext.artifactId !== artifactId) {
       throw new PreviewGatewayError(403, 'ARTIFACT_MISMATCH', '预览 artifact 与 Tailwind CSS 请求不一致。')
     }
-    options.previewTokenCache.set(artifactId, previewToken)
+    rememberPreviewToken(options.previewTokenCache, artifactId, previewToken)
 
     // 服务令牌缓存仅加速：未命中时凭 previewToken 换票恢复，CSS/截图代理跨副本可用。
     const serviceToken = await ensureRuntimeServiceToken({
@@ -1132,7 +1242,7 @@ async function handlePreviewTailwindCssRequest(
       previewToken,
       requestTimeoutMs: options.backendRequestTimeoutMs,
     })
-    const manifest = await fetchArtifactManifest(artifactId, backendClient, options.manifestCache)
+    const manifest = await fetchArtifactManifest(artifactId, backendClient, options.manifestCache, options.caches)
     assertManifestMatchesContext(manifest, verified.publicContext)
 
     const sources = await collectPreviewTailwindSources({
@@ -1141,9 +1251,10 @@ async function handlePreviewTailwindCssRequest(
       entryDescriptor: verified.publicContext.entryDescriptor,
       backendClient,
     })
-    const cacheKey = `${artifactId}:${buildPreviewTailwindCacheSignature(sources)}`
+    // 缓存键使用稳定内容身份（artifact + 源码签名），换票不产生新的缓存身份
+    const cacheKey = buildPreviewCacheKey(artifactId, buildPreviewTailwindCacheSignature(sources))
     const cachedCss = options.tailwindCssCache.get(cacheKey)
-    if (cachedCss) {
+    if (cachedCss !== undefined) {
       return sendCss(res, cachedCss)
     }
 
@@ -1160,7 +1271,7 @@ async function handlePreviewTailwindCssRequest(
       css = `/* preview tailwind compile failed: ${escapeCssComment(error instanceof Error ? error.message : String(error))} */\n`
     }
 
-    options.tailwindCssCache.set(cacheKey, css)
+    options.tailwindCssCache.set(cacheKey, css, { artifactId })
     sendCss(res, css)
   } catch (error) {
     logRuntimeServer('error', 'runtime.preview.tailwind.request.failed', '预览 Tailwind CSS 请求失败。', {

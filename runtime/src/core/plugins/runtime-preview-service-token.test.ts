@@ -5,11 +5,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  buildPreviewCacheKey,
+  PreviewBoundedCache,
+  PREVIEW_CACHE_IDENTITY_SERVICE_TOKEN,
+} from './runtime-preview-cache'
+import {
   PreviewServiceTokenError,
   readFreshCacheEntry,
   readJwtExpiresAtMs,
   redactJwtForLog,
   resolveRuntimeServiceToken,
+  type ServiceTokenCache,
   type ServiceTokenCacheEntry,
 } from './runtime-preview-service-token'
 
@@ -33,6 +39,19 @@ function exchangeOkResponse(serviceToken: string, expiresIn: number, artifactId:
   )
 }
 
+/** 构造测试用服务令牌缓存，并按稳定内容身份键预置条目。 */
+function createServiceTokenCache(
+  entries: Array<[string, ServiceTokenCacheEntry]> = [],
+): ServiceTokenCache {
+  const cache = new PreviewBoundedCache<ServiceTokenCacheEntry>({ maxEntries: 50, ttlMs: 600_000 })
+  for (const [artifactId, entry] of entries) {
+    cache.set(buildPreviewCacheKey(artifactId, PREVIEW_CACHE_IDENTITY_SERVICE_TOKEN), entry, {
+      artifactId,
+    })
+  }
+  return cache
+}
+
 describe('runtime preview service token recovery', () => {
   const fetchMock = vi.fn()
 
@@ -46,7 +65,7 @@ describe('runtime preview service token recovery', () => {
   })
 
   it('缓存有效时应直接复用，不发起换票请求', async () => {
-    const cache = new Map<string, ServiceTokenCacheEntry>([
+    const cache = createServiceTokenCache([
       ['artifact-1', { token: 'cached-service-token', expiresAtMs: Date.now() + 120_000 }],
     ])
 
@@ -62,7 +81,7 @@ describe('runtime preview service token recovery', () => {
   })
 
   it('缓存未命中时应凭 previewToken 向 Backend 换票并写入缓存', async () => {
-    const cache = new Map<string, ServiceTokenCacheEntry>()
+    const cache = createServiceTokenCache()
     const exchangedToken = buildFakeJwt(Math.floor(Date.now() / 1000) + 300)
     fetchMock.mockResolvedValueOnce(exchangeOkResponse(exchangedToken, 300, 'artifact-1'))
 
@@ -86,7 +105,7 @@ describe('runtime preview service token recovery', () => {
   })
 
   it('缓存条目临近过期时应重新换票', async () => {
-    const cache = new Map<string, ServiceTokenCacheEntry>([
+    const cache = createServiceTokenCache([
       ['artifact-1', { token: 'stale-token', expiresAtMs: Date.now() + 5_000 }],
     ])
     const exchangedToken = buildFakeJwt(Math.floor(Date.now() / 1000) + 300)
@@ -104,7 +123,7 @@ describe('runtime preview service token recovery', () => {
   })
 
   it('本次请求自带 Backend 下发令牌时应优先使用并入缓存', async () => {
-    const cache = new Map<string, ServiceTokenCacheEntry>()
+    const cache = createServiceTokenCache()
     const headerToken = buildFakeJwt(Math.floor(Date.now() / 1000) + 600)
 
     const resolved = await resolveRuntimeServiceToken({
@@ -121,7 +140,7 @@ describe('runtime preview service token recovery', () => {
   })
 
   it('过期 preview token 被 Backend 拒绝时应抛出结构化错误', async () => {
-    const cache = new Map<string, ServiceTokenCacheEntry>()
+    const cache = createServiceTokenCache()
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({ code: 'PREVIEW_CONTEXT_INVALID', message: '预览上下文令牌非法或已过期。' }),
@@ -143,7 +162,7 @@ describe('runtime preview service token recovery', () => {
   })
 
   it('换票响应 artifact 不一致时应拒绝使用', async () => {
-    const cache = new Map<string, ServiceTokenCacheEntry>()
+    const cache = createServiceTokenCache()
     fetchMock.mockResolvedValueOnce(exchangeOkResponse('service-token', 300, 'other-artifact'))
 
     await expect(resolveRuntimeServiceToken({
@@ -159,7 +178,7 @@ describe('runtime preview service token recovery', () => {
       artifactId: 'artifact-1',
       previewToken: '',
       backendApiBaseUrl: 'http://backend:8000',
-      serviceTokenCache: new Map(),
+      serviceTokenCache: createServiceTokenCache(),
     })).rejects.toMatchObject({ statusCode: 401, code: 'PREVIEW_CONTEXT_REQUIRED' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -178,7 +197,7 @@ describe('runtime preview service token recovery', () => {
   })
 
   it('无法解析过期时间的令牌不应写入缓存', async () => {
-    const cache = new Map<string, ServiceTokenCacheEntry>()
+    const cache = createServiceTokenCache()
 
     const resolved = await resolveRuntimeServiceToken({
       artifactId: 'artifact-1',
@@ -190,5 +209,38 @@ describe('runtime preview service token recovery', () => {
 
     expect(resolved.token).toBe('opaque-header-token')
     expect(cache.size).toBe(0)
+  })
+
+  it('换票不改变服务令牌缓存的稳定内容身份', async () => {
+    const cache = createServiceTokenCache()
+    const firstToken = buildFakeJwt(Math.floor(Date.now() / 1000) + 300)
+    const secondToken = buildFakeJwt(Math.floor(Date.now() / 1000) + 600)
+    fetchMock
+      .mockResolvedValueOnce(exchangeOkResponse(firstToken, 300, 'artifact-1'))
+      .mockResolvedValueOnce(exchangeOkResponse(secondToken, 600, 'artifact-1'))
+
+    await resolveRuntimeServiceToken({
+      artifactId: 'artifact-1',
+      previewToken: 'preview-token',
+      backendApiBaseUrl: 'http://backend:8000',
+      serviceTokenCache: cache,
+    })
+    // 模拟 TTL 过期后重新换票：缓存身份键不变，仅值被覆盖
+    cache.clear()
+    await resolveRuntimeServiceToken({
+      artifactId: 'artifact-1',
+      previewToken: 'preview-token-rotated',
+      backendApiBaseUrl: 'http://backend:8000',
+      serviceTokenCache: cache,
+    })
+
+    const stableKey = buildPreviewCacheKey('artifact-1', PREVIEW_CACHE_IDENTITY_SERVICE_TOKEN)
+    expect(readFreshCacheEntry(cache, 'artifact-1')?.token).toBe(secondToken)
+    // 键由 artifact + 内容身份构成，不含任何 token 原文
+    expect(stableKey).toContain('artifact-1')
+    expect(stableKey).not.toContain('preview-token')
+    expect(stableKey).not.toContain(firstToken)
+    expect(stableKey).not.toContain(secondToken)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

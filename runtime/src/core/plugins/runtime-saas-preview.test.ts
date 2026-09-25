@@ -540,4 +540,105 @@ describe('runtime saas preview 服务令牌可恢复', () => {
     expect(String(resolved)).toContain('ctx=preview-token-value')
     expect(String(resolved)).toContain('vue&type=style')
   })
+
+  it('artifact 失效（Backend 404）后不得再命中旧缓存', async () => {
+    let manifestFetchCount = 0
+    let moduleGone = false
+    fetchMock.mockImplementation(async (url: string) => {
+      const target = String(url)
+      if (target.includes('/internal/runtime/preview-service-token')) {
+        return new Response(
+          JSON.stringify({
+            service_token: SERVICE_TOKEN,
+            token_type: 'Bearer',
+            expires_in: 300,
+            artifact_id: 'artifact-1',
+            scope: 'runtime-artifact-read',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (target.includes('/manifest')) {
+        manifestFetchCount += 1
+        return new Response(JSON.stringify(matchingManifest()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (target.includes('/modules')) {
+        if (moduleGone) {
+          return new Response(
+            JSON.stringify({ code: 'ARTIFACT_NOT_FOUND', message: 'preview artifact 不存在。' }),
+            { status: 404, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        return new Response('<template><div>foo</div></template>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain' },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    const plugin = createPlugin()
+    const moduleId = '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value'
+
+    // 第一次加载成功，manifest 进入缓存
+    await callLoad(plugin, moduleId)
+    expect(manifestFetchCount).toBe(1)
+
+    // 同副本缓存命中，不再回源 manifest
+    await callLoad(plugin, moduleId)
+    expect(manifestFetchCount).toBe(1)
+
+    // artifact 失效：模块回源 404，应清理对应缓存条目
+    moduleGone = true
+    await expect(callLoad(plugin, moduleId)).rejects.toMatchObject({ statusCode: 404 })
+    moduleGone = false
+
+    // 失效后不得继续命中旧 manifest 缓存，必须重新回源
+    await callLoad(plugin, moduleId)
+    expect(manifestFetchCount).toBe(2)
+  })
+
+  it('换票不产生新的计算缓存身份：token 轮换后仍命中同一缓存条目', async () => {
+    const manifestFetchCount = { value: 0 }
+    fetchMock.mockImplementation(async (url: string) => {
+      const target = String(url)
+      if (target.includes('/internal/runtime/preview-service-token')) {
+        return new Response(
+          JSON.stringify({
+            service_token: SERVICE_TOKEN,
+            token_type: 'Bearer',
+            expires_in: 300,
+            artifact_id: 'artifact-1',
+            scope: 'runtime-artifact-read',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (target.includes('/manifest')) {
+        manifestFetchCount.value += 1
+        return new Response(JSON.stringify(matchingManifest()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (target.includes('/modules')) {
+        return new Response('<template><div>foo</div></template>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain' },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    const plugin = createPlugin()
+    // 同一 artifact、同一内容，但 ctx 预览令牌轮换
+    await callLoad(plugin, '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value')
+    await callLoad(plugin, '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-rotated')
+
+    // 计算缓存身份是 artifact + 内容，不含 token：换票后命中同一 manifest 缓存
+    expect(manifestFetchCount.value).toBe(1)
+  })
 })

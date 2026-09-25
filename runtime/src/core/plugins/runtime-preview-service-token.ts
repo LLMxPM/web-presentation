@@ -12,6 +12,12 @@
  * 日志脱敏：任何日志、错误信息都不得携带令牌原文；需要诊断时只记录 artifact_id 与脱敏摘要。
  */
 
+import {
+  buildPreviewCacheKey,
+  PreviewBoundedCache,
+  PREVIEW_CACHE_IDENTITY_SERVICE_TOKEN,
+} from './runtime-preview-cache'
+
 export const PREVIEW_SERVICE_TOKEN_EXCHANGE_PATH = '/internal/runtime/preview-service-token'
 
 /** 服务令牌过期前的安全刷新窗口，避免临界过期令牌被缓存继续使用。 */
@@ -27,6 +33,11 @@ export interface ServiceTokenCacheEntry {
   token: string
   expiresAtMs: number
 }
+
+/**
+ * 服务令牌缓存容器：有界（LRU + TTL），键为稳定 artifact 身份，令牌只作值。
+ */
+export type ServiceTokenCache = PreviewBoundedCache<ServiceTokenCacheEntry>
 
 /**
  * 解析后的服务令牌及其过期时间。
@@ -58,8 +69,8 @@ export interface ResolveRuntimeServiceTokenOptions {
   previewToken: string
   /** Backend 内部 API 根地址 */
   backendApiBaseUrl: string
-  /** 进程内缓存（仅加速） */
-  serviceTokenCache: Map<string, ServiceTokenCacheEntry>
+  /** 进程内缓存（仅加速，有界 LRU + TTL） */
+  serviceTokenCache: ServiceTokenCache
   /** 本次请求自带的 Backend 下发服务令牌（如 `/__preview` 请求头），优先使用 */
   headerServiceToken?: string
   /** 换票请求超时毫秒数 */
@@ -113,7 +124,7 @@ async function exchangeServiceToken(options: {
   artifactId: string
   previewToken: string
   backendApiBaseUrl: string
-  serviceTokenCache: Map<string, ServiceTokenCacheEntry>
+  serviceTokenCache: ServiceTokenCache
   requestTimeoutMs?: number
 }): Promise<ResolvedServiceToken> {
   const apiBaseUrl = String(options.backendApiBaseUrl || '').trim().replace(/\/+$/, '')
@@ -163,20 +174,20 @@ async function exchangeServiceToken(options: {
 
 /**
  * 读取未过期的缓存条目；临近过期视为缺失。
- * @param cache 服务令牌缓存
+ * @param cache 服务令牌缓存（有界 LRU + TTL）
  * @param artifactId artifact 标识
  * @returns 有效缓存条目；缺失或过期返回 null
  */
 export function readFreshCacheEntry(
-  cache: Map<string, ServiceTokenCacheEntry>,
+  cache: ServiceTokenCache,
   artifactId: string,
 ): ServiceTokenCacheEntry | null {
-  const entry = cache.get(artifactId)
+  const entry = cache.get(buildPreviewCacheKey(artifactId, PREVIEW_CACHE_IDENTITY_SERVICE_TOKEN))
   if (!entry?.token) {
     return null
   }
   if (entry.expiresAtMs - Date.now() <= SERVICE_TOKEN_REFRESH_MARGIN_MS) {
-    cache.delete(artifactId)
+    cache.delete(buildPreviewCacheKey(artifactId, PREVIEW_CACHE_IDENTITY_SERVICE_TOKEN))
     return null
   }
   return entry
@@ -184,20 +195,23 @@ export function readFreshCacheEntry(
 
 /**
  * 写入服务令牌缓存；过期时间不可读的令牌不做缓存。
- * @param cache 服务令牌缓存
+ * 缓存 TTL 与令牌剩余有效期对齐，避免过期条目滞留。
+ * @param cache 服务令牌缓存（有界 LRU + TTL）
  * @param artifactId artifact 标识
  * @param resolved 解析结果
  */
 function writeCacheEntry(
-  cache: Map<string, ServiceTokenCacheEntry>,
+  cache: ServiceTokenCache,
   artifactId: string,
   resolved: ResolvedServiceToken,
 ): void {
-  if (resolved.expiresAtMs <= Date.now()) {
-    cache.delete(artifactId)
+  const cacheKey = buildPreviewCacheKey(artifactId, PREVIEW_CACHE_IDENTITY_SERVICE_TOKEN)
+  const remainingTtlMs = resolved.expiresAtMs - Date.now()
+  if (remainingTtlMs <= 0) {
+    cache.delete(cacheKey)
     return
   }
-  cache.set(artifactId, resolved)
+  cache.set(cacheKey, resolved, { artifactId, ttlMs: remainingTtlMs })
 }
 
 /**
