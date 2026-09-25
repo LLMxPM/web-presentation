@@ -403,22 +403,22 @@ class ApiAccessTokenService:
                 detail="用户账号已被禁用或已删除。",
             )
 
-        # 7. Redis 5 分钟节流更新 last_used_at；等待独立短事务收敛，避免遗留后台任务。
+        # 7. 运行态 5 分钟节流更新 last_used_at；等待独立短事务收敛，避免遗留后台任务。
         await self._update_last_used(token.id, ip)
 
         return token
 
     async def _update_last_used(self, token_id: int, ip: str | None) -> None:
-        """通过 Redis 节流在独立短事务中更新最后使用信息，失败时不阻断鉴权。"""
+        """通过运行态节流在独立短事务中更新最后使用信息，失败时不阻断鉴权。"""
 
         try:
-            redis = get_redis_runtime_client()
-            throttle_key = redis.key(f"pat:last_used_throttle:{token_id}")
-            is_new = redis.client.set(throttle_key, "1", ex=PAT_LAST_USED_THROTTLE_SECONDS, nx=True)
+            runtime = get_redis_runtime_client()
+            throttle_key = runtime.key(f"pat:last_used_throttle:{token_id}")
+            is_new = runtime.set(throttle_key, "1", ex=PAT_LAST_USED_THROTTLE_SECONDS, nx=True)
             if not is_new:
                 return
         except Exception as exc:
-            logger.warning("Redis 节流检查异常: %s", exc)
+            logger.warning("运行态节流检查异常: %s", exc)
 
         try:
             session_factory = get_session_factory()

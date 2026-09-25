@@ -38,6 +38,35 @@ jobs:
       - if: inputs.full
         run: pnpm run test:backend:integration
 
+  # 运行态 memory:// 与真实 Redis 的对拍是发布门禁：缺少 test Redis 时脚本内显式失败，
+  # 不以单元测试代替；该 job 在 PR 与发布流水线都必须执行。
+  runtime-state-parity:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.10.10
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - run: uv sync --project backend --group dev --locked
+      - run: pnpm run test:backend:runtime-state-parity
+        env:
+          # 独立非 0/非 15 库号 + 随机前缀，只清理本次对拍创建的 key。
+          RUNTIME_STATE_PARITY_REDIS_URL: redis://127.0.0.1:6379/13
+          RUNTIME_STATE_PARITY_REQUIRED: '1'
+
   editor-tests:
     runs-on: ubuntu-latest
     steps:
@@ -136,6 +165,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - backend-tests
+      - runtime-state-parity
       - editor-tests
       - contracts
       - render-contracts
@@ -148,6 +178,7 @@ jobs:
       always() &&
       inputs.full &&
       needs.backend-tests.result == 'success' &&
+      needs.runtime-state-parity.result == 'success' &&
       needs.editor-tests.result == 'success' &&
       needs.contracts.result == 'success' &&
       needs.render-contracts.result == 'success' &&

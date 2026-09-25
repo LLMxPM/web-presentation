@@ -108,6 +108,10 @@ class AppSettings(BaseSettings):
     runtime_preview_artifact_ttl_seconds: int = 3600
     runtime_artifact_sweep_interval_seconds: float = 30.0
     runtime_build_state_ttl_seconds: int = 604800
+    # 进程内 memory:// 运行态的有限 payload 预算：2C4G Lite 实测混合负载峰值约 105MB，
+    # 128MiB 留出余量并封住 1 小时 TTL 窗口内无限增长；超限在写入生效前拒绝。
+    runtime_state_memory_max_bytes: int = 134217728
+    runtime_state_memory_max_item_bytes: int = 16777216
     durable_job_lease_seconds: int = 300
     durable_job_heartbeat_seconds: int = 30
     page_screenshot_default_viewport_width: int = 1920
@@ -509,10 +513,12 @@ class AppSettings(BaseSettings):
     @field_validator(
         "runtime_preview_artifact_ttl_seconds",
         "runtime_build_state_ttl_seconds",
+        "runtime_state_memory_max_bytes",
+        "runtime_state_memory_max_item_bytes",
     )
     @classmethod
     def validate_positive_runtime_state_int(cls, value: int) -> int:
-        """校验 Redis 临时运行态 TTL 配置为正整数。"""
+        """校验 Redis 临时运行态 TTL 与进程内 payload 预算为正整数。"""
 
         if value <= 0:
             raise ValueError("Redis 临时运行态配置必须为正整数。")

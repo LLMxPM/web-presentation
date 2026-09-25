@@ -257,28 +257,33 @@ class ProjectTemplatePackageService:
             "asset_metadata": self._build_package_asset_metadata(parsed.assets),
         }
         store = RuntimeArtifactStore()
-        await store.put_artifact(
-            tenant_id=tenant_id,
-            workspace_id=workspace_id,
-            project_id=None,
-            artifact_kind="project_template_preview",
-            manifest=manifest,
-            config_bundle=config_bundle,
-            modules_data=modules_data,
-            artifact_id=artifact_id,
-        )
-        await store.put_asset_blobs(
-            artifact_id=artifact_id,
-            assets={
-                str(asset.metadata.get("file_hash") or ""): {
-                    "content": asset.content,
-                    "content_type": asset.metadata.get("content_type"),
-                    "original_name": asset.metadata.get("original_name"),
-                }
-                for asset in parsed.assets
-                if str(asset.metadata.get("file_hash") or "").strip()
-            },
-        )
+        try:
+            await store.put_artifact(
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                project_id=None,
+                artifact_kind="project_template_preview",
+                manifest=manifest,
+                config_bundle=config_bundle,
+                modules_data=modules_data,
+                artifact_id=artifact_id,
+            )
+            await store.put_asset_blobs(
+                artifact_id=artifact_id,
+                assets={
+                    str(asset.metadata.get("file_hash") or ""): {
+                        "content": asset.content,
+                        "content_type": asset.metadata.get("content_type"),
+                        "original_name": asset.metadata.get("original_name"),
+                    }
+                    for asset in parsed.assets
+                    if str(asset.metadata.get("file_hash") or "").strip()
+                },
+            )
+        except AppException:
+            # 资源未写全时不得签发可用预览 URL，也不能留下可访问的半成品 artifact。
+            await store.delete_artifact(artifact_id)
+            raise
         preview_token = TokenService.generate_preview_context_token(
             tenant_id=tenant_id,
             artifact_id=artifact_id,

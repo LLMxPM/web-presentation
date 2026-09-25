@@ -4,9 +4,15 @@
 
 检查 `DATABASE_URL`、数据库网络、账号权限和 Alembic migration。生产环境如果 migration 失败，应先确认平台镜像内是否包含当前数据库 `alembic_version` 指向的 revision 文件。
 
-## Redis 连接失败
+## Redis / 运行态不可用
 
-Redis 保存预览 artifact 和构建心跳等临时运行态。AI run/HITL 与截图任务租约都不依赖 Redis；截图重复、卡住或恢复问题应优先检查 `page_screenshot_jobs` 的状态、`worker_id`、`lease_expires_at` 和心跳。排查 Redis 时仍需检查 `REDIS_URL`、密码、网络和 `REDIS_KEY_PREFIX`。
+运行态按 `REDIS_URL` 选择后端：`redis://`、`rediss://` 走真实 Redis；`memory://<name>` 走进程内适配器（SQLite Lite 的正式形态）。先看后端类型是否与部署形态一致：`/readyz` 的 `runtime_state_backend` / `runtime_state_ephemeral` 与 `/metrics/runtime-state` 能直接回答，且不会泄露连接串。
+
+- 进程内后端：不存在"连接失败"，表现为容器重启后临时预览与构建运行态失效。用户侧动作是重新打开预览或重新触发构建；`rt_` 开头的临时预览返回 `PREVIEW_ARTIFACT_UNAVAILABLE` 一类失效提示，数字 Release 仍从主库回源。
+- 进程内后端报容量不足（`RUNTIME_STATE_CAPACITY_EXCEEDED`）：`/metrics/runtime-state` 的 `approx_bytes`、`max_bytes`、`capacity_rejections` 可确认是否命中预算。容量随 TTL 与清扫回收，可稍后重试；反复出现时减少模板或页面中的大体积资源。
+- 真实 Redis：检查 `REDIS_URL`、密码、网络与 `REDIS_KEY_PREFIX`，并确认 `memory://` 没有被误配到 PostgreSQL 部署（启动校验会直接拒绝该组合）。
+
+`memory://` 只承载可丢弃临时态。AI run/HITL 与截图任务租约都不依赖它；截图重复、卡住或恢复问题应优先检查 `page_screenshot_jobs` 的状态、`worker_id`、`lease_expires_at` 和心跳。资源比例回填任务的领取与迟到结果围栏同样只依赖数据库列，不受运行态清空影响。契约与边界见 [运行态存储适配器](./runtime-state-adapter.md)。
 
 ## Runtime 调用失败
 

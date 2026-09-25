@@ -19,10 +19,10 @@ production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy
 | 变量 | 说明 |
 | :--- | :--- |
 | `DATABASE_URL` | 主数据库连接串；常规部署使用 PostgreSQL，SQLite 轻量模式使用 `sqlite+aiosqlite:////app/backend/data/web_presentation.db` |
-| `REDIS_URL` | 运行态存储连接串；常规部署使用 Redis，SQLite 轻量模式使用 `memory://lite` |
-| `REDIS_KEY_PREFIX` | Redis 或 memory runtime key 前缀，建议同一运行态多环境隔离 |
+| `REDIS_URL` | 运行态存储连接串。常规部署使用 `redis://…`；SQLite 轻量模式**正式**使用 `memory://lite`（进程内适配器） |
+| `REDIS_KEY_PREFIX` | Redis 或 `memory://` runtime key 前缀，建议同一运行态多环境隔离 |
 
-SQLite 轻量模式不依赖外部 PostgreSQL/Redis。`memory://` 运行态只保存在当前 Backend 进程内，容器重启后短生命周期预览 artifact、锁和构建运行态会失效；主数据仍保存在 SQLite 文件中。
+SQLite 轻量模式不依赖外部 PostgreSQL/Redis。`memory://` 是**受支持的运行态适配器**，与真实 Redis 同契约、不同边界：只保存在当前 Backend 进程内，容器重启后短生命周期预览 artifact、锁和构建运行态会失效；主数据仍保存在 SQLite 文件中。能力矩阵、重启语义与非目标见 [运行态存储适配器](../backend/runtime-state-adapter.md)。
 
 ## 默认管理员
 
@@ -69,6 +69,8 @@ SQLite 轻量模式不依赖外部 PostgreSQL/Redis。`memory://` 运行态只�
 | `RENDER_RUNTIME_ASSET_BASE_URL` | 浏览器访问 Runtime 静态资源的基址 |
 | `RENDER_PLATFORM_ASSET_BASE_URL` | 浏览器访问平台资源的基址 |
 | `RUNTIME_ARTIFACT_SWEEP_INTERVAL_SECONDS` | `memory://` artifact 过期扫描周期，默认 `30` 秒 |
+| `RUNTIME_STATE_MEMORY_MAX_BYTES` | 进程内 `memory://` 运行态总 payload 预算，默认 `134217728`（128 MiB），超限写入返回容量错误而不是拖垮容器 |
+| `RUNTIME_STATE_MEMORY_MAX_ITEM_BYTES` | 进程内 `memory://` 单项 payload 上限，默认 `16777216`（16 MiB） |
 
 Renderer 容器还应设置 `RENDER_WORKER_ID`、`RENDER_SERVICE_CREDENTIAL_FILE`、`RENDER_PROFILE_DIGEST`；可选 `RENDER_CLEANUP_GRACE_SECONDS`（默认 5）、`RENDER_RESULT_TTL_SECONDS`（默认 600）。
 

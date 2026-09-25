@@ -53,7 +53,8 @@ Runtime 诊断与正式构建共享调度槽，默认按诊断:正式构建 `3:1
 - attempt 占用使用 `lease_expires_at`；租约超时由 `RenderCoordinator` 收敛释放，避免 unknown/悬挂执行永久占用容量。
 - 应用关闭时，截图队列先停止认领，再等待领域任务收敛；渲染链路由协调器与 Renderer 负责回收。HTTP 断连也不会提前释放正在执行的槽位。
 - Runtime 诊断和正式构建分别使用 120 秒、600 秒端到端 deadline；渲染阶段默认总预算 `RENDER_REQUEST_TIMEOUT_SECONDS=120`。网络拉取、Vite Worker 与上传共享同一取消信号，超时作为基础设施错误重试而非源码错误。
-- Runtime artifact 在编译和渲染检查结束后主动删除。`memory://` 运行态还会按 `RUNTIME_ARTIFACT_SWEEP_INTERVAL_SECONDS` 扫描过期 key，防止 lite 容器持续积累内存。
+- Runtime artifact 在编译和渲染检查结束后主动删除。`memory://` 运行态还会按 `RUNTIME_ARTIFACT_SWEEP_INTERVAL_SECONDS` 扫描过期 key，防止 lite 容器持续积累内存。两种适配器的边界见 [运行态存储适配器](./runtime-state-adapter.md)。
+- 资源比例回填任务与截图队列同口径：领取用数据库条件更新抢占 `pending`，执行者写入 `worker_id`、`lease_expires_at`、`heartbeat_at`，提交终态与资源比例时复核 attempt 身份与有效租约。旧 attempt 的迟到成功/失败会被围栏拒绝，运行态被清空不影响领取结果。
 
 ## 关键配置
 

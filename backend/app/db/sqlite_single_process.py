@@ -111,6 +111,19 @@ def ensure_sqlite_single_process(database_url: str) -> SqliteSingleProcessGuard 
 def _reject_multi_worker_env() -> None:
     """拒绝显式多 worker 配置；uvicorn --workers>1 不得与 SQLite 文件库共存。"""
 
+    resolved = read_explicit_worker_count()
+    if resolved is None:
+        return
+    key, workers = resolved
+    raise SqliteSingleProcessViolation(
+        f"SQLite 文件库不允许 {key}={workers}：必须单进程写入。"
+        "请将并发约束写在部署模板（如 AI_PAGE_MUTATION_CONCURRENCY=1），不要扩 Backend 进程数。"
+    )
+
+
+def read_explicit_worker_count() -> tuple[str, int] | None:
+    """读取显式声明的 Backend 进程数；未声明或声明为单进程时返回 None。"""
+
     for key in ("WEB_CONCURRENCY", "UVICORN_WORKERS"):
         raw = os.environ.get(key, "").strip()
         if not raw:
@@ -120,10 +133,8 @@ def _reject_multi_worker_env() -> None:
         except ValueError:
             continue
         if workers > 1:
-            raise SqliteSingleProcessViolation(
-                f"SQLite 文件库不允许 {key}={workers}：必须单进程写入。"
-                "请将并发约束写在部署模板（如 AI_PAGE_MUTATION_CONCURRENCY=1），不要扩 Backend 进程数。"
-            )
+            return key, workers
+    return None
 
 
 def _lock_file_exclusive(handle: BinaryIO) -> None:

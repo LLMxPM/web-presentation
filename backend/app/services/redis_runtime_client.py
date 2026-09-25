@@ -1,51 +1,80 @@
-"""文件功能：集中创建 Redis 运行态客户端，并提供测试可用的内存实现。"""
+"""文件功能：提供运行态存储 facade、后端工厂与部署组合校验。
+
+业务只经由 `get_redis_runtime_client()` 返回的 facade 访问短生命周期运行态；
+`memory://` 与 `redis://` / `rediss://` 在 §已登记命令范围内提供一致可观察结果。
+"""
 
 from __future__ import annotations
 
 import json
-import fnmatch
 import logging
-import threading
-import time
-from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
+from urllib.parse import urlparse
 
 from redis import Redis
-from redis.exceptions import AuthenticationError, ConnectionError, TimeoutError
+from sqlalchemy.engine import make_url
 
 from app.core.config import get_settings
-from app.core.exceptions import AppException
-
+from app.db.sqlite_single_process import read_explicit_worker_count
+from app.services.runtime_state import (
+    FORBIDDEN_RUNTIME_STATE_COMMANDS,
+    REGISTERED_RUNTIME_STATE_COMMANDS,
+    RUNTIME_STATE_HELPER_COMMANDS,
+    InMemoryRuntimeStateBackend,
+    RedisRuntimeStateBackend,
+    RuntimeStateBatch,
+    RuntimeStateCapacityError,
+    RuntimeStateCommands,
+    RuntimeStateStats,
+    RuntimeStateTypeError,
+    RuntimeStateUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
+MEMORY_RUNTIME_STATE_SCHEME = "memory"
+REDIS_RUNTIME_STATE_SCHEMES = ("redis", "rediss")
+SUPPORTED_RUNTIME_STATE_SCHEMES = (MEMORY_RUNTIME_STATE_SCHEME, *REDIS_RUNTIME_STATE_SCHEMES)
 
-class RedisRuntimeError(RuntimeError):
-    """表示 Redis 运行态存储当前不可用。"""
+
+class RuntimeStateConfigurationError(RuntimeError):
+    """运行态存储 URL 或部署组合不受支持，启动必须直接失败。"""
 
 
 @dataclass(slots=True)
 class RedisRuntimeClient:
-    """封装 Redis 客户端、key 前缀与 JSON 编解码能力。"""
+    """运行态存储 facade：暴露有类型的窄命令与 JSON 编解码辅助能力。"""
 
-    client: Any
+    backend: RuntimeStateCommands
     key_prefix: str
 
+    @property
+    def backend_kind(self) -> str:
+        """返回后端类型标识（memory / redis），供日志与就绪元数据使用。"""
+
+        return self.backend.kind
+
+    @property
+    def ephemeral(self) -> bool:
+        """返回运行态是否随进程重启丢失。"""
+
+        return self.backend.ephemeral
+
     def key(self, suffix: str) -> str:
-        """拼接带仓库命名空间的 Redis key。"""
+        """拼接带仓库命名空间的运行态 key。"""
 
         return f"{self.key_prefix}:{str(suffix).strip(':')}"
 
     def dumps(self, value: Any) -> str:
-        """把对象编码为 Redis 中保存的 JSON 字符串。"""
+        """把对象编码为运行态中保存的 JSON 字符串。"""
 
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
     def loads(self, value: Any, default: Any = None) -> Any:
-        """从 Redis 字符串或字节内容解析 JSON，失败时返回默认值。"""
+        """从运行态字符串或字节内容解析 JSON，失败时返回默认值。"""
 
         if value is None:
             return default
@@ -61,371 +90,243 @@ class RedisRuntimeClient:
             return default
 
     def ping(self) -> None:
-        """执行 Redis 健康检查，失败时抛出统一运行态异常。"""
+        """执行后端健康检查，失败时抛出统一运行态异常。"""
 
-        try:
-            self.client.ping()
-        except Exception as exc:  # noqa: BLE001
-            raise RedisRuntimeError(_format_redis_runtime_error(exc)) from exc
+        self.backend.ping()
+
+    def set(self, key: str, value: Any, *, ex: int | None = None, nx: bool = False) -> bool:
+        """写入字符串值；`nx` 已存在时返回 False。"""
+
+        return self.backend.set(key, value, ex=ex, nx=nx)
+
+    def get(self, key: str) -> str | None:
+        """读取字符串值。"""
+
+        return self.backend.get(key)
+
+    def incr(self, key: str) -> int:
+        """原子递增计数器并保留已有 TTL。"""
+
+        return self.backend.incr(key)
+
+    def delete(self, *keys: str) -> int:
+        """删除若干 key 并返回删除数量。"""
+
+        return self.backend.delete(*keys)
+
+    def expire(self, key: str, seconds: int) -> bool:
+        """设置 key TTL。"""
+
+        return self.backend.expire(key, seconds)
+
+    def ttl(self, key: str) -> int:
+        """返回剩余秒数：-2 表示 key 不存在，-1 表示无 TTL。"""
+
+        return self.backend.ttl(key)
+
+    def hset(self, key: str, mapping: Mapping[str, Any]) -> int:
+        """写入 Hash 字段并返回新增字段数量。"""
+
+        return self.backend.hset(key, mapping)
+
+    def hget(self, key: str, field: str) -> str | None:
+        """读取 Hash 单字段。"""
+
+        return self.backend.hget(key, field)
+
+    def hmget(self, key: str, fields: Sequence[str]) -> list[str | None]:
+        """按输入顺序批量读取 Hash 字段。"""
+
+        return self.backend.hmget(key, fields)
+
+    def hgetall(self, key: str) -> dict[str, str]:
+        """读取完整 Hash。"""
+
+        return self.backend.hgetall(key)
+
+    def batch(self) -> RuntimeStateBatch:
+        """创建受限批处理；整批对其它读者不可见。"""
+
+        return self.backend.batch()
 
     def sweep_expired(self) -> int:
-        """主动清扫内存实现中的过期键；真实 Redis 自行管理 TTL。"""
+        """主动清扫进程内过期 key；真实 Redis 由服务端 TTL 负责。"""
 
-        sweeper = getattr(self.client, "purge_expired", None)
-        if sweeper is None:
-            return 0
-        return int(sweeper())
+        return self.backend.purge_expired()
+
+    def record_sweep_failure(self) -> None:
+        """登记一次清扫失败，供清扫循环观测与重试。"""
+
+        self.backend.record_sweep_failure()
+
+    def stats(self) -> RuntimeStateStats:
+        """返回运行态观测快照。"""
+
+        return self.backend.stats()
+
+
+def create_runtime_state_client(
+    *,
+    redis_url: str | None = None,
+    key_prefix: str | None = None,
+) -> RedisRuntimeClient:
+    """按显式配置创建运行态客户端；测试与对拍用它注入独立实例与前缀。"""
+
+    settings = get_settings()
+    resolved_url = (redis_url if redis_url is not None else settings.redis_url).strip()
+    resolved_prefix = (key_prefix if key_prefix is not None else settings.redis_key_prefix).strip().strip(":")
+    scheme, instance_name = parse_runtime_state_url(resolved_url)
+    if scheme == MEMORY_RUNTIME_STATE_SCHEME:
+        backend: RuntimeStateCommands = InMemoryRuntimeStateBackend(
+            instance_name=instance_name,
+            max_bytes=settings.runtime_state_memory_max_bytes,
+            max_item_bytes=settings.runtime_state_memory_max_item_bytes,
+        )
+    else:
+        backend = RedisRuntimeStateBackend(
+            Redis.from_url(
+                resolved_url,
+                decode_responses=True,
+                socket_timeout=settings.redis_healthcheck_timeout_seconds,
+                socket_connect_timeout=settings.redis_healthcheck_timeout_seconds,
+            )
+        )
+    return RedisRuntimeClient(backend=backend, key_prefix=resolved_prefix or "runtime_state")
 
 
 @lru_cache
 def get_redis_runtime_client() -> RedisRuntimeClient:
-    """读取配置并创建共享 Redis 运行态客户端。"""
+    """读取配置并创建共享运行态客户端；保留为业务唯一入口。"""
 
-    settings = get_settings()
-    redis_url = settings.redis_url.strip()
-    if redis_url.startswith("memory://"):
-        client: Any = InMemoryRedis()
-    else:
-        client = Redis.from_url(
-            redis_url,
-            decode_responses=True,
-            socket_timeout=settings.redis_healthcheck_timeout_seconds,
-            socket_connect_timeout=settings.redis_healthcheck_timeout_seconds,
-        )
-    return RedisRuntimeClient(client=client, key_prefix=settings.redis_key_prefix)
+    return create_runtime_state_client()
 
 
 def reset_redis_runtime_client() -> None:
-    """清理缓存的 Redis 客户端，供测试切换环境变量。"""
+    """清理缓存的运行态客户端，供测试切换环境变量。"""
 
     get_redis_runtime_client.cache_clear()
 
 
 def ensure_redis_runtime_available() -> None:
-    """校验 Redis 运行态可用，失败时转换为启动期可读错误。"""
+    """校验运行态后端可用，失败时转换为启动期可读错误。"""
+
+    client = get_redis_runtime_client()
+    try:
+        client.ping()
+        logger.info(
+            "运行态存储健康检查通过。",
+            extra={
+                "event": "redis.runtime.health.ok",
+                "runtime_state_backend": client.backend_kind,
+                "runtime_state_ephemeral": client.ephemeral,
+            },
+        )
+    except RuntimeStateUnavailableError:
+        logger.error(
+            "运行态存储健康检查失败。",
+            extra={"event": "redis.runtime.health.failed", "runtime_state_backend": client.backend_kind},
+        )
+        raise
+
+
+def parse_runtime_state_url(redis_url: str) -> tuple[str, str]:
+    """严格解析 `REDIS_URL`，返回后端 scheme 与 `memory://<name>` 实例标识。"""
+
+    normalized = str(redis_url or "").strip()
+    if not normalized:
+        raise RuntimeStateConfigurationError("REDIS_URL 不能为空，请配置 redis:// 或 memory://<name>。")
+    scheme = normalized.partition("://")[0].strip().lower()
+    if scheme not in SUPPORTED_RUNTIME_STATE_SCHEMES:
+        raise RuntimeStateConfigurationError(
+            "REDIS_URL 只支持 redis://、rediss:// 或 memory://<name>，当前 scheme 不受支持。"
+        )
+    if scheme != MEMORY_RUNTIME_STATE_SCHEME:
+        return scheme, ""
+    parsed = urlparse(normalized)
+    instance_name = (parsed.netloc or parsed.path).strip().strip("/")
+    if not instance_name:
+        raise RuntimeStateConfigurationError(
+            "memory:// 必须带实例标识，请使用 memory://lite；该标识只是本进程的配置名，不提供跨进程共享。"
+        )
+    if parsed.path.strip("/"):
+        raise RuntimeStateConfigurationError("memory:// 标识只允许出现在主机位置，例如 memory://lite。")
+    return scheme, instance_name
+
+
+def resolve_runtime_state_profile(redis_url: str) -> tuple[str, bool]:
+    """静态判定后端类型与临时性，不建立连接、不输出 URL。"""
+
+    scheme = str(redis_url or "").strip().partition("://")[0].strip().lower()
+    if scheme == MEMORY_RUNTIME_STATE_SCHEME:
+        return "memory", True
+    if scheme in REDIS_RUNTIME_STATE_SCHEMES:
+        return "redis", False
+    return "invalid", False
+
+
+def validate_runtime_state_deployment(settings: Any | None = None) -> None:
+    """拒绝正式运行中可识别的错误组合，仅由应用生命周期调用。
+
+    迁移脚本等仅为了不连接 Redis 而设置 `memory://` 的场景不经过本校验。
+    """
+
+    resolved = settings or get_settings()
+    scheme, instance_name = parse_runtime_state_url(resolved.redis_url)
+    if scheme != MEMORY_RUNTIME_STATE_SCHEME:
+        return
+    if is_postgresql_database_url(resolved.database_url):
+        raise RuntimeStateConfigurationError(
+            "memory:// 只适用于 SQLite Lite 单进程部署；PostgreSQL 部署必须配置真实 redis:// 或 rediss://。"
+        )
+    workers = read_explicit_worker_count()
+    if workers is not None:
+        worker_key, worker_count = workers
+        raise RuntimeStateConfigurationError(
+            f"memory:// 是进程内运行态，不允许 {worker_key}={worker_count}：请保持单 Backend 进程，"
+            "或改用真实 Redis 承载运行态。"
+        )
+    logger.info(
+        "运行态后端为进程内实例。",
+        extra={
+            "event": "runtime_state.deployment.memory",
+            "runtime_state_backend": MEMORY_RUNTIME_STATE_SCHEME,
+            "runtime_state_ephemeral": True,
+            "runtime_state_instance": instance_name,
+        },
+    )
+
+
+def is_postgresql_database_url(database_url: str) -> bool:
+    """判断数据库连接串是否指向 PostgreSQL。"""
 
     try:
-        get_redis_runtime_client().ping()
-        logger.info("Redis 运行态健康检查通过。", extra={"event": "redis.runtime.health.ok"})
-    except RedisRuntimeError:
-        logger.error("Redis 运行态健康检查失败。", extra={"event": "redis.runtime.health.failed"})
-        raise
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Redis 运行态健康检查异常。", extra={"event": "redis.runtime.health.failed"})
-        raise RedisRuntimeError(_format_redis_runtime_error(exc)) from exc
-
-
-def raise_redis_unavailable() -> None:
-    """将 Redis 不可用映射为对外业务错误。"""
-
-    raise AppException(status_code=503, code="REDIS_RUNTIME_UNAVAILABLE", detail="Redis 运行态存储不可用。")
-
-
-def _format_redis_runtime_error(error: Exception) -> str:
-    """把 redis-py 底层异常转换为更容易排查的中文错误。"""
-
-    if isinstance(error, AuthenticationError):
-        return "Redis 运行态存储认证失败，请在 REDIS_URL 中配置密码，例如 redis://:密码@host:6379/1。"
-    if isinstance(error, TimeoutError):
-        return "Redis 运行态存储连接超时，请检查 REDIS_URL、网络连通性和 REDIS_HEALTHCHECK_TIMEOUT_SECONDS。"
-    if isinstance(error, ConnectionError):
-        return "Redis 运行态存储连接失败，请确认 Redis 服务已启动且 REDIS_URL 地址可访问。"
-    return f"Redis 运行态存储不可用：{error}"
-
-
-class InMemoryRedis:
-    """覆盖测试所需 Redis 子集的线程安全内存实现。"""
-
-    def __init__(self) -> None:
-        self._values: dict[str, str] = {}
-        self._hashes: dict[str, dict[str, str]] = defaultdict(dict)
-        self._streams: dict[str, list[tuple[str, dict[str, str]]]] = defaultdict(list)
-        self._expires: dict[str, float] = {}
-        self._stream_sequence = 0
-        self._condition = threading.Condition()
-
-    def ping(self) -> bool:
-        """模拟 Redis ping。"""
-
-        return True
-
-    def set(self, name: str, value: Any, ex: int | None = None, nx: bool = False) -> bool | None:
-        """保存字符串值，并支持 NX 与秒级 TTL。"""
-
-        with self._condition:
-            self._purge_expired(name)
-            if nx and self.exists(name):
-                return None
-            self._values[name] = str(value)
-            self._set_expire(name, ex)
-            self._condition.notify_all()
-            return True
-
-    def get(self, name: str) -> str | None:
-        """读取字符串值。"""
-
-        with self._condition:
-            self._purge_expired(name)
-            return self._values.get(name)
-
-    def incr(self, name: str) -> int:
-        """原子递增字符串计数器，保持 Redis INCR 的基础语义。"""
-
-        with self._condition:
-            self._purge_expired(name)
-            if name in self._hashes or name in self._streams:
-                raise TypeError(f"WRONGTYPE Operation against a key holding the wrong kind of value: {name}")
-
-            raw_value = self._values.get(name, "0")
-            try:
-                current = int(raw_value) + 1
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"value is not an integer or out of range: {raw_value}") from exc
-
-            self._values[name] = str(current)
-            self._condition.notify_all()
-            return current
-
-    def delete(self, *names: str) -> int:
-        """删除一个或多个 key。"""
-
-        deleted = 0
-        with self._condition:
-            for name in names:
-                existed = self.exists(name)
-                self._values.pop(name, None)
-                self._hashes.pop(name, None)
-                self._streams.pop(name, None)
-                self._expires.pop(name, None)
-                deleted += 1 if existed else 0
-            self._condition.notify_all()
-        return deleted
-
-    def exists(self, name: str) -> bool:
-        """判断 key 是否存在。"""
-
-        self._purge_expired(name)
-        return name in self._values or name in self._hashes or name in self._streams
-
-    def expire(self, name: str, time: int) -> bool:
-        """设置 key TTL。"""
-
-        with self._condition:
-            if not self.exists(name):
-                return False
-            self._set_expire(name, time)
-            return True
-
-    def ttl(self, name: str) -> int:
-        """返回 key 的剩余秒数，遵循 Redis TTL 的 -1/-2 约定。"""
-
-        with self._condition:
-            self._purge_expired(name)
-            if not self.exists(name):
-                return -2
-
-            expires_at = self._expires.get(name)
-            if expires_at is None:
-                return -1
-            return max(0, int(expires_at - time.time()))
-
-    def hset(self, name: str, key: str | None = None, value: Any | None = None, mapping: dict[str, Any] | None = None) -> int:
-        """写入 Hash 字段。"""
-
-        with self._condition:
-            self._purge_expired(name)
-            updates = dict(mapping or {})
-            if key is not None:
-                updates[str(key)] = value
-            target = self._hashes[name]
-            added = 0
-            for field_name, field_value in updates.items():
-                if field_name not in target:
-                    added += 1
-                target[str(field_name)] = str(field_value)
-            self._condition.notify_all()
-            return added
-
-    def hget(self, name: str, key: str) -> str | None:
-        """读取 Hash 单字段。"""
-
-        with self._condition:
-            self._purge_expired(name)
-            return self._hashes.get(name, {}).get(key)
-
-    def hmget(self, name: str, keys: list[str]) -> list[str | None]:
-        """按输入顺序批量读取 Hash 字段，兼容 redis-py hmget。"""
-
-        with self._condition:
-            self._purge_expired(name)
-            target = self._hashes.get(name, {})
-            return [target.get(key) for key in keys]
-
-    def hgetall(self, name: str) -> dict[str, str]:
-        """读取完整 Hash。"""
-
-        with self._condition:
-            self._purge_expired(name)
-            return dict(self._hashes.get(name, {}))
-
-    def xrange(self, name: str, min: str = "-", max: str = "+", count: int | None = None) -> list[tuple[str, dict[str, str]]]:
-        """读取 Stream 条目。"""
-
-        with self._condition:
-            self._purge_expired(name)
-            items = list(self._streams.get(name, []))
-            if count is not None:
-                items = items[:count]
-            return items
-
-    def xread(
-        self,
-        streams: dict[str, str],
-        count: int | None = None,
-        block: int | None = None,
-    ) -> list[tuple[str, list[tuple[str, dict[str, str]]]]]:
-        """阻塞读取 Stream 新条目，兼容 redis-py xread 子集。"""
-
-        deadline = None if block is None else time.time() + max(0, block) / 1000
-        with self._condition:
-            while True:
-                result: list[tuple[str, list[tuple[str, dict[str, str]]]]] = []
-                for stream_name, last_id in streams.items():
-                    self._purge_expired(stream_name)
-                    items = [
-                        item
-                        for item in self._streams.get(stream_name, [])
-                        if _compare_stream_ids(item[0], last_id) > 0
-                    ]
-                    if count is not None:
-                        items = items[:count]
-                    if items:
-                        result.append((stream_name, items))
-                if result:
-                    return result
-                if deadline is not None:
-                    remaining = deadline - time.time()
-                    if remaining <= 0:
-                        return []
-                    self._condition.wait(timeout=remaining)
-                else:
-                    self._condition.wait()
-
-
-    def xadd(self, name: str, fields: dict[str, Any], maxlen: int | None = None, approximate: bool = True) -> str:
-        """追加 Stream 条目。"""
-
-        _ = approximate
-        with self._condition:
-            self._stream_sequence += 1
-            entry_id = f"{int(time.time() * 1000)}-{self._stream_sequence}"
-            self._streams[name].append((entry_id, {str(k): str(v) for k, v in fields.items()}))
-            if maxlen is not None and maxlen > 0:
-                self._streams[name] = self._streams[name][-maxlen:]
-            self._condition.notify_all()
-            return entry_id
-
-    def scan_iter(self, match: str | None = None) -> Iterator[str]:
-        """按 glob 模式扫描 key。"""
-
-        with self._condition:
-            keys = set(self._values) | set(self._hashes) | set(self._streams)
-            for key in list(keys):
-                self._purge_expired(key)
-            keys = set(self._values) | set(self._hashes) | set(self._streams)
-        for key in sorted(keys):
-            if match is None or fnmatch.fnmatch(key, match):
-                yield key
-
-    def purge_expired(self) -> int:
-        """扫描全部 TTL 并主动释放过期值，避免只访问热点 key 时内存累积。"""
-
-        with self._condition:
-            before = len(self._values) + len(self._hashes) + len(self._streams)
-            for key in list(self._expires):
-                self._purge_expired(key)
-            after = len(self._values) + len(self._hashes) + len(self._streams)
-            return max(0, before - after)
-
-    def publish(self, channel: str, message: str) -> int:
-        """模拟发布消息；测试内存实现不维护订阅者。"""
-
-        _ = channel, message
-        return 0
-
-    def pipeline(self) -> "InMemoryPipeline":
-        """创建简单 pipeline。"""
-
-        return InMemoryPipeline(self)
-
-    def _set_expire(self, name: str, seconds: int | None) -> None:
-        if seconds is None:
-            self._expires.pop(name, None)
-            return
-        self._expires[name] = time.time() + max(1, int(seconds))
-
-    def _purge_expired(self, name: str) -> None:
-        expires_at = self._expires.get(name)
-        if expires_at is None or expires_at > time.time():
-            return
-        self._values.pop(name, None)
-        self._hashes.pop(name, None)
-        self._streams.pop(name, None)
-        self._expires.pop(name, None)
-
-
-class InMemoryPipeline:
-    """顺序执行命令的内存 pipeline。"""
-
-    def __init__(self, redis_client: InMemoryRedis) -> None:
-        self._redis = redis_client
-        self._commands: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
-
-    def hset(self, *args: Any, **kwargs: Any) -> "InMemoryPipeline":
-        self._commands.append(("hset", args, kwargs))
-        return self
-
-    def expire(self, *args: Any, **kwargs: Any) -> "InMemoryPipeline":
-        self._commands.append(("expire", args, kwargs))
-        return self
-
-    def xadd(self, *args: Any, **kwargs: Any) -> "InMemoryPipeline":
-        self._commands.append(("xadd", args, kwargs))
-        return self
-
-    def delete(self, *args: Any, **kwargs: Any) -> "InMemoryPipeline":
-        self._commands.append(("delete", args, kwargs))
-        return self
-
-    def set(self, *args: Any, **kwargs: Any) -> "InMemoryPipeline":
-        self._commands.append(("set", args, kwargs))
-        return self
-
-    def execute(self) -> list[Any]:
-        """按记录顺序执行所有命令。"""
-
-        results: list[Any] = []
-        for name, args, kwargs in self._commands:
-            results.append(getattr(self._redis, name)(*args, **kwargs))
-        self._commands = []
-        return results
-
-
-def _compare_stream_ids(left: str, right: str) -> int:
-    """比较 Redis Stream ID，支持 `$` 作为当前尾部哨兵。"""
-
-    if right == "$":
-        return -1
-
-    def parse(value: str) -> tuple[int, int]:
-        head, _, tail = str(value or "0-0").partition("-")
-        try:
-            return int(head), int(tail or 0)
-        except ValueError:
-            return 0, 0
-
-    left_tuple = parse(left)
-    right_tuple = parse(right)
-    if left_tuple == right_tuple:
-        return 0
-    return 1 if left_tuple > right_tuple else -1
+        return make_url(str(database_url or "")).drivername.startswith("postgresql")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+__all__ = [
+    "FORBIDDEN_RUNTIME_STATE_COMMANDS",
+    "InMemoryRuntimeStateBackend",
+    "MEMORY_RUNTIME_STATE_SCHEME",
+    "REDIS_RUNTIME_STATE_SCHEMES",
+    "REGISTERED_RUNTIME_STATE_COMMANDS",
+    "RUNTIME_STATE_HELPER_COMMANDS",
+    "RedisRuntimeClient",
+    "RedisRuntimeStateBackend",
+    "RuntimeStateBatch",
+    "RuntimeStateCapacityError",
+    "RuntimeStateCommands",
+    "RuntimeStateConfigurationError",
+    "RuntimeStateStats",
+    "RuntimeStateTypeError",
+    "RuntimeStateUnavailableError",
+    "create_runtime_state_client",
+    "ensure_redis_runtime_available",
+    "get_redis_runtime_client",
+    "is_postgresql_database_url",
+    "parse_runtime_state_url",
+    "reset_redis_runtime_client",
+    "resolve_runtime_state_profile",
+    "validate_runtime_state_deployment",
+]

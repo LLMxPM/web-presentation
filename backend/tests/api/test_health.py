@@ -27,6 +27,31 @@ async def test_readyz_reports_ready_with_reachable_database(client: AsyncClient)
     assert body["checks"]["render_workers_configured"] is True
 
 
+async def test_readyz_should_expose_static_runtime_state_metadata(client: AsyncClient) -> None:
+    """就绪端点只报告运行态后端类型与临时性，不做连接探测。"""
+
+    response = await client.get("/readyz")
+
+    body = response.json()
+    assert body["checks"]["runtime_state_backend"] == "memory"
+    assert body["checks"]["runtime_state_ephemeral"] is True
+
+
+async def test_runtime_state_metrics_should_report_aggregate_only(client: AsyncClient) -> None:
+    """运行态指标只暴露聚合字节与计数，不返回 key 名称或 payload。"""
+
+    response = await client.get("/metrics/runtime-state")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["backend_kind"] == "memory"
+    assert body["ephemeral"] is True
+    assert body["max_bytes"] > 0
+    assert body["max_item_bytes"] > 0
+    assert body["active_keys"] >= 0
+    assert "runtime:" not in response.text
+
+
 async def test_readyz_reports_not_ready_without_render_workers(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,

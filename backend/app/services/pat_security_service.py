@@ -1,4 +1,4 @@
-"""文件功能：提供个人访问令牌（PAT）的安全审计与 Redis 双桶限速服务。"""
+"""文件功能：提供个人访问令牌（PAT）的安全审计与运行态双桶限速服务。"""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ class PatAuditService:
 
 
 class PatRateLimitService:
-    """基于 Redis 的 PAT 双桶限速服务（支持 Redis 故障时的 Fail-Open 安全放行）。"""
+    """基于运行态存储的 PAT 双桶限速服务（后端故障时 Fail-Open 安全放行）。"""
 
     @classmethod
     def check_ip_rate_limit(cls, ip: str) -> None:
@@ -115,13 +115,14 @@ class PatRateLimitService:
             return
 
         try:
-            redis = get_redis_runtime_client()
-            key = redis.key(f"pat:rate_limit:ip:{ip}")
-            current = redis.client.incr(key)
+            runtime = get_redis_runtime_client()
+            key = runtime.key(f"pat:rate_limit:ip:{ip}")
+            current = runtime.incr(key)
             if current == 1:
-                redis.client.expire(key, PAT_IP_RATE_LIMIT_WINDOW_SECONDS)
+                runtime.expire(key, PAT_IP_RATE_LIMIT_WINDOW_SECONDS)
             if current > PAT_IP_RATE_LIMIT_MAX_REQUESTS:
-                ttl = redis.client.ttl(key) or PAT_IP_RATE_LIMIT_WINDOW_SECONDS
+                remaining = runtime.ttl(key)
+                ttl = remaining if remaining and remaining > 0 else PAT_IP_RATE_LIMIT_WINDOW_SECONDS
                 raise AppException(
                     status_code=429,
                     code="RATE_LIMIT_EXCEEDED",
@@ -131,7 +132,7 @@ class PatRateLimitService:
         except AppException:
             raise
         except Exception as exc:
-            logger.warning("PAT IP 限速检查 Redis 降级放行: %s", exc)
+            logger.warning("PAT IP 限速检查运行态降级放行: %s", exc)
 
     @classmethod
     def check_auth_failure_rate_limit(cls, ip: str, public_id: str | None = None) -> None:
@@ -145,11 +146,12 @@ class PatRateLimitService:
             lock_key_suffix += f":{public_id}"
 
         try:
-            redis = get_redis_runtime_client()
-            lock_key = redis.key(lock_key_suffix)
-            is_locked = redis.client.get(lock_key)
+            runtime = get_redis_runtime_client()
+            lock_key = runtime.key(lock_key_suffix)
+            is_locked = runtime.get(lock_key)
             if is_locked:
-                ttl = redis.client.ttl(lock_key) or PAT_AUTH_FAILURE_LOCKOUT_SECONDS
+                remaining = runtime.ttl(lock_key)
+                ttl = remaining if remaining and remaining > 0 else PAT_AUTH_FAILURE_LOCKOUT_SECONDS
                 PatAuditService.log_rate_limited(ip=ip, public_id=public_id, lockout_seconds=ttl)
                 raise AppException(
                     status_code=429,
@@ -160,7 +162,7 @@ class PatRateLimitService:
         except AppException:
             raise
         except Exception as exc:
-            logger.warning("PAT 封禁检查 Redis 降级放行: %s", exc)
+            logger.warning("PAT 封禁检查运行态降级放行: %s", exc)
 
     @classmethod
     def record_auth_failure(cls, ip: str, public_id: str | None = None) -> None:
@@ -176,19 +178,19 @@ class PatRateLimitService:
             lock_key_suffix += f":{public_id}"
 
         try:
-            redis = get_redis_runtime_client()
-            bucket_key = redis.key(bucket_key_suffix)
-            lock_key = redis.key(lock_key_suffix)
+            runtime = get_redis_runtime_client()
+            bucket_key = runtime.key(bucket_key_suffix)
+            lock_key = runtime.key(lock_key_suffix)
 
-            failures = redis.client.incr(bucket_key)
+            failures = runtime.incr(bucket_key)
             if failures == 1:
-                redis.client.expire(bucket_key, PAT_AUTH_FAILURE_WINDOW_SECONDS)
+                runtime.expire(bucket_key, PAT_AUTH_FAILURE_WINDOW_SECONDS)
 
             if failures >= PAT_AUTH_FAILURE_MAX_ATTEMPTS:
-                redis.client.set(lock_key, "1", ex=PAT_AUTH_FAILURE_LOCKOUT_SECONDS)
-                redis.client.delete(bucket_key)
+                runtime.set(lock_key, "1", ex=PAT_AUTH_FAILURE_LOCKOUT_SECONDS)
+                runtime.delete(bucket_key)
                 PatAuditService.log_rate_limited(
                     ip=ip, public_id=public_id, lockout_seconds=PAT_AUTH_FAILURE_LOCKOUT_SECONDS
                 )
         except Exception as exc:
-            logger.warning("PAT 失败计数 Redis 降级: %s", exc)
+            logger.warning("PAT 失败计数运行态降级: %s", exc)

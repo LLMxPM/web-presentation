@@ -30,7 +30,7 @@ docker compose -f .\scripts\dev\compose.infra.yml up -d
 
 `scripts/dev/compose.infra.yml` 统一定位为本地开发和 CI 测试共享的基础设施入口，不属于 `deploy/` 下的交付部署模板。当前 `.github/scripts/*`、本指南、测试治理文档和 Backend README 都统一引用该路径。
 
-Backend 测试默认会把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调预览、截图、代码检查、构建等临时 artifact 能力时必须启动 Redis；AI run/HITL 状态由 Backend 主库中的平台运行态表承担，不再依赖 Redis。
+Backend 测试默认会把 `REDIS_URL` 设置为 `memory://test`，不依赖本机 Redis。手动联调时运行态按 `REDIS_URL` 选择后端：配 `memory://lite`（或任意 `memory://<name>`）即使用进程内适配器，无需启动 Redis，重启后临时 artifact 失效；需要跨进程共享、更长保留或按常规部署一致性验证时，再启动 `scripts/dev/compose.infra.yml` 中的 Redis 并把 `REDIS_URL` 指过去。AI run/HITL 状态由 Backend 主库中的平台运行态表承担，两种运行态后端都不影响它；边界见 [运行态存储适配器](./backend/runtime-state-adapter.md)。
 
 ## 环境变量准备（全仓统一）
 

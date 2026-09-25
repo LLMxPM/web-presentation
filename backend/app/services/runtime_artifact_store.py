@@ -1,19 +1,30 @@
-"""文件功能：用 Redis 保存 Runtime 临时预览 artifact、模板预览资源与构建运行态。"""
+"""文件功能：用运行态存储保存 Runtime 临时预览 artifact、模板预览资源与构建运行态。"""
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, NoReturn
 from uuid import uuid4
 
 from app.core.config import get_settings
-from app.services.redis_runtime_client import RedisRuntimeClient, get_redis_runtime_client
+from app.core.exceptions import AppException
+from app.services.redis_runtime_client import (
+    RedisRuntimeClient,
+    RuntimeStateCapacityError,
+    RuntimeStateUnavailableError,
+    get_redis_runtime_client,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeArtifactStore:
-    """封装 Runtime 临时 artifact 在 Redis 中的读写协议。"""
+    """封装 Runtime 临时 artifact 在运行态存储中的读写协议。"""
 
     def __init__(self, runtime_client: RedisRuntimeClient | None = None) -> None:
         self.runtime = runtime_client or get_redis_runtime_client()
@@ -59,37 +70,40 @@ class RuntimeArtifactStore:
         }
 
         def write() -> None:
-            pipe = self.runtime.client.pipeline()
+            pipe = self.runtime.batch()
             pipe.set(self._manifest_key(resolved_artifact_id), self.runtime.dumps(manifest_payload), ex=ttl)
             pipe.set(self._config_key(resolved_artifact_id), self.runtime.dumps(config_bundle), ex=ttl)
-            pipe.hset(self._meta_key(resolved_artifact_id), mapping=meta_payload)
+            pipe.hset(self._meta_key(resolved_artifact_id), meta_payload)
             pipe.expire(self._meta_key(resolved_artifact_id), ttl)
             if module_mapping:
-                pipe.hset(self._modules_key(resolved_artifact_id), mapping=module_mapping)
+                pipe.hset(self._modules_key(resolved_artifact_id), module_mapping)
             pipe.expire(self._modules_key(resolved_artifact_id), ttl)
             pipe.execute()
 
-        await asyncio.to_thread(write)
+        await self._run_state_write(write, action="创建预览")
         return resolved_artifact_id
 
     async def get_manifest(self, artifact_id: str) -> dict[str, Any] | None:
         """读取 Runtime artifact manifest，缺失时返回 None。"""
 
-        raw = await asyncio.to_thread(self.runtime.client.get, self._manifest_key(artifact_id))
+        raw = await self._run_state_read(lambda: self.runtime.get(self._manifest_key(artifact_id)), action="读取预览")
         value = self.runtime.loads(raw, default=None)
         return value if isinstance(value, dict) else None
 
     async def get_config_bundle(self, artifact_id: str) -> dict[str, Any] | None:
         """读取 Runtime artifact config bundle，缺失时返回 None。"""
 
-        raw = await asyncio.to_thread(self.runtime.client.get, self._config_key(artifact_id))
+        raw = await self._run_state_read(lambda: self.runtime.get(self._config_key(artifact_id)), action="读取预览")
         value = self.runtime.loads(raw, default=None)
         return value if isinstance(value, dict) else None
 
     async def get_module(self, artifact_id: str, logical_path: str) -> str | None:
         """读取 Runtime artifact 中指定逻辑模块源码。"""
 
-        value = await asyncio.to_thread(self.runtime.client.hget, self._modules_key(artifact_id), logical_path)
+        value = await self._run_state_read(
+            lambda: self.runtime.hget(self._modules_key(artifact_id), logical_path),
+            action="读取预览模块",
+        )
         return str(value) if value is not None else None
 
     async def get_modules(self, artifact_id: str, logical_paths: list[str]) -> dict[str, str] | None:
@@ -97,10 +111,9 @@ class RuntimeArtifactStore:
 
         if not logical_paths:
             return {}
-        values = await asyncio.to_thread(
-            self.runtime.client.hmget,
-            self._modules_key(artifact_id),
-            logical_paths,
+        values = await self._run_state_read(
+            lambda: self.runtime.hmget(self._modules_key(artifact_id), logical_paths),
+            action="读取预览模块",
         )
         if not isinstance(values, (list, tuple)) or len(values) != len(logical_paths) or any(value is None for value in values):
             return None
@@ -137,17 +150,20 @@ class RuntimeArtifactStore:
             return
 
         def write() -> None:
-            pipe = self.runtime.client.pipeline()
-            pipe.hset(self._assets_key(artifact_id), mapping=mapping)
+            pipe = self.runtime.batch()
+            pipe.hset(self._assets_key(artifact_id), mapping)
             pipe.expire(self._assets_key(artifact_id), ttl)
             pipe.execute()
 
-        await asyncio.to_thread(write)
+        await self._run_state_write(write, action="创建模板预览")
 
     async def get_asset_blob(self, artifact_id: str, file_hash: str) -> dict[str, Any] | None:
         """读取模板包预览资源内容，缺失时返回 None。"""
 
-        raw = await asyncio.to_thread(self.runtime.client.hget, self._assets_key(artifact_id), file_hash)
+        raw = await self._run_state_read(
+            lambda: self.runtime.hget(self._assets_key(artifact_id), file_hash),
+            action="读取模板预览资源",
+        )
         payload = self.runtime.loads(raw, default=None)
         if not isinstance(payload, dict):
             return None
@@ -171,7 +187,7 @@ class RuntimeArtifactStore:
             self._assets_key(artifact_id),
             self._meta_key(artifact_id),
         )
-        return int(await asyncio.to_thread(self.runtime.client.delete, *keys))
+        return int(await asyncio.to_thread(self.runtime.delete, *keys))
 
     async def sweep_expired(self) -> int:
         """触发内存运行态的全局 TTL 清理；真实 Redis 调用会直接返回零。"""
@@ -179,23 +195,50 @@ class RuntimeArtifactStore:
         return int(await asyncio.to_thread(self.runtime.sweep_expired))
 
     async def put_build_state(self, *, job_id: int, mapping: dict[str, Any], ttl_seconds: int | None = None) -> None:
-        """写入或更新构建任务的 Redis 运行态。"""
+        """写入或更新构建任务的运行态缓存。
+
+        构建任务、产物元数据与 Release 的事实源在数据库；缓存不可用时只告警，
+        不能让已经提交的构建任务被接口错误地宣称为未创建。
+        """
 
         ttl = ttl_seconds or get_settings().runtime_build_state_ttl_seconds
         payload = {str(key): "" if value is None else str(value) for key, value in mapping.items()}
 
         def write() -> None:
-            pipe = self.runtime.client.pipeline()
-            pipe.hset(self._build_key(job_id), mapping=payload)
+            pipe = self.runtime.batch()
+            pipe.hset(self._build_key(job_id), payload)
             pipe.expire(self._build_key(job_id), ttl)
             pipe.execute()
 
-        await asyncio.to_thread(write)
+        try:
+            await asyncio.to_thread(write)
+        except (RuntimeStateUnavailableError, RuntimeStateCapacityError) as exc:
+            logger.warning(
+                "构建任务运行态缓存写入失败，状态以数据库为准。",
+                extra={
+                    "event": "project.build.state.cache_failed",
+                    "job_id": job_id,
+                    "error": str(exc),
+                },
+            )
 
-    async def get_build_state(self, *, job_id: int) -> dict[str, str]:
-        """读取构建任务 Redis 运行态。"""
+    async def _run_state_write(self, operation: Callable[[], Any], *, action: str) -> Any:
+        """执行运行态写入，并把故障与容量拒绝转换为稳定业务错误。"""
 
-        return await asyncio.to_thread(self.runtime.client.hgetall, self._build_key(job_id))
+        try:
+            return await asyncio.to_thread(operation)
+        except RuntimeStateCapacityError as exc:
+            _raise_runtime_state_capacity(action, exc)
+        except RuntimeStateUnavailableError as exc:
+            _raise_runtime_state_unavailable(action, exc)
+
+    async def _run_state_read(self, operation: Callable[[], Any], *, action: str) -> Any:
+        """执行运行态读取，把后端不可用转换为可重试的业务错误。"""
+
+        try:
+            return await asyncio.to_thread(operation)
+        except RuntimeStateUnavailableError as exc:
+            _raise_runtime_state_unavailable(action, exc)
 
     def _manifest_key(self, artifact_id: str) -> str:
         return self.runtime.key(f"runtime:artifact:{artifact_id}:manifest")
@@ -216,12 +259,59 @@ class RuntimeArtifactStore:
         return self.runtime.key(f"runtime:build:{job_id}")
 
 
+def _raise_runtime_state_capacity(action: str, error: Exception) -> NoReturn:
+    """把进程内 payload 预算拒绝转换为带重试与缩减建议的业务错误。"""
+
+    logger.warning(
+        "运行态存储容量不足。",
+        extra={"event": "runtime_state.capacity_rejected", "action": action, "error": str(error)},
+    )
+    raise AppException(
+        status_code=503,
+        code="RUNTIME_STATE_CAPACITY_EXCEEDED",
+        detail="运行时缓存容量已满，暂时无法完成本次请求。请稍后重试；若反复出现，请减少模板或页面中的大体积资源后重试。",
+    ) from error
+
+
+def _raise_runtime_state_unavailable(action: str, error: Exception) -> NoReturn:
+    """把运行态后端不可用转换为可重试的业务错误。"""
+
+    logger.warning(
+        "运行态存储不可用。",
+        extra={"event": "runtime_state.unavailable", "action": action, "error": str(error)},
+    )
+    raise AppException(
+        status_code=503,
+        code="RUNTIME_STATE_UNAVAILABLE",
+        detail="运行时缓存暂不可用，请稍后重试。",
+    ) from error
+
+
 async def run_runtime_artifact_sweeper() -> None:
-    """按配置周期清理内存运行态过期键，防止 lite 部署长期积累。"""
+    """按配置周期清理进程内运行态过期键；单次失败记录事件后继续重试。"""
 
     settings = get_settings()
     interval = max(1.0, float(settings.runtime_artifact_sweep_interval_seconds))
     store = RuntimeArtifactStore()
+    if not store.runtime.ephemeral:
+        logger.info(
+            "运行态后端由服务端管理 TTL，跳过进程内过期扫描。",
+            extra={"event": "runtime_state.sweep.skipped", "runtime_state_backend": store.runtime.backend_kind},
+        )
+        return
     while True:
         await asyncio.sleep(interval)
-        await store.sweep_expired()
+        try:
+            await store.sweep_expired()
+        except Exception:  # noqa: BLE001
+            # 清扫失败不能让后台任务静默退出：记录事件后按同一有界间隔重试，
+            # 惰性过期仍由各读命令兜底，数据有效期不因扫描延迟而延长。
+            store.runtime.record_sweep_failure()
+            logger.warning(
+                "运行态过期扫描失败，将在下一周期重试。",
+                extra={
+                    "event": "runtime_state.sweep.failed",
+                    "runtime_state_backend": store.runtime.backend_kind,
+                },
+                exc_info=True,
+            )

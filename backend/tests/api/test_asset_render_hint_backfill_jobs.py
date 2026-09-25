@@ -15,6 +15,7 @@ from app.services.asset_render_hint_backfill_job_service import (
     run_asset_render_hint_backfill_job,
 )
 from app.services.asset_render_metadata_service import AssetRenderMetadataService
+from app.services.durable_job_lease_service import build_durable_worker_id
 
 
 def _build_png_header(width: int, height: int) -> bytes:
@@ -70,12 +71,18 @@ async def _run_group_jobs(group: dict[str, Any]) -> None:
     """领取并执行任务组里的所有 pending 任务。"""
 
     session_factory = get_session_factory()
+    worker_id = build_durable_worker_id()
     async with session_factory() as session:
         claimed_jobs = await AssetRenderHintBackfillJobService(session).claim_pending_jobs(
             limit=max(1, int(group["requested_count"])),
+            worker_id=worker_id,
         )
     for job in claimed_jobs:
-        await run_asset_render_hint_backfill_job(job.id, session_factory=session_factory)
+        await run_asset_render_hint_backfill_job(
+            job.id,
+            worker_id=worker_id,
+            session_factory=session_factory,
+        )
 
 
 async def test_preview_asset_render_hint_backfill_should_not_write_asset(

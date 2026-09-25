@@ -22,6 +22,12 @@ class AssetRenderHintBackfillJob(TimestampMixin, Base):
             "overwrite_manual",
             "status",
         ),
+        # 过期租约恢复按 status + lease_expires_at 扫描，与其它持久化任务表口径一致。
+        Index(
+            "ix_asset_render_hint_backfill_jobs_status_lease",
+            "status",
+            "lease_expires_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -38,6 +44,11 @@ class AssetRenderHintBackfillJob(TimestampMixin, Base):
     overwrite_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 领取正确性只依赖这些数据库列：worker_id 标识本次 attempt，租约决定迟到结果是否被围栏拒绝。
+    worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     current_render_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     next_render_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

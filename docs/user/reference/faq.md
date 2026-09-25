@@ -14,7 +14,7 @@
 
 ## 自托管应该选哪种部署方式？
 
-个人或小团队优先使用 SQLite 轻量单容器部署，一个容器内运行 Backend、Runtime 和 Gateway，不需要额外准备 PostgreSQL 和 Redis。需要长期生产使用、集中备份、对象存储或现有数据库基础设施时，再阅读 [生产部署指南](../../developer/deployment/README.md)。
+个人或小团队优先使用 SQLite 轻量单容器部署，一个容器内运行 Backend、Runtime 和 Gateway，不需要额外准备 PostgreSQL 和 Redis。需要长期生产使用、集中备份、对象存储或现有数据库基础设施时，再阅读 [生产部署指南](../../developer/deployment/README.md)。轻量版重启后预览/构建的临时运行态会丢失，项目与页面数据不受影响。
 
 ## 默认管理员密码在哪里改？
 

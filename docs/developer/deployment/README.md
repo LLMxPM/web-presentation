@@ -42,7 +42,7 @@ production env 版中，访问入口是单独的 `gateway` 容器；`backend` �
 ## 前置条件
 
 - 已安装 Docker Engine 与 Docker Compose v2。
-- SQLite 轻量版不需要 PostgreSQL 与 Redis；`platform-lite` 只支持单实例，并需配套独立 Renderer。
+- SQLite 轻量版不需要 PostgreSQL 与 Redis；`platform-lite` 只支持单实例，并需配套独立 Renderer。运行态使用 `memory://` 适配器（见 [运行态存储适配器](../backend/runtime-state-adapter.md)）。
 - 外部依赖简化版和 production env 版需要已准备可访问的 PostgreSQL 与 Redis。
 - 内置依赖简化版会随应用启动 PostgreSQL 与 Redis，适合单机试部署或小规模自托管。
 - 部署机器可以拉取平台、Runtime 与 Renderer 对应镜像；轻量版使用 `llmxpm/web-presentation:sqlite-lite` 加 Renderer 镜像。

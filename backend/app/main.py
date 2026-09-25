@@ -63,8 +63,12 @@ from app.services.page_screenshot_job_service import (
 from app.services.page_screenshot_queue_worker import drain_page_screenshot_jobs
 from app.services.project_build_service import recover_interrupted_build_jobs_on_startup
 from app.services.rendering.coordinator import get_render_coordinator
-from app.services.redis_runtime_client import ensure_redis_runtime_available
-from app.services.runtime_artifact_store import run_runtime_artifact_sweeper
+from app.services.redis_runtime_client import (
+    ensure_redis_runtime_available,
+    resolve_runtime_state_profile,
+    validate_runtime_state_deployment,
+)
+from app.services.runtime_artifact_store import RuntimeArtifactStore, run_runtime_artifact_sweeper
 
 
 logger = logging.getLogger(__name__)
@@ -98,7 +102,9 @@ async def lifespan(app: FastAPI):
         await BootstrapService(session_factory).ensure_default_admin()
         async with session_factory() as catalog_session:
             await AiModelCatalogService(catalog_session).ensure_minimal_catalog()
+        validate_runtime_state_deployment(get_settings())
         ensure_redis_runtime_available()
+        _log_runtime_state_startup(app)
         if get_settings().ai_enabled:
             await recover_interrupted_agent_runs_on_startup(session_factory)
         await recover_interrupted_build_jobs_on_startup(session_factory)
@@ -245,6 +251,10 @@ def create_app() -> FastAPI:
 
         checks["render_workers_configured"] = bool(settings.render_workers_config)
         checks["sqlite_single_process"] = app.state.sqlite_single_process_guard is not None
+        # 静态元数据：只报告后端类型与临时性，不做连接探测，避免瞬断触发容器重启。
+        runtime_state_backend, runtime_state_ephemeral = resolve_runtime_state_profile(settings.redis_url)
+        checks["runtime_state_backend"] = runtime_state_backend
+        checks["runtime_state_ephemeral"] = runtime_state_ephemeral
 
         ready = checks["database_reachable"] and checks["render_workers_configured"]
         return JSONResponse(
@@ -257,6 +267,17 @@ def create_app() -> FastAPI:
         """导出进程内 SQLite 写路径打点快照，供基线采集；默认关闭时仍返回 enabled=false。"""
 
         return JSONResponse(write_path_metrics.snapshot())
+
+    @app.get("/metrics/runtime-state", include_in_schema=False)
+    async def runtime_state_metrics() -> JSONResponse:
+        """导出运行态后端聚合指标，供容量基线与排障使用。
+
+        只返回后端类型与聚合计数/字节，不返回 key 名称、payload 内容或连接串。
+        """
+
+        store = RuntimeArtifactStore()
+        stats = store.runtime.stats()
+        return JSONResponse(stats.as_dict())
 
     _mount_ai_runtime(app)
     app.mount("/media", StaticFiles(directory=ObjectStorageService().ensure_local_root()), name="media")
@@ -411,6 +432,27 @@ async def _stop_background_task(task: asyncio.Task[None]) -> None:
     task.cancel()
     with suppress(asyncio.CancelledError):
         await task
+
+
+def _log_runtime_state_startup(app: FastAPI) -> None:
+    """记录运行态后端类型、临时性、进程边界与清扫周期，不输出 URL 或 key 内容。"""
+
+    settings = get_settings()
+    backend_kind, ephemeral = resolve_runtime_state_profile(settings.redis_url)
+    logger.info(
+        "运行态存储后端已就绪。",
+        extra={
+            "event": "runtime_state.startup",
+            "runtime_state_backend": backend_kind,
+            "runtime_state_ephemeral": ephemeral,
+            "runtime_state_sweep_interval_seconds": round(
+                float(settings.runtime_artifact_sweep_interval_seconds), 3
+            )
+            if ephemeral
+            else None,
+            "sqlite_single_process": app.state.sqlite_single_process_guard is not None,
+        },
+    )
 
 
 def _raise_database_connectivity_error(exc: SQLAlchemyError, *, phase: str) -> None:

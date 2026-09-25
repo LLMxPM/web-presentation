@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.redis_runtime_client import InMemoryRedis, RedisRuntimeClient
+from app.services.redis_runtime_client import RedisRuntimeClient
 from app.services.runtime_artifact_store import RuntimeArtifactStore
+from app.services.runtime_state import InMemoryRuntimeStateBackend
 
 
 @pytest.mark.asyncio
 async def test_runtime_artifact_should_delete_all_related_keys() -> None:
     """诊断结束后主动删除应覆盖 manifest、配置、模块、资源和元信息。"""
 
-    memory = InMemoryRedis()
-    runtime = RedisRuntimeClient(client=memory, key_prefix="test")
+    backend = InMemoryRuntimeStateBackend(instance_name="test")
+    runtime = RedisRuntimeClient(backend=backend, key_prefix="test")
     store = RuntimeArtifactStore(runtime_client=runtime)
     artifact_id = await store.put_artifact(
         tenant_id="tenant_1",
@@ -34,18 +35,19 @@ async def test_runtime_artifact_should_delete_all_related_keys() -> None:
     assert await store.get_manifest(artifact_id) is None
     assert await store.get_module(artifact_id, "src/views/demo.vue") is None
     assert await store.get_asset_blob(artifact_id, "hash") is None
+    assert backend.stats().active_keys == 0
 
 
-def test_in_memory_runtime_should_sweep_all_expired_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_memory_runtime_should_sweep_all_expired_keys() -> None:
     """未再次访问旧 key 时，全局 sweep 也必须释放已经过期的内存。"""
 
     now = 1_000.0
-    monkeypatch.setattr("app.services.redis_runtime_client.time.time", lambda: now)
-    memory = InMemoryRedis()
-    memory.set("artifact:a", "a", ex=1)
-    memory.hset("artifact:b", mapping={"value": "b"})
-    memory.expire("artifact:b", 1)
+    backend = InMemoryRuntimeStateBackend(instance_name="test", clock=lambda: now)
+    backend.set("artifact:a", "a", ex=1)
+    backend.hset("artifact:b", {"value": "b"})
+    backend.expire("artifact:b", 1)
 
     now = 1_002.0
-    assert memory.purge_expired() == 2
-    assert list(memory.scan_iter()) == []
+    assert backend.purge_expired() == 2
+    assert backend.stats().active_keys == 0
+    assert backend.stats().sweep_count == 1

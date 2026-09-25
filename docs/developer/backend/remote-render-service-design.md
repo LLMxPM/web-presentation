@@ -130,7 +130,9 @@ Backend 在授权后生成不可变快照，包含：
 
 ### 3.3 artifact 生命周期
 
-快照 manifest、源码与资源引用持久化到 Backend 可共享读取的对象存储或持久化目录，作为不可变输入的事实源。所有部署使用真实 Redis 分发 Runtime artifact 的读取缓存；缓存缺失时从持久化快照重建，不能因 Redis 重启丢失已接纳请求的输入。取消渲染链路对进程内 `memory://` artifact 的依赖。
+快照 manifest、源码与资源引用持久化到 Backend 可共享读取的对象存储或持久化目录，作为不可变输入的事实源。渲染链路**不以进程内 `memory://` artifact 为事实源**：缓存缺失时从持久化快照重建，不能因运行态重启丢失已接纳请求的输入。
+
+Runtime preview artifact 的读取缓存走**运行态存储适配器**（见 [运行态存储适配器](./runtime-state-adapter.md)）：常规部署为真实 Redis；SQLite Lite 正式使用 `memory://` 进程内适配器。两者只承载可丢弃临时态，语义以适配器契约为准。
 
 RenderRequest 持有 artifact 引用。排队、执行、重试和结果处理期间持续保活；请求终态、全部 attempts 完成回收，且结果已消费或消费保留期到期后解除引用。无人消费的终态必须由清理器收敛，不能永久挂住输入。清理器同时检查引用和宽限期，不能仅凭最初 TTL 删除在途输入。
 
