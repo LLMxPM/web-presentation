@@ -84,6 +84,8 @@ ENV RUNTIME_LOG_FORMAT="json"
 ENV RUNTIME_ACCESS_LOG_ENABLED="false"
 ENV RUNTIME_STANDALONE_PREVIEW_ENABLED="false"
 ENV ASSET_STORAGE_DRIVER="local"
+# 预置 tiktoken BPE 到固定缓存目录，避免离线/气隙启动时导入期联网下载。
+ENV TIKTOKEN_CACHE_DIR=/app/.cache/tiktoken
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get -o Acquire::Retries=3 update \
@@ -104,9 +106,11 @@ COPY --from=editor-build /app/editor/dist/ /usr/share/nginx/html/
 COPY deploy/docker/nginx/web-presentation.conf /etc/nginx/conf.d/default.conf
 COPY deploy/docker/entrypoints/start_lite.sh /app/docker/entrypoints/start_lite.sh
 
-RUN mkdir -p /app/backend/data /run/nginx /var/cache/nginx /var/log/nginx \
+RUN mkdir -p /app/backend/data /run/nginx /var/cache/nginx /var/log/nginx /app/.cache/tiktoken \
     && chmod +x /app/docker/entrypoints/start_lite.sh \
-    && node --version
+    && node --version \
+    && /app/.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" \
+    && test -n "$(ls -A /app/.cache/tiktoken)"
 
 EXPOSE 80 8000 7373
 

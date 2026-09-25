@@ -21,6 +21,7 @@ production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy
 | `DATABASE_URL` | 主数据库连接串；常规部署使用 PostgreSQL，SQLite 轻量模式使用 `sqlite+aiosqlite:////app/backend/data/web_presentation.db` |
 | `REDIS_URL` | 运行态存储连接串。常规部署使用 `redis://…`；SQLite 轻量模式**正式**使用 `memory://lite`（进程内适配器） |
 | `REDIS_KEY_PREFIX` | Redis 或 `memory://` runtime key 前缀，建议同一运行态多环境隔离 |
+| `TIKTOKEN_CACHE_DIR` | tiktoken 词表缓存目录。交付镜像已固定为 `/app/.cache/tiktoken` 并在构建期预置 `cl100k_base`，离线/气隙启动无需出网；覆盖该变量需自行保证缓存文件已存在 |
 
 SQLite 轻量模式不依赖外部 PostgreSQL/Redis。`memory://` 是**受支持的运行态适配器**，与真实 Redis 同契约、不同边界：只保存在当前 Backend 进程内，容器重启后短生命周期预览 artifact、锁和构建运行态会失效；主数据仍保存在 SQLite 文件中。能力矩阵、重启语义与非目标见 [运行态存储适配器](../backend/runtime-state-adapter.md)。
 
