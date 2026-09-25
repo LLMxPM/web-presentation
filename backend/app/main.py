@@ -136,7 +136,7 @@ async def lifespan(app: FastAPI):
         )
         if get_settings().ai_enabled:
             ai_page_mutation_queue_task = asyncio.create_task(
-                run_ai_page_mutation_queue_loop(session_factory, app=app),
+                run_ai_page_mutation_queue_loop(session_factory),
                 name="ai-page-mutation-queue",
             )
             ai_image_generation_queue_task = asyncio.create_task(

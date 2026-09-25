@@ -15,7 +15,7 @@ AI 页面写工具
 ```
 
 - `create_project_page` 与 `apply_page_edits` 为顺序工具。同一模型步骤中的多个调用会生成一个 Batch，Batch 序号由平台在同一 run 内持久化递增，避免 Pydantic AI continuation 重置内部步骤号后误复用已完成批次；页面源码仍只保存在原始 AI tool call 中。
-- 页面 Job 与 Batch 使用数据库租约、心跳和拥有者条件更新。Batch 每次认领都会递增 `lease_generation`；运行态事件、消息历史和终态提交将该代次嵌入同一条条件写入，过期协调器即使仍拿到模型响应也不能覆盖新执行者。Backend 重启后仅重新认领租约已过期的任务，并把中断的 `running` run 恢复为 `waiting_external`，不干扰其他实例仍在执行的任务。
+- 页面 Job 使用数据库租约、心跳和拥有者条件更新；领域 Job 终态会写穿到统一 `AiAgentExternalTask`。模型续跑只由 `ai-external-task-coordinator` 认领 `AiAgentExternalBatch`，每次认领递增 `lease_generation`，运行态写入嵌入同一条件，过期协调器即使仍拿到模型响应也不能覆盖新执行者。Backend 重启后仅重新认领租约已过期的领域任务，并把历史遗留的页面 Batch `resuming` 记录收敛为 `completed`；Run 的 `waiting_external` 恢复统一由 external coordinator 负责。
 - 任务在 Runtime/Renderer 阶段不持有数据库事务；提交前会重新检查取消状态、权限和页面版本。
 - Job 全部结束后，后台协调器将多个 deferred result 一次性交回 Pydantic AI。用户关闭浏览器或登录会话过期不会中断已授权任务；撤销成员权限、停用用户或取消 run 会阻止后续页面写入。
 - 页面代码检查使用 `page_diagnostics` 最小快照：只注入候选入口、递归组件/页面依赖和实际引用资产；无法安全解析的依赖继续按原校验错误或完整快照语义收敛，不得跳过 Vite 与远程渲染检查。

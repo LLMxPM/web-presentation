@@ -44,4 +44,3 @@ class GenerationWakeup:
 
 
 page_mutation_job_wakeup = GenerationWakeup()
-page_mutation_batch_wakeup = GenerationWakeup()

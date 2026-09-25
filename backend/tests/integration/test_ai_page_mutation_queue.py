@@ -17,10 +17,9 @@ from app.ai.page_mutation_queue import (
     recover_interrupted_ai_page_mutation_jobs_on_startup,
 )
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
-from app.ai.run_write_fence import AgentRunWriteFenceLost, PageMutationContinuationWriteFence, agent_run_write_fence_scope
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
-from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun, AiAgentSession, AiAgentToolCall
+from app.models.ai_agent_runtime import AiAgentRun, AiAgentSession, AiAgentToolCall
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
 from app.models.page import Page
 from app.models.user import User
@@ -213,10 +212,10 @@ async def test_ai_page_mutation_job_should_be_idempotent_and_lease_owned(
 
 
 
-async def test_expired_continuation_lease_should_restore_waiting_external_run(
+async def test_startup_recovery_should_finalize_legacy_resuming_batch(
     authenticated_client: AsyncClient,
 ) -> None:
-    """续跑进程中断后，过期 Batch 应恢复 run 等待态而不是永久停在 running。"""
+    """启动恢复只收敛历史 resuming 页面 Batch，不再与 external 协调器双轨改写 Run。"""
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
@@ -231,16 +230,6 @@ async def test_expired_continuation_lease_should_restore_waiting_external_run(
     workspace_id = workspace_response.json()["id"]
     project_id = project_response.json()["id"]
     session_factory = get_session_factory()
-    requirement_payload = {
-        "id": "requirement-recovery-1",
-        "kind": "external_job",
-        "run_id": "run-recovery-1",
-        "session_id": "session-recovery-1",
-        "tool_name": "create_project_page",
-        "tool_execution": {"tool_call_id": "tool-recovery-1"},
-        "note": "正在后台处理页面变更。",
-        "user_feedback_schema": [],
-    }
 
     async with session_factory() as session:
         user = await session.scalar(select(User).where(User.username == "admin"))
@@ -261,7 +250,7 @@ async def test_expired_continuation_lease_should_restore_waiting_external_run(
             session_id="session-recovery-1",
             agent_id="agent-coordinator",
             user_id=user.id,
-            status="running",
+            status="waiting_external",
             scope_type="project",
             workspace_id=workspace_id,
             project_id=project_id,
@@ -270,25 +259,12 @@ async def test_expired_continuation_lease_should_restore_waiting_external_run(
             message_history_json=[],
         ))
         await session.flush()
-        session.add(AiAgentRequirement(
-            requirement_id="requirement-recovery-1",
-            session_id="session-recovery-1",
-            run_id="run-recovery-1",
-            kind="external_job",
-            status="resolved",
-            tool_call_id="tool-recovery-1",
-            tool_name="create_project_page",
-            payload_json=requirement_payload,
-            resolved_payload_json={"source": "test"},
-            resolved_at=utc_now(),
-        ))
         session.add(AiPageMutationBatch(
             batch_id="batch-recovery-1",
             run_id="run-recovery-1",
             session_id="session-recovery-1",
             run_step=1,
             status="resuming",
-            requirement_id="requirement-recovery-1",
             worker_id="dead-worker",
             lease_expires_at=utc_now() - timedelta(seconds=1),
             heartbeat_at=utc_now() - timedelta(seconds=2),
@@ -300,51 +276,10 @@ async def test_expired_continuation_lease_should_restore_waiting_external_run(
         run = await session.get(AiAgentRun, "run-recovery-1")
         batch = await session.get(AiPageMutationBatch, "batch-recovery-1")
         assert run is not None and batch is not None
+        # Run 状态由统一 external coordinator 恢复；这里不得倒写。
         assert run.status == "waiting_external"
-        assert run.pending_requirement_json == requirement_payload
-        assert batch.status == "pending"
+        assert batch.status == "completed"
         assert batch.worker_id is None
-        assert batch.lease_generation == 1
-
-    # 恢复会提升代次；过期协调器即使仍持有旧 Session，也不能再追加运行态事件。
-    async with session_factory() as session:
-        run = await session.get(AiAgentRun, "run-recovery-1")
-        assert run is not None
-        stale_store = PlatformAgentRuntimeStore(
-            session,
-            user_id=run.user_id,
-            write_fence=PageMutationContinuationWriteFence(
-                batch_id="batch-recovery-1",
-                worker_id="dead-worker",
-                lease_generation=0,
-            ),
-        )
-        with pytest.raises(AgentRunWriteFenceLost):
-            await stale_store.append_event(
-                run,
-                AgentRunEvent(
-                    event="run.continued",
-                    run_id=run.run_id,
-                    session_id=run.session_id,
-                ),
-            )
-        await session.rollback()
-
-    async with session_factory() as session:
-        run = await session.get(AiAgentRun, "run-recovery-1")
-        assert run is not None
-        run.error_message = "旧协调器不应提交"
-        with agent_run_write_fence_scope(PageMutationContinuationWriteFence(
-            batch_id="batch-recovery-1", worker_id="dead-worker", lease_generation=0,
-        )):
-            with pytest.raises(AgentRunWriteFenceLost):
-                await session.commit()
-
-    async with session_factory() as session:
-        run = await session.get(AiAgentRun, "run-recovery-1")
-        assert run is not None
-        assert run.event_index == -1
-        assert run.error_message is None
 
 
 @pytest.mark.parametrize("generic_tool", [False, True], ids=["direct-tool", "generic-tool"])

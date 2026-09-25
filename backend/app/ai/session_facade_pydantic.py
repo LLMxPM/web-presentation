@@ -1112,22 +1112,6 @@ class AgentSessionFacade:
 
         return generator()
 
-    async def continue_external_page_mutations_to_store(
-        self,
-        *,
-        run_id: str,
-        deferred_results: DeferredToolResults,
-        continuation_fence: AgentRunWriteFence | None = None,
-    ) -> str:
-        """兼容入口：由后台协调器恢复页面变更 external_job run。"""
-
-        return await self.continue_external_job_to_store(
-            run_id=run_id,
-            deferred_results=deferred_results,
-            continuation_fence=continuation_fence,
-            source="ai_page_mutation_queue",
-        )
-
     async def continue_external_job_to_store(
         self,
         *,

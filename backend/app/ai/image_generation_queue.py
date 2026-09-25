@@ -14,6 +14,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from app.ai.external_task_control import sync_external_task_from_domain_job
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.platform_tools import recoverable_tool_error_result
 from app.core.config import get_settings
@@ -82,6 +83,7 @@ async def recover_interrupted_image_generation_jobs_on_startup(
             job.lease_expires_at = None
             job.heartbeat_at = None
             job.finished_at = utc_now() if job.status == "error" else None
+            await sync_external_task_from_domain_job(session, job=job)
         if jobs:
             await session.commit()
         return len(jobs)
@@ -141,9 +143,11 @@ async def _claim_one_job(session_factory: async_sessionmaker[AsyncSession], *, w
             job.status = "cancelled"
             job.cancel_requested_at = job.cancel_requested_at or utc_now()
             job.finished_at = utc_now()
+            await sync_external_task_from_domain_job(session, job=job)
             await session.commit()
             return None
         job.progress_json = {"phase": "running", "message": "图片正在生成。"}
+        await sync_external_task_from_domain_job(session, job=job)
         await session.commit()
         await _append_progress(session_factory, database_id=job.id, phase="running", message="图片正在生成。")
         return job.id
@@ -262,6 +266,7 @@ async def _execute_job(
                 job.worker_id = None
                 job.lease_expires_at = None
                 job.progress_json = {"phase": "error", "message": "图片任务已取消。"}
+                await sync_external_task_from_domain_job(session, job=job)
                 await session.commit()
                 return
             attachment_service = AgentImageAttachmentService(session, user_id=job.user_id)
@@ -354,6 +359,7 @@ async def _execute_job(
             job.worker_id = None
             job.lease_expires_at = None
             job.heartbeat_at = None
+            await sync_external_task_from_domain_job(session, job=job)
             await session.commit()
         await _append_progress(session_factory, database_id=database_id, phase="completed", message="图片已生成并保存到资源库。")
     except Exception as exc:  # noqa: BLE001
@@ -484,6 +490,7 @@ async def _persist_waiting_provider_result(
         job.lease_expires_at = None
         job.heartbeat_at = None
         job.progress_json = {"phase": "running", "message": "图片供应商正在处理任务。"}
+        await sync_external_task_from_domain_job(session, job=job)
         await session.commit()
     await _append_progress(
         session_factory,
@@ -554,6 +561,7 @@ async def _cancel_one_waiting_provider_job(session_factory: async_sessionmaker[A
         job.finished_at = utc_now()
         job.next_poll_at = None
         job.progress_json = {"phase": "error", "message": "图片任务已取消。"}
+        await sync_external_task_from_domain_job(session, job=job)
         await session.commit()
     await _append_progress(session_factory, database_id=job_id, phase="error", message="图片任务已取消。")
     return True
@@ -673,6 +681,7 @@ async def _mark_job_error(
         job.finished_at = utc_now() if terminal else None
         job.worker_id = None
         job.lease_expires_at = None
+        await sync_external_task_from_domain_job(session, job=job)
         await session.commit()
     await _append_progress(
         session_factory,

@@ -90,7 +90,11 @@ async def run_ai_external_task_coordinator(
 
 
 async def synchronize_external_task_states(session_factory: async_sessionmaker[AsyncSession]) -> None:
-    """把迁移期间保留的页面和图片领域状态投影到统一Task，并推进就绪Batch。"""
+    """对账领域 Job 与统一 Task，并推进已全部终态的 Batch。
+
+    正常路径已由领域队列写穿 ExternalTask；本函数保留为崩溃恢复和
+    历史数据的兜底投影，并负责把 waiting_tasks Batch 推进为 ready。
+    """
 
     async with session_factory() as session:
         tasks = list(

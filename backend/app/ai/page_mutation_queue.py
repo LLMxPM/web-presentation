@@ -1,35 +1,31 @@
-"""文件功能：运行 AI 页面变更持久化队列、租约心跳、取消协调与模型自动续跑。"""
+"""文件功能：运行 AI 页面变更持久化队列、租约心跳与取消协调。
+
+模型续跑统一由 external coordinator 认领 AiAgentExternalBatch 完成；
+本模块只负责 AiPageMutationJob 领域执行，并把终态写穿到 AiAgentExternalTask。
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 from contextlib import suppress
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from time import monotonic
 from uuid import uuid4
 
-from fastapi import FastAPI
-from pydantic_ai import DeferredToolResults
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.ai.external_task_control import sync_external_task_from_domain_job
 from app.ai.page_mutation_executor import AiPageMutationExecutor
-from app.ai.page_mutation_wakeup import page_mutation_batch_wakeup, page_mutation_job_wakeup
+from app.ai.page_mutation_wakeup import page_mutation_job_wakeup
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
-from app.ai.platform_tools import recoverable_tool_error_result
-from app.ai.run_write_fence import AgentRunWriteFenceLost, PageMutationContinuationWriteFence
-from app.ai.session_facade_pydantic import AgentSessionFacade
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
-from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun
+from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
-from app.models.enums import RecordStatus
-from app.models.user import User
 from app.schemas.agent import AgentRunEvent
-from app.services.auth_service import AuthContext
 from app.services.durable_job_lease_service import (
     claim_pending_jobs,
     recover_expired_running_jobs,
@@ -39,29 +35,15 @@ from app.services.durable_job_lease_service import (
 
 logger = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
-_TERMINAL_JOB_STATUSES = {"succeeded", "failed", "cancelled"}
+_ACTIVE_JOB_STATUSES = ("pending", "running")
 _FATAL_PERMISSION_ERROR_PREFIX = "AUTH_PERMISSION_DENIED"
 _RETRYABLE_RUNTIME_QUEUE_ERROR_CODES = {"RUNTIME_VITE_QUEUE_FULL", "RUNTIME_VITE_QUEUE_TIMEOUT"}
 
 
-class _ContinuationLeaseLost(RuntimeError):
-    """表示自动续跑已失去 Batch 租约，旧协调器不得继续调用模型。"""
-
-
-@dataclass(frozen=True, slots=True)
-class _ClaimedContinuationBatch:
-    """保存一次条件认领得到的 Batch 业务 ID 与不可复用租约代次。"""
-
-    batch_id: str
-    lease_generation: int
-
-
 async def run_ai_page_mutation_queue_loop(
     session_factory: async_sessionmaker[AsyncSession],
-    *,
-    app: FastAPI,
 ) -> None:
-    """启动配置数量的页面变更 Worker 和单个自动续跑协调器。"""
+    """启动配置数量的页面变更领域 Worker。"""
 
     settings = get_settings()
     concurrency = max(1, int(getattr(settings, "ai_page_mutation_concurrency", 1)))
@@ -72,8 +54,6 @@ async def run_ai_page_mutation_queue_loop(
         )
         for index in range(concurrency)
     ]
-    # 模型续跑已由统一 external coordinator 负责；本循环只保留页面领域Worker。
-    _ = app
     try:
         await asyncio.gather(*workers)
     finally:
@@ -87,7 +67,7 @@ async def run_ai_page_mutation_queue_loop(
 async def recover_interrupted_ai_page_mutation_jobs_on_startup(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> int:
-    """恢复过期任务和续跑租约；仍有效的其他实例任务保持不变。"""
+    """恢复过期领域 Job，并收敛历史遗留的页面 Batch 续跑残留。"""
 
     async with session_factory() as session:
         summary = await recover_expired_running_jobs(
@@ -97,7 +77,7 @@ async def recover_interrupted_ai_page_mutation_jobs_on_startup(
             interrupted_error_code="AI_PAGE_MUTATION_INTERRUPTED",
             interrupted_error_message="页面变更任务执行中断且已达到最大重试次数。",
         )
-    recovered_batches = await _recover_expired_continuation_batches(session_factory)
+    recovered_batches = await _finalize_legacy_resuming_batches(session_factory)
     total = summary.total_count + recovered_batches
     if total:
         logger.warning(
@@ -107,197 +87,33 @@ async def recover_interrupted_ai_page_mutation_jobs_on_startup(
     return total
 
 
-async def _recover_expired_continuation_batches(
-    session_factory: async_sessionmaker[AsyncSession],
-) -> int:
-    """恢复过期的模型续跑租约，并把中断的 run 还原为可继续的等待态。"""
+async def _finalize_legacy_resuming_batches(session_factory: async_sessionmaker[AsyncSession]) -> int:
+    """把迁移前留下的页面 Batch resuming 记录收敛为 completed。
+
+    模型续跑已统一到 AiAgentExternalBatch；这里只清理旧状态机残留，
+    不再改写 Run 或 Requirement，避免与 external coordinator 双轨恢复。
+    """
 
     now = utc_now()
-    terminal_statuses = {"completed", "cancelled", "failed"}
-    recovered = 0
     async with session_factory() as session:
-        batches = list(
-            (
-                await session.scalars(
-                    select(AiPageMutationBatch)
-                    .where(
-                        AiPageMutationBatch.status == "resuming",
-                        (AiPageMutationBatch.lease_expires_at.is_(None))
-                        | (AiPageMutationBatch.lease_expires_at <= now),
-                    )
-                    .order_by(AiPageMutationBatch.created_at.asc())
-                )
-            ).all()
-        )
-        for batch in batches:
-            # 先通过代次 CAS 使旧协调器失去围栏，再决定恢复/终止状态。不能在
-            # 已过期记录上直接修改 ORM 对象，否则旧实例可能与恢复者并发回写。
-            if not await _take_expired_batch_for_recovery(session, batch=batch, now=now):
-                continue
-            run = await session.get(AiAgentRun, batch.run_id)
-            if run is None:
-                _mark_recovered_batch_terminal(
-                    batch,
-                    status="failed",
-                    now=now,
-                    code="AI_RUN_NOT_FOUND",
-                    message="待恢复运行不存在。",
-                )
-                recovered += 1
-                continue
-            if run.cancel_requested_at is not None or run.status == "cancelling":
-                _mark_recovered_batch_terminal(batch, status="cancelled", now=now)
-                recovered += 1
-                continue
-            if run.status in terminal_statuses:
-                _mark_recovered_batch_terminal(
-                    batch,
-                    status="completed" if run.status == "completed" else run.status,
-                    now=now,
-                    code=run.error_code,
-                    message=run.error_message,
-                )
-                recovered += 1
-                continue
-
-            requirement = await _load_batch_requirement(session, batch=batch)
-            if requirement is None:
-                _mark_recovered_batch_terminal(
-                    batch,
-                    status="failed",
-                    now=now,
-                    code="AI_EXTERNAL_REQUIREMENT_MISSING",
-                    message="页面变更批次缺少可恢复的外部 requirement。",
-                )
-                run.status = "failed"
-                run.pending_requirement_json = None
-                run.error_code = "AI_EXTERNAL_REQUIREMENT_MISSING"
-                run.error_message = "页面变更批次缺少可恢复的外部 requirement。"
-                run.finished_at = now
-                recovered += 1
-                continue
-
-            pending_requirement = await session.scalar(
-                select(AiAgentRequirement)
-                .where(
-                    AiAgentRequirement.run_id == run.run_id,
-                    AiAgentRequirement.kind == "external_job",
-                    AiAgentRequirement.status == "pending",
-                )
-                .order_by(AiAgentRequirement.created_at.desc())
-                .limit(1)
+        result = await session.execute(
+            update(AiPageMutationBatch)
+            .where(AiPageMutationBatch.status == "resuming")
+            .values(
+                status="completed",
+                finished_at=now,
+                worker_id=None,
+                lease_expires_at=None,
+                heartbeat_at=None,
+                updated_at=now,
             )
-            # 已产生下一轮 external requirement 时，当前 Batch 的结果已经回灌模型；
-            # 只能补齐旧 Batch 终态，不能把 run 倒退回上一轮等待。
-            if (
-                run.status == "waiting_external"
-                and pending_requirement is not None
-                and batch.requirement_id
-                and pending_requirement.requirement_id != batch.requirement_id
-            ):
-                _mark_recovered_batch_terminal(batch, status="completed", now=now)
-                recovered += 1
-                continue
-
-            run.status = "waiting_external"
-            run.pending_requirement_json = dict(requirement.payload_json or {})
-            run.error_code = None
-            run.error_message = None
-            _requeue_recovered_batch(batch, now=now)
-            recovered += 1
+            .execution_options(synchronize_session=False)
+        )
+        if int(result.rowcount or 0):
+            await session.commit()
+            return int(result.rowcount or 0)
         await session.commit()
-    return recovered
-
-
-async def _take_expired_batch_for_recovery(
-    session: AsyncSession,
-    *,
-    batch: AiPageMutationBatch,
-    now: datetime,
-) -> bool:
-    """以租约代次 CAS 认领一个过期续跑 Batch，成功后旧协调器无法继续提交。"""
-
-    expired = (AiPageMutationBatch.lease_expires_at.is_(None)) | (AiPageMutationBatch.lease_expires_at <= now)
-    result = await session.execute(
-        update(AiPageMutationBatch)
-        .where(
-            AiPageMutationBatch.batch_id == batch.batch_id,
-            AiPageMutationBatch.status == "resuming",
-            AiPageMutationBatch.lease_generation == batch.lease_generation,
-            expired,
-        )
-        .values(
-            worker_id=None,
-            lease_expires_at=None,
-            heartbeat_at=None,
-            lease_generation=batch.lease_generation + 1,
-            updated_at=now,
-        )
-        .execution_options(synchronize_session=False)
-    )
-    if int(result.rowcount or 0) != 1:
-        return False
-    await session.refresh(batch)
-    return True
-
-
-async def _load_batch_requirement(
-    session: AsyncSession,
-    *,
-    batch: AiPageMutationBatch,
-) -> AiAgentRequirement | None:
-    """读取 Batch 绑定的 requirement；兼容尚未写入 requirement_id 就崩溃的旧记录。"""
-
-    if batch.requirement_id:
-        requirement = await session.scalar(
-            select(AiAgentRequirement).where(AiAgentRequirement.requirement_id == batch.requirement_id)
-        )
-        if requirement is not None:
-            return requirement
-    return await session.scalar(
-        select(AiAgentRequirement)
-        .where(
-            AiAgentRequirement.run_id == batch.run_id,
-            AiAgentRequirement.kind == "external_job",
-            AiAgentRequirement.status.in_(("pending", "resolving", "resolved")),
-        )
-        .order_by(AiAgentRequirement.created_at.desc())
-        .limit(1)
-    )
-
-
-def _requeue_recovered_batch(batch: AiPageMutationBatch, *, now: datetime) -> None:
-    """清除过期续跑租约并重新暴露给协调器。"""
-
-    batch.status = "pending"
-    batch.worker_id = None
-    batch.lease_expires_at = None
-    batch.heartbeat_at = None
-    batch.started_at = None
-    batch.error_code = None
-    batch.error_message = None
-    batch.finished_at = None
-    batch.updated_at = now
-
-
-def _mark_recovered_batch_terminal(
-    batch: AiPageMutationBatch,
-    *,
-    status: str,
-    now: datetime,
-    code: str | None = None,
-    message: str | None = None,
-) -> None:
-    """在恢复时收敛已经无需再次续跑的 Batch。"""
-
-    batch.status = status
-    batch.worker_id = None
-    batch.lease_expires_at = None
-    batch.heartbeat_at = None
-    batch.finished_at = now
-    batch.error_code = code
-    batch.error_message = message
-    batch.updated_at = now
+    return 0
 
 
 async def _run_job_worker(
@@ -311,6 +127,7 @@ async def _run_job_worker(
     poll_interval = max(0.05, float(getattr(settings, "ai_page_mutation_poll_interval_seconds", 0.5)))
     lease_seconds = max(1, int(getattr(settings, "durable_job_lease_seconds", 300)))
     executor = AiPageMutationExecutor(session_factory)
+    idle_reconcile_counter = 0
     while True:
         try:
             observed_generation = page_mutation_job_wakeup.generation
@@ -335,8 +152,13 @@ async def _run_job_worker(
                     candidate_query=candidate_query,
                 )
             if not claimed:
+                idle_reconcile_counter += 1
+                if idle_reconcile_counter >= 4:
+                    idle_reconcile_counter = 0
+                    await _reconcile_cancelled_and_orphaned_jobs(session_factory)
                 await page_mutation_job_wakeup.wait(observed_generation, poll_interval)
                 continue
+            idle_reconcile_counter = 0
             await _execute_claimed_job(
                 session_factory,
                 executor=executor,
@@ -447,7 +269,7 @@ async def _execute_claimed_job(
         heartbeat.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeat
-        await page_mutation_batch_wakeup.notify()
+        await _sync_external_after_execution(session_factory, database_id=database_id)
         logger.info(
             "AI 页面变更任务本次执行结束。",
             extra={
@@ -459,322 +281,27 @@ async def _execute_claimed_job(
         )
 
 
-async def _claim_ready_batch(
+async def _sync_external_after_execution(
     session_factory: async_sessionmaker[AsyncSession],
     *,
-    worker_id: str,
-) -> _ClaimedContinuationBatch | None:
-    """查找全部 Job 已终态且 run 正在等待的 Batch，并用条件更新认领。"""
-
-    now = utc_now()
-    lease_seconds = max(1, int(getattr(get_settings(), "durable_job_lease_seconds", 300)))
-    async with session_factory() as session:
-        candidates = list(
-            (
-                await session.scalars(
-                    select(AiPageMutationBatch)
-                    .join(AiAgentRun, AiAgentRun.run_id == AiPageMutationBatch.run_id)
-                    .where(
-                        AiPageMutationBatch.status == "pending",
-                        AiAgentRun.status == "waiting_external",
-                        AiAgentRun.cancel_requested_at.is_(None),
-                    )
-                    .order_by(AiPageMutationBatch.created_at.asc())
-                    .limit(8)
-                )
-            ).all()
-        )
-    for batch in candidates:
-        async with session_factory() as session:
-            nonterminal_count = int(
-                await session.scalar(
-                    select(func.count(AiPageMutationJob.id)).where(
-                        AiPageMutationJob.batch_id == batch.batch_id,
-                        AiPageMutationJob.status.not_in(_TERMINAL_JOB_STATUSES),
-                    )
-                )
-                or 0
-            )
-            total_count = int(
-                await session.scalar(
-                    select(func.count(AiPageMutationJob.id)).where(AiPageMutationJob.batch_id == batch.batch_id)
-                )
-                or 0
-            )
-            if nonterminal_count or total_count == 0:
-                continue
-            # 计数查询只用于候选筛选；开始条件写前释放 SQLite 只读事务。
-            await session.rollback()
-            claim = await session.execute(
-                update(AiPageMutationBatch)
-                .where(
-                    AiPageMutationBatch.batch_id == batch.batch_id,
-                    AiPageMutationBatch.status == "pending",
-                    AiPageMutationBatch.lease_generation == batch.lease_generation,
-                )
-                .values(
-                    status="resuming",
-                    worker_id=worker_id,
-                    lease_expires_at=now + timedelta(seconds=lease_seconds),
-                    heartbeat_at=now,
-                    started_at=now,
-                    lease_generation=batch.lease_generation + 1,
-                    updated_at=now,
-                )
-                .execution_options(synchronize_session=False)
-            )
-            await session.commit()
-            if int(claim.rowcount or 0) == 1:
-                return _ClaimedContinuationBatch(
-                    batch_id=batch.batch_id,
-                    lease_generation=batch.lease_generation + 1,
-                )
-    return None
-
-
-async def _continue_claimed_batch(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    app: FastAPI,
-    batch_id: str,
-    lease_generation: int,
-    worker_id: str,
+    database_id: int,
 ) -> None:
-    """构造多 call DeferredToolResults，并通过后台 AuthContext 自动恢复模型。"""
+    """把领域 Job 最新状态写穿到统一 ExternalTask，缩短续跑就绪窗口。"""
 
-    fence = PageMutationContinuationWriteFence(
-        batch_id=batch_id,
-        worker_id=worker_id,
-        lease_generation=lease_generation,
-    )
-    lease_lost = asyncio.Event()
-    heartbeat = asyncio.create_task(
-        _heartbeat_batch_lease(
-            session_factory,
-            batch_id=batch_id,
-            worker_id=worker_id,
-            lease_generation=lease_generation,
-            lease_lost=lease_lost,
-        ),
-        name=f"ai-page-batch-heartbeat-{batch_id}",
-    )
-    continuation_task: asyncio.Task[str] | None = None
-    lease_waiter: asyncio.Task[bool] | None = None
     try:
         async with session_factory() as session:
-            batch = await session.scalar(
-                select(AiPageMutationBatch).where(*fence.batch_conditions(utc_now()))
-            )
-            if batch is None:
+            job = await session.get(AiPageMutationJob, database_id)
+            if job is None:
                 return
-            run = await session.get(AiAgentRun, batch.run_id)
-            jobs = list(
-                (
-                    await session.scalars(
-                        select(AiPageMutationJob)
-                        .where(AiPageMutationJob.batch_id == batch_id)
-                        .order_by(AiPageMutationJob.created_at.asc(), AiPageMutationJob.id.asc())
-                    )
-                ).all()
-            )
-            if run is None:
-                await _mark_batch_failed_in_session(
-                    session,
-                    batch,
-                    fence=fence,
-                    code="AI_RUN_NOT_FOUND",
-                    message="待恢复运行不存在。",
-                )
-                return
-            if run.cancel_requested_at is not None or any(job.status == "cancelled" for job in jobs):
-                await _cancel_waiting_run(session, run=run, batch=batch, fence=fence)
-                return
-            fatal_job = next(
-                (job for job in jobs if job.status == "failed" and _is_fatal_job_error(job.error_code)),
-                None,
-            )
-            if fatal_job is not None:
-                await _fail_waiting_run(
-                    session,
-                    run=run,
-                    batch=batch,
-                    fence=fence,
-                    code=fatal_job.error_code or "AI_PAGE_MUTATION_FORBIDDEN",
-                    message=fatal_job.error_message or "页面变更权限已失效。",
-                )
-                return
-            user = await session.get(User, run.user_id)
-            if user is None or user.status != RecordStatus.ACTIVE.value:
-                await _fail_waiting_run(
-                    session,
-                    run=run,
-                    batch=batch,
-                    fence=fence,
-                    code="AUTH_DISABLED",
-                    message="执行页面变更的用户已被禁用或删除。",
-                )
-                return
-            deferred_results = DeferredToolResults()
-            for job in jobs:
-                if job.status == "succeeded":
-                    deferred_results.calls[job.deferred_tool_call_id] = job.result_json
-                else:
-                    deferred_results.calls[job.deferred_tool_call_id] = recoverable_tool_error_result(
-                        code=job.error_code or "AI_PAGE_MUTATION_FAILED",
-                        message=job.error_message or "页面变更任务执行失败。",
-                        status_code=503,
-                        hint="该任务已停止重试，请根据错误信息重新调用。",
-                    )
-            current = AuthContext(
-                user=user,
-                session_token="",
-                backend_session_id=f"background:{run.run_id}",
-            )
-            requirement_id = await _pending_external_requirement_id(session, run.run_id)
-            await fence.ensure_owned(session, now=utc_now())
-            batch.requirement_id = requirement_id
-            await session.commit()
-
-        if not await _owns_active_continuation_lease(
-            session_factory,
-            batch_id=batch_id,
-            worker_id=worker_id,
-            lease_generation=lease_generation,
-        ):
-            raise _ContinuationLeaseLost()
-        continuation_task = asyncio.create_task(
-            _continue_external_batch_to_store(
-                session_factory,
-                app=app,
-                current=current,
-                run_id=run.run_id,
-                deferred_results=deferred_results,
-                continuation_fence=fence,
-            )
-        )
-        lease_waiter = asyncio.create_task(lease_lost.wait())
-        completed, _ = await asyncio.wait(
-            {continuation_task, lease_waiter},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        if lease_waiter in completed:
-            if not continuation_task.done():
-                continuation_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await continuation_task
-            raise _ContinuationLeaseLost()
-        status = await continuation_task
-        if lease_lost.is_set():
-            raise _ContinuationLeaseLost()
-
-        async with session_factory() as session:
-            now = utc_now()
-            completed = await session.execute(
-                update(AiPageMutationBatch)
-                .where(
-                    *fence.batch_conditions(now),
-                    _batch_run_has_no_cancellation_request(),
-                )
-                .values(
-                    status="completed",
-                    finished_at=now,
-                    worker_id=None,
-                    lease_expires_at=None,
-                    heartbeat_at=None,
-                    updated_at=now,
-                )
-                .execution_options(synchronize_session=False)
-            )
-            if int(completed.rowcount or 0) != 1:
-                await session.rollback()
-                if await _mark_claimed_batch_cancelled_if_requested(
-                    session_factory,
-                    batch_id=batch_id,
-                    worker_id=worker_id,
-                    lease_generation=lease_generation,
-                ):
-                    return
-                raise _ContinuationLeaseLost()
-            # 结果已经进入 Pydantic AI message history，清理 Job 副本避免长期重复保存大诊断对象。
-            await session.execute(
-                update(AiPageMutationJob)
-                .where(AiPageMutationJob.batch_id == batch_id)
-                .values(result_json=None)
-            )
-            await session.commit()
-            logger.info(
-                "AI 页面变更批次已自动恢复模型。",
-                extra={"event": "ai.page_mutation.continued", "batch_id": batch_id, "run_status": status},
-            )
-    except (AgentRunWriteFenceLost, _ContinuationLeaseLost):
+            synced = await sync_external_task_from_domain_job(session, job=job)
+            if synced:
+                await session.commit()
+    except Exception:  # noqa: BLE001
         logger.warning(
-            "AI 页面变更续跑已失去租约，旧协调器停止执行。",
-            extra={"event": "ai.page_mutation.continue_lease_lost", "batch_id": batch_id},
+            "页面变更终态写穿统一外部任务失败，交由协调器对账。",
+            exc_info=True,
+            extra={"event": "ai.page_mutation.external_sync_failed", "job_id": database_id},
         )
-    except asyncio.CancelledError:
-        if continuation_task is not None and not continuation_task.done():
-            continuation_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await continuation_task
-        raise
-    except Exception as exc:  # noqa: BLE001
-        logger.exception(
-            "AI 页面变更批次自动续跑失败。",
-            extra={"event": "ai.page_mutation.continue_failed", "batch_id": batch_id},
-        )
-        await _fail_claimed_batch(
-            session_factory,
-            batch_id=batch_id,
-            worker_id=worker_id,
-            lease_generation=lease_generation,
-            code="AI_PAGE_MUTATION_CONTINUE_FAILED",
-            message=str(exc)[:2000] or "页面变更完成，但自动恢复模型失败。",
-        )
-    finally:
-        if lease_waiter is not None and not lease_waiter.done():
-            lease_waiter.cancel()
-            with suppress(asyncio.CancelledError):
-                await lease_waiter
-        heartbeat.cancel()
-        with suppress(asyncio.CancelledError):
-            await heartbeat
-
-
-async def _continue_external_batch_to_store(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    app: FastAPI,
-    current: AuthContext,
-    run_id: str,
-    deferred_results: DeferredToolResults,
-    continuation_fence: PageMutationContinuationWriteFence,
-) -> str:
-    """在独立短会话中执行一次被租约保护的 Pydantic AI 自动续跑。"""
-
-    async with session_factory() as session:
-        return await AgentSessionFacade(app=app, current=current, session=session).continue_external_page_mutations_to_store(
-            run_id=run_id,
-            deferred_results=deferred_results,
-            continuation_fence=continuation_fence,
-        )
-
-
-async def _owns_active_continuation_lease(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    batch_id: str,
-    worker_id: str,
-    lease_generation: int,
-) -> bool:
-    """在调用模型前再次核对 Batch 所有者与未过期租约，形成续跑栅栏。"""
-
-    fence = PageMutationContinuationWriteFence(
-        batch_id=batch_id,
-        worker_id=worker_id,
-        lease_generation=lease_generation,
-    )
-    async with session_factory() as session:
-        return await fence.is_owned(session, now=utc_now())
 
 
 async def _append_progress_event(
@@ -858,55 +385,6 @@ async def _heartbeat_job_lease(
             return
 
 
-async def _heartbeat_batch_lease(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    batch_id: str,
-    worker_id: str,
-    lease_generation: int,
-    lease_lost: asyncio.Event,
-) -> None:
-    """续租模型恢复 Batch；续租失败时通知调用方取消旧协调器的模型执行。"""
-
-    settings = get_settings()
-    heartbeat_seconds = max(1, int(getattr(settings, "durable_job_heartbeat_seconds", 30)))
-    lease_seconds = max(heartbeat_seconds + 1, int(getattr(settings, "durable_job_lease_seconds", 300)))
-    while True:
-        try:
-            await asyncio.sleep(heartbeat_seconds)
-            now = utc_now()
-            async with session_factory() as session:
-                result = await session.execute(
-                    update(AiPageMutationBatch)
-                    .where(
-                        *PageMutationContinuationWriteFence(
-                            batch_id=batch_id,
-                            worker_id=worker_id,
-                            lease_generation=lease_generation,
-                        ).batch_conditions(now)
-                    )
-                    .values(
-                        heartbeat_at=now,
-                        lease_expires_at=now + timedelta(seconds=lease_seconds),
-                    )
-                    .execution_options(synchronize_session=False)
-                )
-                await session.commit()
-            if int(result.rowcount or 0) != 1:
-                lease_lost.set()
-                return
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001
-            logger.warning(
-                "AI 页面变更 Batch 续租失败，旧协调器将停止续跑。",
-                exc_info=True,
-                extra={"event": "ai.page_mutation.continuation_heartbeat_failed", "batch_id": batch_id},
-            )
-            lease_lost.set()
-            return
-
-
 async def _retry_or_fail_job(
     session_factory: async_sessionmaker[AsyncSession],
     *,
@@ -924,7 +402,7 @@ async def _retry_or_fail_job(
         now = utc_now()
         if job.cancel_requested_at is not None:
             # 取消请求优先于晚到的 Runtime/浏览器错误；不能把取消任务覆盖成失败。
-            await transition_owned_running_job(
+            transitioned = await transition_owned_running_job(
                 session,
                 AiPageMutationJob,
                 job_id=database_id,
@@ -934,7 +412,14 @@ async def _retry_or_fail_job(
                     cancel_requested_at=job.cancel_requested_at,
                 ),
                 require_active_lease=True,
+                commit=False,
             )
+            if transitioned:
+                await session.refresh(job)
+                await sync_external_task_from_domain_job(session, job=job)
+                await session.commit()
+            else:
+                await session.rollback()
             return
         if job.attempt_count < _MAX_ATTEMPTS:
             values = {
@@ -956,7 +441,7 @@ async def _retry_or_fail_job(
                 "error_code": code,
                 "error_message": message,
             }
-        await transition_owned_running_job(
+        transitioned = await transition_owned_running_job(
             session,
             AiPageMutationJob,
             job_id=database_id,
@@ -965,7 +450,14 @@ async def _retry_or_fail_job(
             # 查询完成后到状态流转前可能收到取消；条件更新确保不会反向覆盖它。
             require_not_cancelled=True,
             require_active_lease=True,
+            commit=False,
         )
+        if transitioned:
+            await session.refresh(job)
+            await sync_external_task_from_domain_job(session, job=job)
+            await session.commit()
+        else:
+            await session.rollback()
 
 
 async def _transition_job_failed(
@@ -985,7 +477,7 @@ async def _transition_job_failed(
         now = utc_now()
         if job.cancel_requested_at is not None:
             # 取消与权限校验失败并发时，用户的取消语义优先。
-            await transition_owned_running_job(
+            transitioned = await transition_owned_running_job(
                 session,
                 AiPageMutationJob,
                 job_id=database_id,
@@ -995,9 +487,16 @@ async def _transition_job_failed(
                     cancel_requested_at=job.cancel_requested_at,
                 ),
                 require_active_lease=True,
+                commit=False,
             )
+            if transitioned:
+                await session.refresh(job)
+                await sync_external_task_from_domain_job(session, job=job)
+                await session.commit()
+            else:
+                await session.rollback()
             return
-        await transition_owned_running_job(
+        transitioned = await transition_owned_running_job(
             session,
             AiPageMutationJob,
             job_id=database_id,
@@ -1013,7 +512,14 @@ async def _transition_job_failed(
             },
             require_not_cancelled=True,
             require_active_lease=True,
+            commit=False,
         )
+        if transitioned:
+            await session.refresh(job)
+            await sync_external_task_from_domain_job(session, job=job)
+            await session.commit()
+        else:
+            await session.rollback()
 
 
 async def _transition_job_cancelled(
@@ -1026,14 +532,22 @@ async def _transition_job_cancelled(
 
     async with session_factory() as session:
         now = utc_now()
-        await transition_owned_running_job(
+        transitioned = await transition_owned_running_job(
             session,
             AiPageMutationJob,
             job_id=database_id,
             worker_id=worker_id,
             values=_cancelled_job_transition_values(now=now),
             require_active_lease=True,
+            commit=False,
         )
+        if transitioned:
+            job = await session.get(AiPageMutationJob, database_id)
+            if job is not None:
+                await sync_external_task_from_domain_job(session, job=job)
+            await session.commit()
+        else:
+            await session.rollback()
 
 
 async def _transition_cancel_requested_job_if_owned(
@@ -1055,7 +569,7 @@ async def _transition_cancel_requested_job_if_owned(
         )
         if job is None:
             return False
-        return await transition_owned_running_job(
+        transitioned = await transition_owned_running_job(
             session,
             AiPageMutationJob,
             job_id=database_id,
@@ -1065,70 +579,21 @@ async def _transition_cancel_requested_job_if_owned(
                 cancel_requested_at=job.cancel_requested_at,
             ),
             require_active_lease=True,
+            commit=False,
         )
-
-
-def _batch_run_has_no_cancellation_request():
-    """构造关联条件：只有 run 未收到取消请求时，Batch 才可标记完成。"""
-
-    return (
-        select(AiAgentRun.run_id)
-        .where(
-            AiAgentRun.run_id == AiPageMutationBatch.run_id,
-            AiAgentRun.cancel_requested_at.is_(None),
-        )
-        .exists()
-    )
-
-
-async def _mark_claimed_batch_cancelled_if_requested(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    batch_id: str,
-    worker_id: str,
-    lease_generation: int,
-) -> bool:
-    """由续跑租约拥有者在模型调用返回后收敛已取消的 Batch。"""
-
-    now = utc_now()
-    fence = PageMutationContinuationWriteFence(
-        batch_id=batch_id,
-        worker_id=worker_id,
-        lease_generation=lease_generation,
-    )
-    cancellation_requested = (
-        select(AiAgentRun.run_id)
-        .where(
-            AiAgentRun.run_id == AiPageMutationBatch.run_id,
-            AiAgentRun.cancel_requested_at.is_not(None),
-        )
-        .exists()
-    )
-    async with session_factory() as session:
-        result = await session.execute(
-            update(AiPageMutationBatch)
-            .where(*fence.batch_conditions(now), cancellation_requested)
-            .values(
-                status="cancelled",
-                finished_at=now,
-                worker_id=None,
-                lease_expires_at=None,
-                heartbeat_at=None,
-                updated_at=now,
-            )
-            .execution_options(synchronize_session=False)
-        )
-        if int(result.rowcount or 0) != 1:
+        if transitioned:
+            await session.refresh(job)
+            await sync_external_task_from_domain_job(session, job=job)
+            await session.commit()
+        else:
             await session.rollback()
-            return False
-        await session.commit()
-        return True
+        return transitioned
 
 
 async def _reconcile_cancelled_and_orphaned_jobs(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """传播 run 取消/终态，但不提前释放运行中 Job 或续跑 Batch 的租约。"""
+    """传播 run 取消/终态，但不提前释放运行中 Job 的租约。"""
 
     now = utc_now()
     async with session_factory() as session:
@@ -1202,8 +667,7 @@ async def _reconcile_cancelled_and_orphaned_jobs(
                 .execution_options(synchronize_session=False)
             )
         if orphaned_pending_batch_ids:
-            # pending Batch 没有协调器所有者，可以直接结束；resuming Batch 必须
-            # 留给当前租约拥有者完成收尾，不能由巡检任务抢先释放租约。
+            # 页面 Batch 只负责分组；续跑与 Requirement 由统一 external 状态机管理。
             await session.execute(
                 update(AiPageMutationBatch)
                 .where(
@@ -1222,6 +686,12 @@ async def _reconcile_cancelled_and_orphaned_jobs(
                 )
                 .execution_options(synchronize_session=False)
             )
+        if orphaned_pending_job_ids or orphaned_running_job_ids or orphaned_pending_batch_ids:
+            for job_id in (*orphaned_pending_job_ids,):
+                job = await session.get(AiPageMutationJob, int(job_id))
+                if job is not None:
+                    await sync_external_task_from_domain_job(session, job=job)
+            await session.commit()
         cancelling_runs = list(
             (
                 await session.scalars(
@@ -1232,8 +702,6 @@ async def _reconcile_cancelled_and_orphaned_jobs(
                 )
             ).all()
         )
-        if orphaned_pending_job_ids or orphaned_running_job_ids or orphaned_pending_batch_ids:
-            await session.commit()
     for run_id in cancelling_runs:
         async with session_factory() as session:
             current_run = await session.scalar(
@@ -1292,149 +760,20 @@ async def _reconcile_cancelled_and_orphaned_jobs(
                 )
                 .execution_options(synchronize_session=False)
             )
-            # resuming Batch 的 worker_id/lease 字段刻意不在此处修改。运行中的
-            # 模型续跑会通过 run.cancel_requested_at 感知取消，并由租约拥有者在
-            # 真实停止后完成 Batch 终态迁移。
+            cancelled_jobs = list(
+                (
+                    await session.scalars(
+                        select(AiPageMutationJob).where(AiPageMutationJob.run_id == current_run.run_id)
+                    )
+                ).all()
+            )
+            for job in cancelled_jobs:
+                await sync_external_task_from_domain_job(session, job=job)
             await PlatformAgentRuntimeStore(session, user_id=current_run.user_id).mark_terminal(
                 current_run,
                 status="cancelled",
                 content="用户停止了当前页面变更运行。",
             )
-
-
-async def _pending_external_requirement_id(session: AsyncSession, run_id: str) -> str | None:
-    """读取 Batch 对应的 pending external requirement 业务 ID。"""
-
-    requirement = await session.scalar(
-        select(AiAgentRequirement)
-        .where(
-            AiAgentRequirement.run_id == run_id,
-            AiAgentRequirement.status == "pending",
-            AiAgentRequirement.kind == "external_job",
-        )
-        .order_by(AiAgentRequirement.created_at.desc())
-    )
-    return requirement.requirement_id if requirement is not None else None
-
-
-async def _mark_batch_failed_in_session(
-    session: AsyncSession,
-    batch: AiPageMutationBatch,
-    *,
-    fence: PageMutationContinuationWriteFence | None = None,
-    code: str,
-    message: str,
-) -> None:
-    """在当前短事务中收敛无法恢复的 Batch。"""
-
-    now = utc_now()
-    if fence is not None:
-        await fence.ensure_owned(session, now=now)
-    batch.status = "failed"
-    batch.error_code = code
-    batch.error_message = message
-    batch.finished_at = now
-    batch.worker_id = None
-    batch.lease_expires_at = None
-    batch.heartbeat_at = None
-    batch.updated_at = now
-    await session.commit()
-
-
-async def _cancel_waiting_run(
-    session: AsyncSession,
-    *,
-    run: AiAgentRun,
-    batch: AiPageMutationBatch,
-    fence: PageMutationContinuationWriteFence | None = None,
-) -> None:
-    """批次被取消时同步终止 waiting_external run。"""
-
-    await PlatformAgentRuntimeStore(
-        session,
-        user_id=run.user_id,
-        write_fence=fence,
-    ).mark_terminal(
-        run,
-        status="cancelled",
-        content="页面变更任务已取消。",
-    )
-    now = utc_now()
-    if fence is not None:
-        await fence.ensure_owned(session, now=now)
-    batch.status = "cancelled"
-    batch.finished_at = now
-    batch.worker_id = None
-    batch.lease_expires_at = None
-    batch.heartbeat_at = None
-    batch.updated_at = now
-    await session.commit()
-
-
-async def _fail_waiting_run(
-    session: AsyncSession,
-    *,
-    run: AiAgentRun,
-    batch: AiPageMutationBatch,
-    fence: PageMutationContinuationWriteFence | None = None,
-    code: str,
-    message: str,
-) -> None:
-    """权限等致命错误同时终止 Batch 与 run。"""
-
-    await PlatformAgentRuntimeStore(
-        session,
-        user_id=run.user_id,
-        write_fence=fence,
-    ).mark_terminal(
-        run,
-        status="failed",
-        error_code=code,
-        error_message=message,
-    )
-    now = utc_now()
-    if fence is not None:
-        await fence.ensure_owned(session, now=now)
-    batch.status = "failed"
-    batch.error_code = code
-    batch.error_message = message
-    batch.finished_at = now
-    batch.worker_id = None
-    batch.lease_expires_at = None
-    batch.heartbeat_at = None
-    batch.updated_at = now
-    await session.commit()
-
-
-async def _fail_claimed_batch(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    batch_id: str,
-    worker_id: str,
-    lease_generation: int,
-    code: str,
-    message: str,
-) -> None:
-    """自动续跑异常时只允许租约拥有者收敛 Batch，并终止仍在等待的 run。"""
-
-    fence = PageMutationContinuationWriteFence(
-        batch_id=batch_id,
-        worker_id=worker_id,
-        lease_generation=lease_generation,
-    )
-    async with session_factory() as session:
-        batch = await session.scalar(
-            select(AiPageMutationBatch).where(*fence.batch_conditions(utc_now()))
-        )
-        if batch is None:
-            return
-        run = await session.get(AiAgentRun, batch.run_id)
-        if run is not None and run.status not in {"completed", "cancelled", "failed"}:
-            # continuation 已把 run 切为 running 后再抛错时也必须收敛终态，
-            # 否则过期 Batch 会失去 waiting_external 领取条件并永久卡住。
-            await _fail_waiting_run(session, run=run, batch=batch, fence=fence, code=code, message=message)
-            return
-        await _mark_batch_failed_in_session(session, batch, fence=fence, code=code, message=message)
 
 
 def _is_fatal_job_error(code: str | None) -> bool:

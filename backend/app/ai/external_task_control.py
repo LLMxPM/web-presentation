@@ -163,6 +163,62 @@ async def transition_external_task(
         task.heartbeat_at = None
 
 
+async def sync_external_task_from_domain_job(
+    session: AsyncSession,
+    *,
+    job: Any,
+) -> bool:
+    """把领域 Job 的状态、租约和结果写穿到统一 ExternalTask。
+
+    页面/图片 Job 仍作为执行租约事实源；统一 Task 是模型续跑的唯一控制面。
+    本函数是领域→外部的投影，允许按领域终态直接收敛，不套用人工状态机迁移表。
+    调用方在领域状态迁移后调用，并负责在同一事务提交。
+    """
+
+    task = await session.scalar(
+        select(AiAgentExternalTask).where(
+            AiAgentExternalTask.run_id == job.run_id,
+            AiAgentExternalTask.tool_call_id == job.tool_call_id,
+        )
+    )
+    if task is None:
+        return False
+    domain_status = str(getattr(job, "status", "") or "")
+    # 页面用 succeeded/failed，图片用 completed/error；统一映射到外部任务词表。
+    mapped = {
+        "pending": "pending",
+        "running": "running",
+        "waiting_provider": "waiting_provider",
+        "succeeded": "succeeded",
+        "completed": "succeeded",
+        "failed": "failed",
+        "error": "failed",
+        "cancelled": "cancelled",
+    }.get(domain_status)
+    if mapped is None:
+        return False
+    now = utc_now()
+    if task.status != mapped:
+        task.status = mapped
+        task.progress_at = now
+    task.result_json = getattr(job, "result_json", None)
+    task.error_code = getattr(job, "error_code", None)
+    task.error_message = getattr(job, "error_message", None)
+    task.attempt_count = int(getattr(job, "attempt_count", 0) or 0)
+    if mapped == "running":
+        task.worker_id = getattr(job, "worker_id", None)
+        task.lease_expires_at = getattr(job, "lease_expires_at", None)
+        task.heartbeat_at = getattr(job, "heartbeat_at", None)
+    else:
+        task.worker_id = None
+        task.lease_expires_at = None
+        task.heartbeat_at = None
+    if mapped in {"succeeded", "failed", "cancelled"}:
+        finished_at = getattr(job, "finished_at", None)
+        task.finished_at = finished_at or now
+    return True
+
+
 async def consume_external_batch_results(
     session: AsyncSession,
     *,
