@@ -183,6 +183,51 @@ async def test_run_project_build_job_should_requeue_then_fail_on_budget(
 
 
 @pytest.mark.asyncio
+async def test_uncertain_build_response_should_wait_for_lease_before_retry(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """构建中上传失败返回 503 后保留 attempt，待租约过期才允许重派。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
+    job_id = job_payload["id"]
+
+    async def fake_dispatch_failure(self, **kwargs):  # noqa: ANN001, ARG001
+        raise AppException(
+            status_code=503,
+            code="BUILD_ARTIFACT_UPLOAD_FAILED",
+            detail="产物上传失败。",
+            data={"dispatch_may_have_started": True},
+        )
+
+    monkeypatch.setattr(
+        "app.services.project_build_service.RuntimeBuildClient.dispatch_project_build",
+        fake_dispatch_failure,
+    )
+
+    await run_project_build_job(job_id)
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        assert job.status == "running"
+        assert job.attempt_count == 1
+        assert job.attempt_id is not None
+        assert job.lease_expires_at is not None
+        assert job.lease_expires_at > utc_now()
+        job.lease_expires_at = utc_now() - timedelta(seconds=1)
+        await session.commit()
+
+    async with get_session_factory()() as session:
+        assert await recover_expired_build_jobs(session) == 1
+    async with get_session_factory()() as session:
+        recovered = await session.get(ProjectBuildJob, job_id)
+        assert recovered is not None
+        assert recovered.status == "pending"
+        assert recovered.attempt_id is None
+
+
+@pytest.mark.asyncio
 async def test_run_project_build_job_should_fail_immediately_past_deadline(
     authenticated_client: AsyncClient,
     monkeypatch,
@@ -412,7 +457,7 @@ async def test_recover_interrupted_build_jobs_on_startup_should_respect_budget(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """启动收敛应按重试预算回 pending 或标 failed。"""
+    """启动收敛应按重试预算回 pending 或标 failed，并作废 attempt。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
     job_payload = await _create_build_job(
@@ -427,6 +472,9 @@ async def test_recover_interrupted_build_jobs_on_startup_should_respect_budget(
     async with get_session_factory()() as session:
         claimed = await ProjectBuildService(session, lease_owner="worker-a").claim_job(job_id=job_id)
         assert claimed is not None
+        # 模拟租约过期后的进程中断，避免启动收敛抢走其它副本健康租约。
+        claimed.lease_expires_at = utc_now() - timedelta(seconds=1)
+        await session.commit()
 
     session_factory = get_session_factory()
     recovered = await recover_interrupted_build_jobs_on_startup(session_factory)
@@ -437,3 +485,151 @@ async def test_recover_interrupted_build_jobs_on_startup_should_respect_budget(
         assert job is not None
         # attempt_count=1 已达 max_attempts=1，启动收敛直接标 failed。
         assert job.status == "failed"
+        assert job.attempt_id is None
+        assert job.lease_owner is None
+
+
+@pytest.mark.asyncio
+async def test_startup_recovery_should_not_steal_healthy_lease_from_other_replica(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """任意 Backend 启动都不得重置其它副本租约仍有效的 running 构建。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
+    job_id = job_payload["id"]
+
+    async with get_session_factory()() as session:
+        claimed = await ProjectBuildService(session, lease_owner="other-replica-worker").claim_job(job_id=job_id)
+        assert claimed is not None
+        assert claimed.lease_expires_at is not None
+        assert claimed.lease_expires_at > utc_now()
+
+    session_factory = get_session_factory()
+    recovered = await recover_interrupted_build_jobs_on_startup(session_factory)
+    assert recovered == 0
+
+    async with session_factory() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        assert job.status == "running"
+        assert job.lease_owner == "other-replica-worker"
+        assert job.attempt_id == claimed.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_startup_recovery_force_owner_prefix_only_touches_matching_owner(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """force_owner_prefix 只回收本进程前缀任务，不碰其它 owner 的健康租约。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
+    job_id = job_payload["id"]
+
+    async with get_session_factory()() as session:
+        claimed = await ProjectBuildService(session, lease_owner="local-host:1:abc").claim_job(job_id=job_id)
+        assert claimed is not None
+
+    session_factory = get_session_factory()
+    recovered = await recover_interrupted_build_jobs_on_startup(
+        session_factory,
+        owner_prefix="local-host:",
+    )
+    assert recovered == 1
+
+    async with session_factory() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        assert job.status == "pending"
+        assert job.attempt_id is None
+        assert job.lease_owner is None
+
+
+@pytest.mark.asyncio
+async def test_recover_expired_should_settle_success_when_artifact_present(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """回收时若产物已提升，应按成功收敛，不得清空产物再重派。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
+    job_id = job_payload["id"]
+
+    async with get_session_factory()() as session:
+        claimed = await ProjectBuildService(session, lease_owner="worker-a").claim_job(job_id=job_id)
+        assert claimed is not None
+        claimed.lease_expires_at = utc_now() - timedelta(seconds=1)
+        # 模拟「超时前产物已上传、终态未写入」的崩溃窗口。
+        claimed.artifact_storage_key = "build-artifacts/1/1/attempts/x/dist.zip"
+        claimed.artifact_sha256 = "abc"
+        await session.commit()
+
+    async with get_session_factory()() as session:
+        recovered = await recover_expired_build_jobs(session)
+    assert recovered == 1
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.artifact_storage_key == "build-artifacts/1/1/attempts/x/dist.zip"
+        assert job.artifact_sha256 == "abc"
+
+
+@pytest.mark.asyncio
+async def test_recover_expired_should_invalidate_attempt_and_artifact_metadata(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """无产物回收后 attempt_id 必须为空，且不得残留产物指针。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
+    job_id = job_payload["id"]
+
+    async with get_session_factory()() as session:
+        claimed = await ProjectBuildService(session, lease_owner="worker-a").claim_job(job_id=job_id)
+        assert claimed is not None
+        claimed.lease_expires_at = utc_now() - timedelta(seconds=1)
+        await session.commit()
+
+    async with get_session_factory()() as session:
+        recovered = await recover_expired_build_jobs(session)
+    assert recovered == 1
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        assert job.status == "pending"
+        assert job.attempt_id is None
+        assert job.artifact_storage_key is None
+        assert job.artifact_sha256 is None
+
+
+@pytest.mark.asyncio
+async def test_assert_attempt_fence_should_reject_when_lease_owner_missing(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """无租约持有者时围栏必须拒绝，避免死 attempt 在 pending 行上提升产物。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
+    job_id = job_payload["id"]
+
+    async with get_session_factory()() as session:
+        service = ProjectBuildService(session, lease_owner="worker-a")
+        job = await service.get_job_by_id(job_id)
+        job.status = "pending"
+        job.attempt_id = "dead-attempt"
+        job.lease_owner = None
+        job.lease_expires_at = None
+        await session.commit()
+
+        with pytest.raises(AppException) as exc_info:
+            service.assert_attempt_fence(job=job, attempt_id="dead-attempt", lease_owner="worker-a")
+        assert exc_info.value.code == "BUILD_LEASE_MISSING"

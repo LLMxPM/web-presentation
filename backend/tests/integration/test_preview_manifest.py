@@ -5,7 +5,7 @@ from httpx import AsyncClient
 
 async def test_preview_artifact_manifest_should_map_asset_name_to_file_hash(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """预览 artifact 清单应写入 asset.name -> file_hash 映射，供 Runtime 严格按逻辑名解析资源。"""
 
@@ -79,7 +79,7 @@ async def test_preview_artifact_manifest_should_map_asset_name_to_file_hash(
 
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     manifest = manifest_response.json()
@@ -164,7 +164,7 @@ async def test_preview_artifact_manifest_should_reject_request_without_runtime_s
 
 async def test_page_version_preview_artifact_should_use_historical_page_content(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """历史版本单页预览应以内存物化后的版本源码与备注作为入口内容。"""
 
@@ -239,7 +239,7 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
 
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     manifest = manifest_response.json()
@@ -249,7 +249,7 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
     module_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
         params={"path": module_path},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert module_response.status_code == 200
     assert module_response.text == "<template><div>历史版本 V1</div></template>"
@@ -257,7 +257,7 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
     batch_response = await authenticated_client.post(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules/batch",
         json={"paths": [module_path]},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert batch_response.status_code == 200, batch_response.text
     assert batch_response.json() == {
@@ -267,7 +267,7 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
     missing_batch_response = await authenticated_client.post(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules/batch",
         json={"paths": ["src/views/not-allowed.vue"]},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert missing_batch_response.status_code == 404
     assert missing_batch_response.json()["code"] == "MODULE_NOT_FOUND"
@@ -275,7 +275,7 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
     oversized_batch_response = await authenticated_client.post(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules/batch",
         json={"paths": [f"src/views/page-{index}.vue" for index in range(129)]},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert oversized_batch_response.status_code == 422
 
@@ -287,7 +287,7 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     assert config_bundle_response.json()["routes"]["routes"][0]["meta"]["speakerNotes"] == "历史版本 V1 备注"
@@ -354,7 +354,7 @@ async def test_asset_upload_should_reject_duplicate_name_in_same_workspace(
 
 async def test_preview_artifact_config_bundle_should_translate_routes_to_component_paths(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """预览 artifact 配置包应把结构化项目路由转译成 Runtime 可加载的 component 路径。"""
 
@@ -418,7 +418,7 @@ async def test_preview_artifact_config_bundle_should_translate_routes_to_compone
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     config_bundle = config_bundle_response.json()

@@ -58,8 +58,13 @@ def build_code_check_failed_result(
     message: str,
     source: str = "backend",
     canonical_diff: str | None = None,
+    retryable: bool = False,
 ) -> dict[str, object]:
-    """构造统一代码检查失败响应，供只读检查和 apply 内置校验复用。"""
+    """构造统一代码检查失败响应，供只读检查和 apply 内置校验复用。
+
+    `retryable=True` 表示瞬态基础设施失败（Redis 抖动、Runtime 满载、超时等），
+    检查结果缓存不得把它当成稳定「代码检查失败」长期沉淀。
+    """
 
     return {
         "success": False,
@@ -69,6 +74,7 @@ def build_code_check_failed_result(
         "message": message,
         "patch_repaired": False,
         "canonical_diff": canonical_diff,
+        "retryable": retryable,
         "diagnostics": [
             {
                 "severity": "error",
@@ -157,7 +163,7 @@ class CodeCheckService:
                     snapshot_profile="page_diagnostics",
                 )
             except AppException as exc:
-                return self._failed_result(code=exc.code, message=exc.detail)
+                return self._failed_result_from_exception(exc)
             await self._release_session_before_diagnostics()
             return await self._dispatch_diagnostics(
                 artifact_id=preview.artifact_id,
@@ -250,7 +256,7 @@ class CodeCheckService:
                     snapshot_profile="page_diagnostics",
                 )
             except AppException as exc:
-                return self._failed_result(code=exc.code, message=exc.detail)
+                return self._failed_result_from_exception(exc)
             await self._release_session_before_diagnostics()
             return await self._dispatch_diagnostics(
                 artifact_id=preview.artifact_id,
@@ -641,10 +647,33 @@ class CodeCheckService:
         )
 
     @staticmethod
-    def _failed_result(*, code: str, message: str, source: str = "backend") -> dict[str, object]:
+    def _failed_result(
+        *,
+        code: str,
+        message: str,
+        source: str = "backend",
+        retryable: bool = False,
+    ) -> dict[str, object]:
         """构造统一失败响应。"""
 
-        return build_code_check_failed_result(code=code, message=message, source=source)
+        return build_code_check_failed_result(
+            code=code,
+            message=message,
+            source=source,
+            retryable=retryable,
+        )
+
+    @staticmethod
+    def _failed_result_from_exception(exc: AppException) -> dict[str, object]:
+        """把 AppException 归一为检查失败结果；瞬态基础设施错误必须标记 retryable。"""
+
+        from app.services.code_check_result_cache import is_transient_infrastructure_error
+
+        return CodeCheckService._failed_result(
+            code=exc.code,
+            message=exc.detail,
+            retryable=is_transient_infrastructure_error(exc),
+        )
 
 
 def _compile_stage_status(result: Mapping[str, object]) -> str:

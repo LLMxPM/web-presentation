@@ -75,7 +75,7 @@ export default function runtimeVisualEdit(options: RuntimeVisualEditOptions = {}
           await verifyRuntimeServiceToken(String(req.headers[serviceTokenHeaderName] || ''), {
             jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
             audience: options.serviceAudience || process.env.RUNTIME_SERVICE_TOKEN_AUDIENCE || DEFAULT_SERVICE_AUDIENCE,
-            requiredScope: 'runtime-artifact-read',
+            requiredScope: 'runtime-internal-tool',
           })
           const payload = await readJsonBody(req, PAGE_VISUAL_EDIT_MAX_REQUEST_BYTES)
           // 轻量工具独立通道：不与完整编译诊断共享容量，短请求不排在长编译之后。

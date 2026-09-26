@@ -36,6 +36,7 @@ test-results/
 **/.env.*
 !**/.env.example
 !**/.env.*.example
+deploy/runtime.env
 
 backend/build_artifacts/
 backend/data/

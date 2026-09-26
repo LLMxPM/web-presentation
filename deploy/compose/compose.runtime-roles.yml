@@ -3,6 +3,9 @@
 
 # 使用前请至少修改：
 # - 复制 deploy/.env.example 为 deploy/.env，替换密钥、域名和外部依赖地址（同 compose.prod.yml）。
+# - 复制 deploy/runtime.env.example 为 deploy/runtime.env，并按同一套域名/audience/JWKS 修改；
+#   Runtime 三角色只读 runtime.env，不读 deploy/.env，避免平台密钥进入编译用户代码的容器。
+#   runtime.env 中的 RUNTIME_PUBLIC_BASE_URL / audience / 路径必须与 deploy/.env 一致。
 # - 各角色与 Renderer 的 deploy.resources.limits 以及对应的 Runtime 执行预算为示例值，
 #   必须按实测负载调整；取值依据见 docs/developer/deployment/compose.md「分角色单机」。
 # - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
@@ -25,6 +28,16 @@ x-production-env: &production-env
   env_file:
     # 相对本文件目录 deploy/compose/，读取 deploy/.env
     - ../.env
+
+# Runtime 角色只注入非密钥配置。不得复用 *production-env：runtime-build / runtime-check
+# 会编译用户手写 SFC，Vite transform/build 可执行作者代码；DATABASE_URL、REDIS_URL、
+# AI_SECRET_ENCRYPTION_KEY、RUNTIME_RSA_PRIVATE_KEY 等平台密钥绝不能进入这些容器。
+# 签名私钥只挂 Backend（RUNTIME_RSA_PRIVATE_KEY_FILE / secret），Runtime 仅读 JWKS。
+# 可配置项（域名、audience、JWKS、路径）从 ../runtime.env 读取，禁止在本文件写死示例域名。
+x-runtime-role-env: &runtime-role-env
+  env_file:
+    # 相对本文件目录 deploy/compose/，读取 deploy/runtime.env（复制 runtime.env.example）。
+    - ../runtime.env
 
 # 三个角色容器共用的就绪探针；健康检查只看本进程，不依赖 Backend。
 x-runtime-role-healthcheck: &runtime-role-healthcheck
@@ -125,7 +138,8 @@ services:
           memory: 4g
 
   runtime-preview:
-    <<: *production-env
+    # 不复用 *production-env：预览角色从 ../runtime.env 读非密钥配置，不注入平台密钥。
+    <<: *runtime-role-env
     image: llmxpm/web-runtime-vue:latest
     restart: unless-stopped
     environment:
@@ -157,7 +171,7 @@ services:
   # upstream runtime_preview_pool 的第二条 server，并 reload gateway。
   # 注意：runtime-preview-2 不共享 runtime 别名，避免与单实例语义混淆。
   # runtime-preview-2:
-  #   <<: *production-env
+  #   <<: *runtime-role-env
   #   image: llmxpm/web-runtime-vue:latest
   #   restart: unless-stopped
   #   environment:
@@ -180,7 +194,8 @@ services:
   #         memory: 2g
 
   runtime-build:
-    <<: *production-env
+    # 不复用 *production-env：构建角色编译用户手写 SFC，绝不能注入 DB/Redis/AI/签名私钥。
+    <<: *runtime-role-env
     image: llmxpm/web-runtime-vue:latest
     restart: unless-stopped
     environment:
@@ -209,7 +224,8 @@ services:
           memory: 8g
 
   runtime-check:
-    <<: *production-env
+    # 不复用 *production-env：检查角色同样编译用户手写 SFC，从 ../runtime.env 读非密钥配置。
+    <<: *runtime-role-env
     image: llmxpm/web-runtime-vue:latest
     restart: unless-stopped
     environment:

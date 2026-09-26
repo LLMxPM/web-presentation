@@ -31,8 +31,9 @@ SQLite 轻量版使用 `llmxpm/web-presentation:sqlite-lite`，在 `platform-lit
 | `deploy/compose/compose.yml` | 外部 PostgreSQL/Redis 简化版，启动 `platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
 | `deploy/compose/compose.with-deps.yml` | 内置 PostgreSQL/Redis 简化版，启动 `postgres`、`redis`、`platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
 | `deploy/compose/compose.prod.yml` | production env 版，拆分 `backend-migrate`、`backend`、`runtime`、`renderer` 与 `gateway`，通过 `env_file: .env` 读取生产环境变量 |
-| `deploy/compose/compose.runtime-roles.yml` | 分角色单机版，`runtime-preview` / `runtime-build` / `runtime-check` 各一实例，附每角色 CPU/内存 limits 与执行预算，Gateway 只代理预览 |
-| `deploy/.env.example` | 仅供 production env 版与分角色单机版复制为 `deploy/.env` 使用 |
+| `deploy/compose/compose.runtime-roles.yml` | 分角色单机版，`runtime-preview` / `runtime-build` / `runtime-check` 各一实例，Backend 读取 `deploy/.env`，Runtime 角色只读取 `deploy/runtime.env`，Gateway 只代理预览 |
+| `deploy/.env.example` | 供 production env 版与分角色单机版的 Backend 复制为 `deploy/.env` 使用 |
+| `deploy/runtime.env.example` | 供分角色单机版的 Runtime 复制为 `deploy/runtime.env` 使用，不包含平台密钥 |
 | `deploy/docker/nginx/web-presentation.conf` | 平台镜像内置 Gateway 配置，托管 Editor 并代理 Backend 与 Runtime |
 
 简化版中，`platform` 容器同时运行 Backend 与 Gateway。`runtime` 默认只在 compose 内网访问。`platform` 容器内通过 `extra_hosts` 把 `backend:8000` 指向本机 Backend，compose 网络中通过别名把 `backend:8000` 暴露给 Runtime 回源。

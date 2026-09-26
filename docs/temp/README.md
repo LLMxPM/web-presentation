@@ -8,13 +8,14 @@
 | 文档 | 说明 |
 | :--- | :--- |
 | [`architecture-assessment-2026-09-25.md`](./architecture-assessment-2026-09-25.md) | **现行架构评估**。对 09-24 稿做批判性复核与重估：上调 C0 截图身份、任务模型碎片化，重排优先序；基线 `c6c9b1a`。 |
+| [`review-multi-deployment-e2efe6c-head.md`](./review-multi-deployment-e2efe6c-head.md) | **落地后评审（2026-09-25）**。`e2efe6c..HEAD` 把 plan T0-1…T4-3 一次性落地的代码评审：门禁实测、3 Critical / 5 Major、声称 vs 实际、修复顺序；基线 `0896cc7`。 |
 
 ## 规划与实施状态
 
 | 文档 | 说明 |
 | :--- | :--- |
 | [`plans/lite-memory-adapter.md`](./plans/lite-memory-adapter.md) | Lite `memory://` 运行态适配器。**代码已实施（2026-09-25）**，见文末实施记录；未覆盖项（构建产物下载、跨宿主基线、Renderer 实链）仍是缺口。 |
-| [`plans/runtime-multi-deployment-scaling-plan.md`](./plans/runtime-multi-deployment-scaling-plan.md) | Runtime 多部署形态与横向扩容路线图。**未实施**：09-25 依 `e2efe6c` 复核修订，改为「先计算治理与角色隔离 → 计算池扩容 → Preview 多副本」，含第 10 节任务清单；角色拆分、预览授权可恢复、构建持久领取均未开始。 |
+| [`plans/runtime-multi-deployment-scaling-plan.md`](./plans/runtime-multi-deployment-scaling-plan.md) | Runtime 多部署形态与横向扩容路线图。**T0-1…T4-3 已于 `e2efe6c..HEAD` 落地（2026-09-25）**，见文末实施记录与 [`review-multi-deployment-e2efe6c-head.md`](./review-multi-deployment-e2efe6c-head.md)：3 Critical / 5 Major 待修，多副本拓扑与跨副本 E2E 仍未就绪。 |
 
 ## 归档（历史）
 

@@ -136,12 +136,12 @@ class RuntimeVisualEditClient:
 
         headers = {
             "X-Request-ID": get_current_request_id(),
-            RUNTIME_SERVICE_TOKEN_HEADER: TokenService.generate_runtime_service_access_token(
+            RUNTIME_SERVICE_TOKEN_HEADER: TokenService.generate_runtime_internal_tool_token(
                 expires_in_seconds=900,
             ),
         }
         return await request_runtime_role_json(
-            role="check",
+            role="light",
             method="POST",
             path=path,
             settings=self.settings,

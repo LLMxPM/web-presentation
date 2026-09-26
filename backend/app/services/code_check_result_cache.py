@@ -67,7 +67,8 @@ class CodeCheckCacheMetrics:
 def is_transient_check_result(result: object) -> bool:
     """判断检查结果是否为瞬态基础设施失败。
 
-    超时、Renderer 不可用、Runtime 不可用等结果不得作为稳定「代码检查失败」长期缓存。
+    超时、Renderer 不可用、Runtime 不可用、Redis 抖动等结果不得作为稳定
+    「代码检查失败」长期缓存——那会把完全正确的源码误判成有问题。
     """
 
     if not isinstance(result, Mapping):
@@ -84,9 +85,28 @@ def is_transient_check_result(result: object) -> bool:
     diagnostics = result.get("diagnostics")
     if isinstance(diagnostics, list):
         for item in diagnostics:
-            if isinstance(item, Mapping) and item.get("source") == "infrastructure":
+            if not isinstance(item, Mapping):
+                continue
+            if item.get("source") == "infrastructure":
+                return True
+            diag_code = str(item.get("code") or "")
+            if diag_code in _TRANSIENT_DIAGNOSTIC_CODES:
                 return True
     return False
+
+
+_TRANSIENT_DIAGNOSTIC_CODES = frozenset(
+    {
+        "RUNTIME_STATE_UNAVAILABLE",
+        "RUNTIME_CAPACITY_EXCEEDED",
+        "RUNTIME_ADMISSION_FULL",
+        "RUNTIME_TARGETS_UNAVAILABLE",
+        "RUNTIME_DIAGNOSTICS_FAILED",
+        "RENDER_SERVICE_UNAVAILABLE",
+        "PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE",
+        "COMPONENT_CHECK_UNAVAILABLE",
+    }
+)
 
 
 def is_transient_infrastructure_error(exc: BaseException) -> bool:
@@ -102,6 +122,7 @@ def is_transient_infrastructure_error(exc: BaseException) -> bool:
         "RUNTIME_CAPACITY_EXCEEDED",
         "RUNTIME_ADMISSION_FULL",
         "RUNTIME_TARGETS_UNAVAILABLE",
+        "RUNTIME_STATE_UNAVAILABLE",
         "RENDER_SERVICE_UNAVAILABLE",
         "PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE",
         "COMPONENT_CHECK_UNAVAILABLE",

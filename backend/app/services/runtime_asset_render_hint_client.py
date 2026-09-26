@@ -55,7 +55,7 @@ class RuntimeAssetRenderHintClient:
             payload,
             headers={
                 "X-Request-ID": get_current_request_id(),
-                RUNTIME_SERVICE_TOKEN_HEADER: TokenService.generate_runtime_service_access_token(
+                RUNTIME_SERVICE_TOKEN_HEADER: TokenService.generate_runtime_internal_tool_token(
                     expires_in_seconds=900,
                 ),
             },
@@ -95,7 +95,7 @@ class RuntimeAssetRenderHintClient:
         """通过选址器调用 Runtime 轻量测量入口，满载自动换副本。"""
 
         return await request_runtime_role_json(
-            role="check",
+            role="light",
             method=method,
             path=path,
             settings=self.settings,

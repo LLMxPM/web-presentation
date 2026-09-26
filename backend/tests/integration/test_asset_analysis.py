@@ -109,7 +109,7 @@ async def test_icon_asset_upload_should_generate_structured_analysis_metadata(
 
 async def test_project_preview_icon_config_should_include_analysis_for_theme_project_icon(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """整项目预览下发的 static_icons 应携带主题项目图标的分析元数据。"""
 
@@ -178,7 +178,7 @@ async def test_project_preview_icon_config_should_include_analysis_for_theme_pro
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     static_icons = config_bundle_response.json()["icons"]["static_icons"]
@@ -193,7 +193,7 @@ async def test_project_preview_icon_config_should_include_analysis_for_theme_pro
 
 async def test_project_preview_icon_config_should_include_icons_from_transitive_workspace_components(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """整项目预览应递归扫描已发布模块图，收录页面间接依赖组件里的静态图标。"""
 
@@ -296,10 +296,11 @@ import WrapperIcon from '@workspace-components/{wrapper_component["code"]}/v/1'
         json={"entry_descriptor": {"entry_type": "route", "route": "/home"}},
     )
     assert preview_response.status_code == 200
+    artifact_id = preview_response.json()["artifact_id"]
 
     config_bundle_response = await authenticated_client.get(
-        f"/internal/runtime/preview-artifacts/{preview_response.json()['artifact_id']}/config-bundle",
-        headers=runtime_service_headers,
+        f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     assert config_bundle_response.json()["icons"]["static_icons"] == [
@@ -313,7 +314,7 @@ import WrapperIcon from '@workspace-components/{wrapper_component["code"]}/v/1'
 
 async def test_component_preview_should_backfill_legacy_icon_analysis_metadata(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """老 icon 资产缺少 analysis_metadata 时，组件预览应补齐分析信息并走内联 SVG。"""
 
@@ -359,7 +360,7 @@ async def test_component_preview_should_backfill_legacy_icon_analysis_metadata(
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     static_icons = config_bundle_response.json()["icons"]["static_icons"]
@@ -391,7 +392,7 @@ async def test_component_preview_should_backfill_legacy_icon_analysis_metadata(
 
 async def test_component_preview_should_collect_icon_names_from_static_array_v_for(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """组件预览应从顶层 const 数组对象字面量和 v-for 中收集 Icon 名称。"""
 
@@ -451,7 +452,7 @@ const items = [
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     assert config_bundle_response.json()["icons"]["static_icons"] == [

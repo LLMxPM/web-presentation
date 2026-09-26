@@ -360,7 +360,7 @@ async function verifyRuntimeServiceToken(token: string, options: { jwksUrl: stri
     audience: options.audience,
   })
   const claims = payload as RuntimeServiceClaims
-  if (claims.sub !== 'runtime-service' || claims.scope !== 'runtime-artifact-read') {
+  if (claims.sub !== 'runtime-service' || claims.scope !== 'runtime-internal-tool') {
     throw new RuntimeMeasureError(401, 'RUNTIME_SERVICE_TOKEN_INVALID', 'Runtime 服务令牌缺少必需声明。')
   }
   return claims

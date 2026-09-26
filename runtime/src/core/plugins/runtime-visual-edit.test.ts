@@ -41,7 +41,7 @@ describe('runtime visual edit plugin', () => {
     joseMocks.jwtVerify.mockResolvedValue({
       payload: {
         sub: 'runtime-service',
-        scope: 'runtime-artifact-read',
+        scope: 'runtime-internal-tool',
       },
     })
   })

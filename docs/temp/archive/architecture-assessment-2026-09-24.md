@@ -3,7 +3,7 @@
 > 评估日期：2026-09-24。基线提交 `023c95c`（分支 `dev`）。  
 > 输入材料：`docs/temp/archive/` 下首轮评审与 2026-09-23/24 专项评估，以及 `e8afd67..023c95c` 提交区间的实现与文档。  
 > 判断口径：代码可确认的问题与尚未验证的风险分开表述；单机 Lite 与 PostgreSQL 部署的行为差异单独标出。  
-> 本文是 `docs/temp` 的**现行评估**；历史稿与问题状态表见 [`archive/`](./archive/)，未实施规划见 [`plans/`](./plans/)。
+> 本文是 `docs/temp` 的**现行评估**；历史稿与问题状态表见 [`archive/`](./)，未实施规划见 [`plans/`](../plans/)。
 
 ---
 
@@ -165,10 +165,10 @@ Editor (Vue) ──HTTP──► Gateway ──┬──► Backend (FastAPI 控
 | :--- | :--- | :--- |
 | **D1**：SQLite Lite 产品地位 | **已定案（2026-09-24）——长期一等公民**（选项 A） | P2 **全做**、P3 **全做**、P4/P5 **必做**。统一写重试（2b）按 D1=A **重新立项**；2d 仅有限重立（不恢复零调用点别名）；BoolInt **维持裁剪**。实现沿用 6.3.1 技术结论，见下表。 |
 | **D2**：是否触发写路径基线门 | **仍待实测** | 需 2C4G 空闲/混合两轮（`DATABASE_WRITE_PATH_METRICS_ENABLED` + `/metrics/db-write`）；未达标前不启动 Runtime 角色拆分。D1=A **不替代** D2：基线决定调度节奏怎么收，不决定 Lite 是否一等。 |
-| **Lite 运行态** | **已定案（2026-09-24）：正式支持 `memory://` 适配器** | 与真实 Redis 双后端同契约；Lite 不强制上 Redis。契约见 [`docs/developer/backend/runtime-state-adapter.md`](../../developer/backend/runtime-state-adapter.md)，实施计划见 [`plans/lite-memory-adapter.md`](./plans/lite-memory-adapter.md)。 |
+| **Lite 运行态** | **已定案（2026-09-24）：正式支持 `memory://` 适配器** | 与真实 Redis 双后端同契约；Lite 不强制上 Redis。契约见 [`docs/developer/backend/runtime-state-adapter.md`](../../developer/backend/runtime-state-adapter.md)，实施计划见 [`plans/lite-memory-adapter.md`](../plans/lite-memory-adapter.md)。 |
 | **CDP/Browserless 路线** | **已作废（2026-09-24）** | 由远程 Renderer（`renderer/` + `render-contracts`）承接浏览器执行边界。`archive/cdp.md` 仅作历史对照，**不再作为实施计划或路线图**。 |
 
-**D1=A 对已裁剪项的重立约束**（承接 [`archive/architecture-assessment-sqlite-2026-09.md`](./archive/architecture-assessment-sqlite-2026-09.md) §6.3.1）：
+**D1=A 对已裁剪项的重立约束**（承接 [`archive/architecture-assessment-sqlite-2026-09.md`](./architecture-assessment-sqlite-2026-09.md) §6.3.1）：
 
 | 原步骤 | 重立结论 | 说明 |
 | :--- | :--- | :--- |
@@ -183,7 +183,7 @@ Editor (Vue) ──HTTP──► Gateway ──┬──► Backend (FastAPI 控
 
 ## 5. 尚未验证（不可当作已有能力）
 
-- **容量基线**：RSS、OOM、SQLite 锁等待、队列年龄、P50/P95——打点入口已有，目标机两轮采集未完成（模板见 [`archive/baseline-sqlite-2026-09.md`](./archive/baseline-sqlite-2026-09.md)）。
+- **容量基线**：RSS、OOM、SQLite 锁等待、队列年龄、P50/P95——打点入口已有，目标机两轮采集未完成（模板见 [`archive/baseline-sqlite-2026-09.md`](./baseline-sqlite-2026-09.md)）。
 - **多实例联调**：共享对象存储、JWKS/签名密钥一致、AI 凭证密钥、迁移与租约跨实例——规划有清单，未验收。
 - **故障注入**：Renderer 全挂、Worker 掉线、busy_timeout 耗尽、构建进程被杀后的端到端行为。
 - **性能等价**：两阶段（编译+渲染诊断）耗时拆分；「删编译省 50%」类结论无基线，**不应采纳**。
@@ -202,7 +202,7 @@ Editor (Vue) ──HTTP──► Gateway ──┬──► Backend (FastAPI 控
 | 内外 API 机械合并 URL | 事务语义不同；先做契约矩阵。 |
 | 固定 1.5GB / 降延迟 40% 当验收 | 未验证假设。 |
 | Browserless/CDP 当作待办路线 | **已作废**。远程 Renderer 已覆盖该边界；`archive/cdp.md` 仅历史对照，不进入计划。 |
-| Runtime 多副本/角色拆分当已有 bug 清单 | 见 [`plans/runtime-multi-deployment-scaling-plan.md`](./plans/runtime-multi-deployment-scaling-plan.md)，属未实施路线图。 |
+| Runtime 多副本/角色拆分当已有 bug 清单 | 见 [`plans/runtime-multi-deployment-scaling-plan.md`](../plans/runtime-multi-deployment-scaling-plan.md)，属未实施路线图。 |
 
 ---
 
@@ -212,12 +212,12 @@ Editor (Vue) ──HTTP──► Gateway ──┬──► Backend (FastAPI 控
 
 1. **P1-Screenshot / P2-Profile**：截图指纹纳入 Runtime/Renderer/字体/Chromium 版本；`profile` 不匹配拒绝派发；发布定向失效旧截图。这是当前最高残留正确性风险。
 2. **D2 基线采集**（打点已就绪）：Lite 2C4G 空闲 10 分钟 + 混合负载各一轮。产出写路径结论后，直接喂给第 3 步的任务运行时节奏设计。
-3. **P3 任务运行时 + 2b 写重试（D1=A 重立）**：按 [`archive/architecture-assessment-sqlite-2026-09.md`](./archive/architecture-assessment-sqlite-2026-09.md) §6.4 立项；2b 以 session 工厂签名设计，不恢复旧抽象。目标验收仍用结构性判据：空闲零写 DML、`database is locked` 归零或可重试闭环、tick P95 < 轮询间隔。
-4. **P5 Lite 边界固化**：部署文档写死 Lite 能力范围（单进程、单 Backend、SQLite 卷禁止多实例）；评估 `platform-lite` 是否拆 Runtime 或至少独立重启。**运行态半边**按 [`plans/lite-memory-adapter.md`](./plans/lite-memory-adapter.md) 执行（`memory://` 契约、双后端对拍、可观测）。
+3. **P3 任务运行时 + 2b 写重试（D1=A 重立）**：按 [`archive/architecture-assessment-sqlite-2026-09.md`](./architecture-assessment-sqlite-2026-09.md) §6.4 立项；2b 以 session 工厂签名设计，不恢复旧抽象。目标验收仍用结构性判据：空闲零写 DML、`database is locked` 归零或可重试闭环、tick P95 < 轮询间隔。
+4. **P5 Lite 边界固化**：部署文档写死 Lite 能力范围（单进程、单 Backend、SQLite 卷禁止多实例）；评估 `platform-lite` 是否拆 Runtime 或至少独立重启。**运行态半边**按 [`plans/lite-memory-adapter.md`](../plans/lite-memory-adapter.md) 执行（`memory://` 契约、双后端对拍、可观测）。
 5. **P1-Build**：构建任务改持久化领取 + attempt 围栏，与页面/截图队列对齐。
 6. **P4 迁移双方言等价**：新迁移双库行为证明；与 3 并行可接受，不可无限期推迟。
 7. **P2-API 契约矩阵**：同一操作双入口对拍（权限、错误码、字段、同步/异步语义）。
-8. 多 Runtime 副本 / 角色拆分：**排在 1–3 与 D2 之后**，按 [`plans/runtime-multi-deployment-scaling-plan.md`](./plans/runtime-multi-deployment-scaling-plan.md) 增量，不重开任务模型。**不要再规划 Browserless/CDP**。
+8. 多 Runtime 副本 / 角色拆分：**排在 1–3 与 D2 之后**，按 [`plans/runtime-multi-deployment-scaling-plan.md`](../plans/runtime-multi-deployment-scaling-plan.md) 增量，不重开任务模型。**不要再规划 Browserless/CDP**。
 
 **D1=A 的长期含义（产品与工程）**
 

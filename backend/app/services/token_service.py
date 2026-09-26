@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import serialization
 import jwt
 
 from app.core.config import get_settings
+from app.core.exceptions import AppException
 from app.services.signing_identity import SigningKeyring, load_signing_keyring
 
 
@@ -280,18 +281,43 @@ class TokenService:
     def generate_runtime_service_access_token(
         cls,
         *,
-        artifact_id: str | None = None,
+        artifact_id: str,
         expires_in_seconds: int = 3600,
     ) -> str:
-        """签发供 Runtime 回源 Backend 内部 artifact 接口使用的短期服务令牌。"""
+        """签发供 Runtime 回源 Backend 内部 artifact 接口使用的短期服务令牌。
 
+        必须绑定 artifact_id：无作用域令牌不得进入 artifact 读取链路，
+        否则会抵消 artifact 绑定、对任意 artifact 有效。
+        """
+
+        normalized_artifact_id = str(artifact_id or "").strip()
+        if not normalized_artifact_id:
+            raise AppException(
+                status_code=500,
+                code="RUNTIME_SERVICE_TOKEN_ARTIFACT_REQUIRED",
+                detail="Runtime 服务令牌必须绑定 artifact_id。",
+            )
         settings = get_settings()
         payload: dict[str, Any] = {
             "aud": settings.runtime_service_token_audience,
             "scope": "runtime-artifact-read",
+            "artifact_id": normalized_artifact_id,
         }
-        if artifact_id is not None:
-            payload["artifact_id"] = str(artifact_id)
+        return cls.generate_signed_token(
+            payload,
+            expires_in_seconds=expires_in_seconds,
+            subject="runtime-service",
+        )
+
+    @classmethod
+    def generate_runtime_internal_tool_token(cls, *, expires_in_seconds: int = 900) -> str:
+        """签发供 Backend 调用 Runtime 轻量内部工具的短期令牌，不绑定 artifact。"""
+
+        settings = get_settings()
+        payload: dict[str, Any] = {
+            "aud": settings.runtime_service_token_audience,
+            "scope": "runtime-internal-tool",
+        }
         return cls.generate_signed_token(
             payload,
             expires_in_seconds=expires_in_seconds,

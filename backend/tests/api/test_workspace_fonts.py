@@ -159,7 +159,7 @@ async def test_workspace_font_config_should_reject_duplicate_font_face_signature
 
 async def test_preview_artifact_config_bundle_should_include_resolved_workspace_fonts(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """预览 artifact 配置包应根据主题库引用写入实际字体配置。"""
 
@@ -254,7 +254,7 @@ async def test_preview_artifact_config_bundle_should_include_resolved_workspace_
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     config_bundle = config_bundle_response.json()
@@ -267,7 +267,7 @@ async def test_preview_artifact_config_bundle_should_include_resolved_workspace_
 
 async def test_preview_artifact_config_bundle_should_include_declared_non_theme_font(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """页面源码显式声明的非主题字体应进入预览 artifact 字体包。"""
 
@@ -321,9 +321,10 @@ const titleFont = useAssetFontFamily('BrandSerif')
         json={"entry_descriptor": {"entry_type": "route", "route": "/home"}},
     )
     assert preview_response.status_code == 200
+    artifact_id = preview_response.json()["artifact_id"]
     config_bundle_response = await authenticated_client.get(
-        f"/internal/runtime/preview-artifacts/{preview_response.json()['artifact_id']}/config-bundle",
-        headers=runtime_service_headers,
+        f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
 
@@ -333,7 +334,7 @@ const titleFont = useAssetFontFamily('BrandSerif')
 
 async def test_preview_artifact_config_bundle_should_include_component_declared_font(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """页面依赖组件中声明的非主题字体应沿组件闭包进入项目字体包。"""
 
@@ -412,9 +413,10 @@ import FontTitle from '@workspace-components/{component['code']}/v/1'
         json={"entry_descriptor": {"entry_type": "route", "route": "/home"}},
     )
     assert preview_response.status_code == 200
+    artifact_id = preview_response.json()["artifact_id"]
     config_bundle_response = await authenticated_client.get(
-        f"/internal/runtime/preview-artifacts/{preview_response.json()['artifact_id']}/config-bundle",
-        headers=runtime_service_headers,
+        f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
 
@@ -960,7 +962,7 @@ async def test_workspace_font_list_should_page_keyword_and_status_filter(
 
 async def test_preview_artifact_should_not_include_font_matched_only_by_workspace_theme_label(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """旧主题字体 label 仅作为 CSS fallback，不应自动匹配字体注册进入字体包。"""
 
@@ -1020,7 +1022,7 @@ async def test_preview_artifact_should_not_include_font_matched_only_by_workspac
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     fonts_bundle = config_bundle_response.json()["fonts"]["items"]
@@ -1357,7 +1359,7 @@ async def test_font_face_declaration_fields_should_reject_invalid_values(
 
 async def test_preview_bundle_should_include_all_active_faces_of_theme_bound_family(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """主题绑定字体族后，预览字体包应下发该族全部 active 字体文件，archived 不下发。"""
 
@@ -1416,9 +1418,10 @@ async def test_preview_bundle_should_include_all_active_faces_of_theme_bound_fam
         json={"entry_descriptor": {"entry_type": "route", "route": "/home"}},
     )
     assert preview_response.status_code == 200
+    artifact_id = preview_response.json()["artifact_id"]
     config_bundle_response = await authenticated_client.get(
-        f"/internal/runtime/preview-artifacts/{preview_response.json()['artifact_id']}/config-bundle",
-        headers=runtime_service_headers,
+        f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
 
@@ -1432,7 +1435,7 @@ async def test_preview_bundle_should_include_all_active_faces_of_theme_bound_fam
 
 async def test_preview_bundle_should_include_whole_family_for_explicit_declaration(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """源码显式声明单个字体文件时，预览字体包应带出所属字体族全部 active 字体文件。"""
 
@@ -1482,9 +1485,10 @@ const titleFont = useAssetFontFamily('DeclaredSerif-Regular')
         json={"entry_descriptor": {"entry_type": "route", "route": "/home"}},
     )
     assert preview_response.status_code == 200
+    artifact_id = preview_response.json()["artifact_id"]
     config_bundle_response = await authenticated_client.get(
-        f"/internal/runtime/preview-artifacts/{preview_response.json()['artifact_id']}/config-bundle",
-        headers=runtime_service_headers,
+        f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
 

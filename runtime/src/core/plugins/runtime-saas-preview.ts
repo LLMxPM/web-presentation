@@ -264,14 +264,14 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
       }
       const parsedSource = parseRemoteModuleId(source)
       if (parsedSource) {
-        // Vue SFC 子请求会丢弃 ctx；此处从 importer 或进程内缓存恢复并回填，
-        // 使样式/脚本子请求的模块 ID 自带预览上下文，跨副本也能凭当前请求恢复授权。
+        // Vue SFC 子请求会丢弃 ctx；此处仅从 importer 的 ctx 回填，使样式/脚本
+        // 子请求的模块 ID 自带预览上下文。绝不从进程内缓存取凭证——缓存票据
+        // 可能属于其它请求者，不能替代本次请求的鉴权。
         if (parsedSource.previewToken) {
           return source
         }
-        const recoveredPreviewToken = recoverPreviewToken(parsedSource.artifactId, importer, previewTokenCache)
+        const recoveredPreviewToken = recoverPreviewToken(parsedSource.artifactId, importer)
         if (recoveredPreviewToken) {
-          rememberPreviewToken(previewTokenCache, parsedSource.artifactId, recoveredPreviewToken)
           return attachRemoteModulePreviewToken(source, recoveredPreviewToken)
         }
         return source
@@ -313,7 +313,9 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
       }
       const moduleLoadStartedAt = Date.now()
       try {
-        const effectivePreviewToken = parsed.previewToken || readPreviewTokenCache(previewTokenCache, parsed.artifactId) || ''
+        // 只认模块 ID 自带的 previewToken（来自本次请求链），绝不从进程内缓存取凭证。
+        // 缓存票据可能是其它请求者写入的，用它验签等于替他人鉴权。
+        const effectivePreviewToken = parsed.previewToken || ''
         if (!effectivePreviewToken) {
           throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '远程模块请求缺少预览上下文令牌。')
         }
@@ -454,39 +456,25 @@ function toLoggableError(error: unknown): Record<string, unknown> {
 }
 
 /**
- * 恢复远程模块 ID 缺失的预览令牌：优先取 importer 的 ctx，其次取进程内 previewToken 缓存。
+ * 恢复远程模块 ID 缺失的预览令牌：只认 importer 的 ctx。
+ * 绝不从进程内 previewToken 缓存取凭证——缓存票据可能属于其它请求者。
  * @param artifactId 目标 artifact ID
  * @param importer 导入方模块 ID
- * @param previewTokenCache 预览令牌缓存
  * @returns 可回填的预览令牌；无法恢复时返回空串
  */
 function recoverPreviewToken(
   artifactId: string,
   importer: string | undefined,
-  previewTokenCache: PreviewBoundedCache<string>,
 ): string {
   const importerInfo = importer ? parseRemoteModuleId(importer) : null
   if (importerInfo?.previewToken && importerInfo.artifactId === artifactId) {
     return importerInfo.previewToken
   }
-  return readPreviewTokenCache(previewTokenCache, artifactId)
+  return ''
 }
 
 /**
- * 读取预览令牌缓存；键为稳定 artifact 身份，token 只作值。
- * @param previewTokenCache 预览令牌缓存
- * @param artifactId artifact 标识
- * @returns 缓存的预览令牌；缺失时返回空串
- */
-function readPreviewTokenCache(
-  previewTokenCache: PreviewBoundedCache<string>,
-  artifactId: string,
-): string {
-  return previewTokenCache.get(buildPreviewCacheKey(artifactId, PREVIEW_CACHE_IDENTITY_PREVIEW_TOKEN)) || ''
-}
-
-/**
- * 写入预览令牌缓存；键为稳定 artifact 身份，换票不改变缓存身份。
+ * 写入预览令牌缓存。仅作非鉴权加速线索，禁止用作请求鉴权凭证。
  * @param previewTokenCache 预览令牌缓存
  * @param artifactId artifact 标识
  * @param previewToken 预览令牌

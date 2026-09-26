@@ -14,7 +14,7 @@ from app.services.durable_job_lease_service import build_durable_worker_id, clai
 from app.services.page_screenshot_job_service import PageScreenshotJobService
 from app.services.project_artifact_builder import ProjectArtifactSnapshot
 from app.services.project_build_service import ProjectBuildService, run_project_build_job
-from tests.integration.test_project_build import build_fake_snapshot, create_active_project
+from tests.integration.test_project_build import build_fake_snapshot, build_zip_bytes, create_active_project
 from tests.integration.test_project_build_job_lease import _create_build_job
 
 
@@ -105,10 +105,23 @@ async def test_double_dispatch_should_execute_build_only_once(
     dispatch_count = 0
 
     async def fake_dispatch(self, **kwargs):  # noqa: ANN001, ARG002
-        """记录 Runtime 派发次数。"""
+        """记录 Runtime 派发次数；模拟真实链路在返回前上传产物。"""
 
         nonlocal dispatch_count
         dispatch_count += 1
+        # 生产路径 Runtime 在 dispatch 响应前完成归档上传；否则不得标记 succeeded（M10）。
+        async with get_session_factory()() as upload_session:
+            service = ProjectBuildService(upload_session)
+            job = await service.get_job_by_id(job_id)
+            await service.persist_uploaded_artifact(
+                job=job,
+                archive_content=build_zip_bytes({"index.html": b"<html>ok</html>"}),
+                entry_file="index.html",
+                sha256=None,
+                size_bytes=None,
+                attempt_id=job.attempt_id,
+                lease_owner=job.lease_owner,
+            )
 
     async def fake_build_snapshot(  # noqa: ANN001
         self,

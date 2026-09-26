@@ -121,7 +121,7 @@ const previewConfigUrl = resolveResourcePath('app')
 
 async def test_component_draft_save_publish_restore_and_version_preview(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """组件草稿可反复保存，发布才生成版本；发布版可预览并可恢复到草稿。"""
 
@@ -182,7 +182,7 @@ async def test_component_draft_save_publish_restore_and_version_preview(
     module_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
         params={"path": f"src/workspace-components/{component['code']}/v/1.vue"},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert module_response.status_code == 200
     assert "draft v1" in module_response.text

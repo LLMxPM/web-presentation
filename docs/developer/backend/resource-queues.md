@@ -43,7 +43,7 @@ SQLite/lite 推荐保持所有重资源并发为 1。SQLite 文件库为**单实
 | Runtime 等待队列 | 16 | 16 |
 | `RENDER_QUEUE_SIZE` | 64 | 64 |
 
-Runtime 诊断与正式构建共享调度槽，默认按诊断:正式构建 `3:1` 加权领取。渲染调度按交互诊断:后台截图 `3:1` 类别轮转，并在同类别内按 workspace 轮转。队列满或 Runtime 等待超时会返回 `RUNTIME_VITE_QUEUE_FULL` / `RUNTIME_VITE_QUEUE_TIMEOUT` 或 `RENDER_QUEUE_FULL`，不会伪装成页面源码错误。
+Runtime 诊断、正式构建与轻量工具（可视化编辑、资源比例测量）使用**独立并发 lane 与队列**（见 `runtime-vite-task-scheduler.ts`），不再按权重共享调度槽。Backend 侧选址与准入同步按 `check` / `light` 分开计数（`RUNTIME_CHECK_MAX_INFLIGHT` / `RUNTIME_LIGHT_MAX_INFLIGHT`），180 秒完整编译诊断不会把 10/40 秒轻量工具打成 `RUNTIME_ADMISSION_FULL`。渲染调度按交互诊断:后台截图 `3:1` 类别轮转，并在同类别内按 workspace 轮转。队列满或 Runtime 等待超时会返回 `RUNTIME_VITE_QUEUE_FULL` / `RUNTIME_VITE_QUEUE_TIMEOUT` 或 `RENDER_QUEUE_FULL`，不会伪装成页面源码错误。
 
 ## 复用与清理
 

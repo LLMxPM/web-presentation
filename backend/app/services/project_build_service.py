@@ -288,6 +288,8 @@ class ProjectBuildService:
                     error_message=None,
                     started_at=now,
                     finished_at=None,
+                    # 新 attempt 从干净产物指针开始，避免残留上一轮成功产物。
+                    **_clear_artifact_fields(),
                 )
                 .execution_options(synchronize_session=False)
             )
@@ -324,6 +326,7 @@ class ProjectBuildService:
                 attempt_id=None,
                 error_message=error_message,
                 finished_at=None,
+                **_clear_artifact_fields(),
             )
             .execution_options(synchronize_session=False)
         )
@@ -338,7 +341,11 @@ class ProjectBuildService:
         success: bool,
         error_message: str | None = None,
     ) -> bool:
-        """在仍持有任务租约时写入终态，避免迟到执行者覆盖新结果。"""
+        """在仍持有任务租约时写入终态，避免迟到执行者覆盖新结果。
+
+        成功终态前置校验产物指针：dispatch 返回不等于产物已提升；
+        无产物不得标记 succeeded（M10）。
+        """
 
         now = utc_now()
         values: dict[str, object] = {
@@ -348,13 +355,26 @@ class ProjectBuildService:
         }
         if success:
             values["lease_expires_at"] = None
+        else:
+            # 失败终态一并清理租约与 attempt，避免行上残留陈旧 owner / 产物指针。
+            values["lease_owner"] = None
+            values["lease_expires_at"] = None
+            values["claimed_at"] = None
+            values["attempt_id"] = None
+            values.update(_clear_artifact_fields())
+
+        conditions = [
+            ProjectBuildJob.id == job_id,
+            ProjectBuildJob.status == "running",
+            ProjectBuildJob.lease_owner == lease_owner,
+        ]
+        if success:
+            # 成功必须已有产物：禁止「succeeded 但无产物」的对外可见状态。
+            conditions.append(ProjectBuildJob.artifact_storage_key.is_not(None))
+
         result = await self.session.execute(
             update(ProjectBuildJob)
-            .where(
-                ProjectBuildJob.id == job_id,
-                ProjectBuildJob.status == "running",
-                ProjectBuildJob.lease_owner == lease_owner,
-            )
+            .where(*conditions)
             .values(**values)
             .execution_options(synchronize_session=False)
         )
@@ -401,21 +421,29 @@ class ProjectBuildService:
                 detail="构建产物 attempt 与当前任务不一致，迟到上传不得覆盖新结果。",
                 data={"job_id": job.id, "attempt_id": job_attempt or None},
             )
-        if job.lease_owner:
-            if lease_owner and str(lease_owner) != str(job.lease_owner):
-                raise AppException(
-                    status_code=409,
-                    code="BUILD_LEASE_OWNER_MISMATCH",
-                    detail="构建产物上传者与当前租约持有者不一致。",
-                    data={"job_id": job.id},
-                )
-            if job.lease_expires_at is not None and job.lease_expires_at <= utc_now():
-                raise AppException(
-                    status_code=409,
-                    code="BUILD_LEASE_EXPIRED",
-                    detail="构建任务租约已过期，产物不得提升为最终结果。",
-                    data={"job_id": job.id},
-                )
+        # 无租约持有者时不得跳过 owner / 过期检查：回收后的 pending 行若仍带旧 attempt，
+        # 此前会同时绕过 owner 与过期两项校验，使死 attempt 仍能提升产物。
+        if not job.lease_owner:
+            raise AppException(
+                status_code=409,
+                code="BUILD_LEASE_MISSING",
+                detail="构建任务当前没有有效租约，产物不得提升为最终结果。",
+                data={"job_id": job.id, "status": job.status},
+            )
+        if lease_owner and str(lease_owner) != str(job.lease_owner):
+            raise AppException(
+                status_code=409,
+                code="BUILD_LEASE_OWNER_MISMATCH",
+                detail="构建产物上传者与当前租约持有者不一致。",
+                data={"job_id": job.id},
+            )
+        if job.lease_expires_at is not None and job.lease_expires_at <= utc_now():
+            raise AppException(
+                status_code=409,
+                code="BUILD_LEASE_EXPIRED",
+                detail="构建任务租约已过期，产物不得提升为最终结果。",
+                data={"job_id": job.id},
+            )
 
     async def delete_artifact(self, *, project_id: int, job_id: int) -> ProjectBuildJob:
         """删除已完成任务的归档文件并清空产物元数据，保留构建历史记录。"""
@@ -476,14 +504,50 @@ class ProjectBuildService:
             if declared_size_bytes != actual_size_bytes:
                 raise AppException(status_code=409, code="BUILD_ARTIFACT_SIZE_MISMATCH", detail="构建产物大小声明不匹配。")
 
-        # 先写入 attempt 级不可变对象键，再提升任务上的最终产物指针。
+        # 先写入 attempt 级不可变对象键，再以条件 UPDATE 提升任务上的最终产物指针。
+        # 禁止 read-then-write：两个 attempt 交错时后提交者不得凭内存旧值覆盖新结果（M7）。
         storage_key = self.build_attempt_storage_key(job)
-        job.artifact_storage_key = await self.object_storage.put_object(
+        stored_key = await self.object_storage.put_object(
             storage_key,
             archive_content,
             "application/zip",
         )
-        job.artifact_download_url = self.build_artifact_download_url(job)
+        download_url = self.build_artifact_download_url(job)
+        normalized_attempt = str(attempt_id or "").strip()
+        promote_conditions = [
+            ProjectBuildJob.id == job.id,
+            ProjectBuildJob.status.in_(("pending", "running")),
+            ProjectBuildJob.attempt_id == normalized_attempt,
+            ProjectBuildJob.attempt_id.is_not(None),
+        ]
+        if job.lease_owner:
+            promote_conditions.append(ProjectBuildJob.lease_owner == job.lease_owner)
+            if job.lease_expires_at is not None:
+                promote_conditions.append(ProjectBuildJob.lease_expires_at > utc_now())
+
+        promote = await self.session.execute(
+            update(ProjectBuildJob)
+            .where(*promote_conditions)
+            .values(
+                artifact_storage_key=stored_key,
+                artifact_download_url=download_url,
+                artifact_entry_file=normalized_entry_file,
+                artifact_sha256=actual_sha256,
+                artifact_size_bytes=actual_size_bytes,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if (promote.rowcount or 0) != 1:
+            await self.session.rollback()
+            raise AppException(
+                status_code=409,
+                code="BUILD_ATTEMPT_MISMATCH",
+                detail="构建产物 attempt 与当前任务不一致，迟到上传不得覆盖新结果。",
+                data={"job_id": job.id, "attempt_id": normalized_attempt or None},
+            )
+
+        job.artifact_storage_key = stored_key
+        job.artifact_download_url = download_url
         job.artifact_entry_file = normalized_entry_file
         job.artifact_sha256 = actual_sha256
         job.artifact_size_bytes = actual_size_bytes
@@ -498,7 +562,8 @@ class ProjectBuildService:
                 "error_message": "",
             },
         )
-        await self.session.flush()
+        await self.session.commit()
+        await self.session.refresh(job)
         return job
 
     def build_artifact_download_url(self, job: ProjectBuildJob) -> str:
@@ -638,6 +703,42 @@ async def run_project_build_job(
             # 先刷新任务以读取最新 attempt 预算，再决定重试或终止。
             await session.rollback()
             current = await service.get_job_by_id(claimed_job_id)
+
+            # 超时等「结果不确定」错误：对端可能已完成构建并上传。先确认产物，
+            # 确认不到则保留租约等过期收敛，禁止立即发起新 attempt（重复派发）。
+            if _is_uncertain_dispatch_error(exc):
+                completed = await service.complete_job(
+                    job_id=claimed_job_id,
+                    lease_owner=owner,
+                    success=True,
+                )
+                if completed:
+                    await RuntimeArtifactStore().put_build_state(
+                        job_id=claimed_job_id,
+                        mapping={
+                            "status": "succeeded",
+                            "snapshot_release_id": current.snapshot_release_id,
+                            "project_id": current.project_id,
+                            "base_url": current.base_url,
+                            "last_heartbeat_at": utc_now().isoformat(),
+                            "error_message": "",
+                        },
+                    )
+                    logger.info(
+                        "构建派发响应超时但产物已提升，按成功收敛。",
+                        extra={"event": "project.build.job.uncertain_settled_success", "job_id": claimed_job_id},
+                    )
+                    return
+                logger.warning(
+                    "构建结果不确定且尚无产物，保留租约等待过期收敛，不立即重派。",
+                    extra={
+                        "event": "project.build.job.uncertain_hold_lease",
+                        "job_id": claimed_job_id,
+                        "error_message": error_message,
+                    },
+                )
+                return
+
             if service.is_retry_allowed(current):
                 requeued = await service.release_job_to_pending(
                     job_id=claimed_job_id,
@@ -760,14 +861,39 @@ async def run_project_build_queue_loop(
             await asyncio.sleep(poll_interval)
 
 
-async def recover_expired_build_jobs(session: AsyncSession, *, force: bool = False) -> int:
-    """收敛租约过期（或启动强制）的 running 任务：未超预算回 pending，超预算标 failed。"""
+def _clear_artifact_fields() -> dict[str, object]:
+    """返回清空产物指针的字段集合，避免跨 attempt 残留旧产物元数据。"""
+
+    return {
+        "artifact_storage_key": None,
+        "artifact_download_url": None,
+        "artifact_entry_file": None,
+        "artifact_sha256": None,
+        "artifact_size_bytes": None,
+    }
+
+
+async def recover_expired_build_jobs(
+    session: AsyncSession,
+    *,
+    force_owner_prefix: str | None = None,
+) -> int:
+    """收敛租约过期的 running 任务：未超预算回 pending，超预算标 failed。
+
+    多副本安全：默认只回收 lease_expires_at 为空或已过期的任务，不得抢走其它
+    副本租约仍有效、正在执行的构建。`force_owner_prefix` 仅额外回收
+    `lease_owner` 以该前缀开头的任务（同一主机/进程中断的自身任务）。
+    回收时一律作废 attempt_id，阻止迟到上传把旧产物提升为最终结果。
+    """
 
     now = utc_now()
     expired_clause = (ProjectBuildJob.lease_expires_at.is_(None)) | (ProjectBuildJob.lease_expires_at <= now)
-    conditions = [ProjectBuildJob.status == "running"]
-    if not force:
-        conditions.append(expired_clause)
+    recoverable_clause = expired_clause
+    normalized_prefix = str(force_owner_prefix or "").strip()
+    if normalized_prefix:
+        recoverable_clause = expired_clause | (ProjectBuildJob.lease_owner.like(f"{normalized_prefix}%"))
+
+    conditions = [ProjectBuildJob.status == "running", recoverable_clause]
     candidates = list(
         (
             await session.execute(
@@ -776,6 +902,7 @@ async def recover_expired_build_jobs(session: AsyncSession, *, force: bool = Fal
                     ProjectBuildJob.attempt_count,
                     ProjectBuildJob.max_attempts,
                     ProjectBuildJob.deadline_at,
+                    ProjectBuildJob.artifact_storage_key,
                 ).where(*conditions)
             )
         ).all()
@@ -790,32 +917,57 @@ async def recover_expired_build_jobs(session: AsyncSession, *, force: bool = Fal
         attempt_count = int(row.attempt_count or 0)
         deadline_at: datetime | None = row.deadline_at
         past_deadline = deadline_at is not None and now >= deadline_at
-        base_where = [ProjectBuildJob.id == row.id, ProjectBuildJob.status == "running"]
-        if not force:
-            base_where.append(expired_clause)
+        base_where = [ProjectBuildJob.id == row.id, ProjectBuildJob.status == "running", recoverable_clause]
+        clear_fields = _clear_artifact_fields()
+
+        # 产物已提升：按成功收敛，不得清空产物后再重派。
+        if row.artifact_storage_key:
+            result = await session.execute(
+                update(ProjectBuildJob)
+                .where(*base_where, ProjectBuildJob.artifact_storage_key.is_not(None))
+                .values(
+                    status="succeeded",
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    claimed_at=None,
+                    error_message=None,
+                    finished_at=now,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            recovered += int(result.rowcount or 0)
+            continue
+
         if attempt_count < attempt_limit and not past_deadline:
             result = await session.execute(
                 update(ProjectBuildJob)
-                .where(*base_where)
+                .where(*base_where, ProjectBuildJob.artifact_storage_key.is_(None))
                 .values(
                     status="pending",
                     lease_owner=None,
                     lease_expires_at=None,
                     claimed_at=None,
+                    # 作废 attempt 身份：旧令牌不得再把迟到产物提升为最终结果。
+                    attempt_id=None,
                     error_message="构建租约过期或进程中断，已回到待执行队列。",
                     finished_at=None,
+                    **clear_fields,
                 )
                 .execution_options(synchronize_session=False)
             )
         else:
             result = await session.execute(
                 update(ProjectBuildJob)
-                .where(*base_where)
+                .where(*base_where, ProjectBuildJob.artifact_storage_key.is_(None))
                 .values(
                     status="failed",
                     error_message="构建进程中断或超时，且已用尽重试预算。",
                     finished_at=now,
                     lease_expires_at=None,
+                    lease_owner=None,
+                    claimed_at=None,
+                    attempt_id=None,
+                    **clear_fields,
                 )
                 .execution_options(synchronize_session=False)
             )
@@ -824,11 +976,19 @@ async def recover_expired_build_jobs(session: AsyncSession, *, force: bool = Fal
     return recovered
 
 
-async def recover_interrupted_build_jobs_on_startup(session_factory) -> int:
-    """应用启动时收敛仍标记 running 的构建任务，按重试预算回 pending 或标 failed。"""
+async def recover_interrupted_build_jobs_on_startup(
+    session_factory,
+    *,
+    owner_prefix: str | None = None,
+) -> int:
+    """应用启动时收敛租约过期或属于本进程前缀的构建任务。
+
+    多副本下禁止使用全局 force 抢占：任何 Backend 启动（扩容、滚动发布、崩溃重启）
+    都只应收回过期租约与本进程前缀任务，避免重复派发其它副本正在执行的构建。
+    """
 
     async with session_factory() as session:
-        recovered = await recover_expired_build_jobs(session, force=True)
+        recovered = await recover_expired_build_jobs(session, force_owner_prefix=owner_prefix)
         if recovered:
             logger.info(
                 "启动时已收敛中断的构建任务。",
@@ -862,6 +1022,31 @@ def _extract_build_error_message(error: Exception) -> str:
     if isinstance(error, AppException):
         return error.detail
     return str(error) or "构建失败。"
+
+
+def _is_uncertain_dispatch_error(error: Exception) -> bool:
+    """判断派发错误是否「结果不确定」——对端可能已执行甚至已上传。
+
+    超时与传输层在请求发出后的失败均属此类：立即重派会形成重复构建。
+    路由器对不确定路径会打上 `dispatch_may_have_started` 标记；
+    连接未建立与容量满载除外，可安全重试。
+    """
+
+    if isinstance(error, AppException):
+        data = error.data if isinstance(getattr(error, "data", None), dict) else {}
+        if data.get("dispatch_may_have_started") is True:
+            return True
+        # 504 超时：请求已发出，对端可能仍在执行。
+        if error.status_code == 504:
+            return True
+        # 容量满载 / 配置错误：请求未进入执行，可安全重试。
+        if error.code in {
+            "RUNTIME_CAPACITY_EXCEEDED",
+            "RUNTIME_ADMISSION_FULL",
+            "RUNTIME_TARGETS_UNAVAILABLE",
+        }:
+            return False
+    return False
 
 
 def _normalize_build_entry_file(raw_entry_file: str | None) -> str:

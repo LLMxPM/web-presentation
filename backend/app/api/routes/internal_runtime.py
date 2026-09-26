@@ -108,7 +108,11 @@ def _read_bearer_token(
 
 
 def _verify_runtime_service_request(request: Request, artifact_id: str) -> dict[str, object]:
-    """校验 Runtime 调用 Backend 内部 preview artifact 接口时的服务级令牌。"""
+    """校验 Runtime 调用 Backend 内部 preview artifact 接口时的服务级令牌。
+
+    服务令牌必须绑定目标 artifact：缺失 artifact_id 的令牌一律拒绝，
+    避免无作用域令牌抵消 artifact 绑定、对任意 artifact 有效。
+    """
 
     service_token = _read_bearer_token(
         request,
@@ -124,7 +128,13 @@ def _verify_runtime_service_request(request: Request, artifact_id: str) -> dict[
             detail="Runtime 服务令牌非法、artifact 不匹配或已过期。",
         ) from exc
     token_artifact_id = str(claims.get("artifact_id") or "").strip()
-    if token_artifact_id and token_artifact_id != str(artifact_id):
+    if not token_artifact_id:
+        raise AppException(
+            status_code=401,
+            code="RUNTIME_SERVICE_TOKEN_INVALID",
+            detail="Runtime 服务令牌缺少 artifact 绑定，不得访问 artifact 接口。",
+        )
+    if token_artifact_id != str(artifact_id):
         raise AppException(status_code=403, code="PREVIEW_ARTIFACT_MISMATCH", detail="服务令牌与目标 artifact 不一致。")
     return claims
 

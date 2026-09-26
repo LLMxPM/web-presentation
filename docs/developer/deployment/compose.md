@@ -65,10 +65,12 @@ production env 版适合把环境变量集中放在 `deploy/.env` 中维护。�
 
 ## 分角色单机（Runtime 角色）
 
-`deploy/compose/compose.runtime-roles.yml` 把 Runtime 拆成 `runtime-preview`、`runtime-build`、`runtime-check` 三个角色容器（`RUNTIME_ROLE` 分别为 `preview`、`build`、`check`），与 Backend、迁移、Renderer 和 Gateway 组成分角色单机拓扑。启动方式与 production env 版相同，读取 `deploy/.env`；角色差异和资源约束写在模板内。
+`deploy/compose/compose.runtime-roles.yml` 把 Runtime 拆成 `runtime-preview`、`runtime-build`、`runtime-check` 三个角色容器（`RUNTIME_ROLE` 分别为 `preview`、`build`、`check`），与 Backend、迁移、Renderer 和 Gateway 组成分角色单机拓扑。Backend 仍从 `deploy/.env` 读配置；**Runtime 三角色只读 `deploy/runtime.env`**（复制 `deploy/runtime.env.example`），避免 `DATABASE_URL` / `REDIS_URL` / `AI_SECRET_ENCRYPTION_KEY` / `RUNTIME_RSA_PRIVATE_KEY` 等平台密钥进入会编译用户手写 SFC 的容器。`runtime.env` 中的域名、audience、JWKS 与路径必须与 `deploy/.env` 同名项一致，否则预览资源会指向错误域名或令牌校验失败。角色差异和资源约束写在模板内。
 
 ```bash
 cp deploy/.env.example deploy/.env
+cp deploy/runtime.env.example deploy/runtime.env
+# 同步修改两份文件中的域名 / audience / 路径，保持一致
 cd deploy
 docker compose -f compose/compose.runtime-roles.yml config
 docker compose -f compose/compose.runtime-roles.yml pull
@@ -109,7 +111,7 @@ Docker 容器默认不施加 CPU/内存限制；只把一个 Runtime 拆成三�
 
 三个角色容器都用 `/__runtime_healthz` 做 healthcheck，探针只看本进程，不依赖 Backend。启动顺序为：`renderer` 与三个 runtime 角色就绪 → `backend-migrate` 成功完成 → `backend` 健康 → `gateway` 健康。Gateway 只依赖 `backend` 与 `runtime-preview`；`runtime-build` / `runtime-check` 由 Backend 按需调用，不进入公开就绪链路。
 
-`RUNTIME_ROLE` 由 Runtime 角色逻辑（规划 T1-1）消费：`preview` 不开放构建与诊断入口，`build` / `check` 只保留对应执行面。模板可先于角色逻辑部署；在角色路由契约完成前，Backend 的 `RUNTIME_BASE_URL` 仍指向 `runtime-preview`，构建与源码检查内部目标按发布顺序逐项切换到 `runtime-build` / `runtime-check`。
+`RUNTIME_ROLE` 由 Runtime 角色逻辑消费：`preview` 不开放构建与诊断入口，`build` / `check` 只保留对应执行面。模板已配置好三个角色目标（`RUNTIME_PREVIEW/BUILD/CHECK_BASE_URL`）；**不要**把 `RUNTIME_BASE_URL` 单独指向 `runtime-preview` 后再逐项切换——preview 实例已注销构建/诊断端点，那样会把请求打回 Vite 并收到 HTML/404 而不是结构化错误。改角色拓扑时同步改对应 `RUNTIME_*_BASE_URL(S)`。
 
 ### 计算副本扩容（Check/Build 多副本与全链路准入）
 

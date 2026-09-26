@@ -58,7 +58,7 @@ async def test_asset_upload_should_default_description_to_null(
 
 async def test_video_asset_upload_should_be_manageable_and_manifest_renderable(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """视频资源应支持上传、列表筛选，并在 artifact manifest 中输出 video 渲染类型。"""
 
@@ -93,10 +93,11 @@ async def test_video_asset_upload_should_be_manageable_and_manifest_renderable(
         f"/api/workspaces/{workspace_id}/assets/{payload['id']}/preview-artifact",
     )
     assert preview_response.status_code == 200
+    artifact_id = preview_response.json()["artifact_id"]
 
     config_response = await authenticated_client.get(
-        f"/internal/runtime/preview-artifacts/{preview_response.json()['artifact_id']}/config-bundle",
-        headers=runtime_service_headers,
+        f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_response.status_code == 200
     asset_preview = config_response.json()["asset_preview"]
@@ -796,7 +797,7 @@ async def test_mermaid_aspect_ratio_should_be_manual_only(
 
 async def test_asset_preview_artifact_should_expose_runtime_asset_config(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """文本资源、SVG 图片和 SVG 图标应能创建 Runtime 资源预览 artifact。"""
 
@@ -839,10 +840,11 @@ async def test_asset_preview_artifact_should_expose_runtime_asset_config(
         assert preview_payload["entry_descriptor"] == {"entry_type": "asset_host"}
         assert preview_payload["asset_id"] == asset_payload["id"]
         assert preview_payload["asset_name"] == item["name"]
+        artifact_id = preview_payload["artifact_id"]
 
         manifest_response = await authenticated_client.get(
-            f"/internal/runtime/preview-artifacts/{preview_payload['artifact_id']}/manifest",
-            headers=runtime_service_headers,
+            f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
+            headers=runtime_service_headers(artifact_id),
         )
         assert manifest_response.status_code == 200
         manifest = manifest_response.json()
@@ -855,7 +857,7 @@ async def test_asset_preview_artifact_should_expose_runtime_asset_config(
 
         config_response = await authenticated_client.get(
             f"/internal/runtime/preview-artifacts/{preview_payload['artifact_id']}/config-bundle",
-            headers=runtime_service_headers,
+            headers=runtime_service_headers(artifact_id),
         )
         assert config_response.status_code == 200
         asset_preview = config_response.json()["asset_preview"]

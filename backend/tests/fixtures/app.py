@@ -100,14 +100,22 @@ async def authenticated_client(client: AsyncClient) -> AsyncClient:
 
 
 @pytest.fixture
-def runtime_service_headers() -> dict[str, str]:
-    """生成 Runtime 访问 Backend 内部 artifact 接口所需的服务级请求头。"""
+def runtime_service_headers():
+    """生成 Runtime 访问 Backend 内部 artifact 接口所需的服务级请求头。
+
+    服务令牌必须绑定 artifact_id：调用 `runtime_service_headers(artifact_id)`
+    得到访问该 artifact 的请求头；不再支持无作用域通配令牌。
+    """
 
     from app.services.token_service import TokenService
 
-    service_token = TokenService.generate_runtime_service_access_token(
-        expires_in_seconds=300,
-    )
-    return {
-        "Authorization": f"Bearer {service_token}",
-    }
+    def _build(artifact_id: str | int) -> dict[str, str]:
+        service_token = TokenService.generate_runtime_service_access_token(
+            artifact_id=str(artifact_id),
+            expires_in_seconds=300,
+        )
+        return {
+            "Authorization": f"Bearer {service_token}",
+        }
+
+    return _build

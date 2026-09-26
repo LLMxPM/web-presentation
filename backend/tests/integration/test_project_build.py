@@ -17,7 +17,11 @@ from app.models.release import Release
 from app.schemas.release import PreviewEntryDescriptor
 from app.services.project_artifact_builder import ProjectArtifactSnapshot
 from app.services.project_build_artifact_proxy_service import ProjectBuildArtifactProxyService
-from app.services.project_build_service import normalize_project_build_base_url, run_project_build_job
+from app.services.project_build_service import (
+    ProjectBuildService,
+    normalize_project_build_base_url,
+    run_project_build_job,
+)
 from app.services.token_service import TokenService
 
 
@@ -558,10 +562,23 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
     success_job_snapshot_release_id = success_response.json()["snapshot_release_id"]
     captured_dispatch: dict[str, str] = {}
 
-    async def fake_dispatch_success(self, *, artifact_id: str, base_url: str, build_token: str):  # noqa: ANN001
+    async def fake_dispatch_success(self, *, artifact_id: str, base_url: str, build_token: str, **kwargs):  # noqa: ANN001
         captured_dispatch["artifact_id"] = artifact_id
         captured_dispatch["base_url"] = base_url
         captured_dispatch["build_token"] = build_token
+        # 生产路径 Runtime 在 dispatch 响应前完成归档上传；否则 complete_job(success=True) 会拒绝（M10）。
+        async with get_session_factory()() as upload_session:
+            service = ProjectBuildService(upload_session)
+            job = await service.get_job_by_id(success_job_id)
+            await service.persist_uploaded_artifact(
+                job=job,
+                archive_content=build_zip_bytes({"index.html": b"<html>ok</html>"}),
+                entry_file="index.html",
+                sha256=None,
+                size_bytes=None,
+                attempt_id=job.attempt_id,
+                lease_owner=job.lease_owner,
+            )
 
     monkeypatch.setattr(
         "app.services.project_build_service.RuntimeBuildClient.dispatch_project_build",
@@ -668,7 +685,12 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     async with get_session_factory()() as session:
         created_job = await session.get(ProjectBuildJob, build_job["id"])
         assert created_job is not None
-        job_attempt_id = created_job.attempt_id
+        # 生产路径先领取再上传：围栏要求有效租约，pending 创建态不得直接提升产物。
+        claimed_job = await ProjectBuildService(session, lease_owner="test-worker").claim_job(
+            job_id=build_job["id"]
+        )
+        assert claimed_job is not None
+        job_attempt_id = claimed_job.attempt_id
         expected_storage_key = (
             f"build-artifacts/{project_id}/{build_job['id']}/attempts/{job_attempt_id}/dist.zip"
         )
@@ -679,6 +701,7 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
         workspace_id=workspace_id,
         base_url="/deploy/",
         attempt_id=job_attempt_id,
+        lease_owner="test-worker",
     )
 
     upload_response = await authenticated_client.post(

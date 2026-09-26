@@ -118,7 +118,7 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
 
 async def test_runtime_kit_component_preview_should_use_local_component_host(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """Runtime Kit 组件预览应通过本地 @runtime-kit 模块加载，artifact 不写入远程模块。"""
 
@@ -150,7 +150,7 @@ async def test_runtime_kit_component_preview_should_use_local_component_host(
     artifact_id = preview_payload["artifact_id"]
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     manifest = manifest_response.json()
@@ -161,7 +161,7 @@ async def test_runtime_kit_component_preview_should_use_local_component_host(
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     component_preview = config_bundle_response.json()["component_preview"]
@@ -177,7 +177,7 @@ async def test_runtime_kit_component_preview_should_use_local_component_host(
 
 async def test_runtime_kit_asset_component_preview_should_include_manifest_schema(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """资源组件预览应把 manifest 中的 previewSchema 和默认预览选项下发给 Runtime。"""
 
@@ -195,7 +195,7 @@ async def test_runtime_kit_asset_component_preview_should_include_manifest_schem
     artifact_id = preview_payload["artifact_id"]
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     component_preview = config_bundle_response.json()["component_preview"]
@@ -223,7 +223,7 @@ async def test_runtime_kit_asset_component_preview_should_include_manifest_schem
 
 async def test_runtime_kit_theme_logo_preview_should_include_manifest_schema(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """主题 Logo 组件预览应下发 manifest schema，且不提供兜底图片。"""
 
@@ -241,7 +241,7 @@ async def test_runtime_kit_theme_logo_preview_should_include_manifest_schema(
     artifact_id = preview_payload["artifact_id"]
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     component_preview = config_bundle_response.json()["component_preview"]
@@ -259,7 +259,7 @@ async def test_runtime_kit_theme_logo_preview_should_include_manifest_schema(
 
 async def test_runtime_kit_default_container_preview_should_use_static_slot_defaults(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """内建容器组件预览应使用 manifest 中的静态 slot 默认内容。"""
 
@@ -284,7 +284,7 @@ async def test_runtime_kit_default_container_preview_should_use_static_slot_defa
     artifact_id = preview_response.json()["artifact_id"]
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     config_bundle = config_bundle_response.json()

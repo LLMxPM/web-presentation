@@ -23,6 +23,9 @@ export const PREVIEW_SERVICE_TOKEN_EXCHANGE_PATH = '/internal/runtime/preview-se
 /** 服务令牌过期前的安全刷新窗口，避免临界过期令牌被缓存继续使用。 */
 const SERVICE_TOKEN_REFRESH_MARGIN_MS = 30_000
 
+/** 服务令牌缓存 TTL 上限：即使对端声称更长，也不缓存超过该值的条目（防缓存投毒钉死）。 */
+const SERVICE_TOKEN_MAX_CACHE_TTL_MS = 15 * 60 * 1000
+
 /** 换票请求默认超时时间。 */
 const DEFAULT_EXCHANGE_TIMEOUT_MS = 10_000
 
@@ -80,7 +83,8 @@ export interface ResolveRuntimeServiceTokenOptions {
 /**
  * 获取可用于 Backend 内部 artifact 接口的短期服务令牌。
  *
- * 恢复顺序：有效缓存 → 本次请求自带令牌 → 向 Backend 内部换票。缓存只加速，任何缺失都可换票恢复。
+ * 恢复顺序：有效缓存 → 本次请求自带且可校验过期的令牌（仅本请求使用，不入缓存）→ 向 Backend 换票。
+ * 请求头令牌未经验签，绝不能写入进程内缓存——否则攻击者可投毒缓存、让后续合法请求复用伪令牌。
  * @param options 恢复选项
  * @returns 服务令牌与其过期时间
  */
@@ -100,10 +104,14 @@ export async function resolveRuntimeServiceToken(
     return cached
   }
 
+  // 请求头令牌：仅当能读出合理 exp 且仍新鲜时供本请求使用；绝不入缓存（M1 缓存投毒）。
   if (options.headerServiceToken) {
-    const resolved = resolveTokenWithExpiry(options.headerServiceToken, Date.now())
-    writeCacheEntry(serviceTokenCache, artifactId, resolved)
-    return resolved
+    const headerResolved = resolveTokenWithExpiry(options.headerServiceToken, Date.now())
+    const remainingMs = headerResolved.expiresAtMs - Date.now()
+    if (remainingMs > SERVICE_TOKEN_REFRESH_MARGIN_MS && remainingMs <= SERVICE_TOKEN_MAX_CACHE_TTL_MS) {
+      return headerResolved
+    }
+    // 不新鲜 / 无 exp / exp 异常远：视为缺失，回退换票。
   }
 
   return exchangeServiceToken({
@@ -206,12 +214,16 @@ function writeCacheEntry(
   resolved: ResolvedServiceToken,
 ): void {
   const cacheKey = buildPreviewCacheKey(artifactId, PREVIEW_CACHE_IDENTITY_SERVICE_TOKEN)
-  const remainingTtlMs = resolved.expiresAtMs - Date.now()
+  let remainingTtlMs = resolved.expiresAtMs - Date.now()
   if (remainingTtlMs <= 0) {
     cache.delete(cacheKey)
     return
   }
-  cache.set(cacheKey, resolved, { artifactId, ttlMs: remainingTtlMs })
+  // TTL 封顶：防止伪造/异常 exp 把条目钉在缓存里数年（M1）。
+  if (remainingTtlMs > SERVICE_TOKEN_MAX_CACHE_TTL_MS) {
+    remainingTtlMs = SERVICE_TOKEN_MAX_CACHE_TTL_MS
+  }
+  cache.set(cacheKey, { ...resolved, expiresAtMs: Date.now() + remainingTtlMs }, { artifactId, ttlMs: remainingTtlMs })
 }
 
 /**

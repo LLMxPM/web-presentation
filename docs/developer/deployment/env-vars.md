@@ -1,6 +1,6 @@
 # 部署环境变量
 
-production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy/.env.example`。SQLite 轻量单容器版和两个简化版 compose 不读取该文件，而是在 compose 文件内直接写变量。
+production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy/.env.example`。分角色单机版的 Backend 也读取该文件，Runtime 三角色只读取由 `deploy/runtime.env.example` 复制的 `deploy/runtime.env`；两份文件中的公开地址、令牌 audience 和路径须保持一致，平台密钥只放在 Backend 的 `deploy/.env`。SQLite 轻量单容器版和两个简化版 compose 不读取这些文件，而是在 compose 文件内直接写变量。
 
 ## 对外访问
 

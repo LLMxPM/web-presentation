@@ -44,7 +44,7 @@ def stub_runtime_service_token(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         TokenService,
-        "generate_runtime_service_access_token",
+        "generate_runtime_internal_tool_token",
         staticmethod(lambda **_kwargs: "runtime-test-token"),
     )
 

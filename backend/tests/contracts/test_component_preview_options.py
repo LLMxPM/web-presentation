@@ -22,7 +22,7 @@ async def test_workspace_should_not_expose_component_preview_default_config(
 
 async def test_component_preview_options_should_drive_page_and_placement(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """草稿组件预览应使用 preview_options 生成页面尺寸和组件占位。"""
 
@@ -66,7 +66,7 @@ async def test_component_preview_options_should_drive_page_and_placement(
     artifact_id = preview_response.json()["artifact_id"]
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     config_bundle = config_bundle_response.json()

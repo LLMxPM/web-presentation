@@ -453,7 +453,7 @@ async def test_page_screenshot_should_reject_non_vue_page(
 
 async def test_page_screenshot_preview_artifact_should_use_cached_asset_base(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
     monkeypatch,
 ) -> None:
     """截图链路创建的预览 artifact 应使用 Backend 缓存资源入口。"""
@@ -547,7 +547,7 @@ async def test_page_screenshot_preview_artifact_should_use_cached_asset_base(
     artifact_id = str(preview_claims["artifact_id"])
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     assert manifest_response.json()["asset_base_url"] == f"http://127.0.0.1:8000/public/cached-assets/{workspace_id}"

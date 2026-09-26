@@ -219,6 +219,32 @@ def test_is_transient_check_result_should_detect_infrastructure_failures() -> No
     assert is_transient_check_result({"status": "failed", "retryable": False, "diagnostics": []}) is False
 
 
+def test_is_transient_check_result_should_treat_redis_unavailable_as_transient() -> None:
+    """Redis 抖动产生的检查失败不得被缓存成稳定「代码检查失败」（M2）。"""
+
+    redis_failure = {
+        "success": False,
+        "status": "failed",
+        "retryable": True,
+        "diagnostics": [
+            {
+                "severity": "error",
+                "source": "backend",
+                "code": "RUNTIME_STATE_UNAVAILABLE",
+                "message": "运行态暂不可用。",
+            }
+        ],
+    }
+    assert is_transient_check_result(redis_failure) is True
+
+    # 即使漏标 retryable，诊断码也应识别为瞬态
+    redis_failure_no_flag = {
+        "status": "failed",
+        "diagnostics": [{"code": "RUNTIME_STATE_UNAVAILABLE"}],
+    }
+    assert is_transient_check_result(redis_failure_no_flag) is True
+
+
 def test_is_transient_infrastructure_error_should_detect_timeouts_and_5xx() -> None:
     """超时与 502/503 等基础设施异常视为瞬态。"""
 
@@ -229,6 +255,9 @@ def test_is_transient_infrastructure_error_should_detect_timeouts_and_5xx() -> N
     ) is True
     assert is_transient_infrastructure_error(
         AppException(status_code=503, code="RENDER_SERVICE_UNAVAILABLE", detail="x")
+    ) is True
+    assert is_transient_infrastructure_error(
+        AppException(status_code=503, code="RUNTIME_STATE_UNAVAILABLE", detail="x")
     ) is True
     assert is_transient_infrastructure_error(
         AppException(status_code=403, code="AI_PAGE_SCOPE_DENIED", detail="x")

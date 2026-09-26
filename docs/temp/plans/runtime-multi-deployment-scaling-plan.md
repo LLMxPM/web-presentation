@@ -1,6 +1,6 @@
 # 运行服务多部署形态与横向扩容规划（草案）
 
-> 状态：规划草案，尚未实施。编写日期 2026-09-23；2026-09-25 依据 `dev @ e2efe6c` 代码复核修订。本文依据当前仓库的代码与部署模板制定；容量、故障恢复时间和性能收益均需实测，不将设计目标表述为已具备的能力。
+> 状态：**T0-1…T4-3 已于 `e2efe6c..HEAD` 落地（2026-09-25）**，见文末第 13 节实施记录与 [`../review-multi-deployment-e2efe6c-head.md`](../review-multi-deployment-e2efe6c-head.md)；落地后评审仍存 3 Critical / 5 Major，多副本拓扑与跨副本 E2E 未就绪，分布式模板不得标记为可用。编写日期 2026-09-23；2026-09-25 依据 `dev @ e2efe6c` 代码复核修订并追加实施记录。本文依据当前仓库的代码与部署模板制定；容量、故障恢复时间和性能收益均需实测，不将设计目标表述为已具备的能力。
 >
 > 本轮修订要点：① 把 Runtime 计算治理（主进程阻塞、峰值内存、重复编译）提前到角色拆分之前，不再以完整性能评估为前置；② 把 Preview 多副本从计算池扩容的前置阶段中解开；③ 新增第 6 节「计算复用与重复编译治理」，形成隔离负载与减少计算两条并行演进线；④ 第 9、10 节改为按实测负载排序的阶段与任务清单。
 
@@ -330,3 +330,74 @@ Runtime 构建和源码诊断工作区使用实例本地临时目录，Renderer 
 7. 最后启用共享对象存储和多 Backend；数据库迁移、密钥和镜像版本作为一组发布。回退前先停止新任务、保存在途状态，并校验旧版本能读取当前 schema 与产物。
 
 实施时同步更新 `deploy/.env.example`、四类 Compose 模板、Gateway 配置、部署文档、Runtime 自身说明及必要的根仓协作规范。Lite 的单实例限制应继续明确展示；分布式模板只有通过对应多实例门禁后才能标记为可用。
+
+## 13. 实施记录（2026-09-25）
+
+`e2efe6c..HEAD`（13 提交 / 82 文件 / +9678/−817）把 §10 任务表 T0-1…T4-3 **一次性全部落地**。逐项结论、门禁实测与落地后评审见 [`../review-multi-deployment-e2efe6c-head.md`](../review-multi-deployment-e2efe6c-head.md)。此处只记状态摘要与**未覆盖项**。
+
+### 任务落地摘要
+
+| 任务 | 主提交 | 状态 |
+| :--- | :--- | :--- |
+| T0-1 指标 | `24b7f29` | 已落地 |
+| T0-2 归档子进程化 | `24b7f29` | 已落地（评审 M5：超时不升级 SIGKILL） |
+| T0-3 健康/容量输出 | `24b7f29` | 已落地 |
+| T1-1 角色配置 | `e80cf56` `f38a5a4` | 已落地（拓扑仍单副本） |
+| T1-2 独立预算 | `f38a5a4` | 已落地 |
+| T1-3 轻量通道 | `f38a5a4` | 已落地 |
+| T1-4 分角色 Compose | `e80cf56` | 已落地（副本数 = 1） |
+| T2-1 检查复用 | `b410d94` | 已落地（评审 M2：瞬态失败被长期缓存） |
+| T2-2 构建持久领取 | `e156630` | 已落地（评审 C1/C2：启动 force 恢复、回收未作废 attempt） |
+| T2-3 容量路由 | `fd09322` | 已落地（评审 M3/M4：错误码映射、非幂等重试） |
+| T3-1 预览授权可恢复 | `f38a5a4` | 部分落地（评审 C3/M1：缓存票据回退、header 信任） |
+| T3-2 缓存有界化 | `9c0d58d` | 已落地 |
+| T3-3 摘流与版本指纹 | `eb75f20` | 已落地 |
+| T4-1 签名与共享 | `979d039` | 已落地（评审认定为整批最扎实） |
+| T4-2 Renderer attempt | `0896cc7` | 已落地 |
+| T4-3 多副本协调与 Run 停机 | `0f89c97` | 测试与文档已补；宣称能力未完全可证 |
+
+### 门禁
+
+Backend 全量 / Runtime gate / 新增单测集成 ✅；`test:repository` 与 `test:contracts` 各红一项，均为 `documentation.test.ts` 断链（46 条，其中 10 条由 `e2efe6c` 移动 archive 文件时引入）。
+
+### 未覆盖项（必须在后续处理）
+
+1. **Critical 修复**：C1 启动 force 恢复抢健康租约、C2 回收未作废 `attempt_id`、C3 预览缓存票据回退（详见评审 §2）。
+2. **Major 修复**：M1 伪造 `x-runtime-service-token` 缓存投毒、M2 瞬态 503 缓存成检查失败、M3 配置错误误判满载、M4 构建 POST 盲目重发、M5 归档 worker 不升级 SIGKILL（详见评审 §3）。
+3. **§11 多副本回归与故障演练**：两预览 / 两构建检查 / 两 Renderer 的跨副本回归、强制跨副本子请求、实例重启与摘流演练**均未执行**。
+4. **AGENTS.md 未同步**：Runtime 角色、构建 attempt 围栏、检查指纹缓存、签名密钥环缺席，违反其 §5 文档维护规则。
+5. **文档断链**：`test:repository` 的 10 条新断链待修；`PROJECT_BUILD_*` / `RUNTIME_BUILD_ID` 未进 `deploy/.env.example` 与 `env-vars.md`。
+6. **分布式模板可用性**：`compose.runtime-roles.yml` 角色副本数均为 1，不得标记为多副本可用。
+
+### 修复记录（2026-09-26，对照评审 C/M/# 编号）
+
+| 项 | 处理 |
+| :--- | :--- |
+| **C1** | `recover_expired_build_jobs` 去掉全局 `force`；启动恢复只回收过期租约或 `force_owner_prefix` 前缀任务，不再抢走其它副本健康租约 |
+| **C2** | 回收/回 pending/失败终态一律 `attempt_id=None` 并清空 `artifact_*`；`assert_attempt_fence` 在无 `lease_owner` 时直接 `BUILD_LEASE_MISSING` |
+| **C3** | `runtime-saas-preview.ts` 的 `load`/`resolveId` 只认请求/importer 自带 `previewToken`，禁止从进程缓存取凭证 |
+| **M1** | 请求头服务令牌未经验签不得入缓存（防跨用户缓存投毒）；TTL 封顶 15 分钟；不新鲜/无 exp 的 header 令牌视为缺失回退换票。工具令牌 scope 分离（`runtime-internal-tool`）作为纵深防御 |
+| **M2** | `build_code_check_failed_result` 支持 `retryable`；瞬态基础设施失败不入检查缓存 |
+| **M3** | 配置/鉴权类 503（`JWKS_URL_MISSING` 等）保留真实错误码，不映射为 `RUNTIME_CAPACITY_EXCEEDED` |
+| **M4** | build 角色 POST 超时不换副本重发非幂等请求 |
+| **M5** | 归档 worker 超时 SIGTERM 后升级 SIGKILL，避免槽位永久泄漏 |
+| **M6** | `compose.runtime-roles.yml` 三角色改用最小 `environment`，不再注入 DB/Redis/AI/签名私钥 |
+| **M7** | `persist_uploaded_artifact` 改为条件 UPDATE（attempt+status+lease）提升产物 |
+| **M9** | 启动校验 `PROJECT_BUILD_LEASE_SECONDS > RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS` |
+| **M10** | `complete_job(success=True)` 强制 `artifact_storage_key` 非空 |
+| **M12** | 轻量工具独立 `role="light"` 准入计数（`RUNTIME_LIGHT_MAX_INFLIGHT`） |
+| **M13** | 服务令牌强制绑定 `artifact_id`（缺失 401）；工具令牌不再走 artifact 读路径 |
+| **断链** | archive 相对链接深度修正，`test:repository` / `test:contracts` 转绿 |
+| **文档** | `resource-queues.md` 独立 lane、`compose.md:112` 路由指引、`multi-backend.md` Run 全局收敛语义、`deploy/.env.example` 补 `PROJECT_BUILD_*` / `RUNTIME_BUILD_ID` / `RUNTIME_LIGHT_MAX_INFLIGHT` |
+
+**仍未覆盖（后续）**：M8 代码侧 Run owner 过滤（现仅文档改为如实描述全局收敛）；M11 指纹三处缺口；#14–#20 门槛项；§11 跨副本演练；AGENTS.md 全面同步；§4.2 Minor 清单。
+
+### 复审修复（2026-09-26 P1/P2）
+
+| 项 | 处理 |
+| :--- | :--- |
+| P1 compose 写死域名/audience | `x-runtime-role-env` 改为 `env_file: ../runtime.env`；新增 `deploy/runtime.env.example`，部署者按域名/audience 定制，与 `deploy/.env` 保持一致；密钥仍不进 Runtime 容器 |
+| P1 构建 POST ReadError 重发 | `RequestError` 中仅 `ConnectError` 可换副本；`ReadError`/`WriteError` 等对 build POST 直接失败，不再重发非幂等请求 |
+| P2 light 准入 0 回退 check | `runtime_light_max_inflight <= 0` 按配置语义视为不限制，不再 `or` 回退 check 上限 |
+| P1 构建 POST 错误响应仍换副本 | build POST 对 5xx、非法 JSON、ReadError、超时及非执行前容量码的 429/503 不换副本；仅明确的队列满、排队超时、调度器关闭可换副本，不确定错误打 `dispatch_may_have_started` 标记 |
+| P1 超时后立即重派 | 队列对不确定错误先确认产物（有则成功），无产物则保留租约等过期收敛，不立即新 attempt；回收时已有产物直接 succeeded |

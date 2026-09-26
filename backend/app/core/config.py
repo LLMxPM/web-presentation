@@ -92,9 +92,11 @@ class AppSettings(BaseSettings):
     # 选址冷却：同一目标连续失败达到阈值后短暂跳过，冷却到期自动恢复参与轮询。
     runtime_target_failure_threshold: int = 3
     runtime_target_cooldown_seconds: float = 15.0
-    # 全链路准入：Backend 同时在途的 build/check 内部调用上限；<=0 表示不限制。
+    # 全链路准入：Backend 同时在途的 build/check/light 内部调用上限；<=0 表示不限制。
+    # light（可视化编辑、资源比例测量）与 check 独立计数，避免长编译诊断队头阻塞轻量工具。
     runtime_build_max_inflight: int = 4
     runtime_check_max_inflight: int = 16
+    runtime_light_max_inflight: int = 16
     runtime_public_base_url: str | None = None
     runtime_shared_secret: str = "change-me"
     runtime_service_token_audience: str = "runtime-backend"
@@ -691,14 +693,16 @@ class AppSettings(BaseSettings):
         """按职责解析 Runtime 内部目标列表。
 
         回退顺序：多副本列表（runtime_build/check_base_urls）→ 单地址 → runtime_base_url。
-        role 取 preview / build / check；preview 当前保持单目标，多副本仅开放给计算角色。
+        role 取 preview / build / check / light；preview 当前保持单目标，多副本仅开放给计算角色。
+        light（轻量工具）与 check 共用计算目标，但准入与冷却独立计数。
         """
 
+        effective_role = "check" if role == "light" else role
         plural_mapping = {
             "build": self.runtime_build_base_urls,
             "check": self.runtime_check_base_urls,
         }
-        targets = parse_runtime_target_list(str(plural_mapping.get(role) or ""))
+        targets = parse_runtime_target_list(str(plural_mapping.get(effective_role) or ""))
         if targets:
             return targets
 
@@ -707,7 +711,7 @@ class AppSettings(BaseSettings):
             "build": self.runtime_build_base_url,
             "check": self.runtime_check_base_url,
         }
-        configured = str(singular_mapping.get(role) or "").strip().rstrip("/")
+        configured = str(singular_mapping.get(effective_role) or "").strip().rstrip("/")
         if configured:
             return [configured]
         fallback = self.runtime_base_url.strip().rstrip("/")
@@ -800,3 +804,21 @@ def validate_runtime_role_targets(settings: AppSettings | None = None) -> None:
                         "target": explicit_preview,
                     },
                 )
+
+
+def validate_project_build_lease_covers_timeout(settings: AppSettings | None = None) -> None:
+    """启动期断言构建租约时长覆盖构建请求超时（M9）。
+
+    否则队列循环会在 Runtime 仍在执行时偷走自己的构建：
+    `project_build_lease_seconds` 必须严格大于 `runtime_build_request_timeout_seconds`。
+    """
+
+    resolved = settings or get_settings()
+    lease_seconds = int(resolved.project_build_lease_seconds)
+    build_timeout = float(resolved.runtime_build_request_timeout_seconds)
+    if lease_seconds <= build_timeout:
+        raise ValueError(
+            "PROJECT_BUILD_LEASE_SECONDS 必须大于 RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS："
+            f"当前 lease={lease_seconds}s <= timeout={build_timeout}s，"
+            "否则租约会先于构建请求过期，队列循环会偷走正在执行的构建。"
+        )

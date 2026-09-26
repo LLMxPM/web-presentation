@@ -541,6 +541,25 @@ describe('runtime saas preview 服务令牌可恢复', () => {
     expect(String(resolved)).toContain('vue&type=style')
   })
 
+  it('无 ctx 的模块请求不得回退到进程内 previewToken 缓存（C3）', async () => {
+    mockBackendFetch()
+    const plugin = createPlugin()
+    // 先用合法请求把票据写入进程内缓存（模拟他人/先前请求留下的缓存条目）
+    await callLoad(plugin, '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value')
+
+    // 同一 artifact、同一模块、不带 ctx：必须 401，绝不能用缓存票据冒充鉴权
+    await expect(
+      callLoad(plugin, '/@runtime-preview/artifact-1/src/views/Foo.vue'),
+    ).rejects.toMatchObject({ statusCode: 401, code: 'PREVIEW_CONTEXT_REQUIRED' })
+
+    // resolveId 同样不得从缓存回填无 importer 票据的模块 ID
+    const resolvedWithoutImporter = await callResolveId(
+      plugin,
+      '/@runtime-preview/artifact-1/src/views/Bar.vue',
+    )
+    expect(String(resolvedWithoutImporter || '')).not.toContain('ctx=')
+  })
+
   it('artifact 失效（Backend 404）后不得再命中旧缓存', async () => {
     let manifestFetchCount = 0
     let moduleGone = false

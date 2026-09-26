@@ -1105,9 +1105,32 @@ function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promi
     let stdout = ''
     let stderr = ''
     let timedOut = false
+    let forceKillTimer: ReturnType<typeof setTimeout> | null = null
+    const clearTimers = () => {
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer)
+        forceKillTimer = null
+      }
+    }
     const timeoutHandle = setTimeout(() => {
       timedOut = true
-      child.kill()
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        // 终止调用失败时仍等待 exit / 强制终止。
+      }
+      // 子进程若忽略 SIGTERM，必须升级 SIGKILL；否则 promise 永不落定，
+      // 调度器槽位与临时工作区都会泄漏（M5）。
+      forceKillTimer = setTimeout(() => {
+        if (child.exitCode !== null || child.signalCode !== null) {
+          return
+        }
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          // 保持 close 监听，绝不把仍存活的进程视为已回收。
+        }
+      }, DIAGNOSTICS_WORKER_STOP_GRACE_MS)
     }, options.timeoutMs)
 
     child.stdout.on('data', chunk => {
@@ -1117,10 +1140,12 @@ function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promi
       stderr = appendCapturedOutput(stderr, chunk)
     })
     child.on('error', error => {
+      clearTimers()
       clearTimeout(timeoutHandle)
       reject(error)
     })
     child.on('close', (code, signal) => {
+      clearTimers()
       clearTimeout(timeoutHandle)
       resolve({ code, signal, stdout, stderr, timedOut })
     })

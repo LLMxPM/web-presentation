@@ -1,6 +1,6 @@
 # 架构评估：SQLite 兼容与定时任务写路径
 
-> **D1 决策更新（2026-09-24）**：SQLite Lite **长期一等公民**（选项 A）。本文 §6.0/§6.3.1 中「D1 未决 ⇒ 从裁剪」的 2b/2d 剩余项应按现行评估重新立项；BoolInt 维持裁剪。现行结论与执行序见 [`../architecture-assessment-2026-09-24.md`](../architecture-assessment-2026-09-24.md)。
+> **D1 决策更新（2026-09-24）**：SQLite Lite **长期一等公民**（选项 A）。本文 §6.0/§6.3.1 中「D1 未决 ⇒ 从裁剪」的 2b/2d 剩余项应按现行评估重新立项；BoolInt 维持裁剪。现行结论与执行序见 [`../architecture-assessment-2026-09-24.md`](./architecture-assessment-2026-09-24.md)。
 
 > 评估日期：2026-09-23；**核对修订：2026-09-24**（对照 HEAD `44282d6` 逐条复核，全部结论已带 `file:line` 证据）。  
 > 对象为当前工作区 Backend 持久化层、迁移与后台循环。  

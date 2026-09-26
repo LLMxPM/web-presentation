@@ -96,7 +96,7 @@ JWKS（`/.well-known/jwks.json`）由当前密钥与轮换期旧钥共同构成�
 | 用户点击停止 | 请求取消当前 Run，终态为 `cancelled` |
 | Backend 正常退出 / 滚动重启 | 取消仍在执行的进程内任务，写入 `AI_RUN_PROCESS_STOPPED` |
 | Backend 异常退出 | 由 active-run 空闲超时收敛，或下次启动时 `recover_interrupted_agent_runs_on_startup` 终态化 |
-| 多 Backend 副本扩容 | 各副本各自收敛本进程 Run；**不得据此宣称普通 Run 可跨实例迁移或无中断续跑** |
+| 多 Backend 副本扩容 | **任一副本启动会全局收敛所有未完成 Run**（`recover_interrupted_agent_runs_on_startup` 无 owner/进程过滤，见 `run_recovery.py`）；在途 Run 可能被其它副本启动判为 `AI_RUN_PROCESS_STOPPED`。**不得据此宣称普通 Run 可跨实例迁移或无中断续跑** |
 
 停机后的用户可理解恢复路径：
 

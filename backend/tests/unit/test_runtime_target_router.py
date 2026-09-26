@@ -29,6 +29,7 @@ def _settings(**overrides: object) -> AppSettings:
         "runtime_target_cooldown_seconds": 10.0,
         "runtime_build_max_inflight": 2,
         "runtime_check_max_inflight": 2,
+        "runtime_light_max_inflight": 2,
     }
     base.update(overrides)
     return AppSettings(**base)  # type: ignore[arg-type]
@@ -209,14 +210,18 @@ def test_admission_unlimited_when_limit_non_positive() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _routing_transport(handler_by_host: dict[str, httpx.Response]) -> httpx.MockTransport:
-    """按目标主机返回预设响应的 Mock transport。"""
+def _routing_transport(
+    handler_by_host: dict[str, httpx.Response | Exception],
+) -> httpx.MockTransport:
+    """按目标主机返回预设响应或抛出预设异常的 Mock transport。"""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        response = handler_by_host.get(request.url.host or "")
-        if response is None:
+        result = handler_by_host.get(request.url.host or "")
+        if isinstance(result, Exception):
+            raise result
+        if result is None:
             return httpx.Response(502, json={"code": "UNREACHABLE", "message": "no handler"})
-        return response
+        return result
 
     return httpx.MockTransport(handler)
 
@@ -279,6 +284,36 @@ async def test_request_maps_all_overloaded_to_stable_capacity_error() -> None:
     assert exc_info.value.code == RUNTIME_CAPACITY_EXCEEDED
     assert exc_info.value.status_code == 503
     assert (exc_info.value.headers or {}).get("Retry-After") == "5"
+
+
+@pytest.mark.asyncio
+async def test_request_should_not_map_config_error_503_to_capacity_exceeded() -> None:
+    """配置/鉴权类 503 必须保留真实错误码，不得伪装成副本满载（M3）。"""
+
+    settings = _settings(runtime_check_base_urls="http://a:7373,http://b:7373")
+    router = RuntimeTargetRouter(settings_provider=lambda: settings, clock=_FakeClock())
+    transport = _routing_transport(
+        {
+            "a": httpx.Response(503, json={"code": "JWKS_URL_MISSING", "message": "未配置 JWKS"}),
+            "b": httpx.Response(200, json={"status": "passed"}),
+        }
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await request_runtime_role_json(
+            role="check",
+            method="POST",
+            path="/__runtime_internal/v1/diagnostics/artifact",
+            settings=settings,
+            headers={},
+            timeout_seconds=5.0,
+            default_error_code="RUNTIME_DIAGNOSTICS_FAILED",
+            json_payload={"artifact_id": "a"},
+            transport=transport,
+            router=router,
+        )
+    assert exc_info.value.code == "JWKS_URL_MISSING"
+    assert exc_info.value.code != RUNTIME_CAPACITY_EXCEEDED
 
 
 @pytest.mark.asyncio
@@ -345,3 +380,171 @@ async def test_request_fails_over_on_unavailable_replica() -> None:
     # 故障副本进入冷却：下一轮选址把健康副本排在前面。
     ordered = router.ordered_candidates("build", settings.resolve_runtime_role_base_urls("build"))
     assert ordered[0] == "http://up:7373"
+
+
+@pytest.mark.asyncio
+async def test_build_post_should_not_failover_on_read_error() -> None:
+    """构建 POST 在 ReadError（请求可能已到达）后禁止换副本重发（P1）。"""
+
+    settings = _settings(runtime_build_base_urls="http://a:7373,http://b:7373")
+    router = RuntimeTargetRouter(settings_provider=lambda: settings, clock=_FakeClock())
+    transport = _routing_transport(
+        {
+            "a": httpx.ReadError("connection reset while reading response"),
+            "b": httpx.Response(200, json={"artifact_id": "a"}),
+        }
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await request_runtime_role_json(
+            role="build",
+            method="POST",
+            path="/__runtime_internal/v1/builds/project",
+            settings=settings,
+            headers={},
+            timeout_seconds=5.0,
+            default_error_code="RUNTIME_REQUEST_FAILED",
+            content=b"{}",
+            transport=transport,
+            router=router,
+        )
+    # 不得把非幂等构建 POST 重发到 b：b 不应被触及。
+    assert exc_info.value.code == "RUNTIME_REQUEST_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_build_post_should_not_failover_on_5xx() -> None:
+    """构建 POST 在 5xx 后禁止换副本：第一副本可能已执行并上传。"""
+
+    settings = _settings(runtime_build_base_urls="http://a:7373,http://b:7373")
+    router = RuntimeTargetRouter(settings_provider=lambda: settings, clock=_FakeClock())
+    transport = _routing_transport(
+        {
+            "a": httpx.Response(500, json={"code": "BUILD_INTERNAL", "message": "boom"}),
+            "b": httpx.Response(200, json={"artifact_id": "a"}),
+        }
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await request_runtime_role_json(
+            role="build",
+            method="POST",
+            path="/__runtime_internal/v1/builds/project",
+            settings=settings,
+            headers={},
+            timeout_seconds=5.0,
+            default_error_code="RUNTIME_REQUEST_FAILED",
+            content=b"{}",
+            transport=transport,
+            router=router,
+        )
+    assert exc_info.value.code == "BUILD_INTERNAL"
+    assert (exc_info.value.data or {}).get("dispatch_may_have_started") is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [429, 503])
+async def test_build_post_should_not_failover_on_ambiguous_capacity_response(status_code: int) -> None:
+    """构建中回源或上传返回 429/503 时，不得误判为执行前满载并重发。"""
+
+    settings = _settings(runtime_build_base_urls="http://a:7373,http://b:7373")
+    router = RuntimeTargetRouter(settings_provider=lambda: settings, clock=_FakeClock())
+    transport = _routing_transport(
+        {
+            "a": httpx.Response(status_code, json={"code": "BUILD_ARTIFACT_UPLOAD_FAILED", "message": "upload failed"}),
+            "b": httpx.Response(200, json={"artifact_id": "duplicate"}),
+        }
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await request_runtime_role_json(
+            role="build",
+            method="POST",
+            path="/__runtime_internal/v1/builds/project",
+            settings=settings,
+            headers={},
+            timeout_seconds=5.0,
+            default_error_code="RUNTIME_REQUEST_FAILED",
+            content=b"{}",
+            transport=transport,
+            router=router,
+        )
+    assert exc_info.value.code == "BUILD_ARTIFACT_UPLOAD_FAILED"
+    assert (exc_info.value.data or {}).get("dispatch_may_have_started") is True
+
+
+@pytest.mark.asyncio
+async def test_build_post_can_failover_on_pre_dispatch_queue_full() -> None:
+    """Runtime 明确在执行前拒绝构建时，允许将 POST 发给空闲副本。"""
+
+    settings = _settings(runtime_build_base_urls="http://a:7373,http://b:7373")
+    router = RuntimeTargetRouter(settings_provider=lambda: settings, clock=_FakeClock())
+    transport = _routing_transport(
+        {
+            "a": httpx.Response(429, json={"code": "RUNTIME_VITE_QUEUE_FULL", "message": "busy"}),
+            "b": httpx.Response(200, json={"artifact_id": "built"}),
+        }
+    )
+
+    result = await request_runtime_role_json(
+        role="build",
+        method="POST",
+        path="/__runtime_internal/v1/builds/project",
+        settings=settings,
+        headers={},
+        timeout_seconds=5.0,
+        default_error_code="RUNTIME_REQUEST_FAILED",
+        content=b"{}",
+        transport=transport,
+        router=router,
+    )
+    assert result == {"artifact_id": "built"}
+
+
+@pytest.mark.asyncio
+async def test_check_post_should_still_failover_on_read_error() -> None:
+    """幂等/可重试角色的 ReadError 仍可换副本。"""
+
+    settings = _settings(runtime_check_base_urls="http://a:7373,http://b:7373")
+    router = RuntimeTargetRouter(settings_provider=lambda: settings, clock=_FakeClock())
+    transport = _routing_transport(
+        {
+            "a": httpx.ReadError("connection reset"),
+            "b": httpx.Response(200, json={"status": "passed"}),
+        }
+    )
+
+    result = await request_runtime_role_json(
+        role="check",
+        method="POST",
+        path="/__runtime_internal/v1/diagnostics/artifact",
+        settings=settings,
+        headers={},
+        timeout_seconds=5.0,
+        default_error_code="RUNTIME_DIAGNOSTICS_FAILED",
+        json_payload={"artifact_id": "a"},
+        transport=transport,
+        router=router,
+    )
+    assert result == {"status": "passed"}
+
+
+@pytest.mark.asyncio
+async def test_light_admission_zero_means_unlimited() -> None:
+    """RUNTIME_LIGHT_MAX_INFLIGHT=0 表示不限制，不得回退为 check 上限（P2）。"""
+
+    settings = _settings(runtime_check_max_inflight=1, runtime_light_max_inflight=0)
+    router = RuntimeTargetRouter(settings_provider=lambda: settings, clock=_FakeClock())
+
+    # light 0 = 不限制：连续进入两次均成功。
+    with router.admission("light"):
+        pass
+    with router.admission("light"):
+        pass
+
+    # check 上限为 1：第二次并发进入应被拒绝。
+    with router.admission("check"):
+        with pytest.raises(AppException) as exc_info:
+            with router.admission("check"):
+                pass
+        assert exc_info.value.code == RUNTIME_ADMISSION_FULL

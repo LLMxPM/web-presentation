@@ -173,7 +173,7 @@ def _patch_analyze(
 @pytest.mark.asyncio
 async def test_create_visual_edit_preview_artifact_should_persist_bound_metadata(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """API 应生成绑定当前版本的专用 artifact，并保存 Runtime canonical Manifest。"""
@@ -209,7 +209,7 @@ async def test_create_visual_edit_preview_artifact_should_persist_bound_metadata
     artifact_id = payload["artifact_id"]
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     artifact_manifest = manifest_response.json()
@@ -228,7 +228,7 @@ async def test_create_visual_edit_preview_artifact_should_persist_bound_metadata
     module_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
         params={"path": visual_edit["module_path"]},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert module_response.status_code == 200
     assert module_response.text == f"{PAGE_SOURCE}\n<!-- instrumented -->"
@@ -237,7 +237,7 @@ async def test_create_visual_edit_preview_artifact_should_persist_bound_metadata
 @pytest.mark.asyncio
 async def test_create_visual_edit_artifact_should_expose_pinned_component_props_only(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """组件映射应使用页面 v1 import 本地名和 v1 schema，不受组件最新草稿漂移。"""
@@ -344,7 +344,7 @@ import LocalEmptyCard from '@workspace-components/{empty_schema_component["code"
     artifact_id = response.json()["artifact_id"]
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     assert (

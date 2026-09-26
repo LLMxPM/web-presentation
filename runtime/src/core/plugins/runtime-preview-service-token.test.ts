@@ -122,7 +122,7 @@ describe('runtime preview service token recovery', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('本次请求自带 Backend 下发令牌时应优先使用并入缓存', async () => {
+  it('本次请求自带令牌可使用但不得写入缓存（防缓存投毒）', async () => {
     const cache = createServiceTokenCache()
     const headerToken = buildFakeJwt(Math.floor(Date.now() / 1000) + 600)
 
@@ -136,7 +136,28 @@ describe('runtime preview service token recovery', () => {
 
     expect(resolved.token).toBe(headerToken)
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(readFreshCacheEntry(cache, 'artifact-1')?.token).toBe(headerToken)
+    // 请求头令牌未经验签，绝不能入缓存——否则可被用于跨用户缓存投毒。
+    expect(readFreshCacheEntry(cache, 'artifact-1')).toBeNull()
+  })
+
+  it('伪造的远期 exp 请求头令牌不得钉死缓存，应换票获取真令牌', async () => {
+    const cache = createServiceTokenCache()
+    const forged = buildFakeJwt(Math.floor(Date.now() / 1000) + 10 * 365 * 24 * 3600)
+    const exchangedToken = buildFakeJwt(Math.floor(Date.now() / 1000) + 300)
+    fetchMock.mockResolvedValueOnce(exchangeOkResponse(exchangedToken, 300, 'artifact-1'))
+
+    const resolved = await resolveRuntimeServiceToken({
+      artifactId: 'artifact-1',
+      previewToken: 'preview-token',
+      backendApiBaseUrl: 'http://backend:8000',
+      serviceTokenCache: cache,
+      headerServiceToken: forged,
+    })
+
+    // 远期 exp 视为异常，不使用、不缓存，回退换票。
+    expect(resolved.token).toBe(exchangedToken)
+    expect(readFreshCacheEntry(cache, 'artifact-1')?.token).toBe(exchangedToken)
+    expect(readFreshCacheEntry(cache, 'artifact-1')?.token).not.toBe(forged)
   })
 
   it('过期 preview token 被 Backend 拒绝时应抛出结构化错误', async () => {
@@ -196,8 +217,10 @@ describe('runtime preview service token recovery', () => {
     expect(redacted).toContain('jwt(')
   })
 
-  it('无法解析过期时间的令牌不应写入缓存', async () => {
+  it('无法解析过期时间的请求头令牌应视为缺失并回退换票，且不写缓存', async () => {
     const cache = createServiceTokenCache()
+    const exchangedToken = buildFakeJwt(Math.floor(Date.now() / 1000) + 300)
+    fetchMock.mockResolvedValueOnce(exchangeOkResponse(exchangedToken, 300, 'artifact-1'))
 
     const resolved = await resolveRuntimeServiceToken({
       artifactId: 'artifact-1',
@@ -207,8 +230,8 @@ describe('runtime preview service token recovery', () => {
       headerServiceToken: 'opaque-header-token',
     })
 
-    expect(resolved.token).toBe('opaque-header-token')
-    expect(cache.size).toBe(0)
+    expect(resolved.token).toBe(exchangedToken)
+    expect(readFreshCacheEntry(cache, 'artifact-1')?.token).toBe(exchangedToken)
   })
 
   it('换票不改变服务令牌缓存的稳定内容身份', async () => {

@@ -85,7 +85,7 @@ const url = resolveResourcePath('app')
 
 async def test_project_preview_artifact_should_publish_component_modules_and_module_resolver_config(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """项目预览 artifact 应把路由页面引用的组件版本一起发布，并下发模块解析边界配置。"""
 
@@ -163,7 +163,7 @@ const configUrl = resolveResourcePath('app')
 
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     manifest = manifest_response.json()
@@ -174,7 +174,7 @@ const configUrl = resolveResourcePath('app')
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     config_bundle = config_bundle_response.json()
@@ -194,14 +194,14 @@ const configUrl = resolveResourcePath('app')
     component_module_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
         params={"path": f"src/workspace-components/{component_data['code']}/v/1.vue"},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert component_module_response.status_code == 200
     assert "Preview Button" in component_module_response.text
 
 async def test_project_preview_artifact_should_include_relative_page_modules_in_snapshot(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """项目预览 artifact 应递归收录页面相对导入引用的其他页面模块。"""
 
@@ -284,7 +284,7 @@ import NestedChildPage from './{child_page["code"]}.vue'
 
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     manifest = manifest_response.json()
@@ -296,14 +296,14 @@ import NestedChildPage from './{child_page["code"]}.vue'
     child_module_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
         params={"path": f"src/views/{child_page['code']}.vue"},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert child_module_response.status_code == 200
     assert "child page content" in child_module_response.text
 
 async def test_standalone_page_preview_should_keep_entry_page_out_of_manifest_whitelist(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """单页面预览入口页应只写入 release_modules，不强制进入 manifest.modules 白名单。"""
 
@@ -356,7 +356,7 @@ import StandaloneCard from '@workspace-components/{component_data['code']}/v/1'
 
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     manifest = manifest_response.json()
@@ -367,14 +367,14 @@ import StandaloneCard from '@workspace-components/{component_data['code']}/v/1'
     page_module_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
         params={"path": f"src/views/{page_data['code']}.vue"},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert page_module_response.status_code == 200
     assert "StandaloneCard" in page_module_response.text
 
 async def test_component_draft_preview_should_publish_component_sandbox_config_bundle(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """组件草稿预览应生成纯沙箱配置，并通过本地组件预览入口加载目标组件。"""
 
@@ -428,7 +428,7 @@ defineProps<{ title?: string }>()
     artifact_id = preview_data["artifact_id"]
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     manifest = manifest_response.json()
@@ -440,7 +440,7 @@ defineProps<{ title?: string }>()
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     config_bundle = config_bundle_response.json()
@@ -476,7 +476,7 @@ defineProps<{ title?: string }>()
 
 async def test_saved_component_preview_should_use_default_preview_options(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """已保存组件预览应使用默认页面尺寸、默认主题与默认组件占位。"""
 
@@ -507,7 +507,7 @@ async def test_saved_component_preview_should_use_default_preview_options(
     artifact_id = preview_response.json()["artifact_id"]
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     config_bundle = config_bundle_response.json()
@@ -539,7 +539,7 @@ async def test_saved_component_preview_should_use_default_preview_options(
 
 async def test_saved_component_preview_should_include_icons_from_transitive_component_dependencies(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """组件预览应递归扫描模块图，把间接依赖组件中的静态图标一并下发。"""
 
@@ -589,10 +589,11 @@ import LeafIcon from '@workspace-components/{leaf_component["code"]}/v/1'
         f"/api/components/{wrapper_component['id']}/preview-artifacts",
     )
     assert preview_response.status_code == 200
+    artifact_id = preview_response.json()["artifact_id"]
 
     config_bundle_response = await authenticated_client.get(
-        f"/internal/runtime/preview-artifacts/{preview_response.json()['artifact_id']}/config-bundle",
-        headers=runtime_service_headers,
+        f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     assert config_bundle_response.json()["icons"] == {
@@ -640,7 +641,7 @@ async def test_component_draft_preview_should_create_hidden_system_project(
 
 async def test_component_source_draft_preview_should_render_unsaved_source_without_persisting_version(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """未保存源码预览应基于内存内容生成临时 release，而不要求先保存组件版本。"""
 
@@ -696,7 +697,7 @@ import RemoteDep from '@workspace-components/{dependency_data['code']}/v/1'
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     config_bundle = config_bundle_response.json()
@@ -715,7 +716,7 @@ import RemoteDep from '@workspace-components/{dependency_data['code']}/v/1'
     draft_module_path = f"src/workspace-components/{component_preview['component_code']}/v/0.vue"
     manifest_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
     assert set(manifest_response.json()["modules"].keys()) == {
@@ -726,14 +727,14 @@ import RemoteDep from '@workspace-components/{dependency_data['code']}/v/1'
     draft_module_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
         params={"path": draft_module_path},
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert draft_module_response.status_code == 200
     assert "未保存草稿" in draft_module_response.text
 
 async def test_component_source_draft_preview_should_apply_preview_options(
     authenticated_client: AsyncClient,
-    runtime_service_headers: dict[str, str],
+    runtime_service_headers,
 ) -> None:
     """未保存源码预览应允许覆盖页面、主题与占位配置，并按组件源码注入最小图标集合。"""
 
@@ -776,7 +777,7 @@ themes:
 
     config_bundle_response = await authenticated_client.get(
         f"/internal/runtime/preview-artifacts/{artifact_id}/config-bundle",
-        headers=runtime_service_headers,
+        headers=runtime_service_headers(artifact_id),
     )
     assert config_bundle_response.status_code == 200
     config_bundle = config_bundle_response.json()
