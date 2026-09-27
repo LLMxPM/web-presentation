@@ -77,6 +77,7 @@ production env 版适合把环境变量集中放在 `deploy/.env` 中维护。�
 - **secret 文件权限**：该凭证具备跨工作空间领取任务的能力，挂载文件必须 `0400`/`0600` 且只归属 Runtime 进程；权限对同组或其他用户开放时启动日志会报 `runtime.build.worker.credential_loose_mode`。构建子进程（Vite/Rollup、ZIP 归档）不会继承 `RUNTIME_BUILD_WORKER_CREDENTIAL(_FILE)`。
 - **单实例并发**：pull 模式下领取消费者数量等于 project lane 并发（`RUNTIME_VITE_TASK_CONCURRENCY`，多消费者共享同一有界调度器），因此调高该预算才会真正增加单实例同时执行的构建任务数。
 - **绝对期限**：`PROJECT_BUILD_TOTAL_DEADLINE_SECONDS` 是任务创建时确定的 wall-clock 时刻，领取租约、attempt 令牌 TTL、续租后的新租约和 Runtime 执行预算都裁剪到该时刻之前；Worker 与 Backend 失联时也会在本地租约到期前主动中止构建。
+- **归档接收上限**：产物回传按分片流式写入对象存储（本地驱动临时文件 + 原子改名，S3 驱动分片上传并在失败时 abort），大小与 sha256 在写入过程中算出，超过 `PROJECT_BUILD_ARTIFACT_MAX_BYTES` 立即中止；Backend 不会把整包归档读进进程内存。
 
 生成 secret 示例：
 

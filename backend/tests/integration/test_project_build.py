@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import AsyncIterator
 from io import BytesIO
 from types import SimpleNamespace
 from zipfile import ZipFile
@@ -10,6 +11,7 @@ from zipfile import ZipFile
 import pytest
 from httpx import AsyncClient
 
+from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
 from app.models.project_build_job import ProjectBuildJob
@@ -148,6 +150,13 @@ def build_zip_bytes(files: dict[str, bytes]) -> bytes:
         for file_path, content in files.items():
             archive.writestr(file_path, content)
     return buffer.getvalue()
+
+
+async def aiter_chunks(chunks: list[bytes]) -> AsyncIterator[bytes]:
+    """把分片列表包成异步迭代器，匹配构建归档的流式接收接口。"""
+
+    for chunk in chunks:
+        yield chunk
 
 
 def test_normalize_project_build_base_url_should_accept_relative_or_root_paths() -> None:
@@ -541,7 +550,7 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
         job = await service.get_job_by_id(success_job_id)
         await service.persist_uploaded_artifact(
             job=job,
-            archive_content=build_zip_bytes({"index.html": b"<html>ok</html>"}),
+            archive_chunks=aiter_chunks([build_zip_bytes({"index.html": b"<html>ok</html>"})]),
             entry_file="index.html",
             sha256=None,
             size_bytes=None,
@@ -803,6 +812,87 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     )
     assert repeated_delete_response.status_code == 404
     assert repeated_delete_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_project_build_artifact_upload_should_reject_oversized_content_length_early(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """声明长度越界的归档应在解析 multipart 前被拒，避免整包先落临时盘。"""
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "project_build_artifact_max_bytes", 128)
+
+    response = await authenticated_client.post(
+        "/internal/runtime/build-jobs/1/artifact",
+        headers={"Authorization": "Bearer invalid-build-token"},
+        files={"archive": ("dist.zip", b"x" * 4096, "application/zip")},
+        data={"entry_file": "index.html"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["code"] == "BUILD_ARTIFACT_TOO_LARGE"
+
+
+@pytest.mark.asyncio
+async def test_persist_uploaded_artifact_should_abort_when_stream_exceeds_limit(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    build_worker_credential: str,
+) -> None:
+    """逐块写入应在越界处立即中止：不提升产物，也不留下半成品对象。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+
+    async def fake_build_snapshot(  # noqa: ANN001
+        self,
+        *,
+        project_id: int,
+        entry_descriptor=None,
+        asset_delivery_mode="public",
+        asset_snapshot_mode="all",
+    ) -> ProjectArtifactSnapshot:
+        return build_fake_snapshot(workspace_id)
+
+    monkeypatch.setattr(
+        "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
+        fake_build_snapshot,
+    )
+    settings = get_settings()
+    monkeypatch.setattr(settings, "project_build_artifact_max_bytes", 64)
+
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200
+    job_id = create_response.json()["id"]
+    claim_response = await authenticated_client.post(
+        "/internal/runtime/build-jobs/claim",
+        json={"worker_id": "runtime-build-test"},
+        headers={"Authorization": f"Bearer {build_worker_credential}"},
+    )
+    assert claim_response.status_code == 200
+
+    async with get_session_factory()() as upload_session:
+        service = ProjectBuildService(upload_session)
+        job = await service.get_job_by_id(job_id)
+        with pytest.raises(AppException) as exc_info:
+            await service.persist_uploaded_artifact(
+                job=job,
+                archive_chunks=aiter_chunks([b"a" * 32, b"b" * 32, b"c" * 32]),
+                entry_file="index.html",
+                sha256=None,
+                size_bytes=None,
+                attempt_id=job.attempt_id,
+                lease_owner=job.lease_owner,
+            )
+
+        assert exc_info.value.code == "OBJECT_TOO_LARGE"
+        aborted_job = await service.get_job_by_id(job_id)
+        assert aborted_job.artifact_storage_key is None
+        assert aborted_job.artifact_size_bytes is None
 
 
 @pytest.mark.asyncio

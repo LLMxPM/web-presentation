@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
@@ -105,12 +105,17 @@ async def download_project_build_artifact(
     await ProjectService(session).get(job.project_id, user_id=current.user.id)
     if not job.artifact_storage_key:
         raise AppException(status_code=404, code="BUILD_ARTIFACT_NOT_FOUND", detail="当前构建任务尚未生成可下载产物。")
-    content = await ObjectStorageService().read_object(job.artifact_storage_key)
-    return Response(
-        content=content,
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="project-{project_id}-build-{job_id}.zip"'},
-    )
+    # 走本地可读路径流式发送，避免大归档整包进入响应内存；S3 驱动会先落派生缓存。
+    async with ObjectStorageService().open_object_for_read(
+        job.artifact_storage_key,
+        expected_sha256=job.artifact_sha256,
+        expected_size=job.artifact_size_bytes,
+    ) as archive_path:
+        return FileResponse(
+            path=str(archive_path),
+            media_type="application/zip",
+            filename=f"project-{project_id}-build-{job_id}.zip",
+        )
 
 
 @router.delete("/projects/{project_id}/build-jobs/{job_id}/artifact", status_code=204)

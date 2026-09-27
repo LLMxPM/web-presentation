@@ -14,6 +14,7 @@ from httpx import AsyncClient
 from sqlalchemy import text
 
 from tests.integration.test_project_build import (
+    aiter_chunks,
     build_fake_snapshot,
     build_zip_bytes,
     create_active_project,
@@ -78,7 +79,7 @@ async def test_claim_renew_complete_should_drive_job_lifecycle(
         job = await service.get_job_by_id(job_id)
         await service.persist_uploaded_artifact(
             job=job,
-            archive_content=build_zip_bytes({"index.html": b"<html>ok</html>"}),
+            archive_chunks=aiter_chunks([build_zip_bytes({"index.html": b"<html>ok</html>"})]),
             entry_file="index.html",
             sha256=None,
             size_bytes=None,

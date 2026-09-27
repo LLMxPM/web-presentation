@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
+import os
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncIterator
 from urllib.parse import quote
+from uuid import uuid4
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
@@ -21,6 +26,20 @@ try:
     from botocore.exceptions import ClientError
 except ImportError:  # pragma: no cover - botocore 随 aioboto3 安装，缺失时仅影响 S3 路径
     ClientError = None
+
+logger = logging.getLogger(__name__)
+
+# S3 分片上传的单片大小：最低要求 5 MiB，取 8 MiB 平衡内存占用与请求次数。
+S3_MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class StreamedObjectWrite:
+    """流式写入完成后回传的对象指纹。"""
+
+    storage_key: str
+    size_bytes: int
+    sha256: str
 
 
 class ObjectStorageService:
@@ -54,6 +73,33 @@ class ObjectStorageService:
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_bytes(content)
         return normalized_key
+
+    async def put_object_stream(
+        self,
+        storage_key: str,
+        chunks: AsyncIterator[bytes],
+        content_type: str | None = None,
+        *,
+        max_size_bytes: int | None = None,
+        bucket_name: str | None = None,
+    ) -> StreamedObjectWrite:
+        """按分片流式写入对象，返回实际大小与 sha256，避免整包进入进程内存。
+
+        `max_size_bytes` 在写入过程中即时生效：超限立刻中止并清理中间产物，
+        而不是先完整落地再判长度——上传侧的体量不可由平台自身保证。
+        本地驱动写临时文件后原子改名，S3 驱动走分片上传并在失败时 abort。
+        """
+
+        normalized_key = self.normalize_storage_key(storage_key)
+        if self.driver == "s3":
+            return await self._put_s3_object_stream(
+                normalized_key,
+                chunks,
+                content_type,
+                max_size_bytes=max_size_bytes,
+                bucket_name=bucket_name,
+            )
+        return await self._put_local_object_stream(normalized_key, chunks, max_size_bytes=max_size_bytes)
 
     async def read_object(self, storage_key: str, *, bucket_name: str | None = None) -> bytes:
         """读取对象原始内容。"""
@@ -234,6 +280,122 @@ class ObjectStorageService:
             put_kwargs["ContentType"] = content_type
         async with self._s3_client() as client:
             await client.put_object(**put_kwargs)
+
+    async def _put_s3_object_stream(
+        self,
+        storage_key: str,
+        chunks: AsyncIterator[bytes],
+        content_type: str | None,
+        *,
+        max_size_bytes: int | None,
+        bucket_name: str | None = None,
+    ) -> StreamedObjectWrite:
+        """以分片上传方式流式写入 S3 对象；任何中断都会 abort，避免遗留未完成分片。"""
+
+        resolved_bucket = self._resolve_s3_bucket_name(bucket_name)
+        self._ensure_s3_config(resolved_bucket)
+        digest = hashlib.sha256()
+        total_bytes = 0
+        buffer = bytearray()
+        parts: list[dict[str, object]] = []
+        async with self._s3_client() as client:
+            create_params: dict[str, object] = {"Bucket": resolved_bucket, "Key": storage_key}
+            if content_type:
+                create_params["ContentType"] = content_type
+            upload_id = str((await client.create_multipart_upload(**create_params))["UploadId"])
+
+            async def upload_part(body: bytes) -> None:
+                """上传单个分片并按序记录 PartNumber/ETag。"""
+
+                response = await client.upload_part(
+                    Bucket=resolved_bucket,
+                    Key=storage_key,
+                    UploadId=upload_id,
+                    PartNumber=len(parts) + 1,
+                    Body=body,
+                )
+                parts.append({"PartNumber": len(parts) + 1, "ETag": response["ETag"]})
+
+            try:
+                async for chunk in chunks:
+                    if not chunk:
+                        continue
+                    total_bytes += len(chunk)
+                    self._guard_stream_size(total_bytes, max_size_bytes)
+                    digest.update(chunk)
+                    buffer.extend(chunk)
+                    while len(buffer) >= S3_MULTIPART_PART_SIZE_BYTES:
+                        await upload_part(bytes(buffer[:S3_MULTIPART_PART_SIZE_BYTES]))
+                        del buffer[:S3_MULTIPART_PART_SIZE_BYTES]
+                if buffer:
+                    await upload_part(bytes(buffer))
+                if not parts:
+                    raise AppException(status_code=400, code="OBJECT_CONTENT_EMPTY", detail="对象内容不能为空。")
+                await client.complete_multipart_upload(
+                    Bucket=resolved_bucket,
+                    Key=storage_key,
+                    UploadId=upload_id,
+                    MultipartUpload={"Parts": parts},
+                )
+            except BaseException:
+                try:
+                    await client.abort_multipart_upload(Bucket=resolved_bucket, Key=storage_key, UploadId=upload_id)
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "S3 分片上传 abort 失败，未完成分片需由 bucket 生命周期规则回收。",
+                        extra={"event": "object_storage.multipart.abort_failed", "storage_key": storage_key},
+                        exc_info=True,
+                    )
+                raise
+
+        return StreamedObjectWrite(storage_key=storage_key, size_bytes=total_bytes, sha256=digest.hexdigest())
+
+    async def _put_local_object_stream(
+        self,
+        storage_key: str,
+        chunks: AsyncIterator[bytes],
+        *,
+        max_size_bytes: int | None,
+    ) -> StreamedObjectWrite:
+        """先写同目录临时文件再原子改名，中途失败不会留下半个对象。"""
+
+        target_path = self.resolve_local_path(storage_key)
+        await asyncio.to_thread(target_path.parent.mkdir, parents=True, exist_ok=True)
+        temp_path = target_path.parent / f".{target_path.name}.part-{uuid4().hex}"
+        digest = hashlib.sha256()
+        total_bytes = 0
+        try:
+            file_handle = temp_path.open("wb")
+            try:
+                async for chunk in chunks:
+                    if not chunk:
+                        continue
+                    total_bytes += len(chunk)
+                    self._guard_stream_size(total_bytes, max_size_bytes)
+                    digest.update(chunk)
+                    await asyncio.to_thread(file_handle.write, chunk)
+                await asyncio.to_thread(file_handle.flush)
+                os.fsync(file_handle.fileno())
+            finally:
+                file_handle.close()
+            if total_bytes == 0:
+                raise AppException(status_code=400, code="OBJECT_CONTENT_EMPTY", detail="对象内容不能为空。")
+            await asyncio.to_thread(os.replace, temp_path, target_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+        return StreamedObjectWrite(storage_key=storage_key, size_bytes=total_bytes, sha256=digest.hexdigest())
+
+    @staticmethod
+    def _guard_stream_size(total_bytes: int, max_size_bytes: int | None) -> None:
+        """流式写入过程中即时核对大小上限，避免继续接收越界上传。"""
+
+        if max_size_bytes is not None and total_bytes > max_size_bytes:
+            raise AppException(
+                status_code=413,
+                code="OBJECT_TOO_LARGE",
+                detail=f"对象大小超过上限 {max_size_bytes} 字节。",
+            )
 
     async def _read_s3_object(self, storage_key: str, *, bucket_name: str | None = None) -> bytes:
         """从 S3 兼容存储读取对象。"""

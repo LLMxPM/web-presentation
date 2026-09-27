@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -25,6 +26,8 @@ from app.services.token_service import TokenService
 router = APIRouter()
 
 MAX_BATCH_MODULE_PATHS = 128
+# 构建归档上传的分片读取大小：只为控制 Backend 常驻内存，不改变对象内容。
+ARTIFACT_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 class RuntimeModuleBatchRequest(BaseModel):
@@ -642,7 +645,48 @@ async def complete_project_build_job(
     return {"job_id": job_id, "status": "failed", "message": "构建任务已标记失败。"}
 
 
-@router.post("/internal/runtime/build-jobs/{job_id}/artifact")
+def _guard_runtime_build_artifact_request(request: Request) -> None:
+    """在解析 multipart 之前按 Content-Length 预筛构建归档大小。
+
+    真实上限仍在流式写入过程中逐块判定；这里只拦明显越界的请求，
+    避免整包先被 Starlette 落到临时磁盘再报错。缺少或非法 Content-Length 时放行。
+    必须作为路由依赖挂载：依赖先于请求体解析执行，写在函数体里已经太晚。
+    """
+
+    header = str(request.headers.get("content-length") or "").strip()
+    if not header:
+        return
+    try:
+        declared_bytes = int(header)
+    except ValueError:
+        return
+    max_bytes = int(get_settings().project_build_artifact_max_bytes)
+    if declared_bytes > max_bytes:
+        raise AppException(
+            status_code=413,
+            code="BUILD_ARTIFACT_TOO_LARGE",
+            detail=f"构建产物超过接收上限 {max_bytes} 字节。",
+        )
+
+
+async def _iter_upload_file_chunks(
+    file: UploadFile,
+    *,
+    chunk_size: int = ARTIFACT_UPLOAD_CHUNK_SIZE,
+) -> AsyncIterator[bytes]:
+    """按固定块读取上传文件，使归档大小不再正比于 Backend 常驻内存。"""
+
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            return
+        yield chunk
+
+
+@router.post(
+    "/internal/runtime/build-jobs/{job_id}/artifact",
+    dependencies=[Depends(_guard_runtime_build_artifact_request)],
+)
 async def upload_project_build_artifact(
     job_id: int,
     request: Request,
@@ -687,11 +731,10 @@ async def upload_project_build_artifact(
             "error_message": "",
         },
     )
-    archive_content = await archive.read()
     service = ProjectBuildService(session)
     build_job = await service.persist_uploaded_artifact(
         job=build_job,
-        archive_content=archive_content,
+        archive_chunks=_iter_upload_file_chunks(archive),
         entry_file=entry_file,
         sha256=sha256,
         size_bytes=size_bytes,

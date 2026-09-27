@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
-import hashlib
 import logging
 from pathlib import Path
 import re
@@ -544,42 +544,47 @@ class ProjectBuildService:
         self,
         *,
         job: ProjectBuildJob,
-        archive_content: bytes,
+        archive_chunks: AsyncIterator[bytes],
         entry_file: str,
         sha256: str | None,
         size_bytes: int | None,
         attempt_id: str | None = None,
         lease_owner: str | None = None,
     ) -> ProjectBuildJob:
-        """保存 Runtime 上传的构建归档；仅在 attempt 与有效租约匹配时提升为最终产物。"""
+        """流式接收 Runtime 上传的构建归档；仅在 attempt 与有效租约匹配时提升为最终产物。
 
-        if not archive_content:
-            raise AppException(status_code=400, code="BUILD_ARTIFACT_EMPTY", detail="构建产物归档不能为空。")
+        归档分片直接写入对象存储，大小与 sha256 在写入过程中算出；超过
+        PROJECT_BUILD_ARTIFACT_MAX_BYTES 立即中止，整包不会进入 Backend 进程内存。
+        """
 
         self.assert_attempt_fence(job=job, attempt_id=attempt_id, lease_owner=lease_owner)
 
         normalized_entry_file = _normalize_build_entry_file(entry_file)
-        actual_sha256 = hashlib.sha256(archive_content).hexdigest()
-        actual_size_bytes = len(archive_content)
         normalized_declared_sha256 = str(sha256 or "").strip().lower() or None
-        if normalized_declared_sha256 and normalized_declared_sha256 != actual_sha256:
-            raise AppException(status_code=409, code="BUILD_ARTIFACT_SHA256_MISMATCH", detail="构建产物校验和不匹配。")
+        declared_size_bytes: int | None = None
         if size_bytes is not None:
             try:
                 declared_size_bytes = int(size_bytes)
             except (TypeError, ValueError) as exc:
                 raise AppException(status_code=400, code="BUILD_ARTIFACT_SIZE_INVALID", detail="构建产物大小声明非法。") from exc
-            if declared_size_bytes != actual_size_bytes:
-                raise AppException(status_code=409, code="BUILD_ARTIFACT_SIZE_MISMATCH", detail="构建产物大小声明不匹配。")
 
         # 先写入 attempt 级不可变对象键，再以条件 UPDATE 提升任务上的最终产物指针。
         # 禁止 read-then-write：两个 attempt 交错时后提交者不得凭内存旧值覆盖新结果（M7）。
         storage_key = self.build_attempt_storage_key(job)
-        stored_key = await self.object_storage.put_object(
+        written = await self.object_storage.put_object_stream(
             storage_key,
-            archive_content,
+            archive_chunks,
             "application/zip",
+            max_size_bytes=int(self.settings.project_build_artifact_max_bytes),
         )
+        stored_key = written.storage_key
+        actual_sha256 = written.sha256
+        actual_size_bytes = written.size_bytes
+        if normalized_declared_sha256 and normalized_declared_sha256 != actual_sha256:
+            raise AppException(status_code=409, code="BUILD_ARTIFACT_SHA256_MISMATCH", detail="构建产物校验和不匹配。")
+        if declared_size_bytes is not None and declared_size_bytes != actual_size_bytes:
+            raise AppException(status_code=409, code="BUILD_ARTIFACT_SIZE_MISMATCH", detail="构建产物大小声明不匹配。")
+
         download_url = self.build_artifact_download_url(job)
         normalized_attempt = str(attempt_id or "").strip()
         promote_conditions = [

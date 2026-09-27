@@ -127,6 +127,9 @@ class AppSettings(BaseSettings):
     # 生产优先使用 *_FILE（Docker secret 挂载），避免密钥进入环境变量。
     runtime_build_worker_credential: str = ""
     runtime_build_worker_credential_file: str | None = None
+    # Runtime 回传构建归档的接收上限：流式写入过程中即时判定并中止，
+    # 不把体量不可信的归档整包读进 Backend 进程。
+    project_build_artifact_max_bytes: int = 512 * 1024 * 1024
     backend_public_base_url: str = "http://127.0.0.1:8000"
     # 远程渲染执行服务配置（Backend 不再安装或持有 Playwright/Chromium）
     render_workers_config: list[dict[str, str]] = Field(
@@ -322,6 +325,7 @@ class AppSettings(BaseSettings):
         "project_build_lease_seconds",
         "project_build_max_attempts",
         "project_build_total_deadline_seconds",
+        "project_build_artifact_max_bytes",
     )
     @classmethod
     def validate_positive_int(cls, value: int) -> int:
