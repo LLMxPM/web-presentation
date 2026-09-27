@@ -15,8 +15,6 @@ from app.schemas.project_build import ProjectBuildAssetSummary, ProjectBuildCrea
 from app.services.auth_service import AuthContext
 from app.services.object_storage_service import ObjectStorageService
 from app.services.project_build_service import ProjectBuildService
-# 保留符号供既有测试 monkeypatch；创建路径不再调度同步派发。
-from app.services.project_build_service import run_project_build_job  # noqa: F401
 from app.services.project_service import ProjectService
 
 router = APIRouter()

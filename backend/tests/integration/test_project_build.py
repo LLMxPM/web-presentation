@@ -225,10 +225,6 @@ async def test_project_build_snapshot_should_only_include_referenced_and_extra_a
     )
     assert update_response.status_code == 200
 
-    async def fake_run_project_build_job(job_id: int) -> None:  # pragma: no cover
-        return None
-
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
     create_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
         json={"base_url": "./"},
@@ -267,10 +263,6 @@ async def test_project_build_snapshot_should_not_include_suggested_reference_ass
     )
     assert suggested_response.status_code == 200
 
-    async def fake_run_project_build_job(job_id: int) -> None:  # pragma: no cover
-        return None
-
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
     create_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
         json={"base_url": "./"},
@@ -336,10 +328,6 @@ async def test_project_build_should_return_structured_dynamic_asset_error(
         '<template><AssetImage :name="dynamicName" /></template>',
     )
 
-    async def fake_run_project_build_job(job_id: int) -> None:  # pragma: no cover
-        return None
-
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
     response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
         json={"base_url": "./"},
@@ -368,10 +356,6 @@ async def test_project_build_should_return_structured_missing_asset_error(
         '<template><AssetImage name="missing_image" /></template>',
     )
 
-    async def fake_run_project_build_job(job_id: int) -> None:  # pragma: no cover
-        return None
-
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
     response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
         json={"base_url": "./"},
@@ -391,7 +375,6 @@ async def test_project_build_job_routes_should_create_and_query_latest_job(
     """创建构建任务后，应能通过 latest、history 和 by-id 接口读取任务。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
-    background_job_ids: list[int] = []
 
     captured_snapshot: dict[str, object] = {}
 
@@ -407,14 +390,10 @@ async def test_project_build_job_routes_should_create_and_query_latest_job(
         captured_snapshot["asset_snapshot_mode"] = asset_snapshot_mode
         return build_fake_snapshot(workspace_id)
 
-    async def fake_run_project_build_job(job_id: int) -> None:
-        background_job_ids.append(job_id)
-
     monkeypatch.setattr(
         "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
         fake_build_snapshot,
     )
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
 
     create_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
@@ -428,7 +407,7 @@ async def test_project_build_job_routes_should_create_and_query_latest_job(
     assert build_job["status"] == "pending"
     assert build_job["snapshot_release_id"] > 0
     # 创建后不再同步派发：任务保持 pending，等待 Runtime Build Worker 领取。
-    assert background_job_ids == []
+    assert build_job["status"] == "pending"
 
     latest_response = await authenticated_client.get(f"/api/projects/{project_id}/build-jobs/latest")
     assert latest_response.status_code == 200
@@ -479,7 +458,6 @@ async def test_create_project_build_job_should_reject_when_active_job_exists(
     """已有排队或运行中的构建任务时，应拒绝重复创建新任务。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
-    background_job_ids: list[int] = []
 
     async def fake_build_snapshot(  # noqa: ANN001
         self,
@@ -491,14 +469,10 @@ async def test_create_project_build_job_should_reject_when_active_job_exists(
     ) -> ProjectArtifactSnapshot:
         return build_fake_snapshot(workspace_id)
 
-    async def fake_run_project_build_job(job_id: int) -> None:
-        background_job_ids.append(job_id)
-
     monkeypatch.setattr(
         "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
         fake_build_snapshot,
     )
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_run_project_build_job)
 
     first_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
@@ -524,6 +498,7 @@ async def test_create_project_build_job_should_reject_when_active_job_exists(
 async def test_run_project_build_job_should_update_status_for_success_and_failure(
     authenticated_client: AsyncClient,
     monkeypatch,
+    build_worker_credential: str,
 ) -> None:
     """Runtime Build Worker 通过 claim/complete API 执行后，应更新 succeeded 或 failed 状态。"""
 
@@ -543,9 +518,6 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
         "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
         fake_build_snapshot,
     )
-    monkeypatch.setenv("RUNTIME_BUILD_WORKER_CREDENTIAL", "test-build-worker-credential")
-    from app.core.config import get_settings
-    get_settings.cache_clear()
 
     success_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
@@ -653,14 +625,10 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     ) -> ProjectArtifactSnapshot:
         return build_fake_snapshot(workspace_id)
 
-    async def fake_background_job(job_id: int) -> None:  # pragma: no cover
-        return None
-
     monkeypatch.setattr(
         "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
         fake_build_snapshot,
     )
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_background_job)
 
     create_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
@@ -856,14 +824,10 @@ async def test_project_build_artifact_proxy_should_report_missing_archive(
     ) -> ProjectArtifactSnapshot:
         return build_fake_snapshot(workspace_id)
 
-    async def fake_background_job(job_id: int) -> None:  # pragma: no cover
-        return None
-
     monkeypatch.setattr(
         "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
         fake_build_snapshot,
     )
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_background_job)
 
     create_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",

@@ -18,17 +18,6 @@ from tests.integration.test_project_build import (
 )
 
 
-@pytest.fixture
-def build_worker_credential(monkeypatch) -> str:
-    """注入测试用 Runtime Build Worker 共享凭证。"""
-
-    credential = "test-build-worker-credential"
-    monkeypatch.setenv("RUNTIME_BUILD_WORKER_CREDENTIAL", credential)
-    get_settings.cache_clear()
-    yield credential
-    get_settings.cache_clear()
-
-
 @pytest.mark.asyncio
 async def test_claim_renew_complete_should_drive_job_lifecycle(
     authenticated_client: AsyncClient,
@@ -287,3 +276,60 @@ async def test_overdue_pending_build_job_should_fail(
         assert job is not None
         assert job.status == "failed"
         assert "总执行期限" in (job.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_claim_should_skip_overdue_pending_job(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+    build_worker_credential: str,
+) -> None:
+    """超过总期限的 pending 任务不得再被领取，避免与 fail_overdue 竞态拉起超期构建。"""
+
+    from datetime import timedelta
+
+    from app.core.time_utils import utc_now
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+
+    async def fake_build_snapshot(
+        self,
+        *,
+        project_id: int,
+        entry_descriptor=None,
+        asset_delivery_mode="public",
+        asset_snapshot_mode="all",
+    ):
+        return build_fake_snapshot(workspace_id)
+
+    monkeypatch.setattr(
+        "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
+        fake_build_snapshot,
+    )
+
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200
+    job_id = create_response.json()["id"]
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        job.deadline_at = utc_now() - timedelta(seconds=1)
+        await session.commit()
+
+    claim_response = await authenticated_client.post(
+        "/internal/runtime/build-jobs/claim",
+        json={"worker_id": "runtime-build-test"},
+        headers={"Authorization": f"Bearer {build_worker_credential}"},
+    )
+    assert claim_response.status_code == 200
+    claim = claim_response.json()
+    assert claim["job_id"] is None
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        assert job.status == "pending"

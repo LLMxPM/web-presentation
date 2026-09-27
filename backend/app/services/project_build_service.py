@@ -24,6 +24,10 @@ from app.schemas.project_build import ProjectBuildAssetSummary, ProjectBuildCrea
 from app.services.project_artifact_builder import ProjectArtifactBuilder
 from app.services.object_storage_service import ObjectStorageService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
+from app.services.durable_job_lease_service import (
+    renew_running_job_lease,
+    transition_owned_running_job,
+)
 
 
 ACTIVE_BUILD_STATUSES = ("pending", "running")
@@ -247,8 +251,15 @@ class ProjectBuildService:
         expires_at = now + timedelta(seconds=lease_seconds)
         new_attempt_id = uuid.uuid4().hex
 
+        # 过期任务不得再被领取：与 fail_overdue_pending_build_jobs 对齐，
+        # 避免「恢复循环尚未收敛、Worker 已 claim」把超期任务重新拉起。
+        deadline_clause = or_(
+            ProjectBuildJob.deadline_at.is_(None),
+            ProjectBuildJob.deadline_at > now,
+        )
         candidate_stmt = select(ProjectBuildJob.id).where(
             ProjectBuildJob.status == "pending",
+            deadline_clause,
             or_(
                 ProjectBuildJob.lease_expires_at.is_(None),
                 ProjectBuildJob.lease_expires_at <= now,
@@ -271,6 +282,7 @@ class ProjectBuildService:
                 .where(
                     ProjectBuildJob.id == candidate_id,
                     ProjectBuildJob.status == "pending",
+                    deadline_clause,
                     or_(
                         ProjectBuildJob.lease_expires_at.is_(None),
                         ProjectBuildJob.lease_expires_at <= now,
@@ -305,24 +317,18 @@ class ProjectBuildService:
         job_id: int,
         lease_owner: str,
     ) -> ProjectBuildJob | None:
-        """仅允许当前未过期租约的拥有者续租，替代「lease 必须覆盖最长 HTTP timeout」的静态约束。"""
+        """仅允许当前未过期租约的拥有者续租；CAS 语义收编自 durable_job_lease_service。"""
 
-        now = utc_now()
-        lease_seconds = self.settings.project_build_lease_seconds
-        result = await self.session.execute(
-            update(ProjectBuildJob)
-            .where(
-                ProjectBuildJob.id == job_id,
-                ProjectBuildJob.status == "running",
-                ProjectBuildJob.lease_owner == lease_owner,
-                ProjectBuildJob.lease_expires_at.is_not(None),
-                ProjectBuildJob.lease_expires_at > now,
-            )
-            .values(lease_expires_at=now + timedelta(seconds=lease_seconds))
-            .execution_options(synchronize_session=False)
+        renewed = await renew_running_job_lease(
+            self.session,
+            ProjectBuildJob,
+            job_id=job_id,
+            worker_id=lease_owner,
+            lease_seconds=self.settings.project_build_lease_seconds,
+            owner_attr="lease_owner",
+            heartbeat_attr="claimed_at",
         )
-        await self.session.commit()
-        if (result.rowcount or 0) != 1:
+        if not renewed:
             return None
         job = await self.session.get(ProjectBuildJob, job_id)
         if job is not None:
@@ -338,28 +344,24 @@ class ProjectBuildService:
     ) -> bool:
         """失败但仍有重试预算时回到 pending；作废当前 attempt，阻止迟到上传提升。"""
 
-        result = await self.session.execute(
-            update(ProjectBuildJob)
-            .where(
-                ProjectBuildJob.id == job_id,
-                ProjectBuildJob.status == "running",
-                ProjectBuildJob.lease_owner == lease_owner,
-            )
-            .values(
-                status="pending",
-                lease_owner=None,
-                lease_expires_at=None,
-                claimed_at=None,
+        return await transition_owned_running_job(
+            self.session,
+            ProjectBuildJob,
+            job_id=job_id,
+            worker_id=lease_owner,
+            owner_attr="lease_owner",
+            values={
+                "status": "pending",
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "claimed_at": None,
                 # 作废 attempt 身份：旧令牌不得再把迟到产物提升为最终结果。
-                attempt_id=None,
-                error_message=error_message,
-                finished_at=None,
+                "attempt_id": None,
+                "error_message": error_message,
+                "finished_at": None,
                 **_clear_artifact_fields(),
-            )
-            .execution_options(synchronize_session=False)
+            },
         )
-        await self.session.commit()
-        return (result.rowcount or 0) == 1
 
     async def complete_job(
         self,
@@ -372,7 +374,8 @@ class ProjectBuildService:
         """在仍持有任务租约时写入终态，避免迟到执行者覆盖新结果。
 
         成功终态前置校验产物指针：dispatch 返回不等于产物已提升；
-        无产物不得标记 succeeded（M10）。
+        无产物不得标记 succeeded（M10）。成功后一并释放 lease_owner，
+        避免行上残留陈旧执行者身份。
         """
 
         now = utc_now()
@@ -380,34 +383,30 @@ class ProjectBuildService:
             "status": "succeeded" if success else "failed",
             "error_message": None if success else error_message,
             "finished_at": now,
+            # 两种终态都释放执行者身份：任务不再被任何 Worker 持有。
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "claimed_at": None,
         }
-        if success:
-            values["lease_expires_at"] = None
-        else:
-            # 失败终态一并清理租约与 attempt，避免行上残留陈旧 owner / 产物指针。
-            values["lease_owner"] = None
-            values["lease_expires_at"] = None
-            values["claimed_at"] = None
+        if not success:
+            # 失败终态一并作废 attempt 并清理产物指针。
             values["attempt_id"] = None
             values.update(_clear_artifact_fields())
 
-        conditions = [
-            ProjectBuildJob.id == job_id,
-            ProjectBuildJob.status == "running",
-            ProjectBuildJob.lease_owner == lease_owner,
-        ]
+        extra_conditions = []
         if success:
             # 成功必须已有产物：禁止「succeeded 但无产物」的对外可见状态。
-            conditions.append(ProjectBuildJob.artifact_storage_key.is_not(None))
+            extra_conditions.append(ProjectBuildJob.artifact_storage_key.is_not(None))
 
-        result = await self.session.execute(
-            update(ProjectBuildJob)
-            .where(*conditions)
-            .values(**values)
-            .execution_options(synchronize_session=False)
+        return await transition_owned_running_job(
+            self.session,
+            ProjectBuildJob,
+            job_id=job_id,
+            worker_id=lease_owner,
+            owner_attr="lease_owner",
+            values=values,
+            extra_conditions=extra_conditions,
         )
-        await self.session.commit()
-        return (result.rowcount or 0) == 1
 
     def is_retry_allowed(self, job: ProjectBuildJob) -> bool:
         """判断失败后是否仍可重试：未超重试预算且未超过总 deadline。"""
@@ -601,27 +600,6 @@ class ProjectBuildService:
             f"{self.settings.backend_public_base_url.rstrip('/')}"
             f"/api/projects/{job.project_id}/build-jobs/{job.id}/artifact"
         )
-
-
-async def run_project_build_job(
-    job_id: int,
-    *,
-    lease_owner: str | None = None,
-    session_factory: async_sessionmaker[AsyncSession] | None = None,
-) -> None:
-    """兼容入口：不再同步派发 Runtime；执行面由 Runtime Build Worker 通过 claim API 拉取。
-
-    历史上本函数会 claim + 同步 POST Runtime 并等待整包构建完成。现在 Backend 只负责
-    创建/恢复/attempt 围栏，真正执行由 Runtime Build Worker 领取
-    （POST /internal/runtime/build-jobs/claim → build → upload → complete）。
-    保留本函数签名是为了兼容既有 BackgroundTasks 与测试导入；它只做一次轻量唤醒，
-    不领取任务，避免与 Worker 争抢 running 租约。
-    """
-
-    logger.debug(
-        "项目构建任务触发已忽略同步派发，等待 Runtime Build Worker 领取。",
-        extra={"event": "project.build.job.dispatch_skipped", "job_id": job_id, "lease_owner": lease_owner},
-    )
 
 
 async def run_project_build_queue_loop(
@@ -838,39 +816,6 @@ def normalize_project_build_base_url(raw_base_url: str | None) -> str:
         raise AppException(status_code=400, code="PROJECT_BUILD_BASE_URL_INVALID", detail="base_url 仅支持 ./ 或以 / 开头。")
 
     return normalized if normalized.endswith("/") else f"{normalized}/"
-
-
-def _extract_build_error_message(error: Exception) -> str:
-    """提取构建失败摘要，供任务状态展示。"""
-
-    if isinstance(error, AppException):
-        return error.detail
-    return str(error) or "构建失败。"
-
-
-def _is_uncertain_dispatch_error(error: Exception) -> bool:
-    """判断派发错误是否「结果不确定」——对端可能已执行甚至已上传。
-
-    超时与传输层在请求发出后的失败均属此类：立即重派会形成重复构建。
-    路由器对不确定路径会打上 `dispatch_may_have_started` 标记；
-    连接未建立与容量满载除外，可安全重试。
-    """
-
-    if isinstance(error, AppException):
-        data = error.data if isinstance(getattr(error, "data", None), dict) else {}
-        if data.get("dispatch_may_have_started") is True:
-            return True
-        # 504 超时：请求已发出，对端可能仍在执行。
-        if error.status_code == 504:
-            return True
-        # 容量满载 / 配置错误：请求未进入执行，可安全重试。
-        if error.code in {
-            "RUNTIME_CAPACITY_EXCEEDED",
-            "RUNTIME_ADMISSION_FULL",
-            "RUNTIME_TARGETS_UNAVAILABLE",
-        }:
-            return False
-    return False
 
 
 def _normalize_build_entry_file(raw_entry_file: str | None) -> str:

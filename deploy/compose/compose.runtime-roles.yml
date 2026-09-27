@@ -6,6 +6,8 @@
 # - 复制 deploy/runtime.env.example 为 deploy/runtime.env，并按同一套域名/audience/JWKS 修改；
 #   Runtime 三角色只读 runtime.env，不读 deploy/.env，避免平台密钥进入编译用户代码的容器。
 #   runtime.env 中的 RUNTIME_PUBLIC_BASE_URL / audience / 路径必须与 deploy/.env 一致。
+# - 生成并写入 deploy/secrets/build_worker_credential（强随机值），Backend 与 runtime-build
+#   通过 secret 挂载同一文件；缺省时 claim fail-closed 且 Worker 不启动，构建会一直 pending。
 # - 各角色与 Renderer 的 deploy.resources.limits 以及对应的 Runtime 执行预算为示例值，
 #   必须按实测负载调整；取值依据见 docs/developer/deployment/compose.md「分角色单机」。
 # - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
@@ -73,6 +75,8 @@ services:
       RUNTIME_PREVIEW_BASE_URL: "http://runtime-preview:7373"
       RUNTIME_BUILD_BASE_URL: "http://runtime-build:7373"
       RUNTIME_CHECK_BASE_URL: "http://runtime-check:7373"
+      # 构建 Worker 共享服务凭证：与 runtime-build 使用同一 secret 文件。
+      RUNTIME_BUILD_WORKER_CREDENTIAL_FILE: "/run/secrets/build_worker_credential"
     volumes:
       - backend-data:/app/backend/data
     expose:
@@ -90,6 +94,7 @@ services:
         condition: service_healthy
     secrets:
       - render_service_credential
+      - build_worker_credential
     networks:
       platform-net:
         aliases:
@@ -199,6 +204,8 @@ services:
     image: llmxpm/web-runtime-vue:latest
     restart: unless-stopped
     environment:
+      # 构建 Worker 共享服务凭证：与 runtime-build 使用同一 secret 文件。
+      RUNTIME_BUILD_WORKER_CREDENTIAL_FILE: "/run/secrets/build_worker_credential"
       RUNTIME_ROLE: "build"
       # 构建执行预算：2 并发 × 2048MB 老生代 ≈ 4GiB 堆；容器 8g 另留约 4GiB 给 Buffer、
       # 归档（产物会整读进内存再压缩）、文件页与主进程。改并发或老生代时必须同步改 limits。
@@ -209,6 +216,8 @@ services:
       RUNTIME_BUILD_WORKER_TIMEOUT_MS: "600000"
     expose:
       - "7373"
+    secrets:
+      - build_worker_credential
     networks:
       # 只挂内部任务网络：无宿主机端口，公开 Gateway 与预览角色都不可直达。
       runtime-jobs-net:
@@ -286,6 +295,10 @@ services:
 secrets:
   render_service_credential:
     file: ../secrets/render_service_credential
+  # Runtime Build Worker 与 Backend 共用的内部服务凭证；文件内容为强随机字符串。
+  # 生成示例：python -c "import secrets; print(secrets.token_urlsafe(32))"
+  build_worker_credential:
+    file: ../secrets/build_worker_credential
 
 volumes:
   backend-data:

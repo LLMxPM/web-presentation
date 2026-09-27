@@ -17,7 +17,6 @@ from app.services.project_build_service import (
     ProjectBuildService,
     recover_expired_build_jobs,
     recover_interrupted_build_jobs_on_startup,
-    run_project_build_job,
 )
 from app.services.token_service import TokenService
 from tests.integration.test_project_build import (
@@ -47,14 +46,10 @@ async def _create_build_job(
     ) -> ProjectArtifactSnapshot:
         return build_fake_snapshot(workspace_id)
 
-    async def fake_background_job(job_id: int) -> None:  # pragma: no cover
-        return None
-
     monkeypatch.setattr(
         "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
         fake_build_snapshot,
     )
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_background_job)
 
     response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
@@ -250,6 +245,11 @@ async def test_run_project_build_job_should_fail_immediately_past_deadline(
     job_id = job_payload["id"]
 
     async with get_session_factory()() as session:
+        service = ProjectBuildService(session, lease_owner="worker-a")
+        claimed = await service.claim_job(job_id=job_id, lease_owner="worker-a")
+        assert claimed is not None
+
+    async with get_session_factory()() as session:
         job = await session.get(ProjectBuildJob, job_id)
         assert job is not None
         job.deadline_at = utc_now() - timedelta(seconds=1)
@@ -257,9 +257,8 @@ async def test_run_project_build_job_should_fail_immediately_past_deadline(
 
     async with get_session_factory()() as session:
         service = ProjectBuildService(session, lease_owner="worker-a")
-        claimed = await service.claim_job(job_id=job_id, lease_owner="worker-a")
-        assert claimed is not None
-        assert not service.is_retry_allowed(claimed)
+        job = await service.get_job_by_id(job_id)
+        assert not service.is_retry_allowed(job)
         failed = await service.complete_job(
             job_id=job_id,
             lease_owner="worker-a",

@@ -127,7 +127,9 @@ class AppSettings(BaseSettings):
     project_build_queue_poll_interval_seconds: float = 1.0
     # Runtime Build Worker 领取任务时使用的共享服务凭证；空值时拒绝 claim（fail-closed），
     # 本地开发/测试可注入固定值。与 RENDER_SERVICE_CREDENTIAL 同属内部服务身份。
+    # 生产优先使用 *_FILE（Docker secret 挂载），避免密钥进入环境变量。
     runtime_build_worker_credential: str = ""
+    runtime_build_worker_credential_file: str | None = None
     backend_public_base_url: str = "http://127.0.0.1:8000"
     # 远程渲染执行服务配置（Backend 不再安装或持有 Playwright/Chromium）
     render_workers_config: list[dict[str, str]] = Field(

@@ -69,7 +69,13 @@ production env 版适合把环境变量集中放在 `deploy/.env` 中维护。�
 
 `deploy/compose/compose.runtime-roles.yml` 把 Runtime 拆成 `runtime-preview`、`runtime-build`、`runtime-check` 三个角色容器（`RUNTIME_ROLE` 分别为 `preview`、`build`、`check`），与 Backend、迁移、Renderer 和 Gateway 组成分角色单机拓扑。Backend 仍从 `deploy/.env` 读配置；**Runtime 三角色只读 `deploy/runtime.env`**（复制 `deploy/runtime.env.example`），避免 `DATABASE_URL` / `REDIS_URL` / `AI_SECRET_ENCRYPTION_KEY` / `RUNTIME_RSA_PRIVATE_KEY` 等平台密钥进入会编译用户手写 SFC 的容器。`runtime.env` 中的域名、audience、JWKS 与路径必须与 `deploy/.env` 同名项一致，否则预览资源会指向错误域名或令牌校验失败。角色差异和资源约束写在模板内。
 
-**构建执行前提：** 项目构建由 `runtime-build` 内的 Build Worker 通过 `POST /internal/runtime/build-jobs/claim` 拉取。`deploy/.env` 与 `deploy/runtime.env` 必须配置**相同**的 `RUNTIME_BUILD_WORKER_CREDENTIAL`；缺省时 Backend 拒绝领取（503 fail-closed）且 Worker 不启动，构建任务会一直停在 `pending` 直到总期限被收敛为失败。生产环境请使用强随机值，不要沿用示例占位符。
+**构建执行前提：** 项目构建由 `runtime-build` 内的 Build Worker 通过 `POST /internal/runtime/build-jobs/claim` 拉取。Backend 与 `runtime-build` 必须持有**相同**的构建 Worker 凭证：分角色模板通过 Docker secret `deploy/secrets/build_worker_credential` 挂载（`RUNTIME_BUILD_WORKER_CREDENTIAL_FILE`），也可在两侧环境变量设置相同的 `RUNTIME_BUILD_WORKER_CREDENTIAL`。缺省时 Backend 拒绝领取（503 fail-closed）且 Worker 不启动，构建任务会一直停在 `pending` 直到总期限被收敛为失败。生产环境请使用强随机值，不要沿用示例占位符。
+
+生成 secret 示例：
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))" > deploy/secrets/build_worker_credential
+```
 
 ```bash
 cp deploy/.env.example deploy/.env

@@ -4,7 +4,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'http'
 import { mkdir, rm, writeFile, access, readdir, readFile } from 'fs/promises'
-import { constants as fsConstants } from 'fs'
+import { constants as fsConstants, readFileSync } from 'fs'
 import { resolve, sep } from 'path'
 
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
@@ -242,7 +242,7 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
       // 工作区采用首次诊断时的惰性预热：创建动作位于 diagnostics scheduler 槽位内，
       // 避免服务启动时与正式构建并发复制完整 Runtime 源码。
       let stopBuildQueueWorker: (() => void) | null = null
-      const buildWorkerCredential = String(process.env.RUNTIME_BUILD_WORKER_CREDENTIAL || '').trim()
+      const buildWorkerCredential = readRuntimeBuildWorkerCredential()
       const backendApiBaseUrl = options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || ''
       if (enableProjectEntry && buildWorkerCredential && backendApiBaseUrl) {
         stopBuildQueueWorker = startRuntimeBuildQueueWorker({
@@ -251,6 +251,8 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
           workerId: process.env.RUNTIME_BUILD_WORKER_ID || `runtime-build-${process.pid}`,
           runtimeRoot,
           scheduler,
+          runProjectBuild,
+          createBuildBackendClient,
         })
       }
       server.httpServer?.once('close', () => {
@@ -284,6 +286,15 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
 
         if (!enableProjectEntry || requestPath !== endpointPath) {
           return next()
+        }
+
+        // Worker 拉取模式已接管构建执行；保留 HTTP 同步入口会形成双路径。
+        if (stopBuildQueueWorker) {
+          return sendJson(res, 503, {
+            success: false,
+            code: 'BUILD_HTTP_DISPATCH_DISABLED',
+            message: '构建已改为 Worker 拉取模式，HTTP 同步派发入口已关闭。',
+          })
         }
 
         if (req.method !== 'POST') {
@@ -599,6 +610,22 @@ function assertBuildRequestMatchesClaims(
   if (normalizedBaseUrl !== normalizeBuildBaseUrl(claims.base_url)) {
     throw new RuntimeBuildError(403, 'BUILD_BASE_URL_MISMATCH', '构建 base_url 与令牌声明不一致。')
   }
+}
+
+/**
+ * 读取 Runtime Build Worker 共享凭证：优先 secret 文件，其次环境变量。
+ * @returns 非空凭证；未配置时返回空字符串（Worker 不启动）
+ */
+export function readRuntimeBuildWorkerCredential(): string {
+  const credentialFile = String(process.env.RUNTIME_BUILD_WORKER_CREDENTIAL_FILE || '').trim()
+  if (credentialFile) {
+    try {
+      return readFileSync(credentialFile, 'utf-8').trim()
+    } catch {
+      return ''
+    }
+  }
+  return String(process.env.RUNTIME_BUILD_WORKER_CREDENTIAL || '').trim()
 }
 
 /**

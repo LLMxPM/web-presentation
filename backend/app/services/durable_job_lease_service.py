@@ -97,23 +97,31 @@ async def renew_running_job_lease(
     worker_id: str,
     lease_seconds: int,
     now: datetime | None = None,
+    owner_attr: str = "worker_id",
+    heartbeat_attr: str = "heartbeat_at",
 ) -> bool:
-    """仅允许当前未过期租约的拥有者续租，避免旧 Worker 重新激活失效任务。"""
+    """仅允许当前未过期租约的拥有者续租，避免旧 Worker 重新激活失效任务。
+
+    `owner_attr` / `heartbeat_attr` 允许 ProjectBuildJob 等使用
+    `lease_owner` / `claimed_at` 命名的任务模型复用同一套 CAS 续租语义。
+    """
 
     heartbeat_at = now or utc_now()
+    owner_column = getattr(model, owner_attr)
+    values = {
+        heartbeat_attr: heartbeat_at,
+        "lease_expires_at": heartbeat_at + timedelta(seconds=max(1, lease_seconds)),
+    }
     result = await session.execute(
         update(model)
         .where(
             model.id == job_id,
             model.status == "running",
-            model.worker_id == worker_id,
+            owner_column == worker_id,
             model.lease_expires_at.is_not(None),
             model.lease_expires_at > heartbeat_at,
         )
-        .values(
-            heartbeat_at=heartbeat_at,
-            lease_expires_at=heartbeat_at + timedelta(seconds=max(1, lease_seconds)),
-        )
+        .values(**values)
         .execution_options(synchronize_session=False)
     )
     await session.commit()
@@ -130,14 +138,24 @@ async def transition_owned_running_job(
     require_not_cancelled: bool = False,
     require_active_lease: bool = False,
     commit: bool = True,
+    owner_attr: str = "worker_id",
+    cancel_attr: str = "cancel_requested_at",
+    extra_conditions: list[Any] | None = None,
 ) -> bool:
-    """按任务 ID、拥有者和可选未过期租约迁移 running 任务，避免旧 Worker 覆盖新状态。"""
+    """按任务 ID、拥有者和可选未过期租约迁移 running 任务，避免旧 Worker 覆盖新状态。
 
-    conditions = [model.id == job_id, model.status == "running", model.worker_id == worker_id]
+    `owner_attr` / `cancel_attr` 支持非标准命名的任务模型；`extra_conditions`
+    供领域服务附加产物指针、attempt 围栏等领域条件。
+    """
+
+    owner_column = getattr(model, owner_attr)
+    conditions = [model.id == job_id, model.status == "running", owner_column == worker_id]
     if require_not_cancelled:
-        conditions.append(model.cancel_requested_at.is_(None))
+        conditions.append(getattr(model, cancel_attr).is_(None))
     if require_active_lease:
         conditions.extend([model.lease_expires_at.is_not(None), model.lease_expires_at > utc_now()])
+    if extra_conditions:
+        conditions.extend(extra_conditions)
     result = await session.execute(
         update(model)
         .where(*conditions)

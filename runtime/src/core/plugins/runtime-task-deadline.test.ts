@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  RuntimeTaskAbortedError,
   RuntimeTaskDeadlineError,
   runWithRuntimeTaskDeadline,
 } from './runtime-task-deadline'
@@ -26,6 +27,25 @@ describe('runtime task deadline', () => {
     })
 
     expect(aborted).toBe(true)
+  })
+
+  it('外部中止信号应中断任务并返回租约失守错误', async () => {
+    const controller = new AbortController()
+
+    const pending = runWithRuntimeTaskDeadline('project', 60_000, async deadline => {
+      await new Promise<void>((_resolveWait, rejectWait) => {
+        deadline.signal.addEventListener('abort', () => {
+          rejectWait(deadline.signal.reason)
+        }, { once: true })
+      })
+    }, controller.signal)
+
+    controller.abort(new RuntimeTaskAbortedError('构建租约失守：HTTP 409'))
+
+    await expect(pending).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'RUNTIME_BUILD_LEASE_LOST',
+    })
   })
 
   it('应在任务完成后清除 deadline 并返回结果', async () => {

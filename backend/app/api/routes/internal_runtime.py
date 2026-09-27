@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import time
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -170,10 +171,27 @@ def _verify_runtime_service_request(request: Request, artifact_id: str) -> dict[
     return claims
 
 
+def _resolve_build_worker_credential() -> str:
+    """解析 Runtime Build Worker 共享凭证：优先 secret 文件，其次环境变量。"""
+
+    settings = get_settings()
+    credential_file = str(settings.runtime_build_worker_credential_file or "").strip()
+    if credential_file:
+        path = Path(credential_file).expanduser()
+        if not path.is_file():
+            raise AppException(
+                status_code=503,
+                code="RUNTIME_BUILD_WORKER_CREDENTIAL_MISSING",
+                detail="Runtime Build Worker 凭证文件不存在。",
+            )
+        return path.read_text(encoding="utf-8").strip()
+    return str(settings.runtime_build_worker_credential or "").strip()
+
+
 def _verify_build_worker_credential(request: Request) -> str:
     """校验 Runtime Build Worker 共享服务凭证；未配置时 fail-closed。"""
 
-    credential = str(get_settings().runtime_build_worker_credential or "").strip()
+    credential = _resolve_build_worker_credential()
     if not credential:
         raise AppException(
             status_code=503,
