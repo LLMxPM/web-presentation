@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import {
   RuntimeDiagnosticsWorker,
   createRuntimeDiagnosticsWorkerScript,
+  createRuntimeBuildChildEnv,
   createRuntimeBuildWorkerScript,
   createRuntimeArchiveWorkerScript,
   isRuntimeBuildWorkerOomFailure,
@@ -352,6 +353,28 @@ describe('runtime build worker', () => {
     } finally {
       await worker.close()
       await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('runtime build child environment', () => {
+  it('构建子进程必须拿不到 Worker 领取凭证，但保留任务级环境变量', () => {
+    const originalCredential = process.env.RUNTIME_BUILD_WORKER_CREDENTIAL
+    const originalCredentialFile = process.env.RUNTIME_BUILD_WORKER_CREDENTIAL_FILE
+    try {
+      process.env.RUNTIME_BUILD_WORKER_CREDENTIAL = 'shared-worker-credential'
+      process.env.RUNTIME_BUILD_WORKER_CREDENTIAL_FILE = '/run/secrets/build_worker_credential'
+
+      const childEnv = createRuntimeBuildChildEnv({ RUNTIME_BUILD_TASK_ROOT: '/tmp/runtime-task' })
+
+      // 构建子进程执行的是用户上传代码，凭证一旦泄漏等于交出跨任务领取权限。
+      expect(childEnv.RUNTIME_BUILD_WORKER_CREDENTIAL).toBeUndefined()
+      expect(childEnv.RUNTIME_BUILD_WORKER_CREDENTIAL_FILE).toBeUndefined()
+      expect(childEnv.RUNTIME_BUILD_TASK_ROOT).toBe('/tmp/runtime-task')
+      expect(childEnv.NO_COLOR).toBe('1')
+    } finally {
+      restoreEnvValue('RUNTIME_BUILD_WORKER_CREDENTIAL', originalCredential)
+      restoreEnvValue('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', originalCredentialFile)
     }
   })
 })

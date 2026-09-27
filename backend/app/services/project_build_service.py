@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from datetime import datetime, timedelta
 import hashlib
 import logging
@@ -248,7 +249,6 @@ class ProjectBuildService:
         owner = lease_owner or self.lease_owner
         now = utc_now()
         lease_seconds = self.settings.project_build_lease_seconds
-        expires_at = now + timedelta(seconds=lease_seconds)
         new_attempt_id = uuid.uuid4().hex
 
         # 过期任务不得再被领取：与 fail_overdue_pending_build_jobs 对齐，
@@ -257,7 +257,7 @@ class ProjectBuildService:
             ProjectBuildJob.deadline_at.is_(None),
             ProjectBuildJob.deadline_at > now,
         )
-        candidate_stmt = select(ProjectBuildJob.id).where(
+        candidate_stmt = select(ProjectBuildJob.id, ProjectBuildJob.deadline_at).where(
             ProjectBuildJob.status == "pending",
             deadline_clause,
             or_(
@@ -272,11 +272,20 @@ class ProjectBuildService:
                 ProjectBuildJob.created_at.asc(),
                 ProjectBuildJob.id.asc(),
             )
-        candidate_ids = list((await self.session.execute(candidate_stmt.limit(10))).scalars().all())
+        candidates = list((await self.session.execute(candidate_stmt.limit(10))).all())
         # 候选读取不应维持 SQLite 读事务，避免并发认领升级写锁失败。
         await self.session.commit()
 
-        for candidate_id in candidate_ids:
+        for candidate in candidates:
+            candidate_id = int(candidate.id)
+            # 租约本身也受绝对期限约束：剩余预算不足时不得发出越过 deadline 的租约，
+            # 否则「租约有效但任务已超期」会让续租和终态失去统一上界。
+            expires_at = _cap_lease_expiry(
+                now + timedelta(seconds=lease_seconds),
+                candidate.deadline_at,
+            )
+            if expires_at <= now:
+                continue
             result = await self.session.execute(
                 update(ProjectBuildJob)
                 .where(
@@ -317,8 +326,15 @@ class ProjectBuildService:
         job_id: int,
         lease_owner: str,
     ) -> ProjectBuildJob | None:
-        """仅允许当前未过期租约的拥有者续租；CAS 语义收编自 durable_job_lease_service。"""
+        """仅允许当前未过期租约的拥有者续租；CAS 语义收编自 durable_job_lease_service。
 
+        新租约以 `deadline_at` 为硬上界：任务超过总期限后不再承认任何所有权，
+        续租因此自然收敛为失败，无需调用方另设过期判断。
+        """
+
+        job = await self.session.get(ProjectBuildJob, job_id)
+        if job is None:
+            return None
         renewed = await renew_running_job_lease(
             self.session,
             ProjectBuildJob,
@@ -327,13 +343,28 @@ class ProjectBuildService:
             lease_seconds=self.settings.project_build_lease_seconds,
             owner_attr="lease_owner",
             heartbeat_attr="claimed_at",
+            not_after=job.deadline_at,
         )
         if not renewed:
             return None
-        job = await self.session.get(ProjectBuildJob, job_id)
-        if job is not None:
-            await self.session.refresh(job)
+        await self.session.refresh(job)
         return job
+
+    def attempt_token_ttl_seconds(self, job: ProjectBuildJob) -> int:
+        """本次 attempt 令牌的 TTL：以任务绝对 deadline 的剩余时间为上限。
+
+        令牌必须覆盖到租约最后一次续租与终态上报，但又不得比任务本身的
+        wall-clock 预算更长，否则超期任务仍能凭旧票写结果。
+        """
+
+        if job.deadline_at is None:
+            return max(
+                int(self.settings.project_build_total_deadline_seconds or 0),
+                int(self.settings.project_build_lease_seconds or 0),
+                900,
+            )
+        remaining_seconds = (job.deadline_at - utc_now()).total_seconds()
+        return max(1, math.ceil(remaining_seconds))
 
     async def release_job_to_pending(
         self,
@@ -342,7 +373,11 @@ class ProjectBuildService:
         lease_owner: str,
         error_message: str | None = None,
     ) -> bool:
-        """失败但仍有重试预算时回到 pending；作废当前 attempt，阻止迟到上传提升。"""
+        """失败但仍有重试预算时回到 pending；作废当前 attempt，阻止迟到上传提升。
+
+        必须仍持有有效租约：租约已失守的执行者不得改写任务归属，
+        回收由恢复循环按过期租约统一收敛。
+        """
 
         return await transition_owned_running_job(
             self.session,
@@ -350,6 +385,7 @@ class ProjectBuildService:
             job_id=job_id,
             worker_id=lease_owner,
             owner_attr="lease_owner",
+            require_active_lease=True,
             values={
                 "status": "pending",
                 "lease_owner": None,
@@ -371,11 +407,15 @@ class ProjectBuildService:
         success: bool,
         error_message: str | None = None,
     ) -> bool:
-        """在仍持有任务租约时写入终态，避免迟到执行者覆盖新结果。
+        """在仍持有有效租约时写入终态，避免迟到执行者覆盖新结果。
 
         成功终态前置校验产物指针：dispatch 返回不等于产物已提升；
         无产物不得标记 succeeded（M10）。成功后一并释放 lease_owner，
         避免行上残留陈旧执行者身份。
+
+        与 renew 保持同一租约口径：租约过期的执行者即使行上仍写着它的
+        `lease_owner`，也不得写终态。产物已提升的成功任务由恢复循环按
+        `artifact_storage_key` 收敛为 succeeded，不需要过期 Worker 抢写。
         """
 
         now = utc_now()
@@ -404,6 +444,7 @@ class ProjectBuildService:
             job_id=job_id,
             worker_id=lease_owner,
             owner_attr="lease_owner",
+            require_active_lease=True,
             values=values,
             extra_conditions=extra_conditions,
         )
@@ -624,6 +665,14 @@ async def run_project_build_queue_loop(
         except Exception:
             logger.exception("项目构建恢复循环异常。", extra={"event": "project.build.queue.failed"})
         await asyncio.sleep(poll_interval)
+
+
+def _cap_lease_expiry(expires_at: datetime, deadline_at: datetime | None) -> datetime:
+    """把租约截止裁剪到任务绝对 deadline 之前；无 deadline 时原样返回。"""
+
+    if deadline_at is not None and expires_at > deadline_at:
+        return deadline_at
+    return expires_at
 
 
 def _clear_artifact_fields() -> dict[str, object]:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 from app.core.config import get_settings
 from app.db.session import get_session_factory
@@ -178,12 +180,16 @@ async def test_claim_missing_snapshot_should_fail_job_not_requeue(
 
 
 @pytest.mark.asyncio
-async def test_claim_build_token_should_cover_total_deadline(
+async def test_claim_build_token_should_be_capped_by_job_deadline(
     authenticated_client: AsyncClient,
     monkeypatch,
     build_worker_credential: str,
 ) -> None:
-    """attempt 令牌 TTL 必须覆盖总 deadline，否则 renew/upload/complete 会在长任务中途集体过期。"""
+    """attempt 令牌 TTL 应覆盖完整租约，但不得越过任务绝对 deadline。
+
+    新语义下 deadline_at 是任务创建即确定的 wall-clock 上界：令牌活得比它长，
+    等于让超期任务仍具备 renew/upload/complete 能力。
+    """
 
     workspace_id, project_id = await create_active_project(authenticated_client)
 
@@ -207,6 +213,7 @@ async def test_claim_build_token_should_cover_total_deadline(
         json={"base_url": "./"},
     )
     assert create_response.status_code == 200
+    job_id = create_response.json()["id"]
 
     claim_response = await authenticated_client.post(
         "/internal/runtime/build-jobs/claim",
@@ -214,14 +221,96 @@ async def test_claim_build_token_should_cover_total_deadline(
         headers={"Authorization": f"Bearer {build_worker_credential}"},
     )
     assert claim_response.status_code == 200
-    build_token = claim_response.json()["build_token"]
-    assert build_token
+    claim = claim_response.json()
+    assert claim["deadline_at"]
 
     settings = get_settings()
-    claims = TokenService.verify_runtime_build_command_token(build_token)
+    claims = TokenService.verify_runtime_build_command_token(claim["build_token"])
     ttl_seconds = int(claims["exp"]) - int(claims["iat"])
-    assert ttl_seconds >= settings.project_build_total_deadline_seconds
+    # 至少覆盖一次完整租约，否则刚续上的租约会被令牌过期打断。
     assert ttl_seconds >= settings.project_build_lease_seconds
+    # 不超过任务剩余期限（允许 1 秒以内的取整误差）。
+    assert int(claims["exp"]) <= int(datetime.fromisoformat(claim["deadline_at"]).timestamp()) + 1
+
+    async with get_session_factory()() as session:
+        service = ProjectBuildService(session)
+        job = await service.get_job_by_id(job_id)
+        assert job.lease_expires_at is not None
+        assert job.lease_expires_at <= job.deadline_at
+
+
+@pytest.mark.asyncio
+async def test_claim_near_deadline_should_cap_lease_and_token(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+    build_worker_credential: str,
+) -> None:
+    """排队到接近总期限的任务：租约与令牌必须裁剪到剩余预算，不得再给满额时长。"""
+
+    from datetime import timedelta
+
+    from app.core.time_utils import utc_now
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+
+    async def fake_build_snapshot(
+        self,
+        *,
+        project_id: int,
+        entry_descriptor=None,
+        asset_delivery_mode="public",
+        asset_snapshot_mode="all",
+    ):
+        return build_fake_snapshot(workspace_id)
+
+    monkeypatch.setattr(
+        "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
+        fake_build_snapshot,
+    )
+
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200
+    job_id = create_response.json()["id"]
+
+    remaining_seconds = 60
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        job.deadline_at = utc_now() + timedelta(seconds=remaining_seconds)
+        await session.commit()
+
+    claim_response = await authenticated_client.post(
+        "/internal/runtime/build-jobs/claim",
+        json={"worker_id": "runtime-build-test"},
+        headers={"Authorization": f"Bearer {build_worker_credential}"},
+    )
+    assert claim_response.status_code == 200
+    claim = claim_response.json()
+    assert claim["job_id"] == job_id
+
+    lease_expires_at = datetime.fromisoformat(str(claim["lease_expires_at"]))
+    deadline_at = datetime.fromisoformat(str(claim["deadline_at"]))
+    assert lease_expires_at <= deadline_at
+    assert (deadline_at - lease_expires_at).total_seconds() < 1
+
+    claims = TokenService.verify_runtime_build_command_token(claim["build_token"])
+    assert int(claims["exp"]) <= int(deadline_at.timestamp()) + 1
+
+    # 剩余预算内的租约同样无法再续：超过 deadline 后 Backend 不再承认所有权。
+    async with get_session_factory()() as session:
+        service = ProjectBuildService(session)
+        job = await service.get_job_by_id(job_id)
+        job.deadline_at = utc_now() - timedelta(seconds=1)
+        await session.commit()
+    async with get_session_factory()() as session:
+        rejected = await ProjectBuildService(session).renew_job_lease(
+            job_id=job_id,
+            lease_owner="runtime-build-test",
+        )
+    assert rejected is None
 
 
 @pytest.mark.asyncio

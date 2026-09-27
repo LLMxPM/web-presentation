@@ -90,7 +90,7 @@ openssl rand -base64 48 | Out-File -Encoding ascii deploy/secrets/render_service
 | :--- | :--- |
 | `RUNTIME_BASE_URL` | Backend 调用 Runtime 的内网地址 |
 | `RUNTIME_PREVIEW/BUILD/CHECK_BASE_URL` | 分角色部署时按职责覆盖的内网目标；留空回退 `RUNTIME_BASE_URL` |
-| `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_CHECK_BASE_URLS` | 计算角色多副本目标列表（JSON 数组或逗号分隔）；留空回退对应单地址。Backend 轮询选址，满载自动换副本 |
+| `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_CHECK_BASE_URLS` | 计算角色多副本目标列表（JSON 数组或逗号分隔）；留空回退对应单地址。Backend 轮询选址，满载自动换副本。构建默认已改为 Worker 拉取，该列表只对 `RUNTIME_BUILD_EXECUTION_MODE=legacy-http` 兼容路径生效 |
 | `RUNTIME_TARGET_FAILURE_THRESHOLD` / `RUNTIME_TARGET_COOLDOWN_SECONDS` | 选址冷却：目标连续失败达到阈值后短暂跳过，冷却到期自动恢复 |
 | `RUNTIME_BUILD_MAX_INFLIGHT` / `RUNTIME_CHECK_MAX_INFLIGHT` | 全链路准入：Backend 同时在途的 build/check 内部调用上限，超限返回 `RUNTIME_ADMISSION_FULL`；全部副本满载返回 `RUNTIME_CAPACITY_EXCEEDED`（503，可重试） |
 | `RUNTIME_BACKEND_API_BASE_URL` | Runtime 回源 Backend 的内网地址 |
@@ -99,8 +99,10 @@ openssl rand -base64 48 | Out-File -Encoding ascii deploy/secrets/render_service
 | `RUNTIME_SERVER_BASE_PATH` | Runtime Vite 资源挂载路径，同域部署通常为 `/runtime/` |
 | `RUNTIME_*_TOKEN_AUDIENCE` | 预览、构建和诊断令牌 audience |
 | `RUNTIME_ROLE` | Runtime 运行角色：`all`（单实例模板默认）或 `preview` / `build` / `check`；分角色模板 `compose.runtime-roles.yml` 按容器覆盖。角色语义由 Runtime 角色逻辑（规划 T1-1）消费 |
+| `RUNTIME_BUILD_EXECUTION_MODE` | 构建执行模式：`pull`（默认）由 Build Worker 领取任务并关闭 HTTP 同步派发入口；`legacy-http` 显式回退到 Backend→Runtime 长同步 RPC |
+| `RUNTIME_BUILD_WORKER_CREDENTIAL` / `RUNTIME_BUILD_WORKER_CREDENTIAL_FILE` | Backend 与 `runtime-build` 共用的领取凭证，两侧必须一致；secret 文件要求 `0400`/`0600`。未配置时 claim API fail-closed、Worker 不启动，构建任务停在 `pending` |
 
-分角色单机模板还会按角色容器覆盖 `RUNTIME_VITE_TASK_CONCURRENCY`、`RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB` 等执行预算，并为每个容器设置 `deploy.resources.limits`；取值依据见 [Compose 部署说明](./compose.md)「分角色单机」。按实测瓶颈增加 Check/Build 副本时，用 `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_CHECK_BASE_URLS` 注册全部副本地址，并按「副本数 × 单副本执行预算」上调准入上限，详见 [Compose 部署说明](./compose.md)「计算副本扩容」。
+分角色单机模板还会按角色容器覆盖 `RUNTIME_VITE_TASK_CONCURRENCY`、`RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB` 等执行预算，并为每个容器设置 `deploy.resources.limits`；取值依据见 [Compose 部署说明](./compose.md)「分角色单机」。pull 模式下单个 `runtime-build` 实例的并发等于其 project lane 并发，再加副本只需增加 `runtime-build` 容器（各自独立领取，无需 Backend 选址）；Check 角色仍由 Backend 轮询扩容，用 `RUNTIME_CHECK_BASE_URLS` 注册全部副本地址并按「副本数 × 单副本执行预算」上调准入上限，详见 [Compose 部署说明](./compose.md)「计算副本扩容」。
 
 ## 签名身份与多 Backend
 

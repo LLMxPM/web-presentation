@@ -18,6 +18,29 @@ const DEFAULT_DIAGNOSTICS_WORKER_RSS_RATIO = 0.75
 const MAX_CAPTURED_OUTPUT_LENGTH = 12000
 const DIAGNOSTICS_WORKER_STOP_GRACE_MS = 1000
 
+/**
+ * 禁止进入构建子进程环境的键：子进程会编译/压缩用户手写代码，
+ * 属于「执行不可信输入」的一侧，不得拿到用于领取任务的内部服务身份，
+ * 连凭证文件路径也不下发，避免子进程顺着 env 找到 secret。
+ */
+const BUILD_CHILD_ENV_DENY_LIST = [
+  'RUNTIME_BUILD_WORKER_CREDENTIAL',
+  'RUNTIME_BUILD_WORKER_CREDENTIAL_FILE',
+]
+
+/**
+ * 构造构建/归档子进程环境。
+ * @param overrides 子进程需要的额外变量
+ * @returns 已剔除内部服务凭证变量的环境副本
+ */
+export function createRuntimeBuildChildEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1', ...overrides }
+  for (const key of BUILD_CHILD_ENV_DENY_LIST) {
+    delete env[key]
+  }
+  return env
+}
+
 export interface RuntimeBuildWorkerRunOptions {
   tempRoot: string
   taskRoot?: string
@@ -299,7 +322,7 @@ export class RuntimeDiagnosticsWorker {
       workerScriptPath,
     ], {
       cwd: this.tempRoot,
-      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+      env: createRuntimeBuildChildEnv(),
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     })
@@ -1094,11 +1117,7 @@ function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promi
       options.outputPath,
     ], {
       cwd: options.cwd,
-      env: {
-        ...process.env,
-        FORCE_COLOR: '0',
-        NO_COLOR: '1',
-      },
+      env: createRuntimeBuildChildEnv(),
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })

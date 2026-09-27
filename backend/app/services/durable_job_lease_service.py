@@ -99,18 +99,27 @@ async def renew_running_job_lease(
     now: datetime | None = None,
     owner_attr: str = "worker_id",
     heartbeat_attr: str = "heartbeat_at",
+    not_after: datetime | None = None,
 ) -> bool:
     """仅允许当前未过期租约的拥有者续租，避免旧 Worker 重新激活失效任务。
 
     `owner_attr` / `heartbeat_attr` 允许 ProjectBuildJob 等使用
     `lease_owner` / `claimed_at` 命名的任务模型复用同一套 CAS 续租语义。
+    `not_after` 用于绝对期限：新租约被裁剪到该时刻之后，越过即拒绝续租，
+    使续租与领取/终态共用同一个 wall-clock 上界。
     """
 
     heartbeat_at = now or utc_now()
     owner_column = getattr(model, owner_attr)
+    lease_expires_at = heartbeat_at + timedelta(seconds=max(1, lease_seconds))
+    if not_after is not None and lease_expires_at > not_after:
+        lease_expires_at = not_after
+    if lease_expires_at <= heartbeat_at:
+        # 绝对期限已经吃掉全部租约预算：此刻起不再承认所有权。
+        return False
     values = {
         heartbeat_attr: heartbeat_at,
-        "lease_expires_at": heartbeat_at + timedelta(seconds=max(1, lease_seconds)),
+        "lease_expires_at": lease_expires_at,
     }
     result = await session.execute(
         update(model)

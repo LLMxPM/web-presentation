@@ -4,7 +4,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'http'
 import { mkdir, rm, writeFile, access, readdir, readFile } from 'fs/promises'
-import { constants as fsConstants, readFileSync } from 'fs'
+import { constants as fsConstants, readFileSync, statSync } from 'fs'
 import { resolve, sep } from 'path'
 
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
@@ -66,7 +66,15 @@ interface RuntimeBuildRunnerOptions {
   enableProjectEntry?: boolean
   /** 是否开放编译诊断入口；check 角色为 true，build 角色为 false。 */
   enableDiagnosticsEntry?: boolean
+  /**
+   * 构建执行模式：`pull` 由 Worker 主动领取任务并关闭 HTTP 同步派发入口，
+   * `legacy-http` 保留 Backend 长同步 RPC。缺省读 RUNTIME_BUILD_EXECUTION_MODE。
+   */
+  buildExecutionMode?: RuntimeBuildExecutionMode
 }
+
+/** Runtime 构建执行模式：`pull` 为 Worker 拉取，`legacy-http` 为遗留 Backend 长同步派发。 */
+export type RuntimeBuildExecutionMode = 'pull' | 'legacy-http'
 
 interface RuntimeBuildCommandClaims extends JWTPayload {
   sub: string
@@ -241,18 +249,29 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
       }
       // 工作区采用首次诊断时的惰性预热：创建动作位于 diagnostics scheduler 槽位内，
       // 避免服务启动时与正式构建并发复制完整 Runtime 源码。
+      const buildExecutionMode = resolveBuildExecutionMode(options.buildExecutionMode)
+      const pullBuildWorkerEnabled = enableProjectEntry && buildExecutionMode === 'pull'
       let stopBuildQueueWorker: (() => void) | null = null
       const buildWorkerCredential = readRuntimeBuildWorkerCredential()
       const backendApiBaseUrl = options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || ''
-      if (enableProjectEntry && buildWorkerCredential && backendApiBaseUrl) {
+      if (pullBuildWorkerEnabled && buildWorkerCredential && backendApiBaseUrl) {
         stopBuildQueueWorker = startRuntimeBuildQueueWorker({
           backendApiBaseUrl,
           workerCredential: buildWorkerCredential,
           workerId: process.env.RUNTIME_BUILD_WORKER_ID || `runtime-build-${process.pid}`,
+          // 消费者数量必须等于 project lane 并发：单循环串行领取会让多出来的执行预算空转。
+          concurrency: scheduler.snapshot().kinds.project.concurrency,
           runtimeRoot,
           scheduler,
           runProjectBuild,
           createBuildBackendClient,
+        })
+      } else if (pullBuildWorkerEnabled) {
+        logRuntimeServer('error', 'runtime.build.worker.not_started', '构建 Worker 未能启动，构建任务将保持待执行。', {
+          module: 'runtime.build',
+          buildExecutionMode,
+          credentialConfigured: Boolean(buildWorkerCredential),
+          backendApiConfigured: Boolean(backendApiBaseUrl),
         })
       }
       server.httpServer?.once('close', () => {
@@ -288,8 +307,9 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
           return next()
         }
 
-        // Worker 拉取模式已接管构建执行；保留 HTTP 同步入口会形成双路径。
-        if (stopBuildQueueWorker) {
+        // pull 模式下永远不开放 HTTP 同步派发入口，与 Worker 是否成功启动无关：
+        // 凭证缺失时若退回开放入口，会形成「配置坏了反而多出第二条执行路径」的 fail-open。
+        if (pullBuildWorkerEnabled) {
           return sendJson(res, 503, {
             success: false,
             code: 'BUILD_HTTP_DISPATCH_DISABLED',
@@ -613,6 +633,18 @@ function assertBuildRequestMatchesClaims(
 }
 
 /**
+ * 解析构建执行模式：默认 `pull`，仅显式配置才保留遗留 HTTP 长同步派发。
+ * @returns 归一化后的执行模式
+ */
+export function resolveBuildExecutionMode(
+  explicit?: RuntimeBuildExecutionMode,
+  env: NodeJS.ProcessEnv = process.env,
+): RuntimeBuildExecutionMode {
+  const raw = String(explicit || env.RUNTIME_BUILD_EXECUTION_MODE || '').trim().toLowerCase()
+  return raw === 'legacy-http' ? 'legacy-http' : 'pull'
+}
+
+/**
  * 读取 Runtime Build Worker 共享凭证：优先 secret 文件，其次环境变量。
  * @returns 非空凭证；未配置时返回空字符串（Worker 不启动）
  */
@@ -620,6 +652,15 @@ export function readRuntimeBuildWorkerCredential(): string {
   const credentialFile = String(process.env.RUNTIME_BUILD_WORKER_CREDENTIAL_FILE || '').trim()
   if (credentialFile) {
     try {
+      // 该文件与执行不可信构建代码的进程同容器共存，权限过宽时应显式暴露而不是静默接受。
+      // Windows 不上报：POSIX 权限位在 NTFS 上没有对应语义。
+      const stat = statSync(credentialFile)
+      if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
+        logRuntimeServer('warn', 'runtime.build.worker.credential_loose_mode', '构建 Worker 凭证文件对所有用户可读。', {
+          module: 'runtime.build',
+          mode: (stat.mode & 0o777).toString(8),
+        })
+      }
       return readFileSync(credentialFile, 'utf-8').trim()
     } catch {
       return ''

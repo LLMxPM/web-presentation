@@ -78,6 +78,7 @@ class BuildJobClaimResponse(BaseModel):
     attempt_id: str | None = None
     lease_owner: str | None = None
     lease_expires_at: str | None = None
+    deadline_at: str | None = None
     build_token: str | None = None
     service_token: str | None = None
     message: str = "当前没有可领取的构建任务。"
@@ -480,13 +481,9 @@ async def claim_project_build_job(
         )
 
     # attempt 令牌 TTL 必须覆盖整个任务生命周期（含 renew 续租），
-    # 否则 renew/upload/complete 会在票过期后集体 401，续租形同虚设。
-    settings = get_settings()
-    token_ttl_seconds = max(
-        int(settings.project_build_total_deadline_seconds or 0),
-        int(settings.project_build_lease_seconds or 0),
-        900,
-    )
+    # 否则 renew/upload/complete 会在票过期后集体 401，续租形同虚设；
+    # 同时以任务绝对 deadline 的剩余时间为上限，超期任务不得再凭新票继续执行。
+    token_ttl_seconds = service.attempt_token_ttl_seconds(job)
     build_token = TokenService.generate_runtime_build_command_token(
         job_id=job.id,
         artifact_id=str(job.snapshot_release_id),
@@ -502,6 +499,7 @@ async def claim_project_build_job(
         expires_in_seconds=token_ttl_seconds,
     )
     lease_expires_at = job.lease_expires_at.isoformat() if job.lease_expires_at else None
+    deadline_at = job.deadline_at.isoformat() if job.deadline_at else None
     await RuntimeArtifactStore().put_build_state(
         job_id=job.id,
         mapping={
@@ -524,6 +522,7 @@ async def claim_project_build_job(
         attempt_id=job.attempt_id,
         lease_owner=payload.worker_id,
         lease_expires_at=lease_expires_at,
+        deadline_at=deadline_at,
         build_token=build_token,
         service_token=service_token,
         message="构建任务领取成功。",

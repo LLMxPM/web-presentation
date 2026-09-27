@@ -21,6 +21,7 @@ function emptyClaim() {
     attempt_id: null,
     lease_owner: null,
     lease_expires_at: null,
+    deadline_at: null,
     build_token: null,
     service_token: null,
     message: '当前没有可领取的构建任务。',
@@ -42,7 +43,10 @@ function filledClaim(overrides: Partial<Record<string, unknown>> = {}) {
     workspace_id: 1,
     attempt_id: 'attempt-1',
     lease_owner: 'runtime-build-test',
-    lease_expires_at: new Date().toISOString(),
+    // 默认给一份仍在有效期内的租约：本地看门狗按到期时间判定，过期夹具会让所有
+    // 用例都在第一秒被判定失守，掩盖真正要测的分支。
+    lease_expires_at: isoFromNow(960_000),
+    deadline_at: null,
     build_token: 'build-token',
     service_token: 'service-token',
     message: '构建任务领取成功。',
@@ -52,6 +56,18 @@ function filledClaim(overrides: Partial<Record<string, unknown>> = {}) {
 
 const scheduler = {
   schedule: async <T>(_kind: 'project', run: () => Promise<T>) => run(),
+}
+
+function jsonResponse(payload: unknown): Response {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+/** 相对当前时刻偏移若干毫秒的 ISO 字符串，用于构造 Backend 返回的租约/期限。 */
+function isoFromNow(offsetMs: number): string {
+  return new Date(Date.now() + offsetMs).toISOString()
 }
 
 const createBuildBackendClient: CreateBuildBackendClientFn = () => ({
@@ -300,5 +316,217 @@ describe('runtime-build-queue-worker', () => {
 
     expect(runProjectBuild).toHaveBeenCalled()
     expect(observedAbort).toBeInstanceOf(Error)
+  })
+
+  it('concurrency=2 时应并行领取并执行两个任务', async () => {
+    const claimWorkerIds: string[] = []
+    let runningJobs = 0
+    let maxRunningJobs = 0
+    let claimCount = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith('/claim')) {
+        claimCount += 1
+        claimWorkerIds.push(String(JSON.parse(String(init?.body)).worker_id))
+        if (claimCount <= 2) {
+          return jsonResponse(filledClaim({ job_id: claimCount }))
+        }
+        return jsonResponse(emptyClaim())
+      }
+      if (String(url).includes('/complete')) {
+        return jsonResponse({ message: 'ok' })
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    // 两个构建都进入执行后才放行：只有这样断言到的并发才是真实并发，而不是先后完成。
+    let releaseBoth: () => void = () => {}
+    const bothStarted = new Promise<void>(resolve => {
+      releaseBoth = resolve
+    })
+    const runProjectBuild = vi.fn(async () => {
+      runningJobs += 1
+      maxRunningJobs = Math.max(maxRunningJobs, runningJobs)
+      if (runningJobs >= 2) {
+        releaseBoth()
+      }
+      await bothStarted
+      runningJobs -= 1
+      return {
+        artifactEntryFile: 'index.html',
+        artifactSha256: 'abc',
+        artifactSizeBytes: 12,
+        message: 'ok',
+      }
+    })
+
+    const stop = startRuntimeBuildQueueWorker({
+      backendApiBaseUrl: 'http://backend',
+      workerCredential: 'cred',
+      workerId: 'w1',
+      pollIntervalMs: 500,
+      concurrency: 2,
+      runtimeRoot: '/tmp/runtime',
+      scheduler,
+      runProjectBuild: runProjectBuild as unknown as RunProjectBuildFn,
+      createBuildBackendClient,
+    })
+
+    await vi.advanceTimersByTimeAsync(50)
+    stop()
+
+    expect(runProjectBuild).toHaveBeenCalledTimes(2)
+    expect(maxRunningJobs).toBe(2)
+    expect(new Set(claimWorkerIds)).toEqual(new Set(['w1-1', 'w1-2']))
+    const completeCalls = fetchMock.mock.calls.filter(call => String(call[0]).includes('/complete'))
+    expect(completeCalls.length).toBe(2)
+  })
+
+  it('renew 持续失败时应在本地租约到期时中止构建', async () => {
+    let claimed = false
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/claim')) {
+        if (claimed) {
+          return jsonResponse(emptyClaim())
+        }
+        claimed = true
+        return jsonResponse(filledClaim({ lease_expires_at: isoFromNow(20_000) }))
+      }
+      if (String(url).includes('/renew')) {
+        // Backend 不可达：没有任何响应告诉 Worker 租约已失守，只能靠本地判定。
+        throw new Error('network unreachable')
+      }
+      if (String(url).includes('/complete')) {
+        return jsonResponse({ message: 'ok' })
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    let observedAbort: unknown = null
+    const runProjectBuild = vi.fn(async (params: { deadline: { signal: AbortSignal } }) => {
+      await new Promise((_resolve, reject) => {
+        const signal = params.deadline.signal
+        if (signal.aborted) {
+          reject(signal.reason)
+          return
+        }
+        signal.addEventListener('abort', () => {
+          observedAbort = signal.reason
+          reject(signal.reason)
+        })
+      })
+    })
+
+    const stop = startRuntimeBuildQueueWorker({
+      backendApiBaseUrl: 'http://backend',
+      workerCredential: 'cred',
+      workerId: 'w1',
+      pollIntervalMs: 500,
+      renewIntervalMs: 3_000,
+      runtimeRoot: '/tmp/runtime',
+      scheduler,
+      runProjectBuild: runProjectBuild as unknown as RunProjectBuildFn,
+      createBuildBackendClient,
+    })
+
+    // 租约 20s、安全提前量 1.5s：到点前不应中止，到点后必须自行停手。
+    await vi.advanceTimersByTimeAsync(18_000)
+    expect(observedAbort).toBe(null)
+    await vi.advanceTimersByTimeAsync(3_000)
+    stop()
+
+    expect(observedAbort).toBeInstanceOf(Error)
+    expect((observedAbort as Error).name).toBe('RuntimeTaskAbortedError')
+    const completeCalls = fetchMock.mock.calls.filter(call => String(call[0]).includes('/complete')) as FetchCall[]
+    expect(completeCalls.length).toBe(1)
+    const body = completeBodyOf(completeCalls[0]) as { success: boolean; error_message: string }
+    expect(body.success).toBe(false)
+    expect(body.error_message).toContain('本地判定已到期')
+  })
+
+  it('执行预算应以任务剩余总期限封顶，而不是跑满 Worker 超时', async () => {
+    let claimed = false
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/claim')) {
+        if (claimed) {
+          return jsonResponse(emptyClaim())
+        }
+        claimed = true
+        return jsonResponse(filledClaim({ deadline_at: isoFromNow(10_000) }))
+      }
+      if (String(url).includes('/complete')) {
+        return jsonResponse({ message: 'ok' })
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const runProjectBuild = vi.fn(async (params: { deadline: { signal: AbortSignal } }) => {
+      await new Promise((_resolve, reject) => {
+        params.deadline.signal.addEventListener('abort', () => reject(params.deadline.signal.reason))
+      })
+    })
+
+    const stop = startRuntimeBuildQueueWorker({
+      backendApiBaseUrl: 'http://backend',
+      workerCredential: 'cred',
+      workerId: 'w1',
+      pollIntervalMs: 500,
+      runtimeRoot: '/tmp/runtime',
+      scheduler,
+      runProjectBuild: runProjectBuild as unknown as RunProjectBuildFn,
+      createBuildBackendClient,
+    })
+
+    // Worker 默认超时 600s：任务只剩 10s 时必须在 10s 处收手。
+    await vi.advanceTimersByTimeAsync(11_000)
+    stop()
+
+    const completeCalls = fetchMock.mock.calls.filter(call => String(call[0]).includes('/complete')) as FetchCall[]
+    expect(completeCalls.length).toBe(1)
+    const body = completeBodyOf(completeCalls[0]) as { success: boolean; error_message: string }
+    expect(body.success).toBe(false)
+    expect(body.error_message).toContain('执行时限')
+  })
+
+  it('剩余总期限不足时应放弃执行并直接上报失败', async () => {
+    let claimed = false
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/claim')) {
+        if (claimed) {
+          return jsonResponse(emptyClaim())
+        }
+        claimed = true
+        return jsonResponse(filledClaim({ deadline_at: isoFromNow(1_000) }))
+      }
+      if (String(url).includes('/complete')) {
+        return jsonResponse({ message: 'ok' })
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const runProjectBuild = vi.fn()
+    const stop = startRuntimeBuildQueueWorker({
+      backendApiBaseUrl: 'http://backend',
+      workerCredential: 'cred',
+      workerId: 'w1',
+      pollIntervalMs: 500,
+      runtimeRoot: '/tmp/runtime',
+      scheduler,
+      runProjectBuild: runProjectBuild as unknown as RunProjectBuildFn,
+      createBuildBackendClient,
+    })
+
+    await vi.advanceTimersByTimeAsync(50)
+    stop()
+
+    expect(runProjectBuild).not.toHaveBeenCalled()
+    const completeCalls = fetchMock.mock.calls.filter(call => String(call[0]).includes('/complete')) as FetchCall[]
+    expect(completeCalls.length).toBe(1)
+    const body = completeBodyOf(completeCalls[0]) as { success: boolean; error_message: string }
+    expect(body.success).toBe(false)
+    expect(body.error_message).toContain('剩余总期限')
   })
 })

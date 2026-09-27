@@ -50,7 +50,7 @@ JWKS（`/.well-known/jwks.json`）由当前密钥与轮换期旧钥共同构成�
 
 1. 生成新私钥，分配新 `kid`（如 `default-key-2`），写入 secret 挂载。
 2. 滚动更新所有 Backend：`RUNTIME_RSA_PRIVATE_KEY_FILE` 指向新钥、`RUNTIME_RSA_KEY_ID=default-key-2`，并把旧钥写入 `RUNTIME_RSA_PREVIOUS_KEYS=[{"kid":"default-key-1","private_key_file":"…旧钥路径"}]`。
-3. 等待已签发票据全部过期。TTL 上限取当前业务签发窗口：预览上下文/服务令牌默认 3600 秒，构建/诊断命令令牌默认 900 秒；建议至少保留旧钥 **1 小时**（覆盖最长 TTL）后再清理。
+3. 等待已签发票据全部过期。TTL 上限取当前业务签发窗口：预览上下文/服务令牌默认 3600 秒，诊断命令令牌默认 900 秒，构建 attempt 令牌按任务剩余总期限签发（上界为 `PROJECT_BUILD_TOTAL_DEADLINE_SECONDS`，默认 3600 秒）；建议至少保留旧钥 **1 小时**（覆盖最长 TTL）后再清理。
 4. 从 `RUNTIME_RSA_PREVIOUS_KEYS` 移除旧钥并再次滚动更新；此后旧票据立即失效。
 
 紧急作废（泄漏等）：跳过第 3 步，直接移除旧钥并重启全部副本；未过期的旧票据立即失效，客户端/预览会按鉴权失败重新换票。

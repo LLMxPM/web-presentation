@@ -619,6 +619,54 @@ async def test_recover_expired_should_invalidate_attempt_and_artifact_metadata(
 
 
 @pytest.mark.asyncio
+async def test_complete_and_requeue_should_reject_expired_lease(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """租约到期的执行者不得再写终态或改回 pending：续租与终态必须共用同一租约口径。
+
+    否则会出现「renew 已判定失守、complete 仍被承认」的窗口——过期 Worker 能
+    在恢复循环收敛之前抢写结果，覆盖接管者正在产生的状态。
+    """
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
+    job_id = job_payload["id"]
+
+    async with get_session_factory()() as session:
+        claimed = await ProjectBuildService(session, lease_owner="worker-a").claim_job(job_id=job_id)
+        assert claimed is not None
+        claimed.lease_expires_at = utc_now() - timedelta(seconds=1)
+        await session.commit()
+
+    async with get_session_factory()() as session:
+        service = ProjectBuildService(session)
+        requeued = await service.release_job_to_pending(
+            job_id=job_id,
+            lease_owner="worker-a",
+            error_message="Runtime 暂不可用。",
+        )
+        assert not requeued
+        failed = await service.complete_job(
+            job_id=job_id,
+            lease_owner="worker-a",
+            success=False,
+            error_message="Runtime 暂不可用。",
+        )
+        assert not failed
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        # 未被过期执行者改写，等待恢复循环按过期租约收敛。
+        assert job.status == "running"
+        assert job.attempt_id is not None
+
+    async with get_session_factory()() as session:
+        assert await recover_expired_build_jobs(session) == 1
+
+
+@pytest.mark.asyncio
 async def test_assert_attempt_fence_should_reject_when_lease_owner_missing(
     authenticated_client: AsyncClient,
     monkeypatch,

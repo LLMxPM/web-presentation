@@ -121,6 +121,8 @@ class AppSettings(BaseSettings):
     # 租约时长仍是未续租场景的安全下限；重试预算与总 deadline 由 Backend 统一裁决。
     project_build_lease_seconds: int = 960
     project_build_max_attempts: int = 3
+    # 任务创建即确定的绝对 wall-clock 期限：领取租约、attempt 令牌 TTL、续租后的
+    # 新租约与 Runtime 执行预算全部裁剪到该时刻之前，超期即不再承认所有权。
     project_build_total_deadline_seconds: int = 3600
     # 兼容字段：队列循环现为 recovery-only，不再按此并发派发执行。
     project_build_queue_concurrency: int = 1

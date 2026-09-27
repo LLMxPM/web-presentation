@@ -69,12 +69,20 @@ production env 版适合把环境变量集中放在 `deploy/.env` 中维护。�
 
 `deploy/compose/compose.runtime-roles.yml` 把 Runtime 拆成 `runtime-preview`、`runtime-build`、`runtime-check` 三个角色容器（`RUNTIME_ROLE` 分别为 `preview`、`build`、`check`），与 Backend、迁移、Renderer 和 Gateway 组成分角色单机拓扑。Backend 仍从 `deploy/.env` 读配置；**Runtime 三角色只读 `deploy/runtime.env`**（复制 `deploy/runtime.env.example`），避免 `DATABASE_URL` / `REDIS_URL` / `AI_SECRET_ENCRYPTION_KEY` / `RUNTIME_RSA_PRIVATE_KEY` 等平台密钥进入会编译用户手写 SFC 的容器。`runtime.env` 中的域名、audience、JWKS 与路径必须与 `deploy/.env` 同名项一致，否则预览资源会指向错误域名或令牌校验失败。角色差异和资源约束写在模板内。
 
-**构建执行前提：** 项目构建由 `runtime-build` 内的 Build Worker 通过 `POST /internal/runtime/build-jobs/claim` 拉取。Backend 与 `runtime-build` 必须持有**相同**的构建 Worker 凭证：分角色模板通过 Docker secret `deploy/secrets/build_worker_credential` 挂载（`RUNTIME_BUILD_WORKER_CREDENTIAL_FILE`），也可在两侧环境变量设置相同的 `RUNTIME_BUILD_WORKER_CREDENTIAL`。缺省时 Backend 拒绝领取（503 fail-closed）且 Worker 不启动，构建任务会一直停在 `pending` 直到总期限被收敛为失败。生产环境请使用强随机值，不要沿用示例占位符。
+**构建执行前提：** 项目构建由 `runtime-build` 内的 Build Worker 通过 `POST /internal/runtime/build-jobs/claim` 拉取，续租走 `.../{job_id}/renew`，终态走 `.../complete`。Backend 与 `runtime-build` 必须持有**相同**的构建 Worker 凭证：分角色模板通过 Docker secret `deploy/secrets/build_worker_credential` 挂载（`RUNTIME_BUILD_WORKER_CREDENTIAL_FILE`），也可在两侧环境变量设置相同的 `RUNTIME_BUILD_WORKER_CREDENTIAL`。缺省时 Backend 拒绝领取（503 fail-closed）且 Worker 不启动，构建任务会一直停在 `pending` 直到总期限被收敛为失败。生产环境请使用强随机值，不要沿用示例占位符。
+
+构建拉取模型的行为边界：
+
+- **执行模式固定为 pull**：`RUNTIME_BUILD_EXECUTION_MODE` 默认 `pull`，此时 Backend→Runtime 的 HTTP 同步派发入口恒返回 `503 BUILD_HTTP_DISPATCH_DISABLED`，与 Worker 是否成功启动无关——凭证丢失不会反而多出一条执行路径。只有显式设置 `legacy-http` 才恢复旧入口，用于回退。
+- **secret 文件权限**：该凭证具备跨工作空间领取任务的能力，挂载文件必须 `0400`/`0600` 且只归属 Runtime 进程；权限对同组或其他用户开放时启动日志会报 `runtime.build.worker.credential_loose_mode`。构建子进程（Vite/Rollup、ZIP 归档）不会继承 `RUNTIME_BUILD_WORKER_CREDENTIAL(_FILE)`。
+- **单实例并发**：pull 模式下领取消费者数量等于 project lane 并发（`RUNTIME_VITE_TASK_CONCURRENCY`，多消费者共享同一有界调度器），因此调高该预算才会真正增加单实例同时执行的构建任务数。
+- **绝对期限**：`PROJECT_BUILD_TOTAL_DEADLINE_SECONDS` 是任务创建时确定的 wall-clock 时刻，领取租约、attempt 令牌 TTL、续租后的新租约和 Runtime 执行预算都裁剪到该时刻之前；Worker 与 Backend 失联时也会在本地租约到期前主动中止构建。
 
 生成 secret 示例：
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))" > deploy/secrets/build_worker_credential
+chmod 400 deploy/secrets/build_worker_credential
 ```
 
 ```bash
@@ -98,7 +106,7 @@ docker compose -f compose/compose.runtime-roles.yml up -d
 | `backend` | `platform-net` + `runtime-jobs-net`（别名 `backend`） | 无 | 两个网络的唯一交点 |
 | `gateway` | `platform-net` | `80` | 唯一公开入口，只代理预览角色 |
 
-`runtime-build` / `runtime-check` 不发布宿主机端口，且不加入 `platform-net`；公开 Gateway 挂在 `platform-net` 上，只能通过主机名 `runtime` 到达 `runtime-preview`，构建与源码检查端点不经公开 Gateway 暴露，只由 Backend 经 `runtime-jobs-net` 调用。浏览器访问关系与下文「访问关系」一致。
+`runtime-build` / `runtime-check` 不发布宿主机端口，且不加入 `platform-net`；公开 Gateway 挂在 `platform-net` 上，只能通过主机名 `runtime` 到达 `runtime-preview`，构建与源码检查端点不经公开 Gateway 暴露，只在 `runtime-jobs-net` 内可达：构建任务由 `runtime-build` 主动出站领取 Backend（Backend 也在该网络上），源码检查则由 Backend 经该网络调用 `runtime-check`。浏览器访问关系与下文「访问关系」一致。
 
 ### 容器资源约束与执行预算（示例值，需按实测调整）
 
@@ -127,11 +135,12 @@ Docker 容器默认不施加 CPU/内存限制；只把一个 Runtime 拆成三�
 
 按实测瓶颈需要增加 `runtime-build` / `runtime-check` 副本时（规划 T2-3）：
 
-1. 为新副本复制对应角色服务定义，改用独立容器名/别名（如 `runtime-build-2`），保持 `RUNTIME_ROLE` 与执行预算一致；副本只挂 `runtime-jobs-net`，仍不发布宿主机端口。
-2. 在 Backend 环境用 `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_CHECK_BASE_URLS` 注册全部副本内网地址（逗号分隔或 JSON 数组）。Backend 按轮询选址；某副本满载（429/503）时自动切换其它空闲副本，全部满载返回稳定错误码 `RUNTIME_CAPACITY_EXCEEDED`（503，可重试）。目标连续失败达到 `RUNTIME_TARGET_FAILURE_THRESHOLD` 后按 `RUNTIME_TARGET_COOLDOWN_SECONDS` 短暂冷却，冷却到期自动恢复。
-3. 按「副本数 × 单副本执行预算」上调 `RUNTIME_BUILD_MAX_INFLIGHT` / `RUNTIME_CHECK_MAX_INFLIGHT`，这是 Backend 侧全链路准入上限：在途调用超限立即返回 `RUNTIME_ADMISSION_FULL`（503，可重试），避免 Check 扩容后把 Renderer/Preview 打穿。`preview` 仍保持单副本，不参与多目标选址。
+1. 为新副本复制对应角色服务定义，改用独立容器名/别名（如 `runtime-build-2`），保持 `RUNTIME_ROLE` 与执行预算一致；副本只挂 `runtime-jobs-net`，仍不发布宿主机端口。Build 副本必须与 Backend 使用**同一**领取凭证，但容器间不需要互相可见。
+2. **Build 副本无需注册**：pull 模式下每个 `runtime-build` 实例自行 `claim`，任务在数据库层被条件更新认领，天然互斥；加副本只增加消费者总数。Backend 侧的 `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_BUILD_MAX_INFLIGHT` 只在 `RUNTIME_BUILD_EXECUTION_MODE=legacy-http` 兼容路径上参与选址与准入。
+3. **Check 副本需要注册**：在 Backend 环境用 `RUNTIME_CHECK_BASE_URLS` 登记全部副本内网地址（逗号分隔或 JSON 数组）。Backend 按轮询选址；某副本满载（429/503）时自动切换其它空闲副本，全部满载返回稳定错误码 `RUNTIME_CAPACITY_EXCEEDED`（503，可重试）。目标连续失败达到 `RUNTIME_TARGET_FAILURE_THRESHOLD` 后按 `RUNTIME_TARGET_COOLDOWN_SECONDS` 短暂冷却，冷却到期自动恢复。
+4. 按「副本数 × 单副本执行预算」上调 `RUNTIME_CHECK_MAX_INFLIGHT`（Check 仍走 Backend 在途计数）：在途调用超限立即返回 `RUNTIME_ADMISSION_FULL`（503，可重试），避免 Check 扩容后把 Renderer/Preview 打穿。`preview` 仍保持单副本，不参与多目标选址。
 
-Runtime 本地队列（`RUNTIME_VITE_TASK_*`）仅承担单实例容量保护，不做全局公平；跨副本分摊由上述选址与准入负责。满载与准入拒绝均属可重试容量问题，不应记为业务失败。
+Runtime 本地队列（`RUNTIME_VITE_TASK_*`）仅承担单实例容量保护，不做全局公平；Check 的跨副本分摊由上述选址与准入负责，Build 的跨副本分摊由持久任务的租约认领负责。满载与准入拒绝均属可重试容量问题，不应记为业务失败。
 
 ### 预览多副本与滚动发布
 

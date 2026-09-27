@@ -30,10 +30,14 @@
 ## 项目构建
 
 1. 用户在 Editor 发起项目构建。
-2. Backend 创建构建任务和 build snapshot。
-3. Runtime 拉取 snapshot，生成临时入口并执行 Vite 构建。
-4. Runtime 将构建产物压缩并上传回 Backend。
-5. Backend 保存产物并返回稳定访问地址。
+2. Backend 创建 `ProjectBuildJob` 持久任务（含 `attempt_id`、租约字段和创建时即确定的绝对 `deadline_at`）并生成 build snapshot。
+3. `runtime-build` 内的 Build Worker 按 project lane 并发启动等量领取消费者，通过 `POST /internal/runtime/build-jobs/claim` 以条件更新认领任务；Backend 下发 attempt 令牌，并把租约与令牌 TTL 一并裁剪到 `deadline_at` 之前。
+4. Worker 执行期间周期调用 `renew`：收到 401/409 立即中止在跑构建，与 Backend 失联时也在本地租约到期（留出安全余量）前主动停手，避免失守的执行者继续消耗资源或抢写状态。
+5. Runtime 拉取 snapshot，生成临时入口并在隔离子进程内执行 Vite 构建与 ZIP 归档；构建子进程不继承 Worker 领取凭证。
+6. Worker 上传产物后调用 `complete`。Backend 只在 `attempt_id` 与**有效租约**同时匹配时才提升产物或写终态，失守的执行者只能留下等待恢复的 `running` 行。
+7. 恢复循环按过期租约接管或收敛：已经上传产物的任务收敛为 `succeeded`，超过总期限仍未被领取的任务收敛为 `failed`。
+
+pull 模式下 Backend→Runtime 的 HTTP 同步派发入口恒返回 `503 BUILD_HTTP_DISPATCH_DISABLED`，与 Worker 是否成功启动无关；只有显式设置 `RUNTIME_BUILD_EXECUTION_MODE=legacy-http` 才重新开放旧入口。凭证未配置时 Backend claim API fail-closed 且 Worker 不启动，构建任务停留在 `pending` 直到总期限把它收敛为失败。
 
 ## 关键约束
 
