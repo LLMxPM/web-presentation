@@ -3,6 +3,9 @@
  */
 
 import { EventEmitter } from 'node:events'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -123,6 +126,114 @@ describe('runtime diagnostics module batch client', () => {
       expect(fetchMock).toHaveBeenCalledTimes(3)
     } finally {
       vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('runtime build artifact streaming upload', () => {
+  type CapturedUpload = {
+    url: string
+    init: RequestInit & { duplex?: string }
+    body: Buffer
+  }
+
+  /**
+   * 捕获 Runtime 上传归档时实际发出的请求：读取请求体流并返回 200。
+   * @param captured 捕获结果容器
+   * @param networkFailures 前若干次调用模拟连接被重置
+   * @returns 供 vi.stubGlobal 使用的 fetch 实现
+   */
+  function captureUploadFetch(
+    captured: CapturedUpload[],
+    networkFailures: number,
+  ): ReturnType<typeof vi.fn> {
+    let remainingFailures = networkFailures
+    return vi.fn(async (url: string, init: RequestInit & { duplex?: string }) => {
+      if (remainingFailures > 0) {
+        remainingFailures -= 1
+        throw new TypeError('connection reset')
+      }
+      const body = Buffer.from(await new Response(init.body as BodyInit).arrayBuffer())
+      captured.push({ url: String(url), init, body })
+      return new Response(JSON.stringify({ artifact_entry_file: 'index.html' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+  }
+
+  it('应以磁盘文件流作为请求体，归档元数据走请求头', async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), 'wp-build-archive-'))
+    try {
+      const archivePath = join(tempRoot, 'artifact.zip')
+      const content = Buffer.from('PK\u0003\u0004 streaming archive bytes')
+      await writeFile(archivePath, content)
+      const captured: CapturedUpload[] = []
+      const fetchMock = captureUploadFetch(captured, 0)
+      vi.stubGlobal('fetch', fetchMock)
+      let uploadSummary: { artifact_entry_file?: string } = {}
+      try {
+        const client = createBuildBackendClient({ backendApiBaseUrl: 'http://backend', serviceToken: 'token' })
+        uploadSummary = await client.uploadBuildArtifact({
+          jobId: 'job-1',
+          buildToken: 'build-token',
+          archivePath,
+          entryFile: 'index.html',
+          sha256: 'archive-sha256',
+          sizeBytes: content.byteLength,
+        })
+      } finally {
+        vi.unstubAllGlobals()
+      }
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(captured).toHaveLength(1)
+      expect(captured[0].url).toBe('http://backend/internal/runtime/build-jobs/job-1/artifact')
+      // 整包不再进内存：请求体是文件流，而不是拼好的 FormData/Blob。
+      expect(captured[0].init.body).toBeInstanceOf(ReadableStream)
+      expect(captured[0].init.body).not.toBeInstanceOf(FormData)
+      expect(captured[0].init.duplex).toBe('half')
+      expect(captured[0].body.equals(content)).toBe(true)
+      const headers = new Headers(captured[0].init.headers)
+      expect(headers.get('authorization')).toBe('Bearer build-token')
+      expect(headers.get('content-type')).toBe('application/zip')
+      expect(headers.get('x-runtime-build-archive-entry-file')).toBe('index.html')
+      expect(headers.get('x-runtime-build-archive-sha256')).toBe('archive-sha256')
+      expect(headers.get('x-runtime-build-archive-size-bytes')).toBe(String(content.byteLength))
+      expect(uploadSummary.artifact_entry_file).toBe('index.html')
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('网络重试时应重新打开归档文件，而不是重放已消费的流', async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), 'wp-build-archive-'))
+    try {
+      const archivePath = join(tempRoot, 'artifact.zip')
+      const content = Buffer.from('PK\u0003\u0004 retryable archive bytes')
+      await writeFile(archivePath, content)
+      const captured: CapturedUpload[] = []
+      const fetchMock = captureUploadFetch(captured, 1)
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        const client = createBuildBackendClient({ backendApiBaseUrl: 'http://backend', serviceToken: 'token' })
+        await client.uploadBuildArtifact({
+          jobId: 'job-1',
+          buildToken: 'build-token',
+          archivePath,
+          entryFile: 'index.html',
+          sha256: 'archive-sha256',
+          sizeBytes: content.byteLength,
+        })
+      } finally {
+        vi.unstubAllGlobals()
+      }
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(captured).toHaveLength(1)
+      expect(captured[0].body.equals(content)).toBe(true)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
     }
   })
 })

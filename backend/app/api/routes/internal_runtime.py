@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,8 +26,6 @@ from app.services.token_service import TokenService
 router = APIRouter()
 
 MAX_BATCH_MODULE_PATHS = 128
-# 构建归档上传的分片读取大小：只为控制 Backend 常驻内存，不改变对象内容。
-ARTIFACT_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 class RuntimeModuleBatchRequest(BaseModel):
@@ -645,15 +643,24 @@ async def complete_project_build_job(
     return {"job_id": job_id, "status": "failed", "message": "构建任务已标记失败。"}
 
 
-def _guard_runtime_build_artifact_request(request: Request) -> None:
-    """在解析 multipart 之前按 Content-Length 预筛构建归档大小。
+# 构建归档流式上传的元数据请求头：归档正文不再走 multipart，Backend 边收边写对象存储。
+BUILD_ARCHIVE_ENTRY_FILE_HEADER = "x-runtime-build-archive-entry-file"
+BUILD_ARCHIVE_SHA256_HEADER = "x-runtime-build-archive-sha256"
+BUILD_ARCHIVE_SIZE_HEADER = "x-runtime-build-archive-size-bytes"
 
-    真实上限仍在流式写入过程中逐块判定；这里只拦明显越界的请求，
-    避免整包先被 Starlette 落到临时磁盘再报错。缺少或非法 Content-Length 时放行。
+
+def _guard_runtime_build_artifact_request(request: Request) -> None:
+    """在读取请求正文之前按声明大小预筛构建归档。
+
+    Runtime 先落盘再流式上传，分块传输的请求体没有 Content-Length，
+    声明大小由 `x-runtime-build-archive-size-bytes` 携带。真实上限仍在流式
+    写入过程中逐块判定；这里只拦明显越界的请求，避免开始接收一个必然失败的归档。
     必须作为路由依赖挂载：依赖先于请求体解析执行，写在函数体里已经太晚。
     """
 
-    header = str(request.headers.get("content-length") or "").strip()
+    header = str(
+        request.headers.get(BUILD_ARCHIVE_SIZE_HEADER) or request.headers.get("content-length") or ""
+    ).strip()
     if not header:
         return
     try:
@@ -669,17 +676,38 @@ def _guard_runtime_build_artifact_request(request: Request) -> None:
         )
 
 
-async def _iter_upload_file_chunks(
-    file: UploadFile,
-    *,
-    chunk_size: int = ARTIFACT_UPLOAD_CHUNK_SIZE,
-) -> AsyncIterator[bytes]:
-    """按固定块读取上传文件，使归档大小不再正比于 Backend 常驻内存。"""
+def _read_build_archive_metadata(request: Request) -> tuple[str, str | None, int | None]:
+    """解析流式归档上传的入口文件与校验声明。
 
-    while True:
-        chunk = await file.read(chunk_size)
-        if not chunk:
-            return
+    返回 `(entry_file, sha256, size_bytes)`；入口文件缺失时按契约拒绝，
+    sha256 与大小仍由 `persist_uploaded_artifact` 在实际写入后对拍。
+    """
+
+    entry_file = str(request.headers.get(BUILD_ARCHIVE_ENTRY_FILE_HEADER) or "").strip()
+    if not entry_file:
+        raise AppException(
+            status_code=400,
+            code="BUILD_ARTIFACT_ENTRY_FILE_INVALID",
+            detail="缺少构建产物入口文件请求头。",
+        )
+    sha256 = str(request.headers.get(BUILD_ARCHIVE_SHA256_HEADER) or "").strip() or None
+    declared_size = str(request.headers.get(BUILD_ARCHIVE_SIZE_HEADER) or "").strip()
+    if not declared_size:
+        return entry_file, sha256, None
+    try:
+        return entry_file, sha256, int(declared_size)
+    except ValueError as exc:
+        raise AppException(
+            status_code=400,
+            code="BUILD_ARTIFACT_SIZE_INVALID",
+            detail="构建产物大小声明非法。",
+        ) from exc
+
+
+async def _iter_request_body_chunks(request: Request) -> AsyncIterator[bytes]:
+    """按分片读取请求正文，使归档大小不再正比于 Backend 常驻内存。"""
+
+    async for chunk in request.stream():
         yield chunk
 
 
@@ -691,18 +719,19 @@ async def upload_project_build_artifact(
     job_id: int,
     request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    archive: UploadFile = File(...),
-    entry_file: str = Form(...),
-    sha256: str | None = Form(default=None),
-    size_bytes: int | None = Form(default=None),
 ):
-    """接收 Runtime 上传的构建归档，并写回任务元数据。"""
+    """接收 Runtime 流式上传的构建归档，并写回任务元数据。
+
+    归档正文直接作为请求体传入，入口文件、sha256 与大小通过
+    `x-runtime-build-archive-*` 请求头声明；Backend 不落整包内存。
+    """
 
     build_token = _read_bearer_token(request)
     try:
         claims = TokenService.verify_runtime_build_command_token(build_token)
     except Exception as exc:  # noqa: BLE001
         raise AppException(status_code=401, code="BUILD_TOKEN_INVALID", detail="构建令牌非法或已过期。") from exc
+    entry_file, sha256, size_bytes = _read_build_archive_metadata(request)
     build_job = await _get_build_job_or_404(session, job_id)
     if str(claims.get("job_id") or "") != str(build_job.id):
         raise AppException(status_code=403, code="BUILD_JOB_MISMATCH", detail="构建任务与令牌声明不一致。")
@@ -734,7 +763,7 @@ async def upload_project_build_artifact(
     service = ProjectBuildService(session)
     build_job = await service.persist_uploaded_artifact(
         job=build_job,
-        archive_chunks=_iter_upload_file_chunks(archive),
+        archive_chunks=_iter_request_body_chunks(request),
         entry_file=entry_file,
         sha256=sha256,
         size_bytes=size_bytes,

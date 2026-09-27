@@ -34,7 +34,7 @@
 3. `runtime-build` 内的 Build Worker 按 project lane 并发启动等量领取消费者，通过 `POST /internal/runtime/build-jobs/claim` 以条件更新认领任务；Backend 下发 attempt 令牌，并把租约与令牌 TTL 一并裁剪到 `deadline_at` 之前。
 4. Worker 执行期间周期调用 `renew`：收到 401/409 立即中止在跑构建，与 Backend 失联时也在本地租约到期（留出安全余量）前主动停手，避免失守的执行者继续消耗资源或抢写状态。
 5. Runtime 拉取 snapshot，生成临时入口并在隔离子进程内执行 Vite 构建与 ZIP 归档；构建子进程不继承 Worker 领取凭证。
-6. Worker 上传产物后调用 `complete`。Backend 只在 `attempt_id` 与**有效租约**同时匹配时才提升产物或写终态，失守的执行者只能留下等待恢复的 `running` 行。
+6. Worker 以 `POST /internal/runtime/build-jobs/{job_id}/artifact` 上传产物：归档按分块流直接作为请求体，入口文件与 sha256、大小通过 `x-runtime-build-archive-*` 头声明，两侧都不再把整包读进内存，Backend 超过 `PROJECT_BUILD_ARTIFACT_MAX_BYTES` 即中止写入。上传成功后调用 `complete`。Backend 只在 `attempt_id` 与**有效租约**同时匹配时才提升产物或写终态，失守的执行者只能留下等待恢复的 `running` 行。
 7. 恢复循环按过期租约接管或收敛：已经上传产物的任务收敛为 `succeeded`，超过总期限仍未被领取的任务收敛为 `failed`。
 
 构建不存在第二跳执行路径：Backend 不再向 Runtime 同步派发构建，Runtime 也不暴露构建 HTTP 入口。凭证未配置时 Backend claim API fail-closed 且 Worker 不启动，构建任务停留在 `pending` 直到总期限把它收敛为失败。

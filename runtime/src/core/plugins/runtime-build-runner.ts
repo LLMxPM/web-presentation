@@ -4,7 +4,8 @@
 
 import type { IncomingMessage, ServerResponse } from 'http'
 import { mkdir, rm, writeFile, access, readdir, readFile } from 'fs/promises'
-import { constants as fsConstants, readFileSync, statSync } from 'fs'
+import { createReadStream, constants as fsConstants, readFileSync, statSync } from 'fs'
+import { Readable } from 'stream'
 import { resolve, sep } from 'path'
 
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
@@ -115,7 +116,8 @@ interface BuildArtifactSummary {
 interface BuildArtifactUploadParams {
   jobId: string
   buildToken: string
-  archiveBuffer: Buffer
+  /** 归档文件路径：上传时按分片从磁盘读取，整包不进入 Runtime 主进程内存。 */
+  archivePath: string
   entryFile: string
   sha256: string
   sizeBytes: number
@@ -621,15 +623,17 @@ async function uploadBuildArtifactWithRetry(
   let lastError: unknown = null
   for (let attempt = 1; attempt <= DEFAULT_ARTIFACT_UPLOAD_MAX_ATTEMPTS; attempt += 1) {
     throwIfAborted(signal)
+    // 流式 body 一旦发出就无法回退重放，因此每次尝试都重新打开归档文件。
+    const archiveStream = createReadStream(params.archivePath)
     try {
-      const response = await fetch(uploadUrl, {
+      const requestInit: RequestInit & { duplex: 'half' } = {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${params.buildToken}`,
-        },
-        body: buildArtifactUploadFormData(params),
+        headers: buildArtifactUploadHeaders(params),
+        body: Readable.toWeb(archiveStream) as unknown as ReadableStream,
+        duplex: 'half',
         signal,
-      })
+      }
+      const response = await fetch(uploadUrl, requestInit)
       return response
     } catch (error) {
       if (signal?.aborted) {
@@ -648,6 +652,8 @@ async function uploadBuildArtifactWithRetry(
         cause: formatUnknownError((error as { cause?: unknown } | null)?.cause),
       })
       await sleep(DEFAULT_ARTIFACT_UPLOAD_RETRY_BASE_MS * attempt, signal)
+    } finally {
+      archiveStream.destroy()
     }
   }
 
@@ -659,18 +665,18 @@ async function uploadBuildArtifactWithRetry(
 }
 
 /**
- * 为单次上传创建新的 multipart 表单；重试时不能复用已消费的 body。
+ * 构造构建归档上传的请求头：归档元数据随流式正文一起声明，不再走 multipart 字段。
  * @param params 上传参数
- * @returns multipart 表单
+ * @returns 认证与归档元数据请求头
  */
-function buildArtifactUploadFormData(params: BuildArtifactUploadParams): FormData {
-  const formData = new FormData()
-  const archiveBytes = new Uint8Array(params.archiveBuffer)
-  formData.set('archive', new Blob([archiveBytes], { type: 'application/zip' }), 'dist.zip')
-  formData.set('entry_file', params.entryFile)
-  formData.set('sha256', params.sha256)
-  formData.set('size_bytes', String(params.sizeBytes))
-  return formData
+function buildArtifactUploadHeaders(params: BuildArtifactUploadParams): Record<string, string> {
+  return {
+    Authorization: `Bearer ${params.buildToken}`,
+    'content-type': 'application/zip',
+    'x-runtime-build-archive-entry-file': params.entryFile,
+    'x-runtime-build-archive-sha256': params.sha256,
+    'x-runtime-build-archive-size-bytes': String(params.sizeBytes),
+  }
 }
 
 /**
@@ -947,7 +953,6 @@ export async function runProjectBuild(params: {
       timeoutMs: params.deadline.remainingMs(),
     })
     params.deadline.throwIfExpired()
-    const archiveBuffer = await readFile(archiveResult.archivePath)
     const artifactSha256 = archiveResult.sha256
     const artifactSizeBytes = archiveResult.sizeBytes
     logRuntimeBuild('artifact.archive.done', {
@@ -969,7 +974,7 @@ export async function runProjectBuild(params: {
     const uploadSummary = await params.backendClient.uploadBuildArtifact({
       jobId: params.jobId,
       buildToken: params.buildToken,
-      archiveBuffer,
+      archivePath: archiveResult.archivePath,
       entryFile: 'index.html',
       sha256: artifactSha256,
       sizeBytes: artifactSizeBytes,

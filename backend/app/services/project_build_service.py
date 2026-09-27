@@ -878,6 +878,9 @@ def _normalize_build_entry_file(raw_entry_file: str | None) -> str:
     normalized = str(raw_entry_file or "").strip().replace("\\", "/")
     if not normalized:
         raise AppException(status_code=400, code="BUILD_ARTIFACT_ENTRY_FILE_INVALID", detail="构建产物入口文件不能为空。")
+    if not normalized.isascii():
+        # 归档元数据经 HTTP 头传递，非 ASCII 头值只会被按 latin-1 解码成乱码，宁可拒绝也不留下错误的入口名。
+        raise AppException(status_code=400, code="BUILD_ARTIFACT_ENTRY_FILE_INVALID", detail="构建产物入口文件只能使用 ASCII 字符。")
     if normalized.startswith("/") or ".." in Path(normalized).parts:
         raise AppException(status_code=400, code="BUILD_ARTIFACT_ENTRY_FILE_INVALID", detail="构建产物入口文件路径不合法。")
     return normalized

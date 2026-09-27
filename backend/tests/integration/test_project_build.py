@@ -159,6 +159,91 @@ async def aiter_chunks(chunks: list[bytes]) -> AsyncIterator[bytes]:
         yield chunk
 
 
+async def upload_build_archive_stream(
+    client: AsyncClient,
+    *,
+    job_id: int,
+    build_token: str,
+    archive_content: bytes,
+    entry_file: str = "index.html",
+    sha256: str | None = None,
+    declared_size_bytes: int | None = None,
+):
+    """按流式归档契约上传构建产物。
+
+    归档正文直接作为请求体发送，入口文件与校验声明通过 `x-runtime-build-archive-*`
+    头声明：`sha256` 为 None 时省略该头，大小默认声明为正文实际长度，
+    传 `declared_size_bytes` 可模拟声明与实际不一致。
+    正文用分块迭代器发送，请求因此没有 Content-Length，贴近 Runtime 的真实上传形态。
+    """
+
+    headers = {
+        "Authorization": f"Bearer {build_token}",
+        "content-type": "application/zip",
+        "x-runtime-build-archive-entry-file": entry_file,
+        "x-runtime-build-archive-size-bytes": str(
+            len(archive_content) if declared_size_bytes is None else declared_size_bytes
+        ),
+    }
+    if sha256 is not None:
+        headers["x-runtime-build-archive-sha256"] = sha256
+    chunks = [archive_content[offset : offset + 1024] for offset in range(0, len(archive_content), 1024)]
+    return await client.post(
+        f"/internal/runtime/build-jobs/{job_id}/artifact",
+        headers=headers,
+        content=aiter_chunks(chunks),
+    )
+
+
+async def create_claimed_build_job(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[int, int, int, str]:
+    """创建并以 `test-worker` 领取一个构建任务，返回工作空间、项目、任务 ID 和 attempt 令牌。
+
+    令牌按领取到的 `attempt_id` 与租约持有者签发，贴近 Worker 上传产物的真实前置状态。
+    """
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+
+    async def fake_build_snapshot(  # noqa: ANN001
+        self,
+        *,
+        project_id: int,
+        entry_descriptor=None,
+        asset_delivery_mode="public",
+        asset_snapshot_mode="all",
+    ) -> ProjectArtifactSnapshot:
+        return build_fake_snapshot(workspace_id)
+
+    monkeypatch.setattr(
+        "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
+        fake_build_snapshot,
+    )
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200
+    build_job = create_response.json()
+    async with get_session_factory()() as session:
+        claimed_job = await ProjectBuildService(session, lease_owner="test-worker").claim_job(
+            job_id=build_job["id"]
+        )
+        assert claimed_job is not None
+        attempt_id = claimed_job.attempt_id
+    build_token = TokenService.generate_runtime_build_command_token(
+        job_id=build_job["id"],
+        artifact_id=str(build_job["snapshot_release_id"]),
+        project_id=project_id,
+        workspace_id=workspace_id,
+        base_url="./",
+        attempt_id=attempt_id,
+        lease_owner="test-worker",
+    )
+    return workspace_id, project_id, int(build_job["id"]), build_token
+
+
 def test_normalize_project_build_base_url_should_accept_relative_or_root_paths() -> None:
     """base_url 仅允许 `./` 或以 `/` 开头的部署基路径。"""
 
@@ -677,15 +762,12 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
         lease_owner="test-worker",
     )
 
-    upload_response = await authenticated_client.post(
-        f"/internal/runtime/build-jobs/{build_job['id']}/artifact",
-        headers={"Authorization": f"Bearer {build_token}"},
-        files={"archive": ("dist.zip", archive_content, "application/zip")},
-        data={
-            "entry_file": "index.html",
-            "sha256": archive_sha256,
-            "size_bytes": str(len(archive_content)),
-        },
+    upload_response = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=build_job["id"],
+        build_token=build_token,
+        archive_content=archive_content,
+        sha256=archive_sha256,
     )
     assert upload_response.status_code == 200
     upload_payload = upload_response.json()
@@ -815,24 +897,72 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
 
 
 @pytest.mark.asyncio
-async def test_project_build_artifact_upload_should_reject_oversized_content_length_early(
+async def test_project_build_artifact_upload_should_reject_oversized_declared_size_early(
     authenticated_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """声明长度越界的归档应在解析 multipart 前被拒，避免整包先落临时盘。"""
+    """声明长度越界的归档应在读取请求体前被拒，不开始接收一个必然失败的归档。"""
 
     settings = get_settings()
     monkeypatch.setattr(settings, "project_build_artifact_max_bytes", 128)
 
     response = await authenticated_client.post(
         "/internal/runtime/build-jobs/1/artifact",
-        headers={"Authorization": "Bearer invalid-build-token"},
-        files={"archive": ("dist.zip", b"x" * 4096, "application/zip")},
-        data={"entry_file": "index.html"},
+        headers={
+            "Authorization": "Bearer invalid-build-token",
+            "x-runtime-build-archive-entry-file": "index.html",
+            "x-runtime-build-archive-size-bytes": "4096",
+        },
+        content=aiter_chunks([b"x" * 1024] * 4),
     )
 
     assert response.status_code == 413
     assert response.json()["code"] == "BUILD_ARTIFACT_TOO_LARGE"
+
+
+@pytest.mark.asyncio
+async def test_project_build_artifact_upload_should_require_entry_file_header(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """流式归档必须声明入口文件头，缺失时在读取正文前拒绝。"""
+
+    _, _, job_id, build_token = await create_claimed_build_job(authenticated_client, monkeypatch)
+
+    response = await authenticated_client.post(
+        f"/internal/runtime/build-jobs/{job_id}/artifact",
+        headers={
+            "Authorization": f"Bearer {build_token}",
+            "x-runtime-build-archive-size-bytes": "8",
+        },
+        content=aiter_chunks([b"12345678"]),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "BUILD_ARTIFACT_ENTRY_FILE_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_project_build_artifact_upload_should_reject_mismatched_declared_size(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """声明大小只是预筛依据：与实际归档不一致时不得提升产物。"""
+
+    _, _, job_id, build_token = await create_claimed_build_job(authenticated_client, monkeypatch)
+    archive_content = build_zip_bytes({"index.html": b"<html>ok</html>"})
+
+    response = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=build_token,
+        archive_content=archive_content,
+        sha256=hashlib.sha256(archive_content).hexdigest(),
+        declared_size_bytes=len(archive_content) + 1,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "BUILD_ARTIFACT_SIZE_MISMATCH"
 
 
 @pytest.mark.asyncio

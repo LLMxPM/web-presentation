@@ -23,6 +23,7 @@ from tests.integration.test_project_build import (
     build_fake_snapshot,
     build_zip_bytes,
     create_active_project,
+    upload_build_archive_stream,
 )
 
 
@@ -302,15 +303,12 @@ async def test_upload_should_reject_stale_attempt_and_keep_latest_result(
         attempt_id=attempt_a,
         lease_owner="worker-a",
     )
-    upload_a = await authenticated_client.post(
-        f"/internal/runtime/build-jobs/{job_id}/artifact",
-        headers={"Authorization": f"Bearer {token_a}"},
-        files={"archive": ("dist.zip", archive_a, "application/zip")},
-        data={
-            "entry_file": "index.html",
-            "sha256": hashlib.sha256(archive_a).hexdigest(),
-            "size_bytes": str(len(archive_a)),
-        },
+    upload_a = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=token_a,
+        archive_content=archive_a,
+        sha256=hashlib.sha256(archive_a).hexdigest(),
     )
     assert upload_a.status_code == 200
     assert f"/attempts/{attempt_a}/" in upload_a.json()["artifact_storage_key"]
@@ -332,15 +330,12 @@ async def test_upload_should_reject_stale_attempt_and_keep_latest_result(
         assert attempt_b != attempt_a
 
     # 迟到的 attempt_a 上传不得覆盖。
-    late_upload = await authenticated_client.post(
-        f"/internal/runtime/build-jobs/{job_id}/artifact",
-        headers={"Authorization": f"Bearer {token_a}"},
-        files={"archive": ("dist.zip", archive_a, "application/zip")},
-        data={
-            "entry_file": "index.html",
-            "sha256": hashlib.sha256(archive_a).hexdigest(),
-            "size_bytes": str(len(archive_a)),
-        },
+    late_upload = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=token_a,
+        archive_content=archive_a,
+        sha256=hashlib.sha256(archive_a).hexdigest(),
     )
     assert late_upload.status_code == 409
     assert late_upload.json()["code"] == "BUILD_ATTEMPT_MISMATCH"
@@ -355,15 +350,12 @@ async def test_upload_should_reject_stale_attempt_and_keep_latest_result(
         attempt_id=attempt_b,
         lease_owner="worker-b",
     )
-    upload_b = await authenticated_client.post(
-        f"/internal/runtime/build-jobs/{job_id}/artifact",
-        headers={"Authorization": f"Bearer {token_b}"},
-        files={"archive": ("dist.zip", archive_b, "application/zip")},
-        data={
-            "entry_file": "index.html",
-            "sha256": hashlib.sha256(archive_b).hexdigest(),
-            "size_bytes": str(len(archive_b)),
-        },
+    upload_b = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=token_b,
+        archive_content=archive_b,
+        sha256=hashlib.sha256(archive_b).hexdigest(),
     )
     assert upload_b.status_code == 200
     assert upload_b.json()["artifact_storage_key"].endswith(f"/attempts/{attempt_b}/dist.zip")
@@ -405,15 +397,12 @@ async def test_upload_should_reject_expired_lease(
         attempt_id=attempt_id,
         lease_owner="worker-a",
     )
-    response = await authenticated_client.post(
-        f"/internal/runtime/build-jobs/{job_id}/artifact",
-        headers={"Authorization": f"Bearer {token}"},
-        files={"archive": ("dist.zip", archive, "application/zip")},
-        data={
-            "entry_file": "index.html",
-            "sha256": hashlib.sha256(archive).hexdigest(),
-            "size_bytes": str(len(archive)),
-        },
+    response = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=token,
+        archive_content=archive,
+        sha256=hashlib.sha256(archive).hexdigest(),
     )
     assert response.status_code == 409
     assert response.json()["code"] == "BUILD_LEASE_EXPIRED"
@@ -446,15 +435,12 @@ async def test_upload_should_reject_lease_owner_mismatch(
         attempt_id=attempt_id,
         lease_owner="worker-evil",
     )
-    response = await authenticated_client.post(
-        f"/internal/runtime/build-jobs/{job_id}/artifact",
-        headers={"Authorization": f"Bearer {token}"},
-        files={"archive": ("dist.zip", archive, "application/zip")},
-        data={
-            "entry_file": "index.html",
-            "sha256": hashlib.sha256(archive).hexdigest(),
-            "size_bytes": str(len(archive)),
-        },
+    response = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=token,
+        archive_content=archive,
+        sha256=hashlib.sha256(archive).hexdigest(),
     )
     assert response.status_code == 409
     assert response.json()["code"] == "BUILD_LEASE_OWNER_MISMATCH"
