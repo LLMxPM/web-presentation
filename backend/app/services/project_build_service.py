@@ -24,8 +24,6 @@ from app.schemas.project_build import ProjectBuildAssetSummary, ProjectBuildCrea
 from app.services.project_artifact_builder import ProjectArtifactBuilder
 from app.services.object_storage_service import ObjectStorageService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
-from app.services.runtime_build_client import RuntimeBuildClient
-from app.services.token_service import TokenService
 
 
 ACTIVE_BUILD_STATUSES = ("pending", "running")
@@ -300,6 +298,36 @@ class ProjectBuildService:
                     await self.session.refresh(claimed)
                 return claimed
         return None
+
+    async def renew_job_lease(
+        self,
+        *,
+        job_id: int,
+        lease_owner: str,
+    ) -> ProjectBuildJob | None:
+        """仅允许当前未过期租约的拥有者续租，替代「lease 必须覆盖最长 HTTP timeout」的静态约束。"""
+
+        now = utc_now()
+        lease_seconds = self.settings.project_build_lease_seconds
+        result = await self.session.execute(
+            update(ProjectBuildJob)
+            .where(
+                ProjectBuildJob.id == job_id,
+                ProjectBuildJob.status == "running",
+                ProjectBuildJob.lease_owner == lease_owner,
+                ProjectBuildJob.lease_expires_at.is_not(None),
+                ProjectBuildJob.lease_expires_at > now,
+            )
+            .values(lease_expires_at=now + timedelta(seconds=lease_seconds))
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.commit()
+        if (result.rowcount or 0) != 1:
+            return None
+        job = await self.session.get(ProjectBuildJob, job_id)
+        if job is not None:
+            await self.session.refresh(job)
+        return job
 
     async def release_job_to_pending(
         self,
@@ -581,284 +609,43 @@ async def run_project_build_job(
     lease_owner: str | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    """领取并执行整项目构建任务；失败时按重试预算回到 pending 或标为 failed。"""
+    """兼容入口：不再同步派发 Runtime；执行面由 Runtime Build Worker 通过 claim API 拉取。
 
-    factory = session_factory or get_session_factory()
-    owner = lease_owner or f"build-worker:{uuid.uuid4().hex}"
-    async with factory() as session:
-        service = ProjectBuildService(session, lease_owner=owner)
-        job = await service.claim_job(job_id=job_id, lease_owner=owner)
-        if job is None:
-            # 已被其他执行者领取或不可领取，不重复派发。
-            return
+    历史上本函数会 claim + 同步 POST Runtime 并等待整包构建完成。现在 Backend 只负责
+    创建/恢复/attempt 围栏，真正执行由 Runtime Build Worker 领取
+    （POST /internal/runtime/build-jobs/claim → build → upload → complete）。
+    保留本函数签名是为了兼容既有 BackgroundTasks 与测试导入；它只做一次轻量唤醒，
+    不领取任务，避免与 Worker 争抢 running 租约。
+    """
 
-        # 回滚后 ORM 实例会过期，提前固化关键标识。
-        claimed_job_id = job.id
-        claimed_project_id = job.project_id
-        claimed_snapshot_release_id = job.snapshot_release_id
-        claimed_base_url = job.base_url
-
-        await RuntimeArtifactStore().put_build_state(
-            job_id=claimed_job_id,
-            mapping={
-                "status": "running",
-                "snapshot_release_id": claimed_snapshot_release_id,
-                "project_id": claimed_project_id,
-                "base_url": claimed_base_url,
-                "runtime_dispatch_at": "",
-                "last_heartbeat_at": utc_now().isoformat(),
-                "error_message": "",
-            },
-        )
-        logger.info(
-            "项目构建任务开始执行。",
-            extra={
-                "event": "project.build.job.started",
-                "job_id": claimed_job_id,
-                "project_id": claimed_project_id,
-                "attempt_id": job.attempt_id,
-                "attempt_count": job.attempt_count,
-                "lease_owner": owner,
-            },
-        )
-
-        try:
-            release = await session.get(Release, claimed_snapshot_release_id)
-            if release is None:
-                raise AppException(status_code=404, code="BUILD_SNAPSHOT_NOT_FOUND", detail="构建快照不存在。")
-
-            owner_scope = dict(release.manifest.get("owner_scope") or {})
-            project_id = int(owner_scope.get("project_id") or claimed_project_id)
-            workspace_id = int(owner_scope.get("workspace_id") or 0)
-            if workspace_id <= 0:
-                raise AppException(status_code=409, code="BUILD_SCOPE_INVALID", detail="构建快照缺少工作空间归属。")
-
-            build_token = TokenService.generate_runtime_build_command_token(
-                job_id=claimed_job_id,
-                artifact_id=str(claimed_snapshot_release_id),
-                project_id=project_id,
-                workspace_id=workspace_id,
-                base_url=claimed_base_url,
-                attempt_id=job.attempt_id,
-                lease_owner=owner,
-            )
-            await RuntimeArtifactStore().put_build_state(
-                job_id=claimed_job_id,
-                mapping={
-                    "status": "runtime_dispatched",
-                    "snapshot_release_id": claimed_snapshot_release_id,
-                    "project_id": project_id,
-                    "workspace_id": workspace_id,
-                    "base_url": claimed_base_url,
-                    "runtime_dispatch_at": utc_now().isoformat(),
-                    "last_heartbeat_at": utc_now().isoformat(),
-                    "error_message": "",
-                },
-            )
-            logger.info(
-                "项目构建任务已派发 Runtime。",
-                extra={
-                    "event": "project.build.job.dispatched",
-                    "job_id": claimed_job_id,
-                    "project_id": project_id,
-                    "workspace_id": workspace_id,
-                    "artifact_id": str(claimed_snapshot_release_id),
-                    "attempt_id": job.attempt_id,
-                },
-            )
-            await RuntimeBuildClient().dispatch_project_build(
-                artifact_id=str(claimed_snapshot_release_id),
-                base_url=claimed_base_url,
-                build_token=build_token,
-            )
-            completed = await service.complete_job(
-                job_id=claimed_job_id,
-                lease_owner=owner,
-                success=True,
-            )
-            if not completed:
-                logger.warning(
-                    "项目构建成功但租约已失守，结果不由本执行者提交。",
-                    extra={"event": "project.build.job.success_lost_lease", "job_id": claimed_job_id},
-                )
-                return
-            await RuntimeArtifactStore().put_build_state(
-                job_id=claimed_job_id,
-                mapping={
-                    "status": "succeeded",
-                    "snapshot_release_id": claimed_snapshot_release_id,
-                    "project_id": project_id,
-                    "workspace_id": workspace_id,
-                    "base_url": claimed_base_url,
-                    "last_heartbeat_at": utc_now().isoformat(),
-                    "error_message": "",
-                },
-            )
-            logger.info(
-                "项目构建任务执行成功。",
-                extra={"event": "project.build.job.succeeded", "job_id": claimed_job_id, "project_id": project_id},
-            )
-        except Exception as exc:  # noqa: BLE001
-            error_message = _extract_build_error_message(exc)
-            # 先刷新任务以读取最新 attempt 预算，再决定重试或终止。
-            await session.rollback()
-            current = await service.get_job_by_id(claimed_job_id)
-
-            # 超时等「结果不确定」错误：对端可能已完成构建并上传。先确认产物，
-            # 确认不到则保留租约等过期收敛，禁止立即发起新 attempt（重复派发）。
-            if _is_uncertain_dispatch_error(exc):
-                completed = await service.complete_job(
-                    job_id=claimed_job_id,
-                    lease_owner=owner,
-                    success=True,
-                )
-                if completed:
-                    await RuntimeArtifactStore().put_build_state(
-                        job_id=claimed_job_id,
-                        mapping={
-                            "status": "succeeded",
-                            "snapshot_release_id": current.snapshot_release_id,
-                            "project_id": current.project_id,
-                            "base_url": current.base_url,
-                            "last_heartbeat_at": utc_now().isoformat(),
-                            "error_message": "",
-                        },
-                    )
-                    logger.info(
-                        "构建派发响应超时但产物已提升，按成功收敛。",
-                        extra={"event": "project.build.job.uncertain_settled_success", "job_id": claimed_job_id},
-                    )
-                    return
-                logger.warning(
-                    "构建结果不确定且尚无产物，保留租约等待过期收敛，不立即重派。",
-                    extra={
-                        "event": "project.build.job.uncertain_hold_lease",
-                        "job_id": claimed_job_id,
-                        "error_message": error_message,
-                    },
-                )
-                return
-
-            if service.is_retry_allowed(current):
-                requeued = await service.release_job_to_pending(
-                    job_id=claimed_job_id,
-                    lease_owner=owner,
-                    error_message=error_message,
-                )
-                if requeued:
-                    await RuntimeArtifactStore().put_build_state(
-                        job_id=claimed_job_id,
-                        mapping={
-                            "status": "pending",
-                            "snapshot_release_id": current.snapshot_release_id,
-                            "project_id": current.project_id,
-                            "base_url": current.base_url,
-                            "last_heartbeat_at": utc_now().isoformat(),
-                            "error_message": error_message,
-                        },
-                    )
-                    logger.warning(
-                        "项目构建任务失败，仍在重试预算内已回到 pending。",
-                        extra={
-                            "event": "project.build.job.requeued",
-                            "job_id": claimed_job_id,
-                            "project_id": current.project_id,
-                            "attempt_count": current.attempt_count,
-                            "error_message": error_message,
-                        },
-                    )
-                    return
-            failed = await service.complete_job(
-                job_id=claimed_job_id,
-                lease_owner=owner,
-                success=False,
-                error_message=error_message,
-            )
-            if not failed:
-                logger.warning(
-                    "项目构建失败但租约已失守，终态不由本执行者写入。",
-                    extra={"event": "project.build.job.failed_lost_lease", "job_id": claimed_job_id},
-                )
-                return
-            await RuntimeArtifactStore().put_build_state(
-                job_id=claimed_job_id,
-                mapping={
-                    "status": "failed",
-                    "snapshot_release_id": current.snapshot_release_id,
-                    "project_id": current.project_id,
-                    "base_url": current.base_url,
-                    "last_heartbeat_at": utc_now().isoformat(),
-                    "error_message": error_message,
-                },
-            )
-            logger.exception(
-                "项目构建任务执行失败。",
-                extra={
-                    "event": "project.build.job.failed",
-                    "job_id": claimed_job_id,
-                    "project_id": current.project_id,
-                    "artifact_id": str(current.snapshot_release_id),
-                },
-            )
+    logger.debug(
+        "项目构建任务触发已忽略同步派发，等待 Runtime Build Worker 领取。",
+        extra={"event": "project.build.job.dispatch_skipped", "job_id": job_id, "lease_owner": lease_owner},
+    )
 
 
 async def run_project_build_queue_loop(
     session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    """持续发现并执行待构建任务，作为 BackgroundTasks 之外的持久派发路径。"""
+    """持续收敛租约过期的构建任务；真正执行由 Runtime Build Worker 通过 claim API 领取。"""
 
     settings = get_settings()
     factory = session_factory or get_session_factory()
-    poll_interval = max(0.1, settings.project_build_queue_poll_interval_seconds)
-    concurrency = max(1, settings.project_build_queue_concurrency)
-    lease_owner = f"build-queue:{uuid.uuid4().hex}"
+    poll_interval = max(1.0, settings.project_build_queue_poll_interval_seconds)
     logger.info(
-        "项目构建队列后台任务已启动。",
-        extra={"event": "project.build.queue.started", "concurrency": concurrency, "lease_owner": lease_owner},
+        "项目构建恢复循环已启动（不再同步派发，等待 Runtime Build Worker 领取）。",
+        extra={"event": "project.build.queue.started", "mode": "recovery-only"},
     )
     while True:
         try:
             async with factory() as session:
-                # 先收敛租约过期的 running 任务，再发现可领取的 pending 任务。
                 await recover_expired_build_jobs(session)
-                now = utc_now()
-                pending_ids = list(
-                    (
-                        await session.execute(
-                            select(ProjectBuildJob.id)
-                            .where(
-                                ProjectBuildJob.status == "pending",
-                                or_(
-                                    ProjectBuildJob.lease_expires_at.is_(None),
-                                    ProjectBuildJob.lease_expires_at <= now,
-                                ),
-                            )
-                            .order_by(ProjectBuildJob.created_at.asc(), ProjectBuildJob.id.asc())
-                            .limit(concurrency)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-            if not pending_ids:
-                await asyncio.sleep(poll_interval)
-                continue
-            # 由 run_project_build_job 内部完成条件领取，避免双重 claim。
-            await asyncio.gather(
-                *[
-                    run_project_build_job(
-                        job_id,
-                        lease_owner=lease_owner,
-                        session_factory=factory,
-                    )
-                    for job_id in pending_ids
-                ]
-            )
+                await fail_overdue_pending_build_jobs(session)
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001
-            logger.exception("项目构建队列循环异常。", extra={"event": "project.build.queue.failed"})
-            await asyncio.sleep(poll_interval)
+        except Exception:
+            logger.exception("项目构建恢复循环异常。", extra={"event": "project.build.queue.failed"})
+        await asyncio.sleep(poll_interval)
 
 
 def _clear_artifact_fields() -> dict[str, object]:
@@ -871,6 +658,43 @@ def _clear_artifact_fields() -> dict[str, object]:
         "artifact_sha256": None,
         "artifact_size_bytes": None,
     }
+
+
+async def fail_overdue_pending_build_jobs(session: AsyncSession) -> int:
+    """把超过总 deadline 仍停留在 pending 的任务收敛为 failed。
+
+    没有 Runtime Build Worker 领取时任务会一直 pending；超过 deadline 后
+    不应再被领取，避免无限悬挂。
+    """
+
+    now = utc_now()
+    result = await session.execute(
+        update(ProjectBuildJob)
+        .where(
+            ProjectBuildJob.status == "pending",
+            ProjectBuildJob.deadline_at.is_not(None),
+            ProjectBuildJob.deadline_at <= now,
+        )
+        .values(
+            status="failed",
+            error_message="构建任务超过总执行期限仍未被领取。",
+            finished_at=now,
+            lease_owner=None,
+            lease_expires_at=None,
+            claimed_at=None,
+            attempt_id=None,
+            **_clear_artifact_fields(),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+    recovered = int(result.rowcount or 0)
+    if recovered:
+        logger.warning(
+            "已收敛超过总期限的待执行构建任务。",
+            extra={"event": "project.build.job.overdue_pending_failed", "failed_count": recovered},
+        )
+    return recovered
 
 
 async def recover_expired_build_jobs(

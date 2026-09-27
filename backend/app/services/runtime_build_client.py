@@ -1,4 +1,8 @@
-"""文件功能：封装 Backend 调用 Runtime 内部整包构建接口的 HTTP 客户端。"""
+"""文件功能：封装 Backend 调用 Runtime 内部整包构建接口的 HTTP 客户端（遗留长 RPC 路径）。
+
+主执行路径已改为 Runtime Build Worker 通过 claim/renew/complete API 拉取持久任务。
+本客户端仅供兼容与角色路由单测保留，生产创建路径不再调用 dispatch_project_build。
+"""
 
 from __future__ import annotations
 

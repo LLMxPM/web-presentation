@@ -143,7 +143,7 @@ async def test_run_project_build_job_should_requeue_then_fail_on_budget(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """失败且未超重试预算应回到 pending，超预算后标为 failed。"""
+    """Worker complete 失败且未超重试预算应回到 pending，超预算后标为 failed。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
     job_payload = await _create_build_job(
@@ -155,15 +155,29 @@ async def test_run_project_build_job_should_requeue_then_fail_on_budget(
     )
     job_id = job_payload["id"]
 
-    async def fake_dispatch_failure(self, **kwargs):  # noqa: ANN001, ARG001
-        raise AppException(status_code=502, code="RUNTIME_BUILD_FAILED", detail="Runtime 暂不可用。")
+    async def claim_and_fail(worker_id: str) -> str:
+        async with get_session_factory()() as session:
+            service = ProjectBuildService(session, lease_owner=worker_id)
+            claimed = await service.claim_job(job_id=job_id, lease_owner=worker_id)
+            assert claimed is not None
+            if service.is_retry_allowed(claimed):
+                requeued = await service.release_job_to_pending(
+                    job_id=job_id,
+                    lease_owner=worker_id,
+                    error_message="Runtime 暂不可用。",
+                )
+                assert requeued
+                return "pending"
+            failed = await service.complete_job(
+                job_id=job_id,
+                lease_owner=worker_id,
+                success=False,
+                error_message="Runtime 暂不可用。",
+            )
+            assert failed
+            return "failed"
 
-    monkeypatch.setattr(
-        "app.services.project_build_service.RuntimeBuildClient.dispatch_project_build",
-        fake_dispatch_failure,
-    )
-
-    await run_project_build_job(job_id)
+    assert await claim_and_fail("worker-a") == "pending"
     async with get_session_factory()() as session:
         job = await session.get(ProjectBuildJob, job_id)
         assert job is not None
@@ -173,7 +187,7 @@ async def test_run_project_build_job_should_requeue_then_fail_on_budget(
         assert job.attempt_id is None
         assert job.error_message == "Runtime 暂不可用。"
 
-    await run_project_build_job(job_id)
+    assert await claim_and_fail("worker-b") == "failed"
     async with get_session_factory()() as session:
         job = await session.get(ProjectBuildJob, job_id)
         assert job is not None
@@ -187,26 +201,17 @@ async def test_uncertain_build_response_should_wait_for_lease_before_retry(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """构建中上传失败返回 503 后保留 attempt，待租约过期才允许重派。"""
+    """Worker 失联后保留 running/attempt，待租约过期才允许回收重派。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
     job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
     job_id = job_payload["id"]
 
-    async def fake_dispatch_failure(self, **kwargs):  # noqa: ANN001, ARG001
-        raise AppException(
-            status_code=503,
-            code="BUILD_ARTIFACT_UPLOAD_FAILED",
-            detail="产物上传失败。",
-            data={"dispatch_may_have_started": True},
-        )
+    async with get_session_factory()() as session:
+        service = ProjectBuildService(session, lease_owner="worker-a")
+        claimed = await service.claim_job(job_id=job_id, lease_owner="worker-a")
+        assert claimed is not None
 
-    monkeypatch.setattr(
-        "app.services.project_build_service.RuntimeBuildClient.dispatch_project_build",
-        fake_dispatch_failure,
-    )
-
-    await run_project_build_job(job_id)
     async with get_session_factory()() as session:
         job = await session.get(ProjectBuildJob, job_id)
         assert job is not None
@@ -250,15 +255,19 @@ async def test_run_project_build_job_should_fail_immediately_past_deadline(
         job.deadline_at = utc_now() - timedelta(seconds=1)
         await session.commit()
 
-    async def fake_dispatch_failure(self, **kwargs):  # noqa: ANN001, ARG001
-        raise AppException(status_code=502, code="RUNTIME_BUILD_FAILED", detail="Runtime 暂不可用。")
+    async with get_session_factory()() as session:
+        service = ProjectBuildService(session, lease_owner="worker-a")
+        claimed = await service.claim_job(job_id=job_id, lease_owner="worker-a")
+        assert claimed is not None
+        assert not service.is_retry_allowed(claimed)
+        failed = await service.complete_job(
+            job_id=job_id,
+            lease_owner="worker-a",
+            success=False,
+            error_message="Runtime 暂不可用。",
+        )
+        assert failed
 
-    monkeypatch.setattr(
-        "app.services.project_build_service.RuntimeBuildClient.dispatch_project_build",
-        fake_dispatch_failure,
-    )
-
-    await run_project_build_job(job_id)
     async with get_session_factory()() as session:
         job = await session.get(ProjectBuildJob, job_id)
         assert job is not None

@@ -30,8 +30,8 @@ SQLite 轻量版使用 `llmxpm/web-presentation:sqlite-lite`，在 `platform-lit
 | `deploy/compose/compose.sqlite-lite.yml` | SQLite + memory runtime 轻量版，启动 `platform-lite` 与 `renderer`，环境变量直接写在 compose 内 |
 | `deploy/compose/compose.yml` | 外部 PostgreSQL/Redis 简化版，启动 `platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
 | `deploy/compose/compose.with-deps.yml` | 内置 PostgreSQL/Redis 简化版，启动 `postgres`、`redis`、`platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
-| `deploy/compose/compose.prod.yml` | production env 版，拆分 `backend-migrate`、`backend`、`runtime`、`renderer` 与 `gateway`，通过 `env_file: .env` 读取生产环境变量 |
-| `deploy/compose/compose.runtime-roles.yml` | 分角色单机版，`runtime-preview` / `runtime-build` / `runtime-check` 各一实例，Backend 读取 `deploy/.env`，Runtime 角色只读取 `deploy/runtime.env`，Gateway 只代理预览 |
+| `deploy/compose/compose.prod.yml` | runtime-all 兼容/Lite 生产版，拆分 `backend-migrate`、`backend`、`runtime`、`renderer` 与 `gateway`，通过 `env_file: .env` 读取生产环境变量；适合小团队或尚未分角色的环境 |
+| `deploy/compose/compose.runtime-roles.yml` | **官方生产主路径**：分角色单机版，`runtime-preview` / `runtime-build` / `runtime-check` 各一实例，Backend 读取 `deploy/.env`，Runtime 角色只读取 `deploy/runtime.env`，Gateway 只代理预览 |
 | `deploy/.env.example` | 供 production env 版与分角色单机版的 Backend 复制为 `deploy/.env` 使用 |
 | `deploy/runtime.env.example` | 供分角色单机版的 Runtime 复制为 `deploy/runtime.env` 使用，不包含平台密钥 |
 | `deploy/docker/nginx/web-presentation.conf` | 平台镜像内置 Gateway 配置，托管 Editor 并代理 Backend 与 Runtime |
@@ -40,7 +40,7 @@ SQLite 轻量版使用 `llmxpm/web-presentation:sqlite-lite`，在 `platform-lit
 
 SQLite 轻量版中，`platform-lite` 容器同时运行 Backend、Runtime 与 Gateway，独立 `renderer` 容器执行截图。平台容器入口脚本会把 `backend` 和 `runtime` 解析到本机，复用同一份 Gateway 配置。
 
-production env 版中，访问入口是单独的 `gateway` 容器；`backend` 和 `runtime` 默认只在 compose 内网访问。分角色单机版把 `runtime` 拆为 `runtime-preview` / `runtime-build` / `runtime-check`，Gateway 只代理预览角色，详见 [Compose 部署说明](./compose.md)。
+production env 版中，访问入口是单独的 `gateway` 容器；`backend` 和 `runtime` 默认只在 compose 内网访问。**正式生产推荐使用分角色单机版** `compose.runtime-roles.yml`：把 `runtime` 拆为 `runtime-preview` / `runtime-build` / `runtime-check`，Gateway 只代理预览角色，Runtime 不注入平台密钥。`compose.prod.yml` 保留为 runtime-all 兼容路径，详见 [Compose 部署说明](./compose.md)。
 
 ## 前置条件
 

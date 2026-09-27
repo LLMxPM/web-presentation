@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +14,9 @@ from app.db.session import get_db_session
 from app.schemas.project_build import ProjectBuildAssetSummary, ProjectBuildCreateRequest, ProjectBuildJobResponse
 from app.services.auth_service import AuthContext
 from app.services.object_storage_service import ObjectStorageService
-from app.services.project_build_service import ProjectBuildService, run_project_build_job
+from app.services.project_build_service import ProjectBuildService
+# 保留符号供既有测试 monkeypatch；创建路径不再调度同步派发。
+from app.services.project_build_service import run_project_build_job  # noqa: F401
 from app.services.project_service import ProjectService
 
 router = APIRouter()
@@ -36,18 +38,16 @@ async def get_project_build_asset_summary(
 async def create_project_build_job(
     project_id: int,
     payload: ProjectBuildCreateRequest,
-    background_tasks: BackgroundTasks,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ProjectBuildJobResponse:
-    """创建项目整包构建任务，并异步派发给 Runtime。"""
+    """创建项目整包构建任务；执行由 Runtime Build Worker 通过 claim API 领取。"""
 
     await ProjectService(session).get(project_id, user_id=current.user.id)
     service = ProjectBuildService(session)
     job = await service.create_build_job(project_id=project_id, payload=payload, created_by=current.user.id)
-    # BackgroundTasks 只是低延迟触发提示，不是正确性依赖：队列循环与本触发
-    # 都调用 run_project_build_job，领取 CAS 保证同一任务最多被一个执行者派发。
-    background_tasks.add_task(run_project_build_job, job.id)
+    # 不再同步派发 Runtime：任务保持 pending，由 Runtime Build Worker
+    # POST /internal/runtime/build-jobs/claim 领取后执行并 complete。
     return ProjectBuildJobResponse.model_validate(job)
 
 

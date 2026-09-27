@@ -1,15 +1,17 @@
-"""文件功能：向 Runtime 提供内部 preview artifact 读取、预览服务令牌换发与构建产物上传接口。"""
+"""文件功能：向 Runtime 提供内部 preview artifact 读取、构建任务领取/续租/完成与产物上传接口。"""
 
 from __future__ import annotations
 
+import hmac
 import time
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db.session import get_db_session
@@ -56,6 +58,35 @@ class PreviewServiceTokenExchangeResponse(BaseModel):
     expires_in: int
     artifact_id: str
     scope: str = "runtime-artifact-read"
+
+
+class BuildJobClaimRequest(BaseModel):
+    """Runtime Build Worker 领取构建任务的内部请求。"""
+
+    worker_id: str = Field(min_length=1, max_length=128)
+
+
+class BuildJobClaimResponse(BaseModel):
+    """领取结果：任务载荷与本次 attempt 的限权令牌；无任务时 job_id 为空。"""
+
+    job_id: int | None = None
+    project_id: int | None = None
+    snapshot_release_id: str | None = None
+    base_url: str | None = None
+    workspace_id: int | None = None
+    attempt_id: str | None = None
+    lease_owner: str | None = None
+    lease_expires_at: str | None = None
+    build_token: str | None = None
+    service_token: str | None = None
+    message: str = "当前没有可领取的构建任务。"
+
+
+class BuildJobCompleteRequest(BaseModel):
+    """Runtime Build Worker 上报构建终态的内部请求。"""
+
+    success: bool
+    error_message: str | None = Field(default=None, max_length=2000)
 
 
 def _resolve_runtime_service_token_ttl(preview_claims: dict[str, object]) -> int:
@@ -137,6 +168,81 @@ def _verify_runtime_service_request(request: Request, artifact_id: str) -> dict[
     if token_artifact_id != str(artifact_id):
         raise AppException(status_code=403, code="PREVIEW_ARTIFACT_MISMATCH", detail="服务令牌与目标 artifact 不一致。")
     return claims
+
+
+def _verify_build_worker_credential(request: Request) -> str:
+    """校验 Runtime Build Worker 共享服务凭证；未配置时 fail-closed。"""
+
+    credential = str(get_settings().runtime_build_worker_credential or "").strip()
+    if not credential:
+        raise AppException(
+            status_code=503,
+            code="RUNTIME_BUILD_WORKER_CREDENTIAL_MISSING",
+            detail="Backend 未配置 RUNTIME_BUILD_WORKER_CREDENTIAL，无法接受构建任务领取。",
+        )
+    token = _read_bearer_token(
+        request,
+        missing_code="RUNTIME_BUILD_WORKER_CREDENTIAL_REQUIRED",
+        missing_detail="缺少 Runtime Build Worker 服务凭证。",
+    )
+    # 常量时间比较，避免通过响应时序侧信道猜测共享凭证。
+    if not hmac.compare_digest(token.encode("utf-8"), credential.encode("utf-8")):
+        raise AppException(
+            status_code=401,
+            code="RUNTIME_BUILD_WORKER_CREDENTIAL_INVALID",
+            detail="Runtime Build Worker 服务凭证无效。",
+        )
+    return token
+
+
+def _verify_build_command_token(request: Request, job: ProjectBuildJob) -> dict[str, Any]:
+    """校验构建命令令牌与任务、attempt、租约围栏一致。"""
+
+    build_token = _read_bearer_token(request)
+    try:
+        claims = TokenService.verify_runtime_build_command_token(build_token)
+    except Exception as exc:  # noqa: BLE001
+        raise AppException(status_code=401, code="BUILD_TOKEN_INVALID", detail="构建令牌非法或已过期。") from exc
+    if str(claims.get("job_id") or "") != str(job.id):
+        raise AppException(status_code=403, code="BUILD_JOB_MISMATCH", detail="构建任务与令牌声明不一致。")
+    if str(claims.get("artifact_id") or "") != str(job.snapshot_release_id):
+        raise AppException(status_code=403, code="BUILD_ARTIFACT_MISMATCH", detail="构建快照与令牌声明不一致。")
+    token_attempt_id = str(claims.get("attempt_id") or "").strip() or None
+    token_lease_owner = str(claims.get("lease_owner") or "").strip() or None
+    job_attempt = str(job.attempt_id or "").strip()
+    if not token_attempt_id or token_attempt_id != job_attempt:
+        raise AppException(status_code=409, code="BUILD_ATTEMPT_MISMATCH", detail="构建令牌 attempt 与当前任务不一致。")
+    if token_lease_owner and job.lease_owner and str(token_lease_owner) != str(job.lease_owner):
+        raise AppException(status_code=409, code="BUILD_LEASE_OWNER_MISMATCH", detail="构建令牌租约拥有者不一致。")
+    return claims
+
+
+async def _fail_claimed_build_job(
+    service: ProjectBuildService,
+    *,
+    job_id: int,
+    lease_owner: str,
+    error_message: str,
+) -> None:
+    """把已领取但存在不可重试缺陷的任务直接写成 failed，禁止回到 pending 毒丸循环。"""
+
+    completed = await service.complete_job(
+        job_id=job_id,
+        lease_owner=lease_owner,
+        success=False,
+        error_message=error_message,
+    )
+    if not completed:
+        # 租约已失守时终态由其它执行者或恢复循环收敛，这里不覆盖。
+        return
+    await RuntimeArtifactStore().put_build_state(
+        job_id=job_id,
+        mapping={
+            "status": "failed",
+            "error_message": error_message,
+            "last_heartbeat_at": utc_now().isoformat(),
+        },
+    )
 
 
 def _verify_optional_preview_context(request: Request, artifact_id: str) -> None:
@@ -311,6 +417,212 @@ async def get_preview_artifact_modules_batch(
     if len(modules) != len(payload.paths):
         raise AppException(status_code=404, code="MODULE_NOT_FOUND", detail="批量请求中的模块不存在。")
     return {"modules": {path: modules[path] for path in payload.paths}}
+
+
+@router.post("/internal/runtime/build-jobs/claim", response_model=BuildJobClaimResponse)
+async def claim_project_build_job(
+    payload: BuildJobClaimRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> BuildJobClaimResponse:
+    """Runtime Build Worker 原子领取 pending 构建任务；无任务时返回空 job_id。"""
+
+    _verify_build_worker_credential(request)
+    service = ProjectBuildService(session, lease_owner=payload.worker_id)
+    job = await service.claim_job(lease_owner=payload.worker_id)
+    if job is None:
+        return BuildJobClaimResponse(message="当前没有可领取的构建任务。")
+
+    release = await session.get(Release, job.snapshot_release_id)
+    if release is None:
+        # 缺失快照不可重试：直接终态失败，避免 claim→pending 无限毒丸循环。
+        await _fail_claimed_build_job(
+            service,
+            job_id=job.id,
+            lease_owner=payload.worker_id,
+            error_message="构建快照不存在。",
+        )
+        return BuildJobClaimResponse(
+            job_id=job.id,
+            message="构建快照不存在，任务已标记失败。",
+        )
+
+    owner_scope = dict(release.manifest.get("owner_scope") or {})
+    workspace_id = int(owner_scope.get("workspace_id") or 0)
+    if workspace_id <= 0:
+        await _fail_claimed_build_job(
+            service,
+            job_id=job.id,
+            lease_owner=payload.worker_id,
+            error_message="构建快照缺少工作空间归属。",
+        )
+        return BuildJobClaimResponse(
+            job_id=job.id,
+            message="构建快照缺少工作空间归属，任务已标记失败。",
+        )
+
+    # attempt 令牌 TTL 必须覆盖整个任务生命周期（含 renew 续租），
+    # 否则 renew/upload/complete 会在票过期后集体 401，续租形同虚设。
+    settings = get_settings()
+    token_ttl_seconds = max(
+        int(settings.project_build_total_deadline_seconds or 0),
+        int(settings.project_build_lease_seconds or 0),
+        900,
+    )
+    build_token = TokenService.generate_runtime_build_command_token(
+        job_id=job.id,
+        artifact_id=str(job.snapshot_release_id),
+        project_id=job.project_id,
+        workspace_id=workspace_id,
+        base_url=job.base_url,
+        attempt_id=job.attempt_id,
+        lease_owner=payload.worker_id,
+        expires_in_seconds=token_ttl_seconds,
+    )
+    service_token = TokenService.generate_runtime_service_access_token(
+        artifact_id=str(job.snapshot_release_id),
+        expires_in_seconds=token_ttl_seconds,
+    )
+    lease_expires_at = job.lease_expires_at.isoformat() if job.lease_expires_at else None
+    await RuntimeArtifactStore().put_build_state(
+        job_id=job.id,
+        mapping={
+            "status": "running",
+            "snapshot_release_id": job.snapshot_release_id,
+            "project_id": job.project_id,
+            "workspace_id": workspace_id,
+            "base_url": job.base_url,
+            "runtime_dispatch_at": utc_now().isoformat(),
+            "last_heartbeat_at": utc_now().isoformat(),
+            "error_message": "",
+        },
+    )
+    return BuildJobClaimResponse(
+        job_id=job.id,
+        project_id=job.project_id,
+        snapshot_release_id=str(job.snapshot_release_id),
+        base_url=job.base_url,
+        workspace_id=workspace_id,
+        attempt_id=job.attempt_id,
+        lease_owner=payload.worker_id,
+        lease_expires_at=lease_expires_at,
+        build_token=build_token,
+        service_token=service_token,
+        message="构建任务领取成功。",
+    )
+
+
+@router.post("/internal/runtime/build-jobs/{job_id}/renew")
+async def renew_project_build_job_lease(
+    job_id: int,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> dict[str, Any]:
+    """Runtime Build Worker 续租当前 attempt；仅未过期租约的拥有者可续。"""
+
+    build_job = await _get_build_job_or_404(session, job_id)
+    claims = _verify_build_command_token(request, build_job)
+    token_lease_owner = str(claims.get("lease_owner") or "").strip() or None
+    if not token_lease_owner:
+        raise AppException(status_code=403, code="BUILD_LEASE_OWNER_REQUIRED", detail="构建令牌缺少租约拥有者。")
+    service = ProjectBuildService(session)
+    renewed = await service.renew_job_lease(job_id=job_id, lease_owner=token_lease_owner)
+    if renewed is None:
+        raise AppException(status_code=409, code="BUILD_LEASE_RENEW_REJECTED", detail="构建租约已过期或拥有者不匹配。")
+    await RuntimeArtifactStore().put_build_state(
+        job_id=job_id,
+        mapping={
+            "status": "running",
+            "snapshot_release_id": renewed.snapshot_release_id,
+            "project_id": renewed.project_id,
+            "base_url": renewed.base_url,
+            "last_heartbeat_at": utc_now().isoformat(),
+            "error_message": "",
+        },
+    )
+    return {
+        "job_id": job_id,
+        "lease_expires_at": renewed.lease_expires_at.isoformat() if renewed.lease_expires_at else None,
+        "message": "构建租约已续期。",
+    }
+
+
+@router.post("/internal/runtime/build-jobs/{job_id}/complete")
+async def complete_project_build_job(
+    job_id: int,
+    payload: BuildJobCompleteRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> dict[str, Any]:
+    """Runtime Build Worker 上报构建终态；成功必须已有产物（CAS 围栏）。"""
+
+    build_job = await _get_build_job_or_404(session, job_id)
+    claims = _verify_build_command_token(request, build_job)
+    token_lease_owner = str(claims.get("lease_owner") or "").strip() or None
+    if not token_lease_owner:
+        raise AppException(status_code=403, code="BUILD_LEASE_OWNER_REQUIRED", detail="构建令牌缺少租约拥有者。")
+    service = ProjectBuildService(session)
+    if payload.success:
+        completed = await service.complete_job(
+            job_id=job_id,
+            lease_owner=token_lease_owner,
+            success=True,
+        )
+        if not completed:
+            raise AppException(status_code=409, code="BUILD_COMPLETE_REJECTED", detail="构建终态被拒绝：租约失守或缺少产物。")
+        await RuntimeArtifactStore().put_build_state(
+            job_id=job_id,
+            mapping={
+                "status": "succeeded",
+                "snapshot_release_id": build_job.snapshot_release_id,
+                "project_id": build_job.project_id,
+                "base_url": build_job.base_url,
+                "last_heartbeat_at": utc_now().isoformat(),
+                "error_message": "",
+            },
+        )
+        return {"job_id": job_id, "status": "succeeded", "message": "构建任务已标记成功。"}
+
+    error_message = (payload.error_message or "Runtime 构建失败。").strip()
+    if service.is_retry_allowed(build_job):
+        requeued = await service.release_job_to_pending(
+            job_id=job_id,
+            lease_owner=token_lease_owner,
+            error_message=error_message,
+        )
+        if requeued:
+            await RuntimeArtifactStore().put_build_state(
+                job_id=job_id,
+                mapping={
+                    "status": "pending",
+                    "snapshot_release_id": build_job.snapshot_release_id,
+                    "project_id": build_job.project_id,
+                    "base_url": build_job.base_url,
+                    "last_heartbeat_at": utc_now().isoformat(),
+                    "error_message": error_message,
+                },
+            )
+            return {"job_id": job_id, "status": "pending", "message": "构建失败仍在重试预算内，已回到 pending。"}
+    failed = await service.complete_job(
+        job_id=job_id,
+        lease_owner=token_lease_owner,
+        success=False,
+        error_message=error_message,
+    )
+    if not failed:
+        raise AppException(status_code=409, code="BUILD_COMPLETE_REJECTED", detail="构建终态被拒绝：租约失守。")
+    await RuntimeArtifactStore().put_build_state(
+        job_id=job_id,
+        mapping={
+            "status": "failed",
+            "snapshot_release_id": build_job.snapshot_release_id,
+            "project_id": build_job.project_id,
+            "base_url": build_job.base_url,
+            "last_heartbeat_at": utc_now().isoformat(),
+            "error_message": error_message,
+        },
+    )
+    return {"job_id": job_id, "status": "failed", "message": "构建任务已标记失败。"}
 
 
 @router.post("/internal/runtime/build-jobs/{job_id}/artifact")

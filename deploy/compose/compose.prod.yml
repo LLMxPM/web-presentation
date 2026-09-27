@@ -1,4 +1,8 @@
-# 文件功能：提供链接 deploy/.env 的生产可维护编排模板，拆分迁移、Backend、Runtime 与 Gateway 以便独立观测和重启。
+# 文件功能：runtime-all 兼容/Lite 生产编排模板（单 Runtime 进程同时承担 preview/build/check）。
+#
+# 官方生产主路径请使用 compose.runtime-roles.yml（分角色 runtime-preview / runtime-build / runtime-check，
+# 最小权限 runtime.env、独立 CPU/内存 limits）。本模板保留给小团队、兼容部署和尚未迁移到分角色拓扑的环境。
+# 两种模板不要混用同一套 deploy/.env 的角色目标变量语义；迁移步骤见 docs/developer/deployment/compose.md。
 
 x-production-env: &production-env
   env_file:

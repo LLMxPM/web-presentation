@@ -20,7 +20,6 @@ from app.services.project_build_artifact_proxy_service import ProjectBuildArtifa
 from app.services.project_build_service import (
     ProjectBuildService,
     normalize_project_build_base_url,
-    run_project_build_job,
 )
 from app.services.token_service import TokenService
 
@@ -428,7 +427,8 @@ async def test_project_build_job_routes_should_create_and_query_latest_job(
     assert build_job["base_url"] == "/demo/"
     assert build_job["status"] == "pending"
     assert build_job["snapshot_release_id"] > 0
-    assert background_job_ids == [build_job["id"]]
+    # 创建后不再同步派发：任务保持 pending，等待 Runtime Build Worker 领取。
+    assert background_job_ids == []
 
     latest_response = await authenticated_client.get(f"/api/projects/{project_id}/build-jobs/latest")
     assert latest_response.status_code == 200
@@ -518,7 +518,6 @@ async def test_create_project_build_job_should_reject_when_active_job_exists(
         "active_job_id": first_job["id"],
         "active_job_status": "pending",
     }
-    assert background_job_ids == [first_job["id"]]
 
 
 @pytest.mark.asyncio
@@ -526,7 +525,7 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """后台任务执行后，应根据 Runtime 返回结果更新 succeeded 或 failed 状态。"""
+    """Runtime Build Worker 通过 claim/complete API 执行后，应更新 succeeded 或 failed 状态。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
 
@@ -540,18 +539,13 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
     ) -> ProjectArtifactSnapshot:
         return build_fake_snapshot(workspace_id)
 
-    async def fake_background_job(job_id: int) -> None:  # pragma: no cover
-        return None
-
     monkeypatch.setattr(
         "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
         fake_build_snapshot,
     )
-    monkeypatch.setattr("app.api.routes.build_jobs.run_project_build_job", fake_background_job)
-    monkeypatch.setattr(
-        "app.services.project_build_service.TokenService.generate_runtime_build_command_token",
-        lambda **kwargs: "runtime-build-token",
-    )
+    monkeypatch.setenv("RUNTIME_BUILD_WORKER_CREDENTIAL", "test-build-worker-credential")
+    from app.core.config import get_settings
+    get_settings.cache_clear()
 
     success_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
@@ -559,33 +553,36 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
     )
     assert success_response.status_code == 200
     success_job_id = success_response.json()["id"]
-    success_job_snapshot_release_id = success_response.json()["snapshot_release_id"]
-    captured_dispatch: dict[str, str] = {}
 
-    async def fake_dispatch_success(self, *, artifact_id: str, base_url: str, build_token: str, **kwargs):  # noqa: ANN001
-        captured_dispatch["artifact_id"] = artifact_id
-        captured_dispatch["base_url"] = base_url
-        captured_dispatch["build_token"] = build_token
-        # 生产路径 Runtime 在 dispatch 响应前完成归档上传；否则 complete_job(success=True) 会拒绝（M10）。
-        async with get_session_factory()() as upload_session:
-            service = ProjectBuildService(upload_session)
-            job = await service.get_job_by_id(success_job_id)
-            await service.persist_uploaded_artifact(
-                job=job,
-                archive_content=build_zip_bytes({"index.html": b"<html>ok</html>"}),
-                entry_file="index.html",
-                sha256=None,
-                size_bytes=None,
-                attempt_id=job.attempt_id,
-                lease_owner=job.lease_owner,
-            )
-
-    monkeypatch.setattr(
-        "app.services.project_build_service.RuntimeBuildClient.dispatch_project_build",
-        fake_dispatch_success,
+    claim_response = await authenticated_client.post(
+        "/internal/runtime/build-jobs/claim",
+        json={"worker_id": "runtime-build-test"},
+        headers={"Authorization": "Bearer test-build-worker-credential"},
     )
+    assert claim_response.status_code == 200
+    claim = claim_response.json()
+    assert claim["job_id"] == success_job_id
+    build_token = claim["build_token"]
 
-    await run_project_build_job(success_job_id)
+    async with get_session_factory()() as upload_session:
+        service = ProjectBuildService(upload_session)
+        job = await service.get_job_by_id(success_job_id)
+        await service.persist_uploaded_artifact(
+            job=job,
+            archive_content=build_zip_bytes({"index.html": b"<html>ok</html>"}),
+            entry_file="index.html",
+            sha256=None,
+            size_bytes=None,
+            attempt_id=job.attempt_id,
+            lease_owner=job.lease_owner,
+        )
+
+    complete_ok = await authenticated_client.post(
+        f"/internal/runtime/build-jobs/{success_job_id}/complete",
+        json={"success": True},
+        headers={"Authorization": f"Bearer {build_token}"},
+    )
+    assert complete_ok.status_code == 200
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -597,12 +594,6 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
     assert success_job.started_at is not None
     assert success_job.finished_at is not None
     assert success_job.attempt_count == 1
-    assert success_job.attempt_id
-    assert captured_dispatch == {
-        "artifact_id": str(success_job_snapshot_release_id),
-        "base_url": "./",
-        "build_token": "runtime-build-token",
-    }
 
     failed_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
@@ -614,19 +605,24 @@ async def test_run_project_build_job_should_update_status_for_success_and_failur
     async with session_factory() as session:
         failed_job_row = await session.get(ProjectBuildJob, failed_job_id)
         assert failed_job_row is not None
-        # 用尽重试预算，验证超预算标 failed。
         failed_job_row.max_attempts = 1
         await session.commit()
 
-    async def fake_dispatch_failure(self, *, artifact_id: str, base_url: str, build_token: str):  # noqa: ANN001, ARG001
-        raise AppException(status_code=502, code="RUNTIME_BUILD_FAILED", detail="Runtime 服务暂不可用。")
-
-    monkeypatch.setattr(
-        "app.services.project_build_service.RuntimeBuildClient.dispatch_project_build",
-        fake_dispatch_failure,
+    claim_failed = await authenticated_client.post(
+        "/internal/runtime/build-jobs/claim",
+        json={"worker_id": "runtime-build-test"},
+        headers={"Authorization": "Bearer test-build-worker-credential"},
     )
+    assert claim_failed.status_code == 200
+    failed_claim = claim_failed.json()
+    assert failed_claim["job_id"] == failed_job_id
 
-    await run_project_build_job(failed_job_id)
+    complete_fail = await authenticated_client.post(
+        f"/internal/runtime/build-jobs/{failed_job_id}/complete",
+        json={"success": False, "error_message": "Runtime 服务暂不可用。"},
+        headers={"Authorization": f"Bearer {failed_claim['build_token']}"},
+    )
+    assert complete_fail.status_code == 200
 
     async with session_factory() as session:
         failed_job = await session.get(ProjectBuildJob, failed_job_id)

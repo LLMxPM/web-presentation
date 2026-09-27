@@ -29,6 +29,9 @@ services:
       RUNTIME_PUBLIC_BASE_URL: "http://127.0.0.1:8080/runtime"
       RUNTIME_PREVIEW_JWKS_URL: "http://127.0.0.1:8000/.well-known/jwks.json"
       RUNTIME_BACKEND_API_BASE_URL: "http://127.0.0.1:8000"
+      # 单容器内 Backend 与 Runtime 共用该凭证；正式部署请改为强随机值。
+      # 不配置时 claim fail-closed，且 Worker 不会启动，构建任务会一直 pending。
+      RUNTIME_BUILD_WORKER_CREDENTIAL: "change-build-worker-credential"
       RUNTIME_SERVER_HOST: "0.0.0.0"
       RUNTIME_SERVER_PORT: "7373"
       RUNTIME_SERVER_BASE_PATH: "/runtime/"

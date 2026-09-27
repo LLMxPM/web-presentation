@@ -13,7 +13,7 @@ from app.models.project_build_job import ProjectBuildJob
 from app.services.durable_job_lease_service import build_durable_worker_id, claim_pending_jobs
 from app.services.page_screenshot_job_service import PageScreenshotJobService
 from app.services.project_artifact_builder import ProjectArtifactSnapshot
-from app.services.project_build_service import ProjectBuildService, run_project_build_job
+from app.services.project_build_service import ProjectBuildService
 from tests.integration.test_project_build import build_fake_snapshot, build_zip_bytes, create_active_project
 from tests.integration.test_project_build_job_lease import _create_build_job
 
@@ -96,32 +96,11 @@ async def test_double_dispatch_should_execute_build_only_once(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """BackgroundTasks 与队列循环重复调用执行入口时，领取 CAS 保证只派发一次。"""
+    """两个 Runtime Build Worker 并发 claim 时，领取 CAS 保证只有一个取得任务。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
     job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
     job_id = int(job_payload["id"])
-
-    dispatch_count = 0
-
-    async def fake_dispatch(self, **kwargs):  # noqa: ANN001, ARG002
-        """记录 Runtime 派发次数；模拟真实链路在返回前上传产物。"""
-
-        nonlocal dispatch_count
-        dispatch_count += 1
-        # 生产路径 Runtime 在 dispatch 响应前完成归档上传；否则不得标记 succeeded（M10）。
-        async with get_session_factory()() as upload_session:
-            service = ProjectBuildService(upload_session)
-            job = await service.get_job_by_id(job_id)
-            await service.persist_uploaded_artifact(
-                job=job,
-                archive_content=build_zip_bytes({"index.html": b"<html>ok</html>"}),
-                entry_file="index.html",
-                sha256=None,
-                size_bytes=None,
-                attempt_id=job.attempt_id,
-                lease_owner=job.lease_owner,
-            )
 
     async def fake_build_snapshot(  # noqa: ANN001
         self,
@@ -134,23 +113,23 @@ async def test_double_dispatch_should_execute_build_only_once(
         return build_fake_snapshot(workspace_id)
 
     monkeypatch.setattr(
-        "app.services.project_build_service.RuntimeBuildClient.dispatch_project_build",
-        fake_dispatch,
-    )
-    monkeypatch.setattr(
         "app.services.project_build_service.ProjectArtifactBuilder.build_snapshot",
         fake_build_snapshot,
     )
 
-    # 模拟 BackgroundTasks 与队列循环在同一时刻提交同一 job。
-    await asyncio.gather(
-        run_project_build_job(job_id, lease_owner="dispatch-hint-a"),
-        run_project_build_job(job_id, lease_owner="dispatch-hint-b"),
-    )
+    async def claim_as(worker_id: str) -> bool:
+        async with get_session_factory()() as session:
+            claimed = await ProjectBuildService(session, lease_owner=worker_id).claim_job(
+                job_id=job_id,
+                lease_owner=worker_id,
+            )
+            return claimed is not None
 
-    assert dispatch_count == 1
+    first, second = await asyncio.gather(claim_as("runtime-build-a"), claim_as("runtime-build-b"))
+
+    assert [first, second].count(True) == 1
     job = await _read_build_job(job_id)
-    assert job.status == "succeeded"
+    assert job.status == "running"
     assert job.attempt_count == 1
 
 

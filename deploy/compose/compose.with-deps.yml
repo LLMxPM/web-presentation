@@ -6,6 +6,7 @@
 # - RUNTIME_SERVER_BASE_PATH 应与 RUNTIME_PUBLIC_BASE_URL 的 URL path 保持一致：
 #   同域 /runtime 使用 /runtime/；独立 Runtime 根域名 https://runtime.example.com 使用 /。
 # - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
+# - RUNTIME_BUILD_WORKER_CREDENTIAL：Backend 与 runtime 必须一致；不配则构建任务无法被领取。
 # - AI_SECRET_ENCRYPTION_KEY 必须是 Fernet 密钥：32 字节随机值的 URL-safe base64 编码，
 #   通常长度为 44 个字符并以 = 结尾；可用命令生成：
 #   python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
@@ -81,6 +82,8 @@ services:
       DURABLE_JOB_HEARTBEAT_SECONDS: "30"
       RUNTIME_DIAGNOSTICS_REQUEST_TIMEOUT_SECONDS: "180"
       RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS: "900"
+      # 构建 Worker 共享服务凭证：platform 与 runtime 必须一致，正式部署请改为强随机值。
+      RUNTIME_BUILD_WORKER_CREDENTIAL: "change-build-worker-credential"
       ASSET_STORAGE_DRIVER: "local"
     volumes:
       - backend-data:/app/backend/data
@@ -121,6 +124,8 @@ services:
       RUNTIME_PREVIEW_JWKS_URL: "http://backend:8000/.well-known/jwks.json"
       RUNTIME_SERVICE_TOKEN_AUDIENCE: "runtime-backend"
       RUNTIME_BACKEND_API_BASE_URL: "http://backend:8000"
+      # 与 platform 侧 RUNTIME_BUILD_WORKER_CREDENTIAL 保持一致，否则 Worker 不会启动。
+      RUNTIME_BUILD_WORKER_CREDENTIAL: "change-build-worker-credential"
       # Runtime Vite 资源挂载路径，应等于 RUNTIME_PUBLIC_BASE_URL 的 path；独立 Runtime 根域名部署时改为 "/"。
       RUNTIME_SERVER_BASE_PATH: "/runtime/"
       RUNTIME_LOG_LEVEL: "info"

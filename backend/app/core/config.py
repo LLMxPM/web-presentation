@@ -117,12 +117,17 @@ class AppSettings(BaseSettings):
     runtime_request_timeout_seconds: float = 10.0
     runtime_diagnostics_request_timeout_seconds: float = 180.0
     runtime_build_request_timeout_seconds: float = 900.0
-    # 项目整包构建持久领取：租约需覆盖 Runtime 构建请求超时，重试预算与总 deadline 由 Backend 统一裁决。
+    # 项目整包构建持久领取：Runtime Build Worker 通过 claim API 拉取并 renew 续租。
+    # 租约时长仍是未续租场景的安全下限；重试预算与总 deadline 由 Backend 统一裁决。
     project_build_lease_seconds: int = 960
     project_build_max_attempts: int = 3
     project_build_total_deadline_seconds: int = 3600
+    # 兼容字段：队列循环现为 recovery-only，不再按此并发派发执行。
     project_build_queue_concurrency: int = 1
     project_build_queue_poll_interval_seconds: float = 1.0
+    # Runtime Build Worker 领取任务时使用的共享服务凭证；空值时拒绝 claim（fail-closed），
+    # 本地开发/测试可注入固定值。与 RENDER_SERVICE_CREDENTIAL 同属内部服务身份。
+    runtime_build_worker_credential: str = ""
     backend_public_base_url: str = "http://127.0.0.1:8000"
     # 远程渲染执行服务配置（Backend 不再安装或持有 Playwright/Chromium）
     render_workers_config: list[dict[str, str]] = Field(
@@ -807,10 +812,10 @@ def validate_runtime_role_targets(settings: AppSettings | None = None) -> None:
 
 
 def validate_project_build_lease_covers_timeout(settings: AppSettings | None = None) -> None:
-    """启动期断言构建租约时长覆盖构建请求超时（M9）。
+    """启动期断言构建租约时长覆盖构建请求超时（安全缺省）。
 
-    否则队列循环会在 Runtime 仍在执行时偷走自己的构建：
-    `project_build_lease_seconds` 必须严格大于 `runtime_build_request_timeout_seconds`。
+    Runtime Build Worker 现在通过 renew 续租，不再依赖「lease 必须覆盖最长 HTTP timeout」
+    维持正确性；本校验仍保留作为缺省下限，防止未配置 renew 的部署把租约设得过短。
     """
 
     resolved = settings or get_settings()

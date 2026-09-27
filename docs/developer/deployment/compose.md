@@ -11,8 +11,8 @@
 | `deploy/compose/compose.sqlite-lite.yml` | 个人/小团队轻量部署 | `platform-lite` 内置 Backend、Editor、Runtime 和 Gateway，另有 Renderer；使用 SQLite 与 memory runtime |
 | `deploy/compose/compose.with-deps.yml` | 单机试部署 | 启动 PostgreSQL、Redis、platform、runtime 和 renderer |
 | `deploy/compose/compose.yml` | 外部依赖简化版 | 启动 platform、runtime 和 renderer；数据库与 Redis 使用外部服务 |
-| `deploy/compose/compose.prod.yml` | 生产 env 版 | 拆分迁移、Backend、Runtime、Renderer 和 Gateway，通过 `deploy/.env` 管理变量 |
-| `deploy/compose/compose.runtime-roles.yml` | 分角色单机 | `runtime-preview` / `runtime-build` / `runtime-check` 各一实例 + Renderer，每角色显式 CPU/内存 limits 与执行预算；Gateway 只代理预览 |
+| `deploy/compose/compose.prod.yml` | runtime-all 兼容/Lite | 拆分迁移、Backend、Runtime、Renderer 和 Gateway，通过 `deploy/.env` 管理变量；单 Runtime 同时承担 preview/build/check |
+| `deploy/compose/compose.runtime-roles.yml` | **官方生产主路径（分角色单机）** | `runtime-preview` / `runtime-build` / `runtime-check` 各一实例 + Renderer，每角色显式 CPU/内存 limits 与执行预算；Gateway 只代理预览 |
 
 ## SQLite 轻量单容器
 
@@ -51,7 +51,9 @@ docker compose -f compose/compose.with-deps.yml up -d
 
 内置 Redis 默认关闭 AOF，减少低配单机上的持续磁盘写入。该 Redis 只承载短生命周期运行态，不保存平台主数据。
 
-## production env 版
+## production env 版（runtime-all 兼容 / Lite）
+
+> **官方生产主路径请用下一节的分角色单机版。** 本模板保留给小团队、兼容部署和尚未迁移到分角色拓扑的环境：单 Runtime 进程同时承担 preview/build/check，资源互相争抢，且 Runtime 容器会读取整份 `deploy/.env`。
 
 ```bash
 cp deploy/.env.example deploy/.env
@@ -63,9 +65,11 @@ docker compose -f compose/compose.prod.yml up -d
 
 production env 版适合把环境变量集中放在 `deploy/.env` 中维护。外部 PostgreSQL 和 Redis 需要提前准备。
 
-## 分角色单机（Runtime 角色）
+## 分角色单机（Runtime 角色）— 官方生产主路径
 
 `deploy/compose/compose.runtime-roles.yml` 把 Runtime 拆成 `runtime-preview`、`runtime-build`、`runtime-check` 三个角色容器（`RUNTIME_ROLE` 分别为 `preview`、`build`、`check`），与 Backend、迁移、Renderer 和 Gateway 组成分角色单机拓扑。Backend 仍从 `deploy/.env` 读配置；**Runtime 三角色只读 `deploy/runtime.env`**（复制 `deploy/runtime.env.example`），避免 `DATABASE_URL` / `REDIS_URL` / `AI_SECRET_ENCRYPTION_KEY` / `RUNTIME_RSA_PRIVATE_KEY` 等平台密钥进入会编译用户手写 SFC 的容器。`runtime.env` 中的域名、audience、JWKS 与路径必须与 `deploy/.env` 同名项一致，否则预览资源会指向错误域名或令牌校验失败。角色差异和资源约束写在模板内。
+
+**构建执行前提：** 项目构建由 `runtime-build` 内的 Build Worker 通过 `POST /internal/runtime/build-jobs/claim` 拉取。`deploy/.env` 与 `deploy/runtime.env` 必须配置**相同**的 `RUNTIME_BUILD_WORKER_CREDENTIAL`；缺省时 Backend 拒绝领取（503 fail-closed）且 Worker 不启动，构建任务会一直停在 `pending` 直到总期限被收敛为失败。生产环境请使用强随机值，不要沿用示例占位符。
 
 ```bash
 cp deploy/.env.example deploy/.env

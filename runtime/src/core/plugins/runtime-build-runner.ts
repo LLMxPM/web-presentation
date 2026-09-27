@@ -47,6 +47,7 @@ import {
   RuntimeViteTaskScheduler,
   RuntimeViteTaskSchedulerError,
 } from './runtime-vite-task-scheduler'
+import { startRuntimeBuildQueueWorker } from './runtime-build-queue-worker'
 import {
   RuntimeTaskDeadlineError,
   runWithRuntimeTaskDeadline,
@@ -240,7 +241,21 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
       }
       // 工作区采用首次诊断时的惰性预热：创建动作位于 diagnostics scheduler 槽位内，
       // 避免服务启动时与正式构建并发复制完整 Runtime 源码。
+      let stopBuildQueueWorker: (() => void) | null = null
+      const buildWorkerCredential = String(process.env.RUNTIME_BUILD_WORKER_CREDENTIAL || '').trim()
+      const backendApiBaseUrl = options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || ''
+      if (enableProjectEntry && buildWorkerCredential && backendApiBaseUrl) {
+        stopBuildQueueWorker = startRuntimeBuildQueueWorker({
+          backendApiBaseUrl,
+          workerCredential: buildWorkerCredential,
+          workerId: process.env.RUNTIME_BUILD_WORKER_ID || `runtime-build-${process.pid}`,
+          runtimeRoot,
+          scheduler,
+        })
+      }
       server.httpServer?.once('close', () => {
+        stopBuildQueueWorker?.()
+        stopBuildQueueWorker = null
         unregisterCapacityProvider?.()
         unregisterCapacityProvider = null
         scheduler.close()
@@ -966,7 +981,7 @@ function throwIfAborted(signal?: AbortSignal): void {
  * @param params 构建参数
  * @returns 构建摘要
  */
-async function runProjectBuild(params: {
+export async function runProjectBuild(params: {
   runtimeRoot: string
   jobId: string
   artifactId: string

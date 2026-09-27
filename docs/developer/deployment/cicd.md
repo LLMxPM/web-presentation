@@ -76,8 +76,8 @@ Pre-release 只推送固定版本标签，不移动 `latest` 与 `sqlite-lite`�
 - `deploy/compose/compose.yml`：外部 PostgreSQL/Redis 简化版，环境变量直接写在 compose 内。
 - `deploy/compose/compose.sqlite-lite.yml`：SQLite + memory runtime 轻量版，使用 `llmxpm/web-presentation:sqlite-lite` 与独立 Renderer 镜像。
 - `deploy/compose/compose.with-deps.yml`：内置 PostgreSQL/Redis 简化版，随应用一起启动 PostgreSQL 与 Redis，环境变量直接写在 compose 内。
-- `deploy/compose/compose.prod.yml`：production env 版，拆分迁移、Backend、Runtime、Renderer 与 Gateway，并通过 `env_file: ../.env` 读取 `deploy/.env`。
-- `deploy/compose/compose.runtime-roles.yml`：分角色单机版，`runtime-preview` / `runtime-build` / `runtime-check` 各一实例，附每角色 CPU/内存 limits 与执行预算，Gateway 只代理预览；Backend 读取 `deploy/.env`，Runtime 角色只读取 `deploy/runtime.env`。
+- `deploy/compose/compose.prod.yml`：runtime-all 兼容/Lite 生产版，拆分迁移、Backend、Runtime、Renderer 与 Gateway，并通过 `env_file: ../.env` 读取 `deploy/.env`；适合小团队或尚未分角色的环境。
+- `deploy/compose/compose.runtime-roles.yml`：**官方生产主路径**，分角色单机版，`runtime-preview` / `runtime-build` / `runtime-check` 各一实例，附每角色 CPU/内存 limits 与执行预算，Gateway 只代理预览；Backend 读取 `deploy/.env`，Runtime 角色只读取 `deploy/runtime.env`。
 - `deploy/.env.example`：供 production env 版与分角色单机版的 Backend 复制为 `deploy/.env` 使用。
 - `deploy/runtime.env.example`：供分角色单机版的 Runtime 复制为 `deploy/runtime.env` 使用，不包含平台密钥。
 
