@@ -1,15 +1,20 @@
 /**
- * 文件用途：验证 Runtime 健康检查插件的中间件注册与容量快照响应内容。
+ * 文件用途：验证 Runtime 健康检查插件的中间件注册、容量快照响应与就绪探针语义。
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ServerResponse } from 'http'
 import type { ViteDevServer } from 'vite'
 
 import runtimeHealth, {
+  RUNTIME_READINESS_PATH,
   buildRuntimeHealthPayload,
+  buildRuntimeReadinessPayload,
   buildRuntimeVersionFingerprint,
+  collectRuntimeReadiness,
+  registerRuntimeReadinessProbe,
   sendRuntimeHealthResponse,
+  sendRuntimeReadinessResponse,
 } from './runtime-health'
 import {
   recordRuntimeWorkload,
@@ -23,6 +28,15 @@ type RuntimeHealthMiddleware = (
   res: MockResponse,
   next: () => void,
 ) => void
+
+/** 每个用例都会注册就绪探针，必须逐个注销，避免污染其它用例的就绪汇总。 */
+const unregisterReadinessProbes: Array<() => void> = []
+
+afterEach(() => {
+  while (unregisterReadinessProbes.length > 0) {
+    unregisterReadinessProbes.pop()?.()
+  }
+})
 
 describe('runtime health plugin', () => {
   it('应只处理健康检查路径，其它请求继续交给后续中间件', () => {
@@ -144,6 +158,94 @@ describe('runtime health plugin', () => {
     unregister()
     resetRuntimeWorkloadCounters()
     expect(buildRuntimeHealthPayload().viteTaskScheduler).toBeUndefined()
+  })
+})
+
+describe('runtime readiness probe', () => {
+  it('没有角色探针时应就绪，并由中间件按路径分流', () => {
+    const plugin = runtimeHealth()
+    const handlers: RuntimeHealthMiddleware[] = []
+    const runConfigureServer = plugin.configureServer as unknown as (server: ViteDevServer) => void
+    runConfigureServer({
+      middlewares: {
+        use(handler: RuntimeHealthMiddleware) {
+          handlers.push(handler)
+        },
+      },
+    } as unknown as ViteDevServer)
+
+    const readinessResponse = createMockResponse()
+    const next = vi.fn()
+    handlers[0]({ url: `${RUNTIME_READINESS_PATH}?probe=1` }, readinessResponse, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(readinessResponse.statusCode).toBe(200)
+    expect(readinessResponse.headers['cache-control']).toBe('no-store')
+    expect(JSON.parse(readinessResponse.body)).toMatchObject({
+      status: 'ok',
+      role: 'all',
+      checks: {},
+    })
+  })
+
+  it('任一角色探针未就绪时应返回 503，但存活探针仍返回 200', () => {
+    unregisterReadinessProbes.push(registerRuntimeReadinessProbe('buildWorker', () => ({
+      ready: false,
+      detail: '构建 Worker 未启动：缺少可用凭证或 Backend API 地址。',
+    })))
+
+    const readinessResponse = createMockResponse()
+    sendRuntimeReadinessResponse(readinessResponse)
+    expect(readinessResponse.statusCode).toBe(503)
+    const readinessPayload = JSON.parse(readinessResponse.body)
+    expect(readinessPayload.status).toBe('unavailable')
+    expect(readinessPayload.checks.buildWorker).toEqual({
+      ready: false,
+      detail: '构建 Worker 未启动：缺少可用凭证或 Backend API 地址。',
+    })
+
+    // 进程仍然存活：存活探针不得因为角色能力缺失而失败，否则会被编排层反复重启。
+    const healthResponse = createMockResponse()
+    sendRuntimeHealthResponse(healthResponse)
+    expect(healthResponse.statusCode).toBe(200)
+    expect(JSON.parse(healthResponse.body).status).toBe('ok')
+  })
+
+  it('布尔探针与抛错探针都应被归一化，抛错按未就绪处理', () => {
+    unregisterReadinessProbes.push(registerRuntimeReadinessProbe('booleanProbe', () => true))
+    unregisterReadinessProbes.push(
+      registerRuntimeReadinessProbe('throwingProbe', () => {
+        throw new Error('探针自身故障')
+      }),
+    )
+
+    const readiness = collectRuntimeReadiness()
+    expect(readiness.ready).toBe(false)
+    expect(readiness.checks.booleanProbe).toEqual({ ready: true })
+    expect(readiness.checks.throwingProbe).toEqual({ ready: false, detail: '探针自身故障' })
+    expect(buildRuntimeReadinessPayload(readiness).status).toBe('unavailable')
+  })
+
+  it('注销探针后不得继续影响就绪汇总', () => {
+    const unregister = registerRuntimeReadinessProbe('transient', () => false)
+    expect(collectRuntimeReadiness().ready).toBe(false)
+
+    unregister()
+    const readiness = collectRuntimeReadiness()
+    expect(readiness.ready).toBe(true)
+    expect(readiness.checks.transient).toBeUndefined()
+  })
+
+  it('同名探针重复注册时只保留最后一个实现，注销后不残留', () => {
+    unregisterReadinessProbes.push(registerRuntimeReadinessProbe('buildWorker', () => false))
+    const unregisterSecond = registerRuntimeReadinessProbe('buildWorker', () => true)
+
+    expect(collectRuntimeReadiness().checks.buildWorker).toEqual({ ready: true })
+
+    unregisterSecond()
+    const readiness = collectRuntimeReadiness()
+    expect(readiness.ready).toBe(true)
+    expect(readiness.checks.buildWorker).toBeUndefined()
   })
 })
 

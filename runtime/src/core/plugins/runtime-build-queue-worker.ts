@@ -72,6 +72,8 @@ export interface RuntimeBuildQueueWorkerOptions {
   }
   runProjectBuild: RunProjectBuildFn
   createBuildBackendClient: CreateBuildBackendClientFn
+  /** 领取循环启动后回调实际启动的消费者数量，供就绪探针核对执行面是否真的可用。 */
+  onStarted?: (info: { workerId: string; consumerCount: number }) => void
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 2000
@@ -84,6 +86,10 @@ const MAX_CONSUMER_COUNT = 16
 const FALLBACK_LEASE_MS = 960_000
 /** 剩余总期限低于该值时不再启动构建：注定超期的任务交给恢复循环收敛。 */
 const MIN_BUILD_BUDGET_MS = 5_000
+/** 终态上报的传输重试次数：产物已上传时 complete 丢失不应退化成等待租约过期。 */
+const COMPLETE_MAX_ATTEMPTS = 3
+/** 终态上报重试的基础退避；按尝试序号线性放大。 */
+const COMPLETE_RETRY_BASE_MS = 500
 
 /**
  * 按并发预算启动等量的 Runtime Build Worker 领取循环，返回统一停止函数。
@@ -121,6 +127,7 @@ export function startRuntimeBuildQueueWorker(options: RuntimeBuildQueueWorkerOpt
       isStopped: () => stopped,
     })
   }
+  options.onStarted?.({ workerId: baseWorkerId, consumerCount: concurrency })
 
   return () => {
     stopped = true
@@ -445,23 +452,44 @@ async function completeBuildJob(
   body: { success: boolean; error_message?: string },
   requestTimeoutMs?: number,
 ): Promise<void> {
-  const response = await fetchWithTimeout(
-    `${apiBaseUrl}/internal/runtime/build-jobs/${jobId}/complete`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${buildToken}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(body),
-    },
-    requestTimeoutMs,
-  )
-  if (!response.ok) {
+  const url = `${apiBaseUrl}/internal/runtime/build-jobs/${jobId}/complete`
+  let lastError: unknown = null
+  for (let attempt = 1; attempt <= COMPLETE_MAX_ATTEMPTS; attempt += 1) {
+    if (attempt > 1) {
+      await sleep(COMPLETE_RETRY_BASE_MS * (attempt - 1))
+    }
+    let response: Response
+    try {
+      response = await fetchWithTimeout(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${buildToken}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(body),
+        },
+        requestTimeoutMs,
+      )
+    } catch (error) {
+      // 传输层失败：Backend 可能已提交终态但响应丢失，成功上报是幂等的，重试即可收敛。
+      lastError = error
+      continue
+    }
+    if (response.ok) {
+      return
+    }
     const text = await response.text().catch(() => '')
-    throw new Error(`complete 失败：HTTP ${response.status} ${text.slice(0, 200)}`)
+    const rejection = new Error(`complete 失败：HTTP ${response.status} ${text.slice(0, 200)}`)
+    if (response.status < 500) {
+      // 4xx 是确定性拒绝（租约失守、attempt 不匹配），重试只会推迟恢复循环收敛。
+      throw rejection
+    }
+    lastError = rejection
   }
+  throw lastError instanceof Error ? lastError : new Error('complete 失败：未知错误。')
 }
 
 /**

@@ -128,7 +128,16 @@ Docker 容器默认不施加 CPU/内存限制；只把一个 Runtime 拆成三�
 
 ### 健康检查与依赖顺序
 
-三个角色容器都用 `/__runtime_healthz` 做 healthcheck，探针只看本进程，不依赖 Backend。启动顺序为：`renderer` 与三个 runtime 角色就绪 → `backend-migrate` 成功完成 → `backend` 健康 → `gateway` 健康。Gateway 只依赖 `backend` 与 `runtime-preview`；`runtime-check` 由 Backend 按需调用，`runtime-build` 只主动出站领取任务，两者都不进入公开就绪链路。
+Runtime 暴露两个探针，语义严格分离：
+
+| 端点 | 语义 | 失败含义 |
+| :--- | :--- | :--- |
+| `GET /__runtime_healthz` | 存活（liveness）：进程与 Vite server 还在，附带角色、版本指纹与容量快照 | 进程卡死，应重启 |
+| `GET /__runtime_readyz` | 就绪（readiness）：本角色声明的执行面是否真的可用 | 进程活着但不能承接该角色的任务，不得放行依赖 |
+
+三个角色容器的 compose healthcheck 都打 `/__runtime_readyz`，探针只看本进程，不依赖 Backend。`runtime-build` 的就绪条件是「调度器未关闭 + 领取循环在运行 + 消费者数量等于 project lane 并发」；凭证缺失或 Worker 未启动时返回 503，`depends_on: service_healthy` 因此不会放行一个永远不会领取构建任务的空转副本。`RUNTIME_ROLE=build` 且凭证不可读或 Backend 地址缺失时，Runtime 直接启动失败（进程退出、容器重启），不再降级成「启动成功但 Worker disabled」。启动顺序为：`renderer` 与三个 runtime 角色就绪 → `backend-migrate` 成功完成 → `backend` 健康 → `gateway` 健康。Gateway 只依赖 `backend` 与 `runtime-preview`；`runtime-check` 由 Backend 按需调用，`runtime-build` 只主动出站领取任务，两者都不进入公开就绪链路。
+
+镜像级 `HEALTHCHECK` 与 `scripts/contracts/check-image-startup.py` 仍使用 `/__runtime_healthz`：它们验证的是「交付镜像能否启动」，不绑定角色执行面。
 
 `RUNTIME_ROLE` 由 Runtime 角色逻辑消费：`preview` 不开放诊断与轻量工具入口，`build` 只跑构建领取 Worker，`check` 只保留诊断与轻量工具执行面。模板已配置好 preview 与 check 两个 Backend 出站目标（`RUNTIME_PREVIEW/CHECK_BASE_URL`）；**不要**把 `RUNTIME_BASE_URL` 单独指向 `runtime-preview` 后再逐项切换——preview 实例已注销诊断与轻量工具端点，那样会把请求打回 Vite 并收到 HTML/404 而不是结构化错误。改角色拓扑时同步改对应 `RUNTIME_*_BASE_URL(S)`。
 
@@ -150,7 +159,7 @@ Runtime 本地队列（`RUNTIME_VITE_TASK_*`）仅承担单实例容量保护，
 1. **扩容**：复制 `runtime-preview` 服务为 `runtime-preview-2`（独立别名，见 `compose.runtime-roles.yml` 中注释示例），取消 Gateway 配置中对应 `server` 注释后 reload。每个 `server` 声明带 `max_fails` / `fail_timeout` 被动摘流，连续失败的实例在窗口内不再路由，到期自动恢复；可重试请求经 `proxy_next_upstream` 交给池内其它实例。WebSocket Upgrade 由 `$connection_upgrade` 映射透传，软亲和（如 `ip_hash`）只能作为缓存命中优化，不能成为正确性前提——任一副本必须凭当前请求和受信 Backend 独立完成预览鉴权与 artifact 读取。
 2. **版本指纹**：`GET /__runtime_healthz` 返回 `runtime_kit_version`（Runtime Kit 清单版本）与 `build_id`（部署注入的 `RUNTIME_BUILD_ID`）。滚动发布前核对新旧副本指纹，避免同一预览混用不同 HTML、Runtime Kit、转换模块和样式。
 3. **滚动发布顺序**：
-   - **新副本就绪**：启动新版预览副本，等待 healthcheck 通过，并确认 `/__runtime_healthz` 的 `runtime_kit_version` / `build_id` 为目标版本。
+   - **新副本就绪**：启动新版预览副本，等待 healthcheck（`/__runtime_readyz`）通过，并确认 `/__runtime_healthz` 的 `runtime_kit_version` / `build_id` 为目标版本。
    - **流量切换**：把新副本加入 `runtime_preview_pool` 并 reload；确认旧副本不再承接新请求（标记 `down` 或移出列表）。
    - **旧副本排空**：等待旧副本在途连接与预览子请求结束（长轮询/WS 由 `proxy_read_timeout` 保证不会被立即切断），必要时核对旧副本 access 日志已无新请求。
    - **旧副本下线**：排空完成后停止旧容器。

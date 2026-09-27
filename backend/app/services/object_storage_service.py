@@ -375,7 +375,9 @@ class ObjectStorageService:
                     digest.update(chunk)
                     await asyncio.to_thread(file_handle.write, chunk)
                 await asyncio.to_thread(file_handle.flush)
-                os.fsync(file_handle.fileno())
+                # fsync 是同步磁盘调用：NFS / 机械盘 / 容器 overlay 上可能阻塞数百毫秒，
+                # 必须和写入一样丢到线程池，不能占用 Backend event loop。
+                await asyncio.to_thread(os.fsync, file_handle.fileno())
             finally:
                 file_handle.close()
             if total_bytes == 0:

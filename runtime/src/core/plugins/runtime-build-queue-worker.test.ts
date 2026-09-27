@@ -75,6 +75,16 @@ const createBuildBackendClient: CreateBuildBackendClientFn = () => ({
   fetchConfigBundle: async () => ({}) as never,
 })
 
+/** 构造直接返回成功产物的构建替身：用于只关心 complete 语义的用例。 */
+function succeededBuildFn(): RunProjectBuildFn {
+  return vi.fn(async () => ({
+    artifactEntryFile: 'index.html',
+    artifactSha256: 'abc',
+    artifactSizeBytes: 12,
+    message: 'ok',
+  })) as unknown as RunProjectBuildFn
+}
+
 describe('runtime-build-queue-worker', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -256,6 +266,84 @@ describe('runtime-build-queue-worker', () => {
 
     // 只有一次 success complete 尝试；失败后交由租约恢复，不得追加 failed。
     expect(completeCount).toBe(1)
+  })
+
+  it('complete 响应丢失时应重试，而不是退化成等待租约过期', async () => {
+    let claimed = false
+    let completeCount = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/claim')) {
+        if (claimed) {
+          return jsonResponse(emptyClaim())
+        }
+        claimed = true
+        return jsonResponse(filledClaim())
+      }
+      if (String(url).includes('/complete')) {
+        completeCount += 1
+        if (completeCount === 1) {
+          // Backend 可能已提交终态但响应丢失：只能靠幂等 complete 的重试收敛。
+          throw new TypeError('connection reset')
+        }
+        return jsonResponse({ message: 'ok' })
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const stop = startRuntimeBuildQueueWorker({
+      backendApiBaseUrl: 'http://backend',
+      workerCredential: 'cred',
+      workerId: 'w1',
+      pollIntervalMs: 500,
+      runtimeRoot: '/tmp/runtime',
+      scheduler,
+      runProjectBuild: succeededBuildFn(),
+      createBuildBackendClient,
+    })
+
+    await vi.advanceTimersByTimeAsync(1_500)
+    stop()
+
+    const completeCalls = fetchMock.mock.calls.filter(call => String(call[0]).includes('/complete')) as FetchCall[]
+    expect(completeCalls).toHaveLength(2)
+    // 两次都必须是 success：产物已提升，任何一次改写 failed 都会清掉最终产物。
+    expect(completeCalls.map(call => (completeBodyOf(call) as { success: boolean }).success)).toEqual([true, true])
+  })
+
+  it('complete 传输持续失败时应重试到上限后放弃，交给租约恢复收敛', async () => {
+    let claimed = false
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/claim')) {
+        if (claimed) {
+          return jsonResponse(emptyClaim())
+        }
+        claimed = true
+        return jsonResponse(filledClaim())
+      }
+      if (String(url).includes('/complete')) {
+        throw new TypeError('connection refused')
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const stop = startRuntimeBuildQueueWorker({
+      backendApiBaseUrl: 'http://backend',
+      workerCredential: 'cred',
+      workerId: 'w1',
+      pollIntervalMs: 500,
+      runtimeRoot: '/tmp/runtime',
+      scheduler,
+      runProjectBuild: succeededBuildFn(),
+      createBuildBackendClient,
+    })
+
+    await vi.advanceTimersByTimeAsync(3_000)
+    stop()
+
+    const completeCalls = fetchMock.mock.calls.filter(call => String(call[0]).includes('/complete')) as FetchCall[]
+    expect(completeCalls).toHaveLength(3)
   })
 
   it('renew 收到 409 时应 abort 在跑构建', async () => {

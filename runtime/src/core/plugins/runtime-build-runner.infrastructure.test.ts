@@ -1,5 +1,6 @@
 /**
- * 文件用途：验证 Runtime 诊断的基础设施错误语义与惰性工作区预热边界。
+ * 文件用途：验证 Runtime 诊断的基础设施错误语义、惰性工作区预热边界、
+ * 归档流式上传与 build 角色启动/就绪判定。
  */
 
 import { EventEmitter } from 'node:events'
@@ -18,6 +19,7 @@ import {
   RuntimeBuildWorkerProcessError,
   RuntimeBuildWorkerViteError,
 } from './runtime-build-worker'
+import { collectRuntimeReadiness } from './runtime-health'
 import {
   RuntimeDiagnosticsWorkspaceError,
   RuntimeDiagnosticsWorkspacePool,
@@ -235,6 +237,89 @@ describe('runtime build artifact streaming upload', () => {
     } finally {
       await rm(tempRoot, { recursive: true, force: true })
     }
+  })
+})
+
+describe('runtime build worker readiness', () => {
+  /** 以最小插件宿主挂载只开构建面的 runner；返回关闭函数。 */
+  function mountBuildRunner(): { close: () => void } {
+    const httpServer = new EventEmitter()
+    const internals = runtimeBuildRunner({
+      enableProjectEntry: true,
+      enableDiagnosticsEntry: false,
+    }) as unknown as {
+      configResolved: (config: { root: string }) => void
+      configureServer: (server: {
+        httpServer: EventEmitter
+        middlewares: { use: (handler: unknown) => void }
+      }) => void
+    }
+    internals.configResolved({ root: process.cwd() })
+    internals.configureServer({
+      httpServer,
+      middlewares: { use: () => {} },
+    })
+    return { close: () => httpServer.emit('close') }
+  }
+
+  it('RUNTIME_ROLE=build 且 worker 凭证不可读时应直接启动失败', () => {
+    vi.stubEnv('RUNTIME_ROLE', 'build')
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', '')
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', '')
+    vi.stubEnv('RUNTIME_BACKEND_API_BASE_URL', 'http://backend:8000')
+    try {
+      expect(() => mountBuildRunner()).toThrow(/RUNTIME_ROLE=build 但构建 Worker 无法启动/)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('RUNTIME_ROLE=build 且 Backend 地址缺失时同样启动失败', () => {
+    vi.stubEnv('RUNTIME_ROLE', 'build')
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', 'test-credential')
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', '')
+    vi.stubEnv('RUNTIME_BACKEND_API_BASE_URL', '')
+    try {
+      expect(() => mountBuildRunner()).toThrow(/Backend API 地址缺失/)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('非 build 角色缺凭证时仍可启动，但就绪探针必须报告未就绪', () => {
+    vi.stubEnv('RUNTIME_ROLE', 'all')
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', '')
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', '')
+    vi.stubEnv('RUNTIME_BACKEND_API_BASE_URL', '')
+    const { close } = mountBuildRunner()
+    try {
+      const check = collectRuntimeReadiness().checks.buildWorker
+      expect(check).toMatchObject({ ready: false })
+      expect(check.detail).toContain('构建 Worker 领取循环未在运行')
+    } finally {
+      close()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('Worker 启动后就绪，关闭服务器后回到未就绪', () => {
+    vi.stubEnv('RUNTIME_ROLE', 'all')
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', 'test-credential')
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', '')
+    vi.stubEnv('RUNTIME_BACKEND_API_BASE_URL', 'http://backend:8000')
+    // 领取循环会立刻发起 claim：用离线替身避免测试打出真实请求。
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('offline')
+    }))
+    const { close } = mountBuildRunner()
+    try {
+      expect(collectRuntimeReadiness().checks.buildWorker).toEqual({ ready: true })
+    } finally {
+      close()
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
+    expect(collectRuntimeReadiness().checks.buildWorker).toMatchObject({ ready: false })
   })
 })
 

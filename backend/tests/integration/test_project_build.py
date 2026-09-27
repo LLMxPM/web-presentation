@@ -17,6 +17,7 @@ from app.db.session import get_session_factory
 from app.models.project_build_job import ProjectBuildJob
 from app.models.release import Release
 from app.schemas.release import PreviewEntryDescriptor
+from app.services.object_storage_service import ObjectStorageService
 from app.services.project_artifact_builder import ProjectArtifactSnapshot
 from app.services.project_build_artifact_proxy_service import ProjectBuildArtifactProxyService
 from app.services.project_build_service import (
@@ -963,6 +964,167 @@ async def test_project_build_artifact_upload_should_reject_mismatched_declared_s
 
     assert response.status_code == 409
     assert response.json()["code"] == "BUILD_ARTIFACT_SIZE_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_project_build_artifact_upload_should_discard_object_when_promotion_rejected(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """提升被拒的归档必须从对象存储回收：DB 不引用的对象没有任何后续清理路径。"""
+
+    _, _, job_id, build_token = await create_claimed_build_job(authenticated_client, monkeypatch)
+    archive_content = build_zip_bytes({"index.html": b"<html>ok</html>"})
+
+    response = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=build_token,
+        archive_content=archive_content,
+        sha256=hashlib.sha256(archive_content).hexdigest(),
+        declared_size_bytes=len(archive_content) + 1,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "BUILD_ARTIFACT_SIZE_MISMATCH"
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        assert job.artifact_storage_key is None
+        attempt_key = ProjectBuildService(session).build_attempt_storage_key(job)
+
+    with pytest.raises(AppException) as exc_info:
+        await ObjectStorageService().read_object(attempt_key)
+    assert exc_info.value.code == "OBJECT_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_project_build_artifact_upload_should_keep_object_already_referenced_by_job(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """已提升产物不得被迟到上传的回收动作删除：对象仍被任务行引用。"""
+
+    _, _, job_id, build_token = await create_claimed_build_job(authenticated_client, monkeypatch)
+    archive_content = build_zip_bytes({"index.html": b"<html>ok</html>"})
+    object_storage = ObjectStorageService()
+
+    promoted = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=build_token,
+        archive_content=archive_content,
+        sha256=hashlib.sha256(archive_content).hexdigest(),
+    )
+    assert promoted.status_code == 200
+    stored_key = promoted.json()["artifact_storage_key"]
+
+    # 同一 attempt 再传一次但校验声明被破坏：写入成功、提升被拒，
+    # 此时对象正是任务行引用的最终产物，回收必须跳过。
+    late = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=build_token,
+        archive_content=archive_content,
+        sha256="0" * 64,
+    )
+    assert late.status_code == 409
+    assert late.json()["code"] == "BUILD_ARTIFACT_SHA256_MISMATCH"
+
+    assert await object_storage.read_object(stored_key) == archive_content
+
+
+@pytest.mark.asyncio
+async def test_complete_should_be_idempotent_for_same_attempt_success(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """重复上报同一 attempt 的成功终态应返回 200，而不是逼 Worker 等租约过期。"""
+
+    _, _, job_id, build_token = await create_claimed_build_job(authenticated_client, monkeypatch)
+    archive_content = build_zip_bytes({"index.html": b"<html>ok</html>"})
+    upload_response = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=build_token,
+        archive_content=archive_content,
+        sha256=hashlib.sha256(archive_content).hexdigest(),
+    )
+    assert upload_response.status_code == 200
+
+    first = await authenticated_client.post(
+        f"/internal/runtime/build-jobs/{job_id}/complete",
+        json={"success": True},
+        headers={"Authorization": f"Bearer {build_token}"},
+    )
+    assert first.status_code == 200
+    assert first.json()["status"] == "succeeded"
+
+    # 响应丢失后的传输重试：任务已终态，同一 attempt 必须幂等成功。
+    retry = await authenticated_client.post(
+        f"/internal/runtime/build-jobs/{job_id}/complete",
+        json={"success": True},
+        headers={"Authorization": f"Bearer {build_token}"},
+    )
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "succeeded"
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+    assert job is not None
+    assert job.status == "succeeded"
+    assert job.artifact_storage_key is not None
+    assert job.attempt_count == 1
+
+
+@pytest.mark.asyncio
+async def test_complete_success_should_still_reject_other_attempt(
+    authenticated_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """幂等只覆盖同一 attempt：其它 attempt 的令牌不得冒领已成功结果。"""
+
+    workspace_id, project_id, job_id, build_token = await create_claimed_build_job(
+        authenticated_client, monkeypatch
+    )
+    archive_content = build_zip_bytes({"index.html": b"<html>ok</html>"})
+    upload_response = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=build_token,
+        archive_content=archive_content,
+        sha256=hashlib.sha256(archive_content).hexdigest(),
+    )
+    assert upload_response.status_code == 200
+    first = await authenticated_client.post(
+        f"/internal/runtime/build-jobs/{job_id}/complete",
+        json={"success": True},
+        headers={"Authorization": f"Bearer {build_token}"},
+    )
+    assert first.status_code == 200
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        snapshot_release_id = str(job.snapshot_release_id)
+    stale_attempt_token = TokenService.generate_runtime_build_command_token(
+        job_id=job_id,
+        artifact_id=snapshot_release_id,
+        project_id=project_id,
+        workspace_id=workspace_id,
+        base_url="./",
+        attempt_id="another-attempt",
+        lease_owner="another-worker",
+    )
+
+    stale = await authenticated_client.post(
+        f"/internal/runtime/build-jobs/{job_id}/complete",
+        json={"success": True},
+        headers={"Authorization": f"Bearer {stale_attempt_token}"},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "BUILD_ATTEMPT_MISMATCH"
 
 
 @pytest.mark.asyncio

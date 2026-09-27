@@ -67,7 +67,7 @@ docker build -t web-runtime-vue:local .
 docker run --rm -p 7373:7373 --env-file .env.example web-runtime-vue:local
 ```
 
-容器健康检查端点为 `GET /__runtime_healthz`。
+容器探针分两个端点：`GET /__runtime_healthz` 是存活探针，只回答「进程还在」，并返回角色、版本指纹与容量快照；`GET /__runtime_readyz` 是就绪探针，额外回答「本角色声明的执行面是否真的可用」。build 角色在构建 Worker 未启动、消费者数量与 project lane 预算不符或调度器已关闭时返回 503；`RUNTIME_ROLE=build` 且 Worker 凭证不可读或 Backend 地址缺失时，进程直接启动失败，不会出现「健康但永远不构建」的副本。
 
 ### 6. Backend build release
 

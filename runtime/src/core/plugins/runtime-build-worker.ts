@@ -7,6 +7,8 @@ import { randomUUID } from 'crypto'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { resolve } from 'path'
 
+import { RuntimeTaskAbortedError } from './runtime-task-deadline'
+
 const DEFAULT_WORKER_MAX_OLD_SPACE_MB = 1024
 const DEFAULT_WORKER_TIMEOUT_MS = 600000
 const DEFAULT_ARCHIVE_WORKER_TIMEOUT_MS = 120000
@@ -16,7 +18,8 @@ const DEFAULT_DIAGNOSTICS_WORKER_MAX_TASKS = 25
 const DEFAULT_DIAGNOSTICS_WORKER_MAX_AGE_MS = 30 * 60 * 1000
 const DEFAULT_DIAGNOSTICS_WORKER_RSS_RATIO = 0.75
 const MAX_CAPTURED_OUTPUT_LENGTH = 12000
-const DIAGNOSTICS_WORKER_STOP_GRACE_MS = 1000
+/** SIGTERM 后等待子进程自行退出的宽限；超时升级 SIGKILL，绝不把存活进程视为已回收。 */
+const WORKER_STOP_GRACE_MS = 1000
 
 /**
  * 禁止进入构建子进程环境的键：子进程会编译/压缩用户手写代码，
@@ -50,6 +53,11 @@ export interface RuntimeBuildWorkerRunOptions {
   maxOldSpaceMb?: number
   timeoutMs?: number
   workerScriptSource?: string
+  /**
+   * 外部中止信号：租约失守或 deadline 到期时必须真正终止 Vite 子进程。
+   * 只中止主进程的 fetch/sleep 会让最耗 CPU 与内存的构建阶段继续跑到自然结束。
+   */
+  signal?: AbortSignal
 }
 
 export interface RuntimeZipArchiveOptions {
@@ -59,6 +67,8 @@ export interface RuntimeZipArchiveOptions {
   maxOldSpaceMb?: number
   timeoutMs?: number
   workerScriptSource?: string
+  /** 外部中止信号：语义同构建 worker，归档阶段同样要能被立即终止。 */
+  signal?: AbortSignal
 }
 
 export interface RuntimeZipArchiveResult {
@@ -599,7 +609,7 @@ async function waitForChildExitAfterTermination(child: ChildProcess): Promise<vo
       } catch {
         // 保持 exit 监听，绝不把仍存活的进程视为已回收。
       }
-    }, DIAGNOSTICS_WORKER_STOP_GRACE_MS)
+    }, WORKER_STOP_GRACE_MS)
   })
 }
 
@@ -608,6 +618,12 @@ async function waitForChildExitAfterTermination(child: ChildProcess): Promise<vo
  * @param options worker 执行参数
  */
 export async function runRuntimeViteBuildInWorker(options: RuntimeBuildWorkerRunOptions): Promise<void> {
+  // 正式构建必须可被中止：租约失守后继续编译是最贵的僵尸计算，
+  // 缺信号属于接线错误，必须在这里响亮失败，而不是退化成只能等超时。
+  if (options.mode === 'project') {
+    requireAbortSignal(options.signal, 'Runtime 正式构建')
+  }
+  throwIfSignalAborted(options.signal)
   const tempRoot = resolve(options.tempRoot)
   const taskRoot = options.taskRoot
     ? resolve(options.taskRoot)
@@ -635,14 +651,19 @@ export async function runRuntimeViteBuildInWorker(options: RuntimeBuildWorkerRun
       cwd: tempRoot,
       maxOldSpaceMb: normalizeWorkerMaxOldSpaceMb(options.maxOldSpaceMb),
       timeoutMs: normalizeWorkerTimeoutMs(options.timeoutMs),
+      signal: options.signal,
     })
   } catch (error) {
+    throwIfSignalAborted(options.signal)
     throw new RuntimeBuildWorkerProcessError(
       500,
       'RUNTIME_BUILD_WORKER_FAILED',
       error instanceof Error ? error.message : 'Runtime 构建 worker 启动失败。',
     )
   }
+  // 子进程被中止信号终止时不得读取残留输出：必须保持租约失守语义，
+  // 否则一次外部中止会被误报成构建失败。
+  throwIfSignalAborted(options.signal)
   const output = await readWorkerOutput(outputPath)
 
   if (output?.success) {
@@ -660,6 +681,9 @@ export async function runRuntimeViteBuildInWorker(options: RuntimeBuildWorkerRun
  * @returns 归档产物摘要与阶段耗时
  */
 export async function runZipArchiveInWorker(options: RuntimeZipArchiveOptions): Promise<RuntimeZipArchiveResult> {
+  // 归档只服务于正式构建链路，同样必须能被租约失守立即终止。
+  requireAbortSignal(options.signal, 'Runtime 归档')
+  throwIfSignalAborted(options.signal)
   const distRoot = resolve(options.distRoot)
   const outputPath = resolve(options.outputPath)
   const compressionLevel = normalizeArchiveCompressionLevel(options.compressionLevel)
@@ -690,8 +714,10 @@ export async function runZipArchiveInWorker(options: RuntimeZipArchiveOptions): 
       cwd: taskRoot,
       maxOldSpaceMb: normalizeWorkerMaxOldSpaceMb(options.maxOldSpaceMb),
       timeoutMs: normalizeArchiveWorkerTimeoutMs(options.timeoutMs),
+      signal: options.signal,
     })
   } catch (error) {
+    throwIfSignalAborted(options.signal)
     throw new RuntimeBuildWorkerProcessError(
       500,
       'RUNTIME_ARCHIVE_WORKER_FAILED',
@@ -699,6 +725,7 @@ export async function runZipArchiveInWorker(options: RuntimeZipArchiveOptions): 
     )
   }
 
+  throwIfSignalAborted(options.signal)
   const output = await readArchiveWorkerOutput(workerOutputPath)
   if (output?.success && output.archive) {
     return {
@@ -1101,14 +1128,24 @@ interface SpawnRuntimeBuildWorkerOptions {
   cwd: string
   maxOldSpaceMb: number
   timeoutMs: number
+  /** 外部中止信号：触发后立即终止子进程，不等待其自然结束。 */
+  signal?: AbortSignal
 }
 
 /**
  * 启动 Node worker 进程并等待退出。
+ *
+ * 超时与外部中止走同一条终止路径：先 SIGTERM，宽限期内未退出再 SIGKILL，
+ * 并始终等到 close 才落定 promise。只中止主进程的 await 而不杀子进程，
+ * 会让租约失守后的 Vite/ZIP 阶段继续占用 CPU、内存与调度槽位。
  * @param options 进程参数
  * @returns 退出摘要
  */
 function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promise<RuntimeBuildWorkerExit> {
+  const abortSignal = options.signal
+  if (abortSignal?.aborted) {
+    return Promise.reject(toAbortError(abortSignal.reason))
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
       `--max-old-space-size=${options.maxOldSpaceMb}`,
@@ -1130,17 +1167,28 @@ function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promi
         clearTimeout(forceKillTimer)
         forceKillTimer = null
       }
+      clearTimeout(timeoutHandle)
+      abortSignal?.removeEventListener('abort', onAbort)
     }
-    const timeoutHandle = setTimeout(() => {
-      timedOut = true
+    /**
+     * 请求子进程退出，并在宽限期后强制终止。
+     * 子进程若忽略 SIGTERM，必须升级 SIGKILL；否则 promise 永不落定，
+     * 调度器槽位与临时工作区都会泄漏（M5）。
+     */
+    const terminate = () => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return
+      }
       try {
         child.kill('SIGTERM')
       } catch {
         // 终止调用失败时仍等待 exit / 强制终止。
       }
-      // 子进程若忽略 SIGTERM，必须升级 SIGKILL；否则 promise 永不落定，
-      // 调度器槽位与临时工作区都会泄漏（M5）。
+      if (forceKillTimer) {
+        return
+      }
       forceKillTimer = setTimeout(() => {
+        forceKillTimer = null
         if (child.exitCode !== null || child.signalCode !== null) {
           return
         }
@@ -1149,8 +1197,14 @@ function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promi
         } catch {
           // 保持 close 监听，绝不把仍存活的进程视为已回收。
         }
-      }, DIAGNOSTICS_WORKER_STOP_GRACE_MS)
+      }, WORKER_STOP_GRACE_MS)
+    }
+    const onAbort = () => terminate()
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true
+      terminate()
     }, options.timeoutMs)
+    abortSignal?.addEventListener('abort', onAbort, { once: true })
 
     child.stdout.on('data', chunk => {
       stdout = appendCapturedOutput(stdout, chunk)
@@ -1160,15 +1214,53 @@ function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promi
     })
     child.on('error', error => {
       clearTimers()
-      clearTimeout(timeoutHandle)
       reject(error)
     })
     child.on('close', (code, signal) => {
       clearTimers()
-      clearTimeout(timeoutHandle)
       resolve({ code, signal, stdout, stderr, timedOut })
     })
   })
+}
+
+/**
+ * 把外部中止信号转换成可直接抛出的错误；signal.reason 已是任务级错误时原样复用。
+ * @param reason AbortSignal.reason
+ * @returns 中止错误
+ */
+function toAbortError(reason: unknown): Error {
+  if (reason instanceof Error) {
+    return reason
+  }
+  return new RuntimeTaskAbortedError(String(reason || 'Runtime 任务已中止。'))
+}
+
+/**
+ * 在中止信号已触发时立即抛出，避免继续启动子进程或读取其残留输出。
+ * @param signal 外部中止信号
+ */
+function throwIfSignalAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw toAbortError(signal.reason)
+  }
+}
+
+/**
+ * 要求调用方为不可回退的重计算阶段接上中止信号。
+ *
+ * 子进程一旦启动就无法被「只中止 await」收回，缺少信号会让租约失守后的
+ * Vite/ZIP 阶段继续烧 CPU 与内存直到自身超时，属于必须暴露的接线错误。
+ * @param signal 外部中止信号
+ * @param stage 阶段名称，用于错误消息定位
+ */
+function requireAbortSignal(signal: AbortSignal | undefined, stage: string): void {
+  if (!signal) {
+    throw new RuntimeBuildWorkerProcessError(
+      500,
+      'RUNTIME_BUILD_WORKER_SIGNAL_REQUIRED',
+      `${stage}必须传入中止信号，否则租约失守后无法终止子进程。`,
+    )
+  }
 }
 
 /**

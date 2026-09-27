@@ -37,6 +37,8 @@ import {
   recordRuntimeWorkload,
   registerRuntimeCapacityProvider,
 } from './runtime-capacity'
+import { registerRuntimeReadinessProbe } from './runtime-health'
+import { getRuntimeRole } from './runtime-role'
 import {
   RuntimeDiagnosticsWorkspaceError,
   RuntimeDiagnosticsWorkspacePool,
@@ -225,7 +227,44 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
       let stopBuildQueueWorker: (() => void) | null = null
       const buildWorkerCredential = readRuntimeBuildWorkerCredential()
       const backendApiBaseUrl = options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || ''
-      if (enableProjectEntry && buildWorkerCredential && backendApiBaseUrl) {
+      const buildWorkerRunnable = enableProjectEntry
+        && Boolean(buildWorkerCredential)
+        && Boolean(backendApiBaseUrl)
+      if (enableProjectEntry && !buildWorkerRunnable && getRuntimeRole() === 'build') {
+        // build 角色只有 Worker 这一条构建执行路径：「启动成功但 Worker 未启动」会让编排层
+        // 看到健康副本、Backend 也照常就绪，而所有构建任务永久滞留队列。必须在启动期直接失败。
+        throw new Error(
+          'RUNTIME_ROLE=build 但构建 Worker 无法启动：'
+          + `worker 凭证${buildWorkerCredential ? '已配置' : '缺失或不可读'}，`
+          + `Backend API 地址${backendApiBaseUrl ? '已配置' : '缺失'}。`,
+        )
+      }
+      // 就绪探针读的是本次挂载自己的执行面状态：进程存活不等于能构建，
+      // Worker 未启动、消费者数量与 project lane 预算不符或调度器已关闭都必须报未就绪。
+      // 探针不随 close 注销——排空中的副本应持续报告未就绪，而不是在关闭瞬间变回健康。
+      let buildWorkerStopped = true
+      let buildWorkerConsumers = 0
+      if (enableProjectEntry) {
+        registerRuntimeReadinessProbe('buildWorker', () => {
+          const snapshot = scheduler.snapshot()
+          if (snapshot.closed) {
+            return { ready: false, detail: '构建任务调度器已关闭。' }
+          }
+          if (buildWorkerStopped) {
+            return { ready: false, detail: '构建 Worker 领取循环未在运行。' }
+          }
+          const expectedConsumers = snapshot.kinds.project.concurrency
+          if (buildWorkerConsumers !== expectedConsumers) {
+            return {
+              ready: false,
+              detail: `构建 Worker 消费者数量 ${buildWorkerConsumers}，期望 ${expectedConsumers}。`,
+            }
+          }
+          return { ready: true }
+        })
+      }
+      if (buildWorkerRunnable) {
+        buildWorkerStopped = false
         stopBuildQueueWorker = startRuntimeBuildQueueWorker({
           backendApiBaseUrl,
           workerCredential: buildWorkerCredential,
@@ -236,6 +275,9 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
           scheduler,
           runProjectBuild,
           createBuildBackendClient,
+          onStarted: info => {
+            buildWorkerConsumers = info.consumerCount
+          },
         })
       } else if (enableProjectEntry) {
         // 构建没有第二条执行路径：凭证或 Backend 地址缺失时任务只会留在队列里等待人工介入。
@@ -246,6 +288,8 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
         })
       }
       server.httpServer?.once('close', () => {
+        buildWorkerStopped = true
+        buildWorkerConsumers = 0
         stopBuildQueueWorker?.()
         stopBuildQueueWorker = null
         unregisterCapacityProvider?.()
@@ -938,6 +982,9 @@ export async function runProjectBuild(params: {
       mode: 'project',
       outDir: distRoot,
       timeoutMs: params.deadline.remainingMs(),
+      // 必须传 signal：租约失守时只有它能让 Vite 子进程真正退出，
+      // 否则最耗 CPU/内存的阶段会一直跑到自然结束或 worker 超时。
+      signal: params.deadline.signal,
     })
     params.deadline.throwIfExpired()
     logRuntimeBuild('vite.build.done', {
@@ -951,6 +998,7 @@ export async function runProjectBuild(params: {
       distRoot,
       outputPath: resolve(tempRoot, 'artifact.zip'),
       timeoutMs: params.deadline.remainingMs(),
+      signal: params.deadline.signal,
     })
     params.deadline.throwIfExpired()
     const artifactSha256 = archiveResult.sha256

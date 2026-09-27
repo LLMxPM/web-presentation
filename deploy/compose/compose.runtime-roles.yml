@@ -41,13 +41,15 @@ x-runtime-role-env: &runtime-role-env
     # 相对本文件目录 deploy/compose/，读取 deploy/runtime.env（复制 runtime.env.example）。
     - ../runtime.env
 
-# 三个角色容器共用的就绪探针；健康检查只看本进程，不依赖 Backend。
+# 三个角色容器共用的探针；只看本进程，不依赖 Backend。
+# 用 readyz 而不是 healthz：build 角色的凭证缺失或 Worker 未启动时，进程存活但
+# 永远不会领取构建任务，必须让 healthcheck 失败，避免 depends_on 放行一个空转副本。
 x-runtime-role-healthcheck: &runtime-role-healthcheck
   test:
     - CMD
     - node
     - -e
-    - const port=process.env.RUNTIME_SERVER_PORT||'7373'; fetch('http://127.0.0.1:'+port+'/__runtime_healthz').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))
+    - const port=process.env.RUNTIME_SERVER_PORT||'7373'; fetch('http://127.0.0.1:'+port+'/__runtime_readyz').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))
   interval: 10s
   timeout: 5s
   retries: 5
@@ -205,8 +207,8 @@ services:
     restart: unless-stopped
     environment:
       # 构建 Worker 共享服务凭证：与 Backend 使用同一 secret 文件（要求 0400/0600，仅属主可读）。
-      # 构建只有 Worker 主动 claim/renew/complete 这一条执行路径；凭证缺失时 Worker 不启动，
-      # 任务保持 pending 由 Backend 收敛为失败，不会退回任何 HTTP 同步派发入口。
+      # 构建只有 Worker 主动 claim/renew/complete 这一条执行路径；RUNTIME_ROLE=build 时凭证不可读
+      # 或 RUNTIME_BACKEND_API_BASE_URL 缺失会让容器直接启动失败，而不是健康地空转。
       RUNTIME_BUILD_WORKER_CREDENTIAL_FILE: "/run/secrets/build_worker_credential"
       RUNTIME_ROLE: "build"
       # 构建执行预算：2 并发 × 2048MB 老生代 ≈ 4GiB 堆；容器 8g 另留约 4GiB 给 Buffer、

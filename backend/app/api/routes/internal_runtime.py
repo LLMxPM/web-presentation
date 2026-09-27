@@ -565,6 +565,39 @@ async def renew_project_build_job_lease(
     }
 
 
+async def _is_same_attempt_success(
+    session: AsyncSession,
+    *,
+    job_id: int,
+    attempt_id: str | None,
+) -> bool:
+    """判断任务是否已按同一 attempt 的产物收敛为 succeeded。
+
+    用于把重复的 complete(success) 上报识别为幂等成功：产物指针必须存在且
+    attempt 必须匹配，其它 attempt 的成功结果不得被迟到执行者冒领。
+    """
+
+    if not attempt_id:
+        return False
+    # 直接查库而不是走 identity map：终态可能由恢复循环在别的会话里写入，
+    # 缓存中的实例即使未过期也不能代表当前数据库状态。
+    row = (
+        await session.execute(
+            select(
+                ProjectBuildJob.status,
+                ProjectBuildJob.attempt_id,
+                ProjectBuildJob.artifact_storage_key,
+            ).where(ProjectBuildJob.id == job_id)
+        )
+    ).first()
+    return (
+        row is not None
+        and str(row.status) == "succeeded"
+        and bool(row.artifact_storage_key)
+        and str(row.attempt_id or "") == attempt_id
+    )
+
+
 @router.post("/internal/runtime/build-jobs/{job_id}/complete")
 async def complete_project_build_job(
     job_id: int,
@@ -572,13 +605,19 @@ async def complete_project_build_job(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> dict[str, Any]:
-    """Runtime Build Worker 上报构建终态；成功必须已有产物（CAS 围栏）。"""
+    """Runtime Build Worker 上报构建终态；成功必须已有产物（CAS 围栏）。
+
+    成功上报是幂等的：同一 attempt 的产物已提升且任务已是 succeeded 时返回 200，
+    而不是 409。否则「产物已上传、complete 响应丢失」只能等租约过期由恢复循环收敛，
+    用户会看到产物已生成但任务仍 running 十几分钟。
+    """
 
     build_job = await _get_build_job_or_404(session, job_id)
     claims = _verify_build_command_token(request, build_job)
     token_lease_owner = str(claims.get("lease_owner") or "").strip() or None
     if not token_lease_owner:
         raise AppException(status_code=403, code="BUILD_LEASE_OWNER_REQUIRED", detail="构建令牌缺少租约拥有者。")
+    token_attempt_id = str(claims.get("attempt_id") or "").strip() or None
     service = ProjectBuildService(session)
     if payload.success:
         completed = await service.complete_job(
@@ -586,7 +625,11 @@ async def complete_project_build_job(
             lease_owner=token_lease_owner,
             success=True,
         )
-        if not completed:
+        if not completed and not await _is_same_attempt_success(
+            session,
+            job_id=job_id,
+            attempt_id=token_attempt_id,
+        ):
             raise AppException(status_code=409, code="BUILD_COMPLETE_REJECTED", detail="构建终态被拒绝：租约失守或缺少产物。")
         await RuntimeArtifactStore().put_build_state(
             job_id=job_id,

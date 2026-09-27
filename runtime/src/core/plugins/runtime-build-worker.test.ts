@@ -1,5 +1,5 @@
 /**
- * 文件用途：验证 Runtime 构建 worker 的子进程隔离、错误识别与超时处理。
+ * 文件用途：验证 Runtime 构建 worker 的子进程隔离、错误识别、超时与外部中止处理。
  */
 
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'fs/promises'
@@ -22,6 +22,10 @@ import {
   runRuntimeViteBuildInWorker,
   runZipArchiveInWorker,
 } from './runtime-build-worker'
+import { RuntimeTaskAbortedError } from './runtime-task-deadline'
+
+/** 外部中止后允许子进程存活的上限；只中止 await 会让它跑满 worker 超时。 */
+const ABORT_KILL_BUDGET_MS = 3000
 
 describe('runtime build worker', () => {
   it('应生成包含 Vite 构建配置的 worker 脚本', () => {
@@ -95,6 +99,7 @@ describe('runtime build worker', () => {
         distRoot,
         outputPath,
         compressionLevel: 6,
+        signal: new AbortController().signal,
       })
 
       expect(result.archivePath).toBe(outputPath)
@@ -176,6 +181,7 @@ describe('runtime build worker', () => {
         mode: 'project',
         outDir: join(tempRoot, 'dist'),
         workerScriptSource: 'process.exit(7)',
+        signal: new AbortController().signal,
       })).rejects.toMatchObject({
         code: 'RUNTIME_BUILD_WORKER_FAILED',
         statusCode: 500,
@@ -357,6 +363,148 @@ describe('runtime build worker', () => {
   })
 })
 
+describe('runtime build worker external abort', () => {
+  it('租约失守式外部中止应真正终止构建子进程，而不是只中止主进程 await', async () => {
+    const tempRoot = await createWorkerFixture()
+    try {
+      const pidPath = join(tempRoot, 'build-worker-pid.txt')
+      const controller = new AbortController()
+      const run = runRuntimeViteBuildInWorker({
+        tempRoot,
+        base: './',
+        mode: 'project',
+        outDir: join(tempRoot, 'dist'),
+        // 子进程自身预算远大于中止窗口：只有真正杀掉进程才能在宽限期内落定。
+        timeoutMs: 60_000,
+        workerScriptSource: createLongRunningWorkerScript(pidPath),
+        signal: controller.signal,
+      })
+      const pid = await waitForWorkerPid(pidPath)
+      expect(isProcessAlive(pid)).toBe(true)
+
+      const abortedAt = Date.now()
+      controller.abort(new RuntimeTaskAbortedError('构建租约失守：HTTP 409'))
+      await expect(run).rejects.toMatchObject({
+        name: 'RuntimeTaskAbortedError',
+        code: 'RUNTIME_BUILD_LEASE_LOST',
+        statusCode: 409,
+      })
+
+      expect(Date.now() - abortedAt).toBeLessThan(ABORT_KILL_BUDGET_MS)
+      expect(isProcessAlive(pid)).toBe(false)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('归档 worker 同样必须被外部中止终止', async () => {
+    const tempRoot = await createWorkerFixture()
+    try {
+      const distRoot = join(tempRoot, 'dist')
+      await mkdir(distRoot, { recursive: true })
+      await writeFile(join(distRoot, 'index.html'), '<html>ok</html>', 'utf-8')
+      const pidPath = join(tempRoot, 'archive-worker-pid.txt')
+      const controller = new AbortController()
+      const run = runZipArchiveInWorker({
+        distRoot,
+        outputPath: join(tempRoot, 'artifact.zip'),
+        timeoutMs: 60_000,
+        workerScriptSource: createLongRunningWorkerScript(pidPath),
+        signal: controller.signal,
+      })
+      const pid = await waitForWorkerPid(pidPath)
+
+      const abortedAt = Date.now()
+      controller.abort(new RuntimeTaskAbortedError('构建租约本地判定已到期，停止继续投入计算。'))
+      await expect(run).rejects.toMatchObject({ code: 'RUNTIME_BUILD_LEASE_LOST' })
+
+      expect(Date.now() - abortedAt).toBeLessThan(ABORT_KILL_BUDGET_MS)
+      expect(isProcessAlive(pid)).toBe(false)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('中止信号已触发时不得再启动子进程', async () => {
+    const tempRoot = await createWorkerFixture()
+    try {
+      const controller = new AbortController()
+      controller.abort(new RuntimeTaskAbortedError('构建租约失守：HTTP 409'))
+
+      await expect(runRuntimeViteBuildInWorker({
+        tempRoot,
+        base: './',
+        mode: 'project',
+        workerScriptSource: createLongRunningWorkerScript(join(tempRoot, 'never-written.txt')),
+        signal: controller.signal,
+      })).rejects.toMatchObject({
+        code: 'RUNTIME_BUILD_LEASE_LOST',
+        statusCode: 409,
+      })
+      await expect(runZipArchiveInWorker({
+        distRoot: tempRoot,
+        outputPath: join(tempRoot, 'artifact.zip'),
+        workerScriptSource: createLongRunningWorkerScript(join(tempRoot, 'never-written.txt')),
+        signal: controller.signal,
+      })).rejects.toMatchObject({ code: 'RUNTIME_BUILD_LEASE_LOST' })
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('正式构建与归档缺少中止信号时应直接失败，而不是退化成只能等超时', async () => {
+    const tempRoot = await createWorkerFixture()
+    try {
+      await expect(runRuntimeViteBuildInWorker({
+        tempRoot,
+        base: './',
+        mode: 'project',
+        workerScriptSource: createLongRunningWorkerScript(join(tempRoot, 'never-written.txt')),
+      })).rejects.toMatchObject({
+        code: 'RUNTIME_BUILD_WORKER_SIGNAL_REQUIRED',
+        statusCode: 500,
+      })
+      await expect(runZipArchiveInWorker({
+        distRoot: tempRoot,
+        outputPath: join(tempRoot, 'artifact.zip'),
+      })).rejects.toMatchObject({ code: 'RUNTIME_BUILD_WORKER_SIGNAL_REQUIRED' })
+
+      // 诊断构建仍可省略信号：它由 HTTP 请求驱动，没有租约会失守。
+      await expect(runRuntimeViteBuildInWorker({
+        tempRoot,
+        base: './',
+        mode: 'diagnostics',
+        workerScriptSource: createResultScript('{ success: true }'),
+      })).resolves.toBeUndefined()
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('子进程忽略 SIGTERM 时应升级 SIGKILL 后才落定', async () => {
+    const tempRoot = await createWorkerFixture()
+    try {
+      const pidPath = join(tempRoot, 'stubborn-worker-pid.txt')
+      const controller = new AbortController()
+      const run = runRuntimeViteBuildInWorker({
+        tempRoot,
+        base: './',
+        mode: 'project',
+        timeoutMs: 60_000,
+        workerScriptSource: createSignalIgnoringWorkerScript(pidPath),
+        signal: controller.signal,
+      })
+      const pid = await waitForWorkerPid(pidPath)
+
+      controller.abort(new RuntimeTaskAbortedError('构建租约失守：HTTP 409'))
+      await expect(run).rejects.toMatchObject({ code: 'RUNTIME_BUILD_LEASE_LOST' })
+      expect(isProcessAlive(pid)).toBe(false)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('runtime build child environment', () => {
   it('构建子进程必须拿不到 Worker 领取凭证，但保留任务级环境变量', () => {
     const originalCredential = process.env.RUNTIME_BUILD_WORKER_CREDENTIAL
@@ -445,6 +593,80 @@ function createTimeoutRecoveryScript(lifecycleLogPath: string, invocationPath: s
     '})',
     '',
   ].join('\n')
+}
+
+/**
+ * 创建长时间空转的 worker 脚本：模拟一次迟迟不结束的 Vite 构建，并写下自己的 PID。
+ * @param pidPath PID 文件路径
+ * @returns ESM 脚本文本
+ */
+function createLongRunningWorkerScript(pidPath: string): string {
+  return [
+    "import { writeFileSync } from 'node:fs'",
+    `writeFileSync('${escapeScriptPath(pidPath)}', String(process.pid), 'utf-8')`,
+    'setInterval(() => {}, 1000)',
+    '',
+  ].join('\n')
+}
+
+/**
+ * 创建忽略 SIGTERM 的 worker 脚本：用于验证宽限期后会升级 SIGKILL。
+ * @param pidPath PID 文件路径
+ * @returns ESM 脚本文本
+ */
+function createSignalIgnoringWorkerScript(pidPath: string): string {
+  return [
+    "import { writeFileSync } from 'node:fs'",
+    `writeFileSync('${escapeScriptPath(pidPath)}', String(process.pid), 'utf-8')`,
+    'process.on("SIGTERM", () => {})',
+    'setInterval(() => {}, 1000)',
+    '',
+  ].join('\n')
+}
+
+/**
+ * 把 Windows 路径转义成可嵌入脚本字符串字面量的形式。
+ * @param targetPath 原始路径
+ * @returns 转义后的路径
+ */
+function escapeScriptPath(targetPath: string): string {
+  return targetPath.replace(/\\/g, '\\\\')
+}
+
+/**
+ * 等待 worker 写出 PID，确认子进程确实已经启动。
+ * @param pidPath PID 文件路径
+ * @param timeoutMs 等待上限
+ * @returns 子进程 PID
+ */
+async function waitForWorkerPid(pidPath: string, timeoutMs = 20_000): Promise<number> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const pid = Number((await readFile(pidPath, 'utf-8')).trim())
+      if (Number.isInteger(pid) && pid > 0) {
+        return pid
+      }
+    } catch {
+      // 文件尚未写出，继续轮询。
+    }
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+  throw new Error(`worker 未在 ${timeoutMs}ms 内写出 PID：${pidPath}`)
+}
+
+/**
+ * 以 signal 0 探测进程是否仍存活，不发送真实信号。
+ * @param pid 进程号
+ * @returns 是否存活
+ */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**

@@ -559,6 +559,8 @@ class ProjectBuildService:
 
         self.assert_attempt_fence(job=job, attempt_id=attempt_id, lease_owner=lease_owner)
 
+        # 提前取出主键：提升失败路径会 rollback，过期后的 ORM 实例在 async 下不能再惰性加载。
+        job_id = int(job.id)
         normalized_entry_file = _normalize_build_entry_file(entry_file)
         normalized_declared_sha256 = str(sha256 or "").strip().lower() or None
         declared_size_bytes: int | None = None
@@ -580,6 +582,41 @@ class ProjectBuildService:
         stored_key = written.storage_key
         actual_sha256 = written.sha256
         actual_size_bytes = written.size_bytes
+        try:
+            await self._promote_uploaded_artifact(
+                job=job,
+                job_id=job_id,
+                stored_key=stored_key,
+                actual_sha256=actual_sha256,
+                actual_size_bytes=actual_size_bytes,
+                normalized_entry_file=normalized_entry_file,
+                normalized_declared_sha256=normalized_declared_sha256,
+                declared_size_bytes=declared_size_bytes,
+                attempt_id=attempt_id,
+            )
+        except BaseException:
+            # 校验失败、attempt 围栏失守或提交异常都不得把归档留在对象存储里：
+            # 没有任务行引用的对象不会有任何回收路径，只能在这里主动删除。
+            await self._discard_unpromoted_artifact(job_id=job_id, storage_key=stored_key)
+            raise
+        await self.session.refresh(job)
+        return job
+
+    async def _promote_uploaded_artifact(
+        self,
+        *,
+        job: ProjectBuildJob,
+        job_id: int,
+        stored_key: str,
+        actual_sha256: str,
+        actual_size_bytes: int,
+        normalized_entry_file: str,
+        normalized_declared_sha256: str | None,
+        declared_size_bytes: int | None,
+        attempt_id: str | None,
+    ) -> None:
+        """对拍声明校验和与大小，并在 attempt/租约围栏内把归档提升为最终产物。"""
+
         if normalized_declared_sha256 and normalized_declared_sha256 != actual_sha256:
             raise AppException(status_code=409, code="BUILD_ARTIFACT_SHA256_MISMATCH", detail="构建产物校验和不匹配。")
         if declared_size_bytes is not None and declared_size_bytes != actual_size_bytes:
@@ -588,7 +625,7 @@ class ProjectBuildService:
         download_url = self.build_artifact_download_url(job)
         normalized_attempt = str(attempt_id or "").strip()
         promote_conditions = [
-            ProjectBuildJob.id == job.id,
+            ProjectBuildJob.id == job_id,
             ProjectBuildJob.status.in_(("pending", "running")),
             ProjectBuildJob.attempt_id == normalized_attempt,
             ProjectBuildJob.attempt_id.is_not(None),
@@ -616,7 +653,7 @@ class ProjectBuildService:
                 status_code=409,
                 code="BUILD_ATTEMPT_MISMATCH",
                 detail="构建产物 attempt 与当前任务不一致，迟到上传不得覆盖新结果。",
-                data={"job_id": job.id, "attempt_id": normalized_attempt or None},
+                data={"job_id": job_id, "attempt_id": normalized_attempt or None},
             )
 
         job.artifact_storage_key = stored_key
@@ -625,7 +662,7 @@ class ProjectBuildService:
         job.artifact_sha256 = actual_sha256
         job.artifact_size_bytes = actual_size_bytes
         await RuntimeArtifactStore().put_build_state(
-            job_id=job.id,
+            job_id=job_id,
             mapping={
                 "status": "upload_completed",
                 "snapshot_release_id": job.snapshot_release_id,
@@ -636,8 +673,50 @@ class ProjectBuildService:
             },
         )
         await self.session.commit()
-        await self.session.refresh(job)
-        return job
+
+    async def _discard_unpromoted_artifact(self, *, job_id: int, storage_key: str) -> None:
+        """删除提升失败的 attempt 归档；仍被任务行引用的产物必须保留。
+
+        上传期间租约过期时，恢复循环可能已按 `artifact_storage_key` 把同一 attempt
+        收敛为 succeeded，此时对象就是最终产物，删除会让成功任务指向空洞。
+        """
+
+        try:
+            await self.session.rollback()
+            referenced_key = await self.session.scalar(
+                select(ProjectBuildJob.artifact_storage_key).where(ProjectBuildJob.id == job_id)
+            )
+            if referenced_key and str(referenced_key) == storage_key:
+                logger.info(
+                    "构建产物提升失败但对象仍被任务引用，跳过回收。",
+                    extra={
+                        "event": "project.build.artifact.discard_skipped",
+                        "job_id": job_id,
+                        "storage_key": storage_key,
+                    },
+                )
+                return
+            await self.object_storage.delete_object(storage_key)
+            logger.warning(
+                "已回收未提升为最终产物的构建归档。",
+                extra={
+                    "event": "project.build.artifact.discarded",
+                    "job_id": job_id,
+                    "storage_key": storage_key,
+                },
+            )
+        except BaseException:
+            # 回收失败只降级为日志：不能让清理动作覆盖真正的上传错误，
+            # 包括 CancelledError——外层仍会重抛原始异常。
+            logger.warning(
+                "构建归档回收失败，对象需由存储侧生命周期规则清理。",
+                extra={
+                    "event": "project.build.artifact.discard_failed",
+                    "job_id": job_id,
+                    "storage_key": storage_key,
+                },
+                exc_info=True,
+            )
 
     def build_artifact_download_url(self, job: ProjectBuildJob) -> str:
         """生成管理员下载构建产物的稳定地址。"""
