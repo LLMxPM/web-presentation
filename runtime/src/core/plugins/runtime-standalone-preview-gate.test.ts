@@ -72,12 +72,12 @@ describe('runtime standalone preview gate', () => {
     })).toBe(false)
   })
 
-  it('关闭时放行平台预览、构建、诊断与 Vite 资源路径', () => {
+  it('关闭时放行平台预览、内部工具、诊断与 Vite 资源路径', () => {
     const allowedUrls = [
       '/__preview',
       '/__preview-tailwind.css',
       '/__runtime-snapdom-resource-proxy?artifactId=artifact-1&token=token&url=https%3A%2F%2Fexample.com%2Fasset.png',
-      '/__runtime_internal/v1/builds/project',
+      '/__runtime_internal/v1/visual-edit/analyze',
       '/__runtime_internal/v1/diagnostics/artifact',
       '/@vite/client',
       '/@runtime-preview/artifact-1/src/views/Cover.vue?ctx=token',
@@ -102,7 +102,7 @@ describe('runtime standalone preview gate', () => {
       '/runtime/__preview',
       '/runtime/__preview-tailwind.css',
       '/runtime/__runtime-snapdom-resource-proxy?artifactId=artifact-1&token=token&url=https%3A%2F%2Fexample.com%2Fasset.png',
-      '/runtime/__runtime_internal/v1/builds/project',
+      '/runtime/__runtime_internal/v1/visual-edit/analyze',
       '/runtime/@vite/client',
       '/runtime/@runtime-preview/artifact-1/src/views/Cover.vue?ctx=token',
       '/runtime/src/main.ts',

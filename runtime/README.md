@@ -60,7 +60,7 @@ pnpm build
 
 ### 5. 容器镜像
 
-Runtime 作为独立子项目发布自己的 Docker Hub 镜像。镜像保留 Vite dev server，因为 `/__preview`、诊断接口和构建 Worker 领取循环由 Vite 插件承载：构建默认走 `pull` 模式（Worker 主动向 Backend `claim`/`renew`/`complete`），`POST /__runtime_internal/v1/builds/project` 只在显式设置 `RUNTIME_BUILD_EXECUTION_MODE=legacy-http` 时开放，pull 模式下恒返回 `503 BUILD_HTTP_DISPATCH_DISABLED`。
+Runtime 作为独立子项目发布自己的 Docker Hub 镜像。镜像保留 Vite dev server，因为 `/__preview`、诊断接口和构建 Worker 领取循环由 Vite 插件承载：构建只有 Worker 主动向 Backend `claim`/`renew`/`complete` 这一条执行路径，Runtime 不再暴露任何 HTTP 同步派发入口。
 
 ```bash
 docker build -t web-runtime-vue:local .
@@ -115,13 +115,11 @@ Backend 触发整项目构建时，Runtime 会使用专用的 `build-release-mai
 
 - `RUNTIME_PREVIEW_JWKS_URL`
 - `RUNTIME_PREVIEW_TOKEN_AUDIENCE`
-- `RUNTIME_BUILD_TOKEN_AUDIENCE`
 - `RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE`
-- `RUNTIME_ROLE`：运行角色 `all`（默认，合并部署）| `preview` | `build` | `check`。preview 不开放构建/诊断/轻量工具入口，build 只开整项目构建，check 只开诊断与轻量内部工具。
-- `RUNTIME_BUILD_EXECUTION_MODE`：`pull`（默认）| `legacy-http`。pull 模式启动 Build Worker 领取循环并关闭 HTTP 同步派发入口；凭证或 Backend 地址缺失导致 Worker 未启动时，入口同样保持关闭（不 fail-open）。
-- `RUNTIME_BUILD_WORKER_CREDENTIAL` / `RUNTIME_BUILD_WORKER_CREDENTIAL_FILE`：与 Backend 一致的领取凭证，secret 文件要求 `0400`/`0600`。构建子进程不继承这两项环境变量。
+- `RUNTIME_ROLE`：运行角色 `all`（默认，合并部署）| `preview` | `build` | `check`。preview 不开放构建/诊断/轻量工具入口，build 只跑整项目构建 Worker，check 只开诊断与轻量内部工具。
+- `RUNTIME_BUILD_WORKER_CREDENTIAL` / `RUNTIME_BUILD_WORKER_CREDENTIAL_FILE`：与 Backend 一致的领取凭证，secret 文件要求 `0400`/`0600`。构建子进程不继承这两项环境变量。凭证或 `RUNTIME_BACKEND_API_BASE_URL` 缺失时 Worker 不启动，构建任务保持在 Backend 侧 pending，不存在第二条执行入口。
 - `RUNTIME_BUILD_WORKER_ID`：Worker 标识，默认 `runtime-build-<pid>`；project lane 并发大于 1 时按 `-1`、`-2` 后缀派生消费者标识。
-- `RUNTIME_VITE_TASK_CONCURRENCY`：诊断与正式构建的默认并发数（各类别独立计数），lite/SQLite 建议保持 `1`，普通部署可设为 `2`。pull 模式下 project lane 并发即 Build Worker 的领取消费者数量。
+- `RUNTIME_VITE_TASK_CONCURRENCY`：诊断与正式构建的默认并发数（各类别独立计数），lite/SQLite 建议保持 `1`，普通部署可设为 `2`。project lane 并发即 Build Worker 的领取消费者数量。
 - `RUNTIME_VITE_TASK_QUEUE_SIZE`：各类别等待队列上限，默认 `16`；队列满或等待超时返回结构化 HTTP 429。
 - `RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS`：各类别排队超时，默认 `30000`。
 - `RUNTIME_VITE_DIAGNOSTICS_CONCURRENCY` / `RUNTIME_VITE_PROJECT_CONCURRENCY`：按类别覆盖上述预算；也可用 `RUNTIME_PREVIEW/BUILD/CHECK_VITE_TASK_*` 按角色覆盖。

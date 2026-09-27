@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import httpx
 import pytest
 
 from app.core.config import AppSettings, validate_runtime_role_targets
-from app.services.runtime_build_client import RuntimeBuildClient
 from app.services.runtime_diagnostics_client import RuntimeDiagnosticsClient
 from app.services.runtime_visual_edit_client import RuntimeVisualEditClient
 
@@ -17,7 +15,6 @@ def _settings(**overrides: str) -> AppSettings:
     base = {
         "runtime_base_url": "http://runtime:7373",
         "runtime_preview_base_url": "",
-        "runtime_build_base_url": "",
         "runtime_check_base_url": "",
     }
     base.update(overrides)
@@ -25,11 +22,10 @@ def _settings(**overrides: str) -> AppSettings:
 
 
 def test_resolve_runtime_role_base_url_falls_back() -> None:
-    """未配置角色地址时三类目标均回退 runtime_base_url。"""
+    """未配置角色地址时 preview 与 check 目标均回退 runtime_base_url。"""
 
     settings = _settings()
     assert settings.resolve_runtime_role_base_url("preview") == "http://runtime:7373"
-    assert settings.resolve_runtime_role_base_url("build") == "http://runtime:7373"
     assert settings.resolve_runtime_role_base_url("check") == "http://runtime:7373"
 
 
@@ -38,35 +34,26 @@ def test_resolve_runtime_role_base_url_prefers_explicit() -> None:
 
     settings = _settings(
         runtime_preview_base_url="http://runtime-preview:7373/",
-        runtime_build_base_url="http://runtime-build:7373",
         runtime_check_base_url="http://runtime-check:7373/",
     )
     assert settings.resolve_runtime_role_base_url("preview") == "http://runtime-preview:7373"
-    assert settings.resolve_runtime_role_base_url("build") == "http://runtime-build:7373"
     assert settings.resolve_runtime_role_base_url("check") == "http://runtime-check:7373"
 
 
-@pytest.mark.asyncio
-async def test_clients_use_role_specific_base_urls(monkeypatch: pytest.MonkeyPatch) -> None:
-    """构建、诊断、可视化编辑客户端应分别命中 build/check 目标。"""
+def test_light_role_shares_check_targets() -> None:
+    """轻量工具与诊断共用计算目标，但准入独立计数。"""
 
-    captured: list[str] = []
+    settings = _settings(runtime_check_base_urls="http://check-1:7373,http://check-2:7373")
+    assert settings.resolve_runtime_role_base_url("light") == "http://check-1:7373"
+    assert settings.resolve_runtime_role_base_urls("light") == ["http://check-1:7373", "http://check-2:7373"]
 
-    class _CaptureTransport(httpx.AsyncBaseTransport):
-        def __init__(self, label: str) -> None:
-            self.label = label
 
-        async def handle_request(self, request: httpx.Request) -> httpx.Response:
-            captured.append(f"{self.label}:{request.url.scheme}://{request.url.host}:{request.url.port}")
-            return httpx.Response(200, json={"artifact_id": "a", "base_url": "http://x", "message": "ok"})
+def test_clients_use_role_specific_base_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """诊断与可视化编辑客户端应命中 check 目标。"""
 
     settings = _settings(
         runtime_preview_base_url="http://runtime-preview:7373",
-        runtime_build_base_url="http://runtime-build:7373",
         runtime_check_base_url="http://runtime-check:7373",
-    )
-    monkeypatch.setattr(
-        "app.services.runtime_build_client.get_settings", lambda: settings
     )
     monkeypatch.setattr(
         "app.services.runtime_diagnostics_client.get_settings", lambda: settings
@@ -75,9 +62,6 @@ async def test_clients_use_role_specific_base_urls(monkeypatch: pytest.MonkeyPat
         "app.services.runtime_visual_edit_client.get_settings", lambda: settings
     )
 
-    build_client = RuntimeBuildClient()
-    # 仅验证地址解析，不真正发起网络调用。
-    assert build_client.settings.resolve_runtime_role_base_url("build") == "http://runtime-build:7373"
     diag_client = RuntimeDiagnosticsClient()
     assert diag_client.settings.resolve_runtime_role_base_url("check") == "http://runtime-check:7373"
     visual_client = RuntimeVisualEditClient()
@@ -95,11 +79,11 @@ def test_validate_runtime_role_targets_rejects_empty() -> None:
 def test_validate_runtime_role_targets_warns_on_preview_mismatch(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """build/check 目标与 preview 专属地址相同时应输出告警而非报错。"""
+    """check 目标与 preview 专属地址相同时应输出告警而非报错。"""
 
     settings = _settings(
         runtime_preview_base_url="http://runtime-preview:7373",
-        runtime_build_base_url="http://runtime-preview:7373",
+        runtime_check_base_url="http://runtime-preview:7373",
     )
     with caplog.at_level("WARNING"):
         validate_runtime_role_targets(settings)
@@ -109,15 +93,8 @@ def test_validate_runtime_role_targets_warns_on_preview_mismatch(
 def test_validate_runtime_role_targets_accepts_multi_target_lists() -> None:
     """计算角色多副本列表中的每个目标都必须是绝对 http(s) 地址。"""
 
-    settings = _settings(
-        runtime_build_base_urls="http://build-1:7373,http://build-2:7373",
-        runtime_check_base_urls='["http://check-1:7373","http://check-2:7373"]',
-    )
+    settings = _settings(runtime_check_base_urls='["http://check-1:7373","http://check-2:7373"]')
     validate_runtime_role_targets(settings)
-    assert settings.resolve_runtime_role_base_urls("build") == [
-        "http://build-1:7373",
-        "http://build-2:7373",
-    ]
     assert settings.resolve_runtime_role_base_urls("check") == [
         "http://check-1:7373",
         "http://check-2:7373",
@@ -130,3 +107,21 @@ def test_validate_runtime_role_targets_rejects_non_http_list_entry() -> None:
     settings = _settings(runtime_check_base_urls="http://check-1:7373,ftp://bad:7373")
     with pytest.raises(ValueError):
         validate_runtime_role_targets(settings)
+
+
+@pytest.mark.parametrize(
+    "retired_env",
+    [
+        "RUNTIME_BUILD_BASE_URL",
+        "RUNTIME_BUILD_BASE_URLS",
+        "RUNTIME_BUILD_MAX_INFLIGHT",
+        "RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS",
+        "PROJECT_BUILD_QUEUE_CONCURRENCY",
+    ],
+)
+def test_retired_build_dispatch_env_is_rejected(monkeypatch: pytest.MonkeyPatch, retired_env: str) -> None:
+    """Backend 主动派发构建的配置已删除，残留键必须启动失败而不是静默忽略。"""
+
+    monkeypatch.setenv(retired_env, "1")
+    with pytest.raises(ValueError, match="已废弃的 Backend 构建派发配置"):
+        _settings()

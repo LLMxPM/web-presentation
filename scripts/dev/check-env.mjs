@@ -8,7 +8,6 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const AUDIENCES = {
   RUNTIME_SERVICE_TOKEN_AUDIENCE: 'runtime-backend',
   RUNTIME_PREVIEW_TOKEN_AUDIENCE: 'runtime-preview',
-  RUNTIME_BUILD_TOKEN_AUDIENCE: 'runtime-build',
   RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE: 'runtime-diagnostics',
 }
 

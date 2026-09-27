@@ -107,8 +107,10 @@ async def test_claim_should_reject_missing_credential(
 ) -> None:
     """未配置共享凭证时 claim 应 fail-closed。"""
 
-    monkeypatch.delenv("RUNTIME_BUILD_WORKER_CREDENTIAL", raising=False)
-    get_settings.cache_clear()
+    # 凭证可能由开发者本地 .env 提供，只删进程环境变量无法复现「未配置」，直接清空已加载配置。
+    settings = get_settings()
+    monkeypatch.setattr(settings, "runtime_build_worker_credential", "")
+    monkeypatch.setattr(settings, "runtime_build_worker_credential_file", "")
 
     response = await authenticated_client.post(
         "/internal/runtime/build-jobs/claim",

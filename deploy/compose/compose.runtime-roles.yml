@@ -13,14 +13,14 @@
 # - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
 # - 暴露面约束：runtime-build / runtime-check 只挂 runtime-jobs-net，不发布宿主机端口；
 #   公开 Gateway 只挂在 platform-net，且只把主机名 runtime 解析到 runtime-preview，
-#   构建与源码检查端点不经公开 Gateway 暴露。
-# - RUNTIME_ROLE 由 Runtime 角色逻辑消费：preview 不开放构建与诊断入口，
-#   build/check 只保留对应执行面。Backend 通过 RUNTIME_PREVIEW/BUILD/CHECK_BASE_URL
-#   按职责选址，未配置时回退 RUNTIME_BASE_URL。
-# - 需要按实测瓶颈增加 build/check 副本时：复制对应角色服务并改独立别名，在 Backend
-#   配置 RUNTIME_BUILD_BASE_URLS / RUNTIME_CHECK_BASE_URLS 注册全部副本，并按
-#   「副本数 × 单副本执行预算」上调 RUNTIME_BUILD/CHECK_MAX_INFLIGHT；
-#   详见 docs/developer/deployment/compose.md「计算副本扩容」。
+#   源码检查端点不经公开 Gateway 暴露，构建则根本没有入站 HTTP 端点。
+# - RUNTIME_ROLE 由 Runtime 角色逻辑消费：preview 不开放诊断与轻量工具入口，
+#   build 只跑构建领取 Worker，check 只保留诊断与轻量工具执行面。Backend 通过 RUNTIME_PREVIEW/CHECK_BASE_URL
+#   按职责选址，未配置时回退 RUNTIME_BASE_URL；构建不经 Backend 选址，由 Worker 拉取。
+# - 需要按实测瓶颈增加 build/check 副本时：复制对应角色服务并改独立别名。
+#   build 副本只需启动即自行 claim，Backend 侧无需注册；check 副本要在 Backend
+#   配置 RUNTIME_CHECK_BASE_URLS 注册全部副本，并按「副本数 × 单副本执行预算」
+#   上调 RUNTIME_CHECK_MAX_INFLIGHT；详见 docs/developer/deployment/compose.md「计算副本扩容」。
 # - 预览多副本（规划 T3-3）：Gateway 预览 upstream（runtime_preview_pool）已支持多实例，
 #   复制 runtime-preview 服务为 runtime-preview-2（独立别名，不共享 runtime），
 #   取消 nginx 配置中对应 server 注释并 reload；滚动发布顺序见
@@ -71,9 +71,9 @@ services:
     environment:
       # 兼容回退：仍指向预览角色；角色目标未配置时 Backend 使用该地址。
       RUNTIME_BASE_URL: "http://runtime-preview:7373"
-      # 分角色内部目标：预览 / 构建 / 源码检查各自直达，不经公开 Gateway。
+      # 分角色内部目标：预览 / 源码检查各自直达，不经公开 Gateway。
+      # 构建不在这里注册：runtime-build 的 Worker 主动向 Backend claim 任务。
       RUNTIME_PREVIEW_BASE_URL: "http://runtime-preview:7373"
-      RUNTIME_BUILD_BASE_URL: "http://runtime-build:7373"
       RUNTIME_CHECK_BASE_URL: "http://runtime-check:7373"
       # 构建 Worker 共享服务凭证：与 runtime-build 使用同一 secret 文件。
       RUNTIME_BUILD_WORKER_CREDENTIAL_FILE: "/run/secrets/build_worker_credential"
@@ -205,8 +205,8 @@ services:
     restart: unless-stopped
     environment:
       # 构建 Worker 共享服务凭证：与 Backend 使用同一 secret 文件（要求 0400/0600，仅属主可读）。
-      # 默认 RUNTIME_BUILD_EXECUTION_MODE=pull：Worker 主动 claim/renew/complete，HTTP 同步派发入口恒为 503，
-      # 即使凭证缺失导致 Worker 未启动也不会退回开放入口。
+      # 构建只有 Worker 主动 claim/renew/complete 这一条执行路径；凭证缺失时 Worker 不启动，
+      # 任务保持 pending 由 Backend 收敛为失败，不会退回任何 HTTP 同步派发入口。
       RUNTIME_BUILD_WORKER_CREDENTIAL_FILE: "/run/secrets/build_worker_credential"
       RUNTIME_ROLE: "build"
       # 构建执行预算：2 并发 × 2048MB 老生代 ≈ 4GiB 堆；容器 8g 另留约 4GiB 给 Buffer、

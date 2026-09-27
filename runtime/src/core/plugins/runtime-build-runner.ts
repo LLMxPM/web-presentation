@@ -29,7 +29,6 @@ import {
   RuntimeBuildWorkerProcessError,
   RuntimeBuildWorkerViteError,
   normalizeDiagnosticsWorkerTimeoutMs,
-  normalizeWorkerTimeoutMs,
   runRuntimeViteBuildInWorker,
   runZipArchiveInWorker,
 } from './runtime-build-worker'
@@ -55,40 +54,15 @@ import {
 } from './runtime-task-deadline'
 
 interface RuntimeBuildRunnerOptions {
-  endpointPath?: string
   diagnosticsEndpointPath?: string
   serviceTokenHeaderName?: string
   jwksUrl?: string
-  buildAudience?: string
   diagnosticsAudience?: string
   backendApiBaseUrl?: string
-  /** 是否开放整项目构建入口；build 角色为 true，check 角色为 false。 */
+  /** 是否开放整项目构建能力；build 角色为 true，check 角色为 false。 */
   enableProjectEntry?: boolean
   /** 是否开放编译诊断入口；check 角色为 true，build 角色为 false。 */
   enableDiagnosticsEntry?: boolean
-  /**
-   * 构建执行模式：`pull` 由 Worker 主动领取任务并关闭 HTTP 同步派发入口，
-   * `legacy-http` 保留 Backend 长同步 RPC。缺省读 RUNTIME_BUILD_EXECUTION_MODE。
-   */
-  buildExecutionMode?: RuntimeBuildExecutionMode
-}
-
-/** Runtime 构建执行模式：`pull` 为 Worker 拉取，`legacy-http` 为遗留 Backend 长同步派发。 */
-export type RuntimeBuildExecutionMode = 'pull' | 'legacy-http'
-
-interface RuntimeBuildCommandClaims extends JWTPayload {
-  sub: string
-  job_id: string
-  artifact_id: string
-  project_id: string
-  workspace_id: string
-  base_url: string
-  jti: string
-}
-
-interface RuntimeBuildRequestBody {
-  artifact_id: string
-  base_url: string
 }
 
 interface RuntimeDiagnosticsCommandClaims extends JWTPayload {
@@ -165,10 +139,8 @@ interface RuntimeBuildLogContext {
 
 type RuntimeNodeResponse = Pick<ServerResponse, 'statusCode' | 'setHeader' | 'end'>
 
-const DEFAULT_BUILD_ENDPOINT = '/__runtime_internal/v1/builds/project'
 const DEFAULT_DIAGNOSTICS_ENDPOINT = '/__runtime_internal/v1/diagnostics/artifact'
 const MODULE_BATCH_SIZE = 128
-const DEFAULT_BUILD_AUDIENCE = 'runtime-build'
 const DEFAULT_DIAGNOSTICS_AUDIENCE = 'runtime-diagnostics'
 const DEFAULT_RUNTIME_SERVICE_TOKEN_HEADER = 'x-runtime-service-token'
 const DEFAULT_ARTIFACT_UPLOAD_MAX_ATTEMPTS = 3
@@ -206,18 +178,17 @@ function logRuntimeBuildError(stage: string, error: unknown, context: RuntimeBui
   })
 }
 /**
- * Runtime 内部整项目构建插件：
- * 1. 仅在 Vite serve 下暴露内部构建入口；
- * 2. 使用 Backend JWKS 验签构建命令令牌；
+ * Runtime 内部构建与诊断插件：
+ * 1. 构建只由 Build Worker 主动向 Backend 领取任务后执行，不暴露 HTTP 同步派发入口；
+ * 2. 仅在 Vite serve 下暴露内部编译诊断入口，使用 Backend JWKS 验签诊断令牌；
  * 3. 拉取 build snapshot 后在临时工作区执行程序化构建；
  * 4. 构建阶段只物化当前 snapshot 资源，并将其增量写入 `__build_assets`；
  * 5. 构建完成后将 dist.zip 回传 Backend，并清理临时文件。
  */
 export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = {}): Plugin {
-  const endpointPath = options.endpointPath || DEFAULT_BUILD_ENDPOINT
   const diagnosticsEndpointPath = options.diagnosticsEndpointPath || DEFAULT_DIAGNOSTICS_ENDPOINT
   const serviceTokenHeaderName = (options.serviceTokenHeaderName || DEFAULT_RUNTIME_SERVICE_TOKEN_HEADER).toLowerCase()
-  // 角色裁剪：preview 不注册本插件；build 只开构建入口；check 只开诊断入口。
+  // 角色裁剪：preview 不注册本插件；build 只跑 Worker 领取循环；check 只开诊断入口。
   const enableProjectEntry = options.enableProjectEntry !== false
   const enableDiagnosticsEntry = options.enableDiagnosticsEntry !== false
   const scheduler = new RuntimeViteTaskScheduler()
@@ -249,12 +220,10 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
       }
       // 工作区采用首次诊断时的惰性预热：创建动作位于 diagnostics scheduler 槽位内，
       // 避免服务启动时与正式构建并发复制完整 Runtime 源码。
-      const buildExecutionMode = resolveBuildExecutionMode(options.buildExecutionMode)
-      const pullBuildWorkerEnabled = enableProjectEntry && buildExecutionMode === 'pull'
       let stopBuildQueueWorker: (() => void) | null = null
       const buildWorkerCredential = readRuntimeBuildWorkerCredential()
       const backendApiBaseUrl = options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || ''
-      if (pullBuildWorkerEnabled && buildWorkerCredential && backendApiBaseUrl) {
+      if (enableProjectEntry && buildWorkerCredential && backendApiBaseUrl) {
         stopBuildQueueWorker = startRuntimeBuildQueueWorker({
           backendApiBaseUrl,
           workerCredential: buildWorkerCredential,
@@ -266,10 +235,10 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
           runProjectBuild,
           createBuildBackendClient,
         })
-      } else if (pullBuildWorkerEnabled) {
+      } else if (enableProjectEntry) {
+        // 构建没有第二条执行路径：凭证或 Backend 地址缺失时任务只会留在队列里等待人工介入。
         logRuntimeServer('error', 'runtime.build.worker.not_started', '构建 Worker 未能启动，构建任务将保持待执行。', {
           module: 'runtime.build',
-          buildExecutionMode,
           credentialConfigured: Boolean(buildWorkerCredential),
           backendApiConfigured: Boolean(backendApiBaseUrl),
         })
@@ -284,172 +253,28 @@ export default function runtimeBuildRunner(options: RuntimeBuildRunnerOptions = 
       })
       server.middlewares.use(async (req, res, next) => {
         const requestPath = (req.url || '').split('?')[0]
-        if (enableDiagnosticsEntry && requestPath === diagnosticsEndpointPath) {
-          if (req.method !== 'POST') {
-            return sendJson(res, 405, {
-              success: false,
-              code: 'METHOD_NOT_ALLOWED',
-              message: '代码检查入口仅支持 POST。',
-            })
-          }
-          return handleRuntimeDiagnosticsRequest(req, res, {
-            runtimeRoot,
-            serviceTokenHeaderName,
-            jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
-            diagnosticsAudience: options.diagnosticsAudience || process.env.RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE || DEFAULT_DIAGNOSTICS_AUDIENCE,
-            backendApiBaseUrl: options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || '',
-            scheduler,
-            workspacePool,
-          })
-        }
-
-        if (!enableProjectEntry || requestPath !== endpointPath) {
+        if (!enableDiagnosticsEntry || requestPath !== diagnosticsEndpointPath) {
           return next()
         }
-
-        // pull 模式下永远不开放 HTTP 同步派发入口，与 Worker 是否成功启动无关：
-        // 凭证缺失时若退回开放入口，会形成「配置坏了反而多出第二条执行路径」的 fail-open。
-        if (pullBuildWorkerEnabled) {
-          return sendJson(res, 503, {
-            success: false,
-            code: 'BUILD_HTTP_DISPATCH_DISABLED',
-            message: '构建已改为 Worker 拉取模式，HTTP 同步派发入口已关闭。',
-          })
-        }
-
         if (req.method !== 'POST') {
           return sendJson(res, 405, {
             success: false,
             code: 'METHOD_NOT_ALLOWED',
-            message: '整项目构建入口仅支持 POST。',
+            message: '代码检查入口仅支持 POST。',
           })
         }
-
-        try {
-          const buildToken = readBearerToken(String(req.headers.authorization || ''))
-          const verifiedClaims = await verifyBuildToken(buildToken, {
-            jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
-            audience: options.buildAudience || process.env.RUNTIME_BUILD_TOKEN_AUDIENCE || DEFAULT_BUILD_AUDIENCE,
-          })
-          const payload = await readJsonBody<RuntimeBuildRequestBody>(req)
-          const normalizedBaseUrl = normalizeBuildBaseUrl(payload.base_url)
-          assertBuildRequestMatchesClaims(payload, normalizedBaseUrl, verifiedClaims)
-          const buildContext: RuntimeBuildLogContext = {
-            jobId: String(verifiedClaims.job_id),
-            artifactId: payload.artifact_id,
-            baseUrl: normalizedBaseUrl,
-            runtimeRoot,
-            method: req.method,
-            requestUrl: req.url,
-            request_id: String(req.headers['x-request-id'] || ''),
-          }
-
-          logRuntimeBuild('request.received', buildContext)
-          const requestStartedAt = Date.now()
-          const serviceToken = String(req.headers[serviceTokenHeaderName] || '')
-          if (!serviceToken) {
-            throw new RuntimeBuildError(401, 'RUNTIME_SERVICE_TOKEN_REQUIRED', '缺少 Backend 下发的 Runtime 服务令牌。')
-          }
-
-          const backendClient = createBuildBackendClient({
-            backendApiBaseUrl: options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || '',
-            serviceToken,
-          })
-
-          const queuedAt = Date.now()
-          logRuntimeBuild('queue.entered', {
-            ...buildContext,
-            taskKind: 'project',
-            ...scheduler.snapshot(),
-          })
-          const buildSummary = await scheduler.schedule('project', async () => {
-            logRuntimeBuild('queue.acquired', {
-              ...buildContext,
-              taskKind: 'project',
-              queueWaitMs: Date.now() - queuedAt,
-              ...scheduler.snapshot(),
-            })
-            return runWithRuntimeTaskDeadline('project', normalizeWorkerTimeoutMs(), async deadline => {
-              logRuntimeBuild('snapshot.fetch.start', buildContext)
-              const manifest = await backendClient.fetchManifest(payload.artifact_id, deadline.signal)
-              const configBundle = await backendClient.fetchConfigBundle(payload.artifact_id, deadline.signal)
-              deadline.throwIfExpired()
-              logRuntimeBuild('snapshot.fetch.done', {
-                ...buildContext,
-                moduleCount: Object.keys(manifest.modules || {}).length,
-                assetCount: Object.keys(manifest.assets || {}).length,
-              })
-              return runProjectBuild({
-                runtimeRoot,
-                jobId: String(verifiedClaims.job_id),
-                artifactId: payload.artifact_id,
-                buildToken,
-                baseUrl: normalizedBaseUrl,
-                manifest,
-                configBundle,
-                backendClient,
-                deadline,
-              })
-            })
-          })
-
-          sendJson(res, 200, {
-            success: true,
-            artifact_id: payload.artifact_id,
-            base_url: normalizedBaseUrl,
-            artifact_entry_file: buildSummary.artifactEntryFile,
-            artifact_sha256: buildSummary.artifactSha256,
-            artifact_size_bytes: buildSummary.artifactSizeBytes,
-            message: buildSummary.message,
-          })
-          const requestDurationMs = Date.now() - requestStartedAt
-          recordRuntimeWorkload('build', requestDurationMs)
-          logRuntimeBuild('request.completed', {
-            ...buildContext,
-            durationMs: requestDurationMs,
-            artifactEntryFile: buildSummary.artifactEntryFile,
-            artifactSha256: buildSummary.artifactSha256,
-            artifactSizeBytes: buildSummary.artifactSizeBytes,
-          })
-        } catch (error) {
-          logRuntimeBuildError('request.failed', error, {
-            runtimeRoot,
-            method: req.method,
-            requestUrl: req.url,
-          })
-          sendBuildError(res, error)
-        }
+        return handleRuntimeDiagnosticsRequest(req, res, {
+          runtimeRoot,
+          serviceTokenHeaderName,
+          jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
+          diagnosticsAudience: options.diagnosticsAudience || process.env.RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE || DEFAULT_DIAGNOSTICS_AUDIENCE,
+          backendApiBaseUrl: options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || '',
+          scheduler,
+          workspacePool,
+        })
       })
     },
   }
-}
-
-/**
- * 验证整项目构建命令令牌。
- * @param token Backend 签发的整项目构建命令令牌
- * @param options 验签选项
- * @returns 已校验的 claims
- */
-async function verifyBuildToken(
-  token: string,
-  options: {
-    jwksUrl: string
-    audience: string
-  },
-): Promise<RuntimeBuildCommandClaims> {
-  if (!options.jwksUrl) {
-    throw new RuntimeBuildError(503, 'JWKS_URL_MISSING', 'Runtime 未配置 JWKS 地址。')
-  }
-  const jwks = createRemoteJWKSet(new URL(options.jwksUrl))
-  const { payload } = await jwtVerify(token, jwks, {
-    audience: options.audience,
-  })
-
-  const claims = payload as RuntimeBuildCommandClaims
-  if (!claims.job_id || !claims.artifact_id || !claims.project_id || !claims.workspace_id || !claims.base_url) {
-    throw new RuntimeBuildError(401, 'BUILD_TOKEN_INVALID', '构建命令令牌缺少必需声明。')
-  }
-  return claims
 }
 
 /**
@@ -611,37 +436,6 @@ async function readJsonBody<T>(req: NodeJS.ReadableStream): Promise<T> {
   } catch {
     throw new RuntimeBuildError(400, 'REQUEST_BODY_INVALID', '请求体不是合法 JSON。')
   }
-}
-
-/**
- * 校验请求体与令牌声明是否一致。
- * @param payload Runtime 构建请求体
- * @param normalizedBaseUrl 已规范化的 baseUrl
- * @param claims 已校验的 JWT 声明
- */
-function assertBuildRequestMatchesClaims(
-  payload: RuntimeBuildRequestBody,
-  normalizedBaseUrl: string,
-  claims: RuntimeBuildCommandClaims,
-): void {
-  if (String(payload.artifact_id || '') !== String(claims.artifact_id || '')) {
-    throw new RuntimeBuildError(403, 'BUILD_ARTIFACT_MISMATCH', '构建 artifact 与令牌声明不一致。')
-  }
-  if (normalizedBaseUrl !== normalizeBuildBaseUrl(claims.base_url)) {
-    throw new RuntimeBuildError(403, 'BUILD_BASE_URL_MISMATCH', '构建 base_url 与令牌声明不一致。')
-  }
-}
-
-/**
- * 解析构建执行模式：默认 `pull`，仅显式配置才保留遗留 HTTP 长同步派发。
- * @returns 归一化后的执行模式
- */
-export function resolveBuildExecutionMode(
-  explicit?: RuntimeBuildExecutionMode,
-  env: NodeJS.ProcessEnv = process.env,
-): RuntimeBuildExecutionMode {
-  const raw = String(explicit || env.RUNTIME_BUILD_EXECUTION_MODE || '').trim().toLowerCase()
-  return raw === 'legacy-http' ? 'legacy-http' : 'pull'
 }
 
 /**
@@ -1061,12 +855,14 @@ export async function runProjectBuild(params: {
   deadline: RuntimeTaskDeadline
 }): Promise<BuildArtifactSummary> {
   params.deadline.throwIfExpired()
+  // Backend 只按用户输入原样存库，base_url 的规范化与非法值拒绝统一在这里做。
+  const baseUrl = normalizeBuildBaseUrl(params.baseUrl)
   const tempRoot = await createDisposableRuntimeWorkspace(params.runtimeRoot)
   const distRoot = resolve(tempRoot, 'dist')
   const buildContext: RuntimeBuildLogContext = {
     jobId: params.jobId,
     artifactId: params.artifactId,
-    baseUrl: params.baseUrl,
+    baseUrl,
     runtimeRoot: params.runtimeRoot,
     tempRoot,
     distRoot,
@@ -1132,7 +928,7 @@ export async function runProjectBuild(params: {
     logRuntimeBuild('vite.build.start', buildContext)
     await runRuntimeViteBuildInWorker({
       tempRoot,
-      base: params.baseUrl,
+      base: baseUrl,
       mode: 'project',
       outDir: distRoot,
       timeoutMs: params.deadline.remainingMs(),

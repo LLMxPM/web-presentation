@@ -44,7 +44,6 @@ services:
       DURABLE_JOB_LEASE_SECONDS: "300"
       DURABLE_JOB_HEARTBEAT_SECONDS: "30"
       RUNTIME_DIAGNOSTICS_REQUEST_TIMEOUT_SECONDS: "180"
-      RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS: "900"
       # 构建 Worker 共享服务凭证：platform 与 runtime 必须一致，正式部署请改为强随机值。
       RUNTIME_BUILD_WORKER_CREDENTIAL: "change-build-worker-credential"
       ASSET_STORAGE_DRIVER: "local"

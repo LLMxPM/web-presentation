@@ -30,9 +30,9 @@ from app.services.page_preview_service import PagePreviewResult, PagePreviewServ
 from app.services.page_service import PageService
 from app.services.project_config_service import ProjectConfigService
 from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
+from app.services.runtime_target_router import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
 
-RUNTIME_SERVICE_TOKEN_HEADER = "x-runtime-service-token"
 RUNTIME_PREVIEW_CONTEXT_HEADER = "x-runtime-preview-context"
 RUNTIME_PUBLIC_BASE_URL_HEADER = "x-runtime-public-base-url"
 logger = logging.getLogger(__name__)

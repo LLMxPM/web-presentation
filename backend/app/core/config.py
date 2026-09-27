@@ -84,17 +84,14 @@ class AppSettings(BaseSettings):
     runtime_base_url: str = "http://127.0.0.1:7373"
     # 分角色部署时按职责指定 Runtime 内部目标；留空回退 runtime_base_url。
     runtime_preview_base_url: str = ""
-    runtime_build_base_url: str = ""
     runtime_check_base_url: str = ""
     # 计算角色多副本目标列表：JSON 数组或逗号分隔；留空回退对应单地址。
-    runtime_build_base_urls: str = ""
     runtime_check_base_urls: str = ""
     # 选址冷却：同一目标连续失败达到阈值后短暂跳过，冷却到期自动恢复参与轮询。
     runtime_target_failure_threshold: int = 3
     runtime_target_cooldown_seconds: float = 15.0
-    # 全链路准入：Backend 同时在途的 build/check/light 内部调用上限；<=0 表示不限制。
+    # 全链路准入：Backend 同时在途的 check/light 内部调用上限；<=0 表示不限制。
     # light（可视化编辑、资源比例测量）与 check 独立计数，避免长编译诊断队头阻塞轻量工具。
-    runtime_build_max_inflight: int = 4
     runtime_check_max_inflight: int = 16
     runtime_light_max_inflight: int = 16
     runtime_public_base_url: str | None = None
@@ -116,7 +113,6 @@ class AppSettings(BaseSettings):
     object_storage_shared_volume: bool = False
     runtime_request_timeout_seconds: float = 10.0
     runtime_diagnostics_request_timeout_seconds: float = 180.0
-    runtime_build_request_timeout_seconds: float = 900.0
     # 项目整包构建持久领取：Runtime Build Worker 通过 claim API 拉取并 renew 续租。
     # 租约时长仍是未续租场景的安全下限；重试预算与总 deadline 由 Backend 统一裁决。
     project_build_lease_seconds: int = 960
@@ -124,8 +120,7 @@ class AppSettings(BaseSettings):
     # 任务创建即确定的绝对 wall-clock 期限：领取租约、attempt 令牌 TTL、续租后的
     # 新租约与 Runtime 执行预算全部裁剪到该时刻之前，超期即不再承认所有权。
     project_build_total_deadline_seconds: int = 3600
-    # 兼容字段：队列循环现为 recovery-only，不再按此并发派发执行。
-    project_build_queue_concurrency: int = 1
+    # recovery-only 队列循环的扫描间隔；真正执行由 Runtime Build Worker 拉取。
     project_build_queue_poll_interval_seconds: float = 1.0
     # Runtime Build Worker 领取任务时使用的共享服务凭证；空值时拒绝 claim（fail-closed），
     # 本地开发/测试可注入固定值。与 RENDER_SERVICE_CREDENTIAL 同属内部服务身份。
@@ -327,7 +322,6 @@ class AppSettings(BaseSettings):
         "project_build_lease_seconds",
         "project_build_max_attempts",
         "project_build_total_deadline_seconds",
-        "project_build_queue_concurrency",
     )
     @classmethod
     def validate_positive_int(cls, value: int) -> int:
@@ -384,6 +378,39 @@ class AppSettings(BaseSettings):
             raise ValueError("AI_IMAGE_GENERATION_LEASE_SECONDS 必须至少为心跳间隔的3倍。")
         return self
 
+    @model_validator(mode="after")
+    def validate_legacy_build_dispatch_env_rejected(self) -> "AppSettings":
+        """Backend 主动派发构建的旧 HTTP 通道已删除，相关配置必须显式清理而不是静默忽略。"""
+
+        import os
+
+        retired = {
+            "RUNTIME_BUILD_BASE_URL": "构建改由 Runtime Build Worker 拉取，Backend 不再选址 build 目标。",
+            "RUNTIME_BUILD_BASE_URLS": "构建改由 Runtime Build Worker 拉取，Backend 不再选址 build 目标。",
+            "RUNTIME_BUILD_MAX_INFLIGHT": "Backend 侧不再有 build 在途准入。",
+            "RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS": "Backend 侧不再有 build HTTP 超时。",
+            "PROJECT_BUILD_QUEUE_CONCURRENCY": "队列循环已改为 recovery-only，并发由 Runtime Worker 消费者数决定。",
+        }
+        present = [name for name in retired if os.environ.get(name)]
+        # .env 文件中的废弃键可能被 pydantic-settings 静默丢弃，必须单独扫描。
+        for env_path in _iter_settings_env_files():
+            try:
+                for line in env_path.read_text(encoding="utf-8").splitlines():
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#") or "=" not in stripped:
+                        continue
+                    key = stripped.split("=", 1)[0].strip().strip('"').strip("'")
+                    if key in retired and key not in present:
+                        present.append(key)
+            except OSError:
+                continue
+        if present:
+            reasons = "；".join(f"{name}：{retired[name]}" for name in present)
+            raise ValueError(
+                "检测到已废弃的 Backend 构建派发配置：" + reasons + "。请从环境变量与 .env 模板中删除这些键。"
+            )
+        return self
+
     @field_validator(
         "page_screenshot_timeout_seconds",
         "page_screenshot_visual_ready_timeout_seconds",
@@ -400,7 +427,6 @@ class AppSettings(BaseSettings):
         "mutation_job_recovery_backoff_seconds",
         "runtime_artifact_sweep_interval_seconds",
         "runtime_diagnostics_request_timeout_seconds",
-        "runtime_build_request_timeout_seconds",
         "page_screenshot_queue_poll_interval_seconds",
         "page_screenshot_ai_wait_timeout_seconds",
         "asset_render_hint_backfill_queue_poll_interval_seconds",
@@ -441,14 +467,14 @@ class AppSettings(BaseSettings):
             raise ValueError("BACKEND_PUBLIC_BASE_URL 不能为空。")
         return normalized
 
-    @field_validator("runtime_preview_base_url", "runtime_build_base_url", "runtime_check_base_url")
+    @field_validator("runtime_preview_base_url", "runtime_check_base_url")
     @classmethod
     def normalize_runtime_role_base_url(cls, value: str) -> str:
         """规范化分角色 Runtime 内部目标地址；允许留空表示回退 runtime_base_url。"""
 
         return str(value or "").strip()
 
-    @field_validator("runtime_build_base_urls", "runtime_check_base_urls")
+    @field_validator("runtime_check_base_urls")
     @classmethod
     def validate_runtime_role_base_urls(cls, value: str) -> str:
         """校验多副本目标列表配置可被解析；非法 JSON 在启动期直接失败。"""
@@ -701,14 +727,14 @@ class AppSettings(BaseSettings):
     def resolve_runtime_role_base_urls(self, role: str) -> list[str]:
         """按职责解析 Runtime 内部目标列表。
 
-        回退顺序：多副本列表（runtime_build/check_base_urls）→ 单地址 → runtime_base_url。
-        role 取 preview / build / check / light；preview 当前保持单目标，多副本仅开放给计算角色。
+        回退顺序：多副本列表（runtime_check_base_urls）→ 单地址 → runtime_base_url。
+        role 取 preview / check / light；preview 当前保持单目标，多副本仅开放给计算角色。
         light（轻量工具）与 check 共用计算目标，但准入与冷却独立计数。
+        构建不在这里解析：Runtime Build Worker 通过 claim API 主动拉取任务。
         """
 
         effective_role = "check" if role == "light" else role
         plural_mapping = {
-            "build": self.runtime_build_base_urls,
             "check": self.runtime_check_base_urls,
         }
         targets = parse_runtime_target_list(str(plural_mapping.get(effective_role) or ""))
@@ -717,7 +743,6 @@ class AppSettings(BaseSettings):
 
         singular_mapping = {
             "preview": self.runtime_preview_base_url,
-            "build": self.runtime_build_base_url,
             "check": self.runtime_check_base_url,
         }
         configured = str(singular_mapping.get(effective_role) or "").strip().rstrip("/")
@@ -729,7 +754,7 @@ class AppSettings(BaseSettings):
     def resolve_runtime_role_base_url(self, role: str) -> str:
         """按职责解析 Runtime 内部目标地址，未配置角色地址时回退 runtime_base_url。
 
-        role 取 preview / build / check；返回值已去掉末尾斜杠。
+        role 取 preview / check / light；返回值已去掉末尾斜杠。
         多副本配置下返回首个目标，完整列表见 resolve_runtime_role_base_urls。
         """
 
@@ -777,16 +802,15 @@ def get_settings() -> AppSettings:
 def validate_runtime_role_targets(settings: AppSettings | None = None) -> None:
     """启动期校验分角色 Runtime 目标配置。
 
-    - 各职责目标（preview/build/check）解析后必须是绝对 http(s) 地址（存在性校验）。
+    - 各职责目标（preview/check）解析后必须是绝对 http(s) 地址（存在性校验）。
     - 计算角色多副本列表中的每个目标都要满足同一约束。
-    - 若显式配置了 preview 专属地址，而 build/check 任一目标回退到同一地址，输出告警：
-      preview 角色实例不开放构建/诊断入口，不应被 Backend 当作 build/check 目标。
+    - 若显式配置了 preview 专属地址，而 check 目标回退到同一地址，输出告警：
+      preview 角色实例不开放诊断入口，不应被 Backend 当作 check 目标。
     """
 
     resolved = settings or get_settings()
     role_targets = {
         "preview": resolved.resolve_runtime_role_base_urls("preview"),
-        "build": resolved.resolve_runtime_role_base_urls("build"),
         "check": resolved.resolve_runtime_role_base_urls("check"),
     }
     for role, targets in role_targets.items():
@@ -798,36 +822,14 @@ def validate_runtime_role_targets(settings: AppSettings | None = None) -> None:
 
     explicit_preview = str(resolved.runtime_preview_base_url or "").strip().rstrip("/")
     preview_target = role_targets["preview"][0] if role_targets["preview"] else ""
-    if explicit_preview and explicit_preview == preview_target:
-        for role in ("build", "check"):
-            if explicit_preview in role_targets[role]:
-                logging.getLogger(__name__).warning(
-                    "Runtime %s 目标包含 preview 专属地址（%s）。preview 角色不开放构建/诊断入口，"
-                    "请确认该地址不是 preview-only 实例，或改配 RUNTIME_%s_BASE_URL(S)。",
-                    role,
-                    explicit_preview,
-                    role.upper(),
-                    extra={
-                        "event": "runtime.role_target.mismatch",
-                        "role": role,
-                        "target": explicit_preview,
-                    },
-                )
-
-
-def validate_project_build_lease_covers_timeout(settings: AppSettings | None = None) -> None:
-    """启动期断言构建租约时长覆盖构建请求超时（安全缺省）。
-
-    Runtime Build Worker 现在通过 renew 续租，不再依赖「lease 必须覆盖最长 HTTP timeout」
-    维持正确性；本校验仍保留作为缺省下限，防止未配置 renew 的部署把租约设得过短。
-    """
-
-    resolved = settings or get_settings()
-    lease_seconds = int(resolved.project_build_lease_seconds)
-    build_timeout = float(resolved.runtime_build_request_timeout_seconds)
-    if lease_seconds <= build_timeout:
-        raise ValueError(
-            "PROJECT_BUILD_LEASE_SECONDS 必须大于 RUNTIME_BUILD_REQUEST_TIMEOUT_SECONDS："
-            f"当前 lease={lease_seconds}s <= timeout={build_timeout}s，"
-            "否则租约会先于构建请求过期，队列循环会偷走正在执行的构建。"
+    if explicit_preview and explicit_preview == preview_target and explicit_preview in role_targets["check"]:
+        logging.getLogger(__name__).warning(
+            "Runtime check 目标包含 preview 专属地址（%s）。preview 角色不开放诊断入口，"
+            "请确认该地址不是 preview-only 实例，或改配 RUNTIME_CHECK_BASE_URL(S)。",
+            explicit_preview,
+            extra={
+                "event": "runtime.role_target.mismatch",
+                "role": "check",
+                "target": explicit_preview,
+            },
         )

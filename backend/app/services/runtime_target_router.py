@@ -26,21 +26,14 @@ RUNTIME_CAPACITY_EXCEEDED = "RUNTIME_CAPACITY_EXCEEDED"
 RUNTIME_ADMISSION_FULL = "RUNTIME_ADMISSION_FULL"
 RUNTIME_TARGETS_UNAVAILABLE = "RUNTIME_TARGETS_UNAVAILABLE"
 
+# Backend 调用 Runtime 内部端点时携带服务令牌的请求头名称（协议常量，全仓唯一事实源）。
+RUNTIME_SERVICE_TOKEN_HEADER = "x-runtime-service-token"
+
 # 满载/准入拒绝时的建议重试等待秒数，写入 Retry-After 供调用方退避。
 RETRY_AFTER_SECONDS = "5"
 
 # 判定为「目标满载」的 HTTP 状态码；命中后换副本重试，全部耗尽时映射为稳定容量错误。
 _OVERLOAD_STATUS_CODES = {429, 503}
-
-# 构建 POST 只有这些 Runtime 调度器错误能证明任务尚未开始执行，允许换副本。
-# 其它 429/503 可能来自构建中的 Backend 回源或产物上传，结果必须视为不确定。
-_BUILD_PRE_DISPATCH_CAPACITY_CODES = frozenset(
-    {
-        "RUNTIME_VITE_QUEUE_FULL",
-        "RUNTIME_VITE_QUEUE_TIMEOUT",
-        "RUNTIME_VITE_SCHEDULER_CLOSED",
-    }
-)
 
 # 配置/鉴权类错误码：所有副本共享同一配置，换副本无意义；不得伪装成容量问题。
 # 这类 503 必须保留真实错误码直接失败，避免配置事故烧光重试预算并呈现成扩容形状。
@@ -83,7 +76,7 @@ class _TargetHealth:
 
 
 class RuntimeTargetRouter:
-    """Runtime build/check 多副本选址器：轮询 + 连续失败冷却 + 在途准入。
+    """Runtime 计算角色多副本选址器：轮询 + 连续失败冷却 + 在途准入。
 
     - 选址顺序按轮询起点推进，冷却中的目标排到末尾作为兜底，避免全冷时黑洞。
     - 成功调用清零连续失败；连续失败达到阈值后短暂冷却，到期自动恢复。
@@ -164,9 +157,7 @@ class RuntimeTargetRouter:
         """
 
         settings = self._settings_provider()
-        if role == "build":
-            max_inflight = int(settings.runtime_build_max_inflight)
-        elif role == "light":
+        if role == "light":
             # <=0 表示不限制（与配置说明一致），不得用 or 回退到 check 上限。
             max_inflight = int(settings.runtime_light_max_inflight)
         else:
@@ -262,8 +253,7 @@ async def request_runtime_role_json(
 ) -> dict[str, object]:
     """按角色选址调用 Runtime 内部 JSON 接口，满载自动换副本，全部耗尽返回稳定错误。
 
-    - 构建 POST 只在连接未建立或明确的执行前容量拒绝时换副本。
-    - 其它角色对连接失败、超时、5xx、429/503 尝试下一副本。
+    - 连接失败、超时、5xx、429/503 尝试下一副本。
     - 其它 4xx：业务错误，直接抛出，不换副本。
     - 全部副本均满载：抛 RUNTIME_CAPACITY_EXCEEDED（503，可重试）。
     - 本地准入超限：抛 RUNTIME_ADMISSION_FULL（503，可重试），不发起下游调用。
@@ -304,19 +294,6 @@ async def request_runtime_role_json(
                     detail="Runtime 请求超时。",
                     data={"dispatch_may_have_started": True},
                 )
-                # 构建 POST 非幂等：超时后可能已在对端执行甚至已上传，禁止盲目换副本重发（M4）。
-                # 超时交由租约/重试预算收敛，而不是再 POST 一份可能重复的构建。
-                if role == "build" and method.upper() == "POST":
-                    logger.error(
-                        "Runtime 构建 POST 超时，不换副本重发非幂等请求。",
-                        extra={
-                            "event": "runtime.build.timeout_no_retry",
-                            "role": role,
-                            "target": target,
-                            "path": path,
-                        },
-                    )
-                    raise last_error
                 logger.warning(
                     "Runtime 目标请求超时，尝试下一副本。",
                     extra={"event": "runtime.target.timeout", "role": role, "target": target, "path": path},
@@ -343,23 +320,15 @@ async def request_runtime_role_json(
                     detail="Runtime 服务不可访问。",
                     data={"dispatch_may_have_started": True},
                 )
-                # ReadError/WriteError/RemoteProtocolError 等可能发生在对端已接收并开始
-                # 执行之后。构建 POST 非幂等：禁止换副本重发，交由租约/重试预算收敛（M4）。
-                if role == "build" and method.upper() == "POST":
-                    logger.error(
-                        "Runtime 构建 POST 网络错误且请求可能已到达对端，不换副本重发非幂等请求。",
-                        extra={
-                            "event": "runtime.build.request_error_no_retry",
-                            "role": role,
-                            "target": target,
-                            "path": path,
-                            "error_type": type(exc).__name__,
-                        },
-                    )
-                    raise last_error
                 logger.warning(
                     "Runtime 目标不可访问，尝试下一副本。",
-                    extra={"event": "runtime.target.unavailable", "role": role, "target": target, "path": path},
+                    extra={
+                        "event": "runtime.target.unavailable",
+                        "role": role,
+                        "target": target,
+                        "path": path,
+                        "error_type": type(exc).__name__,
+                    },
                 )
                 continue
 
@@ -380,27 +349,6 @@ async def request_runtime_role_json(
                         },
                     )
                     raise error
-                if role == "build" and method.upper() == "POST":
-                    response_code = _extract_response_error_code(response)
-                    if response_code not in _BUILD_PRE_DISPATCH_CAPACITY_CODES:
-                        active_router.mark_failure(role, target)
-                        error = _build_http_exception(
-                            response,
-                            default_code=default_error_code,
-                            extra_data={"dispatch_may_have_started": True},
-                        )
-                        logger.error(
-                            "Runtime 构建 POST 返回非执行前容量错误，不换副本重发。",
-                            extra={
-                                "event": "runtime.build.ambiguous_capacity_no_retry",
-                                "role": role,
-                                "target": target,
-                                "path": path,
-                                "status_code": response.status_code,
-                                "error_code": error.code,
-                            },
-                        )
-                        raise error
                 overload_seen = True
                 active_router.mark_failure(role, target, overloaded=True)
                 last_error = _build_http_exception(response, default_code=default_error_code)
@@ -424,19 +372,6 @@ async def request_runtime_role_json(
                     force_status_code=502,
                     extra_data={"dispatch_may_have_started": True},
                 )
-                # 构建 POST 非幂等：5xx 可能发生在对端已接收并执行之后，禁止换副本重发。
-                if role == "build" and method.upper() == "POST":
-                    logger.error(
-                        "Runtime 构建 POST 返回服务端错误，不换副本重发非幂等请求。",
-                        extra={
-                            "event": "runtime.build.http_error_no_retry",
-                            "role": role,
-                            "target": target,
-                            "path": path,
-                            "status_code": response.status_code,
-                        },
-                    )
-                    raise last_error
                 logger.error(
                     "Runtime 目标返回服务端错误，尝试下一副本。",
                     extra={
@@ -473,18 +408,6 @@ async def request_runtime_role_json(
                     detail="Runtime 返回了非法 JSON。",
                     data={"dispatch_may_have_started": True},
                 )
-                # 非法 JSON 意味着对端已给出响应（可能已执行），构建 POST 不得换副本。
-                if role == "build" and method.upper() == "POST":
-                    logger.error(
-                        "Runtime 构建 POST 返回非法 JSON，不换副本重发非幂等请求。",
-                        extra={
-                            "event": "runtime.build.invalid_response_no_retry",
-                            "role": role,
-                            "target": target,
-                            "path": path,
-                        },
-                    )
-                    raise last_error
                 logger.warning(
                     "Runtime 目标返回非法 JSON，尝试下一副本。",
                     extra={"event": "runtime.target.invalid_response", "role": role, "target": target, "path": path},
@@ -498,17 +421,10 @@ async def request_runtime_role_json(
                     detail="Runtime 响应必须是 JSON 对象。",
                     data={"dispatch_may_have_started": True},
                 )
-                if role == "build" and method.upper() == "POST":
-                    logger.error(
-                        "Runtime 构建 POST 响应结构非法，不换副本重发非幂等请求。",
-                        extra={
-                            "event": "runtime.build.invalid_response_no_retry",
-                            "role": role,
-                            "target": target,
-                            "path": path,
-                        },
-                    )
-                    raise last_error
+                logger.warning(
+                    "Runtime 目标响应结构非法，尝试下一副本。",
+                    extra={"event": "runtime.target.invalid_response", "role": role, "target": target, "path": path},
+                )
                 continue
 
             active_router.mark_success(role, target)

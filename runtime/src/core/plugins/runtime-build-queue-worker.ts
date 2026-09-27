@@ -5,6 +5,7 @@
  */
 
 import { logRuntimeServer } from '../utils/runtime-logger'
+import { recordRuntimeWorkload } from './runtime-capacity'
 import { RuntimeTaskAbortedError, runWithRuntimeTaskDeadline } from './runtime-task-deadline'
 import type { RuntimePreloadedConfigBundle, RuntimePreviewArtifactManifest } from '../shared/runtime-preview'
 
@@ -415,11 +416,13 @@ async function executeClaimedBuildJob(
 
   // 构建与产物上传已成功：complete 上报失败时禁止再写 failed，
   // 否则会清空已提升产物。留给租约过期恢复按 succeeded 收敛。
+  const durationMs = Date.now() - startedAt
   try {
     await completeBuildJob(apiBaseUrl, buildToken, jobId, { success: true }, options.requestTimeoutMs)
+    recordRuntimeWorkload('build', durationMs)
     logRuntimeServer('info', 'runtime.build.worker.job_succeeded', 'Runtime Build Worker 构建任务完成。', {
       ...logContext,
-      durationMs: Date.now() - startedAt,
+      durationMs,
       artifactEntryFile: summary.artifactEntryFile,
       artifactSha256: summary.artifactSha256,
       artifactSizeBytes: summary.artifactSizeBytes,
@@ -427,7 +430,7 @@ async function executeClaimedBuildJob(
   } catch (completeError) {
     logRuntimeServer('error', 'runtime.build.worker.complete_success_lost', '构建成功但终态上报失败，交由租约恢复收敛。', {
       ...logContext,
-      durationMs: Date.now() - startedAt,
+      durationMs,
       artifactEntryFile: summary.artifactEntryFile,
       artifactSha256: summary.artifactSha256,
       error: completeError instanceof Error ? completeError.message : String(completeError),

@@ -51,10 +51,3 @@ class ProjectBuildAssetSummary(BaseModel):
     extra_asset_names: list[str] = Field(default_factory=list)
     included_asset_names: list[str] = Field(default_factory=list)
     dynamic_module_paths: list[str] = Field(default_factory=list)
-
-
-class RuntimeBuildDispatchRequest(BaseModel):
-    """Backend 派发给 Runtime 的整项目构建请求。"""
-
-    artifact_id: str = Field(min_length=1)
-    base_url: str = Field(min_length=1, max_length=255)

@@ -37,7 +37,7 @@
 6. Worker 上传产物后调用 `complete`。Backend 只在 `attempt_id` 与**有效租约**同时匹配时才提升产物或写终态，失守的执行者只能留下等待恢复的 `running` 行。
 7. 恢复循环按过期租约接管或收敛：已经上传产物的任务收敛为 `succeeded`，超过总期限仍未被领取的任务收敛为 `failed`。
 
-pull 模式下 Backend→Runtime 的 HTTP 同步派发入口恒返回 `503 BUILD_HTTP_DISPATCH_DISABLED`，与 Worker 是否成功启动无关；只有显式设置 `RUNTIME_BUILD_EXECUTION_MODE=legacy-http` 才重新开放旧入口。凭证未配置时 Backend claim API fail-closed 且 Worker 不启动，构建任务停留在 `pending` 直到总期限把它收敛为失败。
+构建不存在第二跳执行路径：Backend 不再向 Runtime 同步派发构建，Runtime 也不暴露构建 HTTP 入口。凭证未配置时 Backend claim API fail-closed 且 Worker 不启动，构建任务停留在 `pending` 直到总期限把它收敛为失败。
 
 ## 关键约束
 

@@ -21,7 +21,7 @@ export interface RuntimeRoleSurface {
   health: true
   /** 预览壳：独立预览门、Vue 转换与 SaaS 预览（含 snapdom 资源代理）。 */
   preview: boolean
-  /** 正式构建入口 /__runtime_internal/v1/builds/project。 */
+  /** 正式构建执行面：Build Worker 领取循环与 project lane 预算，无 HTTP 入口。 */
   projectBuild: boolean
   /** 编译诊断入口 /__runtime_internal/v1/diagnostics/artifact。 */
   checkDiagnostics: boolean

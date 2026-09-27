@@ -10,7 +10,6 @@ import runtimeBuildRunner, {
   RuntimeBuildError,
   createBuildBackendClient,
   isRuntimeDiagnosticsInfrastructureError,
-  resolveBuildExecutionMode,
 } from './runtime-build-runner'
 import {
   RuntimeBuildWorkerProcessError,
@@ -128,57 +127,72 @@ describe('runtime diagnostics module batch client', () => {
   })
 })
 
-describe('runtime build execution mode', () => {
-  it('缺省与未知取值都应落到 pull，只有显式 legacy-http 才保留旧入口', () => {
-    expect(resolveBuildExecutionMode(undefined, {})).toBe('pull')
-    expect(resolveBuildExecutionMode(undefined, { RUNTIME_BUILD_EXECUTION_MODE: ' Legacy-HTTP ' })).toBe('legacy-http')
-    expect(resolveBuildExecutionMode(undefined, { RUNTIME_BUILD_EXECUTION_MODE: 'http' })).toBe('pull')
-    // 显式入参优先于进程环境，避免角色模板被宿主 env 意外改写。
-    expect(resolveBuildExecutionMode('pull', { RUNTIME_BUILD_EXECUTION_MODE: 'legacy-http' })).toBe('pull')
-  })
+describe('runtime build entry is pull-only', () => {
+  type Middleware = (
+    req: { method: string; url: string },
+    res: { statusCode: number; setHeader: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> },
+    next: ReturnType<typeof vi.fn>,
+  ) => void
 
-  it('pull 模式下 Worker 因凭证缺失未启动时，HTTP 同步派发入口仍必须关闭', () => {
-    const middlewares: Array<(
-      req: { method: string; url: string },
-      res: { statusCode: number; setHeader: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> },
-      next: ReturnType<typeof vi.fn>,
-    ) => void> = []
+  /** 以最小插件宿主收集 configureServer 注册的中间件。 */
+  function mountRunner(options: Parameters<typeof runtimeBuildRunner>[0]): {
+    middlewares: Middleware[]
+    close: () => void
+  } {
+    const middlewares: Middleware[] = []
     const httpServer = new EventEmitter()
-    const internals = runtimeBuildRunner({
-      enableProjectEntry: true,
-      enableDiagnosticsEntry: false,
-      buildExecutionMode: 'pull',
-      endpointPath: '/__test_internal/build',
-    }) as unknown as {
+    const internals = runtimeBuildRunner(options) as unknown as {
       configResolved: (config: { root: string }) => void
       configureServer: (server: {
         httpServer: EventEmitter
-        middlewares: { use: (handler: (typeof middlewares)[number]) => void }
+        middlewares: { use: (handler: Middleware) => void }
       }) => void
     }
+    internals.configResolved({ root: process.cwd() })
+    internals.configureServer({
+      httpServer,
+      middlewares: { use: handler => middlewares.push(handler) },
+    })
+    return { middlewares, close: () => httpServer.emit('close') }
+  }
 
+  it('Worker 因凭证缺失未启动时，旧同步派发路径也不会被任何入口接管', () => {
+    // 凭证与 Backend 地址双双缺失：构建没有可退回去的第二条执行路径。
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', '')
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', '')
+    vi.stubEnv('RUNTIME_BACKEND_API_BASE_URL', '')
+
+    const { middlewares, close } = mountRunner({
+      enableProjectEntry: true,
+      enableDiagnosticsEntry: false,
+    })
     try {
-      // 凭证与 Backend 地址双双缺失：Worker 起不来，但入口不能因此退回开放（fail-open）。
-      vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', '')
-      vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', '')
-      vi.stubEnv('RUNTIME_BACKEND_API_BASE_URL', '')
-
-      internals.configResolved({ root: process.cwd() })
-      internals.configureServer({
-        httpServer,
-        middlewares: { use: (handler) => middlewares.push(handler) },
-      })
-
       const res = { statusCode: 0, setHeader: vi.fn(), end: vi.fn() }
       const next = vi.fn()
-      middlewares[0]({ method: 'POST', url: '/__test_internal/build' }, res, next)
+      middlewares[0]({ method: 'POST', url: '/__runtime_internal/v1/builds/project' }, res, next)
 
-      expect(res.statusCode).toBe(503)
-      expect(JSON.parse(String(res.end.mock.calls[0][0])).code).toBe('BUILD_HTTP_DISPATCH_DISABLED')
+      expect(next).toHaveBeenCalledTimes(1)
+      expect(res.end).not.toHaveBeenCalled()
+    } finally {
+      close()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('诊断入口仍只接受 POST，避免 GET 触发完整编译', () => {
+    const { middlewares, close } = mountRunner({
+      enableProjectEntry: false,
+      enableDiagnosticsEntry: true,
+    })
+    try {
+      const res = { statusCode: 0, setHeader: vi.fn(), end: vi.fn() }
+      const next = vi.fn()
+      middlewares[0]({ method: 'GET', url: '/__runtime_internal/v1/diagnostics/artifact' }, res, next)
+
+      expect(res.statusCode).toBe(405)
       expect(next).not.toHaveBeenCalled()
     } finally {
-      httpServer.emit('close')
-      vi.unstubAllEnvs()
+      close()
     }
   })
 })

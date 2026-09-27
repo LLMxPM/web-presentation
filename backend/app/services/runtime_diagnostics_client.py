@@ -7,8 +7,7 @@ import time
 
 from app.core.config import get_settings
 from app.core.logging_config import get_current_request_id
-from app.services.runtime_build_client import RUNTIME_SERVICE_TOKEN_HEADER
-from app.services.runtime_target_router import request_runtime_role_json
+from app.services.runtime_target_router import RUNTIME_SERVICE_TOKEN_HEADER, request_runtime_role_json
 from app.services.token_service import TokenService
 
 

@@ -73,7 +73,7 @@ production env 版适合把环境变量集中放在 `deploy/.env` 中维护。�
 
 构建拉取模型的行为边界：
 
-- **执行模式固定为 pull**：`RUNTIME_BUILD_EXECUTION_MODE` 默认 `pull`，此时 Backend→Runtime 的 HTTP 同步派发入口恒返回 `503 BUILD_HTTP_DISPATCH_DISABLED`，与 Worker 是否成功启动无关——凭证丢失不会反而多出一条执行路径。只有显式设置 `legacy-http` 才恢复旧入口，用于回退。
+- **构建只有拉取这一条执行路径**：Backend 不再向 Runtime 同步派发构建，Runtime 也不暴露构建 HTTP 入口。凭证缺失导致 Worker 未启动时不会多出任何执行路径，任务只留在队列里等待人工介入。
 - **secret 文件权限**：该凭证具备跨工作空间领取任务的能力，挂载文件必须 `0400`/`0600` 且只归属 Runtime 进程；权限对同组或其他用户开放时启动日志会报 `runtime.build.worker.credential_loose_mode`。构建子进程（Vite/Rollup、ZIP 归档）不会继承 `RUNTIME_BUILD_WORKER_CREDENTIAL(_FILE)`。
 - **单实例并发**：pull 模式下领取消费者数量等于 project lane 并发（`RUNTIME_VITE_TASK_CONCURRENCY`，多消费者共享同一有界调度器），因此调高该预算才会真正增加单实例同时执行的构建任务数。
 - **绝对期限**：`PROJECT_BUILD_TOTAL_DEADLINE_SECONDS` 是任务创建时确定的 wall-clock 时刻，领取租约、attempt 令牌 TTL、续租后的新租约和 Runtime 执行预算都裁剪到该时刻之前；Worker 与 Backend 失联时也会在本地租约到期前主动中止构建。
@@ -100,7 +100,7 @@ docker compose -f compose/compose.runtime-roles.yml up -d
 | 服务 | 网络 | 宿主机端口 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `runtime-preview` | `platform-net`（别名 `runtime`、`runtime-preview`） | 无 | 预览角色；Gateway Nginx 固定代理主机名 `runtime` |
-| `runtime-build` | `runtime-jobs-net` | 无 | 构建角色；仅 Backend 可达 |
+| `runtime-build` | `runtime-jobs-net` | 无 | 构建角色；只出站领取 Backend，不接收入站构建请求 |
 | `runtime-check` | `runtime-jobs-net` | 无 | 源码检查角色；仅 Backend 可达 |
 | `renderer` | `platform-net` | 无 | 截图执行 |
 | `backend` | `platform-net` + `runtime-jobs-net`（别名 `backend`） | 无 | 两个网络的唯一交点 |
@@ -127,16 +127,16 @@ Docker 容器默认不施加 CPU/内存限制；只把一个 Runtime 拆成三�
 
 ### 健康检查与依赖顺序
 
-三个角色容器都用 `/__runtime_healthz` 做 healthcheck，探针只看本进程，不依赖 Backend。启动顺序为：`renderer` 与三个 runtime 角色就绪 → `backend-migrate` 成功完成 → `backend` 健康 → `gateway` 健康。Gateway 只依赖 `backend` 与 `runtime-preview`；`runtime-build` / `runtime-check` 由 Backend 按需调用，不进入公开就绪链路。
+三个角色容器都用 `/__runtime_healthz` 做 healthcheck，探针只看本进程，不依赖 Backend。启动顺序为：`renderer` 与三个 runtime 角色就绪 → `backend-migrate` 成功完成 → `backend` 健康 → `gateway` 健康。Gateway 只依赖 `backend` 与 `runtime-preview`；`runtime-check` 由 Backend 按需调用，`runtime-build` 只主动出站领取任务，两者都不进入公开就绪链路。
 
-`RUNTIME_ROLE` 由 Runtime 角色逻辑消费：`preview` 不开放构建与诊断入口，`build` / `check` 只保留对应执行面。模板已配置好三个角色目标（`RUNTIME_PREVIEW/BUILD/CHECK_BASE_URL`）；**不要**把 `RUNTIME_BASE_URL` 单独指向 `runtime-preview` 后再逐项切换——preview 实例已注销构建/诊断端点，那样会把请求打回 Vite 并收到 HTML/404 而不是结构化错误。改角色拓扑时同步改对应 `RUNTIME_*_BASE_URL(S)`。
+`RUNTIME_ROLE` 由 Runtime 角色逻辑消费：`preview` 不开放诊断与轻量工具入口，`build` 只跑构建领取 Worker，`check` 只保留诊断与轻量工具执行面。模板已配置好 preview 与 check 两个 Backend 出站目标（`RUNTIME_PREVIEW/CHECK_BASE_URL`）；**不要**把 `RUNTIME_BASE_URL` 单独指向 `runtime-preview` 后再逐项切换——preview 实例已注销诊断与轻量工具端点，那样会把请求打回 Vite 并收到 HTML/404 而不是结构化错误。改角色拓扑时同步改对应 `RUNTIME_*_BASE_URL(S)`。
 
 ### 计算副本扩容（Check/Build 多副本与全链路准入）
 
 按实测瓶颈需要增加 `runtime-build` / `runtime-check` 副本时（规划 T2-3）：
 
 1. 为新副本复制对应角色服务定义，改用独立容器名/别名（如 `runtime-build-2`），保持 `RUNTIME_ROLE` 与执行预算一致；副本只挂 `runtime-jobs-net`，仍不发布宿主机端口。Build 副本必须与 Backend 使用**同一**领取凭证，但容器间不需要互相可见。
-2. **Build 副本无需注册**：pull 模式下每个 `runtime-build` 实例自行 `claim`，任务在数据库层被条件更新认领，天然互斥；加副本只增加消费者总数。Backend 侧的 `RUNTIME_BUILD_BASE_URLS` / `RUNTIME_BUILD_MAX_INFLIGHT` 只在 `RUNTIME_BUILD_EXECUTION_MODE=legacy-http` 兼容路径上参与选址与准入。
+2. **Build 副本无需注册**：每个 `runtime-build` 实例自行 `claim`，任务在数据库层被条件更新认领，天然互斥；加副本只增加消费者总数，Backend 侧不再有 build 选址或准入配置。
 3. **Check 副本需要注册**：在 Backend 环境用 `RUNTIME_CHECK_BASE_URLS` 登记全部副本内网地址（逗号分隔或 JSON 数组）。Backend 按轮询选址；某副本满载（429/503）时自动切换其它空闲副本，全部满载返回稳定错误码 `RUNTIME_CAPACITY_EXCEEDED`（503，可重试）。目标连续失败达到 `RUNTIME_TARGET_FAILURE_THRESHOLD` 后按 `RUNTIME_TARGET_COOLDOWN_SECONDS` 短暂冷却，冷却到期自动恢复。
 4. 按「副本数 × 单副本执行预算」上调 `RUNTIME_CHECK_MAX_INFLIGHT`（Check 仍走 Backend 在途计数）：在途调用超限立即返回 `RUNTIME_ADMISSION_FULL`（503，可重试），避免 Check 扩容后把 Renderer/Preview 打穿。`preview` 仍保持单副本，不参与多目标选址。
 

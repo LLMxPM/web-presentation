@@ -20,11 +20,11 @@ from app.schemas.release import PreviewArtifactCreateRequest, PreviewArtifactRes
 from app.services.auth_service import AuthContext
 from app.services.preview_service import PreviewService
 from app.services.project_service import ProjectService
+from app.services.runtime_target_router import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
 
 router_admin = APIRouter()
 router_public = APIRouter()
-RUNTIME_SERVICE_TOKEN_HEADER = "x-runtime-service-token"
 logger = logging.getLogger(__name__)
 
 
