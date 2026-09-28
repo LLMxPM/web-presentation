@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
+from app.db.tx import commit_end_read
 from app.models.project_build_job import ProjectBuildJob
 from app.models.workspace import Project
 from app.models.release import Release, ReleaseModule
@@ -273,8 +274,7 @@ class ProjectBuildService:
                 ProjectBuildJob.id.asc(),
             )
         candidates = list((await self.session.execute(candidate_stmt.limit(10))).all())
-        # 候选读取不应维持 SQLite 读事务，避免并发认领升级写锁失败。
-        await self.session.commit()
+        await commit_end_read(self.session)
 
         for candidate in candidates:
             candidate_id = int(candidate.id)

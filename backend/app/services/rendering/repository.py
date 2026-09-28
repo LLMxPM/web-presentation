@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.time_utils import utc_now
+from app.db.tx import acquire_admission_lock
 from app.models.render_attempt import RenderAttempt
 from app.models.render_execution import RenderResult, RenderSchedulerState, RenderWorker
 from app.models.render_request import RenderRequest
@@ -60,10 +61,7 @@ class RenderRepository:
         """写锁定调度状态，串行化队列容量检查与请求插入。"""
 
         state = await self.get_scheduler_state()
-        # UPDATE 在 PostgreSQL 中锁住单行，在 SQLite 中通过单行 UPDATE 取得准入锁（SQLite 预写事务），
-        # 使 queue_size/workspace_queue 与后续 INSERT 不再存在检查竞态。
-        state.version = int(state.version or 0) + 1
-        await self.session.flush()
+        await acquire_admission_lock(self.session, state)
         return state
 
     async def count_active_attempts(self, *, workspace_id: int | None = None) -> int:

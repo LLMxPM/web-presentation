@@ -13,6 +13,7 @@ from sqlalchemy import Select, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utc_now
+from app.db.tx import commit_end_read
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,8 +59,7 @@ async def claim_pending_jobs(
             .order_by(model.created_at.asc(), model.id.asc())
         )
     candidate_ids = list((await session.execute(query.limit(max(1, limit)))).scalars().all())
-    # 候选读取不应维持 SQLite 读事务，否则并发认领时可能升级写锁失败。
-    await session.commit()
+    await commit_end_read(session)
 
     claimed_ids: list[int] = []
     for job_id in candidate_ids:
@@ -224,8 +224,8 @@ async def recover_expired_running_jobs(
     expired = (model.lease_expires_at.is_(None)) | (model.lease_expires_at <= recovered_at)
     base_conditions = (model.status == "running", expired)
 
-    # 定时恢复在空闲期会频繁执行。先只读筛选，避免 SQLite 因无命中 UPDATE
-    # 反复争抢 writer 锁；后续 UPDATE 仍带过期条件以抵御筛选后的并发变化。
+    # 定时恢复在空闲期会频繁执行：先只读筛选，无命中时不发任何 UPDATE，避免空转写放大。
+    # 后续 UPDATE 仍带过期条件，以抵御筛选之后的并发变化。
     candidates = list(
         (
             await session.execute(
@@ -234,8 +234,7 @@ async def recover_expired_running_jobs(
         ).all()
     )
     if not candidates:
-        # 只结束本次只读事务，不发送任何 UPDATE。
-        await session.commit()
+        await commit_end_read(session)
         return DurableJobRecoverySummary()
 
     attempt_limit = max(1, max_attempts)

@@ -25,17 +25,25 @@ class _RecordingRecoverySession:
 
         self.statements: list[object] = []
         self.commit_count = 0
+        self._in_transaction = False
 
     async def execute(self, statement: object) -> _EmptyRecoveryResult:
         """记录只读查询；空队列时任何后续 DML 都会增加调用次数。"""
 
         self.statements.append(statement)
+        self._in_transaction = True
         return _EmptyRecoveryResult()
+
+    def in_transaction(self) -> bool:
+        """返回是否仍有未结束的只读事务，与 AsyncSession 同名方法对齐。"""
+
+        return self._in_transaction
 
     async def commit(self) -> None:
         """结束只读事务。"""
 
         self.commit_count += 1
+        self._in_transaction = False
 
 
 @pytest.mark.asyncio
