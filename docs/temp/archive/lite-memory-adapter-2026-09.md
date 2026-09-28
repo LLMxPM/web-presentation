@@ -1,9 +1,11 @@
 # Lite `memory://` 运行态适配器实施计划
 
-> 状态：**规划，代码尚未实施**；基线核对日期：2026-09-25。  
+> **归档说明（2026-09-28）**：代码已按阶段 0/A/B/C/D/E 实施完毕（见 §7），本计划移入 `archive/`。残留缺口已抽入 [`../plans/remaining-work-2026-09-28.md`](../plans/remaining-work-2026-09-28.md)，不再在本文续写。
+>
+> 状态：**已实施（2026-09-25）**；基线核对日期：2026-09-25。  
 > 已定前提：D1=A，SQLite Lite 长期作为正式部署形态；Lite 使用进程内 `memory://`，常规部署使用真实 Redis。  
 > 规范正文：[运行态存储适配器](../../developer/backend/runtime-state-adapter.md)。本文安排实现、测试和发布验收；实施时同步修正该规范。  
-> 本文件位于 `docs/temp/plans/`，已纳入版本控制。正式契约仍以 [`runtime-state-adapter.md`](../../developer/backend/runtime-state-adapter.md) 为准。
+> 本文件原位于 `docs/temp/plans/`，已纳入版本控制。正式契约仍以 [`runtime-state-adapter.md`](../../developer/backend/runtime-state-adapter.md) 为准。
 
 计划和完成定义详见下文；**实施记录（2026-09-25）**见文末第 7 节。
 
@@ -14,7 +16,7 @@
 3. 预览 artifact、构建状态缓存、PAT 限流与节流逐项定义失效语义；缓存故障不得把已经提交到数据库的任务错误地宣称为未创建。
 4. 真 Redis 对拍是发布门禁，不以 `InMemoryRedis` 单测代替；Lite 镜像需通过真实启动和重启演练。
 
-不在本计划内实现完整 Redis 协议、Stream 消费组、跨进程 Pub/Sub、普通 AI Run 跨进程续跑或 Backend 多副本。P3 统一任务运行时可以复用本计划确立的边界，但不能把它的交付当作本计划的前置条件。Runtime 角色拆分和多副本另按[部署扩容规划](./runtime-multi-deployment-scaling-plan.md)推进。
+不在本计划内实现完整 Redis 协议、Stream 消费组、跨进程 Pub/Sub、普通 AI Run 跨进程续跑或 Backend 多副本。P3 统一任务运行时可以复用本计划确立的边界，但不能把它的交付当作本计划的前置条件。Runtime 角色拆分和多副本另按[部署扩容规划](./runtime-multi-deployment-scaling-plan-2026-09.md)推进。
 
 ## 2. 已核实的代码基线与待修正处
 

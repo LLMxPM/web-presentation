@@ -1,10 +1,11 @@
 # 架构评估（批判性复核）：远程渲染与控制面收口之后（2026-09-25）
 
+> **归档说明（2026-09-28）**：本文使命（对 09-24 的复核与优先序重排）已完成。**实现层判断已部分过期**——尤以「构建无租约」「多部署仍是规划」「P1-Build 最弱」为代表；现行结论、决策状态与风险表见 [`../architecture-assessment-2026-09-28.md`](../architecture-assessment-2026-09-28.md)。本文保留为平台演进决策记录，不再续写。
+>
 > 评估日期：2026-09-25。基线提交 `c6c9b1a`（分支 `dev`，较 origin 超前 12）。  
 > 输入材料：`docs/temp/` 现行评估与 archive 专项稿、`e8afd67..c6c9b1a` 提交与对应实现。  
 > 判断口径：对 **2026-09-24 评估**做批判性复核，而不是续写优点清单；代码可确认的问题与尚未验证的风险分开；单机 Lite 与 PostgreSQL 部署的行为差异单独标出。  
-> 本文是 `docs/temp` 的**现行评估**。历史稿见 [`archive/`](./archive/)，未实施规划见 [`plans/`](./plans/)。  
-> **本文相对 09-24 稿的立场变化**：主轴落地判断基本保留；「任务模型碎片化」「文档-实现漂移」被上调并重排优先序。截图环境身份（原 P1-Screenshot）**经产品判定降级**：不要求截图与渲染环境逐像素/逐版本严格一致，当前准确度可接受，不再作为 C0。
+> 本文相对 09-24 稿的立场变化：主轴落地判断基本保留；「任务模型碎片化」「文档-实现漂移」被上调并重排优先序。截图环境身份（原 P1-Screenshot）**经产品判定降级**：不要求截图与渲染环境逐像素/逐版本严格一致，当前准确度可接受，不再作为 C0。
 
 ---
 
@@ -28,7 +29,7 @@
 | 主轴已落地（执行面外移 / 单仓 / 校验收口 / SQLite 边界） | **成立**。`bdfcdab` 起 Backend 无 Chromium；`validation_result.py` 单谓词 + 防漂移测试；`sqlite_single_process` 排他锁在 lifespan 获取；`test_loop_gate` 存在。 |
 | 不能宣称「可水平扩展」或「Lite 已适配 2C4G」 | **成立，且 09-25 补了部分数据**：`memory://` 适配器有 2C4G 实测（运行态峰值 ~105MB / 键 ~186），但 **混合负载端到端、构建产物下载、Renderer 实链**仍在未覆盖项。 |
 | Browserless/CDP 已作废 | **成立**。`archive/cdp.md` 不应再进 roadmap。 |
-| 多 Runtime 副本应等 D2 与阶段 0 | **成立**。`plans/runtime-multi-deployment-scaling-plan.md` 仍是规划，阶段 0 基线未验收。 |
+| 多 Runtime 副本应等 D2 与阶段 0 | **成立（09-28 注）**。多部署 T0–T4 代码已落地，但阶段 0 基线与跨副本演练仍未验收；分布式模板不得标为多副本可用。 |
 | 「删编译省 50%」「纯内存租约」「内外 API 机械合并」等判断不成立 | **成立**。保持作废。 |
 
 ### 1.2 被低估或表述偏软的部分
@@ -169,7 +170,7 @@ Editor (Vue) ──HTTP──► Gateway ──┬──► Backend (FastAPI 控
 | **CDP/Browserless** | 已作废 | 维持。 |
 | **截图准确度** | **已定（2026-09-25）：现状可接受** | 不要求环境级高准确；旧截图复用可接受。原 P1-Screenshot/C0 撤销，降为 R-Screenshot。 |
 | **正常 Run 可恢复？** | **未决策**（被写成实现约束） | 应升为产品决策：要么承诺「会丢」并在 UI 标明，要么立项可恢复 Run。 |
-| **DB 并发原语收口 CP1–CP6** | **已实施（2026-09-28）** | 见 [`plans/db-concurrency-primitives.md`](./plans/db-concurrency-primitives.md) §9。写重试、事务技巧、部署 profile、认领时序已收口到 `backend/app/db/` + `durable_job_lease_service.claim_rows_by_cas`，PG 侧实测收益 14.7x（8 worker）。**不关闭本表其他项**：P1-TaskModel 只完成 claim 子集（9 套任务模型未统一）、P2-Locks 进程锁仍在、仓库没有 PG 侧认领用例、**D2 写路径基线门仍未采集**（该计划的 §9.4 测的是 claim 竞争，不是本表的 D2）。 |
+| **DB 并发原语收口 CP1–CP6** | **已实施（2026-09-28）** | 见 [`db-concurrency-primitives-2026-09.md`](./db-concurrency-primitives-2026-09.md) §9。写重试、事务技巧、部署 profile、认领时序已收口到 `backend/app/db/` + `durable_job_lease_service.claim_rows_by_cas`，PG 侧实测收益 14.7x（8 worker）。**不关闭本表其他项**：P1-TaskModel 只完成 claim 子集（9 套任务模型未统一）、P2-Locks 进程锁仍在、仓库没有 PG 侧认领用例、**D2 写路径基线门仍未采集**（该计划的 §9.4 测的是 claim 竞争，不是本表的 D2）。 |
 
 ---
 
@@ -249,8 +250,11 @@ Editor (Vue) ──HTTP──► Gateway ──┬──► Backend (FastAPI 控
 | :--- | :--- | :--- |
 | `architecture-assessment-2026-09-24.md` | `archive/` | 上一现行评估；主轴判断仍有效，优先序与风险分级以本文为准。 |
 | `docs-temp-issue-status-2026-09.md` | `archive/` | 问题状态表；截图项已按产品判定降级，其余以本文 §4 为准。 |
-| `lite-memory-adapter.md` | `plans/` | **已实施**（见其 §7）；未覆盖项仍属缺口。README 分类需修正。 |
-| `runtime-multi-deployment-scaling-plan.md` | `plans/` | **未实施规划**；阶段 0 门禁仍有效。 |
+| `lite-memory-adapter-2026-09.md` | `archive/` | **已实施**（见其 §7）；未覆盖项抽入现行计划 WS-D。 |
+| `runtime-multi-deployment-scaling-plan-2026-09.md` | `archive/` | **T0–T4 已落地**；多副本门槛与演练仍开放（现行计划 WS-C）。 |
+| `db-concurrency-primitives-2026-09.md` | `archive/` | **CP1–CP6 已实施**；不关闭 P1-TaskModel 与 D2 基线门。 |
+| `plans/remaining-work-2026-09-28.md` | `plans/` | **现行计划**（09-28 整理）：残留问题按 WS-A…H 组织。 |
+| `architecture-assessment-critical-2026-09-25.md` | `archive/` | 结构批判证据快照（死物、门禁、契约纸面化）。 |
 | 其余 `archive/*` | `archive/` | 专项证据库；细节可追溯，结论以本文为准。 |
 
 ---

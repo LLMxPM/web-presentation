@@ -1,9 +1,11 @@
 <!-- 文件功能：e2efe6c..HEAD 多部署落地的代码评审报告（门禁实测 + Critical/Major 复核结论 + 修复顺序）。 -->
 # 代码评审：多部署落地 `e2efe6c..HEAD`（2026-09-25）
 
-> **评审范围**：`e2efe6c..HEAD` 共 13 个提交、82 文件、+9678/−817。实质是把 [`plans/runtime-multi-deployment-scaling-plan.md`](./plans/runtime-multi-deployment-scaling-plan.md) 的 **T0-1…T4-3 一次性全部落地**。<br>
+> **归档说明（2026-09-28）**：C1–C3 / M1–M7 / M9–M10 / M12–M13 / 断链 / 文档修复已落地（见 plan §13 修复记录与复审修复）。残留项已抽入 [`../plans/remaining-work-2026-09-28.md`](../plans/remaining-work-2026-09-28.md)，本文移入 `archive/` 作证据库，不再接受大改。
+>
+> **评审范围**：`e2efe6c..HEAD` 共 13 个提交、82 文件、+9678/−817。实质是把 [`./runtime-multi-deployment-scaling-plan-2026-09.md`](./runtime-multi-deployment-scaling-plan-2026-09.md) 的 **T0-1…T4-3 一次性全部落地**。<br>
 > **判断口径**：Critical/Major 均已对照源码逐条复核，不是转述；「声称的能力」与「已实现并可证」严格分开。<br>
-> **关联文档**：现行评估 [`architecture-assessment-2026-09-25.md`](./architecture-assessment-2026-09-25.md)；规划正文与任务表见 plan §10。<br>
+> **关联文档**：现行评估 [`../architecture-assessment-2026-09-25.md`](./architecture-assessment-2026-09-25.md)；规划正文与任务表见 plan §10。<br>
 > **状态**：本文是**落地后评审**，不是规划稿。规划正文状态须与本文一致（见文末实施记录）。
 
 ---
@@ -55,7 +57,7 @@
 
 **后果**：重复派发 Runtime 构建；健康任务白烧 `attempt_count`。
 
-**仓库自己早有反例**：`asset_render_hint_backfill_job_service.py:232-238`、`page_screenshot_queue_worker.py:161` 都明确只回收过期租约。这直接推翻 `0f89c97` 自己写的 [`multi-backend.md`](../developer/deployment/multi-backend.md)。
+**仓库自己早有反例**：`asset_render_hint_backfill_job_service.py:232-238`、`page_screenshot_queue_worker.py:161` 都明确只回收过期租约。这直接推翻 `0f89c97` 自己写的 [`multi-backend.md`](../../developer/deployment/multi-backend.md)。
 
 **修法**：`force` 仅作用于本进程 `lease_owner` 前缀，或仅单实例生效；多副本只回收 `lease_expires_at` 已过期的任务。其它队列（截图等）若有同类 `force` 逻辑需一并排查。
 

@@ -1,5 +1,7 @@
 # 数据库并发原语收口规划（SQLite Lite / PostgreSQL Prod）
 
+> **归档说明（2026-09-28）**：CP1–CP6 全部落地并完成验证面补强（见 §9），本计划移入 `archive/`。残留缺口已抽入 [`../plans/remaining-work-2026-09-28.md`](../plans/remaining-work-2026-09-28.md)。
+>
 > 状态：**已实施（2026-09-28）**。CP1a / CP1b / CP2 / CP3 / CP4 / CP5 / CP6 全部落地，见 §9 实施记录。CP3 的度量门已在真实 PostgreSQL 16 上采集并复测（§9.4、§9.5），本文 §0-3 的「收益为零」措辞已被实测**部分证伪**，修正见 §0-3 与 §9.2。验证面补强见 §9.6（基准脚本入库、PG 认领用例、idempotency 读重试覆盖）。
 > **编号警示**：本文 §4 CP3 曾把该度量门写作「D2」，但它与现行评估的 **D2 写路径基线门**（Lite 2C4G 空闲/混合两轮 + `/metrics/db-write`）不是同一件事。**现行评估的 D2 仍未采集，不因本文关闭**，本文的测量统一称「claim 竞争基线」。
 > 基线提交：`4becd41`（分支 `dev`）。外部输入结论的基线是 `04d78bd`，两者差异只有 `4becd41`（构建链路评审修复），不影响本文结论。
@@ -311,11 +313,11 @@ CP3/CP4 追加 `pnpm run test:backend:api` 与（PG 侧）`tests/integration/tes
 
 | 文档 | 关系 |
 | :--- | :--- |
-| [`../architecture-assessment-2026-09-25.md`](../architecture-assessment-2026-09-25.md) | 现行评估。本文细化其 **P2-Dialect / P2-Locks / P1-TaskModel**；其 §7.3 优先序中 **P3 契约冻结对 CP3 的约束已在 §5 复核后解除**（对外签名不变），对 CP4 的语义议题仍然有效。**本文只关闭自己新立的「claim 竞争基线」门（§9.4、§9.5），不关闭现行评估的 D2 写路径基线门**，后者在评估文档中仍应保持「待实测」 |
-| [`../archive/architecture-assessment-sqlite-2026-09.md`](../archive/architecture-assessment-sqlite-2026-09.md) | S1–S8 与 2a–2f 原始定义。**2a/2c/2e/2f 已实施**（证据见 §0-4）；本文承接其 **2b/2d**，并修正 2d 的调用点清单（`code_check_service.py` 已无该技巧） |
-| [`../archive/architecture-assessment-2026-09-24.md`](../archive/architecture-assessment-2026-09-24.md) | D1=A 定案与 2b 重立约束（`:175` 禁止旧签名）来源 |
-| [`./runtime-multi-deployment-scaling-plan.md`](./runtime-multi-deployment-scaling-plan.md) | T2-2 构建持久领取（`e156630`）是 CP4 的对象；其阶段 0 门禁与多副本 E2E 缺口仍然有效 |
-| [`./lite-memory-adapter.md`](./lite-memory-adapter.md) | 运行态（`memory://`）与本文的持久化并发原语是**两条独立边界**；其核心不变量「DB 任务领取/租约/终态不得放运行态」约束 CP5 的 profile 派生不得读取运行态 |
+| [`../architecture-assessment-2026-09-25.md`](./architecture-assessment-2026-09-25.md) | 现行评估。本文细化其 **P2-Dialect / P2-Locks / P1-TaskModel**；其 §7.3 优先序中 **P3 契约冻结对 CP3 的约束已在 §5 复核后解除**（对外签名不变），对 CP4 的语义议题仍然有效。**本文只关闭自己新立的「claim 竞争基线」门（§9.4、§9.5），不关闭现行评估的 D2 写路径基线门**，后者在评估文档中仍应保持「待实测」 |
+| [`./architecture-assessment-sqlite-2026-09.md`](./architecture-assessment-sqlite-2026-09.md) | S1–S8 与 2a–2f 原始定义。**2a/2c/2e/2f 已实施**（证据见 §0-4）；本文承接其 **2b/2d**，并修正 2d 的调用点清单（`code_check_service.py` 已无该技巧） |
+| [`./architecture-assessment-2026-09-24.md`](./architecture-assessment-2026-09-24.md) | D1=A 定案与 2b 重立约束（`:175` 禁止旧签名）来源 |
+| [`./runtime-multi-deployment-scaling-plan-2026-09.md`](./runtime-multi-deployment-scaling-plan-2026-09.md) | T2-2 构建持久领取（`e156630`）是 CP4 的对象；其阶段 0 门禁与多副本 E2E 缺口仍然有效 |
+| [`./lite-memory-adapter-2026-09.md`](./lite-memory-adapter-2026-09.md) | 运行态（`memory://`）与本文的持久化并发原语是**两条独立边界**；其核心不变量「DB 任务领取/租约/终态不得放运行态」约束 CP5 的 profile 派生不得读取运行态 |
 
 ---
 
