@@ -15,6 +15,12 @@ AI Agent 由 Backend 统一承载，负责会话、run、消息、事件、工�
 
 多 Backend 副本部署时，普通 Run 同样遵守上述语义：**不承诺跨实例无中断续跑**，各副本只收敛本进程遗留 Run。停机后的用户恢复路径是「在原会话重试」或「新建 Run」（继承消息历史与焦点，不继承中断执行栈）；详见[多 Backend 副本与密钥一致性](../deployment/multi-backend.md)「普通 AI Run 停机语义」。
 
+### 事件追加的并发边界
+
+`event_index` 的单调性由数据库承担：`run_event_writer.allocate_run_event_index()` 用一条 `UPDATE ai_agent_runs SET event_index = event_index + 1 ... RETURNING event_index` 原子分配游标，并把后台续跑的写围栏条件并入同一条语句。该语句在 SQLite 与 PostgreSQL 上语义一致，属跨库共享实现，不需要方言分支。
+
+`platform_runtime._RUN_EVENT_LOCKS` 是**进程内**按 run 复用的 `asyncio.Lock`，只用于串行化同一 run 的追加重试路径，避免退避期间的 rollback 与其他追加交错。它不是分布式互斥原语：多副本下只在本进程生效，跨实例单调性完全依赖上述数据库原子递增，不得用它替代 Backend × N 的互斥。同理 `_has_sqlite_write_transaction()` 只在 SQLite 下可能为真，用途是避免「进程锁 → 数据库写锁」的锁序反转；PostgreSQL 恒为 `False`，直接走数据库路径。
+
 ## 事实源
 
 AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend 主库 `ai_agent_*` 表。Redis 不保存 AI run/HITL 事实源，也不保存正在执行的 Python 协程；它只保留预览、截图和构建等临时运行态。
