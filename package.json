@@ -10,6 +10,7 @@
     "test:backend:unit": "uv run --project backend pytest -c backend/pyproject.toml -m unit",
     "test:backend:api": "uv run --project backend pytest -c backend/pyproject.toml -m api",
     "test:backend:integration": "uv run --project backend pytest -c backend/pyproject.toml -m integration",
+    "test:backend:pg-claim": "uv run --project backend pytest -c backend/pyproject.toml backend/tests/integration/test_pg_claim_contention.py backend/tests/integration/test_migration_behavior_contracts.py",
     "test:backend:runtime-state-parity": "uv run --project backend pytest -c backend/pyproject.toml backend/tests/contracts/test_runtime_state_adapter.py",
     "test:lite:runtime-state-drill": "python scripts/testing/lite-runtime-state-drill.py",
     "test:editor": "pnpm --filter editor test",

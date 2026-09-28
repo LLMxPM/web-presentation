@@ -38,6 +38,38 @@ jobs:
       - if: inputs.full
         run: pnpm run test:backend:integration
 
+  # CP3 的 PostgreSQL 认领分支与双库迁移对拍必须在真实 PG 上执行。
+  # 缺少连接串时脚本内显式失败（P4_POSTGRES_REQUIRED），不以 skip 冒充通过。
+  pg-claim-contention:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: wp_claim_measure
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wp -d wp_claim_measure"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.10.10
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - run: uv sync --project backend --group dev --locked
+      - run: pnpm run test:backend:pg-claim
+        env:
+          P4_POSTGRES_DATABASE_URL: postgresql+asyncpg://wp:wp@127.0.0.1:5432/wp_claim_measure
+          P4_POSTGRES_REQUIRED: '1'
+
   # 运行态 memory:// 与真实 Redis 的对拍是发布门禁：缺少 test Redis 时脚本内显式失败，
   # 不以单元测试代替；该 job 在 PR 与发布流水线都必须执行。
   runtime-state-parity:
@@ -165,6 +197,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - backend-tests
+      - pg-claim-contention
       - runtime-state-parity
       - editor-tests
       - contracts
@@ -178,6 +211,7 @@ jobs:
       always() &&
       inputs.full &&
       needs.backend-tests.result == 'success' &&
+      needs.pg-claim-contention.result == 'success' &&
       needs.runtime-state-parity.result == 'success' &&
       needs.editor-tests.result == 'success' &&
       needs.contracts.result == 'success' &&

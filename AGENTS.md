@@ -159,6 +159,8 @@ pnpm run test:backend
 pnpm run test:backend:unit
 pnpm run test:backend:api
 pnpm run test:backend:integration
+pnpm run test:backend:pg-claim
+pnpm run test:backend:runtime-state-parity
 pnpm run test:editor
 pnpm run test:editor:check
 pnpm run test:editor:build
@@ -184,6 +186,7 @@ pnpm run test:e2e:all
 
 - `test:editor` 只执行 Editor Vitest；`test:editor:check` 执行类型检查；`test:editor:build` 执行生产构建；需要完整 Editor 质量门禁时使用 `test:editor:gate`。
 - `test:runtime` 只执行 Runtime Vitest；需要 Runtime 完整门禁时使用 `test:runtime:gate`。
+- `test:backend:pg-claim` 执行 PostgreSQL 认领形态与双库迁移对拍；提供 `P4_POSTGRES_DATABASE_URL` 时跑真实 PG，CI 以 `P4_POSTGRES_REQUIRED=1` 强制缺配置失败。
 - `test:contracts` 是根仓跨模块契约测试，不等同于 Backend 自身的 `backend/tests/contracts`；`test:contracts:gateway` 执行真实 Nginx 网关契约回归，`test:contracts:cli-skill` 执行 CLI Skill 示例契约测试。
 - `test:repository` 检查文档链接、部署边界和环境覆盖；`test:python-workspace` 在全成员共装环境验证包解析与根目录 CLI；`test:contracts:docker-context` 用合成配置验证 Docker 排除规则。
 - `test:render-contracts` 运行 `packages/render-contracts` 契约单测；`test:renderer` 运行 Renderer 单测；`test:render-e2e` 准备 E2E 环境并运行真实页面截图 smoke，覆盖 Backend→Renderer→Runtime 和 PNG 下载，必须安装 Node/Python 两套 Playwright Chromium。

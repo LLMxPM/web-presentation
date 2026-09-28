@@ -1,6 +1,6 @@
 # 数据库并发原语收口规划（SQLite Lite / PostgreSQL Prod）
 
-> 状态：**已实施（2026-09-28）**。CP1a / CP1b / CP2 / CP3 / CP4 / CP5 / CP6 全部落地，见 §9 实施记录。CP3 的度量门已在真实 PostgreSQL 16 上采集并复测（§9.4、§9.5），本文 §0-3 的「收益为零」措辞已被实测**部分证伪**，修正见 §0-3 与 §9.2。
+> 状态：**已实施（2026-09-28）**。CP1a / CP1b / CP2 / CP3 / CP4 / CP5 / CP6 全部落地，见 §9 实施记录。CP3 的度量门已在真实 PostgreSQL 16 上采集并复测（§9.4、§9.5），本文 §0-3 的「收益为零」措辞已被实测**部分证伪**，修正见 §0-3 与 §9.2。验证面补强见 §9.6（基准脚本入库、PG 认领用例、idempotency 读重试覆盖）。
 > **编号警示**：本文 §4 CP3 曾把该度量门写作「D2」，但它与现行评估的 **D2 写路径基线门**（Lite 2C4G 空闲/混合两轮 + `/metrics/db-write`）不是同一件事。**现行评估的 D2 仍未采集，不因本文关闭**，本文的测量统一称「claim 竞争基线」。
 > 基线提交：`4becd41`（分支 `dev`）。外部输入结论的基线是 `04d78bd`，两者差异只有 `4becd41`（构建链路评审修复），不影响本文结论。
 > 编号：本文工作项用 **CP1–CP6**（Concurrency Primitive），避免与既有 `C0–C4`（`lite-memory-adapter.md` 步骤 / 多部署评审 Critical）冲突。
@@ -164,6 +164,8 @@
 
 **要求**：不删锁（`test_ai_platform_runtime_concurrency.py` 固化了锁序行为），只把上述定位写进模块 docstring 与 `docs/developer/backend/`，并在 CP3 落地后评估 PG 分支是否可跳过进程锁。**禁止**把它当作 Backend × N 的互斥手段——多副本下它天然失效。
 
+**评估结论（§9.6）：PostgreSQL 不可跳过。** 进程锁串行化的是同一 `AsyncSession` 上的并发追加与重试 rollback（会话不可并发共用），不是跨进程互斥；跨进程游标已由 `allocate_run_event_index` 原子递增覆盖。与方言无关。仅当改为「每次追加独立会话」时才可在 PG 跳过，当前不改。
+
 ---
 
 ## 4. 后做批次：CP3 / CP4（已实施，见 §9.1、§9.4–§9.5）
@@ -290,14 +292,18 @@ CP3/CP4 追加 `pnpm run test:backend:api` 与（PG 侧）`tests/integration/tes
 ## 7. 尚未验证（不得当作已有能力）
 
 1. ~~**PG 侧 claim 竞争基线未采集**~~——**已在 §9.4 采集**（真实 PG 16、合成同构表、limit=1/4 × 1/4/8/16 worker，含复测）。仍未采集的是**真实业务谓词**下的基线：合成表不带 JOIN、绝对期限与写围栏。
+   > **JOIN 业务谓词已补用例**（§9.6）：`test_pg_claim_contention.test_join_candidate_query_claims_without_locking_parent_rows` 覆盖「JOIN 过滤 + `FOR UPDATE OF` 不锁父表」。绝对期限（构建租约裁剪）与写围栏仍不在 PG 基准内；混合负载 D2 写路径基线见现行评估，不因本文关闭。
 2. **Backend × N 从未联调**：现行评估 §5 列明的多实例共享对象存储、密钥一致、跨实例迁移与租约，全部未验收。CP5 的 profile 校验只保证「非法组合启动失败」，不证明「合法组合可横向扩展」。§9.4 的 8/16 worker 是**同进程多协程**并发，不等于多副本进程并发（后者另有连接池与 CPU 竞争），不得据此宣称多副本已验收。
 3. **故障注入缺失**：`busy_timeout` 耗尽、PG 序列化失败风暴、Worker 掉线下的 claim 行为均无端到端验收；CP1 统一重试后尤其需要一次 SQLite BUSY 与 PG `40001` 的对拍演练。
+   > **单元级对拍已补**（§9.6）：`tests/unit/test_db_write_retry_drill.py` 覆盖 SQLite BUSY、PG `40001`、PG `40P01` 走同一 `run_with_write_retry` 路径、尝试/rollback 次数一致、非冲突不重试、用尽后仍 rollback。**仍未覆盖**：真实 `busy_timeout` 耗尽风暴、Worker 掉线下的 claim 端到端——需联调/故障注入环境。
 4. **`AgentWriteGuardedAsyncSession`（`db/session.py:29-42`）会在每次 `commit()` 前执行写围栏校验**——这一点已由 §9.2-3 实测确认（正是它使 `page_screenshot_job_service.py:110` 的 `rollback()` 不能替换为 `commit()`）。**仍未量化**的是：PG 单事务 claim 会把围栏校验挪到 claim 提交点，是否与 `SKIP LOCKED` 的持锁窗口互相放大等待。CP3 已落地但**基准用的是普通 `AsyncSession`**，写围栏侧未被覆盖。
    > 缩小后的风险面：认领调用点（5 个队列 Worker + 构建）都在队列循环里用 `session_factory()` 新建的普通会话，不是 Run 续跑期的受围栏会话；`claim_rows_by_cas` 的 `claim_cas` 为同步回调也不允许在持锁窗口内触发围栏查询。剩余可疑点是「受围栏会话是否可能进入 claim 路径」，需要一次调用点核对而非推测。
+   >
+   > **调用点核对已完成（2026-09-28 后补，§9.6）：结论是「不会」。** `agent_run_write_fence_scope` 只在 `pydantic_tools.py` 的工具包装器内生效；全部 `claim_pending_jobs` / `claim_rows_by_cas` / `claim_job` / `_claim_ready_batch` 调用点均在 lifespan 启动的队列 Worker（`page_mutation_queue` / `component_mutation_queue` / `image_generation_queue` / `page_screenshot_queue_worker` / `asset_render_hint_backfill`）或 `internal_runtime` 的 Build Worker HTTP 入口，这些上下文没有进入围栏 scope，`current_agent_run_write_fence()` 恒为 `None`，`AgentWriteGuardedAsyncSession.commit()` 不会触发围栏查询。工具层的 `claims` 是 JWT claims，与任务 claim 无关。**写围栏 × PG claim 放大的风险面可以关闭**；若未来在工具内直接认领，必须重新打开本条。
 5. ~~**CP4 的租约裁剪钩子形状未定**~~——已解决，但答案与本文预期相反：不做 per-candidate 钩子参数，而是把**逐候选取值**留给调用方（`claim_cas` 回调自带 `_cap_lease_expiry`），共享层只保证时序。见 §4 CP4 实施结果。
-6. **`idempotency_service` 的读重试路径零测试覆盖**（§9.2-4）。它的冲突退避、`None` 重试与 `for-else` 兜底再读目前完全靠代码审查保证；这也是它未被并入 `db/retry.py` 的直接原因。补覆盖是收口它的前置条件。
-7. **`rollback()` 会 expire ORM 实体**（§9.3）已在 SQLite 侧踩到一次；PG 侧单事务 claim 的 expire 时机尚未验证。CP3 的 `claim_rows_by_cas` 只返回**行的标量副本**（`row[0]`）不回读实体，构建侧的 `session.get` + `refresh` 发生在提交之后，因此设计上避开了该窗口——但没有测试固化这一不变量。
-8. **仓库没有 PG 侧认领用例**：`tests/fixtures/app.py:51` 强制把 `DATABASE_URL` 覆写为 SQLite，唯一的 PG 通道是 `P4_POSTGRES_DATABASE_URL` 且只被迁移对拍使用。CP3 的 PG 分支在 CI 中**不会执行**，回归只由 SQLite 侧与 §9.4 脚本保证。
+6. ~~**`idempotency_service` 的读重试路径零测试覆盖**~~——**已补覆盖**（§9.6）：冲突退避、不可重试立即上抛、`for-else` 兜底再读、查无此行退避均有用例。顺带修掉「查无此行不 sleep 空转重查」的缺陷。仍**未**并入 `db/retry.py`（读重试语义不同，门禁 allow-list 保留）。
+7. ~~**`rollback()` 会 expire ORM 实体**（§9.3）已在 SQLite 侧踩到一次；PG 侧单事务 claim 的 expire 时机尚未验证。CP3 的 `claim_rows_by_cas` 只返回**行的标量副本**（`row[0]`）不回读实体，构建侧的 `session.get` + `refresh` 发生在提交之后，因此设计上避开了该窗口——但没有测试固化这一不变量。~~——**不变量已固化**（§9.6）：`tests/integration/test_claim_scalar_and_expire.py` 断言 claim 返回标量 ID、rollback expire 后标量仍可用、重试钩子只用预先取出的标量。PG 侧单事务 claim 的 expire 时机仍依赖设计（不回读实体），无独立 PG 用例。
+8. ~~**仓库没有 PG 侧认领用例**~~——**已有用例且已进 CI**（§9.6）：`tests/integration/test_pg_claim_contention.py` + `pnpm run test:backend:pg-claim`；CI job `pg-claim-contention` 起 PostgreSQL 16 服务并以 `P4_POSTGRES_REQUIRED=1` 强制执行（缺配置失败而非 skip）。基准脚本已入库（`app.scripts.measure_claim_contention`），§9.4 数字可用同口径复测，但历史绝对值仍以采集机记录为准。
 
 ---
 
@@ -399,3 +405,19 @@ CP3 落地后以**同一脚本、同一表、同一参数**复跑，此时基准
 缩放曲线由负转正（limit=1：14.5 → 29.2 → 35.2 → 36.8）。CP3 后实测值与 §9.4 中「同事务 SKIP LOCKED」预测值一致（35.2 vs 33.6、36.8 vs 35.2，在复测偏差内），说明 §4 CP3 记录的「逐条 CAS 而非批量 UPDATE」没有损失收益。
 
 **回归**：`pnpm run test:backend` **1074 passed / 9 skipped**（CP4 后 1071，CP3 新增 3 条门禁），SQLite 侧认领用例断言未改。
+
+### 9.6 验证面补强（2026-09-28 之后）
+
+针对 §7 尚未验证项中「可仓库内闭合」的三块补齐：
+
+| 项 | 落地 |
+| :--- | :--- |
+| claim 基准可复现 | 新增 `app.scripts.measure_claim_contention`：只读测量 CLI，在可丢弃库上自建合成队列表，对比 `current`（生产 `claim_rows_by_cas`）与 `cross_commit_cas`（收口前跨 commit 逐条 CAS）。刻意不复现「跨事务 + SKIP LOCKED」字面处方；对照形态也不写 `skip_locked`，以免绕过「`skip_locked` 只允许出现在租约服务」门禁。用法见脚本 docstring。 |
+| PG 侧认领回归 | 新增 `tests/integration/test_pg_claim_contention.py`：配置 `P4_POSTGRES_DATABASE_URL` 时验证 `row_locks_hold_until_commit` 为真、并发 `claim_pending_jobs` 不重复认领、`claim_rows_by_cas` 候选集不相交、多轮并发吃完 pending；未配置则 skip。与迁移对拍共用同一环境变量。 |
+| PG 认领进 CI | 根仓新增 `pnpm run test:backend:pg-claim`；`reusable-quality.yml` 新增 `pg-claim-contention` job（PostgreSQL 16 服务 + `P4_POSTGRES_REQUIRED=1`），并纳入 e2e 前置。缺连接串时显式失败，不以 skip 冒充通过。 |
+| `idempotency` 读重试 | `tests/unit/test_idempotency_service.py` 新增 4 例：可重试冲突退避后命中、不可重试立即上抛、`for-else` 兜底再读次数、查无此行也退避。`_handle_existing_record` 在「重查为 `None`」时原先不 sleep 紧循环，已修为与冲突路径同一退避表。 |
+| 围栏 × claim 调用点核对 | 见 §7-4 核对结论：claim 不在 `agent_run_write_fence_scope` 内，写围栏放大风险关闭。 |
+| 写重试双库对拍 | `tests/unit/test_db_write_retry_drill.py`：SQLite BUSY / PG 40001 / PG 40P01 同路径、同尝试与 rollback 次数；非冲突不重试；用尽后仍 rollback。真实 `busy_timeout` 风暴仍待联调。 |
+| claim 标量 / expire 不变量 | `tests/integration/test_claim_scalar_and_expire.py`：claim 返回标量 ID，rollback expire 后标量仍可用，重试钩子只用预先取出的标量。 |
+| CP6 进程锁评估 | 结论写入 `docs/developer/backend/ai-agent.md` 与本文 CP6：**PostgreSQL 不可跳过**（锁保护同一 AsyncSession 上的并发追加/重试，与方言无关）。 |
+| JOIN 业务谓词认领 | `test_pg_claim_contention` 新增 JOIN 候选用例：只认领 `waiting_external` 父行下任务，`FOR UPDATE OF` 不锁父表。 |

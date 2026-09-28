@@ -21,6 +21,8 @@ AI Agent 由 Backend 统一承载，负责会话、run、消息、事件、工�
 
 `platform_runtime._RUN_EVENT_LOCKS` 是**进程内**按 run 复用的 `asyncio.Lock`，只用于串行化同一 run 的追加重试路径，避免退避期间的 rollback 与其他追加交错。它不是分布式互斥原语：多副本下只在本进程生效，跨实例单调性完全依赖上述数据库原子递增，不得用它替代 Backend × N 的互斥。同理 `_has_sqlite_write_transaction()` 只在 SQLite 下可能为真，用途是避免「进程锁 → 数据库写锁」的锁序反转；PostgreSQL 恒为 `False`，直接走数据库路径。
 
+**CP6 评估结论（PostgreSQL 不可跳过进程锁）**：`event_index` 的跨进程单调性已由 `allocate_run_event_index` 的原子 `UPDATE ... RETURNING` 保证，与本锁无关。本锁串行化的是**同一 `PlatformRuntime` / 同一 `AsyncSession`** 上的并发 `append_event` 与重试 `rollback`——SQLAlchemy 会话本身不可并发共用，这与方言无关。只有在改为「每次追加独立会话」之后，才可能在 PostgreSQL 跳过本锁；当前形态下 SQLite 与 PostgreSQL 都必须持有。
+
 ## 事实源
 
 AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend 主库 `ai_agent_*` 表。Redis 不保存 AI run/HITL 事实源，也不保存正在执行的 Python 协程；它只保留预览、截图和构建等临时运行态。

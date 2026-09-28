@@ -165,23 +165,24 @@ class IdempotencyService:
 
         now = utc_now()
 
-        # 写冲突退避读取：判据同时覆盖 SQLite BUSY/LOCKED 与 PostgreSQL 40001/40P01
+        # 写冲突退避读取：判据同时覆盖 SQLite BUSY/LOCKED 与 PostgreSQL 40001/40P01。
+        # 查无此行同样退避——占位冲突后的重查可能早于并发写者提交可见。
+        stmt = (
+            select(ApiIdempotencyRecord)
+            .where(ApiIdempotencyRecord.user_id == user_id)
+            .where(ApiIdempotencyRecord.workspace_id == workspace_id)
+            .where(ApiIdempotencyRecord.idempotency_key == idempotency_key)
+            .where(ApiIdempotencyRecord.operation == operation)
+        )
         for delay in WRITE_CONFLICT_BACKOFF_DELAYS:
             try:
-                stmt = (
-                    select(ApiIdempotencyRecord)
-                    .where(ApiIdempotencyRecord.user_id == user_id)
-                    .where(ApiIdempotencyRecord.workspace_id == workspace_id)
-                    .where(ApiIdempotencyRecord.idempotency_key == idempotency_key)
-                    .where(ApiIdempotencyRecord.operation == operation)
-                )
                 existing = await self.session.scalar(stmt)
                 if existing is not None:
                     break
             except OperationalError as exc:
                 if not detect_transient_write_conflict(exc):
                     raise
-                await asyncio.sleep(delay)
+            await asyncio.sleep(delay)
         else:
             existing = await self.session.scalar(stmt)
 
