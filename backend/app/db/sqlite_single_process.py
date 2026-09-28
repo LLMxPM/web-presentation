@@ -1,4 +1,4 @@
-"""文件功能：SQLite 文件库单进程边界守卫，拒绝多 worker 与跨容器共享同一 db 文件。"""
+"""文件功能：SQLite 文件库单进程边界守卫，拒绝多 worker/多副本声明与跨容器共享同一 db 文件。"""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import BinaryIO
 
 from sqlalchemy.engine import make_url
+
+from app.db.profile import resolve_deployment_profile
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +85,7 @@ def ensure_sqlite_single_process(database_url: str) -> SqliteSingleProcessGuard 
     if not database or database in {":memory:", "file::memory:"}:
         return None
 
-    _reject_multi_worker_env()
+    _reject_multi_process_deployment()
 
     global _process_guard
     resolved = Path(database).resolve()
@@ -108,33 +110,26 @@ def ensure_sqlite_single_process(database_url: str) -> SqliteSingleProcessGuard 
     return guard
 
 
-def _reject_multi_worker_env() -> None:
-    """拒绝显式多 worker 配置；uvicorn --workers>1 不得与 SQLite 文件库共存。"""
+def _reject_multi_process_deployment() -> None:
+    """拒绝 SQLite 单写库与多 Backend 进程/副本共存。
 
-    resolved = read_explicit_worker_count()
-    if resolved is None:
+    两类声明都要拦：进程内 worker 数（`WEB_CONCURRENCY`/`UVICORN_WORKERS`）与部署级
+    副本声明（`BACKEND_MULTI_INSTANCE`）。后者不落在本进程环境变量里，只靠 worker 数
+    判断会漏掉「compose 扩副本但每个容器仍是单 worker」这种最常见的误配。
+    """
+
+    profile = resolve_deployment_profile()
+    if not profile.multi_process_requested:
         return
-    key, workers = resolved
+    if profile.explicit_worker_count is not None:
+        key, workers = profile.explicit_worker_count
+        reason = f"{key}={workers}"
+    else:
+        reason = "BACKEND_MULTI_INSTANCE=true"
     raise SqliteSingleProcessViolation(
-        f"SQLite 文件库不允许 {key}={workers}：必须单进程写入。"
+        f"SQLite 文件库不允许 {reason}：必须单进程写入。"
         "请将并发约束写在部署模板（如 AI_PAGE_MUTATION_CONCURRENCY=1），不要扩 Backend 进程数。"
     )
-
-
-def read_explicit_worker_count() -> tuple[str, int] | None:
-    """读取显式声明的 Backend 进程数；未声明或声明为单进程时返回 None。"""
-
-    for key in ("WEB_CONCURRENCY", "UVICORN_WORKERS"):
-        raw = os.environ.get(key, "").strip()
-        if not raw:
-            continue
-        try:
-            workers = int(raw)
-        except ValueError:
-            continue
-        if workers > 1:
-            return key, workers
-    return None
 
 
 def _lock_file_exclusive(handle: BinaryIO) -> None:

@@ -15,10 +15,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 from redis import Redis
-from sqlalchemy.engine import make_url
 
 from app.core.config import get_settings
-from app.db.sqlite_single_process import read_explicit_worker_count
+from app.db.profile import resolve_deployment_profile
 from app.services.runtime_state import (
     FORBIDDEN_RUNTIME_STATE_COMMANDS,
     REGISTERED_RUNTIME_STATE_COMMANDS,
@@ -274,11 +273,12 @@ def validate_runtime_state_deployment(settings: Any | None = None) -> None:
     scheme, instance_name = parse_runtime_state_url(resolved.redis_url)
     if scheme != MEMORY_RUNTIME_STATE_SCHEME:
         return
-    if is_postgresql_database_url(resolved.database_url):
+    profile = resolve_deployment_profile(resolved)
+    if profile.is_distributed:
         raise RuntimeStateConfigurationError(
             "memory:// 只适用于 SQLite Lite 单进程部署；PostgreSQL 部署必须配置真实 redis:// 或 rediss://。"
         )
-    workers = read_explicit_worker_count()
+    workers = profile.explicit_worker_count
     if workers is not None:
         worker_key, worker_count = workers
         raise RuntimeStateConfigurationError(
@@ -294,15 +294,6 @@ def validate_runtime_state_deployment(settings: Any | None = None) -> None:
             "runtime_state_instance": instance_name,
         },
     )
-
-
-def is_postgresql_database_url(database_url: str) -> bool:
-    """判断数据库连接串是否指向 PostgreSQL。"""
-
-    try:
-        return make_url(str(database_url or "")).drivername.startswith("postgresql")
-    except Exception:  # noqa: BLE001
-        return False
 
 
 __all__ = [
@@ -324,7 +315,6 @@ __all__ = [
     "create_runtime_state_client",
     "ensure_redis_runtime_available",
     "get_redis_runtime_client",
-    "is_postgresql_database_url",
     "parse_runtime_state_url",
     "reset_redis_runtime_client",
     "resolve_runtime_state_profile",

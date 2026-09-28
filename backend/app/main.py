@@ -44,6 +44,7 @@ from app.db.errors import (
 )
 from app.db import metrics as write_path_metrics
 from app.db.session import get_session_factory
+from app.db.profile import resolve_deployment_profile
 from app.db.sqlite_single_process import SqliteSingleProcessGuard, ensure_sqlite_single_process
 from app.services.bootstrap_service import BootstrapService
 from app.services.ai_model_catalog_service import AiModelCatalogService, run_model_catalog_sync_loop
@@ -264,6 +265,10 @@ def create_app() -> FastAPI:
 
         checks["render_workers_configured"] = bool(settings.render_workers_config)
         checks["sqlite_single_process"] = app.state.sqlite_single_process_guard is not None
+        # 静态部署画像：只反映配置派生结果，不做连接探测。
+        deployment_profile = resolve_deployment_profile(settings)
+        checks["deployment_profile"] = deployment_profile.name
+        checks["backend_multi_process_allowed"] = deployment_profile.backend_multi_process_allowed
         # 静态元数据：只报告后端类型与临时性，不做连接探测，避免瞬断触发容器重启。
         runtime_state_backend, runtime_state_ephemeral = resolve_runtime_state_profile(settings.redis_url)
         checks["runtime_state_backend"] = runtime_state_backend
@@ -464,6 +469,7 @@ def _log_runtime_state_startup(app: FastAPI) -> None:
             if ephemeral
             else None,
             "sqlite_single_process": app.state.sqlite_single_process_guard is not None,
+            "deployment_profile": resolve_deployment_profile(settings).name,
         },
     )
 

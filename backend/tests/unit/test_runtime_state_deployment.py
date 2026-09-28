@@ -23,6 +23,7 @@ class _DeploymentSettings:
 
     database_url: str
     redis_url: str
+    backend_multi_instance: bool = False
 
 
 def test_memory_url_should_require_explicit_instance_name() -> None:

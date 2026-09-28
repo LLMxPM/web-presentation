@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPubl
 from cryptography.fernet import Fernet
 
 from app.core.config import AppSettings, get_settings
-from app.db.sqlite_single_process import read_explicit_worker_count
+from app.db.profile import resolve_deployment_profile
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +96,7 @@ def _to_base64url(value: int) -> str:
 def requires_shared_identity(settings: AppSettings) -> bool:
     """判断当前部署是否按多 Backend 副本约束（显式声明或多进程 worker）。"""
 
-    if settings.backend_multi_instance:
-        return True
-    return read_explicit_worker_count() is not None
+    return resolve_deployment_profile(settings).multi_process_requested
 
 
 def _load_private_key_from_pem(pem_data: bytes, *, source: str) -> RSAPrivateKey:
