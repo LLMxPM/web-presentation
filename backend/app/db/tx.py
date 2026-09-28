@@ -24,6 +24,21 @@ async def commit_end_read(session: AsyncSession) -> None:
         await session.commit()
 
 
+def row_locks_hold_until_commit(session: AsyncSession) -> bool:
+    """判断当前方言的 `SELECT ... FOR UPDATE` 行锁是否会持续到事务结束。
+
+    PostgreSQL 会真正加行锁，因此「加锁读候选 → 逐条 CAS」可以放在同一个事务里，
+    候选集在被提交前对其他执行者不可见。SQLite 方言把 `FOR UPDATE`（含
+    `SKIP LOCKED`）静默丢弃成普通 SELECT，锁语义不存在，而该读事务在下一条 UPDATE
+    时会升级为写事务并可能直接以 SQLITE_BUSY 失败，所以必须提前结束读事务。
+
+    调用方据此选择**事务形态**，不要自行比较 `dialect.name`：这是本仓唯一的方言分支
+    出口，`SKIP LOCKED` 带来的收益与风险都只在这里判定一次。
+    """
+
+    return session.get_bind().dialect.name == "postgresql"
+
+
 async def acquire_admission_lock(
     session: AsyncSession,
     state: object,

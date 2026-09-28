@@ -319,6 +319,7 @@ class ProjectBuildService:
 
         claimed_rows = await claim_rows_by_cas(
             self.session,
+            ProjectBuildJob,
             candidate_query=candidate_stmt,
             candidate_limit=_BUILD_CLAIM_CANDIDATE_LIMIT,
             claim_cas=_claim_cas,

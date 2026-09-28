@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import Update
 
 from app.core.time_utils import utc_now
-from app.db.tx import commit_end_read
+from app.db.tx import commit_end_read, row_locks_hold_until_commit
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,30 +47,41 @@ ClaimCasFactory = Callable[[Row[Any]], "Update | None"]
 
 async def claim_rows_by_cas(
     session: AsyncSession,
+    model: type[Any],
     *,
     candidate_query: Select[Any],
     candidate_limit: int,
     claim_cas: ClaimCasFactory,
     max_claims: int | None = None,
 ) -> list[Row[Any]]:
-    """按「读候选 → 结束读事务 → 逐条 CAS → 提交」认领任务，返回成功认领的候选行。
+    """按「加锁读候选 → 逐条 CAS → 提交」认领任务，返回成功认领的候选行。
 
     输入是只选出主键（可附带认领所需的其它列）的候选查询，和把一行候选映射为条件
     UPDATE 的 `claim_cas`；返回该行为 None 表示本候选当前不可认领，直接跳过且不发
     SQL。正确性只依赖数据库条件：每条 UPDATE 必须自带「尚未被他人认领」的谓词，
     命中与否以 rowcount 判定，因此两个并发认领者最多一个成功。
 
-    约束与原因：
-    1. 候选读取后必须结束读事务，否则 SQLite 会在读事务内升级为写事务并直接以
-       SQLITE_BUSY 失败；PG 侧同样避免把快照带到认领阶段。
-    2. 全部尝试结束后统一提交，即使一条也没抢到也要提交——失败的 CAS 已经开启了
-       写事务，不提交会把写锁带到调用方的下一次操作。
-    3. `max_claims` 供「扫描多候选、只取一个」的领取者使用：达到数量即停止，避免把
-       已 CAS 成功的任务留在无人执行的 running 状态。
+    事务形态按方言分支，且**只**在本函数内部分支（`db/tx.row_locks_hold_until_commit`）：
+
+    - PostgreSQL：候选读取带 `FOR UPDATE SKIP LOCKED`，行锁持续到提交，因此并发认领
+      者的候选集天然互不相交，CAS 不再空转。前提是这个事务里不再插入任何慢路径——
+      `claim_cas` 被刻意定义为**同步**回调，构造 SQL 之外不做任何 await，也就无法把
+      Runtime/Chromium 之类的耗时夹进持锁窗口。
+    - SQLite：方言把 `FOR UPDATE`（含 `SKIP LOCKED`）静默丢弃成普通 SELECT，行锁不存在，
+      读事务还会在下一条 UPDATE 时升级失败，因此读取后先结束读事务，再靠 CAS 竞争。
+      该分支的 SQL 与认领语义与收口前完全一致，唯一变化是候选集不再互斥。
+
+    其他约束：全部尝试结束后统一提交，即使一条也没抢到也要提交——失败的 CAS 已经
+    开启了写事务，不提交会把写锁带给调用方的下一次操作。`max_claims` 供「扫描多候选、
+    只取一个」的领取者使用：达到数量即停止，避免把已 CAS 成功的任务留在无人执行的
+    running 状态。
     """
 
-    rows = list((await session.execute(candidate_query.limit(max(1, candidate_limit)))).all())
-    await commit_end_read(session)
+    # 同一条查询构造在 SQLite 上编译成普通 SELECT，因此不需要按方言分叉查询本身。
+    locking_query = candidate_query.with_for_update(of=model, skip_locked=True)
+    rows = list((await session.execute(locking_query.limit(max(1, candidate_limit)))).all())
+    if not row_locks_hold_until_commit(session):
+        await commit_end_read(session)
 
     claimed_rows: list[Row[Any]] = []
     for row in rows:
@@ -136,6 +147,7 @@ async def claim_pending_jobs(
 
     claimed_rows = await claim_rows_by_cas(
         session,
+        model,
         candidate_query=query,
         candidate_limit=limit,
         claim_cas=_claim_cas,

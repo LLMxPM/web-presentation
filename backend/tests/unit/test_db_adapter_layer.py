@@ -170,6 +170,63 @@ def test_claim_functions_must_delegate_cas_timing() -> None:
     assert offenders == []
 
 
+def test_skip_locked_appears_only_in_lease_service() -> None:
+    """防漂移（CP3）：`SKIP LOCKED` 只允许出现在共享认领时序里。
+
+    CP3 的事务形态分支刻意不下放到调用点：队列服务只提供候选谓词与领域取值，是否
+    用行锁互斥由 `durable_job_lease_service` 决定。否则每个队列都会各自决定要不要
+    加锁，Lite 侧又会出现「写了 FOR UPDATE 却静默失效」的代码。
+    """
+
+    allowed = {"app/services/durable_job_lease_service.py"}
+    offenders = [
+        rel
+        for rel, source in _backend_sources("app")
+        if rel not in allowed and "skip_locked" in source
+    ]
+    assert offenders == []
+
+
+def test_dialect_branch_has_single_exit() -> None:
+    """防漂移（CP3）：并发/事务形态的方言判据只允许存在于 app/db 适配层。
+
+    方言差异必须收敛成语义化判据（行锁是否持续到提交、是否持有写事务），否则
+    `dialect.name` 比较会散落到服务层，退化成「按 SQLite 特殊性写分支」的老问题。
+    例外只放两类：`app/db/` 自身，以及按方言处理 Schema 的播种脚本——后者分支的是
+    DDL/FK 维护，不是并发语义。
+    """
+
+    offenders: list[str] = []
+    for rel, source in _backend_sources("app"):
+        if rel.startswith("app/db/") or rel == "app/scripts/test_data.py":
+            continue
+        if "dialect.name" in source:
+            offenders.append(rel)
+    assert offenders == []
+
+
+def test_row_locks_hold_until_commit_is_false_on_sqlite() -> None:
+    """Lite 侧必须判定为「行锁不持续到提交」，认领才会走结束读事务 + CAS 的老形态。"""
+
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.db.tx import row_locks_hold_until_commit
+
+    async def _probe() -> bool:
+        """在内存 SQLite 上建立会话并读取方言判据。"""
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        try:
+            async with async_sessionmaker(engine)() as session:
+                return row_locks_hold_until_commit(session)
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(_probe()) is False
+
+
 def test_models_should_not_declare_dialect_specific_index_predicates() -> None:
     """防漂移（P2-2f）：model 必须走 db/indexes.partial_index，不得再写 sqlite_where/postgresql_where。"""
 
