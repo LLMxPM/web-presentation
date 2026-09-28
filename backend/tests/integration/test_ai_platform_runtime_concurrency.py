@@ -209,7 +209,7 @@ async def test_append_event_should_retry_clean_sqlite_transaction_after_lock(
         await release_task
 
         rollback_count_before_exhaustion = rollback_count
-        monkeypatch.setattr(platform_runtime, "_SQLITE_EVENT_WRITE_MAX_ATTEMPTS", 2)
+        monkeypatch.setattr(platform_runtime, "_EVENT_WRITE_MAX_ATTEMPTS", 2)
         await blocker_session.execute(
             update(AiAgentRun)
             .where(AiAgentRun.run_id == run_id)

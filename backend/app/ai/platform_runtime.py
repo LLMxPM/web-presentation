@@ -13,12 +13,12 @@ from uuid import uuid4
 from weakref import WeakValueDictionary
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.time_utils import normalize_utc
-from app.db.errors import detect_transient_write_conflict
+from app.db.retry import WriteConflictContext, exponential_backoff_delays, run_with_write_retry
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.run_event_writer import allocate_run_event_index
@@ -62,8 +62,8 @@ STALE_ACTIVE_RUN_ERROR_CODE = "AI_AGENT_STREAM_IDLE_TIMEOUT"
 STALE_ACTIVE_RUN_ERROR_MESSAGE = "模型或工具流长时间没有返回新事件，本次运行已停止。"
 _EVENT_POLL_INTERVAL_SECONDS = 1.0
 _SSE_KEEPALIVE_INTERVAL_SECONDS = 30.0
-_SQLITE_EVENT_WRITE_MAX_ATTEMPTS = 4
-_SQLITE_EVENT_WRITE_RETRY_BASE_SECONDS = 0.025
+_EVENT_WRITE_MAX_ATTEMPTS = 4
+_EVENT_WRITE_RETRY_BASE_SECONDS = 0.025
 _SUBSCRIBERS: dict[str, set[asyncio.Queue[AgentRunEvent | None]]] = {}
 _RUN_EVENT_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 _LIVE_RUN_ACTIVITY_VERSIONS: dict[str, int] = {}
@@ -348,25 +348,35 @@ class PlatformAgentRuntimeStore:
         run_model: AiAgentRun,
         event: AgentRunEvent,
     ) -> AgentRunEvent:
-        """为无额外 pending 状态的纯追加执行 SQLite rollback 与有限退避重试。"""
+        """为无额外 pending 状态的纯追加执行写冲突 rollback 与有限退避重试。"""
 
+        current = run_model
+        # rollback 会 expire 会话内全部实体，重试钩子只能使用此处预先取出的标量，
+        # 不能在 rollback 之后读取 ORM 属性（会触发同步懒加载并抛 MissingGreenlet）。
         run_id = run_model.run_id
-        for attempt in range(_SQLITE_EVENT_WRITE_MAX_ATTEMPTS):
-            try:
-                return await self._append_event_once(run_model, event, commit=True)
-            except OperationalError as exc:
-                can_retry = detect_transient_write_conflict(exc)
-                if not can_retry:
-                    raise
-                await self._session.rollback()
-                if attempt + 1 >= _SQLITE_EVENT_WRITE_MAX_ATTEMPTS:
-                    raise
-                refreshed_run = await self._session.get(AiAgentRun, run_id, populate_existing=True)
-                if refreshed_run is None:
-                    raise ValueError("AI_RUN_NOT_FOUND") from exc
-                run_model = refreshed_run
-                await asyncio.sleep(_SQLITE_EVENT_WRITE_RETRY_BASE_SECONDS * (2**attempt))
-        raise RuntimeError("unreachable event append state")
+
+        async def _append_once(_: AsyncSession) -> AgentRunEvent:
+            """在当前会话内追加一次事件；run 引用由重试钩子刷新后经闭包读取。"""
+
+            return await self._append_event_once(current, event, commit=True)
+
+        async def _reload_run(context: WriteConflictContext) -> None:
+            """重试前重读 run，使聚合字段基于最新已提交内容继续追加。"""
+
+            nonlocal current
+            refreshed_run = await context.session.get(AiAgentRun, run_id, populate_existing=True)
+            if refreshed_run is None:
+                raise ValueError("AI_RUN_NOT_FOUND") from context.error
+            current = refreshed_run
+
+        return await run_with_write_retry(
+            _append_once,
+            session=self._session,
+            backoff_delays=exponential_backoff_delays(
+                _EVENT_WRITE_MAX_ATTEMPTS, _EVENT_WRITE_RETRY_BASE_SECONDS
+            ),
+            on_conflict=_reload_run,
+        )
 
     async def _append_event_once(
         self,
@@ -1715,7 +1725,12 @@ def encode_sse_event(event: AgentRunEvent) -> bytes:
 
 
 def _get_run_event_lock(run_id: str) -> asyncio.Lock:
-    """获取进程内按 run 复用的事件写锁，串行尚未持有 SQLite 写锁的追加操作。"""
+    """获取进程内按 run 复用的事件写锁，串行尚未持有 SQLite 写锁的追加操作。
+
+    本锁只约束当前进程，用于让退避重试的 rollback 不与其他追加交错；跨实例的
+    `event_index` 单调性由 `allocate_run_event_index` 的数据库原子递增承担，
+    因此不得把它当作 Backend 多副本的互斥原语。
+    """
 
     lock = _RUN_EVENT_LOCKS.get(run_id)
     if lock is None:

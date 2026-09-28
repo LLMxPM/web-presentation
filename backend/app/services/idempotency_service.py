@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-SQLITE_BACKOFF_DELAYS = [0.05, 0.1, 0.2]
+WRITE_CONFLICT_BACKOFF_DELAYS = [0.05, 0.1, 0.2]
 
 
 class IdempotencyService:
@@ -165,8 +165,8 @@ class IdempotencyService:
 
         now = utc_now()
 
-        # SQLite 锁重试读取
-        for delay in SQLITE_BACKOFF_DELAYS:
+        # 写冲突退避读取：判据同时覆盖 SQLite BUSY/LOCKED 与 PostgreSQL 40001/40P01
+        for delay in WRITE_CONFLICT_BACKOFF_DELAYS:
             try:
                 stmt = (
                     select(ApiIdempotencyRecord)

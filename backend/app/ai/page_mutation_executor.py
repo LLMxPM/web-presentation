@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.page_mutation_arguments import (
@@ -32,7 +31,7 @@ from app.services.validation_result import resolve_write_gate
 from app.ai.tools.shared import apply_source_edits
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
-from app.db.errors import detect_transient_write_conflict
+from app.db.retry import exponential_backoff_delays, run_with_write_retry
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentToolCall
 from app.models.ai_page_mutation import AiPageMutationJob
 from app.models.enums import PageFileType, RecordStatus
@@ -47,6 +46,9 @@ from app.services.page_service import PageService
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str], Awaitable[None]]
+
+_FINAL_WRITE_RETRY_ATTEMPTS = 3
+_FINAL_WRITE_RETRY_BASE_SECONDS = 0.05
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,21 +459,15 @@ class AiPageMutationExecutor:
         )
 
     async def _run_final_write(self, operation: Callable[[AsyncSession], Awaitable[None]]) -> None:
-        """对 SQLite 最终写入执行有限退避重试，其他数据库错误原样上抛。"""
+        """对最终写入执行有限退避重试，其他数据库错误原样上抛。"""
 
-        max_attempts = 3
-        for attempt in range(max_attempts):
-            session = self._session_factory()
-            try:
-                await operation(session)
-                return
-            except OperationalError as exc:
-                await session.rollback()
-                if not detect_transient_write_conflict(exc) or attempt + 1 >= max_attempts:
-                    raise
-                await asyncio.sleep(0.05 * (2**attempt))
-            finally:
-                await session.close()
+        await run_with_write_retry(
+            operation,
+            session_factory=self._session_factory,
+            backoff_delays=exponential_backoff_delays(
+                _FINAL_WRITE_RETRY_ATTEMPTS, _FINAL_WRITE_RETRY_BASE_SECONDS
+            ),
+        )
 
     async def _lock_owned_job(
         self,

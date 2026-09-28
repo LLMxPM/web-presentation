@@ -107,6 +107,39 @@ def test_json_payload_variant_has_single_source() -> None:
     assert set(offenders) <= allowed, f"JSON 双方言别名散落：{sorted(set(offenders) - allowed)}"
 
 
+def test_write_retry_loop_has_single_definition() -> None:
+    """防漂移（CP1b）：写冲突退避重试只在 app/db/retry.py 实现一次。
+
+    `idempotency_service.py` 是**读**重试：不 rollback、结果为 None 也继续重试、
+    并用 for-else 兜底再读一次。它与写重试的事务语义不同，且当前没有测试覆盖，
+    因此暂列为例外；补齐覆盖后应一并收口，不要以它为模板新增第三套重试。
+    """
+
+    allowed = {"app/db/retry.py", "app/services/idempotency_service.py"}
+    offenders = [
+        rel
+        for rel, source in _backend_sources("app")
+        if rel not in allowed and "except OperationalError" in source
+    ]
+    assert offenders == []
+
+
+def test_write_retry_consumers_use_shared_helper() -> None:
+    """防漂移（CP1b）：三个写重试调用点必须走 run_with_write_retry，不得各自手写循环。"""
+
+    expected = {
+        "app/ai/page_mutation_executor.py",
+        "app/ai/platform_runtime.py",
+        "app/services/page_screenshot_job_service.py",
+    }
+    consumers = {
+        rel
+        for rel, source in _backend_sources("app")
+        if "run_with_write_retry(" in source and rel != "app/db/retry.py"
+    }
+    assert consumers == expected
+
+
 def test_models_should_not_declare_dialect_specific_index_predicates() -> None:
     """防漂移（P2-2f）：model 必须走 db/indexes.partial_index，不得再写 sqlite_where/postgresql_where。"""
 

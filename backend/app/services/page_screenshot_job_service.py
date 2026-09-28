@@ -9,13 +9,13 @@ import uuid
 from collections.abc import Iterable
 
 from sqlalchemy import select, update
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
-from app.db.errors import detect_transient_write_conflict
+from app.db.retry import WriteConflictContext, exponential_backoff_delays, run_with_write_retry
 from app.models.enums import PageFileType, RecordStatus
 from app.models.page import Page
 from app.models.page_screenshot_job import PageScreenshotJob
@@ -48,7 +48,8 @@ from app.services.project_service import ProjectService
 ACTIVE_SCREENSHOT_JOB_STATUSES = ("pending", "running")
 TERMINAL_SCREENSHOT_JOB_STATUSES = {"succeeded", "failed", "skipped", "cancelled"}
 MAX_SCREENSHOT_JOB_ATTEMPTS = 3
-SQLITE_LOCK_RETRY_ATTEMPTS = 3
+WRITE_CONFLICT_RETRY_ATTEMPTS = 3
+PUBLISH_RETRY_BASE_SECONDS = 0.05
 PAGE_SCREENSHOT_JOB_STALE_CODE = "PAGE_SCREENSHOT_JOB_STALE"
 logger = logging.getLogger(__name__)
 
@@ -356,7 +357,7 @@ class PageScreenshotJobService:
         worker_id: str | None = None,
         lease_lost: asyncio.Event | None = None,
     ) -> None:
-        """执行已领取任务；捕获仅执行一次，SQLite 重试只覆盖最终数据库提交。"""
+        """执行已领取任务；捕获仅执行一次，写冲突重试只覆盖最终数据库提交。"""
 
         job = await self.get_job_by_id(job_id)
         owner = worker_id or job.worker_id
@@ -427,93 +428,100 @@ class PageScreenshotJobService:
         lease_lost: asyncio.Event | None,
         execution_started_at: float,
     ) -> None:
-        """以短事务发布已捕获对象；SQLite 锁只重试本阶段，绝不再次启动 Chromium。"""
+        """以短事务发布已捕获对象；写冲突只重试本阶段，绝不再次启动 Chromium。"""
 
         job_id = int(job.id)
         page_id = int(job.page_id)
         operator_id = int(job.created_by or 0)
         # 后续快照校验会 expire_all()，日志不能再读取可能触发异步懒加载的 ORM 属性。
         attempt_count = int(job.attempt_count)
-        for attempt in range(SQLITE_LOCK_RETRY_ATTEMPTS):
+        async def _publish(_: AsyncSession) -> None:
+            """在一个短事务内发布已捕获产物；快照过期或失去租约时放弃本次发布。"""
+
             if self._is_lease_lost(lease_lost):
                 return
-            try:
-                if not await self._is_artifact_snapshot_current(page_id=page_id, artifact=artifact):
-                    await self.session.rollback()
-                    await self._mark_job_stale(job_id=job_id, worker_id=worker_id)
-                    return
-                published_at = utc_now()
-                page_updated = await self.session.execute(
-                    update(Page)
-                    .where(
-                        Page.id == page_id,
-                        Page.current_version_no == artifact.page_version_no,
-                    )
-                    .values(
-                        screenshot_storage_key=artifact.storage_key,
-                        screenshot_version_no=artifact.page_version_no,
-                        screenshot_config_hash=artifact.config_hash,
-                        screenshot_viewport_width=artifact.viewport_width,
-                        screenshot_viewport_height=artifact.viewport_height,
-                        screenshot_updated_at=published_at,
-                        updated_by=operator_id,
-                    )
-                    .execution_options(synchronize_session=False)
-                )
-                if (page_updated.rowcount or 0) != 1:
-                    await self.session.rollback()
-                    await self._mark_job_stale(job_id=job_id, worker_id=worker_id)
-                    return
-                if self._is_lease_lost(lease_lost):
-                    await self.session.rollback()
-                    return
-                completed = await transition_owned_running_job(
-                    self.session,
-                    PageScreenshotJob,
-                    job_id=job_id,
-                    worker_id=worker_id,
-                    require_not_cancelled=True,
-                    require_active_lease=True,
-                    commit=False,
-                    values={
-                        "status": "succeeded",
-                        "error_code": None,
-                        "error_message": None,
-                        "lease_expires_at": None,
-                        "heartbeat_at": None,
-                        "finished_at": published_at,
-                    },
-                )
-                if not completed:
-                    await self.session.rollback()
-                    return
-                await self.session.commit()
-                logger.info(
-                    "页面截图任务执行成功。",
-                    extra={
-                        "event": "page.screenshot.job.succeeded",
-                        "job_id": job_id,
-                        "page_id": page_id,
-                        "attempt_count": attempt_count,
-                        "duration_ms": round((time.monotonic() - execution_started_at) * 1000, 2),
-                    },
-                )
-                return
-            except OperationalError as error:
+            if not await self._is_artifact_snapshot_current(page_id=page_id, artifact=artifact):
                 await self.session.rollback()
-                if not detect_transient_write_conflict(error) or attempt + 1 >= SQLITE_LOCK_RETRY_ATTEMPTS:
-                    raise
-                delay_seconds = 0.05 * (2**attempt)
-                logger.warning(
-                    "页面截图任务最终写入遇到 SQLite 锁，正在短退避重试。",
-                    extra={
-                        "event": "page.screenshot.job.sqlite_lock_retry",
-                        "job_id": job_id,
-                        "attempt": attempt + 1,
-                        "delay_seconds": delay_seconds,
-                    },
+                await self._mark_job_stale(job_id=job_id, worker_id=worker_id)
+                return
+            published_at = utc_now()
+            page_updated = await self.session.execute(
+                update(Page)
+                .where(
+                    Page.id == page_id,
+                    Page.current_version_no == artifact.page_version_no,
                 )
-                await asyncio.sleep(delay_seconds)
+                .values(
+                    screenshot_storage_key=artifact.storage_key,
+                    screenshot_version_no=artifact.page_version_no,
+                    screenshot_config_hash=artifact.config_hash,
+                    screenshot_viewport_width=artifact.viewport_width,
+                    screenshot_viewport_height=artifact.viewport_height,
+                    screenshot_updated_at=published_at,
+                    updated_by=operator_id,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if (page_updated.rowcount or 0) != 1:
+                await self.session.rollback()
+                await self._mark_job_stale(job_id=job_id, worker_id=worker_id)
+                return
+            if self._is_lease_lost(lease_lost):
+                await self.session.rollback()
+                return
+            completed = await transition_owned_running_job(
+                self.session,
+                PageScreenshotJob,
+                job_id=job_id,
+                worker_id=worker_id,
+                require_not_cancelled=True,
+                require_active_lease=True,
+                commit=False,
+                values={
+                    "status": "succeeded",
+                    "error_code": None,
+                    "error_message": None,
+                    "lease_expires_at": None,
+                    "heartbeat_at": None,
+                    "finished_at": published_at,
+                },
+            )
+            if not completed:
+                await self.session.rollback()
+                return
+            await self.session.commit()
+            logger.info(
+                "页面截图任务执行成功。",
+                extra={
+                    "event": "page.screenshot.job.succeeded",
+                    "job_id": job_id,
+                    "page_id": page_id,
+                    "attempt_count": attempt_count,
+                    "duration_ms": round((time.monotonic() - execution_started_at) * 1000, 2),
+                },
+            )
+
+        async def _log_conflict(context: WriteConflictContext) -> None:
+            """记录落库阶段的退避，区分「产物已捕获但写入受阻」与真正的执行失败。"""
+
+            logger.warning(
+                "页面截图任务最终写入遇到写冲突，正在短退避重试。",
+                extra={
+                    "event": "page.screenshot.job.write_conflict_retry",
+                    "job_id": job_id,
+                    "attempt": context.attempt + 1,
+                    "delay_seconds": context.delay_seconds,
+                },
+            )
+
+        await run_with_write_retry(
+            _publish,
+            session=self.session,
+            backoff_delays=exponential_backoff_delays(
+                WRITE_CONFLICT_RETRY_ATTEMPTS, PUBLISH_RETRY_BASE_SECONDS
+            ),
+            on_conflict=_log_conflict,
+        )
 
     async def _is_artifact_snapshot_current(
         self,
