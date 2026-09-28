@@ -140,6 +140,36 @@ def test_write_retry_consumers_use_shared_helper() -> None:
     assert consumers == expected
 
 
+def test_claim_functions_must_delegate_cas_timing() -> None:
+    """防漂移（CP4）：普通队列的认领时序只在 durable_job_lease_service 实现一次。
+
+    `claim_*` 函数可以自带候选谓词与领域取值，但条件 UPDATE 必须由
+    `claim_pending_jobs` / `claim_rows_by_cas` 执行。历史上构建服务自行写过一份
+    「读候选 → 结束读事务 → 逐条 CAS」循环，两处会各自演化：漏掉读事务收口会让
+    SQLite 直接以写锁失败，漏掉 rowcount 判定则会双跑。判定用 AST 精确识别「直接
+    execute 条件 UPDATE」，不用字符串组合近似，避免误伤同样含 pending/running
+    字面量的状态机代码。
+
+    `external_task_queue._claim_ready_batch` 是**已核准的例外**，不是漏改：
+    1. 认领键是 `batch_id` 业务主键，不是自增 `id`；
+    2. 它是「读到实体 → 以该实体的 `lease_generation` 作为 CAS 条件」的**租约围栏**
+       协议，认领成功与否取决于上一代 generation，`claim_rows_by_cas` 不表达该语义；
+    3. 认领必须与 `AiAgentRequirement` 置 `resolving` 在同一事务内原子完成，且抢锁
+       失败时显式 rollback 而非提交。
+    共享认领助手不承诺这三点。新增队列若不符合这三条，必须走 `claim_rows_by_cas`，
+    不得以它为模板再写一份。
+    """
+
+    exempt = {"app/ai/external_task_queue.py"}
+    offenders: list[str] = []
+    for rel, source in _backend_sources("app"):
+        if rel == "app/services/durable_job_lease_service.py" or rel in exempt:
+            continue
+        for name in _claim_functions_executing_own_cas(source):
+            offenders.append(f"{rel}::{name}")
+    assert offenders == []
+
+
 def test_models_should_not_declare_dialect_specific_index_predicates() -> None:
     """防漂移（P2-2f）：model 必须走 db/indexes.partial_index，不得再写 sqlite_where/postgresql_where。"""
 
@@ -151,6 +181,32 @@ def test_models_should_not_declare_dialect_specific_index_predicates() -> None:
     assert offenders == []
 
 
+def test_claim_drift_helper_detects_direct_cas_execution() -> None:
+    """正例对照：认领漂移判定必须真的识别直接 execute 条件 UPDATE，否则门禁会空转。
+
+    上一条码住构建服务手写 claim 的门禁，其有效性完全取决于这个解析函数；没有对照
+    用例时，任何把它改宽的修改都会让门禁静默失效。
+    """
+
+    hand_written = '''
+async def claim_job(self):
+    result = await self.session.execute(
+        update(ProjectBuildJob).where(ProjectBuildJob.status == "pending").values(status="running")
+    )
+    return result.rowcount
+'''
+    delegated = '''
+async def claim_job(self):
+    def _claim_cas(row):
+        return update(ProjectBuildJob).values(status="running")
+
+    rows = await claim_rows_by_cas(self.session, claim_cas=_claim_cas)
+    return rows
+'''
+    assert _claim_functions_executing_own_cas(hand_written) == ["claim_job"]
+    assert _claim_functions_executing_own_cas(delegated) == []
+
+
 def _backend_sources(*subtrees: str):
     """遍历 backend 指定子树源码，返回 (相对 backend 的路径, 源码) 序列。"""
 
@@ -158,3 +214,41 @@ def _backend_sources(*subtrees: str):
     for subtree in subtrees:
         for path in sorted((backend_root / subtree).rglob("*.py")):
             yield path.relative_to(backend_root).as_posix(), path.read_text(encoding="utf-8")
+
+
+def _claim_functions_executing_own_cas(source: str) -> list[str]:
+    """解析源码中的认领函数，返回「自己执行条件 UPDATE」的函数名。
+
+    认领函数按命名约定识别（`claim*` / `_claim*`）。判定标准是函数体内出现
+    `await session.execute(update(...))`：构造 UPDATE 并交给共享助手执行是 CP4 的
+    正确写法（`claim_rows_by_cas` 的 `claim_cas` 回调就是这种），自己 execute 才是
+    重新实现认领时序。
+    """
+
+    tree = ast.parse(source)
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef):
+            continue
+        if not node.name.startswith(("claim", "_claim")):
+            continue
+        if _executes_own_update(node):
+            offenders.append(node.name)
+    return offenders
+
+
+def _executes_own_update(function_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """判断函数体内是否存在对条件 UPDATE 的直接执行。"""
+
+    for node in ast.walk(function_node):
+        if not isinstance(node, ast.Await) or not isinstance(node.value, ast.Call):
+            continue
+        call = node.value
+        if not isinstance(call.func, ast.Attribute) or call.func.attr != "execute":
+            continue
+        if not call.args:
+            continue
+        for sub in ast.walk(call.args[0]):
+            if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id == "update":
+                return True
+    return False

@@ -10,15 +10,17 @@ import logging
 from pathlib import Path
 import re
 import uuid
+from typing import Any
 
 from sqlalchemy import or_, select, update
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.sql.dml import Update
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
-from app.db.tx import commit_end_read
 from app.models.project_build_job import ProjectBuildJob
 from app.models.workspace import Project
 from app.models.release import Release, ReleaseModule
@@ -27,12 +29,15 @@ from app.services.project_artifact_builder import ProjectArtifactBuilder
 from app.services.object_storage_service import ObjectStorageService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.durable_job_lease_service import (
+    claim_rows_by_cas,
     renew_running_job_lease,
     transition_owned_running_job,
 )
 
 
 ACTIVE_BUILD_STATUSES = ("pending", "running")
+# 单次领取扫描的候选行数：与 max_claims=1 配合，多扫候选只为提高命中率。
+_BUILD_CLAIM_CANDIDATE_LIMIT = 10
 logger = logging.getLogger(__name__)
 
 
@@ -243,8 +248,13 @@ class ProjectBuildService:
     ) -> ProjectBuildJob | None:
         """有条件领取构建任务：仅 pending 且未持有有效租约时可被认领。
 
-        使用条件 UPDATE（CAS）保证 SQLite 单领取者与 PostgreSQL 多协调者竞争下
-        同一任务最多被一个执行者取得；成功后写入新的 attempt_id、租约截止与重试计数。
+        认领时序复用 `claim_rows_by_cas`；本方法只描述构建任务自己的列命名
+        （`lease_owner` / `claimed_at`）、绝对期限谓词、逐候选租约裁剪和 attempt 围栏。
+        同一任务最多被一个执行者取得的保证来自条件 UPDATE，而不是候选集：候选读取
+        之后任务可能已被他人抢走，因此 CAS 谓词必须与候选谓词一致。
+
+        构建是「扫描多个候选、只执行一个」的领取者，所以 `max_claims=1`：多扫候选
+        提高单次领取命中率，但绝不把额外任务留在 running。
         """
 
         owner = lease_owner or self.lease_owner
@@ -258,13 +268,14 @@ class ProjectBuildService:
             ProjectBuildJob.deadline_at.is_(None),
             ProjectBuildJob.deadline_at > now,
         )
+        expired_or_absent_lease = or_(
+            ProjectBuildJob.lease_expires_at.is_(None),
+            ProjectBuildJob.lease_expires_at <= now,
+        )
         candidate_stmt = select(ProjectBuildJob.id, ProjectBuildJob.deadline_at).where(
             ProjectBuildJob.status == "pending",
             deadline_clause,
-            or_(
-                ProjectBuildJob.lease_expires_at.is_(None),
-                ProjectBuildJob.lease_expires_at <= now,
-            ),
+            expired_or_absent_lease,
         )
         if job_id is not None:
             candidate_stmt = candidate_stmt.where(ProjectBuildJob.id == job_id)
@@ -273,29 +284,23 @@ class ProjectBuildService:
                 ProjectBuildJob.created_at.asc(),
                 ProjectBuildJob.id.asc(),
             )
-        candidates = list((await self.session.execute(candidate_stmt.limit(10))).all())
-        await commit_end_read(self.session)
 
-        for candidate in candidates:
-            candidate_id = int(candidate.id)
+        def _claim_cas(row: Row[Any]) -> Update | None:
             # 租约本身也受绝对期限约束：剩余预算不足时不得发出越过 deadline 的租约，
             # 否则「租约有效但任务已超期」会让续租和终态失去统一上界。
             expires_at = _cap_lease_expiry(
                 now + timedelta(seconds=lease_seconds),
-                candidate.deadline_at,
+                row.deadline_at,
             )
             if expires_at <= now:
-                continue
-            result = await self.session.execute(
+                return None
+            return (
                 update(ProjectBuildJob)
                 .where(
-                    ProjectBuildJob.id == candidate_id,
+                    ProjectBuildJob.id == row[0],
                     ProjectBuildJob.status == "pending",
                     deadline_clause,
-                    or_(
-                        ProjectBuildJob.lease_expires_at.is_(None),
-                        ProjectBuildJob.lease_expires_at <= now,
-                    ),
+                    expired_or_absent_lease,
                 )
                 .values(
                     status="running",
@@ -310,15 +315,22 @@ class ProjectBuildService:
                     # 新 attempt 从干净产物指针开始，避免残留上一轮成功产物。
                     **_clear_artifact_fields(),
                 )
-                .execution_options(synchronize_session=False)
             )
-            if (result.rowcount or 0) == 1:
-                await self.session.commit()
-                claimed = await self.session.get(ProjectBuildJob, candidate_id)
-                if claimed is not None:
-                    await self.session.refresh(claimed)
-                return claimed
-        return None
+
+        claimed_rows = await claim_rows_by_cas(
+            self.session,
+            candidate_query=candidate_stmt,
+            candidate_limit=_BUILD_CLAIM_CANDIDATE_LIMIT,
+            claim_cas=_claim_cas,
+            max_claims=1,
+        )
+        if not claimed_rows:
+            return None
+        claimed_id = int(claimed_rows[0][0])
+        claimed = await self.session.get(ProjectBuildJob, claimed_id)
+        if claimed is not None:
+            await self.session.refresh(claimed)
+        return claimed
 
     async def renew_job_lease(
         self,

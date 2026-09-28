@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import os
@@ -10,7 +11,9 @@ from typing import Any
 import uuid
 
 from sqlalchemy import Select, select, update
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.dml import Update
 
 from app.core.time_utils import utc_now
 from app.db.tx import commit_end_read
@@ -37,6 +40,52 @@ def build_durable_worker_id() -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
 
 
+# 认领时序里最容易被写错的四个环节收在本函数：候选读取的 LIMIT、读事务结束、
+# 逐条 CAS 的执行选项与 rowcount 判定、以及末尾一次性提交。
+ClaimCasFactory = Callable[[Row[Any]], "Update | None"]
+
+
+async def claim_rows_by_cas(
+    session: AsyncSession,
+    *,
+    candidate_query: Select[Any],
+    candidate_limit: int,
+    claim_cas: ClaimCasFactory,
+    max_claims: int | None = None,
+) -> list[Row[Any]]:
+    """按「读候选 → 结束读事务 → 逐条 CAS → 提交」认领任务，返回成功认领的候选行。
+
+    输入是只选出主键（可附带认领所需的其它列）的候选查询，和把一行候选映射为条件
+    UPDATE 的 `claim_cas`；返回该行为 None 表示本候选当前不可认领，直接跳过且不发
+    SQL。正确性只依赖数据库条件：每条 UPDATE 必须自带「尚未被他人认领」的谓词，
+    命中与否以 rowcount 判定，因此两个并发认领者最多一个成功。
+
+    约束与原因：
+    1. 候选读取后必须结束读事务，否则 SQLite 会在读事务内升级为写事务并直接以
+       SQLITE_BUSY 失败；PG 侧同样避免把快照带到认领阶段。
+    2. 全部尝试结束后统一提交，即使一条也没抢到也要提交——失败的 CAS 已经开启了
+       写事务，不提交会把写锁带到调用方的下一次操作。
+    3. `max_claims` 供「扫描多候选、只取一个」的领取者使用：达到数量即停止，避免把
+       已 CAS 成功的任务留在无人执行的 running 状态。
+    """
+
+    rows = list((await session.execute(candidate_query.limit(max(1, candidate_limit)))).all())
+    await commit_end_read(session)
+
+    claimed_rows: list[Row[Any]] = []
+    for row in rows:
+        statement = claim_cas(row)
+        if statement is None:
+            continue
+        result = await session.execute(statement.execution_options(synchronize_session=False))
+        if (result.rowcount or 0) == 1:
+            claimed_rows.append(row)
+            if max_claims is not None and len(claimed_rows) >= max_claims:
+                break
+    await session.commit()
+    return claimed_rows
+
+
 async def claim_pending_jobs(
     session: AsyncSession,
     model: type[Any],
@@ -47,7 +96,12 @@ async def claim_pending_jobs(
     now: datetime | None = None,
     candidate_query: Select[Any] | None = None,
 ) -> list[int]:
-    """以条件 UPDATE 原子认领 pending 任务，返回当前执行者实际取得的任务 ID。"""
+    """以条件 UPDATE 原子认领 pending 任务，返回当前执行者实际取得的任务 ID。
+
+    认领时序由 `claim_rows_by_cas` 提供；本函数只负责标准队列模型的列名与取值：
+    `worker_id` / `heartbeat_at` / `cancel_requested_at` / `error_code`。列命名不同或
+    需要额外认领条件的任务模型（如 ProjectBuildJob）直接复用 `claim_rows_by_cas`。
+    """
 
     claimed_at = now or utc_now()
     lease_expires_at = claimed_at + timedelta(seconds=max(1, lease_seconds))
@@ -58,15 +112,12 @@ async def claim_pending_jobs(
             .where(model.status == "pending", model.cancel_requested_at.is_(None))
             .order_by(model.created_at.asc(), model.id.asc())
         )
-    candidate_ids = list((await session.execute(query.limit(max(1, limit)))).scalars().all())
-    await commit_end_read(session)
 
-    claimed_ids: list[int] = []
-    for job_id in candidate_ids:
-        result = await session.execute(
+    def _claim_cas(row: Row[Any]) -> Update:
+        return (
             update(model)
             .where(
-                model.id == job_id,
+                model.id == row[0],
                 model.status == "pending",
                 model.cancel_requested_at.is_(None),
             )
@@ -81,12 +132,15 @@ async def claim_pending_jobs(
                 started_at=claimed_at,
                 finished_at=None,
             )
-            .execution_options(synchronize_session=False)
         )
-        if (result.rowcount or 0) == 1:
-            claimed_ids.append(int(job_id))
-    await session.commit()
-    return claimed_ids
+
+    claimed_rows = await claim_rows_by_cas(
+        session,
+        candidate_query=query,
+        candidate_limit=limit,
+        claim_cas=_claim_cas,
+    )
+    return [int(row[0]) for row in claimed_rows]
 
 
 async def renew_running_job_lease(
