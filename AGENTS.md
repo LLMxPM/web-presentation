@@ -50,7 +50,7 @@ Backend 是平台控制面，负责用户、权限、工作空间、项目、页
 - 新增 Python 代码时按 `api/routes`、`schemas`、`models`、`repositories`、`services`、`ai` 等现有分层放置，不要把路由、模型、仓储和业务逻辑写进同一个文件。
 - 新增或调整接口契约时，先明确路径、入参、出参、权限和错误语义，再联动 Editor、Runtime 或测试。
 - 涉及资源、组件、页面源码和 previewSchema 的导入能力时，必须经过 Backend 侧边界校验。
-- 数据库方言与并发边界统一收口在 `backend/app/db/`：写冲突退避重试走 `db/retry.run_with_write_retry`，事务边界技巧走 `db/tx`（`commit_end_read` / `acquire_admission_lock`），写锁探测走 `db/locks.holds_write_lock`，部署形态判定走 `db/profile.resolve_deployment_profile`。`ai/`、`services/`、`rendering/` 不得自行手写 `except OperationalError` 重试循环、下钻 `driver_connection`，或按 SQLite 特殊性写分支；`backend/tests/unit/test_db_adapter_layer.py` 是这些边界的防漂移门禁。注意 SQLite 方言会静默丢弃 `FOR UPDATE`/`SKIP LOCKED`，需要两侧都真正生效的互斥只能用条件 UPDATE（CAS）或单行 UPDATE 表达。
+- 数据库方言与并发边界统一收口在 `backend/app/db/`：写冲突退避重试走 `db/retry.run_with_write_retry`，事务边界技巧走 `db/tx`（`commit_end_read` / `acquire_admission_lock` / `row_locks_hold_until_commit`），写锁探测走 `db/locks.holds_write_lock`，部署形态判定走 `db/profile.resolve_deployment_profile`。后台任务认领的时序唯一实现在 `services/durable_job_lease_service.claim_rows_by_cas`：领域服务只提供候选查询、CAS 语句工厂和列名词汇，不得自行写「加锁读候选 → CAS → 提交」循环；`with_for_update(skip_locked=True)` 只允许出现在该文件内，方言分支只允许出现在 `app/db/`。`ai/`、`services/`、`rendering/` 不得自行手写 `except OperationalError` 重试循环、下钻 `driver_connection`、比较 `dialect.name`，或按 SQLite 特殊性写分支；`backend/tests/unit/test_db_adapter_layer.py` 是这些边界的防漂移门禁。注意 SQLite 方言会静默丢弃 `FOR UPDATE`/`SKIP LOCKED`（编译成普通 SELECT），需要两侧都真正生效的互斥只能用条件 UPDATE（CAS）或单行 UPDATE 表达；`SKIP LOCKED` 只在「加锁读与 CAS 写处于同一事务」时才真正减少无效竞争。
 - Backend 默认项目配置模板由 `backend/app/config_templates/` 自身维护；不要在 Backend 运行时代码中直接读取 `runtime/public/config/`。Runtime 自带的 `public/config/*.config.yaml` 仅作为 Runtime 独立运行和本地 fixture 使用，根仓契约测试只约束两侧模板入口和必要结构。
 - 涉及 Pydantic AI 新特性或不确定用法时，先查阅官方文档再确定实现方式。
 

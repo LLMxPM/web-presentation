@@ -169,6 +169,7 @@ Editor (Vue) ──HTTP──► Gateway ──┬──► Backend (FastAPI 控
 | **CDP/Browserless** | 已作废 | 维持。 |
 | **截图准确度** | **已定（2026-09-25）：现状可接受** | 不要求环境级高准确；旧截图复用可接受。原 P1-Screenshot/C0 撤销，降为 R-Screenshot。 |
 | **正常 Run 可恢复？** | **未决策**（被写成实现约束） | 应升为产品决策：要么承诺「会丢」并在 UI 标明，要么立项可恢复 Run。 |
+| **DB 并发原语收口 CP1–CP6** | **已实施（2026-09-28）** | 见 [`plans/db-concurrency-primitives.md`](./plans/db-concurrency-primitives.md) §9。写重试、事务技巧、部署 profile、认领时序已收口到 `backend/app/db/` + `durable_job_lease_service.claim_rows_by_cas`，PG 侧实测收益 14.7x（8 worker）。**不关闭本表其他项**：P1-TaskModel 只完成 claim 子集（9 套任务模型未统一）、P2-Locks 进程锁仍在、仓库没有 PG 侧认领用例、**D2 写路径基线门仍未采集**（该计划的 §9.4 测的是 claim 竞争，不是本表的 D2）。 |
 
 ---
 

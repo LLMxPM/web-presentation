@@ -16,7 +16,7 @@
 | :--- | :--- |
 | [`plans/lite-memory-adapter.md`](./plans/lite-memory-adapter.md) | Lite `memory://` 运行态适配器。**代码已实施（2026-09-25）**，见文末实施记录；未覆盖项（构建产物下载、跨宿主基线、Renderer 实链）仍是缺口。 |
 | [`plans/runtime-multi-deployment-scaling-plan.md`](./plans/runtime-multi-deployment-scaling-plan.md) | Runtime 多部署形态与横向扩容路线图。**T0-1…T4-3 已于 `e2efe6c..HEAD` 落地（2026-09-25）**，见文末实施记录与 [`review-multi-deployment-e2efe6c-head.md`](./review-multi-deployment-e2efe6c-head.md)：3 Critical / 5 Major 待修，多副本拓扑与跨副本 E2E 仍未就绪。 |
-| [`plans/db-concurrency-primitives.md`](./plans/db-concurrency-primitives.md) | 数据库并发原语收口（CP1–CP6）：承接 SQLite 专项的 **2b/2d**，细化 P2-Dialect / P2-Locks / P1-TaskModel。**CP1/CP2/CP5/CP6 已实施（2026-09-28，基线 `4becd41`）**，见其 §9 实施记录与偏差说明；**CP3/CP4 未实施**，排在 P3 契约冻结与 D2 基线之后。结论：不建能力层/Adapter，只按**事务形态**分方言收 claim。 |
+| [`plans/db-concurrency-primitives.md`](./plans/db-concurrency-primitives.md) | 数据库并发原语收口（CP1–CP6）：承接 SQLite 专项的 **2b/2d**，细化 P2-Dialect / P2-Locks / P1-TaskModel。**CP1–CP6 已全部实施（2026-09-28，基线 `4becd41`，提交 `ccc8a18..4e42795`）**，见 §9 实施记录、偏差说明与 §9.4/§9.5 的 PostgreSQL claim 竞争实测（收口前负缩放，8 worker 提升 14.7x）。结论：不建能力层/Adapter，只按**事务形态**分方言收 claim；残留缺口集中在 §7（PG 侧 CI 用例、多副本联调、故障注入）。 |
 
 ## 归档（历史）
 

@@ -1,6 +1,7 @@
 # 数据库并发原语收口规划（SQLite Lite / PostgreSQL Prod）
 
-> 状态：**部分实施（2026-09-28）**。CP1a / CP1b / CP2 / CP5 / CP6 已落地，见 §9 实施记录；**CP3 / CP4 仍未实施**，按 §5 排在 P3 契约冻结与 D2 基线之后。
+> 状态：**已实施（2026-09-28）**。CP1a / CP1b / CP2 / CP3 / CP4 / CP5 / CP6 全部落地，见 §9 实施记录。CP3 的度量门已在真实 PostgreSQL 16 上采集并复测（§9.4、§9.5），本文 §0-3 的「收益为零」措辞已被实测**部分证伪**，修正见 §0-3 与 §9.2。
+> **编号警示**：本文 §4 CP3 曾把该度量门写作「D2」，但它与现行评估的 **D2 写路径基线门**（Lite 2C4G 空闲/混合两轮 + `/metrics/db-write`）不是同一件事。**现行评估的 D2 仍未采集，不因本文关闭**，本文的测量统一称「claim 竞争基线」。
 > 基线提交：`4becd41`（分支 `dev`）。外部输入结论的基线是 `04d78bd`，两者差异只有 `4becd41`（构建链路评审修复），不影响本文结论。
 > 编号：本文工作项用 **CP1–CP6**（Concurrency Primitive），避免与既有 `C0–C4`（`lite-memory-adapter.md` 步骤 / 多部署评审 Critical）冲突。
 > 复用既有编号：**2b**（统一写重试，D1=A 后已重立）、**2d**（事务技巧语义化，有限重立）、**P1-TaskModel**、**P2-Dialect**、**P2-Locks**、**D1=A**、**D2**。
@@ -27,6 +28,8 @@
 
 3. **真正被漏掉的分歧点不是「有没有 SKIP LOCKED」，而是事务边界。** `SKIP LOCKED` 只在「锁定 SELECT」与「claim UPDATE」**同一事务**内有效。现有实现故意在两者之间 `commit()`（`services/durable_job_lease_service.py:62`、`services/project_build_service.py:277`），目的是规避 SQLite 读事务升级写锁失败。**因此直接给现有候选查询加 `skip_locked=True`，在 PG 上能编译、能跑，但收益为零**——commit 已经把行锁释放了。要拿到收益，必须让 PG 走「单事务 claim」，SQLite 走「跨 commit CAS」。这是事务形态差异，SQLAlchemy 不会替我们表达，也正是唯一值得抽象的原语。
 
+   > **本条「收益为零」已被 §9.4 实测部分证伪。** 跨事务加 `SKIP LOCKED` 仍然消除候选集重叠（无效 CAS 从 75–90% 降到 0%），因此并非零收益；但它把「CAS 空转」换成「等锁阻塞」，吞吐天花板只到同事务形态的一半左右，且不再有行锁保证。准确表述是：**跨事务 `SKIP LOCKED` 治症状，同事务 `SKIP LOCKED` 才治成因。**
+
 4. **模型/类型/索引层比外部评审以为的更结实：已有防漂移门禁。** `backend/tests/unit/test_db_adapter_layer.py` 锁住了四件事：写冲突判据单定义（`:87`）、`driver_connection` 下钻只允许在 `app/db/locks.py`（`:76`）、`with_variant(JSONB` 只在 `db/types.py` 与迁移 helper（`:100`）、model 不得写 `sqlite_where=`/`postgresql_where=`（`:110`）。对应历史步骤 **2a / 2c / 2e / 2f 已实施完毕**。
 
 5. **「SQLite 锁语义泄漏到业务层」部分过时。** 驱动对象下钻已收口（见上）；仍留在 AI 层的是**调用与锁序决策**：`ai/platform_runtime.py:333-344` 依据 `_has_sqlite_write_transaction()`（`:464-470`）决定走进程锁还是重试路径。泄漏面比描述的小，但确实还在，归 **P2-Locks**。
@@ -36,6 +39,8 @@
 **因此本文的处方**：不建能力层、不建 Adapter 矩阵；做 **CP1（=2b）命名与重试收口**、**CP2（=2d）事务技巧语义化**、**CP5 部署 profile 一等化**三件低风险收口，再把 **CP3 事务形态分方言 claim** 与 **CP4 折叠构建 claim** 绑定到 P3 任务运行时契约冻结之后执行。
 
 **对外部评审排序建议的修正**：它主张「先做 DB concurrency primitive 收口，再做 Agent Run lease」。**部分同意**——CP1/CP2/CP5 无契约影响，应当先做；但 CP3/CP4 改的就是 claim 契约本身，**先做等于把 P3 要冻结的东西先实现一遍再返工**。正确顺序是 CP1/CP2/CP5 → P3 契约冻结 → CP3/CP4 → Agent Run lease。
+
+> **本段排序已被 §5 修正 1、2 推翻，此处保留原文以便追溯。** 实测结论：CP3/CP4 对外签名不变、只改内部事务形态，与 P3 契约冻结无耦合；CP4 必须**先于** CP3。实际落地顺序为 CP1a/CP1b/CP2/CP5/CP6 → CP4 → claim 竞争基线 → CP3，全部已完成（§9）。仍受 P3 约束的是**认领语义**（批量协议形态），不是本原语的实现形态。
 
 ---
 
@@ -67,7 +72,7 @@
 | 5 | SQLite 与 PG 已是两个 deployment profile，不是两个平等后端 | **成立** | `db/sqlite_single_process.py:22`（排他锁）、`:111`（拒绝 `WEB_CONCURRENCY`/`UVICORN_WORKERS` > 1）、`:124`；`services/redis_runtime_client.py:277` 拒绝 PG + `memory://`、`:281-287` 拒绝 `memory://` + 多 worker、`:299` `is_postgresql_database_url`。**事实已存在，但被拆在 3 个模块、4 处校验里，没有单一概念** → CP5 |
 | 6 | 不放弃 SQLite；明确「SQLite 不参与分布式语义」 | **成立且已定案** | 与 **D1=A**（2026-09-24 定案：SQLite Lite 长期一等公民）一致。本文不重开 D1 |
 | 7 | `event_index = event_index + 1 RETURNING` 是应当保持的共享实现 | **成立** | `ai/run_event_writer.py:24-33`，并把写围栏条件并入同一条 UPDATE（`:37`）。**这是本仓最好的跨库并发样板，CP3 应对齐它的风格** |
-| 8 | Backend × 8 / 10000 jobs 下会大量 CAS 竞争失败、吞吐下降 | **方向成立，数字未验证** | 现行评估 §5 明确 D2 写路径基线**仍未采集**。竞争上界受 `limit`（构建侧 `:275` 取 10）与并发配置约束，代价是 round trip 与无效 CAS，不是正确性。CP3 必须带 D2 度量门，不得凭推测施工 |
+| 8 | Backend × 8 / 10000 jobs 下会大量 CAS 竞争失败、吞吐下降 | **成立，且比评审预估更严重（已实测）** | 原判定为「方向成立、数字未验证」。claim 竞争基线已在真实 PG 16 上采集（§9.4）：limit=1 时 8 个 worker 的认领吞吐只有单 worker 的 **1/4**（9.5 → 2.4 jobs/s），16 worker 进一步降到 2.0，无效 CAS 占比 75% → 90%。这不是「吞吐下降」而是**负缩放**：加副本反而变慢。修正后的正确表述是「竞争上界不受 `limit` 保护，因为所有 worker 都按 `created_at` 抢同一批头部候选」 |
 | 9 | 只拆「并发 primitive」5 类（job claim / leader / queue admission / write retry / process topology），95% 业务代码共用 | **成立** | 本文 CP1–CP6 与之一一对应，见 §2 映射表。其中 leader election 目前**无实现**（Lite 单进程不需要，PG 侧尚未做 Backend × N），列为 CP3 的可选延伸而非本轮范围 |
 
 ---
@@ -161,7 +166,7 @@
 
 ---
 
-## 4. 后做批次：CP3 / CP4（绑定 P3 契约冻结）
+## 4. 后做批次：CP3 / CP4（已实施，见 §9.1、§9.4–§9.5）
 
 ### CP3 claim 的事务形态分方言
 
@@ -186,9 +191,19 @@ durable_job_lease_service.claim_pending_jobs
 2. **PG 分支必须证明「最多一个执行者取得同一任务」不被削弱**。`SKIP LOCKED` 改变的是候选集选取，不是围栏；`UPDATE` 的 `status='pending'` + `cancel_requested_at IS NULL` 谓词必须保留，作为兜底 CAS。
 3. **不得把方言判断散到调用点**。分支只允许存在于 `durable_job_lease_service` 内部；新增门禁断言 `with_for_update(skip_locked=True)` 在 `backend/app` 中只出现于该文件（对齐 `test_db_adapter_layer.py` 既有风格）。
 4. **`recover_expired_running_jobs`（`:212-316`）本轮不动**。它的只读探测是为了「空闲期不发无命中 UPDATE」，属写放大治理（现行评估 §3 已关闭项 `023c95c`），与 claim 竞争无关；改成单事务会重新引入空闲写放大。
-5. **D2 度量门**：施工前必须采集 PG 侧 claim 竞争基线（无效 CAS 次数 / claim round trip / tick P95），施工后对比。D2 目前**仍未实测**（现行评估 §5、决策表「D2 仍待实测」），打点入口 `db/metrics.py`（`record_write_conflict` / `record_sql`）已就绪。**无基线不得声称吞吐改善。**
+5. **度量门（本文原写作「D2」）**：施工前必须采集 PG 侧 claim 竞争基线（无效 CAS 次数 / claim round trip / tick P95），施工后对比；无基线不得声称吞吐改善。**已满足**：见 §9.4（施工前）与 §9.5（施工后同口径复测）。注意这条度量门与现行评估的 **D2 写路径基线门**不是一件事，后者仍未采集，本文不代替它。打点入口 `db/metrics.py`（`record_write_conflict` / `record_sql`）服务于后者，本轮未使用。
 
 **验收**：`tests/integration/test_multi_replica_coordination.py`（现有并发认领用例 `:149`）在 PG 与 SQLite 两侧均通过且断言值不变；新增用例断言 PG 分支下两个并发 claim 的候选集不相交；`tests/integration/test_ai_page_mutation_queue.py` 三处 `claim_pending_jobs`（`:124,384,528`）行为不变。
+
+**实施结果（2026-09-28）**：
+
+- 分支落在 `claim_rows_by_cas`（CP4 抽出的认领时序）内部，判据是新增的 `db/tx.row_locks_hold_until_commit`，而不是布尔能力开关。
+- **实现与本文目标形态有一处偏差**：PG 侧仍是「逐条 CAS」，没有改成 `WHERE id IN (锁定集)` 的单条批量 UPDATE。原因是 `claim_cas` 必须支持逐候选取值（构建侧的租约裁剪按 `deadline_at` 逐行不同），批量形态无法表达。这不是瓶颈：§9.4 基准里的「同事务 SKIP LOCKED」变体用的正是**批量 UPDATE** 形态，而 §9.5 复测的 CP3 生产代码是**逐条 CAS** 形态，两者在全部并发档上一致（8 worker：35.2 vs 33.6；16 worker：36.8 vs 35.2，在复测偏差内），说明收益全部来自**事务边界**而不是语句合并。
+- SQLite 分支的 SQL 与语义未变：`with_for_update(of=model, skip_locked=True)` 在 SQLite 方言编译后与收口前逐字相同（已用双方言编译对照验证），事务形态判据在 Lite 侧为假因此仍走 `commit_end_read`。Lite 的全部回归仍由现有 1074 条用例守住。
+- `FOR UPDATE OF <目标任务表>` 显式限定加锁表，避免带 JOIN 的候选查询（`ai/page_mutation_queue.py`、`ai/component_mutation_queue.py` 都 JOIN `ai_agent_runs`）把 Run 行也锁住。
+- **`claim_cas` 是同步回调不是疏忽**：类型上排除持锁窗口内 await 慢路径，等于把硬约束 2 固化进签名。
+- 门禁三条：`skip_locked` 只出现在 `durable_job_lease_service.py`；`dialect.name` 只出现在 `app/db/` 与 Schema 播种脚本；SQLite 判据取值直接断言。
+- **验收缺口**：本文要求的「PG 与 SQLite 两侧均通过且断言值不变」只在 SQLite 侧达成。`test_multi_replica_coordination.py` 与 backend 全部用例都强制跑 SQLite（`tests/fixtures/app.py:51` 覆写 `DATABASE_URL`），仓库没有 PG 侧的认领用例；PG 证据来自 §9.4 的独立基准脚本，其表结构是与标准队列同构的合成表，**不含业务谓词与 `AgentWriteGuardedAsyncSession` 写围栏**。
 
 ### CP4 折叠构建 claim
 
@@ -203,6 +218,25 @@ durable_job_lease_service.claim_pending_jobs
 
 **验收**：`tests/integration/test_project_build.py`（`4becd41` 新增 162 行）全绿且断言不改；`grep -c "候选读取不应维持 SQLite" backend/app` 从 2 降为 1（只剩 `durable_job_lease_service`）。
 
+**实施结果（2026-09-28）——本项前提被证伪，交付形态与本文不同**：
+
+本文要求「把候选查询作为 `candidate_query` 传入 `claim_pending_jobs`」即可折叠。**不成立**，实际核对后有三个障碍：
+
+1. **两个模型的列词汇不相交。** `claim_pending_jobs` 硬编码 `model.cancel_requested_at` 谓词与 `error_code=None` 取值，而 `ProjectBuildJob`（`app/models/project_build_job.py`）**既没有 `cancel_requested_at` 也没有 `error_code` 列**——照原方案传入会直接抛 `AttributeError`。这才是构建侧当年自行实现 claim 的真实原因，不是偷懒。若强行合并，需要给共享函数加 `owner_attr`/`heartbeat_attr`/`cancel_attr`/`error_code_attr`/`extra_conditions`/`extra_values`/`lease_cap`/`max_claims` 共约 8 个可选参数。
+2. **构建是「扫描多候选、只领取一个」的认领者。** 旧实现扫描 10 个候选但在第一次 CAS 成功后 `return`；直接复用会连着认领至多 10 个并只执行第 1 个，其余 9 个滞留在无人执行的 `running` 状态并持着有效租约。**这是原方案会引入的真实缺陷。**
+3. 租约裁剪是**逐候选**计算，无法由统一的 `lease_seconds` 表达。
+
+因此实际交付改为**只抽象真正会写错的部分**：新增 `claim_rows_by_cas` 收口「加锁读候选 → （按方言）结束读事务 → 逐条 CAS → rowcount 判定 → 统一提交」这一**时序**，由各服务自带自己的列词汇与领域取值。没有引入配置层，且默认形态下 5 个既有队列的调用完全不变。
+
+顺带修掉旧实现的两个问题（均已在提交说明中记录）：
+
+- 旧 `claim_job` 在一条也没抢到时直接 `return`，此时失败的 CAS 已经开启写事务却没有提交，SQLite 侧会把写锁带给调用方的下一次操作。现在无条件统一末尾提交。
+- 旧实现没有「只领取一个」的约束（见上），现在由 `max_claims=1` 表达。
+
+**门禁落地时发现的第三份手写 claim**：`ai/external_task_queue.py:510 _claim_ready_batch`。本文与外部评审都只数到两份。它**不并入**并列为显式例外，理由是共享助手不承诺它的三条语义：按业务主键 `batch_id` 认领、以 `lease_generation` 作为租约围栏条件、以及必须与 `AiAgentRequirement` 置 `resolving` 同事务原子完成且抢锁失败时 `rollback`（不是 commit）。硬套会丢掉围栏语义。
+
+**验收结果**：`test_project_build.py`、`test_project_build_job_lease.py`、`test_project_build_worker_claim.py`、`test_multi_replica_coordination.py` 共 48 条全绿且断言未改；全部 6 个 claim 消费方相关用例 39 条全绿；backend 全量 1074 passed / 9 skipped。原验收里的 grep 判据已失效（CP2 阶段该注释被改写），改由 `test_claim_functions_must_delegate_cas_timing` 以 AST 精确判定「认领函数自己 execute 条件 UPDATE」。
+
 ---
 
 ## 5. 执行顺序与门禁
@@ -215,9 +249,14 @@ durable_job_lease_service.claim_pending_jobs
 | 4 | ~~CP1 `db/retry.py` 统一重试~~ | 1 | **已完成**，3 套写重试收口、读重试例外见 §9.2-4 |
 | 5 | ~~CP6 文档与定位澄清~~ | 3 | **已完成** |
 | 6 | **P3 任务运行时契约冻结** | — | 现行评估 §7.3 序 1，**本文不代替它**；未开始 |
-| 7 | CP3 claim 分方言 | 2、6、D2 基线 | 带度量门；**未开始**，先回答 §7-4 |
-| 8 | CP4 折叠构建 claim | 7 | **未开始** |
+| 7 | ~~CP3 claim 分方言~~ | 2、6、claim 竞争基线 | **已完成**（§9.4）。基线已实测；**对 6 的依赖已重新评估并解除**，理由见下 |
+| 8 | ~~CP4 折叠构建 claim~~ | 7 | **已完成**，但交付形态与本文不同（§4 CP4 实施结果）；**实际先于 CP3 落地** |
 | 9 | Agent Run lease / Backend × N | 7、8 | 外部评审担心的「再产生一套兼容逻辑」在此被前置消解 |
+
+**对本文 §5 原排序的两处修正**：
+
+1. **CP4 必须先于 CP3，不是后于。** 原文把 CP3 排在 CP4 之前。若在仍存在第二份手写 claim 时就给共享助手加分方言分支，结果是「共享实现被优化、构建 claim 保持旧形态」——恰好留下本文 §0-6 批评的分歧。实际执行顺序为 CP4 → claim 竞争基线 → CP3，CP3 的分方言因此只需落在一处。
+2. **CP3 与 P3 契约冻结无耦合，门禁解除。** 原排序把 CP3 绑在 P3 之后，理由是「CP3/CP4 改的就是 claim 契约本身」。复核后：CP3 **对外签名不变**、只改内部事务形态，且实测收益（14.7x，§9.5）与正确性证据（重复认领恒为 0）都已到位；真正有契约形态问题的是 CP4 的钩子形状，而 CP4 最终以「时序收口 + 词汇留在本地」落地，没有新增跨模块契约。因此 P3 冻结不再是 CP3 的前置条件。仍受 P3 约束的是**认领语义**（例如是否需要 claim-one 之外的批量协议），那属于 P3 的议题而不是本原语的议题。
 
 每步最小验证：
 
@@ -250,13 +289,15 @@ CP3/CP4 追加 `pnpm run test:backend:api` 与（PG 侧）`tests/integration/tes
 
 ## 7. 尚未验证（不得当作已有能力）
 
-1. **PG 侧 claim 竞争基线未采集**（D2 仍待实测）——CP3 的收益目前只有推理，没有数字。
-2. **Backend × N 从未联调**：现行评估 §5 列明的多实例共享对象存储、密钥一致、跨实例迁移与租约，全部未验收。CP5 的 profile 校验只保证「非法组合启动失败」，不证明「合法组合可横向扩展」。
+1. ~~**PG 侧 claim 竞争基线未采集**~~——**已在 §9.4 采集**（真实 PG 16、合成同构表、limit=1/4 × 1/4/8/16 worker，含复测）。仍未采集的是**真实业务谓词**下的基线：合成表不带 JOIN、绝对期限与写围栏。
+2. **Backend × N 从未联调**：现行评估 §5 列明的多实例共享对象存储、密钥一致、跨实例迁移与租约，全部未验收。CP5 的 profile 校验只保证「非法组合启动失败」，不证明「合法组合可横向扩展」。§9.4 的 8/16 worker 是**同进程多协程**并发，不等于多副本进程并发（后者另有连接池与 CPU 竞争），不得据此宣称多副本已验收。
 3. **故障注入缺失**：`busy_timeout` 耗尽、PG 序列化失败风暴、Worker 掉线下的 claim 行为均无端到端验收；CP1 统一重试后尤其需要一次 SQLite BUSY 与 PG `40001` 的对拍演练。
-4. **`AgentWriteGuardedAsyncSession`（`db/session.py:29-42`）会在每次 `commit()` 前执行写围栏校验**——这一点已由 §9.2-3 实测确认（正是它使 `page_screenshot_job_service.py:110` 的 `rollback()` 不能替换为 `commit()`）。**仍未量化**的是：PG 单事务 claim 会把围栏校验挪到 claim 提交点，是否与 `SKIP LOCKED` 的持锁窗口互相放大等待。CP3 施工前必须先回答。
-5. **CP4 的租约裁剪钩子形状未定**，取决于 P3 契约；本文只给约束，不给接口。
+4. **`AgentWriteGuardedAsyncSession`（`db/session.py:29-42`）会在每次 `commit()` 前执行写围栏校验**——这一点已由 §9.2-3 实测确认（正是它使 `page_screenshot_job_service.py:110` 的 `rollback()` 不能替换为 `commit()`）。**仍未量化**的是：PG 单事务 claim 会把围栏校验挪到 claim 提交点，是否与 `SKIP LOCKED` 的持锁窗口互相放大等待。CP3 已落地但**基准用的是普通 `AsyncSession`**，写围栏侧未被覆盖。
+   > 缩小后的风险面：认领调用点（5 个队列 Worker + 构建）都在队列循环里用 `session_factory()` 新建的普通会话，不是 Run 续跑期的受围栏会话；`claim_rows_by_cas` 的 `claim_cas` 为同步回调也不允许在持锁窗口内触发围栏查询。剩余可疑点是「受围栏会话是否可能进入 claim 路径」，需要一次调用点核对而非推测。
+5. ~~**CP4 的租约裁剪钩子形状未定**~~——已解决，但答案与本文预期相反：不做 per-candidate 钩子参数，而是把**逐候选取值**留给调用方（`claim_cas` 回调自带 `_cap_lease_expiry`），共享层只保证时序。见 §4 CP4 实施结果。
 6. **`idempotency_service` 的读重试路径零测试覆盖**（§9.2-4）。它的冲突退避、`None` 重试与 `for-else` 兜底再读目前完全靠代码审查保证；这也是它未被并入 `db/retry.py` 的直接原因。补覆盖是收口它的前置条件。
-7. **`rollback()` 会 expire ORM 实体**（§9.3）已在 SQLite 侧踩到一次；PG 侧单事务 claim 的 expire 时机尚未验证。
+7. **`rollback()` 会 expire ORM 实体**（§9.3）已在 SQLite 侧踩到一次；PG 侧单事务 claim 的 expire 时机尚未验证。CP3 的 `claim_rows_by_cas` 只返回**行的标量副本**（`row[0]`）不回读实体，构建侧的 `session.get` + `refresh` 发生在提交之后，因此设计上避开了该窗口——但没有测试固化这一不变量。
+8. **仓库没有 PG 侧认领用例**：`tests/fixtures/app.py:51` 强制把 `DATABASE_URL` 覆写为 SQLite，唯一的 PG 通道是 `P4_POSTGRES_DATABASE_URL` 且只被迁移对拍使用。CP3 的 PG 分支在 CI 中**不会执行**，回归只由 SQLite 侧与 §9.4 脚本保证。
 
 ---
 
@@ -264,7 +305,7 @@ CP3/CP4 追加 `pnpm run test:backend:api` 与（PG 侧）`tests/integration/tes
 
 | 文档 | 关系 |
 | :--- | :--- |
-| [`../architecture-assessment-2026-09-25.md`](../architecture-assessment-2026-09-25.md) | 现行评估。本文细化其 **P2-Dialect / P2-Locks / P1-TaskModel**，不改变其 §7.3 优先序；P3 契约冻结仍排在 CP3/CP4 之前 |
+| [`../architecture-assessment-2026-09-25.md`](../architecture-assessment-2026-09-25.md) | 现行评估。本文细化其 **P2-Dialect / P2-Locks / P1-TaskModel**；其 §7.3 优先序中 **P3 契约冻结对 CP3 的约束已在 §5 复核后解除**（对外签名不变），对 CP4 的语义议题仍然有效。**本文只关闭自己新立的「claim 竞争基线」门（§9.4、§9.5），不关闭现行评估的 D2 写路径基线门**，后者在评估文档中仍应保持「待实测」 |
 | [`../archive/architecture-assessment-sqlite-2026-09.md`](../archive/architecture-assessment-sqlite-2026-09.md) | S1–S8 与 2a–2f 原始定义。**2a/2c/2e/2f 已实施**（证据见 §0-4）；本文承接其 **2b/2d**，并修正 2d 的调用点清单（`code_check_service.py` 已无该技巧） |
 | [`../archive/architecture-assessment-2026-09-24.md`](../archive/architecture-assessment-2026-09-24.md) | D1=A 定案与 2b 重立约束（`:175` 禁止旧签名）来源 |
 | [`./runtime-multi-deployment-scaling-plan.md`](./runtime-multi-deployment-scaling-plan.md) | T2-2 构建持久领取（`e156630`）是 CP4 的对象；其阶段 0 门禁与多副本 E2E 缺口仍然有效 |
@@ -274,7 +315,7 @@ CP3/CP4 追加 `pnpm run test:backend:api` 与（PG 侧）`tests/integration/tes
 
 ## 9. 实施记录（2026-09-28）
 
-基线 `4becd41`，实施范围 CP1a / CP1b / CP2 / CP5 / CP6。**CP3 / CP4 未实施**，门禁条件（P3 契约冻结 + D2 基线）均未满足。
+基线 `4becd41`。第一批：CP1a / CP1b / CP2 / CP5 / CP6（§9.1–§9.3）。第二批：CP4 → claim 竞争基线 → CP3（§9.4–§9.5），第二批内部顺序与本文原排序不同，理由见 §5 修正 1、2。全部提交：`ccc8a18..4e42795`（`dev`）。
 
 ### 9.1 已落地
 
@@ -283,11 +324,13 @@ CP3/CP4 追加 `pnpm run test:backend:api` 与（PG 侧）`tests/integration/tes
 | **CP1a** | 改名 `SQLITE_BACKOFF_DELAYS`→`WRITE_CONFLICT_BACKOFF_DELAYS`、`SQLITE_LOCK_RETRY_ATTEMPTS`→`WRITE_CONFLICT_RETRY_ATTEMPTS`、`_SQLITE_EVENT_WRITE_*`→`_EVENT_WRITE_*`；日志事件 `page.screenshot.job.sqlite_lock_retry`→`.write_conflict_retry`；4 处「SQLite 锁/SQLite 重试」措辞改为写冲突口径。`db/errors.py:73-75` 的 SQLite 专属常量按计划**保留原名**。 |
 | **CP1b** | 新建 `backend/app/db/retry.py`：`run_with_write_retry`（session 工厂签名）、`exponential_backoff_delays`、`WriteConflictContext`。收编 3 个写重试点：`ai/page_mutation_executor._run_final_write`、`ai/platform_runtime._append_event_with_retry`、`services/page_screenshot_job_service._finalize_captured_job`。各处次数与退避数值**原样保留**为参数。 |
 | **CP2** | `db/tx.py` 扩展 `acquire_admission_lock`；4 个调用点改用命名原语：`durable_job_lease_service`（claim 候选读、recovery 空队列）、`rendering/repository.lock_scheduler_state_for_queue_admission`、`project_build_service.claim_job`。SQLite 事务机理移入 helper docstring。 |
+| **CP3** | `claim_rows_by_cas` 内按方言选择**事务形态**：PostgreSQL 在同一事务里 `SELECT ... FOR UPDATE OF <队列表> SKIP LOCKED` + 逐条 CAS 后一次性提交；SQLite 仍走「候选读 → `commit_end_read` → 逐条 CAS → 提交」。分支只经由 `db/tx.row_locks_hold_until_commit()` 这一个出口，业务层不再比较 `dialect.name`。对外签名与 `claim_pending_jobs` 返回语义不变；`of=model` 是必需的，否则 JOIN 候选查询会把 `ai_agent_runs` 一并锁住。收益与实测见 §9.4、§9.5。 |
+| **CP4** | 交付形态与本文不同：折叠的是**认领时序**不是词汇表。新增 `durable_job_lease_service.claim_rows_by_cas(session, model, candidate_query=…, claim_cas=…, max_claims=…)`，`ProjectBuildJob` 的列名、绝对期限谓词、`_cap_lease_expiry` 与 `attempt_id` 生成留在调用方本地（本文原设想复用 `claim_pending_jobs` 需要 8 个参数，见 §4 CP4 实施结果）。顺带修掉构建 claim 的两个既有缺陷：零候选时提前 `return` 留下未提交的写事务；复用批量循环后会多领任务却只执行 1 个（以 `max_claims=1` 固定）。 |
 | **CP5** | 新建 `backend/app/db/profile.py`：`DeploymentProfile` + `resolve_deployment_profile`；`read_explicit_worker_count` 由 `db/sqlite_single_process.py` 迁入，`is_postgresql_database_url` 由 `services/redis_runtime_client.py` 迁入（无外部消费者，已从其 `__all__` 移除）。`sqlite_single_process`、`redis_runtime_client`、`signing_identity` 三处校验改为消费 profile，**错误消息逐字不变**。新增拒绝：SQLite 文件库 + `BACKEND_MULTI_INSTANCE=true` 启动失败。`/readyz` 与启动日志暴露 `deployment_profile` / `backend_multi_process_allowed`。 |
 | **CP6** | 未删锁。定位写进 `_get_run_event_lock` docstring 与 `docs/developer/backend/ai-agent.md` 新增小节「事件追加的并发边界」。 |
-| 门禁 | `tests/unit/test_db_adapter_layer.py` 新增 2 条防漂移断言；新增 `tests/unit/test_deployment_profile.py`（9 例）；`AGENTS.md` backend 开发约束新增 `app/db/` 边界条目。 |
+| 门禁 | `tests/unit/test_db_adapter_layer.py` 第一批新增 2 条防漂移断言；第二批新增 5 条：认领函数不得自行 execute CAS（AST 检查，附带**正控用例**防门禁静默失效）、`skip_locked` 只允许出现在租约服务、`dialect.name` 分支只允许出现在 `app/db/` 与 `app/scripts/test_data.py`、`row_locks_hold_until_commit` 在 SQLite 上必须为假。新增 `tests/unit/test_deployment_profile.py`（9 例）；`AGENTS.md` backend 开发约束新增 `app/db/` 边界条目与认领时序条目。 |
 
-**实测**：`pnpm run test:backend` **1069 passed / 9 skipped**；`pnpm run test:contracts` 10 files / 33 tests 全绿（含 `test:repository`）。
+**实测**：`pnpm run test:backend` 第一批后 **1069 passed / 9 skipped**，第二批后 **1074 passed / 9 skipped**（§9.5）；`pnpm run test:contracts` 10 files / 33 tests 全绿（含 `test:repository`）。认领相关 96 例、构建与多副本 48 例全绿，SQLite 侧既有断言未改。
 
 ### 9.2 与规划的偏差（均为实测后修正）
 
@@ -302,3 +345,57 @@ CP3/CP4 追加 `pnpm run test:backend:api` 与（PG 侧）`tests/integration/tes
 ### 9.3 实施中发现的新约束（后续必做项需继承）
 
 **`rollback()` 会 expire 会话内全部 ORM 实体**，因此 `on_conflict` 钩子里读取实体属性会触发同步懒加载并抛 `MissingGreenlet`。原 `platform_runtime` 代码把 `run_id` 在循环**之前**取成标量，正是规避此问题；首次改写时踩中并被 `test_append_event_should_retry_clean_sqlite_transaction_after_lock` 拦住。已把该约束写进 `WriteConflictContext` docstring 与调用点注释。**CP3 的单事务 claim 同样在事务内持有 ORM 实体，设计时必须显式考虑 expire 时机。**
+
+### 9.4 PostgreSQL claim 竞争基线（施工前实测）
+
+本文 §4 CP3 原把这一门写作「D2」，与现行评估的 **D2 写路径基线门**（Lite 2C4G + `/metrics/db-write`）重名但不是同一件事；后者仍未采集。本节只关闭 claim 竞争这一门。
+
+**环境**：本地 Docker PostgreSQL 16.14（`localhost:5432`），一次性测量库，`asyncpg`，同进程多协程并发。测量表是与标准队列模型同构的合成表（`id/status/worker_id/lease_expires_at/heartbeat_at/attempt_count/error_code/error_message/cancel_requested_at/started_at/finished_at/created_at`），刻意避开外键播种噪声。脚本 `.tmp/d2/measure_claim_baseline.py`，`created_at` 单调递增以使全部 worker 竞争同一批头部候选。认领后模拟 10 ms 执行以近似真实队列节奏。
+
+**判据**：吞吐（jobs/s）、无效 CAS 占比（发出的 UPDATE 数 − 实际认领数）、每认领一次的任务数据库往返数、tick 延迟 P50/P95、重复认领数（正确性）。
+
+**三种形态的口径**（§9.5 的对比依赖这段，勿混用）：「收口前」= 当时生产代码 `claim_pending_jobs`（跨事务 + 逐条 CAS）；「同事务 SKIP LOCKED」= 单事务内加锁读 + **一条 `WHERE id IN (锁定集)` 批量 UPDATE**（CP3 设想形态之一，实际未采用）；「跨事务 SKIP LOCKED」= 外部评审的字面处方（保留 commit，只加关键字）。
+
+3000 条 pending、10 s 窗口，`limit=1`（对应 `page_mutation_queue`、`image_generation_queue`、`component_mutation_queue` 的真实形态）：
+
+| worker 数 | 收口前（跨事务 CAS） | 同事务 SKIP LOCKED | 跨事务 SKIP LOCKED（字面处方） |
+| :--- | :--- | :--- | :--- |
+| 1 | 9.5 /s，无效 0% | 15.0 /s | 9.0 /s |
+| 4 | 4.3 /s，无效 **74.9%** | 30.8 /s | 16.4 /s |
+| 8 | 2.4 /s，无效 **87.4%** | 33.6 /s | 18.4 /s |
+| 16 | 2.0 /s，无效 **89.7%** | 35.2 /s | 19.2 /s |
+
+`limit=4`（对应截图/资源回填队列的 `limit=concurrency` 形态）：
+
+| worker 数 | 收口前 | 同事务 SKIP LOCKED | 跨事务 SKIP LOCKED |
+| :--- | :--- | :--- | :--- |
+| 4 | 16.4 /s，无效 75.0% | 122.0 /s | 62.4 /s |
+| 8 | 12.8 /s，无效 82.0% | 140.8 /s | 70.4 /s |
+| 16 | 8.8 /s，无效 88.9% | 153.6 /s | 76.8 /s |
+
+**四条结论**：
+
+1. **收口前是负缩放，不是「吞吐下降」。** 8 worker 相对 1 worker 反而慢 4 倍，16 worker 再降到 2.0 /s；每认领一个任务要付出 15.9 次数据库往返（limit=1、8 worker）。原因：候选按 `created_at` 排序且不加锁，所有 worker 拿到**同一批头部候选**，CAS 只能排队等锁后失败重试。外部评审第 8 条的方向由此从推测变为实测，且严重程度高于其描述。
+2. **收益几乎全部来自事务边界，不来自 `SKIP LOCKED` 关键字。** 同事务形态在 1 worker 时就比收口前快 1.58 倍（9.5 → 15.0），此时**完全没有竞争**——差异纯粹是少一次 COMMIT 往返。这支持本文 §0-1「不要建能力布尔层，要改事务形态」。
+3. **本文 §0-3 的「直接加 `skip_locked` 收益为零」措辞过强，已修正。** 跨事务形态确实把无效 CAS 从 75–90% 打到 0%，吞吐约为收口前的 7.7 倍（8 worker，18.4 vs 2.4）。但它的天花板只有同事务形态的一半，且 tick P50 随 worker 线性增长（222 → 425 → 828 ms）——它把「空转 CAS」换成了「等锁阻塞」，串行点没有消失。**准确结论：跨事务 `SKIP LOCKED` 治症状，同事务才治成因。**
+4. **正确性始终未被削弱。** 全部 24 组运行（3 形态 × 7 并发档 × 2 limit）重复认领数恒为 0，包括收口前的 CAS 形态。这与 §4 CP3 硬约束 2 一致：`SKIP LOCKED` 改变候选集选取，围栏仍由 CAS 谓词保证。
+
+**测量边界（不得超出解读）**：合成表不含业务谓词（绝对期限、JOIN、`AgentWriteGuardedAsyncSession` 写围栏）；同进程多协程 ≠ 多副本进程；单轮采样（8 worker 复测两次为 2.4 与 2.8 /s，同事务 33.6 与 34.1，偏差约 ±15% 内）；模拟执行时长 10 ms 是人为设定，只影响绝对吞吐不影响形态间相对关系。**基准脚本未入库**：`.tmp/` 被根 `.gitignore` 忽略，`measure_claim_baseline.py` 只存在于采集机。因此本文数字**不能从仓库复现**，也不进 CI；需要复测时必须重写脚本，或先把脚本正式纳入版本控制（建议 `backend/scripts/` 下的只读基准入口）。
+
+### 9.5 CP4 / CP3 落地后的同口径复测
+
+CP3 落地后以**同一脚本、同一表、同一参数**复跑，此时基准脚本里的 `current` 变体即生产代码 `claim_pending_jobs` 本身（脚本直接导入它），因此对比是同口径的：
+
+| 形态 | limit=1，1 / 4 / 8 / 16 worker | limit=4，4 / 8 / 16 worker |
+| :--- | :--- | :--- |
+| 收口前 | 9.5 / 4.3 / 2.4 / 2.0 | 16.4 / 12.8 / 8.8 |
+| CP3 后 | 14.5 / 29.2 / 35.2 / 36.8 | 110.4 / 131.2 / 147.2 |
+| 倍率 | 1.5x / 6.8x / **14.7x** / **18.4x** | 6.7x / **10.3x** / **16.7x** |
+| 无效 CAS | 0% / 0% / 0% / 0%（原 0 / 74.9 / 87.4 / 89.7%） | 0%（原 75.0 / 82.0 / 88.9%） |
+| 每任务往返 | 2.0（原 2.0 / 7.95 / 15.92 / 19.4） | 1.25（原 5.0 / 6.95 / 11.25） |
+| tick P50（8 worker） | 211.75 ms（原 390.76 ms） | 225.53 ms（原 417.06 ms） |
+| 重复认领 | 恒为 0 | 恒为 0 |
+
+缩放曲线由负转正（limit=1：14.5 → 29.2 → 35.2 → 36.8）。CP3 后实测值与 §9.4 中「同事务 SKIP LOCKED」预测值一致（35.2 vs 33.6、36.8 vs 35.2，在复测偏差内），说明 §4 CP3 记录的「逐条 CAS 而非批量 UPDATE」没有损失收益。
+
+**回归**：`pnpm run test:backend` **1074 passed / 9 skipped**（CP4 后 1071，CP3 新增 3 条门禁），SQLite 侧认领用例断言未改。
