@@ -34,7 +34,7 @@ export function getIconStyleLabel(analysis: AssetAnalysisMetadata | null | undef
     complex: '复杂',
     unknown: '未知',
   }
-  return styleMap[analysis.icon.style] || '未知'
+  return styleMap[analysis.icon.style ?? 'unknown'] || '未知'
 }
 
 /**
@@ -48,7 +48,7 @@ export function getAnalysisStatusLabel(analysis: AssetAnalysisMetadata | null | 
     unsupported: '不支持',
     error: '分析失败',
   }
-  return statusMap[analysis.icon.analysis_status] || '未分析'
+  return statusMap[analysis.icon.analysis_status ?? ''] || '未分析'
 }
 
 /**

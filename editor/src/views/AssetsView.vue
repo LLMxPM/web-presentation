@@ -1152,7 +1152,7 @@ function syncEditForm(asset: AssetResponse): void {
   editForm.description = asset.description ?? ''
   editForm.approx_aspect_ratio = asset.approx_aspect_ratio ?? ''
   originalApproxAspectRatioText.value = editForm.approx_aspect_ratio
-  editTagsText.value = asset.tags.join(', ')
+  editTagsText.value = (asset.tags ?? []).join(', ')
 }
 
 async function loadContent(): Promise<void> {

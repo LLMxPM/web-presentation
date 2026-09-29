@@ -2,7 +2,7 @@
 # Lite 规模、故障域与隔离决策
 
 > **状态**：已定（2026-09-29 文档化）。本文记录 **WS-G1（Lite 规模与是否拆容器）** 与 **WS-G5（Renderer 隔离）** 的结论，供部署文档与用户文档引用。
-> 镜像层证据与未实施形态见内部调研 `docs/temp/image-delivery-research-2026-09-29.md` §6–§9 与子计划 `docs/temp/plans/deployment-image-consolidation-2026-09-29.md`（`docs/temp` 为 gitignore 内部文档，不对外发布）。本文自包含可执行结论。
+> 历史镜像层证据见[已归档调研](../../temp/archive/image-delivery-research-2026-09-29.md) §6–§9，未实施形态见[已归档子计划](../../temp/archive/deployment-image-consolidation-2026-09-29.md)。`docs/temp` 已纳入版本控制；最新复核与下一轮验证见[现行评估与计划](../../temp/README.md)。本文保留既有决策，下文发布形态描述需结合对应版本阅读，不能等同于当前 HEAD 的交付形态。
 
 ---
 

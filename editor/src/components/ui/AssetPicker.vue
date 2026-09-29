@@ -424,7 +424,7 @@ function buildAssetMeta(asset: AssetPickerAsset): string {
  * @param asset 完整资源或主题资源摘要
  */
 function getAssetTags(asset: AssetPickerAsset): string[] {
-  return 'tags' in asset ? asset.tags : []
+  return 'tags' in asset ? asset.tags ?? [] : []
 }
 </script>
 

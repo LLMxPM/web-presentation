@@ -1,12 +1,14 @@
 /**
  * 文件功能：定义前端共享的接口类型与分页结构，供页面、状态和请求层统一复用。
  *
- * 手写镜像层（WS-E2 降级）：结构事实源为 Backend `/openapi.json`，
+ * 核心实体直接引用生成类型；结构事实源为 Backend `/openapi.json`，
  * 生成物为 `api.generated.ts`（命令 `pnpm run codegen:editor-api`）。
  * 新增/修改 API 字段时先改 Backend schema 再重跑 codegen，并用
  * `tests/contracts/editor-api-types-drift.test.ts` 对拍；本文件暂保留
  * 前端别名与本地查询类型，逐步迁移到生成物。
  */
+import type * as GeneratedApi from './api.generated'
+
 export type RecordStatus = 'active' | 'archived'
 export type UserRole = 'platform_admin' | 'workspace_user'
 export type AiLlmConfigScope = 'global' | 'personal'
@@ -20,23 +22,9 @@ export type AssetRole = 'foundation' | 'content'
 export type ProjectMenuMode = 'text' | 'preview' | 'bottom-preview'
 export type WorkspaceComponentType = '页面组件' | '内容组件' | '原子组件'
 
-export interface PreviewSizePreset {
-  name: string
-  width: number
-  height: number
-  base_font_size?: string
-  icon_default_stroke_width?: number
-}
+export type PreviewSizePreset = GeneratedApi.PreviewSizePreset
 
-export interface AuthUser {
-  id: number
-  username: string
-  display_name: string
-  role: UserRole
-  status: RecordStatus
-  last_login_at: string | null
-  preview_size_presets: PreviewSizePreset[]
-}
+export type AuthUser = GeneratedApi.AuthUser
 
 export interface PagedResponse<T> {
   items: T[]
@@ -45,9 +33,7 @@ export interface PagedResponse<T> {
   page_size: number
 }
 
-export interface ProjectBuildExtraAssetsJson {
-  asset_names: string[]
-}
+export type ProjectBuildExtraAssetsJson = GeneratedApi.ProjectBuildExtraAssetsConfig
 
 export interface ProjectSuggestedReferenceAssetItem {
   id: number
@@ -81,70 +67,13 @@ export interface SuggestedComponentsResponse {
   items: SuggestedComponentItem[]
 }
 
-export interface WorkspaceItem {
-  id: number
-  code: string
-  name: string
-  description: string | null
-  status: RecordStatus
-  last_opened_at: string | null
-  default_theme_key: string | null
-  created_at: string
-  updated_at: string
-  created_by: number | null
-  updated_by: number | null
-}
+export type WorkspaceItem = GeneratedApi.WorkspaceItem
 
-export interface ProjectItem {
-  id: number
-  workspace_id: number
-  workspace_name: string
-  code: string
-  name: string
-  description: string | null
-  is_system_managed: boolean
-  status: RecordStatus
-  archived_at: string | null
-  page_width: number
-  page_height: number
-  base_font_size: string
-  icon_default_stroke_width: number
-  show_pdf_export_button: boolean
-  menu_mode: ProjectMenuMode
-  theme_key: string | null
-  style_spec_markdown: string
-  build_extra_assets_json?: ProjectBuildExtraAssetsJson
-  routed_page_count: number
-  total_page_count: number
-  first_page_title: string | null
-  first_page_screenshot_url: string | null
-  created_at: string
-  updated_at: string
-  created_by: number | null
-  updated_by: number | null
-}
+export type ProjectItem = GeneratedApi.ProjectItem
 
 export type ProjectBuildStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
-export interface WorkspaceStyleItem {
-  id: number
-  workspace_id: number
-  key: string
-  name: string
-  description: string | null
-  page_width: number
-  page_height: number
-  base_font_size: string
-  icon_default_stroke_width: number
-  show_pdf_export_button: boolean
-  menu_mode: ProjectMenuMode
-  theme_key: string | null
-  style_spec_markdown: string
-  created_at: string
-  updated_at: string
-  created_by: number | null
-  updated_by: number | null
-}
+export type WorkspaceStyleItem = GeneratedApi.WorkspaceStyleItem
 
 export interface WorkspaceStylePackageStyleSummary {
   key: string
@@ -278,43 +207,9 @@ export interface ProjectBuildJob {
   finished_at: string | null
 }
 
-export interface ProjectRouteBinding {
-  route_id: number
-  parent_route: string | null
-  route: string
-  full_path: string
-  parent_order?: number | null
-  order?: number
-}
+export type ProjectRouteBinding = GeneratedApi.ProjectRoutePageBinding
 
-export interface PageItem {
-  id: number
-  code: string
-  page_content: string
-  current_version_no: number
-  file_type: PageFileType
-  title: string
-  summary: string | null
-  speaker_notes?: string | null
-  status: RecordStatus
-  workspace_id: number | null
-  workspace_name: string | null
-  project_id: number | null
-  project_name: string | null
-  created_at: string
-  updated_at: string
-  created_by: number | null
-  updated_by: number | null
-  screenshot_url: string | null
-  screenshot_version_no: number | null
-  screenshot_config_hash: string | null
-  screenshot_viewport_width?: number | null
-  screenshot_viewport_height?: number | null
-  screenshot_is_latest: boolean
-  screenshot_updated_at: string | null
-  is_in_project_route: boolean | null
-  route_bindings: ProjectRouteBinding[]
-}
+export type PageItem = GeneratedApi.PageItem
 
 export type PageCopyRoutePlacement = 'none' | 'root' | 'group'
 
@@ -563,28 +458,7 @@ export interface WorkspaceComponentReferenceUpgradeResponse {
   failures: WorkspaceComponentReferenceUpgradeItem[]
 }
 
-export interface WorkspaceComponentItem {
-  id: number
-  workspace_id: number
-  workspace_name: string | null
-  code: string
-  content: string
-  preview_schema: string | null
-  current_version_no: number
-  draft_base_version_no: number
-  has_unpublished_changes: boolean
-  published_at: string | null
-  file_type: PageFileType
-  name: string
-  import_name: string
-  component_type: WorkspaceComponentType
-  summary: string | null
-  status: RecordStatus
-  created_at: string
-  updated_at: string
-  created_by: number | null
-  updated_by: number | null
-}
+export type WorkspaceComponentItem = GeneratedApi.WorkspaceComponentItem
 
 export interface WorkspaceComponentVersionListItem {
   id: number
@@ -804,24 +678,7 @@ export interface PreviewEntryDescriptor {
   module_path?: string
 }
 
-export interface PreviewArtifactResponse {
-  preview_url: string
-  artifact_id: string
-  preview_kind: PreviewKind
-  entry_descriptor: PreviewEntryDescriptor
-  viewport_width: number
-  viewport_height: number
-  project_id?: number | null
-  workspace_id?: number | null
-  component_preview_mode?: ComponentPreviewMode | null
-  component_source?: ComponentPreviewSource | null
-  component_code?: string | null
-  component_version_no?: number | null
-  runtime_kit_component_name?: string | null
-  runtime_kit_manifest_version?: string | null
-  asset_id?: number | null
-  asset_name?: string | null
-}
+export type PreviewArtifactResponse = GeneratedApi.PreviewArtifactResponse
 
 export interface RuntimeKitComponentCapabilityItem {
   kind: RuntimeKitCapabilityKind
@@ -1482,30 +1339,11 @@ export interface ThemePalette {
   accent: string[]
 }
 
-export interface ThemeAssetSummary {
-  id: number
-  name: string
-  original_name: string
-  asset_type: string
-  analysis_metadata: AssetAnalysisMetadata | null
-  url: string | null
-}
+export type ThemeAssetSummary = GeneratedApi.WorkspaceThemeAssetSummary
 
-export interface AssetIconAnalysisPayload {
-  format: 'svg' | 'image' | 'unknown'
-  render_mode: 'inline_svg' | 'image'
-  style: 'stroke' | 'fill' | 'mixed' | 'complex' | 'unknown'
-  inline_safe: boolean
-  stroke_width_editable: boolean
-  analysis_status: 'analyzed' | 'unsupported' | 'error'
-  reasons: string[]
-}
+export type AssetIconAnalysisPayload = GeneratedApi.AssetIconAnalysisPayload
 
-export interface AssetAnalysisMetadata {
-  schema_version: number
-  kind: 'icon'
-  icon: AssetIconAnalysisPayload
-}
+export type AssetAnalysisMetadata = GeneratedApi.AssetAnalysisMetadata
 
 export interface AssetRenderHintMetadata {
   schema_version: number
@@ -1520,73 +1358,9 @@ export interface WorkspaceThemeFontFamilySummary {
   name: string
 }
 
-export interface WorkspaceThemeItem {
-  id: number
-  workspace_id: number
-  key: string
-  name: string
-  description: string | null
-  logo_asset_id: number | null
-  invert_logo_asset_id: number | null
-  project_icon_asset_id: number | null
-  project_icon_name: string | null
-  heading_font_family_id: number | null
-  body_font_family_id: number | null
-  code_font_family_id: number | null
-  heading_font_label: string | null
-  body_font_label: string | null
-  code_font_label: string | null
-  heading_font_preset?: string | null
-  body_font_preset?: string | null
-  code_font_preset?: string | null
-  palette: ThemePalette
-  logo_asset: ThemeAssetSummary | null
-  invert_logo_asset: ThemeAssetSummary | null
-  project_icon_asset: ThemeAssetSummary | null
-  heading_font_family: WorkspaceThemeFontFamilySummary | null
-  body_font_family: WorkspaceThemeFontFamilySummary | null
-  code_font_family: WorkspaceThemeFontFamilySummary | null
-  resolved_theme_config_yaml: string
-  created_at: string
-  updated_at: string
-  created_by: number | null
-  updated_by: number | null
-}
+export type WorkspaceThemeItem = GeneratedApi.WorkspaceThemeItem
 
-export interface AssetResponse {
-  id: number
-  workspace_id: number
-  name: string
-  file_name: string
-  original_name: string
-  description: string | null
-  file_size: number
-  file_hash: string
-  content_type: string | null
-  asset_type: AssetType
-  asset_role: AssetRole
-  render_type: AssetType
-  tags: string[]
-  analysis_metadata: AssetAnalysisMetadata | null
-  render_metadata: AssetRenderHintMetadata | Record<string, unknown> | null
-  approx_aspect_ratio?: string | null
-  approx_aspect_ratio_value?: number | null
-  aspect_ratio_source?: 'auto' | 'manual' | 'agent' | string | null
-  status: RecordStatus
-  archived_at: string | null
-  archive_reason: string | null
-  source_asset_id: number | null
-  history_kind: string | null
-  content_editable: boolean
-  url: string | null
-  font_config: WorkspaceFontConfigSummary | null
-  rename_block_reason: string | null
-  delete_block_reason: string | null
-  archive_block_reason: string | null
-  archive_warning_reasons: string[]
-  created_at: string
-  updated_at: string
-}
+export type AssetResponse = GeneratedApi.AssetResponse
 
 export interface AssetContentResponse {
   asset: AssetResponse

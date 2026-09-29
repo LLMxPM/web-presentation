@@ -122,72 +122,20 @@ export interface RuntimeModuleResolverConfig {
   }>
 }
 
-export type ComponentPreviewFieldType = 'string' | 'textarea' | 'number' | 'boolean' | 'select' | 'json'
-
-export interface ComponentPreviewSelectOption {
-  label: string
-  value: string | number | boolean
-}
-
-export interface ComponentPreviewPropField {
-  type: ComponentPreviewFieldType
-  label?: string
-  description?: string
-  required?: boolean
-  default?: unknown
-  placeholder?: string
-  options?: ComponentPreviewSelectOption[]
-}
-
-export interface ComponentPreviewSlotTextNode {
-  type: 'text'
-  value: string
-}
-
-export interface ComponentPreviewSlotHtmlNode {
-  type: 'html'
-  value: string
-}
-
-export interface ComponentPreviewSlotComponentNode {
-  type: 'component'
-  component: string
-  props?: Record<string, unknown>
-  children?: ComponentPreviewSlotNode[]
-}
-
-export type ComponentPreviewSlotNode =
-  | ComponentPreviewSlotTextNode
-  | ComponentPreviewSlotHtmlNode
-  | ComponentPreviewSlotComponentNode
-
-export interface ComponentPreviewSlotField {
-  label?: string
-  description?: string
-  default?: ComponentPreviewSlotNode[]
-}
-
-export interface ComponentPreviewMockField {
-  label?: string
-  description?: string
-  default?: unknown
-}
-
-export interface ComponentPreviewPreset {
-  key: string
-  label: string
-  description?: string
-  props?: Record<string, unknown>
-  slots?: Record<string, ComponentPreviewSlotNode[]>
-  mocks?: Record<string, unknown>
-}
-
-export interface ComponentPreviewSchema {
-  props?: Record<string, ComponentPreviewPropField>
-  slots?: Record<string, ComponentPreviewSlotField>
-  mocks?: Record<string, ComponentPreviewMockField>
-  presets?: ComponentPreviewPreset[]
-}
+import type { ComponentPreviewSchema } from './component-preview.generated'
+export type {
+  ComponentPreviewSchema,
+  ComponentPreviewFieldType,
+  ComponentPreviewSelectOption,
+  ComponentPreviewPropField,
+  ComponentPreviewSlotTextNode,
+  ComponentPreviewSlotHtmlNode,
+  ComponentPreviewSlotComponentNode,
+  ComponentPreviewSlotNode,
+  ComponentPreviewSlotField,
+  ComponentPreviewMockField,
+  ComponentPreviewPreset
+} from './component-preview.generated'
 
 export type RuntimeComponentPreviewSizeMode = 'auto' | 'percent' | 'fixed'
 export type RuntimeComponentPreviewAlignment = 'start' | 'center' | 'end'

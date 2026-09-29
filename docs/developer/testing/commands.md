@@ -39,6 +39,7 @@ pnpm run test:runtime:gate
 
 ```powershell
 pnpm run test:contracts
+pnpm run test:contracts:generated
 pnpm run test:repository
 pnpm run test:python-workspace
 pnpm run test:contracts:docker-context
@@ -53,6 +54,7 @@ pnpm run test:e2e:regression
 pnpm run test:e2e:all
 ```
 
+- `test:contracts:generated`：在隔离配置下从当前 Backend 重导 OpenAPI，核对 API 与两端 previewSchema 生成物；不启动业务服务。契约修改后先运行 `codegen:editor-api` / `codegen:preview-types`。
 - `test:e2e:run`：只运行 `auth + smoke`，不准备环境；globalSetup 会校验 smoke 数据指纹，未准备时提示先执行 prepare。
 - `test:e2e:prepare`：准备 E2E 环境，等价于 `node scripts/testing/prepare-e2e-env.mjs`。未显式设置 `TESTING_START_*` / `TESTING_REUSE_BACKEND` 时进入自启模式：先校验 8000/5173/7373/7400 端口与本地 PostgreSQL/Redis 依赖，端口被占用或依赖缺失时立即报错并给出提示；校验通过后自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock`，随后重置数据、播种 smoke 数据并启动/确认服务。
 - `test:e2e`：准备环境后运行 `auth + smoke`。
@@ -97,3 +99,23 @@ pnpm run test:all
 - `test:render-e2e`：准备 E2E 环境后运行真实页面截图 smoke，覆盖四服务链路并检查 PNG 文件头、尺寸与任务状态，不再使用 Renderer 目录的占位用例。
 
 运行 E2E 前分别执行 `pnpm exec playwright install chromium` 与 `uv run --project renderer playwright install chromium`；Linux 首次安装加 `--with-deps`。准备脚本会启动/确认 Renderer，并使用 Backend 真实客户端校验服务认证、Worker ID 和 profile。测试凭据使用专门的 `E2E_RENDER_SERVICE_CREDENTIAL`，可通过 `E2E_RENDERER_BASE_URL` 覆盖 Renderer 地址，禁止复用生产身份。
+
+## 交付镜像与完整拓扑探针
+
+以下命令只在已准备好的专用测试机器执行。`check-image-startup.py` 创建隔离临时容器；Renderer 通过真实控制 API 接管任务、调用生产执行器，下载 PNG 并检查双色 fixture、校验和与槽位释放。脚本不再手工调用 Playwright 或覆盖浏览器参数。其它镜像只报告入口与健康，不报告业务执行通过。
+
+```powershell
+python scripts/contracts/check-image-startup.py --image $env:WP_SMOKE_IMAGE --variant renderer --output-dir test-results/images/renderer-candidate
+```
+
+产物包括 `image.json`（实际容器镜像 ID、repo digests、OS/CPU 架构）、`receipt.json` 和 `page.png`；CI 镜像 action 自动归档。仅构建了 arm64 manifest 不能代替在 arm64 实际执行该命令。失败时保留未通过状态，不覆写已有证据目录。
+
+完整拓扑复用已经启动的 Gateway、Backend、Runtime、Renderer，**不会启动服务或重置数据**。准备独立测试账号，设置 `WP_SMOKE_USERNAME` / `WP_SMOKE_PASSWORD`；另设置以下命令中的测试地址、页面和项目 ID。它会对指定实体创建截图与构建任务，不应指向生产数据。
+
+```powershell
+python scripts/contracts/check-deployment-pipeline.py --base-url $env:WP_SMOKE_BASE_URL --page-id $env:WP_SMOKE_PAGE_ID --project-id $env:WP_SMOKE_PROJECT_ID --output-dir test-results/deployment/candidate
+```
+
+该探针拒绝失败/取消/跳过任务，检查截图版本、PNG 解码和视口、ZIP SHA-256/大小及 HTML 入口，输出 `pipeline.json`、`page.png`、`build.zip`。失败摘要保存已创建的任务 ID；超时不会自动取消仍在运行的任务。Cookie 只保留于内存，报告不保存密码、下载令牌或业务响应全文。
+
+此入口补足 M01 的截图与产物下载准备，不替代浏览器打开最终构建站点、Compose 全模板版本清单、双架构执行、容量或故障恢复验收。图片与 ZIP 仍须随候选 SHA、各服务实际镜像身份和环境配置一起归档。当前新增探针仅通过本地模拟传输与产物反例测试，真实容器和拓扑执行留待下一轮。

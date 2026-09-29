@@ -1,11 +1,13 @@
+> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/temp/image-delivery-research-2026-09-29.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构评估](../architecture-assessment-2026-09-29.md) · [改进与下一轮验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。
+
 <!-- 文件功能：镜像交付现状专项调研（实测证据快照，2026-09-29）；供 WS-G1/G3/G5 与专项计划 plans/deployment-image-consolidation-2026-09-29.md 使用。 -->
 # 镜像交付现状调研（Lite 单镜像 / Renderer 拆分）
 
 > **日期**：2026-09-29。基线 `3818eab`（分支 `dev`）。对照的已发布版本是 `v0.2.10`（tag 落在 `7fd566b`，2026-09-19；Release run 35511878701 于 2026-09-21 推送镜像）。
-> **定位**：专项**调研 / 证据快照**，既不是评估也不是计划。只记录可复核的事实、实测数字与证据链；结论与实施步骤见 [`plans/deployment-image-consolidation-2026-09-29.md`](./plans/deployment-image-consolidation-2026-09-29.md)（**规划 / 未实施**）。
+> **定位**：专项**调研 / 证据快照**，既不是评估也不是计划。只记录可复核的事实、实测数字与证据链；结论与实施步骤见 [`plans/deployment-image-consolidation-2026-09-29.md`](./deployment-image-consolidation-2026-09-29.md)（**规划 / 未实施**）。
 > **本文未改动任何代码、编排或交付配置。**
 > **时效**：镜像体积与 registry 可拉取性会随下一次 Release 变化，引用前先按 §10 复核。
-> **与现行文档的接口**：为现行计划 [`plans/remaining-work-2026-09-28.md`](./plans/remaining-work-2026-09-28.md) 的 **WS-G1（Lite 故障域）/ G3（密钥治理）/ G5（Renderer 隔离）** 提供输入；并对现行评估 [`architecture-assessment-2026-09-28.md`](./architecture-assessment-2026-09-28.md) §2 第 13 行「Backend 不跑浏览器」补一条**适用层级**说明（见 §7.3）。
+> **与现行文档的接口**：为现行计划 [`plans/remaining-work-2026-09-28.md`](./remaining-work-2026-09-28.md) 的 **WS-G1（Lite 故障域）/ G3（密钥治理）/ G5（Renderer 隔离）** 提供输入；并对现行评估 [`architecture-assessment-2026-09-28.md`](./architecture-assessment-2026-09-28.md) §2 第 13 行「Backend 不跑浏览器」补一条**适用层级**说明（见 §7.3）。
 
 ---
 

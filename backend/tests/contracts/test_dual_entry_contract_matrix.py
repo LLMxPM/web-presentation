@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
+from copy import deepcopy
 
-from app.core.external_operations import OPERATION_REGISTRY, _OPERATION_HTTP_CONTRACTS
+import pytest
+from app.core.external_operations import _OPERATION_HTTP_CONTRACTS, OPERATION_REGISTRY
 from app.main import create_app
 
 pytestmark = pytest.mark.unit
@@ -12,15 +13,63 @@ pytestmark = pytest.mark.unit
 # Top 操作矩阵（与 docs/developer/architecture/dual-entry-contract-matrix.md 同步）
 # 每项：(操作名, Internal 路径或 None, External 路径, 对齐类型, 有意差异说明或 None)
 TOP_OPERATIONS: list[tuple[str, str | None, str, str, str | None]] = [
-    ("page.list", "/api/pages", "/api/v1/projects/{project_id}/pages", "PagedResponse[PageItem]", None),
+    (
+        "page.list",
+        "/api/pages",
+        "/api/v1/projects/{project_id}/pages",
+        "PagedResponse[PageItem]",
+        None,
+    ),
     ("page.get", "/api/pages/{id}", "/api/v1/pages/{id}", "PageItem", None),
-    ("page.create", "/api/pages", "/api/v1/pages", "async_job", "Internal 同步 PageItem；External 202 MutationJob"),
-    ("page.update", "/api/pages/{id}", "/api/v1/pages/{id}", "PageItem", "External 仅元数据，源码走 /edits"),
-    ("page.validate", None, "/api/v1/pages/{page_id}/validate", "external_only", "Internal 无 HTTP 端点（仅 AI 工具）"),
-    ("validate.entity", None, "/api/v1/validate/entity", "external_only", "Internal 无 HTTP 端点（仅 AI 工具）"),
-    ("project.preview", "/api/projects/{id}/preview-artifacts", "/api/v1/projects/{project_id}/preview-artifact", "PreviewArtifactResponse", "入参 shape 不同"),
-    ("page.preview", "/api/pages/{id}/versions/{n}/preview-artifact", "/api/v1/pages/{page_id}/preview-artifact", "PreviewArtifactResponse", "粒度不同"),
-    ("page.archive", "/api/pages/{id}", "/api/v1/pages/{page_id}/archive", "message", "DELETE vs POST"),
+    (
+        "page.create",
+        "/api/pages",
+        "/api/v1/pages",
+        "async_job",
+        "Internal 同步 PageItem；External 202 MutationJob",
+    ),
+    (
+        "page.update",
+        "/api/pages/{id}",
+        "/api/v1/pages/{id}",
+        "PageItem",
+        "External 仅元数据，源码走 /edits",
+    ),
+    (
+        "page.validate",
+        None,
+        "/api/v1/pages/{page_id}/validate",
+        "external_only",
+        "Internal 无 HTTP 端点（仅 AI 工具）",
+    ),
+    (
+        "validate.entity",
+        None,
+        "/api/v1/validate/entity",
+        "external_only",
+        "Internal 无 HTTP 端点（仅 AI 工具）",
+    ),
+    (
+        "project.preview",
+        "/api/projects/{id}/preview-artifacts",
+        "/api/v1/projects/{project_id}/preview-artifact",
+        "PreviewArtifactResponse",
+        "入参 shape 不同",
+    ),
+    (
+        "page.preview",
+        "/api/pages/{id}/versions/{n}/preview-artifact",
+        "/api/v1/pages/{page_id}/preview-artifact",
+        "PreviewArtifactResponse",
+        "粒度不同",
+    ),
+    (
+        "page.archive",
+        "/api/pages/{id}",
+        "/api/v1/pages/{page_id}/archive",
+        "message",
+        "DELETE vs POST",
+    ),
 ]
 
 # External 注册表使用的 path_template（相对 /api/v1）
@@ -34,6 +83,20 @@ EXTERNAL_PATH_TEMPLATES = {
     "project.preview": "/projects/{project_id}/preview-artifact",
     "page.preview": "/pages/{page_id}/preview-artifact",
     "page.archive": "/pages/{page_id}/archive",
+}
+
+
+# 独立声明预期方法，不能从被测注册表反向派生以掩盖漂移。
+EXPECTED_METHODS = {
+    "page.list": ("get", "get"),
+    "page.get": ("get", "get"),
+    "page.create": ("post", "post"),
+    "page.update": ("patch", "patch"),
+    "page.validate": (None, "post"),
+    "validate.entity": (None, "post"),
+    "project.preview": ("post", "post"),
+    "page.preview": ("post", "post"),
+    "page.archive": ("delete", "post"),
 }
 
 
@@ -63,34 +126,48 @@ def openapi_document() -> dict:
 def test_external_registry_covers_all_top_operations() -> None:
     """Top 操作必须全部登记在 External 操作注册表中。"""
 
-    for key in EXTERNAL_PATH_TEMPLATES:
+    for key, expected_path in EXTERNAL_PATH_TEMPLATES.items():
         assert key in OPERATION_REGISTRY, f"External 注册表缺少 Top 操作 {key}"
         assert key in _OPERATION_HTTP_CONTRACTS, f"External HTTP 契约缺少 {key}"
         method, path = _OPERATION_HTTP_CONTRACTS[key]
-        assert path == EXTERNAL_PATH_TEMPLATES[key], f"{key} path_template 漂移：{path}"
-        assert method in {"GET", "POST", "PATCH", "PUT", "DELETE"}
+        assert path == expected_path, f"{key} path_template 漂移：{path}"
+        assert method.lower() == EXPECTED_METHODS[key][1]
+
+
+def _assert_operations(paths: dict) -> None:
+    """完整匹配段数、字面路径和 HTTP 方法；只允许参数名字不同。"""
+    for key, internal, external, _align, _diff in TOP_OPERATIONS:
+        for path, method in zip((internal, external), EXPECTED_METHODS[key]):
+            if path is None:
+                continue
+            candidates = [
+                value
+                for candidate, value in paths.items()
+                if _paths_structurally_equal(candidate, path)
+            ]
+            assert len(candidates) == 1 and method in candidates[0], (
+                f"缺少 {method} {path}"
+            )
 
 
 def test_top_operations_exist_in_openapi(openapi_document: dict) -> None:
-    """矩阵中的 External 路径必须出现在 OpenAPI；Internal 有声明的也须存在。"""
+    """所有声明的 method/path 必须真实注册。"""
+    _assert_operations(openapi_document["paths"])
 
-    paths = openapi_document["paths"]
 
-    for _key, internal_path, external_path, _align, _diff in TOP_OPERATIONS:
-        external_full = f"/api/v1{external_path}" if not external_path.startswith("/api/") else external_path
-        # OpenAPI 使用 FastAPI 的完整路径
-        external_openapi_path = external_full.replace("{project_id}", "{project_id}")
-        if external_openapi_path not in paths and external_full not in paths:
-            # 允许参数名差异：用前缀匹配
-            candidates = [p for p in paths if p.startswith(external_full.split("{")[0])]
-            assert candidates, f"OpenAPI 缺少 External 路径 {external_full}"
-
-        if internal_path is not None:
-            internal_candidates = [
-                p for p in paths
-                if p == internal_path or p.startswith(internal_path.split("{")[0])
-            ]
-            assert internal_candidates, f"OpenAPI 缺少 Internal 路径 {internal_path}"
+@pytest.mark.parametrize("mutation", ["path", "method"])
+def test_missing_operation_cannot_hide_behind_path_prefix(
+    openapi_document: dict, mutation: str
+) -> None:
+    """删除精确路径或方法，保留相同前缀及其它方法也必须失败。"""
+    paths = deepcopy(openapi_document["paths"])
+    target = "/api/v1/pages/{page_id}/preview-artifact"
+    if mutation == "path":
+        paths.pop(target)
+    else:
+        paths[target]["get"] = paths[target].pop("post")
+    with pytest.raises(AssertionError, match="preview-artifact"):
+        _assert_operations(paths)
 
 
 def test_intentional_differences_are_registered() -> None:
@@ -100,7 +177,10 @@ def test_intentional_differences_are_registered() -> None:
     # 创建：async vs sync
     assert "async" in differences["page.create"] or "202" in differences["page.create"]
     # 归档：DELETE vs POST
-    assert "DELETE" in differences["page.archive"] and "POST" in differences["page.archive"]
+    assert (
+        "DELETE" in differences["page.archive"]
+        and "POST" in differences["page.archive"]
+    )
     # 校验：Internal 单侧缺失
     assert "Internal 无 HTTP" in differences["page.validate"]
     assert "Internal 无 HTTP" in differences["validate.entity"]
@@ -136,21 +216,26 @@ def test_aligned_operations_share_response_schema_names(openapi_document: dict) 
                             return item_ref.rsplit("/", 1)[-1]
         return None
 
-    # 页面读取：两侧 PageItem
-    internal_schema = resolve_response_schema("/api/pages/{id}", "get")
-    external_schema = resolve_response_schema("/api/v1/pages/{page_id}", "get")
-    assert internal_schema is not None and external_schema is not None
-    assert internal_schema == external_schema, (
-        f"页面读取响应 schema 不一致：internal={internal_schema} external={external_schema}"
-    )
-
-    # 预览：两侧 PreviewArtifactResponse
-    internal_preview = resolve_response_schema("/api/projects/{id}/preview-artifacts", "post")
-    external_preview = resolve_response_schema("/api/v1/projects/{project_id}/preview-artifact", "post")
-    assert internal_preview is not None and external_preview is not None
-    assert internal_preview == external_preview, (
-        f"项目预览响应 schema 不一致：internal={internal_preview} external={external_preview}"
-    )
-
-    # 组件/结构完整性：components.schemas 非空
+    for key, internal, external, _align, _diff in TOP_OPERATIONS:
+        if key not in {
+            "page.list",
+            "page.get",
+            "page.update",
+            "project.preview",
+            "page.preview",
+        }:
+            continue
+        internal_method, external_method = EXPECTED_METHODS[key]
+        internal_schema = resolve_response_schema(internal, internal_method)
+        external_schema = resolve_response_schema(external, external_method)
+        assert internal_schema is not None and internal_schema == external_schema, key
     assert components, "OpenAPI components.schemas 为空，无法对拍"
+
+
+def test_creation_status_and_validation_asymmetry(openapi_document: dict) -> None:
+    """锁定创建的同步/异步响应及 Internal 校验缺口，不只检查描述文字。"""
+    paths = openapi_document["paths"]
+    assert "200" in paths["/api/pages"]["post"]["responses"]
+    assert "202" in paths["/api/v1/pages"]["post"]["responses"]
+    for internal in ["/api/pages/{id}/validate", "/api/validate/entity"]:
+        assert not any(_paths_structurally_equal(path, internal) for path in paths)

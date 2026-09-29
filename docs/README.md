@@ -31,6 +31,7 @@
 | [本地开发指南](./developer/getting-started.md) | 本地依赖、启动方式、测试数据和运行态维护 |
 | [平台架构总览](./developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 运行时架构 |
 | [模块边界](./developer/architecture/module-boundaries.md) | Backend、Editor、Runtime、Renderer 和 Infra 修改边界 |
+| [现行架构评估与计划](./temp/README.md) | 当前静态评估、下一轮验证计划和历史归档 |
 | [Backend 开发文档](./developer/backend/README.md) | API、AI Agent、工具规格、预览 artifact 和排障 |
 | [Editor 开发文档](./developer/editor/README.md) | 前端结构、AI 侧边栏和 Editor 测试 |
 | [Runtime 开发文档](./developer/runtime/README.md) | 页面、组件、Runtime Kit 和内部接入细节 |

@@ -4,10 +4,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { expect, it } from 'vitest'
 
-/** 读取 Git 纳管的文档，排除依赖、缓存和个人笔记。 */
+/** 检查工作树现存文档，包含未暂存的新文档；已归档移动的旧路径不再作为输入。 */
 function documents(): string[] {
-  return execFileSync('git', ['-c', 'core.quotepath=false', 'ls-files', '--', '*.md'], { encoding: 'utf8' })
-    .trim().split('\n').filter(Boolean)
+  const files = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '*.md'], { encoding: 'utf8' })
+    .split('\0').filter(file => file && fs.existsSync(file))
+  return [...new Set(files)]
 }
 
 it('文档中的相对链接必须指向存在的文件或目录', () => {

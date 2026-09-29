@@ -1,10 +1,12 @@
+> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/temp/plans/deployment-image-consolidation-2026-09-29.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构评估](../architecture-assessment-2026-09-29.md) · [改进与下一轮验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。
+
 <!-- 文件功能：镜像交付与 Lite 单镜像形态的专项实施计划（规划/未实施，2026-09-29）；隶属现行计划 WS-G，证据见 ../image-delivery-research-2026-09-29.md。 -->
 # 部署镜像交付收口与 Lite 单镜像规划（2026-09-29）
 
 > **状态：规划 / 未实施。** 本文不含任何实施记录；落地后按 [`../README.md`](../README.md) 维护约定 2 改状态并同步索引。
 > **日期**：2026-09-29。基线 `3818eab`（分支 `dev`）。对照的已发布版本是 `v0.2.10`（2026-09-21 推送镜像）。
 > **定位**：现行计划 [`./remaining-work-2026-09-28.md`](./remaining-work-2026-09-28.md) 的**专项子计划**，隶属 **WS-G（Lite / 生产加固）**，具体承接 **G1（故障域）/ G3（密钥治理）/ G5（Renderer 隔离）**。**本文不取代现行计划，不新开第二份现行计划。**
-> **证据基座**：[`../image-delivery-research-2026-09-29.md`](../image-delivery-research-2026-09-29.md)（实测层体积、registry 探测、偏差清单 B1–B6、未验证风险）。本文不重复证据，只引用其章节号。
+> **证据基座**：[`../image-delivery-research-2026-09-29.md`](./image-delivery-research-2026-09-29.md)（实测层体积、registry 探测、偏差清单 B1–B6、未验证风险）。本文不重复证据，只引用其章节号。
 > **编号**：工作项用 **IMG0–IMG12**（Image delivery），决策用 **D-Img1**，风险用 **R-Img\***，避免与既有 `S1–S8` / `Q0–Q12` / `P0–P5` / `M1–M7` / `C0–C4` / `CP1–CP6` / `T0–T4` / `WS-A…H` / `G1–G7` / `D1–D2` / `H1–H4` / `R-*` 冲突。
 
 ---
@@ -15,7 +17,7 @@
 2. **推荐 D-Img1 = C（双轨）**：lite 镜像内含 Renderer 进程（单容器、面向 NAS/个人/小团队），同时继续发布独立 `web-presentation-renderer` 镜像（面向 `compose.runtime-roles.yml` 等生产角色）。理由见 §2：合并的净体积代价约等于零（调研 §3），而单容器是 NAS 图形界面唯一能表达的形态（调研 §6）。
 3. **有一个阻塞级前置验证**：容器内 root + `chromium.launch(headless=True)` 无 `--no-sandbox` 从未被测过（调研 §8.1）。它同时是"合并"与"首次发布 renderer 镜像"的前置，**先测这一项，再决定其余顺序**。
 4. **时机**：用户要求"架构完全调整好之后再处理部署问题"。本文按此拆成三档——**S0/S1（止血与发布预演）不触碰架构代码**，若架构收口周期长可提前单独执行；**S2（合并实施）必须等 WS-A/WS-D/WS-G5 的结论**；**S3/S4（门禁与发布）随 S2 或随下一次 Release**。
-5. **不做的事见 §7**：不把 Browserless/CDP 路线拉回来（已作废，见 [`../archive/cdp.md`](../archive/cdp.md)），不在本文里重开 Lite 规模承诺（属 WS-D1/WS-G1），不删除独立 renderer 镜像。
+5. **不做的事见 §7**：不把 Browserless/CDP 路线拉回来（已作废，见 [`../archive/cdp.md`](./cdp.md)），不在本文里重开 Lite 规模承诺（属 WS-D1/WS-G1），不删除独立 renderer 镜像。
 
 ---
 
@@ -146,7 +148,7 @@
 ## 7. 明确不做的事
 
 1. **不恢复 Backend 进程内 Playwright**（v0.2.10 的旧形态）。`config.py:338-373` 的 fail-closed 校验与 AGENTS.md 的"Backend 不安装 Playwright/Chromium"必须继续成立；本文合并的是**镜像**，不是**进程**。
-2. **不重新引入 Browserless / CDP 路线**（已作废，[`../archive/cdp.md`](../archive/cdp.md)）。
+2. **不重新引入 Browserless / CDP 路线**（已作废，[`../archive/cdp.md`](./cdp.md)）。
 3. **不删除独立 renderer 镜像**（`compose.runtime-roles.yml:121` 等生产路径依赖它）。
 4. **不在本文给 Lite 规模 SLA**（属 WS-D1/WS-G1；D2 未采集前只能是目标规模）。
 5. **不改任何队列、租约或任务运行时语义**（属 WS-A）。

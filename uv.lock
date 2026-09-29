@@ -402,6 +402,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "google-genai" },
     { name = "httpx" },
+    { name = "jsonschema" },
     { name = "ollama" },
     { name = "openai" },
     { name = "psycopg", extra = ["binary"] },
@@ -421,7 +422,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "jsonschema" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -439,6 +439,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.136.1" },
     { name = "google-genai", specifier = ">=2.18.1" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "ollama", specifier = ">=0.6.1" },
     { name = "openai", specifier = ">=2.45.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
@@ -458,7 +459,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },

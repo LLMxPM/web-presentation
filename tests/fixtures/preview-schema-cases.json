@@ -1,0 +1,13 @@
+[
+  {"name":"empty","valid":true,"value":{}},
+  {"name":"fields","valid":true,"value":{"props":{"title":{"type":"string","required":true},"size":{"type":"select","options":[{"label":"中","value":2}]}}}},
+  {"name":"nested-slot","valid":true,"value":{"slots":{"default":{"default":[{"type":"component","component":"@runtime-kit/public/components/primitives/Icon.v1.vue","children":[{"type":"text","value":"文本"}]}]}}}},
+  {"name":"preset","valid":true,"value":{"presets":[{"key":"basic","label":"基础","slots":{"default":[{"type":"html","value":"<b>内容</b>"}]}}],"mocks":{"data":{"default":[]}}}},
+  {"name":"missing-type","valid":false,"value":{"props":{"title":{"label":"标题"}}}},
+  {"name":"unknown-type","valid":false,"value":{"props":{"title":{"type":"date"}}}},
+  {"name":"required-not-boolean","valid":false,"value":{"props":{"title":{"type":"string","required":"yes"}}}},
+  {"name":"invalid-select-value","valid":false,"value":{"props":{"size":{"type":"select","options":[{"label":"中","value":{}}]}}}},
+  {"name":"missing-preset-label","valid":false,"value":{"presets":[{"key":"basic"}]}},
+  {"name":"nested-node-value","valid":false,"value":{"slots":{"default":{"default":[{"type":"component","component":"@runtime-kit/public/components/primitives/Icon.v1.vue","children":[{"type":"text","value":5}]}]}}}},
+  {"name":"slots-not-list","valid":false,"value":{"presets":[{"key":"basic","label":"基础","slots":{"default":{}}}]}}
+]

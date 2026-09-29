@@ -1,6 +1,6 @@
 # 运行服务多部署形态与横向扩容规划（草案）
 
-> **归档说明（2026-09-28）**：T0-1…T4-3 已落地，Critical/Major 修复见 §13 修复记录。多副本门槛与残留项已抽入 [`../plans/remaining-work-2026-09-28.md`](../plans/remaining-work-2026-09-28.md)；本规划正文不再续写。
+> **归档说明（2026-09-28）**：T0-1…T4-3 已落地，Critical/Major 修复见 §13 修复记录。多副本门槛与残留项已抽入 [`../plans/remaining-work-2026-09-28.md`](./remaining-work-2026-09-28.md)；本规划正文不再续写。
 >
 > 状态：**T0-1…T4-3 已于 `e2efe6c..HEAD` 落地（2026-09-25）**，见文末第 13 节实施记录与 [`./review-multi-deployment-e2efe6c-head.md`](./review-multi-deployment-e2efe6c-head.md)；落地后评审仍存 3 Critical / 5 Major，多副本拓扑与跨副本 E2E 未就绪，分布式模板不得标记为可用。编写日期 2026-09-23；2026-09-25 依据 `dev @ e2efe6c` 代码复核修订并追加实施记录。本文依据当前仓库的代码与部署模板制定；容量、故障恢复时间和性能收益均需实测，不将设计目标表述为已具备的能力。
 >

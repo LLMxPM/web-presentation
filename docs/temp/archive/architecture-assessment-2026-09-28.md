@@ -1,8 +1,10 @@
+> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/temp/architecture-assessment-2026-09-28.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构评估](../architecture-assessment-2026-09-29.md) · [改进与下一轮验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。
+
 <!-- 文件功能：docs/temp 现行架构评估（对照仓库代码重核版，2026-09-28）；执行计划见 plans/remaining-work-2026-09-28.md。 -->
 # 架构评估（现状与问题）
 
 > **日期**：2026-09-28。基线 `2d7858b`（分支 `dev`）；代码重核至 `3818eab`（仅文档提交）。  
-> **定位**：`docs/temp` 唯一现行评估。只陈述**当前架构现状、已定决策与仍在问题**；执行细节见 [`plans/remaining-work-2026-09-28.md`](./plans/remaining-work-2026-09-28.md)。  
+> **定位**：`docs/temp` 唯一现行评估。只陈述**当前架构现状、已定决策与仍在问题**；执行细节见 [`plans/remaining-work-2026-09-28.md`](./remaining-work-2026-09-28.md)。  
 > **口径**：本版全部断言按当前仓库代码重核；「已实施」不等于「可对外承诺」；产品可接受残留（R-*）只登记。  
 > **与上一版差异**：修正门禁覆盖面、任务方言计数与「空转测试」机制描述；补入 CP4 门禁假阴性、页面/组件队列恢复盲区、弱密钥单实例可上线、PG 备份脚本缺失、Renderer 同网段等遗漏；删除已过期的「构建 BackgroundTasks 无租约」判断。二次补强：Backend 多副本 Run 生命周期正确性、Runtime Build 凭证隔离、仓库 branch protection 未强制、Lite 容量口径、版本兼容矩阵、System DR、多副本措辞降档。
 
@@ -140,7 +142,7 @@ Editor ──HTTP──► Gateway ──┬──► Backend（控制面）
 | 9 | System DR + 生产加固（弱密钥拒绝、密钥/对象存储/DB 联合恢复、网络隔离） | 运维与安全风险 |
 | 10 | 多副本对外承诺 | **严格最后** |
 
-编号与验收口径见 [`plans/remaining-work-2026-09-28.md`](./plans/remaining-work-2026-09-28.md)。
+编号与验收口径见 [`plans/remaining-work-2026-09-28.md`](./remaining-work-2026-09-28.md)。
 
 ---
 

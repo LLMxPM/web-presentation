@@ -100,6 +100,7 @@ docker compose -f compose/compose.sqlite-lite.yml up -d
 | [AI 协作创作](./docs/user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
 | [开发文档](./docs/developer/README.md) | 架构、Backend、Editor、Runtime、Renderer、测试与部署资料 |
 | [平台架构总览](./docs/developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 运行时架构 |
+| [现行架构评估与计划](./docs/temp/README.md) | 2026-09-29 静态复核、历史归档与下一轮测试机验证安排 |
 | [本地开发指南](./docs/developer/getting-started.md) | 本地依赖、启动流程、测试数据和运行态维护 |
 | [Runtime 开发文档](./docs/developer/runtime/README.md) | 页面、组件、Runtime Kit 与运行时内部接入细节 |
 | [测试文档](./docs/developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |

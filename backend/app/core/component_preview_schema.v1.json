@@ -2,107 +2,186 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://web-presentation.local/schemas/component-preview-schema.v1.json",
   "title": "ComponentPreviewSchema",
-  "description": "组件 previewSchema 单一结构源。Backend 校验器、Editor types/component-preview.ts、Runtime runtime-preview.ts 均应对齐本文件；对拍见 tests/contracts/test_preview_schema_parity.py。",
+  "description": "组件 previewSchema 生产结构校验与 Editor/Runtime 类型生成的单一源。",
   "type": "object",
   "additionalProperties": true,
   "properties": {
     "props": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/propField" }
+      "additionalProperties": {
+        "$ref": "#/$defs/propField"
+      }
     },
     "slots": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/slotField" }
+      "additionalProperties": {
+        "$ref": "#/$defs/slotField"
+      }
     },
     "mocks": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/mockField" }
+      "additionalProperties": {
+        "$ref": "#/$defs/mockField"
+      }
     },
     "presets": {
       "type": "array",
-      "items": { "$ref": "#/$defs/preset" }
+      "items": {
+        "$ref": "#/$defs/preset"
+      }
     }
   },
   "$defs": {
     "fieldType": {
       "type": "string",
-      "enum": ["string", "textarea", "number", "boolean", "select", "json"]
+      "enum": [
+        "string",
+        "textarea",
+        "number",
+        "boolean",
+        "select",
+        "json"
+      ]
     },
     "selectOption": {
       "type": "object",
-      "required": ["label", "value"],
+      "required": [
+        "label",
+        "value"
+      ],
       "additionalProperties": true,
       "properties": {
-        "label": { "type": "string" },
-        "value": {}
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ]
+        }
       }
     },
     "propField": {
       "type": "object",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "additionalProperties": true,
       "properties": {
-        "type": { "$ref": "#/$defs/fieldType" },
-        "label": { "type": "string" },
-        "description": { "type": "string" },
-        "required": { "type": "boolean" },
+        "type": {
+          "$ref": "#/$defs/fieldType"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
         "default": true,
-        "placeholder": { "type": "string" },
+        "placeholder": {
+          "type": "string"
+        },
         "options": {
           "type": "array",
-          "items": { "$ref": "#/$defs/selectOption" }
+          "items": {
+            "$ref": "#/$defs/selectOption"
+          }
         },
-        "agent_visible": { "type": "boolean" }
+        "agent_visible": {
+          "type": "boolean"
+        }
       }
     },
     "slotTextNode": {
       "type": "object",
-      "required": ["type", "value"],
+      "required": [
+        "type",
+        "value"
+      ],
       "additionalProperties": true,
       "properties": {
-        "type": { "const": "text" },
-        "value": { "type": "string" }
+        "type": {
+          "const": "text"
+        },
+        "value": {
+          "type": "string"
+        }
       }
     },
     "slotHtmlNode": {
       "type": "object",
-      "required": ["type", "value"],
+      "required": [
+        "type",
+        "value"
+      ],
       "additionalProperties": true,
       "properties": {
-        "type": { "const": "html" },
-        "value": { "type": "string" }
+        "type": {
+          "const": "html"
+        },
+        "value": {
+          "type": "string"
+        }
       }
     },
     "slotComponentNode": {
       "type": "object",
-      "required": ["type", "component"],
+      "required": [
+        "type",
+        "component"
+      ],
       "additionalProperties": true,
       "properties": {
-        "type": { "const": "component" },
-        "component": { "type": "string" },
-        "props": { "type": "object" },
+        "type": {
+          "const": "component"
+        },
+        "component": {
+          "type": "string"
+        },
+        "props": {
+          "type": "object"
+        },
         "children": {
           "type": "array",
-          "items": { "$ref": "#/$defs/slotNode" }
+          "items": {
+            "$ref": "#/$defs/slotNode"
+          }
         }
       }
     },
     "slotNode": {
       "oneOf": [
-        { "$ref": "#/$defs/slotTextNode" },
-        { "$ref": "#/$defs/slotHtmlNode" },
-        { "$ref": "#/$defs/slotComponentNode" }
+        {
+          "$ref": "#/$defs/slotTextNode"
+        },
+        {
+          "$ref": "#/$defs/slotHtmlNode"
+        },
+        {
+          "$ref": "#/$defs/slotComponentNode"
+        }
       ]
     },
     "slotField": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "label": { "type": "string" },
-        "description": { "type": "string" },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
         "default": {
           "type": "array",
-          "items": { "$ref": "#/$defs/slotNode" }
+          "items": {
+            "$ref": "#/$defs/slotNode"
+          }
         }
       }
     },
@@ -110,41 +189,61 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "label": { "type": "string" },
-        "description": { "type": "string" },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
         "default": true
       }
     },
     "preset": {
       "type": "object",
-      "required": ["key", "label"],
+      "required": [
+        "key",
+        "label"
+      ],
       "additionalProperties": true,
       "properties": {
-        "key": { "type": "string" },
-        "label": { "type": "string" },
-        "description": { "type": "string" },
-        "props": { "type": "object" },
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "props": {
+          "type": "object"
+        },
         "slots": {
           "type": "object",
           "additionalProperties": {
             "type": "array",
-            "items": { "$ref": "#/$defs/slotNode" }
+            "items": {
+              "$ref": "#/$defs/slotNode"
+            }
           }
         },
-        "mocks": { "type": "object" }
+        "mocks": {
+          "type": "object"
+        }
       }
     }
   },
-  "x-typescript-interfaces": {
-    "description": "与本 Schema 对齐的手写 TS interface 名称；变更结构时须同步 editor/src/types/component-preview.ts 与 runtime/src/core/shared/runtime-preview.ts。",
-    "ComponentPreviewSchema": ["props", "slots", "mocks", "presets"],
-    "ComponentPreviewPropField": ["type", "label", "description", "required", "default", "placeholder", "options"],
-    "ComponentPreviewSelectOption": ["label", "value"],
-    "ComponentPreviewSlotField": ["label", "description", "default"],
-    "ComponentPreviewMockField": ["label", "description", "default"],
-    "ComponentPreviewPreset": ["key", "label", "description", "props", "slots", "mocks"],
-    "ComponentPreviewSlotTextNode": ["type", "value"],
-    "ComponentPreviewSlotHtmlNode": ["type", "value"],
-    "ComponentPreviewSlotComponentNode": ["type", "component", "props", "children"]
+  "x-typescript-types": {
+    "#": "ComponentPreviewSchema",
+    "#/$defs/fieldType": "ComponentPreviewFieldType",
+    "#/$defs/selectOption": "ComponentPreviewSelectOption",
+    "#/$defs/propField": "ComponentPreviewPropField",
+    "#/$defs/slotTextNode": "ComponentPreviewSlotTextNode",
+    "#/$defs/slotHtmlNode": "ComponentPreviewSlotHtmlNode",
+    "#/$defs/slotComponentNode": "ComponentPreviewSlotComponentNode",
+    "#/$defs/slotNode": "ComponentPreviewSlotNode",
+    "#/$defs/slotField": "ComponentPreviewSlotField",
+    "#/$defs/mockField": "ComponentPreviewMockField",
+    "#/$defs/preset": "ComponentPreviewPreset"
   }
 }

@@ -1,102 +1,28 @@
-/**
- * 文件功能：previewSchema 三端对拍（TS 侧）——JSON Schema 单一源 vs Editor/Runtime 手写 interface。
- */
-
+/** 文件功能：用同一组正反例验证 Editor/Runtime 生成类型，并与 Backend 共用样本。 */
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
-
 import { describe, expect, it } from 'vitest'
+import { renderTypes } from '../../scripts/codegen/schema-types.mjs'
+import { checkTypes } from './schema-typecheck-helper'
 
-const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
-const schemaPath = join(repoRoot, 'backend/app/core/component_preview_schema.v1.json')
-const editorTsPath = join(repoRoot, 'editor/src/types/component-preview.ts')
-const runtimeTsPath = join(repoRoot, 'runtime/src/core/shared/runtime-preview.ts')
-
-interface SchemaDocument {
-  properties: Record<string, unknown>
-  $defs: Record<string, { required?: string[]; properties?: Record<string, unknown> }>
-  'x-typescript-interfaces': Record<string, string[] | string>
+/** 从根仓读取文本；只规范换行，不屏蔽结构差异。 */
+function read(path: string): string {
+  return readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 }
+const document = JSON.parse(read('backend/app/core/component_preview_schema.v1.json'))
+const names = document['x-typescript-types'] as Record<string, string>
+const schemas = Object.fromEntries(Object.entries(names).map(([ref, name]) => [name, ref === '#' ? document : document.$defs[ref.split('/').pop()!]]))
+const expected = renderTypes(schemas, (ref: string) => names[ref])
+const cases = JSON.parse(read('tests/fixtures/preview-schema-cases.json')) as Array<{name: string; valid: boolean; value: unknown}>
 
-function loadSchema(): SchemaDocument {
-  return JSON.parse(readFileSync(schemaPath, 'utf-8')) as SchemaDocument
-}
-
-function extractInterfaceFields(tsSource: string, interfaceName: string): Set<string> {
-  const pattern = new RegExp(`export interface ${interfaceName}\\s*\\{([\\s\\S]*?)\\n\\}`)
-  const match = pattern.exec(tsSource)
-  if (!match) {
-    return new Set()
+describe('previewSchema 三端契约', () => {
+  for (const path of ['editor/src/types/component-preview', 'runtime/src/core/shared/runtime-preview']) {
+    it(`${path} 消费完整生成物并通过正反例语义检查`, () => {
+      const directory = path.slice(0, path.lastIndexOf('/'))
+      const generated = read(`${directory}/component-preview.generated.ts`)
+      expect(generated.slice(generated.indexOf('export type '))).toBe(expected)
+      expect(read(`${path}.ts`)).toContain("from './component-preview.generated'")
+      const source = `import type { ComponentPreviewSchema } from '../../${directory}/component-preview.generated'\n` + cases.map((sample, index) => `${sample.valid ? '' : '// @ts-expect-error ' + sample.name + '\n'}const sample${index}: ComponentPreviewSchema = ${JSON.stringify(sample.value)}`).join('\n')
+      expect(checkTypes(source)).toEqual([])
+    })
   }
-  const fields = new Set<string>()
-  for (const line of match[1].split('\n')) {
-    const stripped = line.trim()
-    if (!stripped || stripped.startsWith('//') || stripped.startsWith('*')) {
-      continue
-    }
-    const fieldMatch = /^([A-Za-z_][A-Za-z0-9_]*)\??:/.exec(stripped)
-    if (fieldMatch) {
-      fields.add(fieldMatch[1])
-    }
-  }
-  return fields
-}
-
-function tsInterfaceMap(schema: SchemaDocument): Record<string, string[]> {
-  const raw = schema['x-typescript-interfaces']
-  const result: Record<string, string[]> = {}
-  for (const [name, fields] of Object.entries(raw)) {
-    if (name === 'description' || !Array.isArray(fields)) {
-      continue
-    }
-    result[name] = fields.map(String)
-  }
-  return result
-}
-
-describe('preview schema parity (TS)', () => {
-  it('JSON Schema 单一源应声明顶层 props/slots/mocks/presets', () => {
-    const schema = loadSchema()
-    expect(schema.properties).toHaveProperty('props')
-    expect(schema.properties).toHaveProperty('slots')
-    expect(schema.properties).toHaveProperty('mocks')
-    expect(schema.properties).toHaveProperty('presets')
-    expect(schema.$defs.propField?.required).toEqual(['type'])
-  })
-
-  it('Editor component-preview.ts 应对齐 JSON Schema 映射字段', () => {
-    const schema = loadSchema()
-    const source = readFileSync(editorTsPath, 'utf-8')
-    const mapping = tsInterfaceMap(schema)
-
-    for (const [interfaceName, expectedFields] of Object.entries(mapping)) {
-      const actual = extractInterfaceFields(source, interfaceName)
-      expect(actual.size, `Editor 未找到 interface ${interfaceName}`).toBeGreaterThan(0)
-      for (const field of expectedFields) {
-        expect(actual, `Editor ${interfaceName} 缺少字段 ${field}`).toContain(field)
-      }
-    }
-  })
-
-  it('Runtime runtime-preview.ts 应对齐 JSON Schema 映射字段', () => {
-    const schema = loadSchema()
-    const source = readFileSync(runtimeTsPath, 'utf-8')
-    const mapping = tsInterfaceMap(schema)
-
-    for (const [interfaceName, expectedFields] of Object.entries(mapping)) {
-      const actual = extractInterfaceFields(source, interfaceName)
-      expect(actual.size, `Runtime 未找到 interface ${interfaceName}`).toBeGreaterThan(0)
-      for (const field of expectedFields) {
-        expect(actual, `Runtime ${interfaceName} 缺少字段 ${field}`).toContain(field)
-      }
-    }
-  })
-
-  it('Editor 与 Runtime 的 ComponentPreviewSchema 字段集合必须一致', () => {
-    const editorFields = extractInterfaceFields(readFileSync(editorTsPath, 'utf-8'), 'ComponentPreviewSchema')
-    const runtimeFields = extractInterfaceFields(readFileSync(runtimeTsPath, 'utf-8'), 'ComponentPreviewSchema')
-    expect([...editorFields].sort()).toEqual([...runtimeFields].sort())
-    expect(editorFields).toEqual(new Set(['props', 'slots', 'mocks', 'presets']))
-  })
 })

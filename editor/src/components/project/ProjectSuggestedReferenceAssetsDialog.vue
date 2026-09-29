@@ -470,7 +470,7 @@ function toAssetSummary(asset: AssetResponse): ReferenceAssetSummary {
     id: asset.id,
     name: asset.name,
     original_name: asset.original_name,
-    description: asset.description,
+    description: asset.description ?? null,
     asset_type: asset.asset_type,
   }
 }

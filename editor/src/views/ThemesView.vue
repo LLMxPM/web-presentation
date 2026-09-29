@@ -637,7 +637,7 @@ async function processFontFilesSelection(target: HTMLInputElement, targetFamily:
       uploadedCount += 1
       if (uploaded.font_config) {
         // 覆盖了已注册字体：指定目标族且不在该族时，把 face 移动到目标族。
-        if (targetFamily && uploaded.font_config.family_id !== targetFamily.id) {
+        if (targetFamily && !targetFamily.faces.some(face => face.id === uploaded.font_config?.id)) {
           try {
             await updateWorkspaceFont(workspaceId.value, uploaded.font_config.id, { family_name: targetFamily.name })
             registeredCount += 1

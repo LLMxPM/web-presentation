@@ -12,6 +12,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
+
 from app.core.exceptions import AppException
 from app.core.runtime_module_policy import (
     is_runtime_public_local_component_module,
@@ -54,23 +56,21 @@ def load_component_preview_schema_document() -> dict[str, Any]:
         return json.load(schema_file)
 
 
+@lru_cache(maxsize=1)
+def _structure_validator() -> Draft202012Validator:
+    """缓存结构校验器；Schema 只使用本文件内的引用，不解析远端资源。"""
+
+    document = load_component_preview_schema_document()
+    Draft202012Validator.check_schema(document)
+    return Draft202012Validator(document)
+
+
 def get_component_preview_schema_top_level_keys() -> frozenset[str]:
     """返回 previewSchema 允许的顶层键集合。"""
 
     document = load_component_preview_schema_document()
     return frozenset(document.get("properties", {}).keys())
 
-
-def get_component_preview_schema_ts_interface_fields() -> dict[str, list[str]]:
-    """返回与本 Schema 对齐的 TS interface 字段映射（对拍用）。"""
-
-    document = load_component_preview_schema_document()
-    mapping = document.get("x-typescript-interfaces", {})
-    return {
-        str(name): [str(field) for field in fields]
-        for name, fields in mapping.items()
-        if isinstance(fields, list) and name != "description"
-    }
 
 
 def normalize_component_preview_schema_text(schema_text: str | None) -> str | None:
@@ -147,6 +147,15 @@ def _parse_component_preview_schema_object(schema_text: str) -> dict[str, Any]:
             status_code=400,
             code="COMPONENT_PREVIEW_SCHEMA_INVALID",
             detail="previewSchema 必须是 JSON 对象。",
+        )
+    error = next(_structure_validator().iter_errors(parsed_value), None)
+    if error is not None:
+        # 不把完整用户数据或嵌套 Schema 塞入错误响应，只提供有界字段路径。
+        location = "/" + "/".join(str(part) for part in error.absolute_path)
+        raise AppException(
+            status_code=400,
+            code="COMPONENT_PREVIEW_SCHEMA_INVALID",
+            detail=f"previewSchema 字段 {location[:240]} 不符合结构约束（{error.validator}）。",
         )
     _validate_slot_component_references(parsed_value)
     return parsed_value

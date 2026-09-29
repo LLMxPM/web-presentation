@@ -11,6 +11,7 @@
 | [本地开发指南](./getting-started.md) | 本地依赖、四个应用服务启动和常用诊断命令 |
 | [平台架构总览](./architecture/overview.md) | 平台目标、控制面/数据面关系、模块职责和主流程 |
 | [模块边界](./architecture/module-boundaries.md) | Backend、Editor、Runtime、Renderer、Infra 的修改边界 |
+| [现行架构评估与计划](../temp/README.md) | 当前架构复核、改进工作包、下一轮测试机矩阵与归档 |
 | [测试文档入口](./testing/README.md) | 根仓、Backend、Editor、Runtime、契约和 E2E 测试入口 |
 | [部署文档入口](./deployment/README.md) | Compose 部署、环境变量、备份恢复、升级回滚和排障 |
 | [External Agent API v1 契约](./reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend API、Scope、任务和交付契约 |

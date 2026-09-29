@@ -1,8 +1,10 @@
+> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/temp/plans/remaining-work-2026-09-28.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构评估](../architecture-assessment-2026-09-29.md) · [改进与下一轮验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。
+
 <!-- 文件功能：docs/temp 2026-09-28 整理后的残留问题与下一轮实施计划（承接已归档三份 plans 与多部署评审的未覆盖项）。 -->
 # 残留问题与下一轮计划（2026-09-28）
 
 > 整理日期：2026-09-28。基线提交 `2d7858b`（分支 `dev`）。  
-> 输入材料：已归档的 [`lite-memory-adapter-2026-09.md`](../archive/lite-memory-adapter-2026-09.md)、[`runtime-multi-deployment-scaling-plan-2026-09.md`](../archive/runtime-multi-deployment-scaling-plan-2026-09.md)、[`db-concurrency-primitives-2026-09.md`](../archive/db-concurrency-primitives-2026-09.md)、[`review-multi-deployment-e2efe6c-head.md`](../archive/review-multi-deployment-e2efe6c-head.md) 的实施记录与未覆盖项，以及现行评估 [`../architecture-assessment-2026-09-28.md`](../architecture-assessment-2026-09-28.md)（继承自 09-25 平台演进稿与结构批判快照）。  
+> 输入材料：已归档的 [`lite-memory-adapter-2026-09.md`](./lite-memory-adapter-2026-09.md)、[`runtime-multi-deployment-scaling-plan-2026-09.md`](./runtime-multi-deployment-scaling-plan-2026-09.md)、[`db-concurrency-primitives-2026-09.md`](./db-concurrency-primitives-2026-09.md)、[`review-multi-deployment-e2efe6c-head.md`](./review-multi-deployment-e2efe6c-head.md) 的实施记录与未覆盖项，以及现行评估 [`../architecture-assessment-2026-09-28.md`](./architecture-assessment-2026-09-28.md)（继承自 09-25 平台演进稿与结构批判快照）。  
 > **本文是 `docs/temp/plans/` 的现行计划**。已实施工作只在 `archive/` 留证据，不在本文复述完成勾选；「未覆盖项不得被完成勾选吃掉」是硬规则。
 
 ---
@@ -153,7 +155,7 @@ F1–F2 已在 WS-A 契约冻结后落地，降低队列迁移时的巨石改动
 | G6 | **D1 方言预算与复审触发器**写入治理文档（口径见评估 §3，2026-09-28 从宽已定）+ 每季粗记账模板 | 超预算才重开 D1；日常双方言不计入超支 | **已完成（2026-09-29）**：[docs/developer/architecture/dialect-budget.md](../../developer/architecture/dialect-budget.md)；固定税 ≤8 人周/季、四条复审触发器、每季粗记账模板；架构索引已挂链 |
 | G7 | **H1a/H1b Run「会丢」标注**：Agent 会话/Run 状态提示 + 用户文档持久性说明 | 用户能区分「Run 会丢」与「external 任务可恢复」 | **已完成（2026-09-29）**：UI 区分取消/`AI_RUN_PROCESS_STOPPED`；FAQ+workflow 持久性说明 |
 
-> **专项输入（2026-09-29，规划/未实施）**：G1 的镜像层事实、G3 的渲染凭证自动生成、G5 的「容器内 root 启动 Chromium」前置验证，已单独成文——证据见 [`../image-delivery-research-2026-09-29.md`](../image-delivery-research-2026-09-29.md)，工作项见专项子计划 [`./deployment-image-consolidation-2026-09-29.md`](./deployment-image-consolidation-2026-09-29.md)（IMG0–IMG12、决策 D-Img1）。**G1 的「再决定是否拆容器」在动手前先读调研 §7.3（边界的三个层级）与 §9（已被推翻的论点，含体积与故障域两条）**；已发布的 lite 镜像实测 645.4 MiB 且自带 225.3 MiB 浏览器层，而 `deploy/compose/` 全部 5 个模板引用的 renderer 镜像从未发布、当前不可拉取。
+> **专项输入（2026-09-29，规划/未实施）**：G1 的镜像层事实、G3 的渲染凭证自动生成、G5 的「容器内 root 启动 Chromium」前置验证，已单独成文——证据见 [`../image-delivery-research-2026-09-29.md`](./image-delivery-research-2026-09-29.md)，工作项见专项子计划 [`./deployment-image-consolidation-2026-09-29.md`](./deployment-image-consolidation-2026-09-29.md)（IMG0–IMG12、决策 D-Img1）。**G1 的「再决定是否拆容器」在动手前先读调研 §7.3（边界的三个层级）与 §9（已被推翻的论点，含体积与故障域两条）**；已发布的 lite 镜像实测 645.4 MiB 且自带 225.3 MiB 浏览器层，而 `deploy/compose/` 全部 5 个模板引用的 renderer 镜像从未发布、当前不可拉取。
 
 ---
 
@@ -206,7 +208,7 @@ F1–F2 已在 WS-A 契约冻结后落地，降低队列迁移时的巨石改动
 
 ---
 
-## 12. 与现行评估的对应（[`../architecture-assessment-2026-09-28.md`](../architecture-assessment-2026-09-28.md)）
+## 12. 与现行评估的对应（[`../architecture-assessment-2026-09-28.md`](./architecture-assessment-2026-09-28.md)）
 
 | 现行评估 ID | 归属工作流 | 状态 |
 | :--- | :--- | :--- |

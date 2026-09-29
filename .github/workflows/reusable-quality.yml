@@ -126,6 +126,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.10.10
+      - run: uv sync --project backend --group dev --locked
+      - run: pnpm run test:contracts:generated
       - run: pnpm run test:contracts
 
   render-contracts:

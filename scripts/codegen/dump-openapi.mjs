@@ -11,18 +11,13 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const outputPath = resolve(process.argv[2] || join(repoRoot, 'editor/src/types/openapi.json'))
 
-const pythonSnippet = `
-import json, sys
-from app.main import app
-print(json.dumps(app.openapi(), ensure_ascii=False))
-`
-
 const result = spawnSync(
   'uv',
-  ['run', '--project', 'backend', 'python', '-c', pythonSnippet],
+  ['run', '--locked', '--project', 'backend', 'python', '-m', 'app.scripts.export_openapi'],
   {
     cwd: repoRoot,
     encoding: 'utf-8',
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     maxBuffer: 32 * 1024 * 1024,
   },
 )

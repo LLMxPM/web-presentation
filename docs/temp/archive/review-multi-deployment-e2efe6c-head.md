@@ -1,7 +1,7 @@
 <!-- 文件功能：e2efe6c..HEAD 多部署落地的代码评审报告（门禁实测 + Critical/Major 复核结论 + 修复顺序）。 -->
 # 代码评审：多部署落地 `e2efe6c..HEAD`（2026-09-25）
 
-> **归档说明（2026-09-28）**：C1–C3 / M1–M7 / M9–M10 / M12–M13 / 断链 / 文档修复已落地（见 plan §13 修复记录与复审修复）。残留项已抽入 [`../plans/remaining-work-2026-09-28.md`](../plans/remaining-work-2026-09-28.md)，本文移入 `archive/` 作证据库，不再接受大改。
+> **归档说明（2026-09-28）**：C1–C3 / M1–M7 / M9–M10 / M12–M13 / 断链 / 文档修复已落地（见 plan §13 修复记录与复审修复）。残留项已抽入 [`../plans/remaining-work-2026-09-28.md`](./remaining-work-2026-09-28.md)，本文移入 `archive/` 作证据库，不再接受大改。
 >
 > **评审范围**：`e2efe6c..HEAD` 共 13 个提交、82 文件、+9678/−817。实质是把 [`./runtime-multi-deployment-scaling-plan-2026-09.md`](./runtime-multi-deployment-scaling-plan-2026-09.md) 的 **T0-1…T4-3 一次性全部落地**。<br>
 > **判断口径**：Critical/Major 均已对照源码逐条复核，不是转述；「声称的能力」与「已实现并可证」严格分开。<br>

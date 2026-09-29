@@ -313,7 +313,7 @@ async function handleDownloadScreenshot(pageItem: PageItem): Promise<void> {
     downloadPageScreenshot(
       downloadablePage.screenshot_url,
       downloadablePage.title,
-      downloadablePage.screenshot_version_no,
+      downloadablePage.screenshot_version_no ?? null,
     )
   } catch (error) {
     Message.error(getErrorMessage(error, '下载页面截图失败。'))

@@ -95,7 +95,7 @@
             <p class="mt-1 truncate font-mono text-[10px] text-text-disabled">{{ asset.original_name }}</p>
             <div class="mt-1 flex min-w-0 items-center gap-1 text-[10px] font-semibold text-text-disabled">
               <span class="shrink-0">{{ formatBytes(asset.file_size) }}</span>
-              <span v-if="asset.tags.length" class="truncate">/ {{ asset.tags.join(' / ') }}</span>
+              <span v-if="(asset.tags ?? []).length" class="truncate">/ {{ (asset.tags ?? []).join(' / ') }}</span>
             </div>
           </div>
 

@@ -31,3 +31,10 @@ runs:
         SMOKE_IMAGE: ${{ inputs.tag }}
         SMOKE_VARIANT: ${{ inputs.variant }}
       run: python scripts/contracts/check-image-startup.py --image "$SMOKE_IMAGE" --variant "$SMOKE_VARIANT"
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: image-evidence-${{ inputs.variant }}-${{ github.job }}-${{ github.run_attempt }}
+        path: test-results/images/
+        if-no-files-found: warn
+        retention-days: 14

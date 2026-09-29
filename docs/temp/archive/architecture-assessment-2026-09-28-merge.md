@@ -1,10 +1,10 @@
 <!-- 文件功能：docs/temp 2026-09-28 整理合并稿（含对 09-25 两稿的过期修正），已归档。 -->
 # 架构评估（合并整理稿）：任务模型主轴确立之后（2026-09-28）
 
-> **归档说明**：本稿为「合并 09-25 两稿 + 标过期实现层」的整理版本，已归档。**现行评估**只看 [`../architecture-assessment-2026-09-28.md`](../architecture-assessment-2026-09-28.md)（现状与问题，不作历史对照）。
+> **归档说明**：本稿为「合并 09-25 两稿 + 标过期实现层」的整理版本，已归档。**现行评估**只看 [`../architecture-assessment-2026-09-28.md`](./architecture-assessment-2026-09-28.md)（现状与问题，不作历史对照）。
 
 > **评估日期**：2026-09-28。基线提交 `2d7858b`（分支 `dev`）。  
-> **定位**：历史合并整理稿。执行计划见 [`../plans/remaining-work-2026-09-28.md`](../plans/remaining-work-2026-09-28.md)。  
+> **定位**：历史合并整理稿。执行计划见 [`../plans/remaining-work-2026-09-28.md`](./remaining-work-2026-09-28.md)。
 > **整理说明**：本稿合并两份 09-25 评估的**仍然成立**结论，并修正其**已过期实现层判断**（见 §1）。原稿整体归档，不在其上续写。  
 > **判断口径**：代码可确认的问题与尚未验证的风险分开；「已实施」不等于「门槛已达成」；产品可接受残留（R-*）只登记不进优先级。
 
@@ -182,7 +182,7 @@ Editor (Vue) ──HTTP──► Gateway ──┬──► Backend (FastAPI 控
 | :--- | :--- | :--- |
 | [`./architecture-assessment-2026-09-25.md`](./architecture-assessment-2026-09-25.md) | `archive/` | 平台演进复核稿。**实现层判断已过期**（§1.1）；决策与优先序主轴由本稿继承。 |
 | [`./architecture-assessment-critical-2026-09-25.md`](./architecture-assessment-critical-2026-09-25.md) | `archive/` | 结构批判证据快照（量化基线、死物、门禁）。开放项仍有效，出口见本稿 §3 与 WS-B/E/F/G。 |
-| [`../plans/remaining-work-2026-09-28.md`](../plans/remaining-work-2026-09-28.md) | `plans/` | **现行计划**（WS-A…H）。 |
+| [`../plans/remaining-work-2026-09-28.md`](./remaining-work-2026-09-28.md) | `plans/` | **现行计划**（WS-A…H）。 |
 | 其余 `archive/*` | `archive/` | 专项证据库；结论以本稿为准。 |
 
 ---

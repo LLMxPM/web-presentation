@@ -254,7 +254,7 @@ function handleVisibleChange(value: boolean): void {
  * @param family 主题绑定的字体族摘要
  * @param label 字体名称回退展示值
  */
-function fontDescription(family: WorkspaceThemeFontFamilySummary | null | undefined, label: string | null): string {
+function fontDescription(family: WorkspaceThemeFontFamilySummary | null | undefined, label: string | null | undefined): string {
   if (family) return '已绑定字体族，同族多字重自动匹配'
   if (label === 'platform-sans' || label === 'platform-mono') return '平台内置字体，预览与截图排版一致'
   if (isThemeFontPreset(label)) return '跟随运行设备字体，跨端排版可能存在差异'

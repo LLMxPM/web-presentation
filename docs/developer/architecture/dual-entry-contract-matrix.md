@@ -1,6 +1,6 @@
 # 双入口契约矩阵（Top 操作）
 
-> 状态：WS-E1 落地。覆盖页面读写、校验、预览、归档 Top 操作；不追求全矩阵。
+> 状态：Top 操作 method/path 与响应对拍已补强（2026-09-30）；真实跨入口联调仍待 M08。覆盖页面读写、校验、预览、归档 Top 操作；不追求全矩阵。
 > 对拍测试：`backend/tests/contracts/test_dual_entry_contract_matrix.py`。
 
 ## 1. 入口定义
@@ -31,12 +31,12 @@ External 操作注册表：`backend/app/core/external_operations.py`（`OPERATIO
 
 自动化对拍（`test_dual_entry_contract_matrix.py`）强制：
 
-1. **注册表 ↔ 路由**：`_OPERATION_HTTP_CONTRACTS` 中 Top 操作的 method/path 在 OpenAPI `paths` 中真实存在。
+1. **注册表 ↔ 路由**：`_OPERATION_HTTP_CONTRACTS` 中 Top 操作的 method/path 在 OpenAPI `paths` 中完整匹配；只允许参数名不同，删除路径或方法但保留同前缀路由的反例必须失败。
 2. **响应模型**：声明对齐的操作（页面列表/读取/更新、预览）两侧响应引用同一 schema 名或字段集合一致。
 3. **有意差异登记**：创建（202 vs 200）、归档（DELETE vs POST）在矩阵中显式标注，测试断言差异仍然存在（防静默漂移成不一致）。
 4. **校验缺口**：Internal 无 validate 端点这一事实被测试锁定，若有人补上 Internal 端点须同步改矩阵。
 
-## 4. 已知缺口（不阻塞本项关闭）
+## 4. 覆盖边界
 
 | 缺口 | 处理 |
 | :--- | :--- |

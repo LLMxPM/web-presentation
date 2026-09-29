@@ -2,7 +2,7 @@
 # 统一任务运行时契约（WS-A1 冻结）
 
 > **状态**：契约冻结（2026-09-29）。**本阶段只定契约，不写实现**。  
-> **输入**：[`docs/temp/plans/remaining-work-2026-09-28.md`](../../../docs/temp/plans/remaining-work-2026-09-28.md) WS-A；现行评估 P1-TaskModel / P1-Recovery / P2-VocabDrift。  
+> **历史输入**：[09-28 计划（已归档）](../../temp/archive/remaining-work-2026-09-28.md) WS-A 及旧评估 P1-TaskModel / P1-Recovery / P2-VocabDrift；最新状态与后续验证见[现行评估与计划](../../temp/README.md)。
 > **出口**：A2 统一执行器、A3 队列迁移、A4 跨表不变量，均不得偏离本文词汇；偏离须先改本文并登记理由。  
 > **硬约束**（继承 CP 系列）：SQLite 分支语义字节级维持；PG 同事务 `SKIP LOCKED` 形态不得退回跨事务 CAS；`with_for_update(skip_locked=True)` 只允许出现在 `durable_job_lease_service`。
 
@@ -194,7 +194,7 @@
 
 ## 5. 现有任务模型映射表（10 套 → 契约）
 
-> 现行评估口径：**10 套任务模型、3 套认领方言**。下表是 A1 冻结的完整映射；A3 每迁一队须把「现状」列收敛到「契约」列。
+> **历史迁移基线**：下表为 A1 冻结时的 10 套任务模型、3 套认领方言映射，不代表最新实现状态；当前差距以[现行评估](../../temp/architecture-assessment-2026-09-29.md)为准，表内迁移前描述待按新计划 W08 对齐。
 
 ### 5.1 总表
 
@@ -387,4 +387,4 @@ await runtime.claim/renew/transition/cancel/recover(...)
 1. 本文是任务运行时**唯一契约**；字段/状态/错误码/恢复语义变更必须先改本文。
 2. A2/A3/A4 的实现 PR 应引用本文对应章节编号。
 3. 新发现的方言或旁路状态追加到 §5 映射表，**不得**另开文档或静默扩表。
-4. 产品边界（Run 会丢、Lite 规模、方言预算）不进本契约，见现行评估 §3。
+4. 产品边界（Run 会丢、Lite 规模、方言预算）不进本契约，见[现行评估 §6](../../temp/architecture-assessment-2026-09-29.md#6-延续的决策与承诺边界)。
