@@ -56,6 +56,7 @@ import {
   assertExpectedRuntimeFingerprint,
   formatRuntimeVersionFingerprint,
 } from './runtime-health'
+import { runWithPreviewBudget, RuntimeViteTaskSchedulerError } from './runtime-preview-scheduler'
 
 interface RuntimeSaaSPreviewOptions {
   previewPath?: string
@@ -182,11 +183,13 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
           return next()
         }
 
+        const requestStartedAt = Date.now()
         try {
-          const requestStartedAt = Date.now()
           // 版本指纹强制：请求方声明期望副本版本时不匹配直接拒绝，避免 HTML/模块混用。
           const localFingerprint = formatRuntimeVersionFingerprint()
           assertExpectedRuntimeFingerprint(req.headers, localFingerprint)
+          // preview 执行预算：HTML/模块转换走独立 lane，RUNTIME_PREVIEW_VITE_TASK_* 生效。
+          await runWithPreviewBudget(async () => {
           const previewToken = String(req.headers[previewHeaderName] || '')
           if (!previewToken) {
             throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '缺少预览上下文令牌。')
@@ -254,12 +257,16 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
               status_code: 200,
             })
           }
+          })
         } catch (error) {
           const previewError = error instanceof PreviewGatewayError ? error : null
+          const schedulerError = error instanceof RuntimeViteTaskSchedulerError ? error : null
           recordRuntimeWorkload(
             'preview',
             Date.now() - requestStartedAt,
-            previewError?.statusCode === 504 ? 'timeout' : 'error',
+            previewError?.statusCode === 504 || schedulerError?.statusCode === 504
+              ? 'timeout'
+              : 'error',
           )
           logRuntimeServer('error', 'runtime.preview.request.failed', 'Runtime 预览入口请求失败。', {
             module: 'runtime.preview',
@@ -1427,7 +1434,9 @@ function sendPreviewTailwindErrorCss(res: RuntimeNodeResponse, error: unknown): 
 function sendPreviewError(res: RuntimeNodeResponse, error: unknown): void {
   const previewError = error instanceof PreviewGatewayError
     ? error
-    : new PreviewGatewayError(500, 'PREVIEW_GATEWAY_ERROR', error instanceof Error ? error.message : '预览网关异常。')
+    : error instanceof RuntimeViteTaskSchedulerError
+      ? new PreviewGatewayError(error.statusCode, error.code, error.message)
+      : new PreviewGatewayError(500, 'PREVIEW_GATEWAY_ERROR', error instanceof Error ? error.message : '预览网关异常。')
 
   res.statusCode = previewError.statusCode
   res.setHeader('Content-Type', 'text/html; charset=utf-8')

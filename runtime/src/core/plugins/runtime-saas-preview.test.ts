@@ -24,7 +24,10 @@ const joseMocks = vi.hoisted(() => ({
 
 vi.mock('jose', () => joseMocks)
 vi.mock('../utils/runtime-logger', () => ({ logRuntimeServer: vi.fn(), isRuntimeAccessLogEnabled: () => false }))
-vi.mock('./runtime-capacity', () => ({ recordRuntimeWorkload: vi.fn() }))
+vi.mock('./runtime-capacity', () => ({
+  recordRuntimeWorkload: vi.fn(),
+  registerRuntimeCapacityProvider: vi.fn(() => () => {}),
+}))
 
 describe('runtime saas preview helpers', () => {
   it('应优先使用 Backend 透传的浏览器可访问 Runtime 地址', () => {

@@ -78,8 +78,8 @@
 | :--- | :--- | :--- | :--- | :--- |
 | C1 | 代码侧 Run owner 过滤（现仅文档如实描述全局收敛） | M8 | 代码与文档一致，或明确降级承诺 | **已完成（2026-09-29）**：`ai_agent_runs.process_owner` + 启动按本机死进程/无主策略收敛；不碰其它副本。见 task-runtime-contract §6.3 |
 | C2 | 检查指纹三处缺口：资源 / 组件主题 / 编译器版本 | M11 | 指纹覆盖三者，缓存不再返回陈旧检查结果 | **基本完成（2026-09-29）**：资源身份 token + 组件默认主题色板 + Kit 清单内容 hash；Runtime 副本 Vite/镜像版本回报并入指纹归 **C6** |
-| C3 | preview 角色独立预算与调度（当前变量全是死配置） | #14 | plan 硬门槛：容器约束 + 内部执行预算配套 | 2–3 天 |
-| C4 | preview 健康输出排队年龄与活跃数 | #15 | `/readyz` 或 metrics 可读 | 0.5 天 |
+| C3 | preview 角色独立预算与调度（当前变量全是死配置） | #14 | plan 硬门槛：容器约束 + 内部执行预算配套 | **已完成（2026-09-29）**：preview 独立 lane + `RUNTIME_PREVIEW_VITE_TASK_*` 生效 |
+| C4 | preview 健康输出排队年龄与活跃数 | #15 | `/readyz` 或 metrics 可读 | **已完成（2026-09-29）**：`viteTaskScheduler` 快照含 preview queued/active/oldestQueuedAgeMs |
 | C5 | 归档峰值内存移出主进程 | #16 | 归档 worker 子进程内存计入子进程 | **基本完成（2026-09-29）**：父进程 RSS 采样峰值入 archive 日志；流式上传仍为长期项 |
 | C6 | 版本指纹强制（当前只报告） | #17 | 不匹配时拒绝或降级有明确策略 | **已完成（2026-09-29）**：`X-Expected-Runtime-Version-Fingerprint` 不匹配 → 409；响应携带 `X-Runtime-Version-Fingerprint` |
 | C7 | `can_safely_remove_worker` 接入真实摘除路径（现为死代码） | #18 | 摘除前核对有可执行保证 | **已完成（2026-09-29）**：`check_render_worker_removal` CLI 门禁 + compose.md 指引 |

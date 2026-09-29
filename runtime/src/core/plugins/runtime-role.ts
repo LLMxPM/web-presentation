@@ -6,8 +6,8 @@
 /** Runtime 运行角色：all 合并部署，preview/build/check 分角色部署。 */
 export type RuntimeRole = 'all' | 'preview' | 'build' | 'check'
 
-/** 调度任务类别：完整编译诊断、正式构建、轻量内部工具各自独立容量。 */
-export type RuntimeViteTaskKind = 'diagnostics' | 'project' | 'light'
+/** 调度任务类别：预览 HTML/模块转换、完整编译诊断、正式构建、轻量内部工具各自独立容量。 */
+export type RuntimeViteTaskKind = 'preview' | 'diagnostics' | 'project' | 'light'
 
 /** 单个任务类别的执行预算：并发上限、排队上限与排队超时。 */
 export interface RuntimeTaskBudget {
@@ -125,6 +125,28 @@ export function resolveRuntimeKindBudget(
         env,
         ['RUNTIME_LIGHT_TOOL_QUEUE_WAIT_TIMEOUT_MS'],
         DEFAULT_LIGHT_TOOL_QUEUE_WAIT_TIMEOUT_MS,
+      ),
+    }
+  }
+
+  if (kind === 'preview') {
+    // preview 面独立预算：角色级 RUNTIME_PREVIEW_VITE_TASK_* 优先，其次共享 RUNTIME_VITE_TASK_*。
+    const previewFallback = ['RUNTIME_PREVIEW_VITE_TASK', 'RUNTIME_VITE_TASK']
+    return {
+      concurrency: readPositiveInt(
+        env,
+        [...previewFallback.map(prefix => `${prefix}_CONCURRENCY`)],
+        DEFAULT_VITE_TASK_CONCURRENCY,
+      ),
+      maxQueueSize: readPositiveInt(
+        env,
+        [...previewFallback.map(prefix => `${prefix}_QUEUE_SIZE`)],
+        DEFAULT_VITE_TASK_QUEUE_SIZE,
+      ),
+      queueWaitTimeoutMs: readPositiveInt(
+        env,
+        [...previewFallback.map(prefix => `${prefix}_QUEUE_WAIT_TIMEOUT_MS`)],
+        DEFAULT_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS,
       ),
     }
   }

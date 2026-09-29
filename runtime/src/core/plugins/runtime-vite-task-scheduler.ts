@@ -56,6 +56,7 @@ export interface RuntimeViteTaskKindSnapshot extends RuntimeTaskBudget {
 export interface RuntimeViteTaskSchedulerSnapshot {
   /** 所有类别合计的执行中任务数 */
   active: number
+  queuedPreview: number
   queuedDiagnostics: number
   queuedProject: number
   queuedLight: number
@@ -134,6 +135,8 @@ export class RuntimeViteTaskScheduler {
       DEFAULT_DIAGNOSTICS_WEIGHT,
     )
     this.lanes = {
+      // preview 独立容量：HTML/模块转换不得被长编译诊断或构建挤占。
+      preview: createLane('preview', options.kinds?.preview, sharedDefaults, { concurrency: false, maxQueueSize: false, queueWaitTimeoutMs: false }, role),
       diagnostics: createLane('diagnostics', options.kinds?.diagnostics, sharedDefaults, sharedProvided, role),
       project: createLane('project', options.kinds?.project, sharedDefaults, sharedProvided, role),
       // 轻量工具独立容量：不继承诊断/构建的共享默认预算，避免被长编译配置拖大或挤占。
@@ -218,7 +221,8 @@ export class RuntimeViteTaskScheduler {
       }
     }
     return {
-      active: kinds.diagnostics.active + kinds.project.active + kinds.light.active,
+      active: kinds.preview.active + kinds.diagnostics.active + kinds.project.active + kinds.light.active,
+      queuedPreview: kinds.preview.queued,
       queuedDiagnostics: kinds.diagnostics.queued,
       queuedProject: kinds.project.queued,
       queuedLight: kinds.light.queued,
@@ -226,6 +230,7 @@ export class RuntimeViteTaskScheduler {
       maxQueueSize: kinds.diagnostics.maxQueueSize,
       queueWaitTimeoutMs: kinds.diagnostics.queueWaitTimeoutMs,
       oldestQueuedAgeMs: Math.max(
+        kinds.preview.oldestQueuedAgeMs,
         kinds.diagnostics.oldestQueuedAgeMs,
         kinds.project.oldestQueuedAgeMs,
         kinds.light.oldestQueuedAgeMs,
