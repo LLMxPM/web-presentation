@@ -1,4 +1,4 @@
-"""文件功能：计算代码检查完整输入指纹，覆盖源码、依赖版本、Runtime Kit、编译配置与主题样式。"""
+"""文件功能：计算代码检查完整输入指纹，覆盖源码、依赖版本、资源、Runtime Kit、编译配置与主题样式。"""
 
 from __future__ import annotations
 
@@ -14,9 +14,11 @@ from app.core.runtime_module_policy import (
     load_runtime_kit_manifest,
 )
 from app.core.text_normalizer import normalize_text_to_lf
+from app.models.asset import WorkspaceAsset
 from app.models.enums import RecordStatus
 from app.models.font import WorkspaceFontConfig
 from app.models.page import Page
+from app.models.workspace import Workspace
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.repositories.module_dependency_repository import ModuleDependencyRepository
@@ -31,6 +33,8 @@ from app.services.component_validation_profile import (
 from app.services.page_screenshot_fingerprint_service import (
     PageScreenshotFingerprintService,
 )
+from app.services.resource_reference_parser import ResourceReferenceParser
+from app.services.workspace_theme_service import WorkspaceThemeService
 
 _PAGE_MODULE_PATH_PATTERN = re.compile(r"^src/views/(?P<code>[A-Za-z0-9_-]+)\.(?P<file_type>[A-Za-z0-9]+)$")
 
@@ -48,6 +52,22 @@ def _hash_json_payload(payload: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _collect_source_asset_names(*sources: str | None) -> list[str]:
+    """从源码与 preview_schema 收集静态资源名。"""
+
+    names: list[str] = []
+    for source in sources:
+        text = source or ""
+        if not text.strip():
+            continue
+        names.extend(ResourceReferenceParser.collect_static_asset_call_names([text]))
+        references = ResourceReferenceParser.collect_vue_asset_references(text)
+        names.extend(references.asset_names)
+        schema_refs = ResourceReferenceParser.collect_preview_schema_asset_references(text)
+        names.extend(schema_refs.asset_names)
+    return sorted({name for name in names if name and name != "__DYNAMIC__"})
+
+
 class CodeCheckFingerprintBuilder:
     """按页面/组件代码检查真实输入组装完整指纹。"""
 
@@ -55,6 +75,7 @@ class CodeCheckFingerprintBuilder:
         self.session = session
         self.dependency_service = ComponentDependencyService(session)
         self.module_dependency_repository = ModuleDependencyRepository(session)
+        self.theme_service = WorkspaceThemeService(session)
 
     async def build_page_fingerprint(
         self,
@@ -64,16 +85,25 @@ class CodeCheckFingerprintBuilder:
         source: str,
         importer_module_path: str,
     ) -> str:
-        """页面检查指纹：源码 + 依赖版本 + Kit + 编译配置 + 主题样式 + 规则版本。"""
+        """页面检查指纹：源码 + 依赖版本 + 引用资源 + Kit/编译器 + 主题样式 + 规则版本。"""
 
-        dependency_identity = await self._resolve_module_graph_identity(
+        dependency_identity, asset_names = await self._resolve_module_graph_identity(
             workspace_id=workspace_id,
             project_id=project_id,
             entry_content=source,
             importer_module_path=importer_module_path,
             allow_page_module_imports=True,
+            extra_asset_sources=[source],
         )
-        theme_style_hash = await self._build_theme_style_hash(workspace_id=workspace_id, project_id=project_id)
+        theme_style_hash = await self._build_theme_style_hash(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            for_component=False,
+        )
+        referenced_assets = await self._resolve_workspace_asset_tokens(
+            workspace_id=workspace_id,
+            asset_names=asset_names,
+        )
         payload = {
             "kind": "page",
             "source": normalize_text_to_lf(source),
@@ -81,8 +111,8 @@ class CodeCheckFingerprintBuilder:
             "project_id": int(project_id),
             "module_path": importer_module_path or "",
             "dependency_identity": dependency_identity,
-            "runtime_kit_version": str(load_runtime_kit_manifest().get("version") or ""),
-            "compile_config": _hash_json_payload(build_runtime_module_resolver_config()),
+            "referenced_assets": referenced_assets,
+            "compiler_identity": _compiler_identity(),
             "theme_style": theme_style_hash,
             "check_rules_version": CODE_CHECK_RULES_VERSION,
             "component_validation_profile_version": COMPONENT_VALIDATION_PROFILE_VERSION,
@@ -98,14 +128,19 @@ class CodeCheckFingerprintBuilder:
         component_type_value: str,
         profile_key: str,
     ) -> str:
-        """组件检查指纹：源码/schema/类型 + 依赖版本 + Kit + 校验 profile + 规则版本。"""
+        """组件检查指纹：源码/schema/类型 + 依赖版本 + 引用资源 + Kit/编译器 + 主题 + 规则版本。"""
 
-        dependency_identity = await self._resolve_module_graph_identity(
+        dependency_identity, asset_names = await self._resolve_module_graph_identity(
             workspace_id=workspace_id,
             project_id=None,
             entry_content=source,
             importer_module_path=None,
             allow_page_module_imports=False,
+            extra_asset_sources=[source, preview_schema],
+        )
+        referenced_assets = await self._resolve_workspace_asset_tokens(
+            workspace_id=workspace_id,
+            asset_names=asset_names,
         )
         payload = {
             "kind": "component",
@@ -115,9 +150,13 @@ class CodeCheckFingerprintBuilder:
             "profile_key": profile_key,
             "workspace_id": int(workspace_id),
             "dependency_identity": dependency_identity,
-            "runtime_kit_version": str(load_runtime_kit_manifest().get("version") or ""),
-            "compile_config": _hash_json_payload(build_runtime_module_resolver_config()),
-            "theme_style": await self._build_theme_style_hash(workspace_id=workspace_id, project_id=None),
+            "referenced_assets": referenced_assets,
+            "compiler_identity": _compiler_identity(),
+            "theme_style": await self._build_theme_style_hash(
+                workspace_id=workspace_id,
+                project_id=None,
+                for_component=True,
+            ),
             "check_rules_version": CODE_CHECK_RULES_VERSION,
             "component_validation_profile_version": COMPONENT_VALIDATION_PROFILE_VERSION,
         }
@@ -131,14 +170,19 @@ class CodeCheckFingerprintBuilder:
         entry_content: str,
         importer_module_path: str | None,
         allow_page_module_imports: bool,
-    ) -> list[str]:
-        """按 artifact 构建相同规则遍历模块图，输出稳定依赖身份 token。"""
+        extra_asset_sources: list[str | None],
+    ) -> tuple[list[str], list[str]]:
+        """按 artifact 构建相同规则遍历模块图，输出依赖身份 token 与引用资源名。"""
 
         tokens: set[str] = set()
+        asset_names: set[str] = set()
         visited_component_version_ids: set[int] = set()
         visited_page_paths: set[str] = set()
         queued_component_version_ids: list[int] = []
         queued_page_paths: list[str] = []
+
+        for name in _collect_source_asset_names(*extra_asset_sources):
+            asset_names.add(name)
 
         parsed = self.dependency_service.parse_dependencies(
             entry_content,
@@ -183,6 +227,9 @@ class CodeCheckFingerprintBuilder:
             component_code = component.code if component is not None else f"id:{version.component_id}"
             content_hash = version.content_hash or _sha256_text(version.content or "")
             tokens.add(f"cv:{component_code}:v{version.version_no}:{content_hash}")
+            # 依赖组件自身引用的资源也进入指纹，替换资源不得复用旧检查结果。
+            for name in _collect_source_asset_names(version.content, version.preview_schema):
+                asset_names.add(name)
             for dependency_version_id in await self.module_dependency_repository.list_component_dependency_version_ids(
                 component_version_id
             ):
@@ -193,12 +240,17 @@ class CodeCheckFingerprintBuilder:
             if page_path in visited_page_paths:
                 continue
             visited_page_paths.add(page_path)
-            page_identity = await self._resolve_page_module_identity(project_id=project_id, page_path=page_path)
-            tokens.add(page_identity[0])
-            if page_identity[1] is not None:
-                enqueue_parsed(page_identity[1], page_path)
+            page_identity, page_content = await self._resolve_page_module_identity(
+                project_id=project_id,
+                page_path=page_path,
+            )
+            tokens.add(page_identity)
+            if page_content is not None:
+                for name in _collect_source_asset_names(page_content):
+                    asset_names.add(name)
+                enqueue_parsed(page_content, page_path)
 
-        return sorted(tokens)
+        return sorted(tokens), sorted(asset_names)
 
     async def _resolve_page_module_identity(self, *, project_id: int | None, page_path: str) -> tuple[str, str | None]:
         """解析页面模块身份 token 与当前源码，供递归依赖展开。"""
@@ -218,8 +270,41 @@ class CodeCheckFingerprintBuilder:
         content = page.page_content or ""
         return f"page:{page_path}:{_sha256_text(normalize_text_to_lf(content))}", content
 
-    async def _build_theme_style_hash(self, *, workspace_id: int, project_id: int | None) -> str:
-        """主题/样式输入 hash：项目主题与画布配置 + 工作空间字体签名。"""
+    async def _resolve_workspace_asset_tokens(
+        self,
+        *,
+        workspace_id: int,
+        asset_names: list[str],
+    ) -> list[str]:
+        """把引用资源解析为 name:file_hash 身份 token；缺失资源显式记入指纹。"""
+
+        names = sorted({str(name or "").strip() for name in asset_names if str(name or "").strip()})
+        if not names:
+            return []
+        rows = await self.session.execute(
+            select(WorkspaceAsset.name, WorkspaceAsset.file_hash)
+            .where(WorkspaceAsset.workspace_id == workspace_id)
+            .where(WorkspaceAsset.name.in_(names))
+            .where(WorkspaceAsset.status == RecordStatus.ACTIVE.value)
+        )
+        by_name = {str(name): str(file_hash or "") for name, file_hash in rows.all()}
+        tokens: list[str] = []
+        for name in names:
+            file_hash = by_name.get(name)
+            if file_hash is None:
+                tokens.append(f"asset:{name}:missing")
+            else:
+                tokens.append(f"asset:{name}:{file_hash}")
+        return tokens
+
+    async def _build_theme_style_hash(
+        self,
+        *,
+        workspace_id: int,
+        project_id: int | None,
+        for_component: bool,
+    ) -> str:
+        """主题/样式输入 hash：项目主题或工作空间默认主题 + 画布配置 + 字体签名。"""
 
         from app.models.workspace import Project
 
@@ -227,12 +312,40 @@ class CodeCheckFingerprintBuilder:
         project = await self.session.get(Project, project_id) if project_id is not None else None
         if project is not None:
             page_config_hash = (await fingerprint_service.build_project_snapshot(project)).config_hash
+            theme_identity: dict[str, object] = {
+                "mode": "project",
+                "theme_key": project.theme_key,
+            }
+        elif for_component:
+            # 组件预览基线是工作空间默认主题，不得用空主题导致色板变更不失效。
+            workspace = await self.session.get(Workspace, workspace_id)
+            theme_key = (workspace.default_theme_key if workspace is not None else None) or None
+            theme_config: dict[str, object] = {}
+            if theme_key:
+                try:
+                    theme_config = await self.theme_service.build_theme_config_document_by_key(
+                        workspace_id,
+                        theme_key,
+                    )
+                except Exception:  # noqa: BLE001 - 主题缺失时显式记入指纹
+                    theme_config = {"__missing_theme__": theme_key}
+            page_config_hash = fingerprint_service.build_hash(
+                page_config=_default_page_config(),
+                theme_key=theme_key,
+                theme_config=theme_config,
+            )
+            theme_identity = {
+                "mode": "workspace_default",
+                "theme_key": theme_key,
+                "theme_config": theme_config,
+            }
         else:
             page_config_hash = fingerprint_service.build_hash(
                 page_config=_default_page_config(),
                 theme_key=None,
                 theme_config={},
             )
+            theme_identity = {"mode": "none"}
 
         font_rows = await self.session.execute(
             select(WorkspaceFontConfig)
@@ -251,7 +364,24 @@ class CodeCheckFingerprintBuilder:
             }
             for row in font_rows.scalars().all()
         ]
-        return _hash_json_payload({"page_config": page_config_hash, "fonts": font_signatures})
+        return _hash_json_payload({
+            "page_config": page_config_hash,
+            "theme_identity": theme_identity,
+            "fonts": font_signatures,
+        })
+
+
+def _compiler_identity() -> dict[str, object]:
+    """编译器/规则身份：Kit 清单内容 hash + 解析器配置，避免只依赖进程级版本字符串。"""
+
+    manifest = load_runtime_kit_manifest()
+    # 清单全文入指纹：即使 version 字段未变，exports 结构变化也必须失效缓存。
+    manifest_hash = _hash_json_payload(manifest)
+    return {
+        "runtime_kit_version": str(manifest.get("version") or ""),
+        "runtime_kit_manifest_hash": manifest_hash,
+        "compile_config": _hash_json_payload(build_runtime_module_resolver_config()),
+    }
 
 
 def _default_page_config():
