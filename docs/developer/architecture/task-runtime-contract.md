@@ -194,7 +194,7 @@
 
 ## 5. 现有任务模型映射表（10 套 → 契约）
 
-> **历史迁移基线**：下表为 A1 冻结时的 10 套任务模型、3 套认领方言映射，不代表最新实现状态；当前差距以[现行评估](../../temp/architecture-assessment-2026-09-29.md)为准，表内迁移前描述待按新计划 W08 对齐。
+> **历史迁移基线（W08 已对齐当前实现）**：下表保留 A1 冻结时的 10 套任务模型、3 套认领方言映射框架。**恢复列已按当前实现更新为「循环内过期恢复 + 启动兜底」**；普通 AI Run 启动恢复为 hostname/pid 过滤，不再描述为全局扫杀。剩余差距以[现行评估](../../temp/architecture-assessment-2026-09-29.md)与[计划](../../temp/plans/architecture-improvement-plan-2026-09-29.md)为准。
 
 ### 5.1 总表
 
@@ -204,13 +204,13 @@
 | 2 | **截图 PageScreenshotJob** | `page_screenshot_jobs` | **A** `claim_pending_jobs` | 标准 / 循环+启动 | `pending/running/succeeded/failed/cancelled/skipped` | 已接近契约；`skipped` 保持旁路 |
 | 3 | **回填 AssetRenderHintBackfillJob** | `asset_render_hint_backfill_jobs` | **A** `claim_pending_jobs` | 标准 / 循环+启动 | 同上（无 skipped） | 已接近契约 |
 | 4 | **图片 AiImageGenerationJob** | `ai_image_generation_jobs` | **A** 标准列 + `waiting_provider` | 标准 / 启动恢复 | `error`≠`failed`；`completed` | `error`→`failed`，`completed`→`succeeded`；`waiting_provider` 登记旁路 |
-| 5 | **页面变更 AiPageMutationJob** | `ai_page_mutation_jobs` | **A** 标准列（Batch 用 generation 围栏） | 标准 / **仅启动**（P1-Recovery） | `completed`/`cancelled` | **补循环内恢复**；`completed`→`succeeded` |
-| 6 | **组件变更 AiComponentMutationTask** | `ai_component_mutation_tasks` + `ai_agent_external_tasks` | **A**（挂在 ExternalTask） | 标准 / **仅启动** | 经 ExternalTask 穿透 | 同上；领域详情表保持 |
+| 5 | **页面变更 AiPageMutationJob** | `ai_page_mutation_jobs` | **A** 标准列（Batch 用 generation 围栏） | 标准 / 循环+启动 | `completed`/`cancelled` | `completed`→`succeeded`（若尚未统一） |
+| 6 | **组件变更 AiComponentMutationTask** | `ai_component_mutation_tasks` + `ai_agent_external_tasks` | **A**（挂在 ExternalTask） | 标准 / 循环+启动 | 经 ExternalTask 穿透 | 同上；领域详情表保持 |
 | 7 | **ExternalTask 统一控制面** | `ai_agent_external_tasks` | **A** 标准列 | 标准 / 对账兜底 | `succeeded`（已是） | 统一为契约 Job；Batch 聚合不进 Job 状态机 |
 | 8 | **ExternalBatch 续跑聚合** | `ai_agent_external_batches` | **B** `lease_generation` CAS | generation 围栏 / coordinator 轮询 | `collecting/waiting_tasks/ready/resuming/completed/failed/cancelled` | **不是 Job**；保留为聚合/续跑角色，字段映射 §5.3 |
 | 9 | **MutationJob（External API）** | `api_mutation_jobs` | **B** `lease_generation` CAS（经 `claim_rows_by_cas`） | 15s 心跳 / 循环恢复 | `canceled`/`succeeded`/`failed` | `canceled` 是 §3 的 v1 兼容别名；`last_error_code` 通过列词汇映射 |
 | 10 | **渲染 RenderRequest + RenderAttempt** | `render_requests` / `render_attempts` | **C** `claim_generation` + `reserve_attempt` | Attempt 租约 / 协调器收敛 | `queued/executing/succeeded/failed/cancelled/expired` | `queued`→`pending`，`executing`→`running`；Attempt 状态机保留 |
-| — | **进程内 AI Run** | `ai_agent_runs` | **无**（非租约队列） | 进程内；启动全局收敛 | `running/waiting_external/paused/cancelling/completed/cancelled/failed` | **契约外**：产品承诺「会丢」；见 §6 |
+| — | **进程内 AI Run** | `ai_agent_runs` | **无**（非租约队列） | 进程内；启动按 hostname/pid 收敛本机死进程 | `running/waiting_external/paused/cancelling/completed/cancelled/failed` | **契约外**：产品承诺「会丢」；见 §6 与[兼容矩阵 §5](../deployment/compatibility-matrix.md#5-run-收敛边界hostname--pid) |
 
 ### 5.2 认领方言对照（3 套 → 1 套）
 
