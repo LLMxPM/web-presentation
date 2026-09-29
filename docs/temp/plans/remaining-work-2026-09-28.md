@@ -33,7 +33,7 @@
 
 ---
 
-## 2. WS-A · P3 统一任务运行时（主轴）
+## 2. WS-A · P3 统一任务运行时（主轴，**A1–A4 已完成 2026-09-29**）
 
 **问题**（现行评估 P1-TaskModel / 结构批判 P0）：至少 9 套并行的领取-租约-心跳-恢复-错误码方言（`external_task_queue` / `page|component mutation` / `image` / `screenshot` / `backfill` / `mutation_job` / `render coordinator` / 构建 `BackgroundTasks` / 进程内 AI Run）。CP4 只收口了 **claim 时序**，没有统一运行时。
 
@@ -42,7 +42,7 @@
 | A1 | **冻结任务运行时契约**：角色模型（Worker / Lease / Attempt / Terminal）、字段词汇（owner、heartbeat、attempt_id、cancel）、错误码族、恢复语义 | 一份契约文档 + 与现有 9 套方言的映射表；**不写实现** | **已完成（2026-09-29）**：[`docs/developer/architecture/task-runtime-contract.md`](../../developer/architecture/task-runtime-contract.md)；含 10 套任务模型映射、3 套认领方言对照、字段/状态/错误码/恢复语义冻结；未写实现 |
 | A2 | **统一 claim/lease/heartbeat/recover 执行器**（扩展 `durable_job_lease_service.claim_rows_by_cas`，不建能力布尔层） | 新任务类型只注册列词汇与领域取值，不再手写 claim；门禁拒绝第 N+1 份手写 claim | **已完成（2026-09-29）**：`JobColumnVocabulary` + `DurableJobRuntime`；词汇化 claim/recover/cancel；`test_job_runtime_vocabulary.py` 14 例；门禁补注新队列注册口径。存量队列迁移归 A3 |
 | A3 | **迁移队列**（建议顺序：构建 → 截图/回填 → 图片 → 页面/组件 mutation → external_task_queue） | 每迁一队：行为回归绿、方言份数 −1、旧代码删除 | **已完成（2026-09-29）**：构建迁移、页面/组件 L1、图片终态归一、MutationJob 词汇化 recover、external 认领 `claim_rows_by_cas`+`on_claimed`。证据见 task-runtime-contract §9 |
-| A4 | **跨表不变量下沉**（如 `resolving` requirement ⇔ 有效租约的 `resuming` batch） | DB 约束或状态机库保证，审计函数降为兜底 | 3–5 天 |
+| A4 | **跨表不变量下沉**（如 `resolving` requirement ⇔ 有效租约的 `resuming` batch） | DB 约束或状态机库保证，审计函数降为兜底 | **已完成（2026-09-29）**：`app/ai/job_invariants.py` 强制 INV-1/3/5；claim 同事务复核；构建 attempt 围栏统一；审计降为兜底。见 task-runtime-contract §7 |
 | A5 | ~~普通 AI Run 持久性语义落产品面~~ | **已定「承诺会丢」**；UI/文档标注改由 **WS-G7** 承接，不在任务运行时内做可恢复 Run | — |
 
 **硬约束**：SQLite 分支语义字节级维持；PG 同事务 `SKIP LOCKED` 形态已实测（8 worker 14.7x），迁移时不得退回跨事务 CAS；`skip_locked` 只允许出现在租约服务。

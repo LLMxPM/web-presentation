@@ -281,19 +281,21 @@
 
 ---
 
-## 7. 不变量（A4 下沉目标）
+## 7. 不变量（A4 已下沉，2026-09-29）
 
-下列不变量当前靠审计/协调器自觉，A4 应改为 **DB 约束或状态机库** 保证；审计函数降为兜底。
+不变量由 **`app/ai/job_invariants.py` 状态机库**在写路径强制；`audit_cross_table_invariants` 与 `audit_external_state_consistency` 降为兜底。
 
-| ID | 不变量 | 现状 | 目标 |
+| ID | 不变量 | 强制方式 | 状态 |
 | :--- | :--- | :--- | :--- |
-| **INV-1** | `requirement.status = resolving` ⇔ 存在 `batch.status = resuming` 且租约有效 | coordinator 逻辑 | 部分唯一索引已有（`uq_*_resuming_run`）；补双向 |
+| **INV-1** | `requirement.status = resolving` ⇔ `batch.status = resuming` 且租约有效 | `assert_inv1_requirement_batch`（claim 同事务复核）+ 部分唯一索引 | **已下沉** |
 | **INV-2** | 同一 `run_id` 至多一个 `resuming` / 一个 `collecting` Batch | ✅ 部分唯一索引 | 保持 |
-| **INV-3** | Job 终态 ⇒ 对应 ExternalTask 已写穿终态 | 同事务手写 | 事务触发器或统一 transition API |
+| **INV-3** | Job 终态 ⇒ ExternalTask 写穿终态 | `finalize_external_backed_job` + `sync_external_task_from_domain_job` 同事务投影 | **已下沉** |
 | **INV-4** | `active_occupancy = 1` 的 (worker_id, worker_epoch) 至多一条 | ✅ 唯一索引 | 保持 |
-| **INV-5** | 产物 `attempt_id` 必须等于 Job 当前 attempt | 手写围栏 | 统一 complete API 强制 |
+| **INV-5** | 产物 `attempt_id` 必须等于 Job 当前 attempt | `assert_inv5_attempt_fence`（构建/产物 complete 唯一入口） | **已下沉** |
 | **INV-6** | `cancel_requested_at` 非空 ⇒ 不得再从 pending 认领 | ✅ 认领谓词 | 保持 |
 | **INV-7** | 终态行不得再被认领 | ✅ 状态谓词 | 保持 |
+
+**实现位置**：`backend/app/ai/job_invariants.py`；单测 `backend/tests/unit/test_job_invariants.py`。
 
 ---
 

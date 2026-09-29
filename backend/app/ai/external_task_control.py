@@ -168,11 +168,12 @@ async def sync_external_task_from_domain_job(
     *,
     job: Any,
 ) -> bool:
-    """把领域 Job 的状态、租约和结果写穿到统一 ExternalTask。
+    """把领域 Job 的状态、租约和结果写穿到统一 ExternalTask（INV-3 投影）。
 
     页面/图片 Job 仍作为执行租约事实源；统一 Task 是模型续跑的唯一控制面。
     本函数是领域→外部的投影，允许按领域终态直接收敛，不套用人工状态机迁移表。
-    调用方在领域状态迁移后调用，并负责在同一事务提交。
+    调用方在领域状态迁移后**必须**调用，并负责在同一事务提交；终态路径优先走
+    `job_invariants.finalize_external_backed_job`，避免 Job/Task 只写一半。
     """
 
     task = await session.scalar(

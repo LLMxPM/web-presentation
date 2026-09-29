@@ -34,6 +34,7 @@ from app.services.durable_job_lease_service import (
     transition_owned_running_job,
 )
 from app.services.job_runtime_vocabulary import PROJECT_BUILD_VOCABULARY
+from app.ai.job_invariants import assert_inv5_attempt_fence
 
 
 ACTIVE_BUILD_STATUSES = ("pending", "running")
@@ -475,47 +476,15 @@ class ProjectBuildService:
         attempt_id: str | None,
         lease_owner: str | None = None,
     ) -> None:
-        """校验上传 attempt 与有效租约均匹配，否则拒绝提升为最终产物。"""
+        """校验上传 attempt 与有效租约均匹配（INV-5），否则拒绝提升为最终产物。"""
 
-        if job.status not in ("pending", "running"):
-            raise AppException(
-                status_code=409,
-                code="BUILD_JOB_NOT_EXECUTABLE",
-                detail="构建任务已结束，迟到上传不得覆盖已有结果。",
-                data={"job_id": job.id, "status": job.status},
-            )
-        normalized_attempt = str(attempt_id or "").strip()
-        job_attempt = str(job.attempt_id or "").strip()
-        if not normalized_attempt or normalized_attempt != job_attempt:
-            raise AppException(
-                status_code=409,
-                code="BUILD_ATTEMPT_MISMATCH",
-                detail="构建产物 attempt 与当前任务不一致，迟到上传不得覆盖新结果。",
-                data={"job_id": job.id, "attempt_id": job_attempt or None},
-            )
-        # 无租约持有者时不得跳过 owner / 过期检查：回收后的 pending 行若仍带旧 attempt，
-        # 此前会同时绕过 owner 与过期两项校验，使死 attempt 仍能提升产物。
-        if not job.lease_owner:
-            raise AppException(
-                status_code=409,
-                code="BUILD_LEASE_MISSING",
-                detail="构建任务当前没有有效租约，产物不得提升为最终结果。",
-                data={"job_id": job.id, "status": job.status},
-            )
-        if lease_owner and str(lease_owner) != str(job.lease_owner):
-            raise AppException(
-                status_code=409,
-                code="BUILD_LEASE_OWNER_MISMATCH",
-                detail="构建产物上传者与当前租约持有者不一致。",
-                data={"job_id": job.id},
-            )
-        if job.lease_expires_at is not None and job.lease_expires_at <= utc_now():
-            raise AppException(
-                status_code=409,
-                code="BUILD_LEASE_EXPIRED",
-                detail="构建任务租约已过期，产物不得提升为最终结果。",
-                data={"job_id": job.id},
-            )
+        assert_inv5_attempt_fence(
+            job=job,
+            attempt_id=attempt_id,
+            require_active_lease=True,
+            lease_owner=lease_owner,
+            require_owner_present=True,
+        )
 
     async def delete_artifact(self, *, project_id: int, job_id: int) -> ProjectBuildJob:
         """删除已完成任务的归档文件并清空产物元数据，保留构建历史记录。"""

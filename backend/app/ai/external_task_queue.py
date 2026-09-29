@@ -34,6 +34,7 @@ from app.models.user import User
 from app.schemas.agent import AgentRunEvent
 from app.services.auth_service import AuthContext
 from app.services.durable_job_lease_service import claim_rows_by_cas
+from app.ai.job_invariants import assert_inv1_requirement_batch, load_requirement_batch_pair
 
 logger = logging.getLogger(__name__)
 _TASK_TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
@@ -595,7 +596,15 @@ async def _claim_ready_batch(
         if not claimed:
             return None
         row = claimed[0]
-        return str(row[0]), int(row[1] or 0) + 1
+        batch_id, generation = str(row[0]), int(row[1] or 0) + 1
+        # INV-1：认领后同事务复核 resolving ⇔ resuming，禁止半截状态提交。
+        requirement_id = row[2]
+        if requirement_id:
+            requirement, batch = await load_requirement_batch_pair(
+                session, requirement_id=str(requirement_id), batch_id=batch_id
+            )
+            assert_inv1_requirement_batch(requirement=requirement, batch=batch, now=now)
+        return batch_id, generation
 
 
 async def _continue_batch(
