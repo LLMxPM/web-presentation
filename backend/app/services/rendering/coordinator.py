@@ -247,12 +247,19 @@ class RenderCoordinator:
         return processed
 
     async def _dispatch_once(self, session: AsyncSession, repository: RenderRepository) -> int:
-        """原子完成一次派发意图，并在事务外发送 HTTP。"""
+        """原子完成一次派发意图，并在事务外发送 HTTP。
+
+        多协调器额度：先取得调度状态准入锁，再在同一事务内「计数 → 选单 → reserve」，
+        避免两个 Backend 同时看见 active=0 而突破 global/workspace limit。
+        """
 
         global_limit = int(self.settings.render_global_concurrency)
         workspace_limit = int(self.settings.render_workspace_concurrency)
+        # 单行版本递增同时充当跨协调器写锁：其后的计数与 reserve 不再交错。
+        await repository.lock_scheduler_state_for_queue_admission()
         active = await repository.count_active_attempts()
         if active >= global_limit:
+            await session.commit()
             return 0
         prefer_category = await repository.get_scheduler_state()
         # 工作空间额度已满时排除候选继续挑，避免单空间堵住全局派发。
@@ -264,6 +271,7 @@ class RenderCoordinator:
                 exclude_request_ids=excluded or None,
             )
             if request is None:
+                await session.commit()
                 return 0
             ws_active = await repository.count_active_attempts(workspace_id=request.workspace_id)
             if ws_active < workspace_limit and not await repository.request_has_unreleased_attempt(request.id):
@@ -271,6 +279,7 @@ class RenderCoordinator:
             excluded.add(request.id)
             request = None
         if request is None:
+            await session.commit()
             return 0
         workers = await repository.list_idle_workers()
         idle_worker = None
@@ -280,6 +289,7 @@ class RenderCoordinator:
                 idle_worker = worker
                 break
         if idle_worker is None:
+            await session.commit()
             return 0
         try:
             attempt = await repository.reserve_attempt(

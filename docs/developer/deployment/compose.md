@@ -170,7 +170,13 @@ Runtime 本地队列（`RUNTIME_VITE_TASK_*`）仅承担单实例容量保护，
 Renderer 仍是唯一浏览器执行角色；扩容使用不同 `worker_id` 与受信直达地址（`RENDER_WORKERS_CONFIG`），每个 Worker 进程持有自己的 `RENDER_WORKER_ID` / `RENDER_WORKER_EPOCH`：
 
 1. **新增 Worker**：启动独立 Renderer 容器，设置唯一 `RENDER_WORKER_ID` 与直达 `base_url`，追加进 `RENDER_WORKERS_CONFIG` 后重启 Backend（或滚动替换）。Worker 心跳会注册当前 epoch；同 `worker_id` 的旧 epoch 会被隔离，避免陈旧行再次派发。
-2. **摘除前核对未释放 attempt**：停止接收新派发前，确认该 Worker 上无 `active_occupancy=1` 的 attempt（可查 `RenderAttempt` 或调用 `can_safely_remove_worker`）。仍有占用时等待租约收敛、取消在途 attempt，或接受超时后由协调器重试到其它 Worker。
+2. **摘除前核对未释放 attempt**：停止接收新派发前，必须执行只读门禁 CLI：
+
+   ```powershell
+   uv run --project backend python -m app.scripts.check_render_worker_removal --worker-id <id> --format summary
+   ```
+
+   退出码 `0` 表示可安全摘除，`2` 表示仍有 `active_occupancy=1` 的 attempt。仍有占用时等待租约收敛、取消在途 attempt，或接受超时后由协调器重试到其它 Worker。禁止只删配置行就下线。
 3. **epoch 变更**：Worker 重启会生成新 epoch；旧 epoch 的迟到回执不得覆盖新结果。摘除旧实例前核对未释放 attempt，不要只删配置行。
 
 ## 访问关系
