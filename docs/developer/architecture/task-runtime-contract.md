@@ -272,12 +272,12 @@
 | ExternalTask | 部分（对账） | 部分 | 领域 Job 终态写穿为主 |
 | MutationJob | ✅ | ✅ | — |
 | Render | ✅（协调器收敛 unknown/expired） | ✅ | — |
-| **AI Run** | — | 全局收敛 | **多副本语义错误**（见 §6.3）；产品已接受「会丢」 |
+| **AI Run** | — | owner 过滤启动收敛 | 已按 owner 过滤（见 §6.3）；产品已接受「会丢」 |
 
 ### 6.3 契约外：普通 AI Run
 
 - **产品决策（H1，2026-09-28）**：普通 AI Run **承诺「会丢」**。进程退出/重启导致的中断是接受的边界，**不做**可恢复 Run。
-- 启动恢复 `recover_interrupted_agent_runs_on_startup` 当前是**全局扫描**语义（无 owner/epoch），多副本会误杀其它副本活跃 Run——这是 **P0-BackendMultiInstance**，归 WS-C 前置，**不在** A2 运行时统一范围内，但迁移任务模型时不得把它伪装成「已统一」。
+- 启动恢复 `recover_interrupted_agent_runs_on_startup` 已按 **owner 过滤**（WS-C C1，2026-09-29）：Run 启动时打 `process_owner = hostname:pid:uuid`；启动只收敛「无主遗留」（单进程部署）与「本机已死进程」的 Run，**不碰其它主机/仍存活 sibling 的活跃 Run**。跨副本僵尸由 `recover_stale_active_run` 空闲超时与用户 `force_cancel` 兜底。仍在 A2 运行时统一范围外，不得伪装成「已统一」。
 - Run 状态机：`running / waiting_external / paused / cancelling → completed / cancelled / failed`；进程停止 → `AI_RUN_PROCESS_STOPPED`。
 - UI/文档标注（区分「取消」与「进程停止、不续跑」）归 **WS-G7**。
 

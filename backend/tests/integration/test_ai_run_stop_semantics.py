@@ -20,6 +20,7 @@ async def _seed_run(
     suffix: str,
     status: str,
     cancel_requested: bool = False,
+    process_owner: str | None = None,
 ) -> tuple[int, str, str]:
     """创建最小可恢复 Run，并返回 (workspace_id, session_id, run_id)。"""
 
@@ -60,6 +61,7 @@ async def _seed_run(
             cancel_requested_at=(now - timedelta(seconds=1)) if cancel_requested else None,
             started_at=now - timedelta(minutes=1),
             updated_at=now - timedelta(minutes=1),
+            process_owner=process_owner,
         ))
         await db.commit()
     return workspace_id, session_id, run_id
@@ -173,3 +175,72 @@ async def test_startup_recovery_should_be_idempotent(
     terminal_events = [event for event in events if event.event == "run.error"]
     assert len(terminal_events) == 1
     assert terminal_events[0].payload_json.get("data", {}).get("code") == "AI_RUN_PROCESS_STOPPED"
+
+
+async def test_startup_recovery_should_skip_other_replica_active_run(
+    authenticated_client: AsyncClient,
+) -> None:
+    """其它副本（其它主机）正在执行的 Run 不得被本副本启动恢复误杀。"""
+
+    _, _, run_id = await _seed_run(
+        authenticated_client,
+        suffix="other-replica",
+        status="running",
+        process_owner="other-replica-host:99999:deadbeef",
+    )
+
+    recovered = await recover_interrupted_agent_runs_on_startup(
+        get_session_factory(),
+        include_unowned=False,
+    )
+    assert recovered == 0
+
+    run = await _read_run(run_id)
+    assert run.status == "running"
+    assert run.error_code is None
+
+
+async def test_startup_recovery_should_skip_unowned_when_multi_instance(
+    authenticated_client: AsyncClient,
+) -> None:
+    """多副本语义下无主遗留不被全局收敛，避免滚动升级误杀。"""
+
+    _, _, run_id = await _seed_run(
+        authenticated_client,
+        suffix="unowned-multi",
+        status="running",
+    )
+
+    recovered = await recover_interrupted_agent_runs_on_startup(
+        get_session_factory(),
+        include_unowned=False,
+    )
+    assert recovered == 0
+
+    run = await _read_run(run_id)
+    assert run.status == "running"
+
+
+async def test_startup_recovery_should_recover_dead_local_process_owner(
+    authenticated_client: AsyncClient,
+) -> None:
+    """本机已死进程遗留的 Run 应被收敛为 AI_RUN_PROCESS_STOPPED。"""
+
+    dead_pid = 2**22 + 22222
+    _, _, run_id = await _seed_run(
+        authenticated_client,
+        suffix="dead-local",
+        status="running",
+        process_owner=f"local-test-host:{dead_pid}:cafebabe",
+    )
+
+    recovered = await recover_interrupted_agent_runs_on_startup(
+        get_session_factory(),
+        include_unowned=False,
+        local_hostname="local-test-host",
+    )
+    assert recovered == 1
+
+    run = await _read_run(run_id)
+    assert run.status == "failed"
+    assert run.error_code == "AI_RUN_PROCESS_STOPPED"

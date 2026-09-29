@@ -71,6 +71,8 @@ class AiAgentRun(TimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 进程归属（hostname:pid:uuid）：启动恢复只收敛本机已死进程的遗留，禁止全局扫杀。
+    process_owner: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
 
 
 class AiAgentRunEvent(TimestampMixin, Base):

@@ -52,6 +52,7 @@ from app.schemas.agent import (
     AgentTimelineToolItem,
 )
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
+from app.services.durable_job_lease_service import build_durable_worker_id
 
 ACTIVE_RUN_STATUSES = {"pending", "running", "paused", "waiting_external", "cancelling"}
 TERMINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
@@ -262,6 +263,7 @@ class PlatformAgentRuntimeStore:
             source=scope.source,
             llm_config_id=llm_config_id,
             llm_config_snapshot_json=dict(llm_metadata) if llm_metadata is not None else None,
+            process_owner=build_durable_worker_id(),
             input_payload_json={
                 "message": message,
                 "image_attachment_ids": list(image_attachment_ids or []),
