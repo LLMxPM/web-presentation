@@ -2,6 +2,8 @@
 
 本章节只覆盖“尽快跑起来”的 SQLite 单体版，适合体验、个人使用和小团队使用。三种方式使用同一个镜像：`llmxpm/web-presentation:sqlite-lite`。如果需要 HTTPS、外部数据库、对象存储、备份策略或多实例，请直接阅读[生产部署指南](../../developer/deployment/README.md)。
 
+**形态说明（已发布镜像）**：`sqlite-lite` 是**单容器**部署，Backend、Runtime、Gateway 与截图用浏览器都在同一镜像内。你**不需要**准备 secret 文件，也**不需要**再启动第二个 Renderer 容器——群晖 Container Manager、飞牛 fnOS 等图形界面路径也只创建一个容器即可。页面截图能力由**该已发布镜像内置的浏览器**提供；若升级到未来改为「独立渲染进程/容器」的版本，以届时发布说明为准。
+
 ## 选择部署方式
 
 | 方式 | 适合场景 | 指导 |
@@ -69,6 +71,14 @@ curl -fsS http://127.0.0.1:8080/healthz
 docker compose -f compose/compose.sqlite-lite.yml ps
 ```
 
-SQLite 数据库、上传资源、截图、构建产物和 Runtime RSA 私钥都保存在 `lite-data` 数据卷或 `/app/backend/data` 挂载目录中。备份时必须完整备份该数据卷或目录，不要只复制 SQLite 文件；不要执行 `docker compose down -v`。
+SQLite 数据库、上传资源、截图（由镜像内置浏览器生成）、构建产物和 Runtime RSA 私钥都保存在 `lite-data` 数据卷或 `/app/backend/data` 挂载目录中。备份时必须完整备份该数据卷或目录，不要只复制 SQLite 文件；不要执行 `docker compose down -v`。
+
+## 适用规模与故障域
+
+| 项 | 说明 |
+| :--- | :--- |
+| 推荐规模 | **5–10 人小团队**，预览并发**约 3**，常规演示文稿工作区（非海量资产库） |
+| 承诺级别 | **容量验收前这是目标规模，不是 SLA / 硬承诺**；实际能力以你的主机配置与使用方式为准 |
+| 故障域 | Backend、Runtime、Gateway 与渲染合并故障域；**容器或服务重启会丢失预览/构建临时运行态**（进行中的 AI 长任务也可能中断且不自动续跑），**业务数据不丢**（均在数据卷内） |
 
 快速部署适合体验和小规模自托管。需要 HTTPS、外部 PostgreSQL/Redis、对象存储、集中日志、迁移、升级回滚或多实例部署时，请阅读[开发文档中的详细部署指南](../../developer/deployment/README.md)。

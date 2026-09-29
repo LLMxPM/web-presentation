@@ -242,6 +242,9 @@ class AgentActiveRunItem(SchemaBase):
     cancel_requested_at: str | None = None
     event_index: int = -1
     llm: dict[str, Any] | None = None
+    # 终态错误码：用于区分「用户取消」与「AI_RUN_PROCESS_STOPPED」等进程停止语义。
+    error_code: str | None = None
+    error_message: str | None = None
 
 
 class AgentRunStartResponse(SchemaBase):

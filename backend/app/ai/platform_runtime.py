@@ -1462,6 +1462,8 @@ class PlatformAgentRuntimeStore:
             cancel_requested_at=_iso(model.cancel_requested_at),
             event_index=model.event_index,
             llm=dict(model.llm_config_snapshot_json) if isinstance(model.llm_config_snapshot_json, dict) else None,
+            error_code=model.error_code,
+            error_message=model.error_message,
         )
 
     def build_context_status(

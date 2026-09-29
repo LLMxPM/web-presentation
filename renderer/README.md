@@ -30,4 +30,4 @@ python scripts/contracts/check-image-startup.py --image web-presentation-rendere
 
 `test:renderer` 运行不依赖真实浏览器的单元测试；`test:render-e2e` 准备隔离的 E2E 数据和四个服务，通过 Editor 发起截图，检查任务成功及 PNG 内容、尺寸，依赖 Node 与 Python 两套 Playwright Chromium。
 
-Release 与平台、Runtime 同时发布 `llmxpm/web-presentation-renderer:<release_tag>`。稳定版本同时更新 `latest`；部署及回滚时固定同一发布版本的镜像组合。
+Release **计划**与平台、Runtime 同步发布 `llmxpm/web-presentation-renderer:<release_tag>`；**该承诺尚未经过真实 Release 验证，当前镜像未推送、registry 中不可拉取**。首次推送预计发生在下一次 Release；在首次发布与可拉取性验证完成前，请把「与平台同版本发布」当作计划口径而非既成事实。稳定版本验证通过后再更新 `latest`；部署及回滚时固定同一发布版本的镜像组合。

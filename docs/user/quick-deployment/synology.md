@@ -2,6 +2,8 @@
 
 本页按群晖 DSM 的 Container Manager 图形界面编写，不要求 SSH 或命令行。不同 DSM 版本的按钮名称可能略有差异。
 
+> **形态说明**：已发布的 `sqlite-lite` 为**单容器**镜像，截图由镜像内置浏览器完成；本页流程**不需要** secret 文件或第二个 Renderer 容器。
+
 ## 1. 拉取镜像
 
 1. 在套件中心安装并打开 **Container Manager**。

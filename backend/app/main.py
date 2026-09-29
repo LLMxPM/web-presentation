@@ -286,6 +286,16 @@ def create_app() -> FastAPI:
 
         return JSONResponse(write_path_metrics.snapshot())
 
+    @app.get("/metrics/job-queues", include_in_schema=False)
+    async def job_queue_metrics() -> JSONResponse:
+        """导出持久化队列积压与租约年龄，供容量基线与积压告警使用。"""
+
+        from app.services.job_queue_metrics import snapshot_job_queue_metrics
+
+        async with get_session_factory()() as session:
+            payload = await snapshot_job_queue_metrics(session)
+        return JSONResponse(payload)
+
     @app.get("/metrics/runtime-state", include_in_schema=False)
     async def runtime_state_metrics() -> JSONResponse:
         """导出运行态后端聚合指标，供容量基线与排障使用。

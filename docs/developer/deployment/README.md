@@ -1,7 +1,12 @@
 <!-- 文件功能：面向部署人员说明 web-presentation Docker Compose 部署、外部依赖接入、升级、回滚与运维检查流程。 -->
 # 生产部署指南
 
-本文档说明如何使用 `deploy/` 目录部署 `web-presentation`。所有正式部署模板默认只拉取 CI/CD 已发布镜像；SQLite 轻量版面向个人或小团队，不需要 PostgreSQL 与 Redis。该版把 Backend、Runtime 和 Gateway 放在同一个 `platform-lite` 容器中，截图仍由独立 Renderer 容器执行。
+本文档说明如何使用 `deploy/` 目录部署 `web-presentation`。所有正式部署模板默认只拉取 CI/CD 已发布镜像；SQLite 轻量版面向个人或小团队，不需要 PostgreSQL 与 Redis。该版把 Backend、Runtime 和 Gateway 放在同一个 `platform-lite` 容器中。
+
+**Lite 与截图能力的两种形态（勿混用）：**
+
+- **已发布 `sqlite-lite`（当前用户可拉取）**：单容器自带浏览器，截图在容器内完成；**不需要**独立 Renderer 容器，也**不需要** `deploy/secrets/` 渲染凭证文件。NAS 图形界面（群晖 / 飞牛）走的就是这条路径。
+- **HEAD / compose 模板形态（待发布预演）**：`deploy/compose/compose.sqlite-lite.yml` 另起独立 Renderer 容器执行截图；但 `web-presentation-renderer` 镜像**尚未发布、当前不可拉取**，该双容器组合在首次 Release 验证前不可用。HEAD 开发中的 lite 渲染能力形态见内部镜像计划（`docs/temp/plans/deployment-image-consolidation-2026-09-29.md`），不以未发布形态指导用户。
 
 ## 文档导航
 
@@ -14,20 +19,21 @@
 | [备份与恢复](./backup-restore.md) | 数据库、资源、构建产物和密钥备份 |
 | [升级与回滚](./upgrade-rollback.md) | 镜像升级、数据库迁移和回滚注意事项 |
 | [部署排障](./troubleshooting.md) | 健康检查、Runtime、AI 设置和数据库迁移问题 |
+| [Lite 规模与隔离决策](./lite-scale-and-isolation.md) | 推荐规模（5–10 人 / 并发 3，D2 前非 SLA）、Lite 故障域、G1 不拆容器与 G5 Renderer 隔离决策 |
 
 常规部署涉及三个业务镜像：
 
 - `llmxpm/web-presentation:latest`：平台镜像，包含 Backend、Editor 静态资源和 Gateway Nginx。
 - `llmxpm/web-runtime-vue:latest`：Runtime 镜像，负责预览、诊断入口和构建。
-- `llmxpm/web-presentation-renderer:latest`：Renderer 镜像，负责真实 Chromium 截图与页面诊断。
+- `llmxpm/web-presentation-renderer:latest`：Renderer 镜像，负责真实 Chromium 截图与页面诊断。**该镜像尚未发布、当前不可拉取**（待下一次 Release 首次推送）；引用它的生产模板在发布预演通过前不能视为可直接部署。
 
-SQLite 轻量版使用 `llmxpm/web-presentation:sqlite-lite`，在 `platform-lite` 容器内运行 Backend、Runtime 和 Gateway，并另行启动 Renderer 容器。轻量平台镜像由根仓 Release workflow 从 `deploy/docker/Dockerfile.lite` 构建并推送。
+SQLite 轻量版使用 `llmxpm/web-presentation:sqlite-lite`：**已发布镜像在单个 `platform-lite` 容器内运行 Backend、Runtime、Gateway 与内置浏览器截图**，不依赖独立 Renderer 容器。轻量平台镜像由根仓 Release workflow 从 `deploy/docker/Dockerfile.lite` 构建并推送。`deploy/compose/compose.sqlite-lite.yml` 中的 renderer 服务定义对应尚未发布的镜像，属开发中形态，不以该形态指导用户。
 
 ## 部署文件
 
 | 文件 | 作用 |
 | :--- | :--- |
-| `deploy/compose/compose.sqlite-lite.yml` | SQLite + memory runtime 轻量版，启动 `platform-lite` 与 `renderer`，环境变量直接写在 compose 内 |
+| `deploy/compose/compose.sqlite-lite.yml` | SQLite + memory runtime 轻量版；含 `platform-lite` 与（开发中）`renderer` 服务定义。**renderer 镜像尚未发布，该模板待发布预演后可用** |
 | `deploy/compose/compose.yml` | 外部 PostgreSQL/Redis 简化版，启动 `platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
 | `deploy/compose/compose.with-deps.yml` | 内置 PostgreSQL/Redis 简化版，启动 `postgres`、`redis`、`platform`、`runtime` 与 `renderer`，环境变量直接写在 compose 内 |
 | `deploy/compose/compose.prod.yml` | runtime-all 兼容/Lite 生产版，拆分 `backend-migrate`、`backend`、`runtime`、`renderer` 与 `gateway`，通过 `env_file: .env` 读取生产环境变量；适合小团队或尚未分角色的环境 |
@@ -38,17 +44,17 @@ SQLite 轻量版使用 `llmxpm/web-presentation:sqlite-lite`，在 `platform-lit
 
 简化版中，`platform` 容器同时运行 Backend 与 Gateway。`runtime` 默认只在 compose 内网访问。`platform` 容器内通过 `extra_hosts` 把 `backend:8000` 指向本机 Backend，compose 网络中通过别名把 `backend:8000` 暴露给 Runtime 回源。
 
-SQLite 轻量版中，`platform-lite` 容器同时运行 Backend、Runtime 与 Gateway，独立 `renderer` 容器执行截图。平台容器入口脚本会把 `backend` 和 `runtime` 解析到本机，复用同一份 Gateway 配置。
+SQLite 轻量版中，已发布的 `platform-lite` 单容器同时运行 Backend、Runtime、Gateway，并用镜像内置浏览器执行截图（**不必**再起独立 `renderer`，也**不必**准备 `deploy/secrets/` 渲染凭证）。`deploy/compose/compose.sqlite-lite.yml` 另定义的 `renderer` 服务属开发中形态，其镜像尚未发布。平台容器入口脚本会把 `backend` 和 `runtime` 解析到本机，复用同一份 Gateway 配置。
 
 production env 版中，访问入口是单独的 `gateway` 容器；`backend` 和 `runtime` 默认只在 compose 内网访问。**正式生产推荐使用分角色单机版** `compose.runtime-roles.yml`：把 `runtime` 拆为 `runtime-preview` / `runtime-build` / `runtime-check`，Gateway 只代理预览角色，Runtime 不注入平台密钥。`compose.prod.yml` 保留为 runtime-all 兼容路径，详见 [Compose 部署说明](./compose.md)。
 
 ## 前置条件
 
 - 已安装 Docker Engine 与 Docker Compose v2。
-- SQLite 轻量版不需要 PostgreSQL 与 Redis；`platform-lite` 只支持单实例，并需配套独立 Renderer。运行态使用 `memory://` 适配器（见 [运行态存储适配器](../backend/runtime-state-adapter.md)）。
+- SQLite 轻量版不需要 PostgreSQL 与 Redis；`platform-lite` 只支持单实例。已发布镜像自带浏览器完成截图，**不需要**独立 Renderer 容器或 secret 文件。运行态使用 `memory://` 适配器（见 [运行态存储适配器](../backend/runtime-state-adapter.md)）。
 - 外部依赖简化版和 production env 版需要已准备可访问的 PostgreSQL 与 Redis。
 - 内置依赖简化版会随应用启动 PostgreSQL 与 Redis，适合单机试部署或小规模自托管。
-- 部署机器可以拉取平台、Runtime 与 Renderer 对应镜像；轻量版使用 `llmxpm/web-presentation:sqlite-lite` 加 Renderer 镜像。
+- 部署机器可以拉取所需业务镜像；轻量版只需 `llmxpm/web-presentation:sqlite-lite`（自带浏览器）。`web-presentation-renderer` 与自构建 `web-runtime-vue` **尚未发布**，生产多容器模板待其首次推送后才可直接拉取部署。
 - 从源码构建镜像时直接使用仓库原生目录；直接使用 Docker Hub 发布镜像不需要仓库源码。
 - 如需要 HTTPS，建议在外层 Nginx、Traefik 或云负载均衡终止 TLS，再转发到 compose 暴露的 HTTP 端口。
 
@@ -178,7 +184,7 @@ llmxpm/web-presentation-renderer:latest
 
 内置 Redis 默认关闭 AOF，以降低小规模部署的磁盘写入成本。Redis 只保存短生命周期预览 artifact、构建状态和锁；主数据仍由 PostgreSQL 或 SQLite 管理。
 
-`latest` 与 `sqlite-lite` 只适合跟随稳定 Release 自动升级。需要精确回滚时，应把平台、Runtime、Renderer 的 image 一起固定到同一发布版本；轻量版固定 `sqlite-lite-<release_tag>` 与对应 Renderer 标签。
+`latest` 与 `sqlite-lite` 只适合跟随稳定 Release 自动升级。需要精确回滚时，已部署多容器拓扑的环境应把平台、Runtime、Renderer 的 image 一起固定到同一发布版本（Renderer 以**已实际发布**的标签为准；当前 renderer 镜像尚未发布）。已发布的轻量版只需固定 `sqlite-lite-<release_tag>`，无需对齐 Renderer 标签。
 
 SQLite 轻量单容器版由 `platform-lite` 容器入口脚本在启动时执行一次 `alembic upgrade head`，随后同时启动 Backend、Runtime 与 Nginx。两个简化版由 `platform` 容器入口脚本在启动时执行一次 `alembic upgrade head`，随后同时启动 Backend 与 Nginx。production env 版由 `backend-migrate` 容器在 `backend` 启动前执行迁移。
 

@@ -51,6 +51,8 @@ async def client(tmp_path: Path, database_template: Path) -> AsyncClient:
     os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{database_path.as_posix()}"
     os.environ["DEFAULT_ADMIN_USERNAME"] = "admin"
     os.environ["DEFAULT_ADMIN_PASSWORD"] = "Admin123456"
+    from cryptography.fernet import Fernet
+    os.environ["AI_SECRET_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
     os.environ["AI_TEST_MODE"] = "mock"
     os.environ["REDIS_URL"] = "memory://test"
     os.environ["REDIS_KEY_PREFIX"] = f"test_{database_path.stem}"

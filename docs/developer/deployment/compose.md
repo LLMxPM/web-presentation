@@ -1,6 +1,10 @@
 # Compose 部署说明
 
-`deploy/` 提供五类部署模板，覆盖 SQLite 轻量版、快速试部署、外部依赖部署、production env 版部署和分角色单机部署。每类模板都启动独立 Renderer；“单容器”仅指轻量版将 Backend、Runtime 和 Gateway 合并在一个平台容器内。现有四类单 Runtime 模板保持原有行为与启动方式不变，Lite 仍为单 Runtime。
+`deploy/` 提供五类部署模板，覆盖 SQLite 轻量版、快速试部署、外部依赖部署、production env 版部署和分角色单机部署。
+
+> **模板可用性（如实说明）**：五类模板均引用 `llmxpm/web-presentation-renderer`（以及自构建 Runtime 镜像）。**renderer 镜像尚未发布、当前不可拉取**，模板在下一次 Release 发布预演通过前**不能视为开箱即用**；`depends_on` 健康检查链路会在 renderer 拉取失败时阻塞平台服务启动。当前可直接使用的轻量路径是已发布的 `sqlite-lite` **单容器**镜像（自带浏览器、无独立 Renderer），见[快速部署](../../user/quick-deployment/README.md)。HEAD 开发中的 lite 渲染能力形态见内部镜像计划。
+
+模板文件中的服务拓扑描述（含「每类模板都启动独立 Renderer」）反映的是**目标编排**，不是「已发布镜像已具备的能力」；不要把模板里的 renderer 服务写成用户必须部署的第二容器。现有四类单 Runtime 模板保持原有行为与启动方式不变，Lite 仍为单 Runtime。
 
 官方发布的 Platform、SQLite Lite、Runtime 和 Renderer 镜像同时支持 `linux/amd64` 与 `linux/arm64`。Compose 文件不固定 `platform`，Docker 会按宿主机架构自动选择镜像；需要在本机交叉构建 ARM64 镜像时，应使用已启用 QEMU 的 Buildx 环境。
 
@@ -8,7 +12,7 @@
 
 | 文件 | 场景 | 特点 |
 | :--- | :--- | :--- |
-| `deploy/compose/compose.sqlite-lite.yml` | 个人/小团队轻量部署 | `platform-lite` 内置 Backend、Editor、Runtime 和 Gateway，另有 Renderer；使用 SQLite 与 memory runtime |
+| `deploy/compose/compose.sqlite-lite.yml` | 个人/小团队轻量部署 | `platform-lite` 内置 Backend、Editor、Runtime 和 Gateway；模板另含（开发中的）Renderer 服务。**已发布 `sqlite-lite` 为自带浏览器的单容器形态，用户侧不必部署独立 Renderer**。使用 SQLite 与 memory runtime |
 | `deploy/compose/compose.with-deps.yml` | 单机试部署 | 启动 PostgreSQL、Redis、platform、runtime 和 renderer |
 | `deploy/compose/compose.yml` | 外部依赖简化版 | 启动 platform、runtime 和 renderer；数据库与 Redis 使用外部服务 |
 | `deploy/compose/compose.prod.yml` | runtime-all 兼容/Lite | 拆分迁移、Backend、Runtime、Renderer 和 Gateway，通过 `deploy/.env` 管理变量；单 Runtime 同时承担 preview/build/check |
@@ -37,7 +41,7 @@ docker build -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-
 docker buildx build --platform linux/arm64 -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite-arm64 --load .
 ```
 
-轻量模式的 `platform-lite` 只支持单实例、单 Backend worker、单 Runtime server，并配套独立 Renderer，不适合多副本或高并发写入。容器重启后短生命周期预览链接、内存锁和内存构建状态会失效，但用户、工作空间、项目、页面、资源和 AI 会话等主数据会保留在 SQLite 文件中。
+轻量模式的 `platform-lite` 只支持单实例、单 Backend worker、单 Runtime server，不适合多副本或高并发写入。**推荐规模（目标，不是 SLA）**：5–10 人小团队、预览并发约 3、常规演示文稿工作区；容量验收（D2）前不得当作硬承诺。**故障域**：Backend + Runtime + Nginx（及当前形态下的渲染）合并故障域，容器重启会丢失预览/构建临时运行态，业务数据（SQLite / `lite-data`）不丢。详见 [Lite 规模与隔离决策](./lite-scale-and-isolation.md)。容器重启后短生命周期预览链接、内存锁和内存构建状态会失效，但用户、工作空间、项目、页面、资源和 AI 会话等主数据会保留在 SQLite 文件中。
 
 ## 试部署
 

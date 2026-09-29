@@ -631,7 +631,6 @@ async def test_reconcile_cancel_should_keep_running_job_and_resuming_batch_lease
                 worker_id="continuation-owner",
                 lease_expires_at=lease_expires_at,
                 heartbeat_at=now,
-                lease_generation=1,
             ),
             AiPageMutationJob(
                 job_id="job-page-mutation-cancel-pending",

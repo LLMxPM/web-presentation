@@ -63,6 +63,8 @@ def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
         "runtime_rsa_allow_auto_generate": True,
         "backend_multi_instance": False,
         "object_storage_shared_volume": False,
+        # 显式固定，避免 os.environ 里其它用例写入的 AI_SECRET_ENCRYPTION_KEY 造成污染。
+        "ai_secret_encryption_key": _VALID_AI_SECRET_KEY,
     }
     base.update(overrides)
     return AppSettings(**base)  # type: ignore[arg-type]
@@ -167,6 +169,7 @@ def test_multi_instance_should_reject_placeholder_shared_secrets(tmp_path: Path)
         backend_multi_instance=True,
         asset_storage_driver="s3",
         runtime_rsa_private_key_file=str(shared_key),
+        ai_secret_encryption_key="vmgRweOsDpMtYVW7SSpceINYcXlUHFNndAby6vRv0iA=",
     )
     with pytest.raises(SigningIdentityError, match="AI_SECRET_ENCRYPTION_KEY"):
         validate_shared_identity_deployment(default_ai)
@@ -181,6 +184,33 @@ def test_multi_instance_should_reject_placeholder_shared_secrets(tmp_path: Path)
     )
     with pytest.raises(SigningIdentityError, match="RENDER_SERVICE_CREDENTIAL"):
         validate_shared_identity_deployment(placeholder_render)
+
+
+def test_single_instance_should_reject_placeholder_secrets(tmp_path: Path) -> None:
+    """单实例/Lite 也不得照抄 compose 示例弱密钥启动（P1-Secrets）。"""
+
+    settings = _settings(
+        tmp_path,
+        ai_secret_encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    )
+    with pytest.raises(SigningIdentityError, match="AI_SECRET_ENCRYPTION_KEY"):
+        validate_shared_identity_deployment(settings)
+
+    weak_admin = _settings(
+        tmp_path,
+        ai_secret_encryption_key=_VALID_AI_SECRET_KEY,
+        default_admin_password="change-admin-password",
+    )
+    with pytest.raises(SigningIdentityError, match="DEFAULT_ADMIN_PASSWORD"):
+        validate_shared_identity_deployment(weak_admin)
+
+    weak_build = _settings(
+        tmp_path,
+        ai_secret_encryption_key=_VALID_AI_SECRET_KEY,
+        runtime_build_worker_credential="change-build-worker-credential",
+    )
+    with pytest.raises(SigningIdentityError, match="RUNTIME_BUILD_WORKER_CREDENTIAL"):
+        validate_shared_identity_deployment(weak_build)
 
 
 def test_single_instance_may_auto_generate_local_key(tmp_path: Path) -> None:

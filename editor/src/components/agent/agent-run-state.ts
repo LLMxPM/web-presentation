@@ -62,6 +62,39 @@ const CONTEXT_COMPRESSION_STARTED_TEXT = '上下文压缩中...'
 const CONTEXT_COMPRESSION_COMPLETED_TEXT = '上下文已压缩。'
 const CONTEXT_COMPRESSION_FAILED_TEXT = '上下文压缩失败。'
 
+/** 进程停止（服务重启）导致的 Run 中断错误码；产品承诺「会丢」，不自动续跑。 */
+export const AI_RUN_PROCESS_STOPPED_CODE = 'AI_RUN_PROCESS_STOPPED'
+
+/**
+ * 解析终态 Run 的展示文案，区分「用户取消」与「进程停止、不续跑」。
+ */
+export function resolveRunTerminalStatusText(
+  status: 'cancelled' | 'failed' | 'completed',
+  eventOrRun: { data?: Record<string, unknown>, content?: string | null, error_code?: string | null, error_message?: string | null } | null,
+): string {
+  const code = String(
+    (eventOrRun?.data as Record<string, unknown> | undefined)?.code
+    ?? eventOrRun?.error_code
+    ?? '',
+  ).trim()
+  const message = String(
+    (eventOrRun?.data as Record<string, unknown> | undefined)?.message
+    ?? eventOrRun?.error_message
+    ?? eventOrRun?.content
+    ?? '',
+  ).trim()
+  if (code === AI_RUN_PROCESS_STOPPED_CODE) {
+    return message || '服务重启导致本次运行已停止，不会自动续跑。可重新发起任务。'
+  }
+  if (status === 'cancelled') {
+    return message || '运行已取消。'
+  }
+  if (status === 'failed') {
+    return message || '运行失败。'
+  }
+  return '运行已完成。'
+}
+
 /**
  * 创建单个会话的默认运行时状态。
  */
@@ -269,13 +302,17 @@ export function applyAgentRunEvent(
       state.activeRun = null
       state.lastRun = buildEventRunState(state, event, options.agentId, 'cancelled')
       removeRunWaitingStatusItems(state, runId)
-      appendRunStatusItem(state, event, 'cancelled', '运行已停止。')
+      appendRunStatusItem(state, event, 'cancelled', resolveRunTerminalStatusText('cancelled', event))
       clearStreamState(state)
       state.lastIssue = null
       return { applied: true, terminal: true }
     case 'run.error':
       {
-        const issue = buildRunIssueState(String(event.data.message || event.content || '智能体执行失败。'), options.agentDisplayName)
+        const isProcessStopped = String(event.data?.code ?? '').trim() === AI_RUN_PROCESS_STOPPED_CODE
+        const terminalText = resolveRunTerminalStatusText('failed', event)
+        const issue = isProcessStopped
+          ? { title: terminalText, detail: terminalText }
+          : buildRunIssueState(String(event.data.message || event.content || '智能体执行失败。'), options.agentDisplayName)
         markLastAssistantMessageInterrupted(state, runId)
         failOpenToolTimelineItems(state, runId, issue.detail)
         state.activeRun = null
@@ -418,6 +455,8 @@ function buildEventRunState(
     updated_at: new Date().toISOString(),
     cancel_requested_at: status === 'cancelling' ? new Date().toISOString() : null,
     event_index: event.event_index ?? event.sequence ?? state.stream.lastSequenceByRun[runId] ?? -1,
+    error_code: typeof event.data?.code === 'string' ? event.data.code : null,
+    error_message: typeof event.data?.message === 'string' ? event.data.message : null,
   }
 }
 

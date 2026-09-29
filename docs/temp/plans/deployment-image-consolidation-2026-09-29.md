@@ -69,7 +69,7 @@
 | 序 | 工作项 | 完成口径 | 估时 | 依赖 |
 | :--- | :--- | :--- | :--- | :--- |
 | **IMG0** | **实测容器内 root 启动 Chromium**：构建 `renderer/Dockerfile`，在容器内以 root 走 `wp_renderer` 自己的 `/readyz` + 一次真实截图（不得由测试脚本代传 `--no-sandbox`） | 得到"能/不能启动"的确定结论；若不能，定稿 `--no-sandbox` 还是非 root `USER`，并同步写进 WS-G5 与 P2-ProdHardening | 0.5 天 | 无（**最高优先，阻塞 S2 与 renderer 首发**） |
-| **IMG1** | 修正偏差清单 **B1–B6**（调研 §5）：`cicd.md`、`deployment/README.md`、`compose.md`、`renderer/README.md`、用户三篇快速部署 | 文档不再声称未发布的镜像已发布；用户文档明确写出当前已发布 lite 的渲染能力来自哪种形态；`pnpm run test:repository` 绿 | 0.5–1 天 | 无 |
+| **IMG1** | 修正偏差清单 **B1–B6**（调研 §5）：`cicd.md`、`deployment/README.md`、`compose.md`、`renderer/README.md`、用户三篇快速部署 | 文档不再声称未发布的镜像已发布；用户文档明确写出当前已发布 lite 的渲染能力来自哪种形态；`pnpm run test:repository` 绿 | **已完成（2026-09-29）**：B1–B6 已纠偏（renderer/自构建 runtime 标明未发布待首发；lite 双容器表述改为「已发布=单容器自带浏览器 / HEAD 模板=开发中」；模板非开箱即用；用户文档补形态与规模/故障域；B5「两个长期容器」已改；renderer/README 发布承诺改为计划中） |
 
 ### S1 · 发布链路预演（首次执行 `build-and-push-services`）
 

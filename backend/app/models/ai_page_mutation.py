@@ -27,8 +27,6 @@ class AiPageMutationBatch(TimestampMixin, Base):
     run_step: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
     requirement_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    # 每次认领/恢复续跑均递增；用于阻断过期协调器把模型结果写回运行态。
-    lease_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

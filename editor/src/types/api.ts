@@ -1172,6 +1172,8 @@ export interface AgentActiveRunItem {
   cancel_requested_at?: string | null
   event_index?: number
   llm?: AgentSessionLlmMetadata | null
+  error_code?: string | null
+  error_message?: string | null
 }
 
 export interface AgentRunProjectSummary {

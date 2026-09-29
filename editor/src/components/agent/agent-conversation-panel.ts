@@ -807,7 +807,7 @@ function compareTimelineItems(left: AgentTimelineItem, right: AgentTimelineItem)
  */
 function resolveRunStatusText(status: string | null) {
   if (status === 'failed') return '运行失败。'
-  if (status === 'cancelled') return '运行已停止。'
+  if (status === 'cancelled') return '运行已取消。'
   if (status === 'paused') return '等待用户处理。'
   if (status === 'waiting_external') return '后台任务正在处理。'
   if (status === 'completed') return '运行已完成。'

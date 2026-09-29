@@ -62,8 +62,8 @@ services:
       # 浏览器访问 Runtime 的地址；独立 Runtime 域名部署时可改为 "https://runtime.example.com"。
       RUNTIME_PUBLIC_BASE_URL: "http://127.0.0.1:8080/runtime"
       CORS_ORIGINS: '["http://127.0.0.1:8080"]'
-      DEFAULT_ADMIN_PASSWORD: "change-admin-password"
-      AI_SECRET_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      DEFAULT_ADMIN_PASSWORD: "REPLACE_WITH_STRONG_PASSWORD"
+      AI_SECRET_ENCRYPTION_KEY: "REPLACE_WITH_GENERATED_FERNET_KEY"
       LOG_LEVEL: "INFO"
       LOG_FORMAT: "json"
       ACCESS_LOG_ENABLED: "false"
@@ -82,7 +82,7 @@ services:
       DURABLE_JOB_HEARTBEAT_SECONDS: "30"
       RUNTIME_DIAGNOSTICS_REQUEST_TIMEOUT_SECONDS: "180"
       # 构建 Worker 共享服务凭证：platform 与 runtime 必须一致，正式部署请改为强随机值。
-      RUNTIME_BUILD_WORKER_CREDENTIAL: "change-build-worker-credential"
+      RUNTIME_BUILD_WORKER_CREDENTIAL: "REPLACE_WITH_STRONG_BUILD_CREDENTIAL"
       ASSET_STORAGE_DRIVER: "local"
     volumes:
       - backend-data:/app/backend/data
@@ -124,7 +124,7 @@ services:
       RUNTIME_SERVICE_TOKEN_AUDIENCE: "runtime-backend"
       RUNTIME_BACKEND_API_BASE_URL: "http://backend:8000"
       # 与 platform 侧 RUNTIME_BUILD_WORKER_CREDENTIAL 保持一致，否则 Worker 不会启动。
-      RUNTIME_BUILD_WORKER_CREDENTIAL: "change-build-worker-credential"
+      RUNTIME_BUILD_WORKER_CREDENTIAL: "REPLACE_WITH_STRONG_BUILD_CREDENTIAL"
       # Runtime Vite 资源挂载路径，应等于 RUNTIME_PUBLIC_BASE_URL 的 path；独立 Runtime 根域名部署时改为 "/"。
       RUNTIME_SERVER_BASE_PATH: "/runtime/"
       RUNTIME_LOG_LEVEL: "info"

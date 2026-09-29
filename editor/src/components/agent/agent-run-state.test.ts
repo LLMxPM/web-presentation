@@ -413,7 +413,45 @@ describe('agent-run-state timeline', () => {
     expect(state.activeRun).toBeNull()
     expect(state.lastRun?.status).toBe('cancelled')
     expect(state.stream.streaming).toBe(false)
-    expect(state.timelineItems.at(-1)).toEqual(expect.objectContaining({ kind: 'run_status', status: 'cancelled' }))
+    expect(state.timelineItems.at(-1)).toEqual(expect.objectContaining({
+      kind: 'run_status',
+      status: 'cancelled',
+      content: '运行已取消。',
+    }))
+  })
+
+  it('run.cancelled 带 AI_RUN_PROCESS_STOPPED 时应标明不会自动续跑', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
+    applyAgentRunEvent(state, event({
+      event: 'run.cancelled',
+      sequence: 2,
+      data: { code: 'AI_RUN_PROCESS_STOPPED', message: 'Backend进程已停止，当前智能体运行无法继续执行。' },
+    }), options)
+
+    expect(state.lastRun?.status).toBe('cancelled')
+    expect(state.lastRun?.error_code).toBe('AI_RUN_PROCESS_STOPPED')
+    expect(state.timelineItems.at(-1)?.content).toContain('Backend进程已停止')
+    expect(state.timelineItems.at(-1)?.content).not.toBe('运行已取消。')
+  })
+
+  it('run.error 带 AI_RUN_PROCESS_STOPPED 时应区分进程停止与普通失败', () => {
+    const state = createAgentSessionRuntimeState()
+    const options = { agentId: 'agent-coordinator', agentDisplayName: '内容助手' }
+
+    applyAgentRunEvent(state, event({ event: 'run.started', sequence: 1 }), options)
+    applyAgentRunEvent(state, event({
+      event: 'run.error',
+      sequence: 2,
+      data: { code: 'AI_RUN_PROCESS_STOPPED' },
+    }), options)
+
+    expect(state.lastRun?.status).toBe('failed')
+    expect(state.lastRun?.error_code).toBe('AI_RUN_PROCESS_STOPPED')
+    expect(state.timelineItems.at(-1)?.content).toContain('不会自动续跑')
+    expect(state.lastIssue?.title).toContain('不会自动续跑')
   })
 
   it('thinking、tool、assistant 应作为独立时间线项', () => {

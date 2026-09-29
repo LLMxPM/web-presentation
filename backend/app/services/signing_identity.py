@@ -37,6 +37,21 @@ _REJECTED_RENDER_SECRET_PLACEHOLDERS = frozenset({
     "replace-me",
 })
 
+# 单实例/Lite 也禁止直接采用的示例弱口令与占位构建凭证（P1-Secrets）。
+_REJECTED_ADMIN_PASSWORD_PLACEHOLDERS = frozenset({
+    "change-admin-password",
+    "admin",
+    "password",
+    "123456",
+    "replace-me",
+})
+_REJECTED_BUILD_CREDENTIAL_PLACEHOLDERS = frozenset({
+    "change-build-worker-credential",
+    "change-me",
+    "replace-me",
+    "replace-with-strong-shared-secret",
+})
+
 
 class SigningIdentityError(RuntimeError):
     """签名身份配置缺失、无法解析或不满足多 Backend 共享前提时抛出。"""
@@ -331,11 +346,44 @@ def validate_shared_identity_deployment(settings: AppSettings | None = None) -> 
             "verification_key_count": len(keyring.verification_keys),
         },
     )
+    # 单实例/Lite 也拒绝文档示例弱密钥，避免照抄 compose 模板直接上线。
+    _ensure_no_placeholder_secrets(resolved)
     if not multi:
         return
     _ensure_shared_secret_material(resolved)
     _ensure_shared_object_storage(resolved)
     _ensure_shared_runtime_state(resolved)
+
+
+def _ensure_no_placeholder_secrets(settings: AppSettings) -> None:
+    """所有部署形态拒绝示例占位密钥；测试请使用真实随机值。"""
+
+    ai_key = (settings.ai_secret_encryption_key or "").strip()
+    if ai_key in _DEFAULT_AI_SECRET_ENCRYPTION_KEYS:
+        raise SigningIdentityError(
+            "AI_SECRET_ENCRYPTION_KEY 禁止使用默认/示例占位值；请生成新的 Fernet 密钥并长期保存。"
+        )
+    try:
+        Fernet(ai_key.encode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - Fernet 对非法密钥抛出多种异常
+        raise SigningIdentityError(
+            "AI_SECRET_ENCRYPTION_KEY 不是合法 Fernet 密钥；请生成 32 字节随机值的 URL-safe base64。"
+        ) from exc
+    admin_password = (settings.default_admin_password or "").strip()
+    if admin_password in _REJECTED_ADMIN_PASSWORD_PLACEHOLDERS:
+        raise SigningIdentityError(
+            "DEFAULT_ADMIN_PASSWORD 禁止使用示例弱口令；请在部署前替换为强随机口令。"
+        )
+    build_credential = (settings.runtime_build_worker_credential or "").strip()
+    if build_credential and build_credential in _REJECTED_BUILD_CREDENTIAL_PLACEHOLDERS:
+        raise SigningIdentityError(
+            "RUNTIME_BUILD_WORKER_CREDENTIAL 禁止使用示例占位值；请生成强随机共享凭证。"
+        )
+    render_secret = (settings.render_service_credential or "").strip()
+    if render_secret and render_secret in _REJECTED_RENDER_SECRET_PLACEHOLDERS:
+        raise SigningIdentityError(
+            "RENDER_SERVICE_CREDENTIAL 禁止使用示例占位值；请生成强随机共享凭证。"
+        )
 
 
 __all__ = [

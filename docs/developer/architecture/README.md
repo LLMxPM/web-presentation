@@ -13,6 +13,7 @@
 | [Runtime 接入架构](./runtime-integration.md) | 运行时架构、Runtime Kit、平台回源和公开契约 |
 | [认证与权限](./auth-and-permission.md) | 登录、工作空间隔离、Runtime 令牌和 AI 权限边界 |
 | [统一任务运行时契约](./task-runtime-contract.md) | Worker/Lease/Attempt/Terminal 角色、字段与状态词汇、错误码族、恢复语义、10 套任务模型映射 |
+| [双库方言维护预算](./dialect-budget.md) | 双库固定税口径、重开 D1 的复审触发器、每季粗记账模板 |
 
 ## 使用建议
 

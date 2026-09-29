@@ -132,7 +132,7 @@
 | :--- | :--- | :--- | :--- |
 | F1 | `platform_runtime.py` 按持久化 / 事件投影 / SSE / 锁拆分 | 单文件职责单一；WS-A 迁移面下降 | 1 周 |
 | F2 | `session_facade_pydantic.py` 拆分 | 同上 | 3–5 天 |
-| F3 | 依赖方向门禁：禁止 `services/` import `app.ai` 新增、路由层直查 ORM | AST/导入门禁 + 清单 | 2–3 天 |
+| F3 | 依赖方向门禁：禁止 `services/` import `app.ai` 新增、路由层直查 ORM | AST/导入门禁 + 清单 | **services→ai 冻结已完成（2026-09-29）**：`test_layering_gates.py` 白名单门禁；路由 ORM 检查待补 |
 | F4 | Editor：`AssetsView` / AI 侧边栏按域拆分；状态三轨收敛 | 可测性恢复；**不挡正确性** | 1–2 周 |
 
 F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行文件里改运行时。
@@ -145,13 +145,13 @@ F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行
 
 | 序 | 工作项 | 完成口径 | 估时 |
 | :--- | :--- | :--- | :--- |
-| G1 | Lite 故障域评估与承诺文档化（Backend+Runtime+Nginx 同容器）；**含 H2a 推荐规模：5–10 人、预览并发约 3** | 先写清「合并故障域」+ 规模承诺，再决定是否拆容器 | 2 天 |
-| G2 | `/readyz` 或 metrics 暴露 loop 队列年龄 / 租约年龄（P1-Health）；按 H2 规模给观测口径 | 积压可观测 | 1 天 |
-| G3 | 密钥治理：去掉 `.env.example` 真实格式密钥、弱默认口令、compose 密钥内联 | secrets 化 + 启动拒绝占位密钥（部分已做，补齐） | 1–2 天 |
+| G1 | Lite 故障域评估与承诺文档化（Backend+Runtime+Nginx 同容器）；**含 H2a 推荐规模：5–10 人、预览并发约 3** | 先写清「合并故障域」+ 规模承诺，再决定是否拆容器 | **已完成（2026-09-29）**：[docs/developer/deployment/lite-scale-and-isolation.md](../../developer/deployment/lite-scale-and-isolation.md)；规模/故障域写入用户文档与 compose.md；G1 决策=本轮不拆容器（NAS 单容器/体积非代价/Backend venv 无 Playwright） |
+| G2 | `/readyz` 或 metrics 暴露 loop 队列年龄 / 租约年龄（P1-Health）；按 H2 规模给观测口径 | 积压可观测 | **已完成（2026-09-29）**：`/metrics/job-queues`（pending/running/过期租约/最老 pending 年龄）+ `test_job_queue_metrics.py` |
+| G3 | 密钥治理：去掉 `.env.example` 真实格式密钥、弱默认口令、compose 密钥内联 | secrets 化 + 启动拒绝占位密钥（部分已做，补齐） | **密钥半完成（2026-09-29）**：`_ensure_no_placeholder_secrets` 单实例也拒绝示例密钥；compose/.env 示例改为 REPLACE_*；Build 凭证隔离仍属 IMG/残留 |
 | G4 | PostgreSQL 备份/恢复脚本与演练（现仅 SQLite demo） | 恢复能力可验证 | 2 天 |
-| G5 | Renderer 网络隔离（现同 bridge + Playwright route 拦截） | 容器级隔离或明确风险接受 | 2–3 天 |
-| G6 | **D1 方言预算与复审触发器**写入治理文档（口径见评估 §3，2026-09-28 从宽已定）+ 每季粗记账模板 | 超预算才重开 D1；日常双方言不计入超支 | 0.5 天 |
-| G7 | **H1a/H1b Run「会丢」标注**：Agent 会话/Run 状态提示 + 用户文档持久性说明 | 用户能区分「Run 会丢」与「external 任务可恢复」 | 1 天 |
+| G5 | Renderer 网络隔离（现同 bridge + Playwright route 拦截） | 容器级隔离或明确风险接受 | **已完成（2026-09-29）**：决策=**风险接受 + 分层说明**（生产角色继续网络隔离/secrets 分离；lite 单容器为已接受风险；标明非多副本/多租户安全）。见 [lite-scale-and-isolation.md](../../developer/deployment/lite-scale-and-isolation.md) §4 |
+| G6 | **D1 方言预算与复审触发器**写入治理文档（口径见评估 §3，2026-09-28 从宽已定）+ 每季粗记账模板 | 超预算才重开 D1；日常双方言不计入超支 | **已完成（2026-09-29）**：[docs/developer/architecture/dialect-budget.md](../../developer/architecture/dialect-budget.md)；固定税 ≤8 人周/季、四条复审触发器、每季粗记账模板；架构索引已挂链 |
+| G7 | **H1a/H1b Run「会丢」标注**：Agent 会话/Run 状态提示 + 用户文档持久性说明 | 用户能区分「Run 会丢」与「external 任务可恢复」 | **已完成（2026-09-29）**：UI 区分取消/`AI_RUN_PROCESS_STOPPED`；FAQ+workflow 持久性说明 |
 
 > **专项输入（2026-09-29，规划/未实施）**：G1 的镜像层事实、G3 的渲染凭证自动生成、G5 的「容器内 root 启动 Chromium」前置验证，已单独成文——证据见 [`../image-delivery-research-2026-09-29.md`](../image-delivery-research-2026-09-29.md)，工作项见专项子计划 [`./deployment-image-consolidation-2026-09-29.md`](./deployment-image-consolidation-2026-09-29.md)（IMG0–IMG12、决策 D-Img1）。**G1 的「再决定是否拆容器」在动手前先读调研 §7.3（边界的三个层级）与 §9（已被推翻的论点，含体积与故障域两条）**；已发布的 lite 镜像实测 645.4 MiB 且自带 225.3 MiB 浏览器层，而 `deploy/compose/` 全部 5 个模板引用的 renderer 镜像从未发布、当前不可拉取。
 
@@ -162,8 +162,8 @@ F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行
 | # | 决策 | 结论 | 转成的工程项 |
 | :--- | :--- | :--- | :--- |
 | H1 | 普通 AI Run 丢失语义 | **承诺「会丢」**。不立项可恢复 Run；进程退出/重启导致的 Run 中断是产品接受的边界 | **H1a** UI/帮助文案标明「AI 长任务在服务重启后可能中断，不自动续跑」（会话/Run 状态处）；**H1b** 用户文档补「持久性说明」（Run 会丢 / external 任务可恢复）。原 WS-A5 关闭 |
-| H2 | Lite 推荐规模 | **5–10 人小团队，预览并发约 3**（项目规模：常规演示文稿工作区，非海量资产库） | **H2a** 用户/Lite 部署文档写入推荐规模与并发承诺；**H2b** 与 WS-G1/G2 对齐：容量阈值、`/readyz`/metrics 按此规模给观测口径 |
-| H3 | 双库方言维护预算 | **从宽**（兼容代价预算放大）。正常双方言成本为固定税；触发器见评估 §3：单季计入 >12 人周，或连续两季 >8 人周/季，或方言阻塞发版 ≥3 次/季，或放弃 Lite 一等公民 | **H3a**（即 WS-G6）把预算与复审触发器写入治理文档；每季粗记账 |
+| H2 | Lite 推荐规模 | **5–10 人小团队，预览并发约 3**（项目规模：常规演示文稿工作区，非海量资产库） | **H2a 已完成（2026-09-29）**：规模与「D2 前非 SLA」已写入用户/部署文档；**H2b** 与 WS-G2 对齐：容量阈值、`/readyz`/metrics 按此规模给观测口径 |
+| H3 | 双库方言维护预算 | **从宽**（兼容代价预算放大）。正常双方言成本为固定税；触发器见评估 §3：单季计入 >12 人周，或连续两季 >8 人周/季，或方言阻塞发版 ≥3 次/季，或放弃 Lite 一等公民 | **H3a 已完成（2026-09-29）**（即 WS-G6）：见 docs/developer/architecture/dialect-budget.md |
 | H4 | ~~截图缓存策略~~ | **已定（2026-09-25）**：现状可接受 | 仅低成本顺手硬化，不进优先级 |
 
 ---
@@ -195,7 +195,14 @@ F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行
 1. WS-A2 统一执行器 + WS-A3 先迁构建/截图队列（与 WS-F1 并行拆 `platform_runtime`）；契约与迁移口径见 [`docs/developer/architecture/task-runtime-contract.md`](../../developer/architecture/task-runtime-contract.md)
 2. WS-C 其余门槛 + C9 跨副本演练（不过则继续标单副本）
 3. ~~WS-E1 双入口 Top 操作对拍~~ **WS-E 全部已完成（2026-09-29）**
-4. WS-G3/G6 密钥与方言预算
+4. WS-G3 密钥治理（G6 方言预算文档已完成 2026-09-29）
+
+---
+
+## 11.5 测试机下一步
+
+本地可做项（G7/G2/G3密钥半/G1/G5/G6/IMG1/死物/分层门禁）已收口。测试机执行清单见
+[`test-machine-runbook-2026-09-29.md`](./test-machine-runbook-2026-09-29.md)（IMG0 → WS-D → C9）。
 
 ---
 
@@ -204,13 +211,13 @@ F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行
 | 现行评估 ID | 归属工作流 | 状态 |
 | :--- | :--- | :--- |
 | P1-TaskModel | WS-A | claim 子集已收口，运行时未统一 |
-| P1-Run | WS-G7（原 WS-A5/H1） | **已定承诺「会丢」**；待 UI/文档标注 |
+| P1-Run | WS-G7（原 WS-A5/H1） | **已关闭（2026-09-29）**：UI/文档标注完成 |
 | P1-Build | WS-A3（构建队列优先迁） | T2-2/CP4 已加固，方言仍在 |
-| P1-Lite | WS-G1 + WS-D | 规模承诺 **5–10 人/并发 3**；故障域与混合负载未验收 |
-| P1-Health | WS-G2 | 待做 |
-| P2-Dialect | WS-G6 + WS-D | **预算已定（§评估 4.1）**；待写入治理文档 |
+| P1-Lite | WS-G1 + WS-D | **文档化完成（2026-09-29）**：目标规模 **5–10 人/并发 3** 已写入用户/部署文档（明确 D2 前非 SLA）；故障域与不拆容器决策见 lite-scale-and-isolation.md；D2 混合负载仍未验收 |
+| P1-Health | WS-G2 | **已关闭（2026-09-29）**：`/metrics/job-queues` |
+| P2-Dialect | WS-G6 + WS-D | **已关闭（2026-09-29）**：预算与复审触发器写入 docs/developer/architecture/dialect-budget.md |
 | P2-API | WS-E | **已关闭（2026-09-29）** |
-| P2-GodFiles | WS-F | 待做 |
+| P2-GodFiles | WS-F | F3 services→ai 门禁已做；F1/F2 巨石拆分待做 |
 | P2-Locks | 登记为 R-CP6 | 定位澄清已写入文档 |
 | P2-Docs | 本次整理 | README 与正文状态已对齐；维护约定见 README |
 | D2 基线门 | WS-D | **仍未采集** |

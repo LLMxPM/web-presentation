@@ -15,8 +15,8 @@ services:
       BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"
       RUNTIME_PUBLIC_BASE_URL: "http://127.0.0.1:8080/runtime"
       CORS_ORIGINS: '["http://127.0.0.1:8080"]'
-      DEFAULT_ADMIN_PASSWORD: "change-admin-password"
-      AI_SECRET_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      DEFAULT_ADMIN_PASSWORD: "REPLACE_WITH_STRONG_PASSWORD"
+      AI_SECRET_ENCRYPTION_KEY: "REPLACE_WITH_GENERATED_FERNET_KEY"
     volumes:
       - lite-data:/app/backend/data
     ports:
@@ -36,10 +36,13 @@ volumes:
 | `DEFAULT_ADMIN_PASSWORD` | 是 | 首次登录使用的默认管理员密码，部署后应立即修改 |
 | `AI_SECRET_ENCRYPTION_KEY` | 是 | 加密模型 API Key 的 Fernet 密钥，生成后必须长期保存，不能随意更换 |
 
-生成 `AI_SECRET_ENCRYPTION_KEY`：
+生成密钥（**启动会拒绝示例占位值**，必须先替换再启动）：
 
 ```bash
+# AI_SECRET_ENCRYPTION_KEY（Fernet，生成后长期保存，更换会导致已存模型凭证无法解密）
 python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+# DEFAULT_ADMIN_PASSWORD
+python -c "import secrets; print(secrets.token_urlsafe(16))"
 ```
 
 如果宿主机 8080 端口被占用，可将端口映射改为 `18080:80`，并把上述 3 个地址中的端口同步改为 `18080`。
@@ -86,5 +89,7 @@ docker logs -f web-presentation-lite
 ## 3. 数据与高级配置
 
 SQLite 数据库、资源、截图、构建产物和 Runtime RSA 私钥保存在 `lite-data` 或 `web-presentation-lite-data` 中。升级前先备份数据卷；不要使用 `docker compose down -v`，也不要删除该数据卷。
+
+截图由**已发布 `sqlite-lite` 镜像内置浏览器**在单容器内完成，上面的 Compose / `docker run` 配置无需 Renderer 服务、无需 secret 文件。
 
 Runtime 内部回源地址、Runtime 资源路径、队列并发、日志、HTTPS、外部数据库和对象存储等高级变量已由镜像或部署模板提供默认值。日常升级、数据备份还原和反向代理排障请阅读 [SQLite 单体版日常维护指南](./maintenance.md)；需要更大型的多实例或对象存储方案时，请阅读[开发文档中的详细部署指南](../../developer/deployment/README.md)。

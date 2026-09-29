@@ -24,6 +24,8 @@ export interface AgentActiveRunItem {
   "cancel_requested_at"?: string | null
   "event_index"?: number
   "llm"?: Record<string, unknown> | null
+  "error_code"?: string | null
+  "error_message"?: string | null
 }
 
 /** 中断一个仍在执行中的 run 的请求体。 */
