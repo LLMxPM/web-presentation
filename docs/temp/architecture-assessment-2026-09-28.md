@@ -12,11 +12,11 @@
 
 1. **控制面 / 执行面边界成立**：Backend 不跑浏览器（`pyproject.toml` 无 Playwright），渲染只在独立 Renderer（`packages/render-contracts`）；凭证 fail-closed；校验有单一谓词 `validation_result`；SQLite 单实例有锁。这层结构值得保持。
 2. **剩余架构主轴仍是任务运行时统一**。领取时序已收口到 `durable_job_lease_service.claim_rows_by_cas`，但**实有 10 套任务模型、3 套认领方言**，心跳/恢复/终态词汇仍各写各的；且 CP4 防漂移门禁存在假阴性，已有认领实现绕过检测。
-3. **有一批「假守卫」，且比上一版描述更严重**：布局脚本死副本 ×7；runtime-kit 跨模块契约测试断言了**不存在的键**（`capabilities`，真实键是 `exports`）；render-contracts JSON Schema 零消费且无 DTO 对拍。假安全感成本低、误导大，应优先清掉。
+3. ~~**有一批「假守卫」~~ **已清理（2026-09-29 WS-B）**：布局脚本死副本 ×7 已删；runtime-kit 测试改为 `exports` 真断言；render-contracts 补 DTO↔JSON Schema 对拍。假安全感入口已关闭。
 4. **多部署能力当前不仅「未验收」，仍有已知正确性与隔离缺口**：Runtime 已完成角色拆分、构建持久租约与部分多副本选址；Backend 已具备 PG / Redis / 共享签名与对象存储前提。但普通 AI Run 启动恢复是**全局扫描语义**，新副本启动会终态化其它副本活跃 Run；RenderCoordinator 全局/工作空间额度是 check-then-act，多副本可超限；Runtime Build 的可信 Worker 凭证与不可信构建执行仍共处同一容器。**Backend / Runtime / Renderer 多副本均不得作为生产承诺。**
-5. **仓库级 merge gate 未强制**：`platform-test.yml` 的 PR workflow 跑得比较全，但 `main`/`dev` 的 branch protection 与 ruleset 均为空（API 实测 `protected=false`、ruleset `[]`），workflow 通过 ≠ 不可绕过合入。
+5. ~~**仓库级 merge gate 未强制**~~ **已强制（2026-09-29 WS-B0）**：`main`/`dev` 启用 classic branch protection（require PR + 1 审 + required check `quality`）。
 6. **产品边界已定**（见 §3）：Run 承诺会丢；Lite 目标 5–10 人 / 预览并发约 3（**容量验收前不是 SLA**）；双库方言预算从宽。
-7. **顺序建议**：死物/假守卫 + merge gate 强制 + CP4 补强 → **Backend 多副本 Run 语义与 Build 隔离** → 任务运行时契约冻结与恢复盲区 → 容量基线 → 多部署门槛与演练（含版本兼容）→ 契约机械化 → 巨石拆分 → System DR。多副本承诺最后。
+7. **顺序建议**：~~死物/假守卫 + merge gate 强制 + CP4 补强~~ **（已完成 2026-09-29）** → **Backend 多副本 Run 语义与 Build 隔离** → 任务运行时契约冻结与恢复盲区 → 容量基线 → 多部署门槛与演练（含版本兼容）→ 契约机械化 → 巨石拆分 → System DR。多副本承诺最后。
 
 ---
 
@@ -74,10 +74,10 @@ Editor ──HTTP──► Gateway ──┬──► Backend（控制面）
 | :--- | :--- | :--- | :--- |
 | **P0-BackendMultiInstance** | `recover_interrupted_agent_runs_on_startup` **无 owner/lease/epoch**，启动时把全库 `pending/running/cancelling` Run 一律终态化（`run_recovery.py:22-36`）。Backend-B 扩容/滚动启动会杀死 Backend-A 正在执行的 Run。`signing_identity` 多实例校验只查共享 RSA/密钥/对象存储/Redis，**不禁止该语义** | 跨副本正确性问题，不是「未演练」；配置层误示 multi-backend 已安全 | 并入 WS-C 前置 blocker；恢复改为按 owner/epoch 认领 |
 | **P0-BuildIsolation** | `runtime-build` 编译用户 SFC（不可信），却挂载全局 `build_worker_credential`（`compose.runtime-roles.yml:212-225`）；子进程只删 env（`runtime-build-worker.ts:30-42`），同容器同 mount、Dockerfile 无 `USER`（root），仍可读 `/run/secrets/build_worker_credential`。该凭证可 claim **任意** pending 构建并领取 `build_token`/`service_token` | 可信 Worker 身份与不可信构建执行共处一容器，不是弱默认密码问题 | 并入 WS-G3 升级：sandbox 独立/降权/只拿单任务短 TTL token |
-| **P0-MergeGate** | `main`/`dev` **branch protection 与 ruleset 均为空**（API 实测 `protected=false`、ruleset `[]`）；workflow 会跑但不阻止合并 | 「有 CI」≠「有门禁」；任何 check 可被绕过 | 并入 WS-B0：先启用 require PR + required checks，再谈清单 |
-| **P0-DeadGoods** | 布局脚本死副本 ×7（约 1605 行）；runtime-kit 跨模块测试断言 `capabilities` 而 manifest 键为 `exports`（后两条循环恒空转）；render-contracts `schemas/*.v1.json` 零消费、无 DTO↔JSON 对拍 | 假安全感，误导维护；AGENTS 双源同步承诺失真 | 计划 WS-B |
-| **P0-ClaimGate** | CP4 认领防漂移门禁有假阴性：`test_db_adapter_layer` 只识别内联 `execute(update(...))`；`mutation_job_service.claim_next_pending_job` 先赋 `update_stmt` 再 execute 可绕过；`rendering/repository.reserve_attempt` 因命名不含 `claim` 漏检 | 并发原语边界可被合法合入的自写认领破坏 | 并入 WS-B，门禁改为语法/AST 级 |
-| **P0-Gates** | 工具目录主防漂移（`test_ai_agent_config.test_unified_tool_specs_should_match_runtime_and_guides`）在 **integration**，PR 默认 `full=false` 不跑；E2E / 镜像 smoke / CLI 跨仓契约亦非 PR 阻塞 | 漂移可合法合入 PR；**unit/api（含越权矩阵）实际在 PR**，缺口在 integration 与跨仓 | 计划 WS-B |
+| ~~**P0-MergeGate**~~ | ~~`main`/`dev` branch protection 为空~~ | ~~「有 CI」≠「有门禁」~~ | **已关闭（2026-09-29 WS-B0）**：`main`/`dev` 均启用 classic protection（1 审 + required check `quality`） |
+| ~~**P0-DeadGoods**~~ | ~~布局脚本死副本 ×7；runtime-kit 测试断言 `capabilities`；render-contracts JSON Schema 零消费~~ | ~~假安全感~~ | **已关闭（2026-09-29 WS-B1–B3）**：死副本已删；manifest 测试改 `exports` 真断言；补 `test_schema_roundtrip.py` |
+| ~~**P0-ClaimGate**~~ | ~~CP4 门禁假阴性：变量间接 `execute(update)` 与 `reserve_*` 命名漏检~~ | ~~并发原语边界可被合法合入破坏~~ | **已关闭（2026-09-29 WS-B ClaimGate）**：AST 检测补强；`claim_next_pending_job` 迁 `claim_rows_by_cas`；`reserve_attempt` 登记例外 |
+| ~~**P0-Gates**~~ | ~~工具目录主防漂移在 integration，PR 默认不跑~~ | ~~漂移可合法合入 PR~~ | **已关闭（2026-09-29 WS-B4）**：主测迁 `tests/unit/test_unified_tool_specs.py`（`test:backend:unit` 在 PR）；contracts/render-contracts 本就在 PR。E2E/镜像 smoke/CLI 跨仓仍非 PR 阻塞（已知边界） |
 | **P1-Recovery** | 页面/组件变更队列 Worker 循环内**不做过期恢复**，仅启动时 `recover_interrupted_*_on_startup`；运行中租约过期的 running 任务滞留到进程重启 | 故障后任务挂死，用户无感知；与 image/screenshot/build/external 的循环内恢复不一致 | 并入 WS-A |
 | **P1-TaskModel** | 重任务 **10 套任务模型**；认领时序 3 套（共享 CAS / lease_generation CAS / render claim_generation）；心跳比例、终态词汇（image `"error"` vs 他处 `"failed"`）不统一 | 正确性靠各队列自觉；扩展成本高；故障语义不可比 | 计划 WS-A |
 | **P1-RenderQuota** | `RenderCoordinator._dispatch_once` 先 `count_active_attempts()` 再 `reserve_attempt()`（`coordinator.py:254-285`），非全局事务原子；多 Backend 可同时见 `active=0` 而突破 global/workspace limit（单 Worker 双派已有 `active_occupancy` 唯一索引保护） | 多协调器下额度失守 | 并入 WS-C |
@@ -97,7 +97,7 @@ Editor ──HTTP──► Gateway ──┬──► Backend（控制面）
 | **P2-GodFiles** | `platform_runtime.py`（2082 行，store+SSE+状态机）、`session_facade_pydantic.py`（1802 行）、`page_mutation_queue.py`（849 行）等；`ai↔services` 双向依赖（约 25↔15 文件），懒 import 掩盖环 | WS-F |
 | **P2-DialectOps** | 双库日常成本可见性（记账与复审触发器需落到治理文档） | WS-G6 |
 | **P2-ProdHardening** | Renderer 与 Backend 同 `platform-net`，浏览器可触达 Backend 内网 API（仅拦 Renderer 控制面路径）；`compose.with-deps` Redis `appendonly no`；各 Dockerfile 均无 `USER`（root） | WS-G3/G5 |
-| **P2-AuthZGap** | 多用户/越权矩阵在 `tests/api/test_multi_user_access.py`（PR 在跑）；缺「A 用户 AI 工具调用写 B 用户实体」的跨用户工具矩阵 | 并入 WS-B |
+| ~~**P2-AuthZGap**~~ | ~~缺「A 用户 AI 工具调用写 B 用户实体」的跨用户工具矩阵~~ | **已关闭（2026-09-29 WS-B）**：补 `test_cross_user_ai_tool_write_should_be_denied`；写路径增加 `AgentWorkScopeService.require_workspace_access` 操作者成员校验 |
 | **P2-VocabDrift** | 终态词汇（`error`/`failed`/`skipped`）、心跳/租约比例、死列 `ai_page_mutation.lease_generation`、死 scope `COMPONENT_TOOL_DELETE_SCOPES` | 并入 WS-A |
 
 ### 4.3 产品可接受残留（登记，不进优先级）
@@ -128,8 +128,8 @@ Editor ──HTTP──► Gateway ──┬──► Backend（控制面）
 
 | 序 | 工作 | 目标 |
 | :--- | :--- | :--- |
-| 0 | **启用 branch protection / ruleset（WS-B0）** | require PR + required checks，merge gate 真正强制 |
-| 1 | 死物清理 + 假守卫修复 + CP4 门禁补强 | 消灭假安全感（1–2 天） |
+| 0 | ~~**启用 branch protection / ruleset（WS-B0）**~~ | **已完成（2026-09-29）** |
+| 1 | ~~死物清理 + 假守卫修复 + CP4 门禁补强~~ | **已完成（2026-09-29 WS-B）** |
 | 2 | **Backend 多副本 Run 恢复语义 + Build credential 隔离** | 关闭跨副本正确性与信任边界缺口（多部署前置） |
 | 3 | 任务运行时契约冻结 + 页面/组件恢复盲区 | 统一角色模型 / 字段 / 恢复语义；循环内恢复 |
 | 4 | D2 与 Lite 规模基线采集 | 用数字支撑目标规模；通过前不写 SLA |
@@ -164,11 +164,11 @@ backend/app/services/runtime_state/                                  运行态�
 backend/app/services/validation_result.py                            校验谓词
 backend/app/db/{retry,tx,profile,sqlite_single_process}.py            方言边界
 backend/app/ai/tool_specs.py                                         工具目录 SSOT
-backend/tests/integration/test_ai_agent_config.py:194                工具防漂移主测（不在 PR）
-backend/tests/unit/test_db_adapter_layer.py                          CP4 门禁（有假阴性）
-backend/app/services/page_render_*_script.py                         死副本 ×7（待删）
-tests/contracts/runtime-backend/runtime-kit-manifest.test.ts         空转测试（键名错误）
-packages/render-contracts/schemas/*.v1.json                          零消费死双源
+backend/tests/unit/test_unified_tool_specs.py                        工具防漂移主测（PR unit，2026-09-29 迁入）
+backend/tests/unit/test_db_adapter_layer.py                          CP4 门禁（AST 已补强，2026-09-29）
+backend/tests/integration/ai/test_ai_generic_business_tools.py       跨用户 AI 工具写入矩阵（2026-09-29）
+packages/render-contracts/tests/test_schema_roundtrip.py             DTO↔JSON Schema 对拍（2026-09-29）
+tests/contracts/runtime-backend/runtime-kit-manifest.test.ts         exports 真断言（2026-09-29 修复）
 deploy/scripts/                                                      仅 SQLite demo 备份
 ```
 

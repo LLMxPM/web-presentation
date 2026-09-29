@@ -453,23 +453,27 @@ def _build_tool_run_context(
     focus_project_id: int | None = None,
     work_scope_mode: str = "workspace",
     allowed_project_ids: list[int] | None = None,
+    user_id: int = 1,
+    username: str = "admin",
+    display_name: str = "管理员",
+    role: str = UserRole.PLATFORM_ADMIN.value,
 ) -> AgentToolContext:
     """构造内容助手工作空间工具令牌和运行上下文。"""
 
     current = AuthContext(
         user=User(
-            id=1,
-            username="admin",
+            id=user_id,
+            username=username,
             password_hash="",
-            display_name="管理员",
-            role=UserRole.PLATFORM_ADMIN.value,
+            display_name=display_name,
+            role=role,
             preview_size_presets=[],
         ),
         session_token="test-session-token",
-        backend_session_id="1",
+        backend_session_id=str(user_id),
     )
-    run_id = "generic-archive-run"
-    session_id = "generic-archive-session"
+    run_id = f"generic-archive-run-{user_id}"
+    session_id = f"generic-archive-session-{user_id}"
     dependencies = {
         "user_id": current.user.id,
         "agent_id": AGENT_COORDINATOR_AGENT_ID,
@@ -513,3 +517,74 @@ def _build_tool_run_context(
         user_id=str(current.user.id),
         dependencies=dependencies,
     )
+
+
+async def test_cross_user_ai_tool_write_should_be_denied(authenticated_client: AsyncClient) -> None:
+    """A 用户的实体不得被 B 用户的 AI 工具写入路径修改、归档或执行生命周期命令。"""
+
+    owner_workspace_id = await _create_workspace(authenticated_client, "实体属主工作空间")
+    owner_style_id = await _create_style(authenticated_client, owner_workspace_id, "owner_style", "属主样式")
+
+    create_user_response = await authenticated_client.post(
+        "/api/users",
+        json={
+            "username": "mallory",
+            "password": "Mallory123456",
+            "display_name": "Mallory",
+            "role": "workspace_user",
+            "status": "active",
+        },
+    )
+    assert create_user_response.status_code == 201, create_user_response.text
+    mallory_id = int(create_user_response.json()["id"])
+
+    tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
+    # Mallory 无属主工作空间成员身份，却伪造 workspace_id 指向属主空间。
+    foreign_context = _build_tool_run_context(
+        owner_workspace_id,
+        approved=True,
+        user_id=mallory_id,
+        username="mallory",
+        display_name="Mallory",
+        role=UserRole.WORKSPACE_USER.value,
+    )
+
+    with pytest.raises(AppException) as update_error:
+        await tools["update_entity"].entrypoint(
+            foreign_context,
+            "style",
+            owner_style_id,
+            {"name": "被越权修改"},
+            "metadata",
+        )
+    # 成员校验先于目标加载，必须稳定抛工作空间访问拒绝，锁住校验顺序。
+    assert update_error.value.code == "WORKSPACE_ACCESS_DENIED"
+
+    with pytest.raises(AppException) as archive_error:
+        await tools["archive_entity"].entrypoint(foreign_context, "style", [owner_style_id], "越权归档")
+    assert archive_error.value.code == "WORKSPACE_ACCESS_DENIED"
+
+    with pytest.raises(AppException) as create_error:
+        await tools["create_entity"].entrypoint(
+            foreign_context,
+            "style",
+            "new",
+            {"key": "mallory_style", "name": "Mallory 样式"},
+        )
+    assert create_error.value.code == "WORKSPACE_ACCESS_DENIED"
+
+    with pytest.raises(AppException) as action_error:
+        await tools["execute_action"].entrypoint(
+            foreign_context,
+            "component",
+            "publish",
+            owner_style_id,
+            None,
+        )
+    assert action_error.value.code == "WORKSPACE_ACCESS_DENIED"
+
+    async with get_session_factory()() as session:
+        style = await session.scalar(select(WorkspaceStyle).where(WorkspaceStyle.id == owner_style_id))
+        assert style is not None
+        assert style.deleted_at is None
+        assert style.name == "属主样式"

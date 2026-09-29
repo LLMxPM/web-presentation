@@ -35,7 +35,7 @@ from app.schemas.component import (
     WorkspaceComponentCreateRequest,
     WorkspaceComponentUpdateRequest,
 )
-from app.services.durable_job_lease_service import build_durable_worker_id
+from app.services.durable_job_lease_service import build_durable_worker_id, claim_rows_by_cas
 from app.services.mutation_planners.component_mutation_planner import ComponentMutationPlanner
 from app.services.mutation_planners.page_mutation_planner import PageMutationPlanner
 from app.services.page_service import PageService
@@ -340,14 +340,13 @@ class MutationJobService:
     # ------------------ Three-Phase Worker Execution ------------------
 
     async def claim_next_pending_job(self) -> ApiMutationJob | None:
-        """阶段 1：短事务认领 pending 任务并抢占租约（通过 CAS 条件更新保证跨数据库多 Worker 并发安全）。"""
+        """阶段 1：短事务认领 pending 任务并抢占租约（认领时序委托 `claim_rows_by_cas`）。"""
 
         now = utc_now()
         lease_seconds = self.settings.mutation_job_lease_seconds
         expires_at = now + timedelta(seconds=lease_seconds)
 
-        # 1. 查找候选待认领任务 ID 列表
-        candidate_stmt = (
+        candidate_query = (
             select(ApiMutationJob.id, ApiMutationJob.lease_generation)
             .where(ApiMutationJob.status == "pending")
             .where(
@@ -357,15 +356,14 @@ class MutationJobService:
                 )
             )
             .order_by(ApiMutationJob.created_at.asc())
-            .limit(10)
         )
-        candidates = (await self.session.execute(candidate_stmt)).all()
-        if not candidates:
-            return None
 
-        # 2. 对候选任务使用 CAS UPDATE 原子抢占单个任务
-        for cand_id, cand_gen in candidates:
-            update_stmt = (
+        def _claim_cas(row) -> Any:
+            """按候选行的 lease_generation 构造条件 UPDATE，仅描述本队列列词汇。"""
+
+            cand_id = row[0]
+            cand_gen = row[1]
+            return (
                 update(ApiMutationJob)
                 .where(ApiMutationJob.id == cand_id)
                 .where(ApiMutationJob.status == "pending")
@@ -379,15 +377,23 @@ class MutationJobService:
                     started_at=func.coalesce(ApiMutationJob.started_at, now),
                 )
             )
-            res = await self.session.execute(update_stmt)
-            if res.rowcount > 0:
-                await self.session.commit()
-                claimed = await self.session.get(ApiMutationJob, cand_id)
-                if claimed is not None:
-                    await self.session.refresh(claimed)
-                return claimed
 
-        return None
+        claimed_rows = await claim_rows_by_cas(
+            self.session,
+            ApiMutationJob,
+            candidate_query=candidate_query,
+            candidate_limit=10,
+            claim_cas=_claim_cas,
+            max_claims=1,
+        )
+        if not claimed_rows:
+            return None
+
+        cand_id = claimed_rows[0][0]
+        claimed = await self.session.get(ApiMutationJob, cand_id)
+        if claimed is not None:
+            await self.session.refresh(claimed)
+        return claimed
 
     async def execute_job_with_lease(self, job: ApiMutationJob) -> None:
         """执行完整三阶段任务：启动心跳、事务外规划慢诊断、CAS 短事务写库收尾。"""

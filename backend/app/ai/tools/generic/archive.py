@@ -24,7 +24,7 @@ from app.services.asset_service import AssetService
 from app.services.project_route_service import ProjectRouteService
 from app.services.workspace_theme_service import WorkspaceThemeService
 from app.services.workspace_style_service import WorkspaceStyleService
-from app.services.agent_work_scope_service import project_is_in_work_scope
+from app.services.agent_work_scope_service import AgentWorkScopeService, project_is_in_work_scope
 
 
 ARCHIVABLE_RESOURCE_TYPES = frozenset({"project", "page", "component", "asset", "theme", "style"})
@@ -39,14 +39,16 @@ async def build_archive_confirmation(
 
     if arguments.resource_type not in ARCHIVABLE_RESOURCE_TYPES:
         raise AppException(status_code=400, code="AI_ENTITY_ARCHIVE_UNSUPPORTED", detail="该对象类型不支持通过内容助手归档。")
-    dependencies, _ = await resolve_tool_context(
+    dependencies, claims = await resolve_tool_context(
         session_factory,
         run_context,
         required_scopes=(),
         required_dependency_fields=("workspace_id",),
     )
     workspace_id = int(dependencies["workspace_id"])
+    operator_id = extract_user_id(str(claims.get("sub")))
     async with session_factory() as session:
+        await AgentWorkScopeService(session, user_id=operator_id).require_workspace_access(workspace_id)
         targets = await _load_targets_for_update(
             session,
             resource_type=arguments.resource_type,
@@ -92,6 +94,7 @@ async def archive_entities(
     workspace_id = int(dependencies["workspace_id"])
     operator_id = extract_user_id(str(claims.get("sub")))
     async with session_factory() as session:
+        await AgentWorkScopeService(session, user_id=operator_id).require_workspace_access(workspace_id)
         targets = await _load_targets_for_update(
             session,
             resource_type=arguments.resource_type,

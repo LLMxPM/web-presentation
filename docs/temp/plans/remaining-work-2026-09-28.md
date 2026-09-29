@@ -10,9 +10,9 @@
 ## 0. 一页结论
 
 1. **三条已归档主线（运行态 `memory://`、多部署 T0–T4、DB 并发原语 CP1–CP6）代码均已落地**，但都不能关闭对应架构项：任务模型仍碎片化、多副本拓扑未就绪、D2 写路径基线仍未采集。
-2. **下一轮主轴只有一条：P3 统一任务运行时（契约冻结 → 迁移）**。其余工作按「先删死物/进门禁（小时级）→ 再补多部署门槛 → 再做契约机械化与巨石拆分」推进，不与 P3 抢同一片代码。
+2. **下一轮主轴只有一条：P3 统一任务运行时（契约冻结 → 迁移）**。其余工作按「再补多部署门槛 → 再做契约机械化与巨石拆分」推进，不与 P3 抢同一片代码。
 3. **产品三问已拍板（2026-09-28）**：Run 承诺「会丢」；Lite 推荐 5–10 人、预览并发约 3；双库方言预算从宽。跟进项转入 WS-G（文档/UI/容量/治理）。
-4. **可立即做的低成本项**（WS-B）合计约 1–2 天：删死副本/死契约测试/死 JSON Schema，把 4 类架构测试推进 PR 阻塞层。投入产出比最高，建议本周内清掉。
+4. ~~**可立即做的低成本项**（WS-B）~~ **已全部完成（2026-09-29）**：死副本/死契约测试/死 JSON Schema 清理，架构测试进 PR 阻塞层，ClaimGate 补强，跨用户 AI 工具写入矩阵，branch protection 启用。见 §3。
 
 ---
 
@@ -21,7 +21,7 @@
 | 工作流 | 名称 | 优先级 | 体量 | 依赖 |
 | :--- | :--- | :--- | :--- | :--- |
 | **WS-A** | P3 统一任务运行时 | **P0 主轴** | 大（多迭代） | 无（可先冻结契约） |
-| **WS-B** | 死物清理 + 架构测试进门禁 | **P0** | 小（1–2 天） | 无 |
+| **WS-B** | 死物清理 + 架构测试进门禁 | **已清（2026-09-29）** | 小 | 无 |
 | **WS-C** | 多部署/多副本门槛补齐 | P1 | 中 | WS-A 部分语义 |
 | **WS-D** | D2 写路径与容量基线 | P1 | 中 | 打点已就绪 |
 | **WS-E** | 跨端契约机械化 | P1 | 中 | 无 |
@@ -51,17 +51,22 @@
 
 ---
 
-## 3. WS-B · 死物清理 + 架构测试进门禁（立即可做）
+## 3. WS-B · 死物清理 + 架构测试进门禁（**已实施，2026-09-29**）
 
 **问题**（结构批判 §4.2–4.4）：假安全感与门禁错位，成本极低、误导极大。
 
-| 序 | 工作项 | 完成口径 | 估时 |
+| 序 | 工作项 | 完成口径 | 状态 |
 | :--- | :--- | :--- | :--- |
-| B1 | 删 `backend/app/services/page_render_*_script.py` 7 份已漂移死副本（约 65KB，零 import） | 全仓 grep 无引用；Renderer 侧 `layout_scripts.py` 为唯一事实源 | 0.5 天 |
-| B2 | 修死契约测试 `runtime-kit-manifest.test.ts`（`capabilities` → `exports`） | 循环体真实执行，能红也能绿 | 0.5 天 |
-| B3 | `packages/render-contracts/schemas/*.v1.json`：补往返对拍测试，或删除死双源 | 二选一，禁止继续「文档声称对拍、实际零消费」 | 0.5 天 |
-| B4 | 把架构级测试推进 PR 阻塞层：`test_unified_tool_specs_*`、render-contracts 往返、runtime-kit `exports` 真断言、多租户越权矩阵 | 进 `test:backend:unit` 或独立 gate job，不再只在 `inputs.full` | 1 天 |
-| B5 | 顺手：`test:repository` / `test:contracts` 文档断链保持绿（归档移动后复核） | 两入口全绿 | 0.5 天 |
+| B1 | 删 `backend/app/services/page_render_*_script.py` 7 份已漂移死副本（约 65KB，零 import） | 全仓 grep 无引用；Renderer 侧 `layout_scripts.py` 为唯一事实源 | **已完成**：7 份死副本已删；`page_render_diagnostics_service.py` 保留 |
+| B2 | 修死契约测试 `runtime-kit-manifest.test.ts`（`capabilities` → `exports`） | 循环体真实执行，能红也能绿 | **已完成**：改为断言 `exports`，补非空清单与 `.vN` 命名契约 |
+| B3 | `packages/render-contracts/schemas/*.v1.json`：补往返对拍测试，或删除死双源 | 二选一，禁止继续「文档声称对拍、实际零消费」 | **已完成**：新增 `test_schema_roundtrip.py`（required/type/enum 对拍 + DTO 往返） |
+| B4 | 把架构级测试推进 PR 阻塞层：`test_unified_tool_specs_*`、render-contracts 往返、runtime-kit `exports` 真断言、多租户越权矩阵 | 进 `test:backend:unit` 或独立 gate job，不再只在 `inputs.full` | **已完成**：工具规格主测迁至 `tests/unit/test_unified_tool_specs.py`；contracts/render-contracts 本就在 PR；补跨用户 AI 工具写入矩阵 |
+| B5 | 顺手：`test:repository` / `test:contracts` 文档断链保持绿（归档移动后复核） | 两入口全绿 | **已完成**：两入口 13+35 全绿 |
+| B0 | 启用 branch protection / ruleset（评估 P0-MergeGate） | require PR + required checks | **已完成**：`main`/`dev` 均启用 classic protection（1 审 + `quality` check） |
+| B-ClaimGate | CP4 认领门禁 AST 补强（评估 P0-ClaimGate） | 捕获变量间接 `execute(update)` 与 `reserve_*` 命名 | **已完成**：检测器补强；`claim_next_pending_job` 迁至 `claim_rows_by_cas`；`reserve_attempt` 登记例外 |
+| B-AuthZ | 跨用户 AI 工具写入矩阵（评估 P2-AuthZGap） | A 用户不得写 B 用户实体 | **已完成**：补 `test_cross_user_ai_tool_write_should_be_denied`；写路径增加操作者成员校验 |
+
+**WS-B 证据**：删除 7 份死副本；`runtime-kit-manifest.test.ts` 5 条真断言；`packages/render-contracts/tests/test_schema_roundtrip.py`；`backend/tests/unit/test_unified_tool_specs.py`；`test_ai_generic_business_tools.py::test_cross_user_ai_tool_write_should_be_denied`；`test_db_adapter_layer.py` 假阴性对照；GitHub branch protection `main`/`dev`。
 
 ---
 
@@ -207,8 +212,9 @@ F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行
 | P2-Locks | 登记为 R-CP6 | 定位澄清已写入文档 |
 | P2-Docs | 本次整理 | README 与正文状态已对齐；维护约定见 README |
 | D2 基线门 | WS-D | **仍未采集** |
-| 结构批判 P0 死物/门禁 | WS-B | 待做 |
+| 结构批判 P0 死物/门禁 | WS-B | **已清（2026-09-29）** |
 | 结构批判 P0 双记账 | 已收敛续跑双轨；统一 runtime 见 WS-A | 部分关闭 |
+| P0-MergeGate / P0-ClaimGate / P0-Gates / P2-AuthZGap | WS-B0 / ClaimGate / B4 / AuthZ | **已关闭（2026-09-29）** |
 
 ---
 

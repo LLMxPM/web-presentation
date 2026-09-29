@@ -51,7 +51,7 @@ from app.services.suggested_component_service import SuggestedComponentService
 from app.services.workspace_style_service import WorkspaceStyleService
 from app.services.workspace_component_service import WorkspaceComponentService
 from app.services.workspace_theme_service import WorkspaceThemeService
-from app.services.agent_work_scope_service import project_is_in_work_scope
+from app.services.agent_work_scope_service import AgentWorkScopeService, project_is_in_work_scope
 
 AI_PAGE_QUERY_EXCLUDED_FIELDS = {
     "page_content",
@@ -490,6 +490,7 @@ async def _create_entity(
     dependencies, claims = await resolve_tool_context(session_factory, run_context, required_scopes=(), required_dependency_fields=("workspace_id",))
     workspace_id = int(dependencies["workspace_id"])
     operator_id = extract_user_id(str(claims.get("sub")))
+    await _require_operator_workspace_access(session_factory, operator_id=operator_id, workspace_id=workspace_id)
     source_id = int(payload.pop("source_id")) if "source_id" in payload else None
     if mode == "copy" and resource_type == "page":
         await _with_page_scope(session_factory, run_context, _required_target_id(source_id, "复制页面时必须提供 source_id。"))
@@ -629,6 +630,7 @@ async def _update_entity(
     dependencies, claims = await resolve_tool_context(session_factory, run_context, required_scopes=(), required_dependency_fields=("workspace_id",))
     workspace_id = int(dependencies["workspace_id"])
     operator_id = extract_user_id(str(claims.get("sub")))
+    await _require_operator_workspace_access(session_factory, operator_id=operator_id, workspace_id=workspace_id)
     if resource_type == "project":
         if action == "route_tree":
             context = await _with_project_scope(session_factory, run_context, target_id)
@@ -703,6 +705,12 @@ async def _execute_action(
     payload = _validate_operation_payload(resource_type, "action", action, payload)
     if (resource_type, action) != ("component", "publish"):
         raise AppException(status_code=400, code="AI_ACTION_UNSUPPORTED", detail="该生命周期命令未开放。")
+    dependencies, claims = await resolve_tool_context(
+        session_factory, run_context, required_scopes=(), required_dependency_fields=("workspace_id",)
+    )
+    workspace_id = int(dependencies["workspace_id"])
+    operator_id = extract_user_id(str(claims.get("sub")))
+    await _require_operator_workspace_access(session_factory, operator_id=operator_id, workspace_id=workspace_id)
     component_id = _required_target_id(target_id, "发布组件时必须提供 target_id。")
     result = await _call_internal(tools["publish_component"], run_context, {"component_id": component_id, **payload})
     return _wrap_internal_mutation(
@@ -1245,6 +1253,18 @@ def _ensure_workspace(actual_workspace_id: int | None, expected_workspace_id: in
 
     if actual_workspace_id != expected_workspace_id:
         raise AppException(status_code=403, code="AI_ENTITY_SCOPE_DENIED", detail="目标对象不属于当前工作空间。")
+
+
+async def _require_operator_workspace_access(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    operator_id: int,
+    workspace_id: int,
+) -> None:
+    """写路径额外校验操作者是目标工作空间启用成员，防止跨用户越权写入。"""
+
+    async with session_factory() as session:
+        await AgentWorkScopeService(session, user_id=operator_id).require_workspace_access(workspace_id)
 
 
 def _ensure_active_status(status: Any, label: str) -> None:

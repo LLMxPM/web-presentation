@@ -160,13 +160,20 @@ def test_claim_functions_must_delegate_cas_timing() -> None:
     不得以它为模板再写一份。
     """
 
-    exempt = {"app/ai/external_task_queue.py"}
+    # 已核准例外：external_task_queue 整文件是 lease_generation 围栏协议（见上）；
+    # reserve_attempt 是渲染侧认领方言命名，CAS 与 RenderAttempt 创建必须同事务原子完成。
+    exempt = {
+        "app/ai/external_task_queue.py",
+        "app/services/rendering/repository.py::reserve_attempt",
+    }
     offenders: list[str] = []
     for rel, source in _backend_sources("app"):
         if rel == "app/services/durable_job_lease_service.py" or rel in exempt:
             continue
         for name in _claim_functions_executing_own_cas(source):
-            offenders.append(f"{rel}::{name}")
+            key = f"{rel}::{name}"
+            if key not in exempt and rel not in exempt:
+                offenders.append(key)
     assert offenders == []
 
 
@@ -242,7 +249,9 @@ def test_claim_drift_helper_detects_direct_cas_execution() -> None:
     """正例对照：认领漂移判定必须真的识别直接 execute 条件 UPDATE，否则门禁会空转。
 
     上一条码住构建服务手写 claim 的门禁，其有效性完全取决于这个解析函数；没有对照
-    用例时，任何把它改宽的修改都会让门禁静默失效。
+    用例时，任何把它改宽的修改都会让门禁静默失效。对照覆盖四种历史漏检形态：
+    内联 `execute(update(...))`、先赋值再 execute、`reserve_*` 命名的认领，
+    以及 `self.update_stmt = update(...)` 后 `execute(self.update_stmt)` 的属性间接形态。
     """
 
     hand_written = '''
@@ -251,6 +260,33 @@ async def claim_job(self):
         update(ProjectBuildJob).where(ProjectBuildJob.status == "pending").values(status="running")
     )
     return result.rowcount
+'''
+    variable_indirect = '''
+async def claim_next_pending_job(self):
+    update_stmt = (
+        update(ApiMutationJob)
+        .where(ApiMutationJob.status == "pending")
+        .values(status="running")
+    )
+    res = await self.session.execute(update_stmt)
+    return res.rowcount
+'''
+    reserve_named = '''
+async def reserve_attempt(self):
+    claim_result = await self.session.execute(
+        update(RenderRequest).where(RenderRequest.status == "queued").values(status="executing")
+    )
+    return claim_result.rowcount
+'''
+    attribute_indirect = '''
+async def claim_next_pending_job(self):
+    self.update_stmt = (
+        update(ApiMutationJob)
+        .where(ApiMutationJob.status == "pending")
+        .values(status="running")
+    )
+    res = await self.session.execute(self.update_stmt)
+    return res.rowcount
 '''
     delegated = '''
 async def claim_job(self):
@@ -261,6 +297,9 @@ async def claim_job(self):
     return rows
 '''
     assert _claim_functions_executing_own_cas(hand_written) == ["claim_job"]
+    assert _claim_functions_executing_own_cas(variable_indirect) == ["claim_next_pending_job"]
+    assert _claim_functions_executing_own_cas(reserve_named) == ["reserve_attempt"]
+    assert _claim_functions_executing_own_cas(attribute_indirect) == ["claim_next_pending_job"]
     assert _claim_functions_executing_own_cas(delegated) == []
 
 
@@ -273,13 +312,24 @@ def _backend_sources(*subtrees: str):
             yield path.relative_to(backend_root).as_posix(), path.read_text(encoding="utf-8")
 
 
+def _contains_update_call(node: ast.AST) -> bool:
+    """判断表达式是否包含 `update(...)` 调用（含方法链赋值形态）。"""
+
+    return any(
+        isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id == "update"
+        for sub in ast.walk(node)
+    )
+
+
 def _claim_functions_executing_own_cas(source: str) -> list[str]:
     """解析源码中的认领函数，返回「自己执行条件 UPDATE」的函数名。
 
-    认领函数按命名约定识别（`claim*` / `_claim*`）。判定标准是函数体内出现
-    `await session.execute(update(...))`：构造 UPDATE 并交给共享助手执行是 CP4 的
-    正确写法（`claim_rows_by_cas` 的 `claim_cas` 回调就是这种），自己 execute 才是
-    重新实现认领时序。
+    认领函数按命名约定识别（`claim*` / `_claim*` / `reserve*` / `_reserve*`；渲染侧
+    `reserve_attempt` 是已知的认领方言命名）。判定标准是函数体内直接 execute 条件
+    UPDATE：既包括内联 `execute(update(...))`，也包括先把 `update(...)` 赋给变量再
+    execute 的历史漏检形态（`mutation_job_service.claim_next_pending_job`）。构造
+    UPDATE 并交给共享助手执行是 CP4 的正确写法（`claim_rows_by_cas` 的 `claim_cas`
+    回调就是这种），自己 execute 才是重新实现认领时序。
     """
 
     tree = ast.parse(source)
@@ -287,7 +337,7 @@ def _claim_functions_executing_own_cas(source: str) -> list[str]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef):
             continue
-        if not node.name.startswith(("claim", "_claim")):
+        if not node.name.startswith(("claim", "_claim", "reserve", "_reserve")):
             continue
         if _executes_own_update(node):
             offenders.append(node.name)
@@ -295,7 +345,28 @@ def _claim_functions_executing_own_cas(source: str) -> list[str]:
 
 
 def _executes_own_update(function_node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """判断函数体内是否存在对条件 UPDATE 的直接执行。"""
+    """判断函数体内是否存在对条件 UPDATE 的直接执行（含变量/属性间接形态）。"""
+
+    # 记录「赋值为 update(...)」的名字与属性（如 update_stmt、self.update_stmt），
+    # execute 时按同一绑定形态回指才算自己执行；不能拿属性名去比对局部变量名集合。
+    update_names: set[str] = set()
+    update_attrs: set[tuple[str, str]] = set()
+    for node in ast.walk(function_node):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+            value = node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+            value = node.value
+        else:
+            continue
+        if not _contains_update_call(value):
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                update_names.add(target.id)
+            elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+                update_attrs.add((target.value.id, target.attr))
 
     for node in ast.walk(function_node):
         if not isinstance(node, ast.Await) or not isinstance(node.value, ast.Call):
@@ -305,7 +376,12 @@ def _executes_own_update(function_node: ast.FunctionDef | ast.AsyncFunctionDef) 
             continue
         if not call.args:
             continue
-        for sub in ast.walk(call.args[0]):
-            if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id == "update":
+        arg = call.args[0]
+        if _contains_update_call(arg):
+            return True
+        if isinstance(arg, ast.Name) and arg.id in update_names:
+            return True
+        if isinstance(arg, ast.Attribute) and isinstance(arg.value, ast.Name):
+            if (arg.value.id, arg.attr) in update_attrs:
                 return True
     return False
