@@ -42,7 +42,12 @@ export async function verifyRuntimeServiceToken(
   let payload: JWTPayload
   try {
     const jwks = createRemoteJWKSet(jwksUrl)
-    const verified = await jwtVerify(token, jwks, { audience: options.audience })
+    const verified = await jwtVerify(token, jwks, {
+      audience: options.audience,
+      algorithms: ['RS256'],
+      clockTolerance: 5,
+      requiredClaims: ['exp'],
+    })
     payload = verified.payload
   } catch (error) {
     throw new RuntimeServiceAuthError(401, 'RUNTIME_SERVICE_TOKEN_INVALID', 'Runtime 服务令牌校验失败。', error)

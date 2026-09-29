@@ -71,7 +71,12 @@ describe('runtime visual edit plugin', () => {
     expect(joseMocks.jwtVerify).toHaveBeenCalledWith(
       'runtime-service-token',
       expect.any(Function),
-      { audience: 'runtime-backend' },
+      {
+        audience: 'runtime-backend',
+        algorithms: ['RS256'],
+        clockTolerance: 5,
+        requiredClaims: ['exp'],
+      },
     )
   })
 

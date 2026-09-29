@@ -654,6 +654,10 @@ async function verifyPreviewToken(token: string, options: { jwksUrl: string; aud
     })
     const verified = await jwtVerify(token, jwks, {
       audience: options.audience,
+      // 预览票据固定 RS256；必须带 exp，拒绝无过期时间的永不过期令牌。
+      algorithms: ['RS256'],
+      clockTolerance: 5,
+      requiredClaims: ['exp', 'jti'],
     })
     payload = verified.payload
   } catch (error) {
@@ -1366,6 +1370,9 @@ function normalizePreviewAssetBase(rawValue: string): string {
 function sendHtml(res: RuntimeNodeResponse, html: string): void {
   res.statusCode = 200
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  // 预览 HTML 内嵌 bearer 票据与 ?token= 样式表链接，禁止中间层缓存与外泄 referrer。
+  res.setHeader('Cache-Control', 'no-store')
+  res.setHeader('Referrer-Policy', 'no-referrer')
   res.end(html)
 }
 

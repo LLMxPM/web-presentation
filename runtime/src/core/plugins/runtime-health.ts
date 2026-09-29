@@ -61,7 +61,9 @@ export default function runtimeHealth(): Plugin {
       server.middlewares.use((req, res, next) => {
         const pathname = getRequestPathname(req.url || '/')
         if (pathname === RUNTIME_HEALTH_PATH) {
-          return sendRuntimeHealthResponse(res)
+          // 容量明细（pid/RSS/预算）只对本机/私网探针返回，避免 base=/ 时全网可读。
+          const detailed = isInternalProbeRequest(req)
+          return sendRuntimeHealthResponse(res, { detailed })
         }
         if (pathname === RUNTIME_READINESS_PATH) {
           return sendRuntimeReadinessResponse(res)
@@ -73,13 +75,56 @@ export default function runtimeHealth(): Plugin {
 }
 
 /**
- * 输出存活探针响应，包含存活状态与进程/角色容量快照。
+ * 判断请求是否来自本机或私网探针；公网请求只得到最小存活体。
+ * @param req Node 请求对象
+ * @returns 是否内部探针
+ */
+export function isInternalProbeRequest(
+  req: { socket?: { remoteAddress?: string | null } | null },
+): boolean {
+  const remote = String(req.socket?.remoteAddress || '').trim().toLowerCase()
+  if (!remote) {
+    return true
+  }
+  // IPv4 回环 / 私网 / 链路本地，以及 IPv6 回环与 ULA。
+  if (
+    remote === '::1'
+    || remote === 'localhost'
+    || remote.startsWith('127.')
+    || remote.startsWith('10.')
+    || remote.startsWith('192.168.')
+    || remote.startsWith('fc')
+    || remote.startsWith('fd')
+    || remote.startsWith('fe80:')
+  ) {
+    return true
+  }
+  // 172.16.0.0 – 172.31.255.255
+  const v4 = /^172\.(\d+)\./.exec(remote)
+  if (v4) {
+    const second = Number(v4[1])
+    return second >= 16 && second <= 31
+  }
+  // IPv4-mapped IPv6（::ffff:127.0.0.1 等）
+  if (remote.startsWith('::ffff:')) {
+    return isInternalProbeRequest({ socket: { remoteAddress: remote.slice(7) } })
+  }
+  return false
+}
+
+/**
+ * 输出存活探针响应。详细模式含进程/角色容量快照；公网请求只返回最小存活体。
  * @param res Node 响应对象
+ * @param options 详细模式开关
  */
 export function sendRuntimeHealthResponse(
   res: Pick<ServerResponse, 'statusCode' | 'setHeader' | 'end'>,
+  options: { detailed?: boolean } = {},
 ): void {
-  sendRuntimeProbeResponse(res, 200, buildRuntimeHealthPayload())
+  const payload = options.detailed === false
+    ? buildMinimalRuntimeHealthPayload()
+    : buildRuntimeHealthPayload()
+  sendRuntimeProbeResponse(res, 200, payload)
 }
 
 /**
@@ -149,6 +194,18 @@ export function buildRuntimeHealthPayload(): Record<string, unknown> {
     role: getRuntimeRole(),
     ...buildRuntimeVersionFingerprint(),
     ...collectRuntimeCapacity(),
+  }
+}
+
+/**
+ * 构建面向公网的最小存活体：不含 pid / RSS / 各角色预算。
+ * @returns 最小健康结构
+ */
+export function buildMinimalRuntimeHealthPayload(): Record<string, unknown> {
+  return {
+    status: 'ok',
+    role: getRuntimeRole(),
+    ...buildRuntimeVersionFingerprint(),
   }
 }
 

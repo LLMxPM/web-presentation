@@ -85,8 +85,8 @@
 | C7 | `can_safely_remove_worker` 接入真实摘除路径（现为死代码） | #18 | 摘除前核对有可执行保证 | **已完成（2026-09-29）**：`check_render_worker_removal` CLI 门禁 + compose.md 指引 |
 | C8 | T0-1 六阶段指标补 `workspace` 计时、统一 `archive` 口径、失败/超时计数 | #19 #20 | 指标可对账 | 1 天 |
 | C9 | **§11 跨副本回归与故障演练**：两预览 / 两构建检查 / 两 Renderer、强制跨副本子请求、实例重启与摘流 | plan §11 | 演练记录入库；未过则模板仍标「单副本」 | 2–3 天 |
-| C10 | AGENTS.md 全面同步：Runtime 角色、构建 attempt 围栏、检查指纹缓存、签名密钥环 | #13 | 与代码一致 | 0.5 天 |
-| C11 | §4.2 Minor 清单批量处理（healthz、`sendHtml` 缺 `no-store`、票据校验欠规格等） | 评审 §4.2 | 建议并入 C 安全项一起做 | 1 天 |
+| C10 | AGENTS.md 全面同步：Runtime 角色、构建 attempt 围栏、检查指纹缓存、签名密钥环 | #13 | 与代码一致 | **已完成（2026-09-29）**：多部署约束小节写入 AGENTS.md |
+| C11 | §4.2 Minor 清单批量处理（healthz、`sendHtml` 缺 `no-store`、票据校验欠规格等） | 评审 §4.2 | 建议并入 C 安全项一起做 | **安全三项已完成（2026-09-29）**：`sendHtml` no-store/Referrer-Policy、JWT RS256+exp、healthz 公网最小化；其余 Minor 视需要另开 |
 
 **禁止事项**：在 C9 通过前，`compose.runtime-roles.yml` 不得宣称多副本可用；不得把「代码已落地」写成「门槛已达成」。
 

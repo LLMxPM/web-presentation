@@ -148,6 +148,14 @@ Runtime Kit 约束：
 - 需要不兼容演进时新增 v2/v3 文件，不修改仍被依赖的旧版本文件。
 - Runtime shell 内部组件、component-preview 宿主页及其辅助类型/组合式能力、PDF 导出、侧栏/缩略图、Toast 与 ErrorBoundary 不应通过 `@runtime-kit` 暴露给页面源码、工作空间组件源码或智能体能力目录。
 
+多部署 / 多副本约束（与代码保持一致，禁止只改文档宣称）：
+
+- **Runtime 角色**：`preview` / `build` / `check` / `all` 由 `runtime-role.ts` 与 `vite.config.ts` 真实注销端点；分角色 compose 见 `deploy/compose/compose.runtime-roles.yml`。角色独立执行预算与健康输出以 Runtime 插件为准，不得把死配置写成已达成门槛。
+- **构建 attempt 围栏**：产物提升必须匹配 Job 当前 `attempt_id`（INV-5）；租约过期/回收一律作废 attempt，禁止迟到上传提升旧产物。
+- **检查指纹缓存**：`CodeCheckFingerprintBuilder` 覆盖源码、依赖版本、引用资源身份、Runtime Kit 清单内容 hash、主题/字体与规则版本；新增会影响检查结果的输入必须进指纹，否则缓存会返回陈旧结果。
+- **签名密钥环**：多 Backend 必须共享同一 RS256 私钥（`signing_identity`）；轮换期 JWKS 同时公布新旧钥；预览/服务令牌固定 `algorithms: ['RS256']` 且要求 `exp`。摘除 Renderer Worker 前必须跑 `python -m app.scripts.check_render_worker_removal`。
+- **普通 AI Run**：产品承诺「会丢」；启动恢复只按 `process_owner` 收敛本机死进程遗留，禁止全局扫杀其它副本活跃 Run。跨副本僵尸由空闲超时与 `force_cancel` 兜底。
+
 ## 4. 测试与验证
 
 优先运行与改动范围匹配的最小测试集，并在最终说明中写清楚已运行和未运行的测试。

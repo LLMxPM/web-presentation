@@ -8,10 +8,12 @@ import type { ViteDevServer } from 'vite'
 
 import runtimeHealth, {
   RUNTIME_READINESS_PATH,
+  buildMinimalRuntimeHealthPayload,
   buildRuntimeHealthPayload,
   buildRuntimeReadinessPayload,
   buildRuntimeVersionFingerprint,
   collectRuntimeReadiness,
+  isInternalProbeRequest,
   registerRuntimeReadinessProbe,
   sendRuntimeHealthResponse,
   sendRuntimeReadinessResponse,
@@ -246,6 +248,28 @@ describe('runtime readiness probe', () => {
     const readiness = collectRuntimeReadiness()
     expect(readiness.ready).toBe(true)
     expect(readiness.checks.buildWorker).toBeUndefined()
+  })
+
+  it('公网请求只应得到最小存活体，不得暴露 pid/RSS/预算', () => {
+    const response = createMockResponse()
+    sendRuntimeHealthResponse(response, { detailed: false })
+    const payload = JSON.parse(response.body)
+    expect(payload.status).toBe('ok')
+    expect(payload.runtime_kit_version).toEqual(expect.any(String))
+    expect(payload.memory).toBeUndefined()
+    expect(payload.workloads).toBeUndefined()
+    expect(payload.pid).toBeUndefined()
+  })
+
+  it('本机/私网探针应识别为内部请求，公网地址不得放行容量明细', () => {
+    expect(isInternalProbeRequest({ socket: { remoteAddress: '127.0.0.1' } })).toBe(true)
+    expect(isInternalProbeRequest({ socket: { remoteAddress: '::1' } })).toBe(true)
+    expect(isInternalProbeRequest({ socket: { remoteAddress: '10.1.2.3' } })).toBe(true)
+    expect(isInternalProbeRequest({ socket: { remoteAddress: '192.168.0.8' } })).toBe(true)
+    expect(isInternalProbeRequest({ socket: { remoteAddress: '172.18.0.4' } })).toBe(true)
+    expect(isInternalProbeRequest({ socket: { remoteAddress: '203.0.113.9' } })).toBe(false)
+    expect(isInternalProbeRequest({ socket: { remoteAddress: '8.8.8.8' } })).toBe(false)
+    expect(buildMinimalRuntimeHealthPayload().memory).toBeUndefined()
   })
 })
 
