@@ -110,17 +110,17 @@
 
 ---
 
-## 6. WS-E · 跨端契约机械化
+## 6. WS-E · 跨端契约机械化（**已完成，2026-09-29**）
 
 **问题**（结构批判 §4.2 / 现行评估 P2-API）：`editor/src/types/api.ts` 170 个手写 interface；previewSchema 三份手写；内外双入口无契约矩阵；根契约测试大量 `toContain` 子串匹配。
 
-| 序 | 工作项 | 完成口径 | 估时 |
-| :--- | :--- | :--- | :--- |
-| E1 | 双入口对拍（Top 操作先行：页面读写、校验、预览、归档） | 契约矩阵文档 + 自动化对拍，不要求全矩阵 | 3–5 天 |
-| E2 | 从 `/openapi.json` 生成 `editor/src/types/api.ts`（或等价 codegen） | 手写镜像层删除或降为生成物 | 1 周 |
-| E3 | previewSchema 抽单一源，三端引用 | 三处手写收敛为一处 + 对拍 | 3–5 天 |
-| E4 | HTTP 状态映射并入契约包（消灭 `rendering/errors.py` 第二事实源） | 错误码单源 | 2 天 |
-| E5 | Runtime Kit 构建端第二道闸（manifest 白名单解析，拒绝 `internal/`） | Backend 写路径 + Runtime 构建端双侧强制；删或消费 `runtime_kit_exports` 死配置 | 2–3 天 |
+| 序 | 工作项 | 完成口径 | 估时 | 状态 |
+| :--- | :--- | :--- | :--- | :--- |
+| E1 | 双入口对拍（Top 操作先行：页面读写、校验、预览、归档） | 契约矩阵文档 + 自动化对拍，不要求全矩阵 | 3–5 天 | **已做**：`docs/developer/architecture/dual-entry-contract-matrix.md` + `backend/tests/contracts/test_dual_entry_contract_matrix.py` |
+| E2 | 从 `/openapi.json` 生成 `editor/src/types/api.ts`（或等价 codegen） | 手写镜像层删除或降为生成物 | 1 周 | **已做**：`pnpm run codegen:editor-api` → `api.generated.ts`（331 schema）；漂移对拍 `tests/contracts/editor-api-types-drift.test.ts` |
+| E3 | previewSchema 抽单一源，三端引用 | 三处手写收敛为一处 + 对拍 | 3–5 天 | **已做**：`backend/app/core/component_preview_schema.v1.json` + Python/TS 双侧对拍 |
+| E4 | HTTP 状态映射并入契约包（消灭 `rendering/errors.py` 第二事实源） | 错误码单源 | 2 天 | **已做**：`render_contracts.errors.http_status_for_error_code` |
+| E5 | Runtime Kit 构建端第二道闸（manifest 白名单解析，拒绝 `internal/`） | Backend 写路径 + Runtime 构建端双侧强制；删或消费 `runtime_kit_exports` 死配置 | 2–3 天 | **已做**：`runtime-kit-import-gate.ts` 双侧强制，消费 `runtime_kit_exports` |
 
 ---
 
@@ -194,7 +194,7 @@ F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行
 
 1. WS-A2 统一执行器 + WS-A3 先迁构建/截图队列（与 WS-F1 并行拆 `platform_runtime`）；契约与迁移口径见 [`docs/developer/architecture/task-runtime-contract.md`](../../developer/architecture/task-runtime-contract.md)
 2. WS-C 其余门槛 + C9 跨副本演练（不过则继续标单副本）
-3. WS-E1 双入口 Top 操作对拍
+3. ~~WS-E1 双入口 Top 操作对拍~~ **WS-E 全部已完成（2026-09-29）**
 4. WS-G3/G6 密钥与方言预算
 
 ---
@@ -209,7 +209,7 @@ F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行
 | P1-Lite | WS-G1 + WS-D | 规模承诺 **5–10 人/并发 3**；故障域与混合负载未验收 |
 | P1-Health | WS-G2 | 待做 |
 | P2-Dialect | WS-G6 + WS-D | **预算已定（§评估 4.1）**；待写入治理文档 |
-| P2-API | WS-E | 待做 |
+| P2-API | WS-E | **已关闭（2026-09-29）** |
 | P2-GodFiles | WS-F | 待做 |
 | P2-Locks | 登记为 R-CP6 | 定位澄清已写入文档 |
 | P2-Docs | 本次整理 | README 与正文状态已对齐；维护约定见 README |
