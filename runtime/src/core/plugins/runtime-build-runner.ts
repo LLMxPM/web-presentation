@@ -987,6 +987,11 @@ export async function runProjectBuild(params: {
       mode: 'project',
       outDir: distRoot,
       timeoutMs: params.deadline.remainingMs(),
+      // 消费 Backend 下发的 runtime_kit_exports 快照作为构建端白名单；
+      // 空数组时 worker 侧回落本地 manifest 门禁。
+      runtimeKitAllowedImports: (params.configBundle.module_resolver?.runtime_kit_exports || []).map(
+        item => String(item.import_path || ''),
+      ).filter(Boolean),
       // 必须传 signal：租约失守时只有它能让 Vite 子进程真正退出，
       // 否则最耗 CPU/内存的阶段会一直跑到自然结束或 worker 超时。
       signal: params.deadline.signal,

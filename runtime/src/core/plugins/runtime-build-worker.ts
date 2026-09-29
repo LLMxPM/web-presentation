@@ -54,6 +54,11 @@ export interface RuntimeBuildWorkerRunOptions {
   timeoutMs?: number
   workerScriptSource?: string
   /**
+   * Runtime Kit 公开导入白名单（`@runtime-kit/...` import_path）。
+   * 优先来自 Backend module_resolver.runtime_kit_exports；空数组时 worker 回落到本地 manifest。
+   */
+  runtimeKitAllowedImports?: string[]
+  /**
    * 外部中止信号：租约失守或 deadline 到期时必须真正终止 Vite 子进程。
    * 只中止主进程的 fetch/sleep 会让最耗 CPU 与内存的构建阶段继续跑到自然结束。
    */
@@ -86,6 +91,8 @@ interface RuntimeBuildWorkerInput {
   base: string
   mode: 'project' | 'diagnostics'
   outDir?: string
+  /** Runtime Kit 公开导入白名单；省略时 worker 读取本地 manifest。 */
+  runtimeKitAllowedImports?: string[]
 }
 
 interface SerializedWorkerError {
@@ -637,6 +644,7 @@ export async function runRuntimeViteBuildInWorker(options: RuntimeBuildWorkerRun
     base: options.base,
     mode: options.mode,
     outDir: options.outDir ? resolve(options.outDir) : undefined,
+    runtimeKitAllowedImports: options.runtimeKitAllowedImports,
   }
 
   await writeFile(inputPath, JSON.stringify(workerInput), 'utf-8')
@@ -965,6 +973,7 @@ export function createRuntimeBuildWorkerScript(): string {
     '  }',
     '}',
     '',
+    createRuntimeKitImportGatePluginSource(),
     'function createBuildOptions(input) {',
     '  const tempRoot = input.tempRoot',
     '  const buildOptions = {',
@@ -991,7 +1000,7 @@ export function createRuntimeBuildWorkerScript(): string {
     '    root: tempRoot,',
     '    base: input.base,',
     '    define: { __RUNTIME_BACKEND_BUILD__: "true" },',
-    '    plugins: [vue()],',
+    '    plugins: [vue(), createRuntimeKitImportGatePlugin(input.runtimeKitAllowedImports, tempRoot)],',
     '    assetsInclude: ["**/*.drawio"],',
     '    resolve: {',
     '      alias: {',
@@ -1030,6 +1039,77 @@ export function createRuntimeBuildWorkerScript(): string {
 }
 
 /**
+ * 生成构建 worker 内嵌的 Runtime Kit 导入门禁 Vite 插件源码。
+ * 第二道闸：拒绝 internal/、未版本化与不在白名单中的 @runtime-kit 导入。
+ * 白名单优先取 Backend 下发的 runtime_kit_exports；否则读取本地 manifest。
+ */
+function createRuntimeKitImportGatePluginSource(): string {
+  return [
+    'async function loadLocalRuntimeKitAllowedImports(tempRoot) {',
+    '  try {',
+    '    const { readFile } = await import("node:fs/promises")',
+    '    const { resolve } = await import("node:path")',
+    '    const manifestPath = resolve(tempRoot, "src/runtime-kit/manifest/runtime-kit.manifest.json")',
+    '    const raw = await readFile(manifestPath, "utf-8")',
+    '    const manifest = JSON.parse(raw)',
+    '    return (manifest.exports || [])',
+    '      .map((item) => String(item?.import_path || "").trim())',
+    '      .filter((path) => path.startsWith("@runtime-kit/"))',
+    '  } catch {',
+    '    return []',
+    '  }',
+    '}',
+    '',
+    'function createRuntimeKitImportGatePlugin(allowedImports, tempRoot) {',
+    '  let allowed = new Set(Array.isArray(allowedImports) ? allowedImports : [])',
+    '  let ready = allowed.size > 0',
+    '  const VERSIONED = /\\.v\\d+(?:\\.[A-Za-z0-9]+)?$/',
+    '  const FORBIDDEN = ["/internal/", "/runtime-shell/", "/component-preview", "/PDF"]',
+    '  async function ensureAllowed() {',
+    '    if (ready) return',
+    '    const local = await loadLocalRuntimeKitAllowedImports(tempRoot)',
+    '    allowed = new Set(local)',
+    '    ready = true',
+    '  }',
+    '  function decide(source) {',
+    '    const normalized = String(source || "").trim().replace(/\\\\/g, "/")',
+    '    if (!normalized.startsWith("@runtime-kit/")) return null',
+    '    for (const fragment of FORBIDDEN) {',
+    '      if (normalized.includes(fragment)) {',
+    '        return `Runtime Kit 不允许导入内部路径：${normalized}`',
+    '      }',
+    '    }',
+    '    if (!VERSIONED.test(normalized)) {',
+    '      return `Runtime Kit 导入必须带 .vN 版本后缀：${normalized}`',
+    '    }',
+    '    if (ready && allowed.size > 0 && !allowed.has(normalized)) {',
+    '      return `Runtime Kit 导入不在公开白名单中：${normalized}`',
+    '    }',
+    '    return null',
+    '  }',
+    '  return {',
+    '    name: "runtime-kit-import-gate",',
+    '    enforce: "pre",',
+    '    async buildStart() {',
+    '      await ensureAllowed()',
+    '    },',
+    '    async resolveId(source) {',
+    '      await ensureAllowed()',
+    '      const reason = decide(source)',
+    '      if (reason) {',
+    '        const error = new Error(reason)',
+    '        error.code = "RUNTIME_LOCAL_IMPORT_FORBIDDEN"',
+    '        throw error',
+    '      }',
+    '      return null',
+    '    },',
+    '  }',
+    '}',
+    '',
+  ].join('\n')
+}
+
+/**
  * 生成长期诊断 worker 脚本；每个 IPC 消息都创建全新的 Vite 配置和插件实例。
  */
 export function createRuntimeDiagnosticsWorkerScript(): string {
@@ -1038,6 +1118,7 @@ export function createRuntimeDiagnosticsWorkerScript(): string {
     ' * 文件用途：长期驻留的 Runtime 诊断 worker，通过 IPC 串行执行独立 Vite 构建。',
     ' */',
     "import { resolve } from 'node:path'",
+    "import { readFile } from 'node:fs/promises'",
     "import { build as viteBuild } from 'vite'",
     "import vue from '@vitejs/plugin-vue'",
     "import tailwindcss from 'tailwindcss'",
@@ -1059,6 +1140,7 @@ export function createRuntimeDiagnosticsWorkerScript(): string {
     '  }',
     '}',
     '',
+    createRuntimeKitImportGatePluginSource(),
     'function createOptions(input) {',
     '  const tempRoot = input.tempRoot',
     '  return {',
@@ -1066,7 +1148,7 @@ export function createRuntimeDiagnosticsWorkerScript(): string {
     '    root: tempRoot,',
     '    base: input.base,',
     '    define: { __RUNTIME_BACKEND_BUILD__: "true" },',
-    '    plugins: [vue()],',
+    '    plugins: [vue(), createRuntimeKitImportGatePlugin(input.runtimeKitAllowedImports, tempRoot)],',
     '    assetsInclude: ["**/*.drawio"],',
     '    resolve: {',
     '      alias: {',

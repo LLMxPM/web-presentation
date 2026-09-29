@@ -32,6 +32,10 @@ import {
   type RuntimePreviewEntryDescriptor,
 } from '../shared/runtime-preview'
 import {
+  createRuntimeKitImportGate,
+  createRuntimeKitGateFromModuleResolver,
+} from '../shared/runtime-kit-import-gate'
+import {
   buildSnapdomProxyFetchHeaders,
   inferContentTypeFromUrl,
   isAllowedSnapdomProxyResourceUrl,
@@ -540,11 +544,13 @@ interface PreviewCacheBundle {
  * 根据 `@/views`、`/src/views` 或相对路径计算远程视图导入目标。
  * @param source import 源
  * @param importerPath 导入方逻辑路径
+ * @param kitGate Runtime Kit 导入门禁（第二道闸）
  * @returns 目标逻辑路径；非远程视图导入时返回 null
  */
 function resolveRemoteModuleImport(
   source: string,
   importerPath: string,
+  kitGate?: ReturnType<typeof createRuntimeKitImportGate>,
 ): { type: 'remote'; modulePath: string } | { type: 'ignore' } | { type: 'disallowed'; source: string } {
   const normalizedSource = String(source || '').trim().replace(/\\/g, '/')
   if (!normalizedSource) {
@@ -556,6 +562,12 @@ function resolveRemoteModuleImport(
   }
 
   if (normalizedSource.startsWith('@runtime-kit/')) {
+    // 第二道闸：即使 Backend 写路径已校验，构建/预览解析仍须按 manifest 白名单强制。
+    const gate = kitGate || defaultRuntimeKitImportGate
+    const decision = gate.decide(normalizedSource)
+    if (!decision.allowed) {
+      return { type: 'disallowed', source: normalizedSource }
+    }
     return { type: 'ignore' }
   }
 
@@ -583,7 +595,14 @@ function resolveRemoteModuleImport(
       return { type: 'ignore' }
     }
     if (normalizedModulePath.startsWith('src/runtime-kit/')) {
-      return { type: 'disallowed', source: normalizedSource }
+      // 相对路径绕进 runtime-kit 时同样走白名单门禁。
+      const aliasForm = normalizedModulePath.replace(/^src\/runtime-kit\//, '@runtime-kit/')
+      const gate = kitGate || defaultRuntimeKitImportGate
+      const decision = gate.decide(aliasForm)
+      if (!decision.allowed) {
+        return { type: 'disallowed', source: normalizedSource }
+      }
+      return { type: 'ignore' }
     }
     if (isBuiltinLocalViewPath(normalizedModulePath)) {
       return { type: 'ignore' }
@@ -596,6 +615,15 @@ function resolveRemoteModuleImport(
 
   return { type: 'ignore' }
 }
+
+/** 本地 manifest 构成的默认门禁；Backend 下发 runtime_kit_exports 时可收紧。 */
+const defaultRuntimeKitImportGate = createRuntimeKitImportGate({})
+
+/**
+ * 从 Backend module_resolver 构建收紧后的 Runtime Kit 门禁。
+ * 消费 `runtime_kit_exports` 快照，与写路径校验边界保持一致。
+ */
+export { createRuntimeKitGateFromModuleResolver }
 
 /**
  * 规范化 Vite base，根路径返回空串。

@@ -37,6 +37,18 @@ describe('runtime build worker', () => {
     expect(source).toContain('input.mode === "diagnostics"')
   })
 
+  it('构建 worker 脚本应内嵌 Runtime Kit 导入门禁插件', () => {
+    const source = createRuntimeBuildWorkerScript()
+    const diagnosticsSource = createRuntimeDiagnosticsWorkerScript()
+
+    for (const text of [source, diagnosticsSource]) {
+      expect(text).toContain('createRuntimeKitImportGatePlugin')
+      expect(text).toContain('RUNTIME_LOCAL_IMPORT_FORBIDDEN')
+      expect(text).toContain('/internal/')
+      expect(text).toContain('runtimeKitAllowedImports')
+    }
+  })
+
   it('应按默认值和显式值解析 worker 资源限制', () => {
     const originalMaxOldSpaceMb = process.env.RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB
     const originalTimeoutMs = process.env.RUNTIME_BUILD_WORKER_TIMEOUT_MS
@@ -234,7 +246,7 @@ describe('runtime build worker', () => {
 
     expect(source).toContain('process.on("message"')
     expect(source).toContain('process.send?.({ taskId: input.taskId, success: true')
-    expect(source).toContain('plugins: [vue()]')
+    expect(source).toContain('plugins: [vue(), createRuntimeKitImportGatePlugin')
   })
 
   it('长期诊断 worker 应复用同一进程并在达到任务上限后轮换', async () => {

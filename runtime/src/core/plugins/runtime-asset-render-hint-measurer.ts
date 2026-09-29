@@ -75,17 +75,21 @@ export default function runtimeAssetRenderHintMeasurer(options: RuntimeAssetRend
         }
         try {
           const startedAt = Date.now()
-          await verifyRuntimeServiceToken(String(req.headers[serviceTokenHeaderName] || ''), {
-            jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
-            audience: options.serviceAudience || process.env.RUNTIME_SERVICE_TOKEN_AUDIENCE || DEFAULT_SERVICE_AUDIENCE,
-          })
-          const payload = await readJsonBody<MeasureRequestBody>(req)
-          // 轻量工具独立通道：不与完整编译诊断共享容量，短请求不排在长编译之后。
-          const result = await runWithLightToolBudget(() => measureAssetRenderHint(payload))
-          sendJson(res, 200, result)
-          recordRuntimeWorkload('light_tool', Date.now() - startedAt)
+          try {
+            await verifyRuntimeServiceToken(String(req.headers[serviceTokenHeaderName] || ''), {
+              jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
+              audience: options.serviceAudience || process.env.RUNTIME_SERVICE_TOKEN_AUDIENCE || DEFAULT_SERVICE_AUDIENCE,
+            })
+            const payload = await readJsonBody<MeasureRequestBody>(req)
+            // 轻量工具独立通道：不与完整编译诊断共享容量，短请求不排在长编译之后。
+            const result = await runWithLightToolBudget(() => measureAssetRenderHint(payload))
+            sendJson(res, 200, result)
+            recordRuntimeWorkload('light_tool', Date.now() - startedAt)
+          } catch (error) {
+            recordRuntimeWorkload('light_tool', Date.now() - startedAt, 'error')
+            throw error
+          }
         } catch (error) {
-          recordRuntimeWorkload('light_tool', Date.now() - startedAt, 'error')
           logRuntimeServer('error', 'runtime.asset_render_hint.measure.failed', 'Runtime 资源比例测量失败。', {
             module: 'runtime.asset_render_hint',
             error,
