@@ -81,7 +81,7 @@
 | C3 | preview 角色独立预算与调度（当前变量全是死配置） | #14 | plan 硬门槛：容器约束 + 内部执行预算配套 | 2–3 天 |
 | C4 | preview 健康输出排队年龄与活跃数 | #15 | `/readyz` 或 metrics 可读 | 0.5 天 |
 | C5 | 归档峰值内存移出主进程 | #16 | 归档 worker 子进程内存计入子进程 | **基本完成（2026-09-29）**：父进程 RSS 采样峰值入 archive 日志；流式上传仍为长期项 |
-| C6 | 版本指纹强制（当前只报告） | #17 | 不匹配时拒绝或降级有明确策略 | 1 天 |
+| C6 | 版本指纹强制（当前只报告） | #17 | 不匹配时拒绝或降级有明确策略 | **已完成（2026-09-29）**：`X-Expected-Runtime-Version-Fingerprint` 不匹配 → 409；响应携带 `X-Runtime-Version-Fingerprint` |
 | C7 | `can_safely_remove_worker` 接入真实摘除路径（现为死代码） | #18 | 摘除前核对有可执行保证 | **已完成（2026-09-29）**：`check_render_worker_removal` CLI 门禁 + compose.md 指引 |
 | C8 | T0-1 六阶段指标补 `workspace` 计时、统一 `archive` 口径、失败/超时计数 | #19 #20 | 指标可对账 | **已完成（2026-09-29）**：workspace 墙钟、archive 墙钟+child 附注、workloads errors/timeouts |
 | C9 | **§11 跨副本回归与故障演练**：两预览 / 两构建检查 / 两 Renderer、强制跨副本子请求、实例重启与摘流 | plan §11 | 演练记录入库；未过则模板仍标「单副本」 | 2–3 天 |

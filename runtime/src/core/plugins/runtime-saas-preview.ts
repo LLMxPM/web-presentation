@@ -52,6 +52,10 @@ import {
 } from './runtime-preview-cache'
 import { isRuntimeAccessLogEnabled, logRuntimeServer } from '../utils/runtime-logger'
 import { recordRuntimeWorkload } from './runtime-capacity'
+import {
+  assertExpectedRuntimeFingerprint,
+  formatRuntimeVersionFingerprint,
+} from './runtime-health'
 
 interface RuntimeSaaSPreviewOptions {
   previewPath?: string
@@ -180,6 +184,9 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
 
         try {
           const requestStartedAt = Date.now()
+          // 版本指纹强制：请求方声明期望副本版本时不匹配直接拒绝，避免 HTML/模块混用。
+          const localFingerprint = formatRuntimeVersionFingerprint()
+          assertExpectedRuntimeFingerprint(req.headers, localFingerprint)
           const previewToken = String(req.headers[previewHeaderName] || '')
           if (!previewToken) {
             throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '缺少预览上下文令牌。')
@@ -1379,6 +1386,7 @@ function sendHtml(res: RuntimeNodeResponse, html: string): void {
   // 预览 HTML 内嵌 bearer 票据与 ?token= 样式表链接，禁止中间层缓存与外泄 referrer。
   res.setHeader('Cache-Control', 'no-store')
   res.setHeader('Referrer-Policy', 'no-referrer')
+  res.setHeader('X-Runtime-Version-Fingerprint', formatRuntimeVersionFingerprint())
   res.end(html)
 }
 
@@ -1391,6 +1399,7 @@ function sendCss(res: RuntimeNodeResponse, css: string): void {
   res.statusCode = 200
   res.setHeader('Content-Type', 'text/css; charset=utf-8')
   res.setHeader('Cache-Control', 'no-store')
+  res.setHeader('X-Runtime-Version-Fingerprint', formatRuntimeVersionFingerprint())
   res.end(css)
 }
 

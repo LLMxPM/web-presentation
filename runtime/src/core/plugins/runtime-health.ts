@@ -238,6 +238,37 @@ export function buildRuntimeVersionFingerprint(): RuntimeVersionFingerprint {
 }
 
 /**
+ * 组装本副本版本指纹字符串（kit 版本 + build_id）。
+ * @returns 稳定指纹文本
+ */
+export function formatRuntimeVersionFingerprint(): string {
+  const fingerprint = buildRuntimeVersionFingerprint()
+  return `${fingerprint.runtime_kit_version || 'unknown'}+${fingerprint.build_id || 'dev'}`
+}
+
+/**
+ * 校验请求方期望的 Runtime 版本指纹；不匹配时抛出业务错误码，避免跨版本混用 HTML/模块。
+ * @param headers 请求头
+ * @param localFingerprint 本副本指纹
+ */
+export function assertExpectedRuntimeFingerprint(
+  headers: Record<string, string | string[] | undefined> | undefined,
+  localFingerprint: string,
+): void {
+  const raw = headers?.['x-expected-runtime-version-fingerprint']
+  const expected = String(Array.isArray(raw) ? raw[0] : raw || '').trim()
+  if (!expected || expected === localFingerprint) {
+    return
+  }
+  const error = new Error(
+    `预览副本版本指纹不匹配：期望 ${expected}，本副本 ${localFingerprint}。请排空旧副本或刷新预览。`,
+  ) as Error & { statusCode?: number; code?: string }
+  error.statusCode = 409
+  error.code = 'PREVIEW_VERSION_SKEW'
+  throw error
+}
+
+/**
  * 输出探针响应：一律 no-store，避免中间层缓存把已恢复的副本继续判死。
  * @param res Node 响应对象
  * @param statusCode HTTP 状态码
