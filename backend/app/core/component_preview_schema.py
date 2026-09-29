@@ -1,8 +1,15 @@
-"""文件功能：提供组件 previewSchema 的文本归一化与 JSON 对象校验辅助函数。"""
+"""文件功能：提供组件 previewSchema 的文本归一化与 JSON 对象校验辅助函数。
+
+结构单一源：`component_preview_schema.v1.json`。本模块做业务校验（import 边界、
+尺寸控制），结构形状以 JSON Schema 为准；Editor/Runtime TS 类型对拍见
+`tests/contracts/test_preview_schema_parity.py`。
+"""
 
 from __future__ import annotations
 
 import json
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from app.core.exceptions import AppException
@@ -10,6 +17,8 @@ from app.core.runtime_module_policy import (
     is_runtime_public_local_component_module,
     parse_workspace_component_import_path,
 )
+
+_PREVIEW_SCHEMA_JSON_PATH = Path(__file__).with_name("component_preview_schema.v1.json")
 
 CONTENT_COMPONENT_SIZE_PROP_KEYS = frozenset(
     {
@@ -35,6 +44,33 @@ CONTENT_COMPONENT_SIZE_PROP_KEYS = frozenset(
         "content_height",
     }
 )
+
+
+@lru_cache(maxsize=1)
+def load_component_preview_schema_document() -> dict[str, Any]:
+    """读取 previewSchema 结构单一源 JSON Schema。"""
+
+    with _PREVIEW_SCHEMA_JSON_PATH.open("r", encoding="utf-8") as schema_file:
+        return json.load(schema_file)
+
+
+def get_component_preview_schema_top_level_keys() -> frozenset[str]:
+    """返回 previewSchema 允许的顶层键集合。"""
+
+    document = load_component_preview_schema_document()
+    return frozenset(document.get("properties", {}).keys())
+
+
+def get_component_preview_schema_ts_interface_fields() -> dict[str, list[str]]:
+    """返回与本 Schema 对齐的 TS interface 字段映射（对拍用）。"""
+
+    document = load_component_preview_schema_document()
+    mapping = document.get("x-typescript-interfaces", {})
+    return {
+        str(name): [str(field) for field in fields]
+        for name, fields in mapping.items()
+        if isinstance(fields, list) and name != "description"
+    }
 
 
 def normalize_component_preview_schema_text(schema_text: str | None) -> str | None:
