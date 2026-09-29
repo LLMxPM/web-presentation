@@ -40,7 +40,7 @@ Editor ──HTTP──► Gateway ──┬──► Backend（控制面）
 | 浏览器截图/渲染 | 只在 Renderer，凭证 fail-closed，每 attempt 新建 Context | 是 |
 | 页面校验通过判定 | 唯一谓词 `validation_result.is_validation_passed` | 是 |
 | SQLite Lite | 单进程/单容器，`memory://` 运行态 | 是（**目标规模**，见 §3；D2 未过不是 SLA） |
-| 重任务恢复 | 页面/图片/截图/构建/回填/外部 Batch 走 DB 租约 | **部分**（页面/组件队列运行中不恢复，见 P1-Recovery） |
+| 重任务恢复 | 页面/图片/截图/构建/回填/外部 Batch 走 DB 租约 | **是**（页面/组件 L1 循环内恢复已补，2026-09-29） |
 | 普通 AI Run | 进程内，重启即 `AI_RUN_PROCESS_STOPPED` | **是：承诺会丢**（文档已披露，UI 弱） |
 | Runtime 多副本 | **固定副本、静态注册形态**（手工复制 service + nginx upstream）；动态发现/扩缩容/摘流与跨副本演练未做 | **否** |
 | Backend 多副本 | 共享前提（RSA/密钥/对象存储/Redis）已校验；**Run 启动恢复全局扫描会杀其它副本活跃 Run** | **否（已知不正确）** |
@@ -78,7 +78,7 @@ Editor ──HTTP──► Gateway ──┬──► Backend（控制面）
 | ~~**P0-DeadGoods**~~ | ~~布局脚本死副本 ×7；runtime-kit 测试断言 `capabilities`；render-contracts JSON Schema 零消费~~ | ~~假安全感~~ | **已关闭（2026-09-29 WS-B1–B3）**：死副本已删；manifest 测试改 `exports` 真断言；补 `test_schema_roundtrip.py` |
 | ~~**P0-ClaimGate**~~ | ~~CP4 门禁假阴性：变量间接 `execute(update)` 与 `reserve_*` 命名漏检~~ | ~~并发原语边界可被合法合入破坏~~ | **已关闭（2026-09-29 WS-B ClaimGate）**：AST 检测补强；`claim_next_pending_job` 迁 `claim_rows_by_cas`；`reserve_attempt` 登记例外 |
 | ~~**P0-Gates**~~ | ~~工具目录主防漂移在 integration，PR 默认不跑~~ | ~~漂移可合法合入 PR~~ | **已关闭（2026-09-29 WS-B4）**：主测迁 `tests/unit/test_unified_tool_specs.py`（`test:backend:unit` 在 PR）；contracts/render-contracts 本就在 PR。E2E/镜像 smoke/CLI 跨仓仍非 PR 阻塞（已知边界） |
-| **P1-Recovery** | 页面/组件变更队列 Worker 循环内**不做过期恢复**，仅启动时 `recover_interrupted_*_on_startup`；运行中租约过期的 running 任务滞留到进程重启 | 故障后任务挂死，用户无感知；与 image/screenshot/build/external 的循环内恢复不一致 | 并入 WS-A |
+| **P1-Recovery** | ~~页面/组件变更队列 Worker 循环内**不做过期恢复**~~ **已关闭（2026-09-29）**：Worker 循环内补过期恢复 | 故障后任务挂死，用户无感知 | **已关闭（2026-09-29 WS-A3）** |
 | **P1-TaskModel** | 重任务 **10 套任务模型**；认领时序 3 套（共享 CAS / lease_generation CAS / render claim_generation）；心跳比例、终态词汇（image `"error"` vs 他处 `"failed"`）不统一 | 正确性靠各队列自觉；扩展成本高；故障语义不可比 | 计划 WS-A |
 | **P1-RenderQuota** | `RenderCoordinator._dispatch_once` 先 `count_active_attempts()` 再 `reserve_attempt()`（`coordinator.py:254-285`），非全局事务原子；多 Backend 可同时见 `active=0` 而突破 global/workspace limit（单 Worker 双派已有 `active_occupancy` 唯一索引保护） | 多协调器下额度失守 | 并入 WS-C |
 | **P1-MultiDeploy** | 多部署门槛未达成；Runtime 多副本是**静态固定拓扑**（手工复制 service + nginx upstream、静态 `RUNTIME_CHECK_BASE_URLS`）；跨副本回归/故障演练未跑 | 容易把 compose 静态复制当成真正分布式 | 计划 WS-C |

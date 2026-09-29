@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
+from time import monotonic
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -19,6 +20,7 @@ from app.models.ai_agent_runtime import AiAgentRun
 from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTask, AiComponentMutationTask
 from app.services.durable_job_lease_service import (
     claim_pending_jobs,
+    recover_expired_running_jobs,
     renew_running_job_lease,
     transition_owned_running_job,
 )
@@ -54,39 +56,26 @@ async def recover_interrupted_component_mutation_tasks(
 ) -> int:
     """启动时恢复租约过期的组件任务。"""
 
-    now = utc_now()
-    recovered = 0
     async with session_factory() as session:
-        tasks = list(
-            (
-                await session.scalars(
-                    select(AiAgentExternalTask).where(
-                        AiAgentExternalTask.kind == "component_mutation",
-                        AiAgentExternalTask.status == "running",
-                        (AiAgentExternalTask.lease_expires_at.is_(None))
-                        | (AiAgentExternalTask.lease_expires_at <= now),
-                    )
-                )
-            ).all()
-        )
-        for task in tasks:
-            if task.cancel_requested_at is not None:
-                task.status = "cancelled"
-                task.finished_at = now
-            elif task.attempt_count < _MAX_ATTEMPTS:
-                task.status = "pending"
-                task.started_at = None
-            else:
-                task.status = "failed"
-                task.error_code = "AI_COMPONENT_MUTATION_INTERRUPTED"
-                task.error_message = "组件任务执行中断且已达到最大重试次数。"
-                task.finished_at = now
-            task.worker_id = None
-            task.lease_expires_at = None
-            task.heartbeat_at = None
-            recovered += 1
-        await session.commit()
-    return recovered
+        return await recover_component_mutation_tasks(session)
+
+
+async def recover_component_mutation_tasks(session: AsyncSession) -> int:
+    """在给定会话内恢复过期组件任务（启动与循环内共用）。
+
+    时序委托 `recover_expired_running_jobs`；候选限定 `kind=component_mutation`，
+    避免把其它 ExternalTask 领域任务扫进来。
+    """
+
+    summary = await recover_expired_running_jobs(
+        session,
+        AiAgentExternalTask,
+        max_attempts=_MAX_ATTEMPTS,
+        interrupted_error_code="AI_COMPONENT_MUTATION_INTERRUPTED",
+        interrupted_error_message="组件任务执行中断且已达到最大重试次数。",
+        extra_base_conditions=[AiAgentExternalTask.kind == "component_mutation"],
+    )
+    return summary.total_count
 
 
 async def _run_worker(session_factory: async_sessionmaker[AsyncSession], *, worker_id: str) -> None:
@@ -95,9 +84,15 @@ async def _run_worker(session_factory: async_sessionmaker[AsyncSession], *, work
     settings = get_settings()
     poll_interval = max(0.05, float(settings.ai_page_mutation_poll_interval_seconds))
     lease_seconds = max(int(settings.durable_job_lease_seconds), int(settings.durable_job_heartbeat_seconds) * 3)
+    # L1 循环内恢复：与页面变更/截图同口径，避免运行中租约过期滞留到进程重启。
+    recovery_interval = max(1.0, min(float(settings.durable_job_heartbeat_seconds), 30.0))
+    last_recovery_at = 0.0
     while True:
         try:
             async with session_factory() as session:
+                if monotonic() - last_recovery_at >= recovery_interval:
+                    await recover_component_mutation_tasks(session)
+                    last_recovery_at = monotonic()
                 candidate = (
                     select(AiAgentExternalTask.id)
                     .join(AiAgentExternalBatch, AiAgentExternalBatch.batch_id == AiAgentExternalTask.batch_id)

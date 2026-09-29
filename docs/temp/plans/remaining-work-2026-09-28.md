@@ -41,7 +41,7 @@
 | :--- | :--- | :--- | :--- |
 | A1 | **冻结任务运行时契约**：角色模型（Worker / Lease / Attempt / Terminal）、字段词汇（owner、heartbeat、attempt_id、cancel）、错误码族、恢复语义 | 一份契约文档 + 与现有 9 套方言的映射表；**不写实现** | **已完成（2026-09-29）**：[`docs/developer/architecture/task-runtime-contract.md`](../../developer/architecture/task-runtime-contract.md)；含 10 套任务模型映射、3 套认领方言对照、字段/状态/错误码/恢复语义冻结；未写实现 |
 | A2 | **统一 claim/lease/heartbeat/recover 执行器**（扩展 `durable_job_lease_service.claim_rows_by_cas`，不建能力布尔层） | 新任务类型只注册列词汇与领域取值，不再手写 claim；门禁拒绝第 N+1 份手写 claim | **已完成（2026-09-29）**：`JobColumnVocabulary` + `DurableJobRuntime`；词汇化 claim/recover/cancel；`test_job_runtime_vocabulary.py` 14 例；门禁补注新队列注册口径。存量队列迁移归 A3 |
-| A3 | **迁移队列**（建议顺序：构建 → 截图/回填 → 图片 → 页面/组件 mutation → external_task_queue） | 每迁一队：行为回归绿、方言份数 −1、旧代码删除 | 每队 2–5 天（完成口径见 task-runtime-contract §9） |
+| A3 | **迁移队列**（建议顺序：构建 → 截图/回填 → 图片 → 页面/组件 mutation → external_task_queue） | 每迁一队：行为回归绿、方言份数 −1、旧代码删除 | 每队 2–5 天（完成口径见 task-runtime-contract §9）；**构建队列已迁 + 页面/组件 L1 恢复已补（2026-09-29）** |
 | A4 | **跨表不变量下沉**（如 `resolving` requirement ⇔ 有效租约的 `resuming` batch） | DB 约束或状态机库保证，审计函数降为兜底 | 3–5 天 |
 | A5 | ~~普通 AI Run 持久性语义落产品面~~ | **已定「承诺会丢」**；UI/文档标注改由 **WS-G7** 承接，不在任务运行时内做可恢复 Run | — |
 

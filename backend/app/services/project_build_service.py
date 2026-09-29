@@ -15,7 +15,6 @@ from typing import Any
 from sqlalchemy import or_, select, update
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.sql.dml import Update
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
@@ -29,10 +28,12 @@ from app.services.project_artifact_builder import ProjectArtifactBuilder
 from app.services.object_storage_service import ObjectStorageService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.durable_job_lease_service import (
-    claim_rows_by_cas,
+    claim_pending_jobs,
+    recover_expired_running_jobs,
     renew_running_job_lease,
     transition_owned_running_job,
 )
+from app.services.job_runtime_vocabulary import PROJECT_BUILD_VOCABULARY
 
 
 ACTIVE_BUILD_STATUSES = ("pending", "running")
@@ -248,13 +249,9 @@ class ProjectBuildService:
     ) -> ProjectBuildJob | None:
         """有条件领取构建任务：仅 pending 且未持有有效租约时可被认领。
 
-        认领时序复用 `claim_rows_by_cas`；本方法只描述构建任务自己的列命名
-        （`lease_owner` / `claimed_at`）、绝对期限谓词、逐候选租约裁剪和 attempt 围栏。
-        同一任务最多被一个执行者取得的保证来自条件 UPDATE，而不是候选集：候选读取
-        之后任务可能已被他人抢走，因此 CAS 谓词必须与候选谓词一致。
-
-        构建是「扫描多个候选、只执行一个」的领取者，所以 `max_claims=1`：多扫候选
-        提高单次领取命中率，但绝不把额外任务留在 running。
+        认领时序委托 `claim_pending_jobs` + `PROJECT_BUILD_VOCABULARY`；本方法只
+        描述构建领域取值（attempt 围栏、deadline 裁剪、产物指针清空）与候选谓词。
+        同一任务最多被一个执行者取得的保证来自条件 UPDATE，而不是候选集。
         """
 
         owner = lease_owner or self.lease_owner
@@ -272,6 +269,7 @@ class ProjectBuildService:
             ProjectBuildJob.lease_expires_at.is_(None),
             ProjectBuildJob.lease_expires_at <= now,
         )
+        # 候选列：id 在前，deadline_at 供 claim_values 做租约裁剪。
         candidate_stmt = select(ProjectBuildJob.id, ProjectBuildJob.deadline_at).where(
             ProjectBuildJob.status == "pending",
             deadline_clause,
@@ -285,49 +283,42 @@ class ProjectBuildService:
                 ProjectBuildJob.id.asc(),
             )
 
-        def _claim_cas(row: Row[Any]) -> Update | None:
-            # 租约本身也受绝对期限约束：剩余预算不足时不得发出越过 deadline 的租约，
-            # 否则「租约有效但任务已超期」会让续租和终态失去统一上界。
-            expires_at = _cap_lease_expiry(
-                now + timedelta(seconds=lease_seconds),
-                row.deadline_at,
-            )
-            if expires_at <= now:
-                return None
-            return (
-                update(ProjectBuildJob)
-                .where(
-                    ProjectBuildJob.id == row[0],
-                    ProjectBuildJob.status == "pending",
-                    deadline_clause,
-                    expired_or_absent_lease,
-                )
-                .values(
-                    status="running",
-                    lease_owner=owner,
-                    lease_expires_at=expires_at,
-                    claimed_at=now,
-                    attempt_id=new_attempt_id,
-                    attempt_count=ProjectBuildJob.attempt_count + 1,
-                    error_message=None,
-                    started_at=now,
-                    finished_at=None,
-                    # 新 attempt 从干净产物指针开始，避免残留上一轮成功产物。
-                    **_clear_artifact_fields(),
-                )
-            )
+        def _claim_values(row: Row[Any], claimed_at: datetime, expires_at: datetime) -> dict[str, Any]:
+            # 租约本身也受绝对期限约束：剩余预算不足时不得发出越过 deadline 的租约。
+            capped = _cap_lease_expiry(expires_at, row[1])
+            return {
+                "status": "running",
+                "lease_owner": owner,
+                "lease_expires_at": capped,
+                "claimed_at": claimed_at,
+                "attempt_id": new_attempt_id,
+                "attempt_count": ProjectBuildJob.attempt_count + 1,
+                "error_message": None,
+                "started_at": claimed_at,
+                "finished_at": None,
+                # 新 attempt 从干净产物指针开始，避免残留上一轮成功产物。
+                **_clear_artifact_fields(),
+            }
 
-        claimed_rows = await claim_rows_by_cas(
+        def _extra_claim_conditions(row: Row[Any]) -> list[Any]:
+            return [deadline_clause, expired_or_absent_lease]
+
+        claimed_ids = await claim_pending_jobs(
             self.session,
             ProjectBuildJob,
+            worker_id=owner,
+            limit=_BUILD_CLAIM_CANDIDATE_LIMIT,
+            lease_seconds=lease_seconds,
+            now=now,
             candidate_query=candidate_stmt,
-            candidate_limit=_BUILD_CLAIM_CANDIDATE_LIMIT,
-            claim_cas=_claim_cas,
+            vocabulary=PROJECT_BUILD_VOCABULARY,
+            claim_values=_claim_values,
+            extra_claim_conditions=_extra_claim_conditions,
             max_claims=1,
         )
-        if not claimed_rows:
+        if not claimed_ids:
             return None
-        claimed_id = int(claimed_rows[0][0])
+        claimed_id = claimed_ids[0]
         claimed = await self.session.get(ProjectBuildJob, claimed_id)
         if claimed is not None:
             await self.session.refresh(claimed)
@@ -832,96 +823,93 @@ async def recover_expired_build_jobs(
     副本租约仍有效、正在执行的构建。`force_owner_prefix` 仅额外回收
     `lease_owner` 以该前缀开头的任务（同一主机/进程中断的自身任务）。
     回收时一律作废 attempt_id，阻止迟到上传把旧产物提升为最终结果。
+
+    时序委托 `recover_expired_running_jobs` + `PROJECT_BUILD_VOCABULARY`；
+    本函数只描述构建领域分类（产物已提升 / 超期 / 预算）与写入取值。
     """
 
     now = utc_now()
-    expired_clause = (ProjectBuildJob.lease_expires_at.is_(None)) | (ProjectBuildJob.lease_expires_at <= now)
-    recoverable_clause = expired_clause
     normalized_prefix = str(force_owner_prefix or "").strip()
-    if normalized_prefix:
-        recoverable_clause = expired_clause | (ProjectBuildJob.lease_owner.like(f"{normalized_prefix}%"))
-
-    conditions = [ProjectBuildJob.status == "running", recoverable_clause]
-    candidates = list(
-        (
-            await session.execute(
-                select(
-                    ProjectBuildJob.id,
-                    ProjectBuildJob.attempt_count,
-                    ProjectBuildJob.max_attempts,
-                    ProjectBuildJob.deadline_at,
-                    ProjectBuildJob.artifact_storage_key,
-                ).where(*conditions)
-            )
-        ).all()
+    recoverable_or = (
+        [ProjectBuildJob.lease_owner.like(f"{normalized_prefix}%")] if normalized_prefix else None
     )
-    if not candidates:
-        await session.commit()
-        return 0
 
-    recovered = 0
-    for row in candidates:
-        attempt_limit = int(row.max_attempts or 3)
-        attempt_count = int(row.attempt_count or 0)
-        deadline_at: datetime | None = row.deadline_at
-        past_deadline = deadline_at is not None and now >= deadline_at
-        base_where = [ProjectBuildJob.id == row.id, ProjectBuildJob.status == "running", recoverable_clause]
-        clear_fields = _clear_artifact_fields()
+    # 候选列供 classify 读取：id 在前，其余为领域字段。
+    candidate_columns = [
+        ProjectBuildJob.id,
+        ProjectBuildJob.attempt_count,
+        ProjectBuildJob.max_attempts,
+        ProjectBuildJob.deadline_at,
+        ProjectBuildJob.artifact_storage_key,
+    ]
 
+    def _classify(row: Row[Any], attempt_limit_fallback: int) -> str:
         # 产物已提升：按成功收敛，不得清空产物后再重派。
-        if row.artifact_storage_key:
-            result = await session.execute(
-                update(ProjectBuildJob)
-                .where(*base_where, ProjectBuildJob.artifact_storage_key.is_not(None))
-                .values(
-                    status="succeeded",
-                    lease_owner=None,
-                    lease_expires_at=None,
-                    claimed_at=None,
-                    error_message=None,
-                    finished_at=now,
-                )
-                .execution_options(synchronize_session=False)
-            )
-            recovered += int(result.rowcount or 0)
-            continue
-
+        if row[4]:
+            return "succeeded"
+        attempt_limit = int(row[2] or 3)
+        attempt_count = int(row[1] or 0)
+        deadline_at: datetime | None = row[3]
+        past_deadline = deadline_at is not None and now >= deadline_at
         if attempt_count < attempt_limit and not past_deadline:
-            result = await session.execute(
-                update(ProjectBuildJob)
-                .where(*base_where, ProjectBuildJob.artifact_storage_key.is_(None))
-                .values(
-                    status="pending",
-                    lease_owner=None,
-                    lease_expires_at=None,
-                    claimed_at=None,
-                    # 作废 attempt 身份：旧令牌不得再把迟到产物提升为最终结果。
-                    attempt_id=None,
-                    error_message="构建租约过期或进程中断，已回到待执行队列。",
-                    finished_at=None,
-                    **clear_fields,
-                )
-                .execution_options(synchronize_session=False)
-            )
-        else:
-            result = await session.execute(
-                update(ProjectBuildJob)
-                .where(*base_where, ProjectBuildJob.artifact_storage_key.is_(None))
-                .values(
-                    status="failed",
-                    error_message="构建进程中断或超时，且已用尽重试预算。",
-                    finished_at=now,
-                    lease_expires_at=None,
-                    lease_owner=None,
-                    claimed_at=None,
-                    attempt_id=None,
-                    **clear_fields,
-                )
-                .execution_options(synchronize_session=False)
-            )
-        recovered += int(result.rowcount or 0)
-    await session.commit()
-    return recovered
+            return "requeued"
+        return "failed"
+
+    def _recover_values(kind: str, row: Row[Any], recovered_at: datetime) -> dict[str, Any]:
+        clear_fields = _clear_artifact_fields()
+        if kind == "succeeded":
+            return {
+                "status": "succeeded",
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "claimed_at": None,
+                "error_message": None,
+                "finished_at": recovered_at,
+            }
+        if kind == "requeued":
+            return {
+                "status": "pending",
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "claimed_at": None,
+                # 作废 attempt 身份：旧令牌不得再把迟到产物提升为最终结果。
+                "attempt_id": None,
+                "error_message": "构建租约过期或进程中断，已回到待执行队列。",
+                "finished_at": None,
+                **clear_fields,
+            }
+        return {
+            "status": "failed",
+            "error_message": "构建进程中断或超时，且已用尽重试预算。",
+            "finished_at": recovered_at,
+            "lease_expires_at": None,
+            "lease_owner": None,
+            "claimed_at": None,
+            "attempt_id": None,
+            **clear_fields,
+        }
+
+    def _kind_extra_where(kind: str) -> list[Any]:
+        if kind == "succeeded":
+            return [ProjectBuildJob.artifact_storage_key.is_not(None)]
+        return [ProjectBuildJob.artifact_storage_key.is_(None)]
+
+    summary = await recover_expired_running_jobs(
+        session,
+        ProjectBuildJob,
+        max_attempts=10**9,  # 预算由 classify 按行 max_attempts 判定
+        interrupted_error_code="BUILD_LEASE_EXPIRED",
+        interrupted_error_message="构建进程中断或超时，且已用尽重试预算。",
+        now=now,
+        vocabulary=PROJECT_BUILD_VOCABULARY,
+        recover_values=_recover_values,
+        classify_recovery=_classify,
+        recoverable_or_conditions=recoverable_or,
+        candidate_columns=candidate_columns,
+        kind_extra_where=_kind_extra_where,
+    )
+    # 历史返回值语义：本次发生状态迁移的行数（含产物已提升的 succeeded）。
+    return summary.total_count
 
 
 async def recover_interrupted_build_jobs_on_startup(

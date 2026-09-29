@@ -343,6 +343,17 @@ await runtime.claim/renew/transition/cancel/recover(...)
 4. 终态词汇改为契约标准（或读侧归一 + 写侧改名一次完成）。
 5. L1 循环内恢复具备（尤其页面/组件队列）。
 
+**迁移进度**：
+
+| 队列 | 状态 | 证据 |
+| :--- | :--- | :--- |
+| 构建 ProjectBuildJob | **已迁（2026-09-29）** | `claim_job` 走 `claim_pending_jobs` + `PROJECT_BUILD_VOCABULARY` + 领域取值；`recover_expired_build_jobs` 走 `recover_expired_running_jobs` + classify/`recover_values`；手写 claim_cas 已删。回归：`test_project_build_job_lease` / `test_project_build_worker_claim` / `test_project_build` / `test_multi_replica_coordination` 全绿 |
+| 截图 / 回填 | 已在统一入口 | `claim_pending_jobs` 标准词汇 + L1/L2 恢复 |
+| 图片 | 待改终态拼写 | `error`→`failed`，`completed`→`succeeded` |
+| 页面/组件 mutation | **L1 已补（2026-09-29）** | Worker 循环内调用 `recover_expired_running_jobs`（页面）/ `recover_component_mutation_tasks`（组件，`kind` 过滤）；P1-Recovery 缺口关闭 |
+| external_task_queue | 待迁 | lease_generation 围栏保留，认领时序归一 |
+| MutationJob | 待迁 | generation 围栏 + `next_attempt_at` 退避 → 词汇化 recover |
+
 **硬约束重申**：SQLite 分支语义字节级维持；PG 同事务 `SKIP LOCKED` 不得退回跨事务 CAS；`skip_locked` 只允许出现在租约服务。
 
 ---

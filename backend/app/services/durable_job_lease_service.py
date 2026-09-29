@@ -27,12 +27,13 @@ class DurableJobRecoverySummary:
     requeued_count: int = 0
     failed_count: int = 0
     cancelled_count: int = 0
+    succeeded_count: int = 0
 
     @property
     def total_count(self) -> int:
         """返回本次发生状态迁移的任务总数。"""
 
-        return self.requeued_count + self.failed_count + self.cancelled_count
+        return self.requeued_count + self.failed_count + self.cancelled_count + self.succeeded_count
 
 
 def build_durable_worker_id() -> str:
@@ -110,6 +111,7 @@ async def claim_pending_jobs(
     vocabulary: JobColumnVocabulary | None = None,
     claim_values: Callable[[Row[Any], datetime, datetime], dict[str, Any]] | None = None,
     extra_claim_conditions: Callable[[Row[Any]], list[Any]] | None = None,
+    max_claims: int | None = None,
 ) -> list[int]:
     """以条件 UPDATE 原子认领 pending 任务，返回当前执行者实际取得的任务 ID。
 
@@ -118,7 +120,7 @@ async def claim_pending_jobs(
 
     默认取值假定「候选列含 id（位置 0）」；若词汇声明了 `lease_generation`，
     候选查询必须把代次列放在**最后一列**（默认候选查询会自动附上），CAS 才能
-    按候选代次围栏。
+    按候选代次围栏。`max_claims` 供「扫多候选、只取一个」的领取者使用。
     """
 
     vocab = vocabulary or STANDARD_JOB_VOCABULARY
@@ -190,6 +192,7 @@ async def claim_pending_jobs(
         candidate_query=query,
         candidate_limit=limit,
         claim_cas=_claim_cas,
+        max_claims=max_claims,
     )
     return [int(row[0]) for row in claimed_rows]
 
@@ -338,12 +341,22 @@ async def recover_expired_running_jobs(
     now: datetime | None = None,
     vocabulary: JobColumnVocabulary | None = None,
     recover_values: Callable[[str, Row[Any], datetime], dict[str, Any]] | None = None,
+    classify_recovery: Callable[[Row[Any], int], str] | None = None,
+    recoverable_or_conditions: list[Any] | None = None,
+    extra_base_conditions: list[Any] | None = None,
+    candidate_columns: list[Any] | None = None,
+    kind_extra_where: Callable[[str], list[Any]] | None = None,
 ) -> DurableJobRecoverySummary:
     """只恢复租约为空或已经过期的 running 任务，并在空队列时避免发起写 DML。
 
     `vocabulary` 允许非标准列名（如 ProjectBuild 的 `lease_owner`/`claimed_at`）
-    复用同一套过期恢复时序。`recover_values` 供领域队列覆盖默认写入（如 MutationJob
-    的 generation 递增与 `next_attempt_at` 退避）；未提供时使用契约标准取值。
+    复用同一套过期恢复时序。`recover_values` 供领域队列覆盖默认写入。
+    `classify_recovery(row, attempt_limit)` 可把候选行分到
+    `cancelled | requeued | failed | succeeded | skip`，覆盖产物已提升等旁路。
+    `recoverable_or_conditions` 与「租约过期」OR，扩大可回收范围（如 force_owner_prefix）。
+    `extra_base_conditions` 追加 AND 谓词（如 `kind=component_mutation`）。
+    `candidate_columns` 自定义候选 SELECT 列（首列必须是 id），供 classify 读取领域字段。
+    `kind_extra_where` 按恢复分类追加 UPDATE 谓词（如 succeeded 仅当产物已提升）。
     """
 
     vocab = vocabulary or STANDARD_JOB_VOCABULARY
@@ -366,38 +379,61 @@ async def recover_expired_running_jobs(
 
     recovered_at = now or utc_now()
     expired = (lease_col.is_(None)) | (lease_col <= recovered_at)
-    base_conditions = (status_col == "running", expired)
+    if recoverable_or_conditions:
+        recoverable = expired
+        for cond in recoverable_or_conditions:
+            recoverable = recoverable | cond
+        base_conditions = [status_col == "running", recoverable]
+    else:
+        base_conditions = [status_col == "running", expired]
+    if extra_base_conditions:
+        base_conditions.extend(extra_base_conditions)
 
     # 定时恢复在空闲期会频繁执行：先只读筛选，无命中时不发任何 UPDATE，避免空转写放大。
     # 后续 UPDATE 仍带过期条件，以抵御筛选之后的并发变化。
-    # 候选只取 id / attempt / cancel，按固定位置读取，避免依赖 Row 属性名。
-    select_cols: list[Any] = [model.id, attempt_col]
-    if cancel_col is not None:
-        select_cols.insert(1, cancel_col)
+    if candidate_columns is not None:
+        select_cols = list(candidate_columns)
+    else:
+        select_cols = [model.id]
+        if cancel_col is not None:
+            select_cols.append(cancel_col)
+        select_cols.append(attempt_col)
     candidates = list((await session.execute(select(*select_cols).where(*base_conditions))).all())
     if not candidates:
         await commit_end_read(session)
         return DurableJobRecoverySummary()
 
     attempt_limit = max(1, max_attempts)
-    cancel_pos = 1 if cancel_col is not None else None
-    attempt_pos = 2 if cancel_col is not None else 1
 
-    cancelled_ids: list[int] = []
-    requeued_ids: list[int] = []
-    failed_ids: list[int] = []
+    # 默认候选列布局：id [, cancel] , attempt
+    default_attempt_pos = 2 if cancel_col is not None else 1
+    default_cancel_pos = 1 if cancel_col is not None else None
+
+    by_kind: dict[str, list[int]] = {
+        "cancelled": [],
+        "requeued": [],
+        "failed": [],
+        "succeeded": [],
+        "skip": [],
+    }
     rows_by_id: dict[int, Row[Any]] = {}
     for row in candidates:
         rid = int(row[0])
         rows_by_id[rid] = row
-        is_cancelled = cancel_pos is not None and row[cancel_pos] is not None
-        attempts = int(row[attempt_pos] or 0)
-        if is_cancelled:
-            cancelled_ids.append(rid)
-        elif attempts < attempt_limit:
-            requeued_ids.append(rid)
+        if classify_recovery is not None:
+            kind = classify_recovery(row, attempt_limit)
         else:
-            failed_ids.append(rid)
+            is_cancelled = default_cancel_pos is not None and row[default_cancel_pos] is not None
+            attempts = int(row[default_attempt_pos] or 0)
+            if is_cancelled:
+                kind = "cancelled"
+            elif attempts < attempt_limit:
+                kind = "requeued"
+            else:
+                kind = "failed"
+        if kind not in by_kind:
+            raise ValueError(f"未知恢复分类：{kind!r}（允许 cancelled/requeued/failed/succeeded/skip）")
+        by_kind[kind].append(rid)
 
     def _default_values(kind: str) -> dict[str, Any]:
         if kind == "cancelled":
@@ -425,6 +461,20 @@ async def recover_expired_running_jobs(
             if finished_name:
                 values[finished_name] = None
             return values
+        if kind == "succeeded":
+            values = {
+                status_name: "succeeded",
+                owner_name: None,
+                lease_name: None,
+                heartbeat_name: None,
+            }
+            if error_code_name:
+                values[error_code_name] = None
+            if error_message_name:
+                values[error_message_name] = None
+            if finished_name:
+                values[finished_name] = recovered_at
+            return values
         values = {
             status_name: "failed",
             lease_name: None,
@@ -443,41 +493,46 @@ async def recover_expired_running_jobs(
             return recover_values(kind, rows_by_id[rid], recovered_at)
         return _default_values(kind)
 
-    cancelled_count = 0
-    requeued_count = 0
-    failed_count = 0
-    if cancelled_ids:
-        extra = [cancel_col.is_not(None)] if cancel_col is not None else []
-        cancelled = await session.execute(
-            update(model)
-            .where(*base_conditions, model.id.in_(cancelled_ids), *extra)
-            .values(**_values_for("cancelled", cancelled_ids[0]))
-            .execution_options(synchronize_session=False)
-        )
-        cancelled_count = int(cancelled.rowcount or 0)
-    if requeued_ids:
-        extra = [cancel_col.is_(None)] if cancel_col is not None else []
-        requeued = await session.execute(
-            update(model)
-            .where(*base_conditions, model.id.in_(requeued_ids), *extra, attempt_col < attempt_limit)
-            .values(**_values_for("requeued", requeued_ids[0]))
-            .execution_options(synchronize_session=False)
-        )
-        requeued_count = int(requeued.rowcount or 0)
-    if failed_ids:
-        extra = [cancel_col.is_(None)] if cancel_col is not None else []
-        failed = await session.execute(
-            update(model)
-            .where(*base_conditions, model.id.in_(failed_ids), *extra, attempt_col >= attempt_limit)
-            .values(**_values_for("failed", failed_ids[0]))
-            .execution_options(synchronize_session=False)
-        )
-        failed_count = int(failed.rowcount or 0)
+    summary = DurableJobRecoverySummary()
+    counts = {"cancelled": 0, "requeued": 0, "failed": 0, "succeeded": 0}
+
+    async def _apply(kind: str, extra_where: list[Any]) -> None:
+        ids = by_kind.get(kind) or []
+        if not ids or kind == "skip":
+            return
+        # 按 id 分条执行：领域 recover_values 依赖单行上下文（如 attempt_id 作废）。
+        for rid in ids:
+            where = [*extra_where]
+            if kind_extra_where is not None:
+                where.extend(kind_extra_where(kind))
+            result = await session.execute(
+                update(model)
+                .where(model.id == rid, *base_conditions, *where)
+                .values(**_values_for(kind, rid))
+                .execution_options(synchronize_session=False)
+            )
+            if (result.rowcount or 0) > 0:
+                counts[kind] = counts.get(kind, 0) + 1
+
+    cancel_where = [cancel_col.is_not(None)] if cancel_col is not None else []
+    no_cancel_where = [cancel_col.is_(None)] if cancel_col is not None else []
+    # 自定义分类时不再叠加通用 attempt 谓词：分类结果已是权威，且 max_attempts 可能是行级列。
+    if classify_recovery is not None:
+        await _apply("cancelled", cancel_where)
+        await _apply("requeued", no_cancel_where)
+        await _apply("failed", no_cancel_where)
+        await _apply("succeeded", [])
+    else:
+        await _apply("cancelled", cancel_where)
+        await _apply("requeued", no_cancel_where + [attempt_col < attempt_limit])
+        await _apply("failed", no_cancel_where + [attempt_col >= attempt_limit])
+        await _apply("succeeded", [])
     await session.commit()
     return DurableJobRecoverySummary(
-        requeued_count=requeued_count,
-        failed_count=failed_count,
-        cancelled_count=cancelled_count,
+        requeued_count=counts["requeued"],
+        failed_count=counts["failed"],
+        cancelled_count=counts["cancelled"],
+        succeeded_count=counts["succeeded"],
     )
 
 
@@ -602,8 +657,12 @@ class DurableJobRuntime:
         interrupted_error_code: str,
         interrupted_error_message: str,
         now: datetime | None = None,
+        classify_recovery: Callable[[Row[Any], int], str] | None = None,
+        recoverable_or_conditions: list[Any] | None = None,
+        candidate_columns: list[Any] | None = None,
+        kind_extra_where: Callable[[str], list[Any]] | None = None,
     ) -> DurableJobRecoverySummary:
-        """过期 running 任务恢复；可选领域写入覆盖。"""
+        """过期 running 任务恢复；可选领域分类与写入覆盖。"""
 
         return await recover_expired_running_jobs(
             session,
@@ -614,4 +673,8 @@ class DurableJobRuntime:
             now=now,
             vocabulary=self.vocabulary,
             recover_values=self.recover_values,
+            classify_recovery=classify_recovery,
+            recoverable_or_conditions=recoverable_or_conditions,
+            candidate_columns=candidate_columns,
+            kind_extra_where=kind_extra_where,
         )

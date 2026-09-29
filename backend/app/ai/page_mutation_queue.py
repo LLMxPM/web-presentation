@@ -134,10 +134,22 @@ async def _run_job_worker(
     lease_seconds = max(1, int(getattr(settings, "durable_job_lease_seconds", 300)))
     executor = AiPageMutationExecutor(session_factory)
     idle_reconcile_counter = 0
+    # L1 循环内恢复：与截图/回填同口径，避免运行中租约过期滞留到进程重启。
+    recovery_interval = max(1.0, min(float(getattr(settings, "durable_job_heartbeat_seconds", 30)), 30.0))
+    last_recovery_at = 0.0
     while True:
         try:
             observed_generation = page_mutation_job_wakeup.generation
             async with session_factory() as session:
+                if monotonic() - last_recovery_at >= recovery_interval:
+                    await recover_expired_running_jobs(
+                        session,
+                        AiPageMutationJob,
+                        max_attempts=_MAX_ATTEMPTS,
+                        interrupted_error_code="AI_PAGE_MUTATION_INTERRUPTED",
+                        interrupted_error_message="页面变更任务执行中断且已达到最大重试次数。",
+                    )
+                    last_recovery_at = monotonic()
                 candidate_query = (
                     select(AiPageMutationJob.id)
                     .join(AiAgentRun, AiAgentRun.run_id == AiPageMutationJob.run_id)
