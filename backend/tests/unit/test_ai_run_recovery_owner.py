@@ -100,6 +100,46 @@ def test_should_recover_run_should_gate_unowned_by_flag() -> None:
     ) is False
 
 
+def test_should_recover_run_should_match_hostname_case_insensitive() -> None:
+    """主机名大小写不同但指向同一主机时，本机已死进程仍应被收敛。"""
+
+    dead_pid = 2**22 + 22222
+    assert should_recover_run(
+        process_owner=f"LOCAL-HOST:{dead_pid}:abc",
+        local_hostname="local-host",
+        current_pid=1,
+        include_unowned=False,
+    ) is True
+
+
+def test_should_recover_run_should_skip_when_pid_reused(monkeypatch) -> None:
+    """PID 重用（占用中的无关进程）会推迟收敛——不误杀，由空闲超时兜底。"""
+
+    reused_pid = 2**22 + 33333
+    monkeypatch.setattr(
+        "app.ai.run_recovery.process_is_alive",
+        lambda pid: pid == reused_pid,
+    )
+    assert should_recover_run(
+        process_owner=f"local-host:{reused_pid}:abc",
+        local_hostname="local-host",
+        current_pid=1,
+        include_unowned=True,
+    ) is False
+
+
+def test_should_recover_run_should_skip_own_pid_regardless_of_probe() -> None:
+    """当前进程自身永不启动恢复，即使存活探测异常也不得误杀。"""
+
+    monkeypatch_pid = os.getpid()
+    assert should_recover_run(
+        process_owner=f"local-host:{monkeypatch_pid}:abc",
+        local_hostname="local-host",
+        current_pid=monkeypatch_pid,
+        include_unowned=True,
+    ) is False
+
+
 def test_utc_now_anchor_is_timezone_aware() -> None:
     """时间锚点保持 aware UTC，避免恢复判断混用 naive/aware。"""
 

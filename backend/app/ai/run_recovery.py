@@ -81,6 +81,12 @@ def should_recover_run(
     - 本机且进程仍存活（含当前进程、同机 sibling worker）：跳过。
     - 本机且进程已死：收敛为进程停止终态。
     - 归属串无法解析：按无主处理，避免误杀。
+
+    已知边界（W05/M04，详见 compatibility-matrix.md §5）：
+    - 容器重建导致 hostname 改变时，原 Run 不会被新容器启动恢复收敛，
+      依赖空闲超时与用户 force_cancel。
+    - PID 重用会把已死进程误判为存活，推迟收敛；uuid 段当前不参与存活判定。
+    - 同名主机、不同 PID namespace 可能误判；多副本应保证 hostname 唯一。
     """
 
     parsed = parse_process_owner(process_owner)

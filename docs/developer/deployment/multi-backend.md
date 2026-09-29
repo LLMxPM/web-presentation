@@ -96,7 +96,7 @@ JWKS（`/.well-known/jwks.json`）由当前密钥与轮换期旧钥共同构成�
 | 用户点击停止 | 请求取消当前 Run，终态为 `cancelled` |
 | Backend 正常退出 / 滚动重启 | 取消仍在执行的进程内任务，写入 `AI_RUN_PROCESS_STOPPED` |
 | Backend 异常退出 | 由 active-run 空闲超时收敛，或下次启动时 `recover_interrupted_agent_runs_on_startup` 终态化 |
-| 多 Backend 副本扩容 | **任一副本启动会全局收敛所有未完成 Run**（`recover_interrupted_agent_runs_on_startup` 无 owner/进程过滤，见 `run_recovery.py`）；在途 Run 可能被其它副本启动判为 `AI_RUN_PROCESS_STOPPED`。**不得据此宣称普通 Run 可跨实例迁移或无中断续跑** |
+| 多 Backend 副本扩容 | **只收敛「无主遗留」与「本机已死进程」的 Run**（`process_owner` = `hostname:pid:uuid` 过滤，见 `run_recovery.py` 与[兼容矩阵 §5](./compatibility-matrix.md#5-run-收敛边界hostname--pid)）。其它副本活跃 Run **不会**被本机启动扫杀。容器重建导致 hostname 变化、PID 重用时，残留 Run 依赖空闲超时与 `force_cancel` 兜底。**不得据此宣称普通 Run 可跨实例迁移或无中断续跑** |
 
 停机后的用户可理解恢复路径：
 
