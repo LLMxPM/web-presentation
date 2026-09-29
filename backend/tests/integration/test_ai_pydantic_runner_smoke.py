@@ -1451,8 +1451,14 @@ async def test_startup_recovery_should_replace_observer_side_stale_run_failure(
             message="模拟上个进程遗留运行",
             image_attachment_ids=[],
         )
+        # start_run 会打上当前进程归属；这里改写成已死的本机进程，模拟重启后的遗留 Run。
+        run_start.run_model.process_owner = "local-test-host:99999:deadbeef"
+        await db_session.commit()
 
-    assert await recover_interrupted_agent_runs_on_startup(get_session_factory()) == 1
+    assert await recover_interrupted_agent_runs_on_startup(
+        get_session_factory(),
+        local_hostname="local-test-host",
+    ) == 1
 
     async with get_session_factory()() as verify_session:
         recovered = await verify_session.get(AiAgentRun, run_start.run_model.run_id)

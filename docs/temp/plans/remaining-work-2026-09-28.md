@@ -130,12 +130,12 @@
 
 | 序 | 工作项 | 完成口径 | 估时 |
 | :--- | :--- | :--- | :--- |
-| F1 | `platform_runtime.py` 按持久化 / 事件投影 / SSE / 锁拆分 | 单文件职责单一；WS-A 迁移面下降 | 1 周 |
-| F2 | `session_facade_pydantic.py` 拆分 | 同上 | 3–5 天 |
-| F3 | 依赖方向门禁：禁止 `services/` import `app.ai` 新增、路由层直查 ORM | AST/导入门禁 + 清单 | **services→ai 冻结已完成（2026-09-29）**：`test_layering_gates.py` 白名单门禁；路由 ORM 检查待补 |
-| F4 | Editor：`AssetsView` / AI 侧边栏按域拆分；状态三轨收敛 | 可测性恢复；**不挡正确性** | 1–2 周 |
+| F1 | `platform_runtime.py` 按持久化 / 事件投影 / SSE / 锁拆分 | 单文件职责单一；WS-A 迁移面下降 | **已完成（2026-09-29）**：拆出 `run_event_locks` / `run_sse_stream` / `run_timeline_build` / `run_value_maps`，门面只留 `PlatformAgentRuntimeStore` 持久化（2086→1096 行）；原导入面兼容再导出；`test_ai_platform_runtime{,_concurrency}` 22 项通过 |
+| F2 | `session_facade_pydantic.py` 拆分 | 同上 | **已完成（2026-09-29）**：拆出 `session_facade_helpers`（消息/确认/LLM 快照纯函数）与 `session_facade_stream`（SSE/续跑 mixin），门面 1802→777 行；`test_pydantic_tool_bridge` 等 46 单测 + `test_ai_pydantic_runner_smoke` 27 项通过 |
+| F3 | 依赖方向门禁：禁止 `services/` import `app.ai` 新增、路由层直查 ORM | AST/导入门禁 + 清单 | **已完成（2026-09-29）**：`test_layering_gates.py` 白名单门禁（services→ai + 路由 ORM 实体导入/查询构造 + 漂移对拍）；存量路由直查清单固化在 `ALLOWED_ROUTES_TO_MODELS` / `ALLOWED_ROUTE_ORM_QUERIES` |
+| F4 | Editor：`AssetsView` / AI 侧边栏按域拆分；状态三轨收敛 | 可测性恢复；**不挡正确性** | **部分完成（2026-09-29）**：AI 侧栏已分域（Panel/Body/Composer/Dialogs 等）；`agent-session` 已收敛为单状态分片；`AssetsView` 静态选项抽至 `asset-view-options.ts`（19 视图测试 + `vue-tsc` 通过）。**残留**：`AssetsView.vue` 主体约 1.7k 行按筛选/详情/批量域再拆，需 UI 实测，单独排期 |
 
-F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行文件里改运行时。
+F1–F2 已在 WS-A 契约冻结后落地，降低队列迁移时的巨石改动面。
 
 ---
 
@@ -217,7 +217,7 @@ F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行
 | P1-Health | WS-G2 | **已关闭（2026-09-29）**：`/metrics/job-queues` |
 | P2-Dialect | WS-G6 + WS-D | **已关闭（2026-09-29）**：预算与复审触发器写入 docs/developer/architecture/dialect-budget.md |
 | P2-API | WS-E | **已关闭（2026-09-29）** |
-| P2-GodFiles | WS-F | F3 services→ai 门禁已做；F1/F2 巨石拆分待做 |
+| P2-GodFiles | WS-F | **基本关闭（2026-09-29）**：F1/F2/F3 已落地；F4 仅剩 `AssetsView` 主体域拆分残留 |
 | P2-Locks | 登记为 R-CP6 | 定位澄清已写入文档 |
 | P2-Docs | 本次整理 | README 与正文状态已对齐；维护约定见 README |
 | D2 基线门 | WS-D | **仍未采集** |

@@ -1,27 +1,58 @@
-"""文件功能：提供平台自有智能体运行态的读写、事件追加、快照构建与 SSE 编码能力。"""
+"""文件功能：提供平台自有智能体运行态的读写、事件追加与快照构建能力（持久化门面）。
+
+职责边界：
+- 本模块只保留 PlatformAgentRuntimeStore 持久化/状态机与兼容再导出。
+- 事件追加锁见 `app.ai.run_event_locks`；SSE 订阅与编码见 `app.ai.run_sse_stream`；
+  timeline 事件投影见 `app.ai.run_timeline_build`；ORM→Schema 映射见 `app.ai.run_value_maps`。
+"""
 
 from __future__ import annotations
 
 import asyncio
-import json
-from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from time import monotonic
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
-from weakref import WeakValueDictionary
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.time_utils import normalize_utc
 from app.db.retry import WriteConflictContext, exponential_backoff_delays, run_with_write_retry
 from app.ai.image_refs import sanitize_message_history_image_refs
 from app.ai.agent.runtime_context import AgentRuntimeContext
+from app.ai.run_event_locks import get_run_event_lock
 from app.ai.run_event_writer import allocate_run_event_index
+from app.ai.run_sse_stream import (
+    STREAM_END_EVENTS,
+    encode_sse_event,
+    get_live_run_activity_version,
+    notify_subscribers,
+    stream_live_subscribe,
+    stream_replay_then_subscribe,
+    subscribe_live_run_events,
+    update_live_run_activity,
+)
+from app.ai.run_timeline_build import (
+    ACTIVE_RUN_STATUSES,
+    RunTimelineProjector,
+    as_utc,
+    first_present,
+    is_meaningful_payload,
+    iso,
+    tool_input_attachment_ids,
+    utc_now,
+)
+from app.ai.run_value_maps import (
+    build_context_status as _build_context_status_impl,
+    map_active_run,
+    map_message_item,
+    map_run_status,
+    map_session_item,
+    scope_metadata,
+    tool_timeline_item,
+)
 from app.ai.run_write_fence import AgentRunWriteFence
 from app.ai.external_task_control import seal_external_batch_for_requirement
 from app.ai.tool_arguments import parse_tool_arguments
@@ -54,20 +85,19 @@ from app.schemas.agent import (
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
 from app.services.durable_job_lease_service import build_durable_worker_id
 
-ACTIVE_RUN_STATUSES = {"pending", "running", "paused", "waiting_external", "cancelling"}
 TERMINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
-# 外部页面任务会在完成后追加 run.continued 或终态事件，因此 waiting_external
-# 不能被视为 SSE 结束，订阅需持续等待自动续跑结果。
-STREAM_END_EVENTS = {"run.completed", "run.cancelled", "run.error", "run.paused"}
 STALE_ACTIVE_RUN_ERROR_CODE = "AI_AGENT_STREAM_IDLE_TIMEOUT"
 STALE_ACTIVE_RUN_ERROR_MESSAGE = "模型或工具流长时间没有返回新事件，本次运行已停止。"
-_EVENT_POLL_INTERVAL_SECONDS = 1.0
-_SSE_KEEPALIVE_INTERVAL_SECONDS = 30.0
 _EVENT_WRITE_MAX_ATTEMPTS = 4
 _EVENT_WRITE_RETRY_BASE_SECONDS = 0.025
-_SUBSCRIBERS: dict[str, set[asyncio.Queue[AgentRunEvent | None]]] = {}
-_RUN_EVENT_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
-_LIVE_RUN_ACTIVITY_VERSIONS: dict[str, int] = {}
+
+# 兼容既有 monkeypatch 与同模块调用名（测试仍从 platform_runtime 改写）。
+_get_run_event_lock = get_run_event_lock
+_update_live_run_activity = update_live_run_activity
+_notify_subscribers = notify_subscribers
+_iso = iso
+_as_utc = as_utc
+_utc_now = utc_now
 
 
 @dataclass(slots=True)
@@ -93,6 +123,63 @@ class PlatformAgentRuntimeStore:
         self._session = session
         self._user_id = user_id
         self._write_fence = write_fence
+
+    def map_session_item(self, model: AiAgentSession) -> AgentSessionItem:
+        """把会话 ORM 映射为接口模型。"""
+
+        return map_session_item(model)
+
+    def map_message_item(self, model: AiAgentMessage) -> AgentMessageItem:
+        """把消息 ORM 映射为接口模型。"""
+
+        return map_message_item(model)
+
+    def map_active_run(self, model: AiAgentRun | None) -> AgentActiveRunItem | None:
+        """把 run ORM 映射为 active/last run 接口模型。"""
+
+        return map_active_run(model)
+
+    def build_context_status(
+        self,
+        *,
+        session_id: str,
+        agent_id: str,
+        runtime_context: AgentRuntimeContext,
+    ) -> AgentContextStatusItem:
+        """构建无模型配置时的上下文状态兜底。"""
+
+        return _build_context_status_impl(
+            session_id=session_id,
+            agent_id=agent_id,
+            runtime_context=runtime_context,
+        )
+
+    def _tool_timeline_item(self, tool_call: AiAgentToolCall, *, order_index: int) -> AgentTimelineItem:
+        """把工具调用映射为 timeline item。"""
+
+        return tool_timeline_item(tool_call, order_index=order_index)
+
+    async def build_timeline_items(self, *, session_id: str) -> list[AgentTimelineItem]:
+        """基于平台消息、工具调用、requirement 与事件生成会话 timeline。"""
+
+        return await RunTimelineProjector(self._session, user_id=self._user_id).build_timeline_items(
+            session_id=session_id
+        )
+
+    async def _tool_attachment_summaries(self, *, session_id: str) -> dict[tuple[str, str], list[AgentMessageAttachmentItem]]:
+        """按 run/tool_call_id 返回工具输出图片附件摘要。"""
+
+        return await RunTimelineProjector(self._session, user_id=self._user_id)._tool_attachment_summaries(
+            session_id=session_id
+        )
+
+    async def _attachment_summary_lookup(self, *, session_id: str) -> dict[int, AgentMessageAttachmentItem]:
+        """返回会话 active 图片附件摘要映射。"""
+
+        return await RunTimelineProjector(self._session, user_id=self._user_id)._attachment_summary_lookup(
+            session_id=session_id
+        )
+
 
     async def list_sessions(
         self,
@@ -419,8 +506,8 @@ class PlatformAgentRuntimeStore:
         await self._sync_tool_event(run_model, event)
         if commit:
             await self._session.commit()
-        _update_live_run_activity(run_model.run_id, event)
-        _notify_subscribers(run_model.run_id, event)
+        update_live_run_activity(run_model.run_id, event)
+        notify_subscribers(run_model.run_id, event)
         return event
 
     async def _enrich_visual_tool_event_attachments(self, run_model: AiAgentRun, event: AgentRunEvent) -> None:
@@ -433,7 +520,7 @@ class PlatformAgentRuntimeStore:
             return
         raw_input = event.data.get("tool_args") if "tool_args" in event.data else event.data.get("args")
         input_payload = parse_tool_arguments(raw_input)
-        input_ids = _tool_input_attachment_ids(input_payload)
+        input_ids = tool_input_attachment_ids(input_payload)
         if input_ids:
             event.data["input_attachments"] = await self._attachment_summaries(
                 session_id=run_model.session_id,
@@ -920,600 +1007,6 @@ class PlatformAgentRuntimeStore:
         )
         return result.scalar_one_or_none()
 
-    async def build_timeline_items(self, *, session_id: str) -> list[AgentTimelineItem]:
-        """基于平台消息、工具调用、requirement 与事件生成会话 timeline。"""
-
-        timeline_entries: list[tuple[tuple[int, int, int, str, str], AgentTimelineItem]] = []
-        run_order = await self._run_order_map(session_id=session_id)
-        run_result = await self._session.execute(
-            select(AiAgentRun)
-            .where(AiAgentRun.session_id == session_id)
-            .order_by(AiAgentRun.created_at.asc())
-        )
-        runs = run_result.scalars().all()
-        for run in runs:
-            run_context_item = self._run_context_timeline_item(run)
-            timeline_entries.append((
-                _timeline_sort_key(
-                    run_order,
-                    run_id=run.run_id,
-                    event_index=None,
-                    phase=-1,
-                    created_at=run_context_item.created_at,
-                    fallback_id=run_context_item.id,
-                ),
-                run_context_item,
-            ))
-        event_output_run_ids: set[str] = set()
-        message_result = await self._session.execute(
-            select(AiAgentMessage)
-            .where(AiAgentMessage.session_id == session_id)
-            .order_by(AiAgentMessage.order_index.asc(), AiAgentMessage.id.asc())
-        )
-        messages = message_result.scalars().all()
-        event_result = await self._session.execute(
-            select(AiAgentRunEvent)
-            .where(AiAgentRunEvent.session_id == session_id)
-            .order_by(AiAgentRunEvent.run_id.asc(), AiAgentRunEvent.event_index.asc(), AiAgentRunEvent.id.asc())
-        )
-        for item in self._timeline_items_from_event_rows(event_result.scalars().all()):
-            if item.kind in {"message", "reasoning"}:
-                event_output_run_ids.add(item.run_id)
-            timeline_entries.append((
-                _timeline_sort_key(
-                    run_order,
-                    run_id=item.run_id,
-                    event_index=item.event_index,
-                    phase=0,
-                    created_at=item.created_at,
-                    fallback_id=item.id,
-                ),
-                item,
-            ))
-
-        for run in runs:
-            if run.run_id in event_output_run_ids:
-                continue
-            if run.reasoning_content:
-                item = AgentTimelineItem(
-                    id=f"run-{run.run_id}-reasoning",
-                    session_id=run.session_id,
-                    run_id=run.run_id,
-                    kind="reasoning",
-                    role=None,
-                    event_index=run.event_index,
-                    order_index=0,
-                    content=run.reasoning_content,
-                    status="running" if run.status in ACTIVE_RUN_STATUSES else None,
-                    tool=None,
-                    source="event",
-                    created_at=_iso(run.created_at),
-                )
-                timeline_entries.append((
-                    _timeline_sort_key(
-                        run_order,
-                        run_id=item.run_id,
-                        event_index=item.event_index,
-                        phase=1,
-                        created_at=item.created_at,
-                        fallback_id=item.id,
-                    ),
-                    item,
-                ))
-            if run.content:
-                item = AgentTimelineItem(
-                    id=f"run-{run.run_id}-message",
-                    session_id=run.session_id,
-                    run_id=run.run_id,
-                    kind="message",
-                    role="assistant",
-                    event_index=run.event_index,
-                    order_index=0,
-                    content=run.content,
-                    status="running" if run.status in ACTIVE_RUN_STATUSES else None,
-                    tool=None,
-                    source="event",
-                    created_at=_iso(run.created_at),
-                )
-                timeline_entries.append((
-                    _timeline_sort_key(
-                        run_order,
-                        run_id=item.run_id,
-                        event_index=item.event_index,
-                        phase=2,
-                        created_at=item.created_at,
-                        fallback_id=item.id,
-                    ),
-                    item,
-                ))
-
-        for message in messages:
-            if (
-                message.role == "assistant"
-                and message.reasoning_content
-                and (not message.run_id or message.run_id not in event_output_run_ids)
-            ):
-                self._append_message_timeline_entry(
-                    timeline_entries,
-                    run_order=run_order,
-                    message=message,
-                    kind="reasoning",
-                    role=None,
-                    content=message.reasoning_content,
-                    phase=1,
-                )
-            if message.role != "assistant" or not message.run_id or message.run_id not in event_output_run_ids:
-                self._append_message_timeline_entry(
-                    timeline_entries,
-                    run_order=run_order,
-                    message=message,
-                    kind="message",
-                    role=message.role if message.role in {"user", "assistant"} else None,  # type: ignore[arg-type]
-                    content=message.content,
-                    phase=-2 if message.role == "user" else 2,
-                )
-
-        sorted_items = [item for _, item in sorted(timeline_entries, key=lambda entry: entry[0])]
-        tool_attachments = await self._tool_attachment_summaries(session_id=session_id)
-        attachment_lookup = await self._attachment_summary_lookup(session_id=session_id)
-        promoted_asset_ids = {
-            attachment.promoted_asset_id
-            for attachments in tool_attachments.values()
-            for attachment in attachments
-            if attachment.promoted_asset_id is not None
-        }
-        promoted_assets: dict[int, WorkspaceAsset] = {}
-        if promoted_asset_ids:
-            assets = list(
-                (
-                    await self._session.execute(
-                        select(WorkspaceAsset).where(WorkspaceAsset.id.in_(promoted_asset_ids))
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            promoted_assets = {asset.id: asset for asset in assets}
-        for order_index, item in enumerate(sorted_items):
-            item.order_index = order_index
-            if item.kind == "tool" and item.tool is not None:
-                key = (item.run_id, item.tool.tool_call_id or "")
-                fallback_key = (item.run_id, item.tool.tool_name)
-                output_attachments = []
-                if item.tool.status == "completed":
-                    output_attachments = (
-                        tool_attachments.get(key, [])
-                        if item.tool.tool_call_id
-                        else tool_attachments.get(fallback_key, [])
-                    )
-                input_attachments = [
-                    attachment_lookup[attachment_id]
-                    for attachment_id in _tool_input_attachment_ids(item.tool.input_payload)
-                    if attachment_id in attachment_lookup
-                ]
-                item.tool.input_attachments = input_attachments
-                item.tool.output_attachments = output_attachments
-                item.attachments = output_attachments
-                if item.tool.tool_name == "generate_image" and item.tool.status == "completed":
-                    output_payload = dict(item.tool.output_payload or {})
-                    output_payload["assets"] = [
-                        {
-                            "id": promoted_assets[attachment.promoted_asset_id].id,
-                            "name": promoted_assets[attachment.promoted_asset_id].name,
-                            "original_name": promoted_assets[attachment.promoted_asset_id].original_name,
-                        }
-                        for attachment in output_attachments
-                        if attachment.promoted_asset_id in promoted_assets
-                    ]
-                    output_payload["deleted_assets"] = [
-                        {
-                            "attachment_id": attachment.id,
-                            "status": "deleted",
-                            "message": "资源库副本已删除，会话原图仍可用并可重新保存。",
-                        }
-                        for attachment in output_attachments
-                        if attachment.promotion_status == "deleted"
-                    ]
-                    item.tool.output_payload = output_payload
-        return sorted_items
-
-    def _run_context_timeline_item(self, run: AiAgentRun) -> AgentTimelineItem:
-        """把 Run 输入快照转换成紧跟本轮用户消息的可回放上下文摘要。"""
-
-        payload = run.input_payload_json or {}
-        focus_payload = payload.get("focus") if isinstance(payload.get("focus"), dict) else {}
-        focus = AgentScopeContext.model_validate({
-            "scope_type": run.scope_type,
-            "workspace_id": run.workspace_id,
-            "project_id": run.project_id,
-            "page_id": run.page_id,
-            "component_id": run.component_id,
-            "source": run.source,
-            **focus_payload,
-        })
-        raw_projects = payload.get("allowed_projects") if isinstance(payload.get("allowed_projects"), list) else []
-        allowed_projects = [
-            AgentRunProjectSummary.model_validate(item)
-            for item in raw_projects
-            if isinstance(item, dict) and item.get("id") is not None
-        ]
-        if not allowed_projects:
-            allowed_projects = [
-                AgentRunProjectSummary(id=int(project_id), name=None)
-                for project_id in payload.get("allowed_project_ids") or []
-            ]
-        return AgentTimelineItem(
-            id=f"run-context-{run.run_id}",
-            session_id=run.session_id,
-            run_id=run.run_id,
-            kind="run_context",
-            role=None,
-            event_index=None,
-            order_index=0,
-            content=None,
-            status=run.status,
-            tool=None,
-            run_context=AgentRunContextSummary(
-                focus=focus,
-                work_scope_mode=str(payload.get("work_scope_mode") or "workspace"),  # type: ignore[arg-type]
-                allowed_projects=allowed_projects,
-                focus_version=int(payload.get("focus_version") or 0),
-            ),
-            source="synthetic",
-            created_at=_iso(run.created_at),
-        )
-
-    async def _run_order_map(self, *, session_id: str) -> dict[str, int]:
-        """按 run 创建顺序建立排序索引，event_index 只在单个 run 内有序。"""
-
-        result = await self._session.execute(
-            select(AiAgentRun.run_id)
-            .where(AiAgentRun.session_id == session_id)
-            .order_by(AiAgentRun.created_at.asc(), AiAgentRun.run_id.asc())
-        )
-        return {run_id: index for index, run_id in enumerate(result.scalars().all())}
-
-    def _timeline_items_from_event_rows(self, event_rows: list[AiAgentRunEvent]) -> list[AgentTimelineItem]:
-        """按事件流重建助手文本、推理、工具和待处理项，保持回放顺序与实时 SSE 一致。"""
-
-        items: list[AgentTimelineItem] = []
-        current_text_by_run: dict[str, AgentTimelineItem | None] = {}
-        tool_items: dict[tuple[str, str], AgentTimelineItem] = {}
-        requirement_items_by_run: dict[str, list[AgentTimelineItem]] = {}
-        for event_row in event_rows:
-            event = AgentRunEvent.model_validate(event_row.payload_json)
-            event.run_id = event.run_id or event_row.run_id
-            event.session_id = event.session_id or event_row.session_id
-            event.event_index = event.event_index if event.event_index is not None else event_row.event_index
-            run_id = event.run_id or event_row.run_id
-            if event.event in {"message.delta", "reasoning.delta"}:
-                item = self._append_text_event_timeline_item(
-                    items,
-                    current_text_by_run=current_text_by_run,
-                    event_row=event_row,
-                    event=event,
-                    kind="message" if event.event == "message.delta" else "reasoning",
-                )
-                if event.content:
-                    item.content = f"{item.content or ''}{event.content}"
-                continue
-            if event.event in {"tool.started", "tool.progress", "tool.completed", "tool.error"}:
-                current_text_by_run[run_id] = None
-                item = self._upsert_tool_event_timeline_item(
-                    items,
-                    tool_items=tool_items,
-                    event_row=event_row,
-                    event=event,
-                    status={
-                        "tool.started": "running",
-                        "tool.progress": "running",
-                        "tool.completed": "completed",
-                        "tool.error": "interrupted" if event.data.get("outcome") == "unknown" else "error",
-                    }[event.event],
-                )
-                if event.event == "tool.progress" and item.tool is not None:
-                    data = event.data if isinstance(event.data, dict) else {}
-                    item.tool.progress = {
-                        key: data[key]
-                        for key in ("phase", "message", "current", "total")
-                        if key in data
-                    }
-                    if data.get("message"):
-                        item.tool.message = str(data["message"])
-                continue
-            if event.event in {"run.paused", "run.waiting"}:
-                current_text_by_run[run_id] = None
-                requirement = event.data.get("requirement") if isinstance(event.data, dict) else None
-                if isinstance(requirement, dict):
-                    requirement_item = AgentTimelineItem(
-                        id=f"requirement-{requirement.get('id') or event_row.id}",
-                        session_id=event_row.session_id,
-                        run_id=event_row.run_id,
-                        kind="requirement",
-                        role=None,
-                        event_index=event_row.event_index,
-                        order_index=0,
-                        content=requirement.get("note"),
-                        status="waiting_external" if event.event == "run.waiting" else "paused",
-                        tool=None,
-                        source="event",
-                        created_at=_iso(event_row.created_at),
-                    )
-                    items.append(requirement_item)
-                    requirement_items_by_run.setdefault(run_id, []).append(requirement_item)
-                continue
-            if event.event in {"run.continued", "run.cancelling", "run.cancelled", "run.completed", "run.error"}:
-                _remove_requirement_timeline_items(
-                    items,
-                    requirement_items_by_run=requirement_items_by_run,
-                    run_id=run_id,
-                )
-            if event.event in {"run.cancelled", "run.error"}:
-                _mark_last_assistant_timeline_item_interrupted(items, run_id=run_id)
-            if event.event == "run.error":
-                current_text_by_run[run_id] = None
-                _mark_open_tool_items_failed(
-                    tool_items,
-                    run_id=run_id,
-                    message=str(event.data.get("message") or event.content or "运行中断，工具调用未完成。"),
-                )
-                continue
-            if event.event.startswith("run.") or event.event == "model.request.started":
-                current_text_by_run[run_id] = None
-        return items
-
-    def _append_text_event_timeline_item(
-        self,
-        items: list[AgentTimelineItem],
-        *,
-        current_text_by_run: dict[str, AgentTimelineItem | None],
-        event_row: AiAgentRunEvent,
-        event: AgentRunEvent,
-        kind: str,
-    ) -> AgentTimelineItem:
-        """追加或复用当前 run 的连续文本片段。"""
-
-        run_id = event.run_id or event_row.run_id
-        role = "assistant" if kind == "message" else None
-        current = current_text_by_run.get(run_id)
-        if current is not None and current.kind == kind and current.role == role:
-            return current
-        item = AgentTimelineItem(
-            id=f"event-{event_row.id}-{kind}",
-            session_id=event_row.session_id,
-            run_id=event_row.run_id,
-            kind=kind,  # type: ignore[arg-type]
-            role=role,  # type: ignore[arg-type]
-            event_index=event_row.event_index,
-            order_index=0,
-            content="",
-            status=None,
-            tool=None,
-            source="event",
-            created_at=_iso(event_row.created_at),
-        )
-        items.append(item)
-        current_text_by_run[run_id] = item
-        return item
-
-    def _upsert_tool_event_timeline_item(
-        self,
-        items: list[AgentTimelineItem],
-        *,
-        tool_items: dict[tuple[str, str], AgentTimelineItem],
-        event_row: AiAgentRunEvent,
-        event: AgentRunEvent,
-        status: str,
-    ) -> AgentTimelineItem:
-        """按 tool_call_id 合并工具开始、完成和失败事件。"""
-
-        data = event.data if isinstance(event.data, dict) else {}
-        run_id = event.run_id or event_row.run_id
-        tool_call_id = str(data.get("tool_call_id") or "").strip()
-        tool_name = str(data.get("tool_name") or "工具调用").strip()
-        key = (run_id, tool_call_id or f"event-{event_row.id}")
-        existing = tool_items.get(key)
-        if existing is None:
-            existing = AgentTimelineItem(
-                id=f"tool-{run_id}-{tool_call_id or event_row.id}",
-                session_id=event_row.session_id,
-                run_id=event_row.run_id,
-                kind="tool",
-                role=None,
-                event_index=event_row.event_index,
-                order_index=0,
-                content=None,
-                status=status,
-                tool=AgentTimelineToolItem(
-                    tool_call_id=tool_call_id or None,
-                    tool_name=tool_name,
-                    status=status if status in {"running", "waiting_external", "completed", "error", "cancelled", "interrupted"} else "running",  # type: ignore[arg-type]
-                    input_payload=_first_present(data, ("tool_args", "arguments", "args")),
-                    output_payload=_first_present(data, ("result", "output")),
-                    message=str(data.get("message") or event.content or ""),
-                ),
-                source="event",
-                created_at=_iso(event_row.created_at),
-            )
-            tool_items[key] = existing
-            items.append(existing)
-            return existing
-        existing.status = status
-        if existing.tool is not None:
-            existing.tool.status = status if status in {"running", "waiting_external", "completed", "error", "cancelled", "interrupted"} else existing.tool.status  # type: ignore[assignment]
-            input_payload = _first_present(data, ("tool_args", "arguments", "args"))
-            if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.tool.input_payload):
-                existing.tool.input_payload = input_payload
-            existing.tool.output_payload = data.get("result") if "result" in data else data.get("output", existing.tool.output_payload)
-            if data.get("message") or event.content:
-                existing.tool.message = str(data.get("message") or event.content or "")
-        return existing
-
-    def _append_message_timeline_entry(
-        self,
-        timeline_entries: list[tuple[tuple[int, int, int, str, str], AgentTimelineItem]],
-        *,
-        run_order: dict[str, int],
-        message: AiAgentMessage,
-        kind: str,
-        role: str | None,
-        content: str,
-        phase: int,
-    ) -> None:
-        """把消息表记录加入待排序 timeline；主要用于用户消息和事件缺失兜底。"""
-
-        item = AgentTimelineItem(
-            id=f"message-{message.id}" if kind == "message" else f"message-{message.id}-{kind}",
-            session_id=message.session_id,
-            run_id=message.run_id or "",
-            kind=kind,  # type: ignore[arg-type]
-            role=role,  # type: ignore[arg-type]
-            event_index=None,
-            order_index=0,
-            content=content,
-            status=None,
-            tool=None,
-            attachments=[
-                AgentMessageAttachmentItem.model_validate(item)
-                for item in (message.attachments_json or [])
-                if isinstance(item, dict)
-            ] if kind == "message" else [],
-            source="message",
-            created_at=_iso(message.created_at),
-        )
-        timeline_entries.append((
-            _timeline_sort_key(
-                run_order,
-                run_id=item.run_id,
-                event_index=item.event_index,
-                phase=phase,
-                created_at=item.created_at,
-                fallback_id=item.id,
-            ),
-            item,
-        ))
-
-    def map_session_item(self, model: AiAgentSession) -> AgentSessionItem:
-        """把会话 ORM 映射为接口模型。"""
-
-        return AgentSessionItem(
-            session_id=model.session_id,
-            agent_id=model.agent_id,
-            workspace_id=model.workspace_id,
-            session_name=model.session_name,
-            focus_mode=model.focus_mode,
-            pinned_project_id=model.pinned_project_id,
-            work_scope_mode=model.work_scope_mode,
-            allowed_project_ids=list(model.allowed_project_ids_json or []),
-            focus_version=model.focus_version,
-            created_at=_iso(model.created_at),
-            updated_at=_iso(model.updated_at),
-            metadata=dict(model.metadata_json or {}),
-        )
-
-    def map_message_item(self, model: AiAgentMessage) -> AgentMessageItem:
-        """把消息 ORM 映射为接口模型。"""
-
-        return AgentMessageItem(
-            id=str(model.id),
-            run_id=model.run_id,
-            role=model.role,  # type: ignore[arg-type]
-            content=model.content,
-            reasoning_content=model.reasoning_content,
-            created_at=_iso(model.created_at),
-            attachments=[
-                AgentMessageAttachmentItem.model_validate(item)
-                for item in (model.attachments_json or [])
-                if isinstance(item, dict)
-            ],
-        )
-
-    def map_active_run(self, model: AiAgentRun | None) -> AgentActiveRunItem | None:
-        """把 run ORM 映射为 active/last run 接口模型。"""
-
-        if model is None:
-            return None
-        pending_requirement = None
-        if model.status in {"paused", "waiting_external"} and isinstance(model.pending_requirement_json, dict):
-            pending_requirement = AgentPendingRequirement.model_validate(model.pending_requirement_json)
-        run_input = model.input_payload_json or {}
-        focus_payload = run_input.get("focus") if isinstance(run_input.get("focus"), dict) else {}
-        return AgentActiveRunItem(
-            run_id=model.run_id,
-            session_id=model.session_id,
-            agent_id=model.agent_id,
-            status=_map_run_status(model.status),
-            focus=AgentScopeContext.model_validate({
-                "scope_type": model.scope_type,
-                "workspace_id": model.workspace_id,
-                "project_id": model.project_id,
-                "page_id": model.page_id,
-                "component_id": model.component_id,
-                "source": model.source,
-                **focus_payload,
-            }),
-            work_scope_mode=str(run_input.get("work_scope_mode") or "workspace"),
-            allowed_project_ids=list(run_input.get("allowed_project_ids") or []),
-            focus_version=int(run_input.get("focus_version") or 0),
-            pending_requirement=pending_requirement,
-            content=model.content,
-            created_at=_iso(model.created_at),
-            updated_at=_iso(model.updated_at),
-            cancel_requested_at=_iso(model.cancel_requested_at),
-            event_index=model.event_index,
-            llm=dict(model.llm_config_snapshot_json) if isinstance(model.llm_config_snapshot_json, dict) else None,
-            error_code=model.error_code,
-            error_message=model.error_message,
-        )
-
-    def build_context_status(
-        self,
-        *,
-        session_id: str,
-        agent_id: str,
-        runtime_context: AgentRuntimeContext,
-    ) -> AgentContextStatusItem:
-        """构建无模型配置时的上下文状态兜底；真实 usage 缺失按 0 返回。"""
-
-        _ = runtime_context
-        return AgentContextStatusItem(
-            session_id=session_id,
-            agent_id=agent_id,
-            compression_enabled=False,
-            compression_required=False,
-            compression_status="idle",
-            compression_method="none",
-            compression_error_message=None,
-            summary_available=False,
-            summary=None,
-            topics=[],
-            summary_updated_at=None,
-            budget_policy_version="none",
-            context_window_tokens=0,
-            required_model_context_tokens=0,
-            request_output_tokens=0,
-            runtime_headroom_tokens=0,
-            compression_trigger_tokens=0,
-            max_output_tokens=0,
-            history_token_ratio=0,
-            compression_target_ratio=0,
-            safety_margin_tokens=0,
-            current_input_tokens=0,
-            fixed_context_tokens=0,
-            history_budget_tokens=0,
-            compression_target_tokens=0,
-            estimated_history_tokens=0,
-            retained_recent_history_tokens=0,
-            retained_recent_message_count=0,
-            context_input_budget_tokens=0,
-            context_used_tokens=0,
-            context_remaining_tokens=0,
-            last_input_tokens=0,
-            last_output_tokens=0,
-            last_total_tokens=0,
-            last_reasoning_tokens=0,
-        )
-
     def _workspace_scope_query(
         self,
         query: Select[tuple[AiAgentSession]],
@@ -1573,70 +1066,6 @@ class PlatformAgentRuntimeStore:
         )
         service = AgentImageAttachmentService(self._session, user_id=self._user_id)
         return [service._to_message_item(item).model_dump(mode="json") for item in result.scalars().all()]
-
-    async def _tool_attachment_summaries(self, *, session_id: str) -> dict[tuple[str, str], list[AgentMessageAttachmentItem]]:
-        """按 run/tool_call_id 返回工具输出图片附件摘要，用于 timeline 缩略图展示。"""
-
-        result = await self._session.execute(
-            select(AiAgentImageAttachment)
-            .where(
-                AiAgentImageAttachment.session_id == session_id,
-                AiAgentImageAttachment.user_id == self._user_id,
-                AiAgentImageAttachment.source_kind == "tool_output",
-                AiAgentImageAttachment.run_id.is_not(None),
-                AiAgentImageAttachment.status == RecordStatus.ACTIVE.value,
-            )
-            .order_by(AiAgentImageAttachment.id.asc())
-        )
-        service = AgentImageAttachmentService(self._session, user_id=self._user_id)
-        summaries: dict[tuple[str, str], list[AgentMessageAttachmentItem]] = {}
-        for attachment in result.scalars().all():
-            run_id = str(attachment.run_id or "")
-            if not run_id:
-                continue
-            item = service._to_message_item(attachment)
-            summaries.setdefault((run_id, str(attachment.tool_call_id or "")), []).append(item)
-            if attachment.tool_name:
-                summaries.setdefault((run_id, attachment.tool_name), []).append(item)
-        return summaries
-
-    async def _attachment_summary_lookup(self, *, session_id: str) -> dict[int, AgentMessageAttachmentItem]:
-        """返回会话 active 图片附件摘要映射，供工具输入缩略图恢复。"""
-
-        result = await self._session.execute(
-            select(AiAgentImageAttachment).where(
-                AiAgentImageAttachment.session_id == session_id,
-                AiAgentImageAttachment.user_id == self._user_id,
-                AiAgentImageAttachment.status == RecordStatus.ACTIVE.value,
-            )
-        )
-        service = AgentImageAttachmentService(self._session, user_id=self._user_id)
-        return {item.id: service._to_message_item(item) for item in result.scalars().all()}
-
-    def _tool_timeline_item(self, tool_call: AiAgentToolCall, *, order_index: int) -> AgentTimelineItem:
-        """把工具调用映射为 timeline item。"""
-
-        return AgentTimelineItem(
-            id=f"tool-{tool_call.id}",
-            session_id=tool_call.session_id,
-            run_id=tool_call.run_id,
-            kind="tool",
-            role=None,
-            event_index=None,
-            order_index=order_index,
-            content=None,
-            status=tool_call.status,
-            tool=AgentTimelineToolItem(
-                tool_call_id=tool_call.tool_call_id,
-                tool_name=tool_call.tool_name,
-                status=tool_call.status if tool_call.status in {"running", "waiting_external", "completed", "error", "cancelled", "interrupted"} else "running",  # type: ignore[arg-type]
-                input_payload=tool_call.input_payload_json,
-                output_payload=tool_call.output_payload_json,
-                message=tool_call.message or "",
-            ),
-            source="event",
-            created_at=_iso(tool_call.created_at),
-        )
 
     def _apply_event_to_run(self, run_model: AiAgentRun, event: AgentRunEvent) -> None:
         """根据平台事件更新 run 聚合字段。"""
@@ -1714,224 +1143,12 @@ class PlatformAgentRuntimeStore:
             self._session.add(existing)
             return
         existing.status = status
-        if _is_meaningful_payload(input_payload) and not _is_meaningful_payload(existing.input_payload_json):
+        if is_meaningful_payload(input_payload) and not is_meaningful_payload(existing.input_payload_json):
             existing.input_payload_json = input_payload
         if event.data.get("result") is not None:
             existing.output_payload_json = event.data.get("result")
         if event.data.get("message") is not None:
             existing.message = str(event.data.get("message") or "")
-
-
-def encode_sse_event(event: AgentRunEvent) -> bytes:
-    """把平台事件编码为 SSE 数据块。"""
-
-    return f"data: {json.dumps(event.model_dump(mode='json'), ensure_ascii=False)}\n\n".encode("utf-8")
-
-
-def _get_run_event_lock(run_id: str) -> asyncio.Lock:
-    """获取进程内按 run 复用的事件写锁，串行尚未持有 SQLite 写锁的追加操作。
-
-    本锁只约束当前进程，用于让退避重试的 rollback 不与其他追加交错；跨实例的
-    `event_index` 单调性由 `allocate_run_event_index` 的数据库原子递增承担，
-    因此不得把它当作 Backend 多副本的互斥原语。
-    """
-
-    lock = _RUN_EVENT_LOCKS.get(run_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _RUN_EVENT_LOCKS[run_id] = lock
-    return lock
-
-
-def get_live_run_activity_version(run_id: str) -> int:
-    """返回当前进程内 run 的活动版本，供模型或工具等待逻辑识别成员事件心跳。"""
-
-    return _LIVE_RUN_ACTIVITY_VERSIONS.get(run_id, 0)
-
-
-def _update_live_run_activity(run_id: str, event: AgentRunEvent) -> None:
-    """成功追加事件后推进活动版本；流结束时清理，避免长期持有已结束 run。"""
-
-    if event.event in STREAM_END_EVENTS:
-        _LIVE_RUN_ACTIVITY_VERSIONS.pop(run_id, None)
-        return
-    _LIVE_RUN_ACTIVITY_VERSIONS[run_id] = _LIVE_RUN_ACTIVITY_VERSIONS.get(run_id, 0) + 1
-
-
-async def stream_replay_then_subscribe(
-    *,
-    store: PlatformAgentRuntimeStore,
-    run_id: str,
-    event_index: int,
-    idle_timeout_seconds: float | None = None,
-) -> AsyncGenerator[bytes, None]:
-    """先从数据库回放事件，再订阅本进程实时事件，并用数据库轮询兜底跨进程恢复。"""
-
-    # 兼容既有调用参数；观察链路不再依据空闲时间改变Run终态。
-    _ = idle_timeout_seconds
-    last_index = event_index
-    for event in await store.replay_events(run_id=run_id, event_index=last_index):
-        yield encode_sse_event(event)
-        last_index = event.event_index if event.event_index is not None else last_index
-        if event.event in STREAM_END_EVENTS:
-            return
-
-    queue = _subscribe(run_id)
-    last_keepalive_at = monotonic()
-    try:
-        while True:
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=_EVENT_POLL_INTERVAL_SECONDS)
-            except asyncio.TimeoutError:
-                replayed = False
-                for replayed_event in await store.replay_events(run_id=run_id, event_index=last_index):
-                    replayed = True
-                    yield encode_sse_event(replayed_event)
-                    last_index = replayed_event.event_index if replayed_event.event_index is not None else last_index
-                    if replayed_event.event in STREAM_END_EVENTS:
-                        return
-                if replayed:
-                    last_keepalive_at = monotonic()
-                    continue
-                run_status = await store.get_run_status(run_id=run_id)
-                if run_status in TERMINAL_RUN_STATUSES or run_status == "paused":
-                    return
-                now = monotonic()
-                if now - last_keepalive_at >= _SSE_KEEPALIVE_INTERVAL_SECONDS:
-                    yield b": keepalive\n\n"
-                    last_keepalive_at = now
-                continue
-            if event is None:
-                return
-            if event.event_index is not None and event.event_index <= last_index:
-                continue
-            yield encode_sse_event(event)
-            last_index = event.event_index if event.event_index is not None else last_index
-            last_keepalive_at = monotonic()
-            if event.event in STREAM_END_EVENTS:
-                return
-    finally:
-        _unsubscribe(run_id, queue)
-
-
-def subscribe_live_run_events(*, run_id: str) -> asyncio.Queue[AgentRunEvent | None]:
-    """提前订阅指定 run 的本进程实时事件。"""
-
-    return _subscribe(run_id)
-
-
-async def stream_live_subscribe(
-    *,
-    run_id: str,
-    queue: asyncio.Queue[AgentRunEvent | None] | None = None,
-) -> AsyncGenerator[bytes, None]:
-    """只订阅本进程实时事件；queue 可由调用方提前创建以避免启动竞态。"""
-
-    live_queue = queue or _subscribe(run_id)
-    try:
-        while True:
-            event = await live_queue.get()
-            if event is None:
-                return
-            if event.event == "run.cancelling":
-                continue
-            yield encode_sse_event(event)
-            if event.event in STREAM_END_EVENTS:
-                return
-    finally:
-        _unsubscribe(run_id, live_queue)
-
-
-def new_session_id() -> str:
-    """生成平台会话 ID。"""
-
-    return f"session-{uuid4().hex}"
-
-
-def _scope_metadata(scope: AgentScopeContext) -> dict[str, Any]:
-    """把 scope 转成会话 metadata。"""
-
-    return scope.model_dump(mode="json")
-
-
-def _timeline_sort_key(
-    run_order: dict[str, int],
-    *,
-    run_id: str,
-    event_index: int | None,
-    phase: int,
-    created_at: str | None,
-    fallback_id: str,
-) -> tuple[int, int, int, str, str]:
-    """生成前端 timeline 的全局排序 key；phase 负责依次放置用户消息、Run 上下文和事件。"""
-
-    max_event_index = 1_000_000_000
-    run_position = run_order.get(run_id, max_event_index)
-    if event_index is None:
-        event_position = -1 if phase < 0 else max_event_index
-    else:
-        event_position = event_index
-    return (run_position, event_position, phase, created_at or "", fallback_id)
-
-
-def _tool_input_attachment_ids(input_payload: Any) -> list[int]:
-    """从视觉工具输入中提取真实附件 ID，并保持首次出现顺序。"""
-
-    if not isinstance(input_payload, dict):
-        return []
-    raw_values: list[Any] = []
-    for key in ("image_attachment_ids", "reference_attachment_ids"):
-        value = input_payload.get(key)
-        if isinstance(value, list):
-            raw_values.extend(value)
-    if input_payload.get("mask_attachment_id") is not None:
-        raw_values.append(input_payload["mask_attachment_id"])
-    inputs = input_payload.get("inputs")
-    if isinstance(inputs, list):
-        raw_values.extend(
-            item.get("attachment_id")
-            for item in inputs
-            if isinstance(item, dict) and item.get("source_type") == "attachment"
-        )
-    result: list[int] = []
-    for value in raw_values:
-        try:
-            attachment_id = int(value)
-        except (TypeError, ValueError):
-            continue
-        if attachment_id > 0 and attachment_id not in result:
-            result.append(attachment_id)
-    return result
-
-
-def _optional_str(value: Any) -> str | None:
-    """把可选事件字段规整为字符串。"""
-
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def _first_present(data: dict[str, Any], keys: tuple[str, ...]) -> Any:
-    """按顺序读取第一个存在的 key，保留空 dict、0、False 等合法值。"""
-
-    for key in keys:
-        if key in data:
-            return data[key]
-    return None
-
-
-def _is_meaningful_payload(value: Any) -> bool:
-    """判断工具 payload 是否携带真实参数，避免空串覆盖后续完整参数。"""
-
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    if isinstance(value, (list, tuple, set, dict)):
-        return bool(value)
-    return True
 
 
 def _normalize_tool_event_arguments(event: AgentRunEvent) -> None:
@@ -1950,64 +1167,6 @@ def _normalize_tool_event_arguments(event: AgentRunEvent) -> None:
         if parsed is not None:
             event.data[key] = parsed
         return
-
-
-def _remove_requirement_timeline_items(
-    items: list[AgentTimelineItem],
-    *,
-    requirement_items_by_run: dict[str, list[AgentTimelineItem]],
-    run_id: str,
-) -> None:
-    """移除已经被继续、取消或终止的 HITL requirement 占位。"""
-
-    stale_items = requirement_items_by_run.pop(run_id, [])
-    if not stale_items:
-        return
-    stale_ids = {item.id for item in stale_items}
-    items[:] = [item for item in items if item.id not in stale_ids]
-
-
-def _mark_open_tool_items_failed(
-    tool_items: dict[tuple[str, str], AgentTimelineItem],
-    *,
-    run_id: str,
-    message: str,
-) -> None:
-    """回放到 run.error 时收敛同 run 中仍处于 running 的工具展示项。"""
-
-    for (item_run_id, _), item in tool_items.items():
-        if item_run_id != run_id or item.kind != "tool" or item.tool is None:
-            continue
-        if item.tool.status != "running":
-            continue
-        item.status = "error"
-        item.tool.status = "error"
-        item.tool.message = item.tool.message or message
-
-
-def _mark_last_assistant_timeline_item_interrupted(
-    items: list[AgentTimelineItem],
-    *,
-    run_id: str,
-) -> None:
-    """把失败 Run 最后一段可见助手正文标记为未完成。"""
-
-    for item in reversed(items):
-        if item.run_id != run_id or item.kind != "message" or item.role != "assistant":
-            continue
-        if str(item.content or "").strip():
-            item.status = "interrupted"
-        return
-
-
-def _map_run_status(status: str) -> str:
-    """把数据库状态映射为接口状态枚举。"""
-
-    if status == "failed":
-        return "failed"
-    if status in {"pending", "running", "paused", "waiting_external", "cancelling", "completed", "cancelled"}:
-        return status
-    return "failed"
 
 
 def _requirement_uses_unified_external_batch(payload: dict[str, Any]) -> bool:
@@ -2037,50 +1196,41 @@ def _is_active_run_unique_conflict(error: IntegrityError) -> bool:
     )
 
 
-def _utc_now() -> datetime:
-    """返回 UTC 当前时间。"""
+# ---------------------------------------------------------------------------
+# 兼容再导出：既有调用方继续 `from app.ai.platform_runtime import ...`
+# ---------------------------------------------------------------------------
 
-    return datetime.now(tz=UTC)
+from app.ai.run_sse_stream import (  # noqa: E402
+    _subscribe,
+    _unsubscribe,
+)
+from app.ai.run_timeline_build import (  # noqa: E402
+    timeline_sort_key as _timeline_sort_key,
+    remove_requirement_timeline_items as _remove_requirement_timeline_items,
+    mark_open_tool_items_failed as _mark_open_tool_items_failed,
+    mark_last_assistant_timeline_item_interrupted as _mark_last_assistant_timeline_item_interrupted,
+)
+from app.ai.run_value_maps import scope_metadata as _scope_metadata  # noqa: E402
+from app.ai.run_event_locks import _get_run_event_lock as _get_run_event_lock_compat  # noqa: E402
 
-
-def _as_utc(value: datetime) -> datetime:
-    """把数据库时间统一为 UTC aware datetime，兼容测试库返回的 naive 时间。"""
-
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
-
-
-def _iso(value: datetime | None) -> str | None:
-    """把 datetime 转为带 UTC 偏移的接口字符串，历史 naive 值直接补 UTC。"""
-
-    return normalize_utc(value).isoformat() if value is not None else None
-
-
-def _subscribe(run_id: str) -> asyncio.Queue[AgentRunEvent | None]:
-    """订阅指定 run 的实时平台事件。"""
-
-    queue: asyncio.Queue[AgentRunEvent | None] = asyncio.Queue()
-    _SUBSCRIBERS.setdefault(run_id, set()).add(queue)
-    return queue
-
-
-def _unsubscribe(run_id: str, queue: asyncio.Queue[AgentRunEvent | None]) -> None:
-    """取消订阅指定 run。"""
-
-    queues = _SUBSCRIBERS.get(run_id)
-    if not queues:
-        return
-    queues.discard(queue)
-    if not queues:
-        _SUBSCRIBERS.pop(run_id, None)
+__all__ = [
+    "ACTIVE_RUN_STATUSES",
+    "PlatformAgentRuntimeStore",
+    "PlatformRunStart",
+    "STREAM_END_EVENTS",
+    "STALE_ACTIVE_RUN_ERROR_CODE",
+    "STALE_ACTIVE_RUN_ERROR_MESSAGE",
+    "TERMINAL_RUN_STATUSES",
+    "encode_sse_event",
+    "get_live_run_activity_version",
+    "new_session_id",
+    "stream_live_subscribe",
+    "stream_replay_then_subscribe",
+    "subscribe_live_run_events",
+]
 
 
-def _notify_subscribers(run_id: str, event: AgentRunEvent) -> None:
-    """向本进程订阅者推送平台事件。"""
+def new_session_id() -> str:
+    """生成平台会话 ID。"""
 
-    for queue in list(_SUBSCRIBERS.get(run_id, ())):
-        queue.put_nowait(event)
-    if event.event in STREAM_END_EVENTS:
-        for queue in list(_SUBSCRIBERS.get(run_id, ())):
-            queue.put_nowait(None)
+    return f"session-{uuid4().hex}"

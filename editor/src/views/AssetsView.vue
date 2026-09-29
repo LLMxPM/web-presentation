@@ -702,19 +702,20 @@ import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetRenderHin
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
 import { downloadBlob } from '@/utils/zip-download'
-type AssetView = 'active' | 'archived' | 'history'
-type DetailTab = 'basic' | 'content' | 'references'
-type BackfillableAssetType = 'image' | 'video' | 'drawio' | 'mermaid' | 'formula'
-
-const BACKFILLABLE_ASSET_TYPES: BackfillableAssetType[] = ['image', 'video', 'drawio', 'mermaid', 'formula']
-
-interface AssetReferenceItem {
-  kind: string
-  id: number
-  component_id?: number
-  name?: string
-  version_no?: number
-}
+import {
+  ASSET_SORT_OPTIONS,
+  ASSET_TYPE_OPTIONS,
+  ASSET_TYPE_SEGMENT_OPTIONS,
+  BACKFILLABLE_ASSET_TYPES,
+  CREATABLE_ASSET_TYPES,
+  DETAIL_TABS,
+  REFERENCE_GROUP_LABELS,
+  VIEW_TABS,
+  type AssetReferenceItem,
+  type AssetView,
+  type BackfillableAssetType,
+  type DetailTab,
+} from '@/views/asset-view-options'
 
 const route = useRoute()
 const router = useRouter()
@@ -762,36 +763,12 @@ const editForm = reactive({
 const editTagsText = ref('')
 const originalApproxAspectRatioText = ref('')
 
-const viewTabs = [
-  { value: 'active', label: '启用' },
-  { value: 'archived', label: '已归档' },
-  { value: 'history', label: '历史' },
-]
-const detailTabs: Array<{ value: DetailTab; label: string }> = [
-  { value: 'basic', label: '基础信息' },
-  { value: 'content', label: '内容编辑' },
-  { value: 'references', label: '引用检查' },
-]
-const assetTypeOptions: Array<{ value: AssetType; label: string }> = [
-  { value: 'icon', label: '图标' },
-  { value: 'image', label: '图片' },
-  { value: 'video', label: '视频' },
-  { value: 'drawio', label: 'Draw.io' },
-  { value: 'mermaid', label: 'Mermaid' },
-  { value: 'chart', label: 'Chart' },
-  { value: 'formula', label: 'Formula' },
-]
-const assetSortOptions = [
-  { value: 'updated_at:desc', label: '最近更新' },
-  { value: 'created_at:desc', label: '最近创建' },
-  { value: 'name:asc', label: '名称升序' },
-  { value: 'file_size:desc', label: '文件较大优先' },
-]
-const assetTypeSegmentOptions: Array<{ value: AssetType | ''; label: string }> = [
-  { value: '', label: '全部' },
-  ...assetTypeOptions,
-]
-const creatableTypes = assetTypeOptions.filter(item => ['icon', 'image', 'drawio', 'mermaid', 'chart', 'formula'].includes(item.value))
+const viewTabs = VIEW_TABS
+const detailTabs = DETAIL_TABS
+const assetTypeOptions = ASSET_TYPE_OPTIONS
+const assetSortOptions = ASSET_SORT_OPTIONS
+const assetTypeSegmentOptions = ASSET_TYPE_SEGMENT_OPTIONS
+const creatableTypes = CREATABLE_ASSET_TYPES
 const createForm = reactive({
   asset_type: 'icon' as AssetType,
   name: '',
@@ -868,14 +845,7 @@ const referenceItems = computed<AssetReferenceItem[]>(() => {
   }))
 })
 const referenceGroups = computed(() => {
-  const labels: Record<string, string> = {
-    page: '页面',
-    component: '组件草稿',
-    component_version: '组件版本',
-    theme: '主题',
-    font: '字体配置',
-  }
-  return Object.entries(labels)
+  return Object.entries(REFERENCE_GROUP_LABELS)
     .map(([kind, label]) => ({
       kind,
       label,

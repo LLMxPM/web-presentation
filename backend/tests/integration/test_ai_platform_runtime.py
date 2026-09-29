@@ -12,6 +12,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelRe
 from sqlalchemy import select
 
 import app.ai.platform_runtime as platform_runtime
+import app.ai.run_sse_stream as run_sse_stream
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
@@ -413,8 +414,8 @@ async def test_platform_runtime_stream_should_poll_database_when_subscriber_miss
         subscribed.set()
         return asyncio.Queue()
 
-    monkeypatch.setattr(platform_runtime, "_subscribe", fake_subscribe)
-    monkeypatch.setattr(platform_runtime, "_EVENT_POLL_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(run_sse_stream, "subscribe", fake_subscribe)
+    monkeypatch.setattr(run_sse_stream, "_EVENT_POLL_INTERVAL_SECONDS", 0.01)
 
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
