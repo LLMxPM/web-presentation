@@ -40,8 +40,12 @@ RUN pnpm --filter web-runtime-vue deploy --legacy --prod /out/runtime
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS backend-deps
 
+ARG UV_INDEX_URL=https://pypi.org/simple
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
+ENV UV_INDEX_URL=${UV_INDEX_URL}
+ENV UV_DEFAULT_INDEX=${UV_INDEX_URL}
+ENV UV_HTTP_TIMEOUT=180
 
 WORKDIR /app
 
@@ -50,7 +54,7 @@ COPY pyproject.toml uv.lock ./
 COPY backend/pyproject.toml backend/README.md ./backend/
 COPY renderer/pyproject.toml ./renderer/
 COPY packages/render-contracts /app/packages/render-contracts
-RUN uv sync --package backend --frozen --no-dev --no-cache --no-install-project
+RUN uv sync --package backend --frozen --no-dev --no-install-project
 
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS lite-runtime
@@ -86,8 +90,15 @@ ENV ASSET_STORAGE_DRIVER="local"
 # 预置 tiktoken BPE 到固定缓存目录，避免离线/气隙启动时导入期联网下载。
 ENV TIKTOKEN_CACHE_DIR=/app/.cache/tiktoken
 
-RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get -o Acquire::Retries=3 update \
+ARG DEBIAN_MIRROR=
+RUN set -eux; \
+    if [ -n "${DEBIAN_MIRROR}" ]; then \
+      find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 \
+        | xargs -0 -r sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g"; \
+    else \
+      sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    apt-get -o Acquire::Retries=3 update \
     && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates curl nginx \
     && rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default \
     && rm -rf /var/lib/apt/lists/*

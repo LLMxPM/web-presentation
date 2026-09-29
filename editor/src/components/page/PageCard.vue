@@ -2,7 +2,7 @@
 <template>
   <article
     data-testid="page-card"
-    class="group/card relative isolate flex cursor-pointer flex-col overflow-hidden rounded-ui-md border border-border bg-surface transition-all duration-200 hover:-translate-y-0.5 hover:border-accent-border hover:shadow-sm"
+    class="group group/card relative isolate flex cursor-pointer flex-col overflow-hidden rounded-ui-md border border-border bg-surface transition-all duration-200 hover:-translate-y-0.5 hover:border-accent-border hover:shadow-sm"
     :class="selected ? 'border-accent-border ring-2 ring-accent-muted' : ''"
     @click="emit('open', page.id)"
   >
@@ -14,7 +14,7 @@
         class="h-full w-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]"
         loading="lazy"
       >
-      <div v-else class="flex h-full w-full flex-col items-center justify-center gap-1.5 text-text-disabled">
+      <div v-else class="pointer-events-none flex h-full w-full flex-col items-center justify-center gap-1.5 text-text-disabled">
         <Layout class="h-6 w-6" />
         <span class="text-[10px] font-semibold tracking-wide">尚未保存截图</span>
       </div>

@@ -9,6 +9,8 @@ export const DEFAULT_E2E_DATABASE_URL =
   'postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/web_presentation_e2e'
 export const DEFAULT_E2E_REDIS_URL = 'redis://127.0.0.1:6379/15'
 export const DEFAULT_E2E_REDIS_KEY_PREFIX = 'web_presentation_e2e'
+// E2E 固定合法 Fernet 密钥：与开发/生产密钥隔离，且不得是启动拒绝的占位值。
+export const DEFAULT_E2E_AI_SECRET_ENCRYPTION_KEY = 'QGrysUq748SBU6jgw_kitFc9lEWAQWm2XhNVK4h6j1c='
 
 export function buildE2eBackendEnv(extraEnv = {}) {
   const databaseUrl = resolveE2eDatabaseUrl()
@@ -24,6 +26,8 @@ export function buildE2eBackendEnv(extraEnv = {}) {
     AI_DB_URL: process.env.E2E_AI_DB_URL || '',
     REDIS_URL: process.env.E2E_REDIS_URL || DEFAULT_E2E_REDIS_URL,
     REDIS_KEY_PREFIX: process.env.E2E_REDIS_KEY_PREFIX || DEFAULT_E2E_REDIS_KEY_PREFIX,
+    AI_SECRET_ENCRYPTION_KEY:
+      process.env.E2E_AI_SECRET_ENCRYPTION_KEY || DEFAULT_E2E_AI_SECRET_ENCRYPTION_KEY,
   }
 }
 

@@ -181,6 +181,7 @@ function extractFromMutationEnvelope(
   const data = isRecord(resultRecord.data) ? resultRecord.data : null
   const nestedData = data && isRecord(data.data) ? data.data : data
   const input = isRecord(inputPayload) ? inputPayload : null
+  const nestedInput = resolveNestedPayload(input)
   const target = isRecord(resultRecord.target)
     ? resultRecord.target
     : (isRecord(mutation.target) ? mutation.target : null)
@@ -229,11 +230,13 @@ function extractFromMutationEnvelope(
       ? (
           resolveStringField(record, ['title', 'name'])
           ?? resolveStringField(nestedData, ['title', 'name'])
+          ?? resolveStringField(nestedInput, ['title', 'name'])
           ?? resolveStringField(input, ['title', 'name'])
         )
       : (
           resolveStringField(record, ['name', 'title'])
           ?? resolveStringField(nestedData, ['name', 'title'])
+          ?? resolveStringField(nestedInput, ['name', 'title'])
           ?? resolveStringField(input, ['name', 'title'])
         )
     return [{
@@ -252,7 +255,7 @@ function extractFromMutationEnvelope(
 }
 
 /**
- * 兼容旧物理工具名返回结构。
+ * 兼容旧物理工具名返回结构；通用 create/update_entity 也从嵌套 payload 提取页面/项目变更。
  */
 function extractFromLegacyTool(
   toolName: string,
@@ -261,25 +264,16 @@ function extractFromLegacyTool(
   context: { runId: string, workspaceId: number | null, projectId: number | null },
 ): AgentEntityChangeItem[] {
   const input = isRecord(inputPayload) ? inputPayload : null
-  if (PAGE_CREATE_TOOLS.has(toolName)) {
+  const nestedInput = resolveNestedPayload(input)
+  const resultData = isRecord(resultRecord.data) ? resultRecord.data : null
+  const nestedResult = resultData && isRecord(resultData.data) ? resultData.data : resultData
+  const isCreate = PAGE_CREATE_TOOLS.has(toolName)
+    || (toolName === 'create_entity' && resolveEntityResourceType(input) === 'page')
+  const isUpdate = PAGE_UPDATE_TOOLS.has(toolName)
+    || (toolName === 'update_entity' && resolveEntityResourceType(input) === 'page')
+  if (isCreate) {
     const pageId = resolveNumberField(resultRecord, ['page_id', 'id'])
-    if (pageId === null) {
-      return []
-    }
-    return [{
-      resourceType: 'page',
-      id: pageId,
-      projectId: resolveNumberField(resultRecord, ['project_id']) ?? resolveNumberField(input, ['project_id']) ?? context.projectId,
-      workspaceId: context.workspaceId,
-      name: resolveStringField(resultRecord, ['title', 'name']) ?? resolveStringField(input, ['title', 'name']),
-      effect: 'create',
-      runId: context.runId,
-      sourceToolName: toolName,
-    }]
-  }
-  if (PAGE_UPDATE_TOOLS.has(toolName)) {
-    const pageId = resolveNumberField(resultRecord, ['page_id', 'id'])
-      ?? resolveNumberField(input, ['page_id'])
+      ?? resolveNumberField(nestedResult, ['page_id', 'id'])
     if (pageId === null) {
       return []
     }
@@ -287,10 +281,41 @@ function extractFromLegacyTool(
       resourceType: 'page',
       id: pageId,
       projectId: resolveNumberField(resultRecord, ['project_id'])
+        ?? resolveNumberField(nestedResult, ['project_id'])
+        ?? resolveNumberField(nestedInput, ['project_id'])
         ?? resolveNumberField(input, ['project_id'])
         ?? context.projectId,
       workspaceId: context.workspaceId,
-      name: resolveStringField(resultRecord, ['title', 'name']) ?? resolveStringField(input, ['title', 'name']),
+      name: resolveStringField(resultRecord, ['title', 'name'])
+        ?? resolveStringField(nestedResult, ['title', 'name'])
+        ?? resolveStringField(nestedInput, ['title', 'name'])
+        ?? resolveStringField(input, ['title', 'name']),
+      effect: 'create',
+      runId: context.runId,
+      sourceToolName: toolName,
+    }]
+  }
+  if (isUpdate) {
+    const pageId = resolveNumberField(resultRecord, ['page_id', 'id'])
+      ?? resolveNumberField(nestedResult, ['page_id', 'id'])
+      ?? resolveNumberField(nestedInput, ['page_id', 'id'])
+      ?? resolveNumberField(input, ['page_id', 'target_id'])
+    if (pageId === null) {
+      return []
+    }
+    return [{
+      resourceType: 'page',
+      id: pageId,
+      projectId: resolveNumberField(resultRecord, ['project_id'])
+        ?? resolveNumberField(nestedResult, ['project_id'])
+        ?? resolveNumberField(nestedInput, ['project_id'])
+        ?? resolveNumberField(input, ['project_id'])
+        ?? context.projectId,
+      workspaceId: context.workspaceId,
+      name: resolveStringField(resultRecord, ['title', 'name'])
+        ?? resolveStringField(nestedResult, ['title', 'name'])
+        ?? resolveStringField(nestedInput, ['title', 'name'])
+        ?? resolveStringField(input, ['title', 'name']),
       effect: 'update',
       runId: context.runId,
       sourceToolName: toolName,
@@ -315,6 +340,20 @@ function extractFromLegacyTool(
     }]
   }
   return []
+}
+
+/** 读取通用工具嵌套 payload（create_entity/update_entity）。 */
+function resolveNestedPayload(input: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!input) {
+    return null
+  }
+  const payload = input.payload
+  return isRecord(payload) ? payload : null
+}
+
+/** 读取通用工具的资源类型。 */
+function resolveEntityResourceType(input: Record<string, unknown> | null): string {
+  return String(input?.resource_type || '').trim()
 }
 
 /** 合并两次 effect：归档优先，其次创建，否则更新。 */

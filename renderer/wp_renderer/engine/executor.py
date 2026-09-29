@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -405,10 +406,12 @@ class RenderExecutor:
         raw = await self._page.evaluate(build_page_render_layout_script())
         layout = raw if isinstance(raw, dict) else {}
         diagnostics = _diagnostics_from_layout(layout)
-        result = self._base_result()
-        result.layout = layout
-        result.diagnostics.extend(diagnostics)
-        return result
+        base = self._base_result()
+        return replace(
+            base,
+            layout=layout,
+            diagnostics=[*base.diagnostics, *diagnostics],
+        )
 
     async def _diagnose_component(self) -> ExecutionResult:
         """在宿主中执行 default 与指定 presets。"""
@@ -437,11 +440,13 @@ class RenderExecutor:
                     truncated=bool(item.get("truncated", False)),
                 )
             )
-        result = self._base_result()
-        result.layout = payload.get("layout") if isinstance(payload.get("layout"), dict) else payload
-        result.scenarios = list(payload.get("scenarios") or [])
-        result.diagnostics.extend(diagnostics)
-        return result
+        base = self._base_result()
+        return replace(
+            base,
+            layout=payload.get("layout") if isinstance(payload.get("layout"), dict) else payload,
+            scenarios=list(payload.get("scenarios") or []),
+            diagnostics=[*base.diagnostics, *diagnostics],
+        )
 
     def _base_result(self) -> ExecutionResult:
         """构造结果骨架；成功产物在清理前保持 retained，不得虚报 cleaned_at。"""

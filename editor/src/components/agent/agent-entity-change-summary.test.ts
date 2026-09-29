@@ -146,4 +146,53 @@ describe('agent-entity-change-summary', () => {
     expect(changes).toHaveLength(2)
     expect(changes.every(item => item.effect === 'archive')).toBe(true)
   })
+
+  it('create_entity 页面 deferred 扁平结果应从嵌套 payload 提取标题', () => {
+    const changes = extractEntityChangesFromTool(
+      'create_entity',
+      {
+        resource_type: 'page',
+        mode: 'new',
+        payload: { project_id: 21, title: 'E2E External Job Page' },
+      },
+      {
+        success: true,
+        message: '页面已创建。',
+        page_id: 42,
+        project_id: 21,
+      },
+      { runId: 'run-1', workspaceId: 11, projectId: 21 },
+    )
+
+    expect(changes).toEqual([expect.objectContaining({
+      resourceType: 'page',
+      id: 42,
+      projectId: 21,
+      name: 'E2E External Job Page',
+      effect: 'create',
+    })])
+  })
+
+  it('create_project_page envelope 中 title 仅在 data 时仍应提取', () => {
+    const changes = extractEntityChangesFromTool(
+      'create_project_page',
+      { title: '封面', page_content: '<template />' },
+      {
+        success: true,
+        resource_type: 'page',
+        operation: 'create',
+        effect: 'create',
+        mutation: { resource_type: 'page', operation: 'create' },
+        target: { id: 53, resource_type: 'page' },
+        data: { page_id: 53, project_id: 21, title: '封面' },
+      },
+      { runId: 'run-1', workspaceId: 11, projectId: 21 },
+    )
+
+    expect(changes).toEqual([expect.objectContaining({
+      id: 53,
+      name: '封面',
+      effect: 'create',
+    })])
+  })
 })

@@ -5,8 +5,17 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 LABEL org.opencontainers.image.title="web-presentation-renderer"
 LABEL org.opencontainers.image.description="Remote render execution service"
 
+# 允许构建时覆盖 Python 包索引、Debian 源与 Playwright 浏览器下载源。
+ARG UV_INDEX_URL=https://pypi.org/simple
+ARG DEBIAN_MIRROR=
+ARG PLAYWRIGHT_DOWNLOAD_HOST=
+
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_INDEX_URL=${UV_INDEX_URL} \
+    UV_DEFAULT_INDEX=${UV_INDEX_URL} \
+    UV_HTTP_TIMEOUT=180 \
+    PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST} \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
@@ -22,7 +31,12 @@ COPY renderer/pyproject.toml ./renderer/
 COPY packages/render-contracts /app/packages/render-contracts
 COPY renderer/wp_renderer /app/renderer/wp_renderer
 
-RUN uv sync --package web-presentation-renderer --frozen --no-dev --no-cache \
+RUN set -eux; \
+    if [ -n "${DEBIAN_MIRROR}" ]; then \
+      find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 \
+        | xargs -0 -r sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g"; \
+    fi; \
+    uv sync --package web-presentation-renderer --frozen --no-dev \
     && playwright install --with-deps chromium \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*

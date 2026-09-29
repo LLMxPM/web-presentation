@@ -505,6 +505,23 @@ def test_success_result_metadata_does_not_claim_cleaned() -> None:
     assert result.slot_generation == 2
 
 
+def test_diagnose_result_can_attach_layout_despite_frozen_dataclass() -> None:
+    """诊断结果必须能写入 layout/scenarios；ExecutionResult 是 frozen dataclass，不得原地赋值。"""
+
+    from dataclasses import replace
+
+    from wp_renderer.engine.executor import RenderExecutor
+
+    request = _make_request(attempt_id="layout-1")
+    execution = SlotExecution(request=request, accepted_at=datetime.now(UTC), slot_generation=1)
+    slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
+    executor = RenderExecutor(settings=slot.settings, slot=slot, execution=execution)
+    base = executor._base_result()  # noqa: SLF001
+    diagnosed = replace(base, layout={"overflows": []}, diagnostics=[])
+    assert diagnosed.layout == {"overflows": []}
+    assert diagnosed.request_id == base.request_id
+
+
 def test_executor_timeout_does_not_cancel_playwright_awaitable() -> None:
     """Renderer 阶段超时只能返回错误，不能取消仍需由 shutdown 解除的底层任务。"""
 

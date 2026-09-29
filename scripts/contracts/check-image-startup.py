@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import os
 import secrets
 import subprocess
 import time
@@ -36,6 +38,7 @@ def verify(image: str, variant: str) -> None:
         "--add-host", "backend:127.0.0.1", "--add-host", "runtime:127.0.0.1",
         "--env", "DATABASE_URL=sqlite+aiosqlite:////app/backend/data/image_smoke.db",
         "--env", "REDIS_URL=memory://image-smoke", "--env", "AI_ENABLED=false",
+        "--env", f"AI_SECRET_ENCRYPTION_KEY={base64.urlsafe_b64encode(os.urandom(32)).decode()}",
         "--env", f"RENDER_SERVICE_CREDENTIAL={secrets.token_urlsafe(48)}",
         "--env", "RUNTIME_SERVER_BASE_PATH=/", image,
     ]
