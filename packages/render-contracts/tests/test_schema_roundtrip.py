@@ -39,6 +39,8 @@ from render_contracts.errors import (  # noqa: E402
     ERROR_CODE_QUEUE_FULL,
     ERROR_CODE_WORKER_BUSY,
     RenderError,
+    error_http_status_table,
+    http_status_for_error_code,
 )
 from render_contracts.schema import (  # noqa: E402
     ArtifactDescriptor,
@@ -271,3 +273,17 @@ def test_json_schema_required_fields_align_with_dto_to_dict() -> None:
     result_schema = _load_schema("execution-result.v1.json")
     result_keys = set(_result().to_dict())
     assert set(result_schema["required"]) <= result_keys
+
+
+def test_error_http_status_map_matches_json_schema() -> None:
+    """错误码→HTTP 状态映射必须与 error.v1.json 的 x-http-status-by-code 完全一致。"""
+
+    schema = _load_schema("error.v1.json")
+    schema_map = schema["x-http-status-by-code"]["properties"]
+    python_map = error_http_status_table()
+    assert schema_map == python_map
+    assert set(schema_map) == set(schema["properties"]["code"]["enum"])
+    for code, status in python_map.items():
+        assert http_status_for_error_code(code) == status
+        assert 400 <= status <= 599
+    assert http_status_for_error_code("RENDER_UNKNOWN_CODE") == 500

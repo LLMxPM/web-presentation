@@ -1,4 +1,4 @@
-"""文件功能：定义远程渲染统一错误模型、错误码与分类。"""
+"""文件功能：定义远程渲染统一错误模型、错误码、分类与 HTTP 状态映射。"""
 
 from __future__ import annotations
 
@@ -31,24 +31,28 @@ CATEGORY_TIMEOUT: Final[str] = "timeout"
 CATEGORY_CANCELLATION: Final[str] = "cancellation"
 CATEGORY_INTERNAL: Final[str] = "internal"
 
-_ERROR_META: Final[dict[str, tuple[str, bool]]] = {
-    ERROR_CODE_QUEUE_FULL: (CATEGORY_CAPACITY, False),
-    ERROR_CODE_WORKER_BUSY: (CATEGORY_CAPACITY, True),
-    ERROR_CODE_SERVICE_UNAVAILABLE: (CATEGORY_INFRASTRUCTURE, True),
-    ERROR_CODE_CONTRACT_MISMATCH: (CATEGORY_CONFIGURATION, False),
-    ERROR_CODE_PROFILE_MISMATCH: (CATEGORY_CONFIGURATION, False),
-    ERROR_CODE_INPUT_EXPIRED: (CATEGORY_INPUT, False),
-    ERROR_CODE_INPUT_NOT_REPRODUCIBLE: (CATEGORY_INPUT, False),
-    ERROR_CODE_CONTENT_ERROR: (CATEGORY_CONTENT, False),
-    ERROR_CODE_ASSET_NOT_READY: (CATEGORY_RESOURCE, True),
-    ERROR_CODE_BROWSER_LOST: (CATEGORY_INFRASTRUCTURE, True),
+# (category, retryable, http_status)：HTTP 状态是 Backend 业务 API 的单源映射，
+# Backend 不得在别处再维护第二份错误码→状态码表。
+_ERROR_META: Final[dict[str, tuple[str, bool, int]]] = {
+    ERROR_CODE_QUEUE_FULL: (CATEGORY_CAPACITY, False, 429),
+    ERROR_CODE_WORKER_BUSY: (CATEGORY_CAPACITY, True, 503),
+    ERROR_CODE_SERVICE_UNAVAILABLE: (CATEGORY_INFRASTRUCTURE, True, 503),
+    ERROR_CODE_CONTRACT_MISMATCH: (CATEGORY_CONFIGURATION, False, 500),
+    ERROR_CODE_PROFILE_MISMATCH: (CATEGORY_CONFIGURATION, False, 500),
+    ERROR_CODE_INPUT_EXPIRED: (CATEGORY_INPUT, False, 409),
+    ERROR_CODE_INPUT_NOT_REPRODUCIBLE: (CATEGORY_INPUT, False, 422),
+    ERROR_CODE_CONTENT_ERROR: (CATEGORY_CONTENT, False, 422),
+    ERROR_CODE_ASSET_NOT_READY: (CATEGORY_RESOURCE, True, 409),
+    ERROR_CODE_BROWSER_LOST: (CATEGORY_INFRASTRUCTURE, True, 500),
     # attempt 级超时可在剩余次数内重试；请求总预算耗尽由仓储收敛为 expired。
-    ERROR_CODE_DEADLINE_EXCEEDED: (CATEGORY_TIMEOUT, True),
-    ERROR_CODE_RESULT_LOST: (CATEGORY_INFRASTRUCTURE, True),
-    ERROR_CODE_OUTPUT_LIMIT_EXCEEDED: (CATEGORY_RESOURCE, False),
-    ERROR_CODE_CANCELLED: (CATEGORY_CANCELLATION, False),
-    ERROR_CODE_INTERNAL_ERROR: (CATEGORY_INTERNAL, True),
+    ERROR_CODE_DEADLINE_EXCEEDED: (CATEGORY_TIMEOUT, True, 504),
+    ERROR_CODE_RESULT_LOST: (CATEGORY_INFRASTRUCTURE, True, 502),
+    ERROR_CODE_OUTPUT_LIMIT_EXCEEDED: (CATEGORY_RESOURCE, False, 422),
+    ERROR_CODE_CANCELLED: (CATEGORY_CANCELLATION, False, 409),
+    ERROR_CODE_INTERNAL_ERROR: (CATEGORY_INTERNAL, True, 500),
 }
+
+DEFAULT_ERROR_HTTP_STATUS: Final[int] = 500
 
 
 @dataclass(slots=True, frozen=True)
@@ -86,7 +90,9 @@ class RenderError:
     ) -> "RenderError":
         """按错误码推断类别与默认可重试性。"""
 
-        category, default_retryable = _ERROR_META.get(code, (CATEGORY_INTERNAL, True))
+        category, default_retryable, _http_status = _ERROR_META.get(
+            code, (CATEGORY_INTERNAL, True, DEFAULT_ERROR_HTTP_STATUS)
+        )
         return cls(
             code=code,
             category=category,
@@ -101,8 +107,9 @@ class RenderError:
         """从字典反序列化错误结构。"""
 
         code = str(payload.get("code") or ERROR_CODE_INTERNAL_ERROR)
-        default_retryable = _ERROR_META.get(code, (CATEGORY_INTERNAL, True))[1]
-        category = str(payload.get("category") or _ERROR_META.get(code, (CATEGORY_INTERNAL, True))[0])
+        meta = _ERROR_META.get(code, (CATEGORY_INTERNAL, True, DEFAULT_ERROR_HTTP_STATUS))
+        default_retryable = meta[1]
+        category = str(payload.get("category") or meta[0])
         stage = str(payload.get("stage") or "execution")
         retryable = parse_bool(payload.get("retryable", default_retryable), default=default_retryable)
         message = str(payload.get("message") or "渲染执行失败。")
@@ -116,6 +123,18 @@ class RenderError:
             message=message,
             trace_id=trace_id,
         )
+
+
+def http_status_for_error_code(code: str) -> int:
+    """按错误码返回业务 API 应使用的 HTTP 状态；未知码归为 500。"""
+
+    return _ERROR_META.get(code, (CATEGORY_INTERNAL, True, DEFAULT_ERROR_HTTP_STATUS))[2]
+
+
+def error_http_status_table() -> dict[str, int]:
+    """导出完整错误码→HTTP 状态表，供契约对拍与文档生成。"""
+
+    return {code: meta[2] for code, meta in _ERROR_META.items()}
 
 
 class RenderContractError(ValueError):

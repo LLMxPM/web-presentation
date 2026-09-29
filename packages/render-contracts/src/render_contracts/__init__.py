@@ -12,6 +12,8 @@ from render_contracts.errors import (
     RenderContractError,
     RenderError,
     RenderExecutionError,
+    error_http_status_table,
+    http_status_for_error_code,
 )
 from render_contracts.schema import (
     ArtifactDescriptor,
@@ -44,6 +46,8 @@ __all__ = [
     "RenderError",
     "RenderContractError",
     "RenderExecutionError",
+    "http_status_for_error_code",
+    "error_http_status_table",
     "ViewportSpec",
     "SnapshotRef",
     "ExecutionRequest",
