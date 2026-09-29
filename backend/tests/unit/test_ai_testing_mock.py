@@ -206,7 +206,7 @@ class TestAgentScenarios:
         """视觉场景真实经历 analyze → generate → deferred 结果 → 终态。"""
 
         _set_ai_test_mode(monkeypatch, "mock")
-        final_result = {"status": "completed", "assets": [{"id": 1, "name": "e2e-mock-visual-abcd-1"}]}
+        final_result = {"status": "succeeded", "assets": [{"id": 1, "name": "e2e-mock-visual-abcd-1"}]}
         response = _respond(_visual_history(final_result), _agent_info_with_tools())
         assert "配图已生成并保存到资源库" in response.parts[0].content
         assert "e2e-mock-visual-abcd-1" in response.parts[0].content
@@ -230,7 +230,7 @@ class TestAgentScenarios:
         """相同历史重复请求必须得到一致响应，保证 deferred 重复恢复幂等。"""
 
         _set_ai_test_mode(monkeypatch, "mock")
-        final_result = {"status": "completed", "assets": [{"id": 1, "name": "e2e-mock-visual-abcd-1"}]}
+        final_result = {"status": "succeeded", "assets": [{"id": 1, "name": "e2e-mock-visual-abcd-1"}]}
         history = _visual_history(final_result)
         first = _respond(history, _agent_info_with_tools())
         second = _respond(history, _agent_info_with_tools())

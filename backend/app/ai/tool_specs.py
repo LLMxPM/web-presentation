@@ -514,7 +514,7 @@ def _image_generation_tool_spec() -> AgentToolSpec:
         risk_level="write",
         response_example={
             "job_id": "image-job-123",
-            "status": "completed",
+            "status": "succeeded",
             "attachments": [
                 {
                     "id": 25,

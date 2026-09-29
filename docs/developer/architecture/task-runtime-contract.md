@@ -343,16 +343,18 @@ await runtime.claim/renew/transition/cancel/recover(...)
 4. 终态词汇改为契约标准（或读侧归一 + 写侧改名一次完成）。
 5. L1 循环内恢复具备（尤其页面/组件队列）。
 
-**迁移进度**：
+**迁移进度（A3 完成，2026-09-29）**：
 
 | 队列 | 状态 | 证据 |
 | :--- | :--- | :--- |
-| 构建 ProjectBuildJob | **已迁（2026-09-29）** | `claim_job` 走 `claim_pending_jobs` + `PROJECT_BUILD_VOCABULARY` + 领域取值；`recover_expired_build_jobs` 走 `recover_expired_running_jobs` + classify/`recover_values`；手写 claim_cas 已删。回归：`test_project_build_job_lease` / `test_project_build_worker_claim` / `test_project_build` / `test_multi_replica_coordination` 全绿 |
-| 截图 / 回填 | 已在统一入口 | `claim_pending_jobs` 标准词汇 + L1/L2 恢复 |
-| 图片 | 待改终态拼写 | `error`→`failed`，`completed`→`succeeded` |
-| 页面/组件 mutation | **L1 已补（2026-09-29）** | Worker 循环内调用 `recover_expired_running_jobs`（页面）/ `recover_component_mutation_tasks`（组件，`kind` 过滤）；P1-Recovery 缺口关闭 |
-| external_task_queue | 待迁 | lease_generation 围栏保留，认领时序归一 |
-| MutationJob | 待迁 | generation 围栏 + `next_attempt_at` 退避 → 词汇化 recover |
+| 构建 ProjectBuildJob | **已迁** | `claim_job` 走 `claim_pending_jobs` + `PROJECT_BUILD_VOCABULARY` + 领域取值；`recover_expired_build_jobs` 走 `recover_expired_running_jobs` + classify/`recover_values`；手写 claim_cas 已删 |
+| 截图 / 回填 | **已在统一入口** | `claim_pending_jobs` 标准词汇 + L1/L2 恢复 |
+| 图片 | **终态已归一** | `error`→`failed`，`completed`→`succeeded`（Job.status 与 result_json） |
+| 页面/组件 mutation | **L1 已补** | Worker 循环内过期恢复；组件恢复带 `kind` 过滤 |
+| external_task_queue | **认领已归一** | `_claim_ready_batch` 走 `claim_rows_by_cas` + `on_claimed`（Requirement 同事务）；generation 围栏保留；门禁例外撤销 |
+| MutationJob | **恢复已词汇化** | `MUTATION_JOB_VOCABULARY` + generation CAS + `next_attempt_at` 退避 |
+
+每迁一队完成口径：行为回归绿、方言份数 −1、旧代码删除、终态词汇对齐、L1 恢复具备。
 
 **硬约束重申**：SQLite 分支语义字节级维持；PG 同事务 `SKIP LOCKED` 不得退回跨事务 CAS；`skip_locked` 只允许出现在租约服务。
 

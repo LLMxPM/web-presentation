@@ -151,20 +151,13 @@ def test_claim_functions_must_delegate_cas_timing() -> None:
     rowcount 判定则会双跑。判定用 AST 精确识别「直接 execute 条件 UPDATE」，不用
     字符串组合近似，避免误伤同样含 pending/running 字面量的状态机代码。
 
-    `external_task_queue._claim_ready_batch` 是**已核准的例外**，不是漏改：
-    1. 认领键是 `batch_id` 业务主键，不是自增 `id`；
-    2. 它是「读到实体 → 以该实体的 `lease_generation` 作为 CAS 条件」的**租约围栏**
-       协议，认领成功与否取决于上一代 generation，`claim_rows_by_cas` 不表达该语义；
-    3. 认领必须与 `AiAgentRequirement` 置 `resolving` 在同一事务内原子完成，且抢锁
-       失败时显式 rollback 而非提交。
-    共享认领助手不承诺这三点。新增队列若不符合这三条，必须走 `claim_rows_by_cas`，
-    不得以它为模板再写一份。
+    `external_task_queue._claim_ready_batch` 已迁到 `claim_rows_by_cas` +
+    `on_claimed`（Requirement 同事务写入）；`reserve_attempt` 仍是渲染侧认领方言
+    命名，CAS 与 RenderAttempt 创建必须同事务原子完成。
     """
 
-    # 已核准例外：external_task_queue 整文件是 lease_generation 围栏协议（见上）；
-    # reserve_attempt 是渲染侧认领方言命名，CAS 与 RenderAttempt 创建必须同事务原子完成。
+    # 已核准例外：reserve_attempt 是渲染侧认领方言命名，CAS 与 RenderAttempt 创建必须同事务原子完成。
     exempt = {
-        "app/ai/external_task_queue.py",
         "app/services/rendering/repository.py::reserve_attempt",
     }
     offenders: list[str] = []

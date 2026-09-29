@@ -55,6 +55,7 @@ async def claim_rows_by_cas(
     candidate_limit: int,
     claim_cas: ClaimCasFactory,
     max_claims: int | None = None,
+    on_claimed: Callable[[Row[Any]], list[Any]] | None = None,
 ) -> list[Row[Any]]:
     """按「加锁读候选 → 逐条 CAS → 提交」认领任务，返回成功认领的候选行。
 
@@ -76,7 +77,8 @@ async def claim_rows_by_cas(
     其他约束：全部尝试结束后统一提交，即使一条也没抢到也要提交——失败的 CAS 已经
     开启了写事务，不提交会把写锁带给调用方的下一次操作。`max_claims` 供「扫描多候选、
     只取一个」的领取者使用：达到数量即停止，避免把已 CAS 成功的任务留在无人执行的
-    running 状态。
+    running 状态。`on_claimed` 在每条 CAS 命中后追加同事务语句（如 Requirement 置
+    resolving），与认领一并提交；回调仍须是**同步**构造语句，不得 await 慢路径。
     """
 
     # 同一条查询构造在 SQLite 上编译成普通 SELECT，因此不需要按方言分叉查询本身。
@@ -93,6 +95,9 @@ async def claim_rows_by_cas(
         result = await session.execute(statement.execution_options(synchronize_session=False))
         if (result.rowcount or 0) == 1:
             claimed_rows.append(row)
+            if on_claimed is not None:
+                for extra in on_claimed(row):
+                    await session.execute(extra.execution_options(synchronize_session=False))
             if max_claims is not None and len(claimed_rows) >= max_claims:
                 break
     await session.commit()
@@ -346,6 +351,7 @@ async def recover_expired_running_jobs(
     extra_base_conditions: list[Any] | None = None,
     candidate_columns: list[Any] | None = None,
     kind_extra_where: Callable[[str], list[Any]] | None = None,
+    row_extra_conditions: Callable[[Row[Any]], list[Any]] | None = None,
 ) -> DurableJobRecoverySummary:
     """只恢复租约为空或已经过期的 running 任务，并在空队列时避免发起写 DML。
 
@@ -357,6 +363,7 @@ async def recover_expired_running_jobs(
     `extra_base_conditions` 追加 AND 谓词（如 `kind=component_mutation`）。
     `candidate_columns` 自定义候选 SELECT 列（首列必须是 id），供 classify 读取领域字段。
     `kind_extra_where` 按恢复分类追加 UPDATE 谓词（如 succeeded 仅当产物已提升）。
+    `row_extra_conditions` 按候选行追加 UPDATE 谓词（如 lease_generation CAS）。
     """
 
     vocab = vocabulary or STANDARD_JOB_VOCABULARY
@@ -505,6 +512,8 @@ async def recover_expired_running_jobs(
             where = [*extra_where]
             if kind_extra_where is not None:
                 where.extend(kind_extra_where(kind))
+            if row_extra_conditions is not None:
+                where.extend(row_extra_conditions(rows_by_id[rid]))
             result = await session.execute(
                 update(model)
                 .where(model.id == rid, *base_conditions, *where)

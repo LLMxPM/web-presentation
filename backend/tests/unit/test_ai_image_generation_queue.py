@@ -39,8 +39,8 @@ def test_image_batch_should_wait_for_every_job_and_return_every_result() -> None
 
     completed_job = SimpleNamespace(
         deferred_tool_call_id="call-image-1",
-        status="completed",
-        result_json={"status": "completed", "assets": [{"id": 1}]},
+        status="succeeded",
+        result_json={"status": "succeeded", "assets": [{"id": 1}]},
         error_code=None,
         error_message=None,
     )
@@ -60,7 +60,7 @@ def test_image_batch_should_wait_for_every_job_and_return_every_result() -> None
         is None
     )
 
-    running_job.status = "error"
+    running_job.status = "failed"
     running_job.error_code = "AI_IMAGE_PROVIDER_FAILED"
     running_job.error_message = "第二张图片生成失败。"
     deferred = _build_image_deferred_results(

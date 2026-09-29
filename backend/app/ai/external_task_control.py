@@ -184,7 +184,7 @@ async def sync_external_task_from_domain_job(
     if task is None:
         return False
     domain_status = str(getattr(job, "status", "") or "")
-    # 页面用 succeeded/failed，图片用 completed/error；统一映射到外部任务词表。
+    # 领域 Job 终态已统一为 succeeded/failed/cancelled；历史 completed/error 仍兼容读侧。
     mapped = {
         "pending": "pending",
         "running": "running",

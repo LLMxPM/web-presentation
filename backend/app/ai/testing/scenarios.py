@@ -104,7 +104,7 @@ def _build_visual_final_response(state: MockConversationState) -> ModelResponse:
     """视觉链路终态：从真实 deferred result 提取资源名称并给出用户可见结论。"""
 
     result = state.last_tool_return(GENERATE_IMAGE_TOOL)
-    if isinstance(result, dict) and result.get("status") == "completed":
+    if isinstance(result, dict) and result.get("status") in {"succeeded", "completed"}:
         assets = result.get("assets") or []
         first_asset = assets[0] if assets and isinstance(assets[0], dict) else {}
         asset_name = str(first_asset.get("name") or VISUAL_SCENARIO_ASSET_PREFIX)

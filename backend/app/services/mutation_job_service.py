@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from sqlalchemy import func, or_, select, update
@@ -35,7 +35,12 @@ from app.schemas.component import (
     WorkspaceComponentCreateRequest,
     WorkspaceComponentUpdateRequest,
 )
-from app.services.durable_job_lease_service import build_durable_worker_id, claim_rows_by_cas
+from app.services.durable_job_lease_service import (
+    build_durable_worker_id,
+    claim_rows_by_cas,
+    recover_expired_running_jobs,
+)
+from app.services.job_runtime_vocabulary import MUTATION_JOB_VOCABULARY
 from app.services.mutation_planners.component_mutation_planner import ComponentMutationPlanner
 from app.services.mutation_planners.page_mutation_planner import PageMutationPlanner
 from app.services.page_service import PageService
@@ -819,71 +824,72 @@ class MutationJobService:
 
     @classmethod
     async def recover_expired_running_jobs(cls) -> int:
-        """周期性回收租约超时的孤儿 running 任务。"""
+        """周期性回收租约超时的孤儿 running 任务。
+
+        时序委托 `recover_expired_running_jobs` + `MUTATION_JOB_VOCABULARY`；
+        本方法只描述 generation 围栏、attempt 递增与退避取值。
+        """
 
         now = utc_now()
         session_factory = get_session_factory()
-        recovered_count = 0
+        backoff = timedelta(seconds=float(get_settings().mutation_job_recovery_backoff_seconds))
+
+        def _classify(row, attempt_limit_fallback: int) -> str:
+            # 候选列：id, lease_generation, attempt_count, max_attempts
+            attempt_count = int(row[2] or 0)
+            max_attempts = int(row[3] or 3)
+            return "requeued" if attempt_count < max_attempts else "failed"
+
+        def _recover_values(kind: str, row, recovered_at: datetime) -> dict[str, Any]:
+            cand_gen = int(row[1] or 0)
+            attempt_count = int(row[2] or 0)
+            if kind == "requeued":
+                return {
+                    "status": "pending",
+                    "worker_id": None,
+                    "lease_expires_at": None,
+                    "lease_generation": cand_gen + 1,
+                    "attempt_count": attempt_count + 1,
+                    "next_attempt_at": recovered_at + backoff,
+                    "last_error_code": "LEASE_TIMEOUT_RECOVERED",
+                }
+            return {
+                "status": "failed",
+                "finished_at": recovered_at,
+                "last_error_code": "LEASE_TIMEOUT_MAX_ATTEMPTS",
+                "error_json": {
+                    "code": "LEASE_TIMEOUT_MAX_ATTEMPTS",
+                    "message": "任务执行租约多次超时且已达最大重试次数。",
+                    "retryable": False,
+                },
+            }
+
+        def _row_extra(row) -> list:
+            # 围栏：仅当 generation 仍是候选时的代次才允许恢复写回。
+            return [ApiMutationJob.lease_generation == int(row[1] or 0)]
 
         async with session_factory() as session:
-            stmt = (
-                select(
+            summary = await recover_expired_running_jobs(
+                session,
+                ApiMutationJob,
+                max_attempts=10**9,  # 预算由 classify 按行 max_attempts 判定
+                interrupted_error_code="LEASE_TIMEOUT_MAX_ATTEMPTS",
+                interrupted_error_message="任务执行租约多次超时且已达最大重试次数。",
+                now=now,
+                vocabulary=MUTATION_JOB_VOCABULARY,
+                recover_values=_recover_values,
+                classify_recovery=_classify,
+                candidate_columns=[
                     ApiMutationJob.id,
                     ApiMutationJob.lease_generation,
                     ApiMutationJob.attempt_count,
                     ApiMutationJob.max_attempts,
-                )
-                .where(ApiMutationJob.status == "running")
-                .where(
-                    (ApiMutationJob.lease_expires_at.is_(None))
-                    | (ApiMutationJob.lease_expires_at <= now)
-                )
+                ],
+                row_extra_conditions=_row_extra,
             )
-            candidates = (await session.execute(stmt)).all()
-            for cand_id, cand_gen, attempt_count, max_attempts in candidates:
-                # 与 durable_job_lease_service 对齐：attempt_count < max 才重入 pending
-                if (attempt_count or 0) < (max_attempts or 3):
-                    update_stmt = (
-                        update(ApiMutationJob)
-                        .where(ApiMutationJob.id == cand_id)
-                        .where(ApiMutationJob.status == "running")
-                        .where(ApiMutationJob.lease_generation == cand_gen)
-                        .values(
-                            status="pending",
-                            worker_id=None,
-                            lease_expires_at=None,
-                            lease_generation=(cand_gen or 0) + 1,
-                            attempt_count=(attempt_count or 0) + 1,
-                            next_attempt_at=now
-                            + timedelta(seconds=float(get_settings().mutation_job_recovery_backoff_seconds)),
-                            last_error_code="LEASE_TIMEOUT_RECOVERED",
-                        )
-                    )
-                else:
-                    update_stmt = (
-                        update(ApiMutationJob)
-                        .where(ApiMutationJob.id == cand_id)
-                        .where(ApiMutationJob.status == "running")
-                        .where(ApiMutationJob.lease_generation == cand_gen)
-                        .values(
-                            status="failed",
-                            finished_at=now,
-                            last_error_code="LEASE_TIMEOUT_MAX_ATTEMPTS",
-                            error_json={
-                                "code": "LEASE_TIMEOUT_MAX_ATTEMPTS",
-                                "message": "任务执行租约多次超时且已达最大重试次数。",
-                                "retryable": False,
-                            },
-                        )
-                    )
-                res = await session.execute(update_stmt)
-                if res.rowcount > 0:
-                    recovered_count += 1
-
-            if recovered_count > 0:
-                await session.commit()
-                logger.info("已回收 %s 个超时 Mutation 孤儿任务。", recovered_count)
-
+        recovered_count = summary.total_count
+        if recovered_count:
+            logger.info("已回收 %s 个超时 Mutation 孤儿任务。", recovered_count)
         return recovered_count
 
 

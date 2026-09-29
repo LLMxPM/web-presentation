@@ -1148,7 +1148,7 @@ async def test_promoted_ai_image_asset_delete_should_keep_attachment_and_allow_r
                     "tool_name": "generate_image",
                     "tool_call_id": "call-asset-lifecycle",
                     "content": {
-                        "status": "completed",
+                        "status": "succeeded",
                         "attachments": [
                             {
                                 "id": attachment.id,

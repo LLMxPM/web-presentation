@@ -39,7 +39,7 @@ from app.services.image_generation_adapters import normalize_image_request
 
 logger = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
-_TERMINAL_JOB_STATUSES = frozenset({"completed", "error", "cancelled"})
+_TERMINAL_JOB_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 
 
 def _image_lease_seconds() -> int:
@@ -63,7 +63,7 @@ def _image_poll_interval() -> float:
 async def recover_interrupted_image_generation_jobs_on_startup(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> int:
-    """把过期 running 图片任务重排；达到重试上限的任务进入 error。"""
+    """把过期 running 图片任务重排；达到重试上限的任务进入 failed。"""
 
     now = utc_now()
     async with session_factory() as session:
@@ -76,13 +76,13 @@ async def recover_interrupted_image_generation_jobs_on_startup(
             )).all()
         )
         for job in jobs:
-            job.status = "pending" if job.attempt_count < _MAX_ATTEMPTS else "error"
+            job.status = "pending" if job.attempt_count < _MAX_ATTEMPTS else "failed"
             job.error_code = None if job.status == "pending" else "AI_IMAGE_GENERATION_INTERRUPTED"
             job.error_message = None if job.status == "pending" else "图片任务多次中断，已停止重试。"
             job.worker_id = None
             job.lease_expires_at = None
             job.heartbeat_at = None
-            job.finished_at = utc_now() if job.status == "error" else None
+            job.finished_at = utc_now() if job.status == "failed" else None
             await sync_external_task_from_domain_job(session, job=job)
         if jobs:
             await session.commit()
@@ -343,12 +343,12 @@ async def _execute_job(
             )
             if job is None:
                 return
-            job.status = "completed"
+            job.status = "succeeded"
             job.provider_status = provider_result.provider_status or "SUCCEEDED"
             job.provider_request_id = provider_result.provider_request_id or job.provider_request_id
             job.result_json = {
                 "job_id": job.job_id,
-                "status": "completed",
+                "status": "succeeded",
                 "attachments": output_attachments,
                 "assets": output_assets,
                 "deleted_assets": [],
@@ -607,7 +607,7 @@ def _build_image_deferred_results(
         job = jobs_by_call_id[call_id]
         deferred.calls[call_id] = (
             job.result_json
-            if job.status == "completed"
+            if job.status == "succeeded"
             else recoverable_tool_error_result(
                 code=job.error_code or "AI_IMAGE_GENERATION_FAILED",
                 message=job.error_message or "图片生成任务失败。",
@@ -671,7 +671,7 @@ async def _mark_job_error(
         if job is None or job.status != "running" or job.worker_id != worker_id:
             return
         terminal = terminal or job.attempt_count >= _MAX_ATTEMPTS
-        job.status = "error" if terminal else "pending"
+        job.status = "failed" if terminal else "pending"
         job.error_code = code if terminal else None
         job.error_message = message if terminal else None
         job.progress_json = {

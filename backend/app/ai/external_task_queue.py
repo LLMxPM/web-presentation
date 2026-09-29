@@ -33,6 +33,7 @@ from app.models.enums import RecordStatus
 from app.models.user import User
 from app.schemas.agent import AgentRunEvent
 from app.services.auth_service import AuthContext
+from app.services.durable_job_lease_service import claim_rows_by_cas
 
 logger = logging.getLogger(__name__)
 _TASK_TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
@@ -138,7 +139,9 @@ async def synchronize_external_task_states(session_factory: async_sessionmaker[A
                 if job is not None:
                     domain_status = {
                         "pending": "pending", "running": "running", "waiting_provider": "waiting_provider",
-                        "completed": "succeeded", "error": "failed", "cancelled": "cancelled",
+                        "succeeded": "succeeded", "completed": "succeeded",
+                        "failed": "failed", "error": "failed",
+                        "cancelled": "cancelled",
                     }.get(job.status)
                     result, error_code, error_message = job.result_json, job.error_code, job.error_message
                     if domain_status == "running":
@@ -512,15 +515,23 @@ async def _claim_ready_batch(
     *,
     worker_id: str,
 ) -> tuple[str, int] | None:
-    """以CAS认领一个ready Batch，并同时把Requirement置为resolving。"""
+    """以CAS认领一个ready Batch，并同时把Requirement置为resolving。
+
+    认领时序委托 `claim_rows_by_cas`；`lease_generation` 围栏与 Requirement
+    同事务写入通过 `claim_cas` / `on_claimed` 表达，不再手写「读候选 → CAS」循环。
+    """
 
     settings = get_settings()
     now = utc_now()
     lease_seconds = max(int(settings.durable_job_lease_seconds), int(settings.durable_job_heartbeat_seconds) * 3)
     async with session_factory() as session:
         other_resuming = aliased(AiAgentExternalBatch)
-        candidate = await session.scalar(
-            select(AiAgentExternalBatch)
+        candidate_query = (
+            select(
+                AiAgentExternalBatch.batch_id,
+                AiAgentExternalBatch.lease_generation,
+                AiAgentExternalBatch.requirement_id,
+            )
             .join(AiAgentRun, AiAgentRun.run_id == AiAgentExternalBatch.run_id)
             .where(
                 AiAgentExternalBatch.status == "ready",
@@ -532,47 +543,59 @@ async def _claim_ready_batch(
                 ),
             )
             .order_by(AiAgentExternalBatch.created_at.asc())
-            .limit(1)
         )
-        if candidate is None:
-            return None
-        generation = candidate.lease_generation + 1
-        result = await session.execute(
-            update(AiAgentExternalBatch)
-            .where(
-                AiAgentExternalBatch.batch_id == candidate.batch_id,
-                AiAgentExternalBatch.status == "ready",
-                AiAgentExternalBatch.lease_generation == candidate.lease_generation,
+
+        def _claim_cas(row) -> Any:
+            batch_id = row[0]
+            cand_gen = row[1]
+            return (
+                update(AiAgentExternalBatch)
+                .where(
+                    AiAgentExternalBatch.batch_id == batch_id,
+                    AiAgentExternalBatch.status == "ready",
+                    AiAgentExternalBatch.lease_generation == cand_gen,
+                )
+                .values(
+                    status="resuming",
+                    worker_id=worker_id,
+                    lease_generation=cand_gen + 1,
+                    lease_expires_at=now + timedelta(seconds=lease_seconds),
+                    heartbeat_at=now,
+                    started_at=now,
+                )
             )
-            .values(
-                status="resuming",
-                worker_id=worker_id,
-                lease_generation=generation,
-                lease_expires_at=now + timedelta(seconds=lease_seconds),
-                heartbeat_at=now,
-                started_at=now,
-            )
-            .execution_options(synchronize_session=False)
-        )
-        if int(result.rowcount or 0) != 1:
-            await session.rollback()
-            return None
-        if candidate.requirement_id:
-            await session.execute(
+
+        def _on_claimed(row) -> list:
+            requirement_id = row[2]
+            if not requirement_id:
+                return []
+            return [
                 update(AiAgentRequirement)
                 .where(
-                    AiAgentRequirement.requirement_id == candidate.requirement_id,
+                    AiAgentRequirement.requirement_id == requirement_id,
                     AiAgentRequirement.status.in_(("pending", "resolving")),
                 )
                 .values(status="resolving")
-            )
+            ]
+
         try:
-            await session.commit()
+            claimed = await claim_rows_by_cas(
+                session,
+                AiAgentExternalBatch,
+                candidate_query=candidate_query,
+                candidate_limit=1,
+                claim_cas=_claim_cas,
+                max_claims=1,
+                on_claimed=_on_claimed,
+            )
         except IntegrityError:
             # 两个协调器可能同时看到同一Run的不同ready Batch；数据库唯一索引负责最终串行化。
             await session.rollback()
             return None
-        return candidate.batch_id, generation
+        if not claimed:
+            return None
+        row = claimed[0]
+        return str(row[0]), int(row[1] or 0) + 1
 
 
 async def _continue_batch(

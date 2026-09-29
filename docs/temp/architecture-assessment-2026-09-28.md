@@ -79,7 +79,7 @@ Editor ──HTTP──► Gateway ──┬──► Backend（控制面）
 | ~~**P0-ClaimGate**~~ | ~~CP4 门禁假阴性：变量间接 `execute(update)` 与 `reserve_*` 命名漏检~~ | ~~并发原语边界可被合法合入破坏~~ | **已关闭（2026-09-29 WS-B ClaimGate）**：AST 检测补强；`claim_next_pending_job` 迁 `claim_rows_by_cas`；`reserve_attempt` 登记例外 |
 | ~~**P0-Gates**~~ | ~~工具目录主防漂移在 integration，PR 默认不跑~~ | ~~漂移可合法合入 PR~~ | **已关闭（2026-09-29 WS-B4）**：主测迁 `tests/unit/test_unified_tool_specs.py`（`test:backend:unit` 在 PR）；contracts/render-contracts 本就在 PR。E2E/镜像 smoke/CLI 跨仓仍非 PR 阻塞（已知边界） |
 | **P1-Recovery** | ~~页面/组件变更队列 Worker 循环内**不做过期恢复**~~ **已关闭（2026-09-29）**：Worker 循环内补过期恢复 | 故障后任务挂死，用户无感知 | **已关闭（2026-09-29 WS-A3）** |
-| **P1-TaskModel** | 重任务 **10 套任务模型**；认领时序 3 套（共享 CAS / lease_generation CAS / render claim_generation）；心跳比例、终态词汇（image `"error"` vs 他处 `"failed"`）不统一 | 正确性靠各队列自觉；扩展成本高；故障语义不可比 | 计划 WS-A |
+| **P1-TaskModel** | 重任务 **10 套任务模型**；认领时序 3 套（共享 CAS / lease_generation CAS / render claim_generation）；心跳比例、终态词汇（image `"error"` vs 他处 `"failed"`）不统一 | 正确性靠各队列自觉；扩展成本高；故障语义不可比 | **部分关闭（2026-09-29 WS-A）**：契约冻结 + 统一执行器 + 队列迁移完成；render `reserve_attempt` 仍为登记例外 |
 | **P1-RenderQuota** | `RenderCoordinator._dispatch_once` 先 `count_active_attempts()` 再 `reserve_attempt()`（`coordinator.py:254-285`），非全局事务原子；多 Backend 可同时见 `active=0` 而突破 global/workspace limit（单 Worker 双派已有 `active_occupancy` 唯一索引保护） | 多协调器下额度失守 | 并入 WS-C |
 | **P1-MultiDeploy** | 多部署门槛未达成；Runtime 多副本是**静态固定拓扑**（手工复制 service + nginx upstream、静态 `RUNTIME_CHECK_BASE_URLS`）；跨副本回归/故障演练未跑 | 容易把 compose 静态复制当成真正分布式 | 计划 WS-C |
 | **P1-VersionSkew** | 滚动升级只约定 Runtime `build_id`/`runtime_kit_version` 指纹一致；缺 **兼容矩阵**：Backend↔Runtime API、Backend↔Renderer `render-contracts`、Backend↔DB schema、Runtime Kit↔产物。版本不一致直接拒绝会造成瞬时停机 | 多服务独立部署后滚动升级必需 | 并入 WS-C |
@@ -98,7 +98,7 @@ Editor ──HTTP──► Gateway ──┬──► Backend（控制面）
 | **P2-DialectOps** | 双库日常成本可见性（记账与复审触发器需落到治理文档） | WS-G6 |
 | **P2-ProdHardening** | Renderer 与 Backend 同 `platform-net`，浏览器可触达 Backend 内网 API（仅拦 Renderer 控制面路径）；`compose.with-deps` Redis `appendonly no`；各 Dockerfile 均无 `USER`（root） | WS-G3/G5 |
 | ~~**P2-AuthZGap**~~ | ~~缺「A 用户 AI 工具调用写 B 用户实体」的跨用户工具矩阵~~ | **已关闭（2026-09-29 WS-B）**：补 `test_cross_user_ai_tool_write_should_be_denied`；写路径增加 `AgentWorkScopeService.require_workspace_access` 操作者成员校验 |
-| **P2-VocabDrift** | 终态词汇（`error`/`failed`/`skipped`）、心跳/租约比例、死列 `ai_page_mutation.lease_generation`、死 scope `COMPONENT_TOOL_DELETE_SCOPES` | 并入 WS-A |
+| **P2-VocabDrift** | ~~终态词汇（`error`/`failed`/`skipped`）、心跳/租约比例、死列 `ai_page_mutation.lease_generation`、死 scope `COMPONENT_TOOL_DELETE_SCOPES`~~ | **部分关闭（2026-09-29）**：Job 终态已统一 succeeded/failed/cancelled；死列/死 scope 待清 |
 
 ### 4.3 产品可接受残留（登记，不进优先级）
 
