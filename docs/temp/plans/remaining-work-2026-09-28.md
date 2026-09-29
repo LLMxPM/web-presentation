@@ -39,9 +39,9 @@
 
 | 序 | 工作项 | 完成口径 | 估时 |
 | :--- | :--- | :--- | :--- |
-| A1 | **冻结任务运行时契约**：角色模型（Worker / Lease / Attempt / Terminal）、字段词汇（owner、heartbeat、attempt_id、cancel）、错误码族、恢复语义 | 一份契约文档 + 与现有 9 套方言的映射表；**不写实现** | 3–5 天 |
-| A2 | **统一 claim/lease/heartbeat/recover 执行器**（扩展 `durable_job_lease_service.claim_rows_by_cas`，不建能力布尔层） | 新任务类型只注册列词汇与领域取值，不再手写 claim；门禁拒绝第 N+1 份手写 claim | 1–2 周 |
-| A3 | **迁移队列**（建议顺序：构建 → 截图/回填 → 图片 → 页面/组件 mutation → external_task_queue） | 每迁一队：行为回归绿、方言份数 −1、旧代码删除 | 每队 2–5 天 |
+| A1 | **冻结任务运行时契约**：角色模型（Worker / Lease / Attempt / Terminal）、字段词汇（owner、heartbeat、attempt_id、cancel）、错误码族、恢复语义 | 一份契约文档 + 与现有 9 套方言的映射表；**不写实现** | **已完成（2026-09-29）**：[`docs/developer/architecture/task-runtime-contract.md`](../../developer/architecture/task-runtime-contract.md)；含 10 套任务模型映射、3 套认领方言对照、字段/状态/错误码/恢复语义冻结；未写实现 |
+| A2 | **统一 claim/lease/heartbeat/recover 执行器**（扩展 `durable_job_lease_service.claim_rows_by_cas`，不建能力布尔层） | 新任务类型只注册列词汇与领域取值，不再手写 claim；门禁拒绝第 N+1 份手写 claim | **已完成（2026-09-29）**：`JobColumnVocabulary` + `DurableJobRuntime`；词汇化 claim/recover/cancel；`test_job_runtime_vocabulary.py` 14 例；门禁补注新队列注册口径。存量队列迁移归 A3 |
+| A3 | **迁移队列**（建议顺序：构建 → 截图/回填 → 图片 → 页面/组件 mutation → external_task_queue） | 每迁一队：行为回归绿、方言份数 −1、旧代码删除 | 每队 2–5 天（完成口径见 task-runtime-contract §9） |
 | A4 | **跨表不变量下沉**（如 `resolving` requirement ⇔ 有效租约的 `resuming` batch） | DB 约束或状态机库保证，审计函数降为兜底 | 3–5 天 |
 | A5 | ~~普通 AI Run 持久性语义落产品面~~ | **已定「承诺会丢」**；UI/文档标注改由 **WS-G7** 承接，不在任务运行时内做可恢复 Run | — |
 
@@ -181,16 +181,16 @@ F1–F2 建议在 WS-A 契约冻结后、队列迁移前做，避免在 1800 行
 
 **迭代 1（本周起）**
 
-1. WS-B 全部（死物 + 门禁）— 立即
-2. WS-A1 契约冻结草案 — 与 1 并行
-3. WS-D1/D3/D5 基线采集 — 与 1 并行
+1. ~~WS-B 全部（死物 + 门禁）~~ **已清（2026-09-29）**
+2. ~~WS-A1 契约冻结草案~~ **已完成（2026-09-29）**：`docs/developer/architecture/task-runtime-contract.md`
+3. WS-D1/D3/D5 基线采集 — 可并行
 4. ~~WS-H 产品拍板~~ **已定（2026-09-28）**；H1a/H1b/H2a/H2b 并入 WS-G7 / G1 / G2
 5. WS-C 安全与正确性项：C1、C2、C7、C11（含 `no-store`/票据）
 6. WS-G7 Run「会丢」UI/文档标注 + WS-G1/G2 规模承诺（小，可本周）
 
 **迭代 2**
 
-1. WS-A2 统一执行器 + WS-A3 先迁构建/截图队列（与 WS-F1 并行拆 `platform_runtime`）
+1. WS-A2 统一执行器 + WS-A3 先迁构建/截图队列（与 WS-F1 并行拆 `platform_runtime`）；契约与迁移口径见 [`docs/developer/architecture/task-runtime-contract.md`](../../developer/architecture/task-runtime-contract.md)
 2. WS-C 其余门槛 + C9 跨副本演练（不过则继续标单副本）
 3. WS-E1 双入口 Top 操作对拍
 4. WS-G3/G6 密钥与方言预算

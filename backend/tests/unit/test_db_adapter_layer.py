@@ -141,14 +141,15 @@ def test_write_retry_consumers_use_shared_helper() -> None:
 
 
 def test_claim_functions_must_delegate_cas_timing() -> None:
-    """防漂移（CP4）：普通队列的认领时序只在 durable_job_lease_service 实现一次。
+    """防漂移（CP4 / WS-A2）：普通队列的认领时序只在 durable_job_lease_service 实现一次。
 
     `claim_*` 函数可以自带候选谓词与领域取值，但条件 UPDATE 必须由
-    `claim_pending_jobs` / `claim_rows_by_cas` 执行。历史上构建服务自行写过一份
-    「读候选 → 结束读事务 → 逐条 CAS」循环，两处会各自演化：漏掉读事务收口会让
-    SQLite 直接以写锁失败，漏掉 rowcount 判定则会双跑。判定用 AST 精确识别「直接
-    execute 条件 UPDATE」，不用字符串组合近似，避免误伤同样含 pending/running
-    字面量的状态机代码。
+    `claim_pending_jobs` / `claim_rows_by_cas` 执行。**新任务类型应通过
+    `JobColumnVocabulary` + `DurableJobRuntime`（或 `claim_values`/`extra_claim_conditions`
+    回调）注册列词汇与领域取值**，不得再手写「读候选 → CAS」循环。历史上构建服务
+    自行写过一份，两处会各自演化：漏掉读事务收口会让 SQLite 直接以写锁失败，漏掉
+    rowcount 判定则会双跑。判定用 AST 精确识别「直接 execute 条件 UPDATE」，不用
+    字符串组合近似，避免误伤同样含 pending/running 字面量的状态机代码。
 
     `external_task_queue._claim_ready_batch` 是**已核准的例外**，不是漏改：
     1. 认领键是 `batch_id` 业务主键，不是自增 `id`；

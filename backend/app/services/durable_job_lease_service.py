@@ -17,6 +17,7 @@ from sqlalchemy.sql.dml import Update
 
 from app.core.time_utils import utc_now
 from app.db.tx import commit_end_read, row_locks_hold_until_commit
+from app.services.job_runtime_vocabulary import STANDARD_JOB_VOCABULARY, JobColumnVocabulary
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,44 +107,82 @@ async def claim_pending_jobs(
     lease_seconds: int,
     now: datetime | None = None,
     candidate_query: Select[Any] | None = None,
+    vocabulary: JobColumnVocabulary | None = None,
+    claim_values: Callable[[Row[Any], datetime, datetime], dict[str, Any]] | None = None,
+    extra_claim_conditions: Callable[[Row[Any]], list[Any]] | None = None,
 ) -> list[int]:
     """以条件 UPDATE 原子认领 pending 任务，返回当前执行者实际取得的任务 ID。
 
-    认领时序由 `claim_rows_by_cas` 提供；本函数只负责标准队列模型的列名与取值：
-    `worker_id` / `heartbeat_at` / `cancel_requested_at` / `error_code`。列命名不同或
-    需要额外认领条件的任务模型（如 ProjectBuildJob）直接复用 `claim_rows_by_cas`。
+    认领时序由 `claim_rows_by_cas` 提供；本函数只负责列词汇与领域取值。
+    新任务类型应通过 `vocabulary` + `claim_values` 注册，不再手写认领时序。
+
+    默认取值假定「候选列含 id（位置 0）」；若词汇声明了 `lease_generation`，
+    候选查询必须把代次列放在**最后一列**（默认候选查询会自动附上），CAS 才能
+    按候选代次围栏。
     """
 
+    vocab = vocabulary or STANDARD_JOB_VOCABULARY
     claimed_at = now or utc_now()
     lease_expires_at = claimed_at + timedelta(seconds=max(1, lease_seconds))
+    status_col = vocab.attribute(model, vocab.status)
+    cancel_col = vocab.optional_attribute(model, vocab.cancel_requested_at)
+    owner_col = vocab.owner_column(model)
+    heartbeat_col = vocab.heartbeat_column(model)
+    attempt_col = vocab.attribute(model, vocab.attempt_count)
+    error_code_col = vocab.optional_attribute(model, vocab.error_code)
+    error_message_col = vocab.optional_attribute(model, vocab.error_message)
+    started_col = vocab.optional_attribute(model, vocab.started_at)
+    finished_col = vocab.optional_attribute(model, vocab.finished_at)
+    generation_name = vocab.lease_generation if vocab.generation_column(model) is not None else None
+    generation_col = vocab.generation_column(model)
+
+    pending_conditions = [status_col == "pending"]
+    if cancel_col is not None:
+        pending_conditions.append(cancel_col.is_(None))
+
     query = candidate_query
     if query is None:
-        query = (
-            select(model.id)
-            .where(model.status == "pending", model.cancel_requested_at.is_(None))
-            .order_by(model.created_at.asc(), model.id.asc())
-        )
+        select_cols: list[Any] = [model.id]
+        if generation_col is not None:
+            select_cols.append(generation_col)
+        order_cols: list[Any] = []
+        if hasattr(model, "created_at"):
+            order_cols.append(model.created_at.asc())
+        order_cols.append(model.id.asc())
+        query = select(*select_cols).where(*pending_conditions).order_by(*order_cols)
+
+    def _default_claim_values() -> dict[str, Any]:
+        values: dict[str, Any] = {
+            vocab.status: "running",
+            vocab.owner: worker_id,
+            vocab.lease_expires_at: lease_expires_at,
+            vocab.heartbeat: claimed_at,
+            vocab.attempt_count: attempt_col + 1,
+        }
+        if generation_name and generation_col is not None:
+            values[generation_name] = generation_col + 1
+        if error_code_col is not None:
+            values[vocab.error_code] = None  # type: ignore[index]
+        if error_message_col is not None:
+            values[vocab.error_message] = None  # type: ignore[index]
+        if started_col is not None:
+            values[vocab.started_at] = claimed_at
+        if finished_col is not None:
+            values[vocab.finished_at] = None
+        return values
 
     def _claim_cas(row: Row[Any]) -> Update:
-        return (
-            update(model)
-            .where(
-                model.id == row[0],
-                model.status == "pending",
-                model.cancel_requested_at.is_(None),
-            )
-            .values(
-                status="running",
-                worker_id=worker_id,
-                lease_expires_at=lease_expires_at,
-                heartbeat_at=claimed_at,
-                attempt_count=model.attempt_count + 1,
-                error_code=None,
-                error_message=None,
-                started_at=claimed_at,
-                finished_at=None,
-            )
+        conditions = [model.id == row[0], *pending_conditions]
+        if generation_name and generation_col is not None:
+            conditions.append(generation_col == row[len(row) - 1])
+        if extra_claim_conditions is not None:
+            conditions.extend(extra_claim_conditions(row))
+        values = (
+            claim_values(row, claimed_at, lease_expires_at)
+            if claim_values is not None
+            else _default_claim_values()
         )
+        return update(model).where(*conditions).values(**values)
 
     claimed_rows = await claim_rows_by_cas(
         session,
@@ -248,31 +287,45 @@ async def request_job_cancellation(
     *,
     job_id: int,
     now: datetime | None = None,
+    vocabulary: JobColumnVocabulary | None = None,
 ) -> bool:
     """请求取消任务；pending 立即终止，running 由执行者在安全边界确认。"""
 
+    vocab = vocabulary or STANDARD_JOB_VOCABULARY
+    status_col = vocab.attribute(model, vocab.status)
+    cancel_name = vocab.cancel_requested_at
+    cancel_col = vocab.optional_attribute(model, cancel_name)
+    finished_col = vocab.optional_attribute(model, vocab.finished_at)
+
     requested_at = now or utc_now()
+    pending_values: dict[str, Any] = {
+        vocab.status: "cancelled",
+        vocab.owner: None,
+        vocab.lease_expires_at: None,
+        vocab.heartbeat: None,
+    }
+    if cancel_col is not None:
+        pending_values[cancel_name] = requested_at
+    if finished_col is not None:
+        pending_values[vocab.finished_at] = requested_at
     pending_result = await session.execute(
         update(model)
-        .where(model.id == job_id, model.status == "pending")
-        .values(
-            status="cancelled",
-            cancel_requested_at=requested_at,
-            finished_at=requested_at,
-            worker_id=None,
-            lease_expires_at=None,
-            heartbeat_at=None,
+        .where(model.id == job_id, status_col == "pending")
+        .values(**pending_values)
+        .execution_options(synchronize_session=False)
+    )
+    running_result = None
+    if cancel_col is not None:
+        running_result = await session.execute(
+            update(model)
+            .where(model.id == job_id, status_col == "running", cancel_col.is_(None))
+            .values(**{cancel_name: requested_at})
+            .execution_options(synchronize_session=False)
         )
-        .execution_options(synchronize_session=False)
-    )
-    running_result = await session.execute(
-        update(model)
-        .where(model.id == job_id, model.status == "running", model.cancel_requested_at.is_(None))
-        .values(cancel_requested_at=requested_at)
-        .execution_options(synchronize_session=False)
-    )
     await session.commit()
-    return (pending_result.rowcount or 0) + (running_result.rowcount or 0) > 0
+    pending_count = pending_result.rowcount or 0
+    running_count = running_result.rowcount if running_result is not None else 0
+    return pending_count + (running_count or 0) > 0
 
 
 async def recover_expired_running_jobs(
@@ -283,93 +336,140 @@ async def recover_expired_running_jobs(
     interrupted_error_code: str,
     interrupted_error_message: str,
     now: datetime | None = None,
+    vocabulary: JobColumnVocabulary | None = None,
+    recover_values: Callable[[str, Row[Any], datetime], dict[str, Any]] | None = None,
 ) -> DurableJobRecoverySummary:
-    """只恢复租约为空或已经过期的 running 任务，并在空队列时避免发起写 DML。"""
+    """只恢复租约为空或已经过期的 running 任务，并在空队列时避免发起写 DML。
+
+    `vocabulary` 允许非标准列名（如 ProjectBuild 的 `lease_owner`/`claimed_at`）
+    复用同一套过期恢复时序。`recover_values` 供领域队列覆盖默认写入（如 MutationJob
+    的 generation 递增与 `next_attempt_at` 退避）；未提供时使用契约标准取值。
+    """
+
+    vocab = vocabulary or STANDARD_JOB_VOCABULARY
+    # 取列对象做谓词；写入键统一用词汇里的属性名字符串，与 update().values(**kwargs) 对齐。
+    status_name = vocab.status
+    owner_name = vocab.owner
+    heartbeat_name = vocab.heartbeat
+    lease_name = vocab.lease_expires_at
+    cancel_name = vocab.cancel_requested_at if vocab.optional_attribute(model, vocab.cancel_requested_at) else None
+    attempt_name = vocab.attempt_count
+    error_code_name = vocab.error_code if vocab.optional_attribute(model, vocab.error_code) else None
+    error_message_name = vocab.error_message if vocab.optional_attribute(model, vocab.error_message) else None
+    started_name = vocab.started_at if vocab.optional_attribute(model, vocab.started_at) else None
+    finished_name = vocab.finished_at if vocab.optional_attribute(model, vocab.finished_at) else None
+
+    status_col = vocab.attribute(model, status_name)
+    lease_col = vocab.attribute(model, lease_name)
+    attempt_col = vocab.attribute(model, attempt_name)
+    cancel_col = vocab.optional_attribute(model, cancel_name) if cancel_name else None
 
     recovered_at = now or utc_now()
-    expired = (model.lease_expires_at.is_(None)) | (model.lease_expires_at <= recovered_at)
-    base_conditions = (model.status == "running", expired)
+    expired = (lease_col.is_(None)) | (lease_col <= recovered_at)
+    base_conditions = (status_col == "running", expired)
 
     # 定时恢复在空闲期会频繁执行：先只读筛选，无命中时不发任何 UPDATE，避免空转写放大。
     # 后续 UPDATE 仍带过期条件，以抵御筛选之后的并发变化。
-    candidates = list(
-        (
-            await session.execute(
-                select(model.id, model.cancel_requested_at, model.attempt_count).where(*base_conditions)
-            )
-        ).all()
-    )
+    # 候选只取 id / attempt / cancel，按固定位置读取，避免依赖 Row 属性名。
+    select_cols: list[Any] = [model.id, attempt_col]
+    if cancel_col is not None:
+        select_cols.insert(1, cancel_col)
+    candidates = list((await session.execute(select(*select_cols).where(*base_conditions))).all())
     if not candidates:
         await commit_end_read(session)
         return DurableJobRecoverySummary()
 
     attempt_limit = max(1, max_attempts)
-    cancelled_ids = [int(row.id) for row in candidates if row.cancel_requested_at is not None]
-    requeued_ids = [
-        int(row.id)
-        for row in candidates
-        if row.cancel_requested_at is None and int(row.attempt_count) < attempt_limit
-    ]
-    failed_ids = [
-        int(row.id)
-        for row in candidates
-        if row.cancel_requested_at is None and int(row.attempt_count) >= attempt_limit
-    ]
+    cancel_pos = 1 if cancel_col is not None else None
+    attempt_pos = 2 if cancel_col is not None else 1
+
+    cancelled_ids: list[int] = []
+    requeued_ids: list[int] = []
+    failed_ids: list[int] = []
+    rows_by_id: dict[int, Row[Any]] = {}
+    for row in candidates:
+        rid = int(row[0])
+        rows_by_id[rid] = row
+        is_cancelled = cancel_pos is not None and row[cancel_pos] is not None
+        attempts = int(row[attempt_pos] or 0)
+        if is_cancelled:
+            cancelled_ids.append(rid)
+        elif attempts < attempt_limit:
+            requeued_ids.append(rid)
+        else:
+            failed_ids.append(rid)
+
+    def _default_values(kind: str) -> dict[str, Any]:
+        if kind == "cancelled":
+            values: dict[str, Any] = {
+                status_name: "cancelled",
+                lease_name: None,
+                heartbeat_name: None,
+            }
+            if finished_name:
+                values[finished_name] = recovered_at
+            return values
+        if kind == "requeued":
+            values = {
+                status_name: "pending",
+                owner_name: None,
+                lease_name: None,
+                heartbeat_name: None,
+            }
+            if error_code_name:
+                values[error_code_name] = None
+            if error_message_name:
+                values[error_message_name] = None
+            if started_name:
+                values[started_name] = None
+            if finished_name:
+                values[finished_name] = None
+            return values
+        values = {
+            status_name: "failed",
+            lease_name: None,
+            heartbeat_name: None,
+        }
+        if error_code_name:
+            values[error_code_name] = interrupted_error_code
+        if error_message_name:
+            values[error_message_name] = interrupted_error_message
+        if finished_name:
+            values[finished_name] = recovered_at
+        return values
+
+    def _values_for(kind: str, rid: int) -> dict[str, Any]:
+        if recover_values is not None:
+            return recover_values(kind, rows_by_id[rid], recovered_at)
+        return _default_values(kind)
+
     cancelled_count = 0
     requeued_count = 0
     failed_count = 0
     if cancelled_ids:
+        extra = [cancel_col.is_not(None)] if cancel_col is not None else []
         cancelled = await session.execute(
             update(model)
-            .where(*base_conditions, model.id.in_(cancelled_ids), model.cancel_requested_at.is_not(None))
-            .values(
-                status="cancelled",
-                finished_at=recovered_at,
-                lease_expires_at=None,
-                heartbeat_at=None,
-            )
+            .where(*base_conditions, model.id.in_(cancelled_ids), *extra)
+            .values(**_values_for("cancelled", cancelled_ids[0]))
             .execution_options(synchronize_session=False)
         )
         cancelled_count = int(cancelled.rowcount or 0)
     if requeued_ids:
+        extra = [cancel_col.is_(None)] if cancel_col is not None else []
         requeued = await session.execute(
             update(model)
-            .where(
-                *base_conditions,
-                model.id.in_(requeued_ids),
-                model.cancel_requested_at.is_(None),
-                model.attempt_count < attempt_limit,
-            )
-            .values(
-                status="pending",
-                worker_id=None,
-                lease_expires_at=None,
-                heartbeat_at=None,
-                error_code=None,
-                error_message=None,
-                started_at=None,
-                finished_at=None,
-            )
+            .where(*base_conditions, model.id.in_(requeued_ids), *extra, attempt_col < attempt_limit)
+            .values(**_values_for("requeued", requeued_ids[0]))
             .execution_options(synchronize_session=False)
         )
         requeued_count = int(requeued.rowcount or 0)
     if failed_ids:
+        extra = [cancel_col.is_(None)] if cancel_col is not None else []
         failed = await session.execute(
             update(model)
-            .where(
-                *base_conditions,
-                model.id.in_(failed_ids),
-                model.cancel_requested_at.is_(None),
-                model.attempt_count >= attempt_limit,
-            )
-            .values(
-                status="failed",
-                lease_expires_at=None,
-                heartbeat_at=None,
-                error_code=interrupted_error_code,
-                error_message=interrupted_error_message,
-                finished_at=recovered_at,
-            )
+            .where(*base_conditions, model.id.in_(failed_ids), *extra, attempt_col >= attempt_limit)
+            .values(**_values_for("failed", failed_ids[0]))
             .execution_options(synchronize_session=False)
         )
         failed_count = int(failed.rowcount or 0)
@@ -379,3 +479,139 @@ async def recover_expired_running_jobs(
         failed_count=failed_count,
         cancelled_count=cancelled_count,
     )
+
+
+@dataclass(slots=True)
+class DurableJobRuntime:
+    """绑定「模型 + 列词汇 + 领域取值」的任务运行时门面（WS-A2）。
+
+    新任务类型只注册本结构，即可获得 claim / renew / transition / cancel / recover；
+    不再手写认领时序。领域差异通过回调注入，不建能力布尔层。
+    """
+
+    model: type[Any]
+    vocabulary: JobColumnVocabulary = STANDARD_JOB_VOCABULARY
+    # 领域认领取值：覆盖默认 status/owner/lease/heartbeat/attempt 写入
+    claim_values: Callable[[Row[Any], datetime, datetime], dict[str, Any]] | None = None
+    # 领域认领谓词：附加到 CAS 条件（如 deadline、expired_or_absent_lease）
+    extra_claim_conditions: Callable[[Row[Any]], list[Any]] | None = None
+    # 领域恢复取值：覆盖默认 pending/failed/cancelled 写入
+    recover_values: Callable[[str, Row[Any], datetime], dict[str, Any]] | None = None
+
+    async def claim(
+        self,
+        session: AsyncSession,
+        *,
+        worker_id: str,
+        limit: int,
+        lease_seconds: int,
+        now: datetime | None = None,
+        candidate_query: Select[Any] | None = None,
+        max_claims: int | None = None,
+    ) -> list[int]:
+        """认领 pending 任务；时序由 `claim_rows_by_cas` 提供。"""
+
+        # max_claims 通过 candidate_limit 传递：候选多扫、命中即停。
+        return await claim_pending_jobs(
+            session,
+            self.model,
+            worker_id=worker_id,
+            limit=limit if max_claims is None else max(limit, max_claims),
+            lease_seconds=lease_seconds,
+            now=now,
+            candidate_query=candidate_query,
+            vocabulary=self.vocabulary,
+            claim_values=self.claim_values,
+            extra_claim_conditions=self.extra_claim_conditions,
+        )
+
+    async def renew(
+        self,
+        session: AsyncSession,
+        *,
+        job_id: int,
+        worker_id: str,
+        lease_seconds: int,
+        now: datetime | None = None,
+        not_after: datetime | None = None,
+    ) -> bool:
+        """拥有者续租；列名按词汇映射。"""
+
+        return await renew_running_job_lease(
+            session,
+            self.model,
+            job_id=job_id,
+            worker_id=worker_id,
+            lease_seconds=lease_seconds,
+            now=now,
+            owner_attr=self.vocabulary.owner,
+            heartbeat_attr=self.vocabulary.heartbeat,
+            not_after=not_after,
+        )
+
+    async def transition(
+        self,
+        session: AsyncSession,
+        *,
+        job_id: int,
+        worker_id: str,
+        values: dict[str, Any],
+        require_not_cancelled: bool = False,
+        require_active_lease: bool = False,
+        commit: bool = True,
+        extra_conditions: list[Any] | None = None,
+    ) -> bool:
+        """按拥有者迁移 running 任务；列名按词汇映射。"""
+
+        return await transition_owned_running_job(
+            session,
+            self.model,
+            job_id=job_id,
+            worker_id=worker_id,
+            values=values,
+            require_not_cancelled=require_not_cancelled,
+            require_active_lease=require_active_lease,
+            commit=commit,
+            owner_attr=self.vocabulary.owner,
+            cancel_attr=self.vocabulary.cancel_requested_at,
+            extra_conditions=extra_conditions,
+        )
+
+    async def cancel(
+        self,
+        session: AsyncSession,
+        *,
+        job_id: int,
+        now: datetime | None = None,
+    ) -> bool:
+        """请求取消；pending 立即终态，running 写取消标记。"""
+
+        return await request_job_cancellation(
+            session,
+            self.model,
+            job_id=job_id,
+            now=now,
+            vocabulary=self.vocabulary,
+        )
+
+    async def recover(
+        self,
+        session: AsyncSession,
+        *,
+        max_attempts: int,
+        interrupted_error_code: str,
+        interrupted_error_message: str,
+        now: datetime | None = None,
+    ) -> DurableJobRecoverySummary:
+        """过期 running 任务恢复；可选领域写入覆盖。"""
+
+        return await recover_expired_running_jobs(
+            session,
+            self.model,
+            max_attempts=max_attempts,
+            interrupted_error_code=interrupted_error_code,
+            interrupted_error_message=interrupted_error_message,
+            now=now,
+            vocabulary=self.vocabulary,
+            recover_values=self.recover_values,
+        )
