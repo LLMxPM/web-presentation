@@ -180,6 +180,41 @@ async def test_mutation_job_recovery_attempt_boundary_and_null_lease(app_session
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("attempt_count", [1, 3])
+@pytest.mark.parametrize("null_lease", [False, True])
+async def test_cancelled_orphan_should_recover_without_retry(
+    app_session: AsyncSession, attempt_count: int, null_lease: bool,
+) -> None:
+    """取消后的 Worker 失联时必须直接终止，不能滞留或消耗新的重试次数。"""
+
+    workspace = Workspace(code="ws-cancel-orphan", name="WS", created_by=1, updated_by=1)
+    app_session.add(workspace)
+    await app_session.flush()
+    now = utc_now()
+    job = ApiMutationJob(
+        job_id="cancel-orphan", job_type="page_create", workspace_id=workspace.id,
+        created_by=1, payload_json={}, status="running", worker_id="lost-worker",
+        lease_generation=7, lease_expires_at=None if null_lease else now - timedelta(seconds=60),
+        heartbeat_at=now - timedelta(seconds=90), cancel_requested_at=now,
+        attempt_count=attempt_count, max_attempts=3, next_attempt_at=now,
+    )
+    app_session.add(job)
+    await app_session.commit()
+
+    assert await MutationJobService.recover_expired_running_jobs() == 1
+    await app_session.refresh(job)
+    assert job.status == "canceled"
+    assert job.attempt_count == attempt_count
+    assert job.lease_generation == 8
+    assert job.finished_at is not None
+    assert job.worker_id is None and job.lease_expires_at is None and job.heartbeat_at is None
+    assert job.next_attempt_at is None
+    assert job.cancel_requested_at == now
+    assert await MutationJobService.recover_expired_running_jobs() == 0
+    assert await MutationJobService(app_session, worker_id="new-worker").claim_next_pending_job() is None
+
+
+@pytest.mark.asyncio
 async def test_mutation_cancel_and_manual_retry_contract(app_session: AsyncSession) -> None:
     """验证 pending/running 取消语义以及人工重试创建不可变的新任务。"""
 

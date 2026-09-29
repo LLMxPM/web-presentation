@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.external_task_control import sync_external_task_from_domain_job
 from app.ai.page_mutation_executor import AiPageMutationExecutor
+from app.ai.page_mutation_recovery import recover_page_mutation_jobs
 from app.ai.page_mutation_wakeup import page_mutation_job_wakeup
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.core.config import get_settings
@@ -28,7 +29,6 @@ from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
 from app.schemas.agent import AgentRunEvent
 from app.services.durable_job_lease_service import (
     claim_pending_jobs,
-    recover_expired_running_jobs,
     renew_running_job_lease,
     transition_owned_running_job,
 )
@@ -76,13 +76,7 @@ async def recover_interrupted_ai_page_mutation_jobs_on_startup(
     """恢复过期领域 Job，并收敛历史遗留的页面 Batch 续跑残留。"""
 
     async with session_factory() as session:
-        summary = await recover_expired_running_jobs(
-            session,
-            AiPageMutationJob,
-            max_attempts=_MAX_ATTEMPTS,
-            interrupted_error_code="AI_PAGE_MUTATION_INTERRUPTED",
-            interrupted_error_message="页面变更任务执行中断且已达到最大重试次数。",
-        )
+        summary = await recover_page_mutation_jobs(session, max_attempts=_MAX_ATTEMPTS)
     recovered_batches = await _finalize_legacy_resuming_batches(session_factory)
     total = summary.total_count + recovered_batches
     if total:
@@ -142,13 +136,7 @@ async def _run_job_worker(
             observed_generation = page_mutation_job_wakeup.generation
             async with session_factory() as session:
                 if monotonic() - last_recovery_at >= recovery_interval:
-                    await recover_expired_running_jobs(
-                        session,
-                        AiPageMutationJob,
-                        max_attempts=_MAX_ATTEMPTS,
-                        interrupted_error_code="AI_PAGE_MUTATION_INTERRUPTED",
-                        interrupted_error_message="页面变更任务执行中断且已达到最大重试次数。",
-                    )
+                    await recover_page_mutation_jobs(session, max_attempts=_MAX_ATTEMPTS)
                     last_recovery_at = monotonic()
                 candidate_query = (
                     select(AiPageMutationJob.id)

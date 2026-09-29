@@ -5,20 +5,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.task_states import (
     EXTERNAL_TASK_TERMINAL_STATUSES,
     REQUIREMENT_ACTIVE_STATUSES,
     ensure_state_transition,
-    REQUIREMENT_TRANSITIONS,
 )
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.models.ai_agent_runtime import AiAgentRequirement
 from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTask
-
+from app.models.ai_image_generation import AiImageGenerationJob
+from app.models.ai_page_mutation import AiPageMutationJob
 
 # ---------------------------------------------------------------------------
 # INV-1：requirement.status = resolving ⇔ 有效租约的 batch.status = resuming
@@ -152,9 +152,10 @@ async def assert_inv3_job_task_synced(
     *,
     job: Any,
 ) -> bool:
-    """审计：领域 Job 终态时对应 ExternalTask 必须已是终态（INV-3 兜底）。"""
+    """审计：领域 Job 与对应 ExternalTask 的终态必须一致，兼容历史图片别名。"""
 
     domain_status = str(getattr(job, "status", "") or "")
+    domain_status = {"completed": "succeeded", "error": "failed"}.get(domain_status, domain_status)
     if domain_status not in EXTERNAL_TASK_TERMINAL_STATUSES:
         return True
     task = await session.scalar(
@@ -165,7 +166,7 @@ async def assert_inv3_job_task_synced(
     )
     if task is None:
         return True
-    return task.status in EXTERNAL_TASK_TERMINAL_STATUSES
+    return task.status == domain_status
 
 
 # ---------------------------------------------------------------------------
@@ -294,5 +295,22 @@ async def audit_cross_table_invariants(
         )
         if batch is None or batch.status != "resuming":
             violations["inv1"].append(f"{requirement.requirement_id}:AI_INV1_NO_RESUMING_BATCH")
+
+    for kind, model in (("page_mutation", AiPageMutationJob), ("image_generation", AiImageGenerationJob)):
+        terminal_status = case({"completed": "succeeded", "error": "failed"}, value=model.status, else_=model.status)
+        jobs = await session.scalars(
+            select(model)
+            .join(
+                AiAgentExternalTask,
+                (AiAgentExternalTask.run_id == model.run_id)
+                & (AiAgentExternalTask.tool_call_id == model.tool_call_id),
+            )
+            .where(
+                terminal_status.in_(EXTERNAL_TASK_TERMINAL_STATUSES),
+                AiAgentExternalTask.status != terminal_status,
+            )
+        )
+        for job in jobs.all():
+            violations["inv3"].append(f"{kind}:{job.job_id}:AI_INV3_JOB_TASK_MISMATCH")
 
     return violations

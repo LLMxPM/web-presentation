@@ -7,6 +7,7 @@ import logging
 import time
 from contextlib import suppress
 from datetime import timedelta
+from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -18,11 +19,19 @@ from sqlalchemy.orm import aliased
 
 from app.ai.external_task_control import consume_external_batch_results
 from app.ai.external_terminal_cleanup import cleanup_terminal_run_external_state
+from app.ai.job_invariants import (
+    assert_inv1_requirement_batch,
+    load_requirement_batch_pair,
+)
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.ai.platform_tools import recoverable_tool_error_result
-from app.ai.run_write_fence import AgentRunWriteFenceLost, ExternalBatchContinuationWriteFence
+from app.ai.run_write_fence import (
+    AgentRunWriteFenceLost,
+    ExternalBatchContinuationWriteFence,
+)
 from app.ai.session_facade_pydantic import AgentSessionFacade
 from app.core.config import get_settings
+from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db import metrics as write_path_metrics
 from app.models.ai_agent_runtime import AiAgentRequirement, AiAgentRun
@@ -34,7 +43,6 @@ from app.models.user import User
 from app.schemas.agent import AgentRunEvent
 from app.services.auth_service import AuthContext
 from app.services.durable_job_lease_service import claim_rows_by_cas
-from app.ai.job_invariants import assert_inv1_requirement_batch, load_requirement_batch_pair
 
 logger = logging.getLogger(__name__)
 _TASK_TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
@@ -547,6 +555,8 @@ async def _claim_ready_batch(
         )
 
         def _claim_cas(row) -> Any:
+            """构造 Batch 代次 CAS，实际执行与提交由共享运行时负责。"""
+
             batch_id = row[0]
             cand_gen = row[1]
             return (
@@ -567,6 +577,8 @@ async def _claim_ready_batch(
             )
 
         def _on_claimed(row) -> list:
+            """把关联 Requirement 放入同一写事务，随后由不变量校验确认命中。"""
+
             requirement_id = row[2]
             if not requirement_id:
                 return []
@@ -579,6 +591,20 @@ async def _claim_ready_batch(
                 .values(status="resolving")
             ]
 
+        async def _validate_claimed(row) -> None:
+            """在认领事务提交前复核 INV-1；失败必须回滚 Batch 和 Requirement。"""
+
+            requirement, batch = await load_requirement_batch_pair(
+                session, requirement_id=row[2], batch_id=str(row[0])
+            )
+            if requirement is None or batch is None or requirement.status != "resolving":
+                raise AppException(
+                    status_code=409,
+                    code="AI_INV1_REQUIREMENT_BATCH_MISMATCH",
+                    detail="认领外部 Batch 时必须存在对应的 resolving Requirement。",
+                )
+            assert_inv1_requirement_batch(requirement=requirement, batch=batch)
+
         try:
             claimed = await claim_rows_by_cas(
                 session,
@@ -588,6 +614,7 @@ async def _claim_ready_batch(
                 claim_cas=_claim_cas,
                 max_claims=1,
                 on_claimed=_on_claimed,
+                validate_claimed=_validate_claimed,
             )
         except IntegrityError:
             # 两个协调器可能同时看到同一Run的不同ready Batch；数据库唯一索引负责最终串行化。
@@ -597,13 +624,6 @@ async def _claim_ready_batch(
             return None
         row = claimed[0]
         batch_id, generation = str(row[0]), int(row[1] or 0) + 1
-        # INV-1：认领后同事务复核 resolving ⇔ resuming，禁止半截状态提交。
-        requirement_id = row[2]
-        if requirement_id:
-            requirement, batch = await load_requirement_batch_pair(
-                session, requirement_id=str(requirement_id), batch_id=batch_id
-            )
-            assert_inv1_requirement_batch(requirement=requirement, batch=batch, now=now)
         return batch_id, generation
 
 

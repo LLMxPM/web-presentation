@@ -12,7 +12,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.core.time_utils import utc_now
 from app.db.retry import WriteConflictContext, run_with_write_retry
-from app.services.durable_job_lease_service import claim_rows_by_cas
+from app.services.durable_job_lease_service import DurableJobRuntime, claim_rows_by_cas
 
 pytestmark = pytest.mark.integration
 
@@ -70,6 +70,26 @@ async def _seed(factory: async_sessionmaker[AsyncSession], *, count: int = 3) ->
             for i in range(count)
         )
         await session.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit,max_claims,expected", [(3, 1, 1), (3, 2, 2), (1, 3, 1)])
+async def test_runtime_claim_should_respect_scan_and_execution_limits(
+    expire_factory: async_sessionmaker[AsyncSession], limit: int, max_claims: int, expected: int,
+) -> None:
+    """多候选扫描不能超额认领，未领取行仍须留给其它 Worker。"""
+
+    await _seed(expire_factory, count=3)
+    runtime = DurableJobRuntime(model=ExpireProbeJob)
+    async with expire_factory() as session:
+        claimed = await runtime.claim(
+            session, worker_id="bounded-worker", limit=limit, max_claims=max_claims, lease_seconds=60,
+        )
+        assert len(claimed) == expected
+    async with expire_factory() as session:
+        statuses = list((await session.scalars(select(ExpireProbeJob.status))).all())
+        assert statuses.count("running") == expected
+        assert statuses.count("pending") == 3 - expected
 
 
 @pytest.mark.asyncio

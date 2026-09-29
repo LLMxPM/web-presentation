@@ -835,14 +835,32 @@ class MutationJobService:
         backoff = timedelta(seconds=float(get_settings().mutation_job_recovery_backoff_seconds))
 
         def _classify(row, attempt_limit_fallback: int) -> str:
-            # 候选列：id, lease_generation, attempt_count, max_attempts
+            """取消优先于重试预算，避免失联 Worker 留下不可再执行的 running。"""
+
+            # 候选列：id, lease_generation, attempt_count, max_attempts, cancel_requested_at
+            if row[4] is not None:
+                return "cancelled"
             attempt_count = int(row[2] or 0)
             max_attempts = int(row[3] or 3)
             return "requeued" if attempt_count < max_attempts else "failed"
 
         def _recover_values(kind: str, row, recovered_at: datetime) -> dict[str, Any]:
+            """按恢复分类写入终态或退避；取消沿用 External API v1 的拼写。"""
+
             cand_gen = int(row[1] or 0)
             attempt_count = int(row[2] or 0)
+            if kind == "cancelled":
+                return {
+                    "status": "canceled",
+                    "finished_at": recovered_at,
+                    "worker_id": None,
+                    "lease_expires_at": None,
+                    "heartbeat_at": None,
+                    "lease_generation": cand_gen + 1,
+                    "next_attempt_at": None,
+                    "last_error_code": None,
+                    "error_json": None,
+                }
             if kind == "requeued":
                 return {
                     "status": "pending",
@@ -884,6 +902,7 @@ class MutationJobService:
                     ApiMutationJob.lease_generation,
                     ApiMutationJob.attempt_count,
                     ApiMutationJob.max_attempts,
+                    ApiMutationJob.cancel_requested_at,
                 ],
                 row_extra_conditions=_row_extra,
             )

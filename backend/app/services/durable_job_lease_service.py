@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime, timedelta
 import os
 import socket
-from typing import Any
 import uuid
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import Select, select, update
 from sqlalchemy.engine import Row
@@ -17,7 +17,10 @@ from sqlalchemy.sql.dml import Update
 
 from app.core.time_utils import utc_now
 from app.db.tx import commit_end_read, row_locks_hold_until_commit
-from app.services.job_runtime_vocabulary import STANDARD_JOB_VOCABULARY, JobColumnVocabulary
+from app.services.job_runtime_vocabulary import (
+    STANDARD_JOB_VOCABULARY,
+    JobColumnVocabulary,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +59,7 @@ async def claim_rows_by_cas(
     claim_cas: ClaimCasFactory,
     max_claims: int | None = None,
     on_claimed: Callable[[Row[Any]], list[Any]] | None = None,
+    validate_claimed: Callable[[Row[Any]], Awaitable[None]] | None = None,
 ) -> list[Row[Any]]:
     """按「加锁读候选 → 逐条 CAS → 提交」认领任务，返回成功认领的候选行。
 
@@ -78,7 +82,9 @@ async def claim_rows_by_cas(
     开启了写事务，不提交会把写锁带给调用方的下一次操作。`max_claims` 供「扫描多候选、
     只取一个」的领取者使用：达到数量即停止，避免把已 CAS 成功的任务留在无人执行的
     running 状态。`on_claimed` 在每条 CAS 命中后追加同事务语句（如 Requirement 置
-    resolving），与认领一并提交；回调仍须是**同步**构造语句，不得 await 慢路径。
+    resolving），与认领一并提交；回调仍须是**同步**构造语句。
+    `validate_claimed` 在附加写入后、提交前复核不变量，只允许同 Session 的数据库
+    操作，不得调用外部 IO 或自行提交。校验或写入失败时整批回滚。
     """
 
     # 同一条查询构造在 SQLite 上编译成普通 SELECT，因此不需要按方言分叉查询本身。
@@ -88,19 +94,25 @@ async def claim_rows_by_cas(
         await commit_end_read(session)
 
     claimed_rows: list[Row[Any]] = []
-    for row in rows:
-        statement = claim_cas(row)
-        if statement is None:
-            continue
-        result = await session.execute(statement.execution_options(synchronize_session=False))
-        if (result.rowcount or 0) == 1:
-            claimed_rows.append(row)
-            if on_claimed is not None:
-                for extra in on_claimed(row):
-                    await session.execute(extra.execution_options(synchronize_session=False))
-            if max_claims is not None and len(claimed_rows) >= max_claims:
-                break
-    await session.commit()
+    try:
+        for row in rows:
+            statement = claim_cas(row)
+            if statement is None:
+                continue
+            result = await session.execute(statement.execution_options(synchronize_session=False))
+            if (result.rowcount or 0) == 1:
+                claimed_rows.append(row)
+                if on_claimed is not None:
+                    for extra in on_claimed(row):
+                        await session.execute(extra.execution_options(synchronize_session=False))
+                if validate_claimed is not None:
+                    await validate_claimed(row)
+                if max_claims is not None and len(claimed_rows) >= max_claims:
+                    break
+        await session.commit()
+    except BaseException:
+        await session.rollback()
+        raise
     return claimed_rows
 
 
@@ -133,8 +145,9 @@ async def claim_pending_jobs(
     lease_expires_at = claimed_at + timedelta(seconds=max(1, lease_seconds))
     status_col = vocab.attribute(model, vocab.status)
     cancel_col = vocab.optional_attribute(model, vocab.cancel_requested_at)
-    owner_col = vocab.owner_column(model)
-    heartbeat_col = vocab.heartbeat_column(model)
+    # 必需列在构造 UPDATE 前校验，避免词汇误配直到执行 SQL 才失败。
+    vocab.owner_column(model)
+    vocab.heartbeat_column(model)
     attempt_col = vocab.attribute(model, vocab.attempt_count)
     error_code_col = vocab.optional_attribute(model, vocab.error_code)
     error_message_col = vocab.optional_attribute(model, vocab.error_message)
@@ -352,6 +365,7 @@ async def recover_expired_running_jobs(
     candidate_columns: list[Any] | None = None,
     kind_extra_where: Callable[[str], list[Any]] | None = None,
     row_extra_conditions: Callable[[Row[Any]], list[Any]] | None = None,
+    on_recovered: Callable[[int], Awaitable[None]] | None = None,
 ) -> DurableJobRecoverySummary:
     """只恢复租约为空或已经过期的 running 任务，并在空队列时避免发起写 DML。
 
@@ -364,6 +378,8 @@ async def recover_expired_running_jobs(
     `candidate_columns` 自定义候选 SELECT 列（首列必须是 id），供 classify 读取领域字段。
     `kind_extra_where` 按恢复分类追加 UPDATE 谓词（如 succeeded 仅当产物已提升）。
     `row_extra_conditions` 按候选行追加 UPDATE 谓词（如 lease_generation CAS）。
+    `on_recovered` 仅对成功更新的 ID 执行同事务投影；只允许同 Session 数据库操作，
+    不得外部 IO 或自行提交。回调失败时整批恢复与投影一并回滚。
     """
 
     vocab = vocabulary or STANDARD_JOB_VOCABULARY
@@ -500,7 +516,6 @@ async def recover_expired_running_jobs(
             return recover_values(kind, rows_by_id[rid], recovered_at)
         return _default_values(kind)
 
-    summary = DurableJobRecoverySummary()
     counts = {"cancelled": 0, "requeued": 0, "failed": 0, "succeeded": 0}
 
     async def _apply(kind: str, extra_where: list[Any]) -> None:
@@ -522,21 +537,27 @@ async def recover_expired_running_jobs(
             )
             if (result.rowcount or 0) > 0:
                 counts[kind] = counts.get(kind, 0) + 1
+                if on_recovered is not None:
+                    await on_recovered(rid)
 
     cancel_where = [cancel_col.is_not(None)] if cancel_col is not None else []
     no_cancel_where = [cancel_col.is_(None)] if cancel_col is not None else []
     # 自定义分类时不再叠加通用 attempt 谓词：分类结果已是权威，且 max_attempts 可能是行级列。
-    if classify_recovery is not None:
-        await _apply("cancelled", cancel_where)
-        await _apply("requeued", no_cancel_where)
-        await _apply("failed", no_cancel_where)
-        await _apply("succeeded", [])
-    else:
-        await _apply("cancelled", cancel_where)
-        await _apply("requeued", no_cancel_where + [attempt_col < attempt_limit])
-        await _apply("failed", no_cancel_where + [attempt_col >= attempt_limit])
-        await _apply("succeeded", [])
-    await session.commit()
+    try:
+        if classify_recovery is not None:
+            await _apply("cancelled", cancel_where)
+            await _apply("requeued", no_cancel_where)
+            await _apply("failed", no_cancel_where)
+            await _apply("succeeded", [])
+        else:
+            await _apply("cancelled", cancel_where)
+            await _apply("requeued", no_cancel_where + [attempt_col < attempt_limit])
+            await _apply("failed", no_cancel_where + [attempt_col >= attempt_limit])
+            await _apply("succeeded", [])
+        await session.commit()
+    except BaseException:
+        await session.rollback()
+        raise
     return DurableJobRecoverySummary(
         requeued_count=counts["requeued"],
         failed_count=counts["failed"],
@@ -575,18 +596,19 @@ class DurableJobRuntime:
     ) -> list[int]:
         """认领 pending 任务；时序由 `claim_rows_by_cas` 提供。"""
 
-        # max_claims 通过 candidate_limit 传递：候选多扫、命中即停。
+        # 候选扫描数量与成功认领上限独立：多扫候选，但达到 max_claims 即停止。
         return await claim_pending_jobs(
             session,
             self.model,
             worker_id=worker_id,
-            limit=limit if max_claims is None else max(limit, max_claims),
+            limit=limit,
             lease_seconds=lease_seconds,
             now=now,
             candidate_query=candidate_query,
             vocabulary=self.vocabulary,
             claim_values=self.claim_values,
             extra_claim_conditions=self.extra_claim_conditions,
+            max_claims=max_claims,
         )
 
     async def renew(

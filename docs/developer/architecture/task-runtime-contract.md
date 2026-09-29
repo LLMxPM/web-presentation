@@ -162,10 +162,12 @@
 | `failed` | `failed` | 多数队列 | **保持** |
 | `failed` | `error` | AiImageGenerationJob | 改名为 `failed` |
 | `cancelled` | `cancelled` | 多数队列 | **保持** |
-| `cancelled` | `canceled` | ApiMutationJob | 改名为 `cancelled` |
+| `cancelled` | `canceled` | ApiMutationJob | External API v1 兼容例外：共享恢复分类为 `cancelled`，领域持久化与响应继续使用 `canceled`；统一改名需另行迁移 API 契约与消费者 |
 | `skipped` | `skipped` | PageScreenshotJob | **保持**（旁路终态） |
 
 > 迁移期允许**读侧归一**（映射函数）作为过渡；**写侧**必须一次改到位，禁止长期双写两种拼写。
+
+**兼容例外（2026-09-29 复核）**：ApiMutationJob 的取消拼写属于现有 External API v1 契约，本次租约修复不改客户端枚举。所有取消写路径继续只写 `canceled`；过期恢复优先处理取消，再判重试预算，同时撤销租约、递增围栏代次且不增加尝试次数。
 
 ---
 
@@ -206,7 +208,7 @@
 | 6 | **组件变更 AiComponentMutationTask** | `ai_component_mutation_tasks` + `ai_agent_external_tasks` | **A**（挂在 ExternalTask） | 标准 / **仅启动** | 经 ExternalTask 穿透 | 同上；领域详情表保持 |
 | 7 | **ExternalTask 统一控制面** | `ai_agent_external_tasks` | **A** 标准列 | 标准 / 对账兜底 | `succeeded`（已是） | 统一为契约 Job；Batch 聚合不进 Job 状态机 |
 | 8 | **ExternalBatch 续跑聚合** | `ai_agent_external_batches` | **B** `lease_generation` CAS | generation 围栏 / coordinator 轮询 | `collecting/waiting_tasks/ready/resuming/completed/failed/cancelled` | **不是 Job**；保留为聚合/续跑角色，字段映射 §5.3 |
-| 9 | **MutationJob（External API）** | `api_mutation_jobs` | **B** `lease_generation` CAS（经 `claim_rows_by_cas`） | 15s 心跳 / 循环恢复 | `canceled`/`succeeded`/`failed` | `canceled`→`cancelled`；`last_error_code`→`error_code` |
+| 9 | **MutationJob（External API）** | `api_mutation_jobs` | **B** `lease_generation` CAS（经 `claim_rows_by_cas`） | 15s 心跳 / 循环恢复 | `canceled`/`succeeded`/`failed` | `canceled` 是 §3 的 v1 兼容别名；`last_error_code` 通过列词汇映射 |
 | 10 | **渲染 RenderRequest + RenderAttempt** | `render_requests` / `render_attempts` | **C** `claim_generation` + `reserve_attempt` | Attempt 租约 / 协调器收敛 | `queued/executing/succeeded/failed/cancelled/expired` | `queued`→`pending`，`executing`→`running`；Attempt 状态机保留 |
 | — | **进程内 AI Run** | `ai_agent_runs` | **无**（非租约队列） | 进程内；启动全局收敛 | `running/waiting_external/paused/cancelling/completed/cancelled/failed` | **契约外**：产品承诺「会丢」；见 §6 |
 
@@ -287,15 +289,17 @@
 
 | ID | 不变量 | 强制方式 | 状态 |
 | :--- | :--- | :--- | :--- |
-| **INV-1** | `requirement.status = resolving` ⇔ `batch.status = resuming` 且租约有效 | `assert_inv1_requirement_batch`（claim 同事务复核）+ 部分唯一索引 | **已下沉** |
+| **INV-1** | `requirement.status = resolving` ⇔ `batch.status = resuming` 且租约有效 | `claim_rows_by_cas(validate_claimed=...)` 在提交前调用 `assert_inv1_requirement_batch`；关联缺失或 Requirement 更新未命中时拒绝整批认领 | **已下沉** |
 | **INV-2** | 同一 `run_id` 至多一个 `resuming` / 一个 `collecting` Batch | ✅ 部分唯一索引 | 保持 |
-| **INV-3** | Job 终态 ⇒ ExternalTask 写穿终态 | `finalize_external_backed_job` + `sync_external_task_from_domain_job` 同事务投影 | **已下沉** |
+| **INV-3** | Job 终态 ⇒ ExternalTask 写穿相同终态 | `finalize_external_backed_job` + `sync_external_task_from_domain_job` 同事务投影；页面启动/循环恢复共用 `page_mutation_recovery`，在恢复提交前投影 | **已下沉** |
 | **INV-4** | `active_occupancy = 1` 的 (worker_id, worker_epoch) 至多一条 | ✅ 唯一索引 | 保持 |
 | **INV-5** | 产物 `attempt_id` 必须等于 Job 当前 attempt | `assert_inv5_attempt_fence`（构建/产物 complete 唯一入口） | **已下沉** |
 | **INV-6** | `cancel_requested_at` 非空 ⇒ 不得再从 pending 认领 | ✅ 认领谓词 | 保持 |
 | **INV-7** | 终态行不得再被认领 | ✅ 状态谓词 | 保持 |
 
 **实现位置**：`backend/app/ai/job_invariants.py`；单测 `backend/tests/unit/test_job_invariants.py`。
+
+**事务回归**：`backend/tests/integration/test_task_runtime_invariants.py` 使用关联完整的数据库记录验证认领校验失败、恢复投影失败时两侧都回滚，以及正常恢复无需对账即可同步 Task。INV-3 审计覆盖页面、图片终态不一致，兼容历史图片 `completed/error` 别名，保持只读。
 
 ---
 
@@ -324,6 +328,8 @@ runtime = DurableJobRuntime(
 )
 await runtime.claim/renew/transition/cancel/recover(...)
 ```
+
+`claim(limit=..., max_claims=...)` 分别限制候选扫描数量与成功认领数量，互不替代。`claim_rows_by_cas` 的 `validate_claimed` 与 `recover_expired_running_jobs` 的 `on_recovered` 都在共享事务提交前执行；回调只允许使用当前 Session 做数据库校验/投影，不得执行外部 IO 或自行提交。回调异常（含取消）使本批写入全部回滚；恢复回调只接收 CAS 确实更新的任务 ID。
 
 **验收口径**：
 
