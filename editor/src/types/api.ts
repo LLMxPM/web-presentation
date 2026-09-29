@@ -1,5 +1,11 @@
 /**
  * 文件功能：定义前端共享的接口类型与分页结构，供页面、状态和请求层统一复用。
+ *
+ * 手写镜像层（WS-E2 降级）：结构事实源为 Backend `/openapi.json`，
+ * 生成物为 `api.generated.ts`（命令 `pnpm run codegen:editor-api`）。
+ * 新增/修改 API 字段时先改 Backend schema 再重跑 codegen，并用
+ * `tests/contracts/editor-api-types-drift.test.ts` 对拍；本文件暂保留
+ * 前端别名与本地查询类型，逐步迁移到生成物。
  */
 export type RecordStatus = 'active' | 'archived'
 export type UserRole = 'platform_admin' | 'workspace_user'
