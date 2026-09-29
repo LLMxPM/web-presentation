@@ -248,6 +248,12 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
             })
           }
         } catch (error) {
+          const previewError = error instanceof PreviewGatewayError ? error : null
+          recordRuntimeWorkload(
+            'preview',
+            Date.now() - requestStartedAt,
+            previewError?.statusCode === 504 ? 'timeout' : 'error',
+          )
           logRuntimeServer('error', 'runtime.preview.request.failed', 'Runtime 预览入口请求失败。', {
             module: 'runtime.preview',
             request_id: String(req.headers['x-request-id'] || ''),

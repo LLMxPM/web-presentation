@@ -70,8 +70,8 @@ export default function runtimeVisualEdit(options: RuntimeVisualEditOptions = {}
           })
         }
 
+        const startedAt = Date.now()
         try {
-          const startedAt = Date.now()
           await verifyRuntimeServiceToken(String(req.headers[serviceTokenHeaderName] || ''), {
             jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
             audience: options.serviceAudience || process.env.RUNTIME_SERVICE_TOKEN_AUDIENCE || DEFAULT_SERVICE_AUDIENCE,
@@ -87,6 +87,8 @@ export default function runtimeVisualEdit(options: RuntimeVisualEditOptions = {}
           sendJson(res, 200, result)
           recordRuntimeWorkload('light_tool', Date.now() - startedAt)
         } catch (error) {
+          const isTimeout = error instanceof Error && /timeout|超时/i.test(error.message)
+          recordRuntimeWorkload('light_tool', Date.now() - startedAt, isTimeout ? 'timeout' : 'error')
           const action = requestPath === applyEndpointPath ? 'apply' : 'analyze'
           logRuntimeServer('error', `runtime.visual_edit.${action}.failed`, `Runtime 页面可视化编辑 ${action} 失败。`, {
             module: 'runtime.visual_edit',

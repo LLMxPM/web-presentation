@@ -907,6 +907,7 @@ export async function runProjectBuild(params: {
   params.deadline.throwIfExpired()
   // Backend 只按用户输入原样存库，base_url 的规范化与非法值拒绝统一在这里做。
   const baseUrl = normalizeBuildBaseUrl(params.baseUrl)
+  const workspaceStartedAt = Date.now()
   const tempRoot = await createDisposableRuntimeWorkspace(params.runtimeRoot)
   const distRoot = resolve(tempRoot, 'dist')
   const buildContext: RuntimeBuildLogContext = {
@@ -920,7 +921,11 @@ export async function runProjectBuild(params: {
 
   try {
     params.deadline.throwIfExpired()
-    logRuntimeBuild('workspace.created', buildContext)
+    // workspace 阶段必须计墙钟：全量 src 拷贝 + node_modules 软链是真实成本。
+    logRuntimeBuild('workspace.created', {
+      ...buildContext,
+      durationMs: Date.now() - workspaceStartedAt,
+    })
 
     const injectStartedAt = Date.now()
     logRuntimeBuild('modules.inject.start', buildContext)
@@ -994,22 +999,39 @@ export async function runProjectBuild(params: {
 
     // ZIP 归档在独立子进程执行，避免同步压缩阻塞承载预览的主事件循环。
     logRuntimeBuild('artifact.archive.start', buildContext)
-    const archiveResult = await runZipArchiveInWorker({
-      distRoot,
-      outputPath: resolve(tempRoot, 'artifact.zip'),
-      timeoutMs: params.deadline.remainingMs(),
-      signal: params.deadline.signal,
-    })
+    const archiveStartedAt = Date.now()
+    const parentRssBefore = process.memoryUsage().rss
+    let parentRssPeak = parentRssBefore
+    const rssSampler = setInterval(() => {
+      parentRssPeak = Math.max(parentRssPeak, process.memoryUsage().rss)
+    }, 50)
+    rssSampler.unref?.()
+    let archiveResult: Awaited<ReturnType<typeof runZipArchiveInWorker>>
+    try {
+      archiveResult = await runZipArchiveInWorker({
+        distRoot,
+        outputPath: resolve(tempRoot, 'artifact.zip'),
+        timeoutMs: params.deadline.remainingMs(),
+        signal: params.deadline.signal,
+      })
+    } finally {
+      clearInterval(rssSampler)
+      parentRssPeak = Math.max(parentRssPeak, process.memoryUsage().rss)
+    }
     params.deadline.throwIfExpired()
     const artifactSha256 = archiveResult.sha256
     const artifactSizeBytes = archiveResult.sizeBytes
+    // archive 墙钟与其它阶段口径一致（含 spawn/写脚本/父进程侧等待），child 自报时长仅作附注。
     logRuntimeBuild('artifact.archive.done', {
       ...buildContext,
-      durationMs: archiveResult.durationMs,
+      durationMs: Date.now() - archiveStartedAt,
+      childDurationMs: archiveResult.durationMs,
       artifactSha256,
       artifactSizeBytes,
       archiveFileCount: archiveResult.fileCount,
       archiveRssBytes: archiveResult.rssBytes,
+      archiveParentRssBeforeBytes: parentRssBefore,
+      archiveParentRssPeakBytes: parentRssPeak,
       archiveCompressionLevel: archiveResult.compressionLevel,
     })
 

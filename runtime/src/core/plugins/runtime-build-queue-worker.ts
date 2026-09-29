@@ -402,6 +402,8 @@ async function executeClaimedBuildJob(
   } catch (error) {
     // 仅确定性构建失败才上报 failed；成功上传后的 complete 抖动不得走此路径。
     const errorMessage = error instanceof Error ? error.message : String(error || '未知构建错误')
+    const isTimeout = /timeout|超时|deadline/i.test(errorMessage)
+    recordRuntimeWorkload('build', Date.now() - startedAt, isTimeout ? 'timeout' : 'error')
     logRuntimeServer('error', 'runtime.build.worker.job_failed', 'Runtime Build Worker 构建任务失败。', {
       ...logContext,
       durationMs: Date.now() - startedAt,

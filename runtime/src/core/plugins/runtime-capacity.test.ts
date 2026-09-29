@@ -33,9 +33,22 @@ describe('runtime capacity', () => {
       totalDurationMs: 150,
       lastDurationMs: 50,
       maxDurationMs: 100,
+      errors: 0,
+      timeouts: 0,
     })
     expect(snapshot.check.calls).toBe(1)
     expect(snapshot.preview.calls).toBe(0)
+  })
+
+  it('应累计失败与超时调用，便于容量输出对账错误率', () => {
+    recordRuntimeWorkload('preview', 10, 'error')
+    recordRuntimeWorkload('preview', 20, 'timeout')
+    recordRuntimeWorkload('preview', 5)
+
+    const snapshot = getRuntimeWorkloadSnapshot()
+    expect(snapshot.preview.errors).toBe(1)
+    expect(snapshot.preview.timeouts).toBe(1)
+    expect(snapshot.preview.calls).toBe(3)
   })
 
   it('应输出进程内存字段', () => {

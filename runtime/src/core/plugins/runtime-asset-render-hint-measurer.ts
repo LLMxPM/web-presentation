@@ -85,6 +85,7 @@ export default function runtimeAssetRenderHintMeasurer(options: RuntimeAssetRend
           sendJson(res, 200, result)
           recordRuntimeWorkload('light_tool', Date.now() - startedAt)
         } catch (error) {
+          recordRuntimeWorkload('light_tool', Date.now() - startedAt, 'error')
           logRuntimeServer('error', 'runtime.asset_render_hint.measure.failed', 'Runtime 资源比例测量失败。', {
             module: 'runtime.asset_render_hint',
             error,

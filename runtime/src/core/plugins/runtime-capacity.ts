@@ -13,6 +13,10 @@ export interface RuntimeWorkloadCounters {
   totalDurationMs: number
   lastDurationMs: number
   maxDurationMs: number
+  /** 失败调用次数（业务错误、编译失败等） */
+  errors: number
+  /** 超时调用次数（504 / deadline / queue timeout） */
+  timeouts: number
 }
 
 export interface RuntimeWorkloadSnapshot {
@@ -49,6 +53,8 @@ const EMPTY_COUNTERS = (): RuntimeWorkloadCounters => ({
   totalDurationMs: 0,
   lastDurationMs: 0,
   maxDurationMs: 0,
+  errors: 0,
+  timeouts: 0,
 })
 
 const workloadCounters: RuntimeWorkloadSnapshot = {
@@ -133,14 +139,24 @@ export function getRuntimeMemorySnapshot(): RuntimeMemorySnapshot {
  * 记录一次负载调用及其耗时，用于区分预览 / Check / Build 压力来源。
  * @param kind 负载类别
  * @param durationMs 本次调用耗时（毫秒）
+ * @param outcome 可选结果：error 计入失败，timeout 计入超时
  */
-export function recordRuntimeWorkload(kind: RuntimeWorkloadKind, durationMs: number): void {
+export function recordRuntimeWorkload(
+  kind: RuntimeWorkloadKind,
+  durationMs: number,
+  outcome?: 'ok' | 'error' | 'timeout',
+): void {
   const counters = workloadCounters[kind]
   counters.calls += 1
   const normalized = Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : 0
   counters.totalDurationMs += normalized
   counters.lastDurationMs = normalized
   counters.maxDurationMs = Math.max(counters.maxDurationMs, normalized)
+  if (outcome === 'error') {
+    counters.errors += 1
+  } else if (outcome === 'timeout') {
+    counters.timeouts += 1
+  }
 }
 
 /**
