@@ -14,6 +14,7 @@ import runtimeBuildRunner, {
   RuntimeBuildError,
   createBuildBackendClient,
   isRuntimeDiagnosticsInfrastructureError,
+  readRuntimeBuildWorkerCredential,
 } from './runtime-build-runner'
 import {
   RuntimeBuildWorkerProcessError,
@@ -320,6 +321,64 @@ describe('runtime build worker readiness', () => {
       vi.unstubAllGlobals()
     }
     expect(collectRuntimeReadiness().checks.buildWorker).toMatchObject({ ready: false })
+  })
+})
+
+describe('runtime build credential isolation (W01)', () => {
+  const itPosix = process.platform === 'win32' ? it.skip : it
+
+  itPosix('已配置子进程降权时，凭证文件对组/其他用户可读必须 fail-closed', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runtime-cred-loose-'))
+    const credentialFile = join(dir, 'build_worker_credential')
+    await writeFile(credentialFile, 'secret-value\n', { mode: 0o644 })
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', credentialFile)
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', '')
+    vi.stubEnv('RUNTIME_BUILD_CHILD_UID', '10001')
+    vi.stubEnv('RUNTIME_BUILD_CHILD_GID', '10001')
+    try {
+      expect(() => readRuntimeBuildWorkerCredential()).toThrow(RuntimeBuildError)
+      try {
+        readRuntimeBuildWorkerCredential()
+        expect.unreachable('应当抛出 RUNTIME_BUILD_CREDENTIAL_LOOSE_MODE')
+      } catch (error) {
+        expect(error).toMatchObject({ code: 'RUNTIME_BUILD_CREDENTIAL_LOOSE_MODE' })
+      }
+    } finally {
+      vi.unstubAllEnvs()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  itPosix('未配置子进程降权时，宽松权限只告警不阻断（受限形态）', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runtime-cred-warn-'))
+    const credentialFile = join(dir, 'build_worker_credential')
+    await writeFile(credentialFile, 'secret-value\n', { mode: 0o644 })
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', credentialFile)
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', '')
+    vi.stubEnv('RUNTIME_BUILD_CHILD_UID', '')
+    vi.stubEnv('RUNTIME_BUILD_CHILD_GID', '')
+    try {
+      expect(readRuntimeBuildWorkerCredential()).toBe('secret-value')
+    } finally {
+      vi.unstubAllEnvs()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('凭证 0400 且已配置降权时正常读取', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runtime-cred-ok-'))
+    const credentialFile = join(dir, 'build_worker_credential')
+    await writeFile(credentialFile, 'secret-value\n', { mode: 0o600 })
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', credentialFile)
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', '')
+    vi.stubEnv('RUNTIME_BUILD_CHILD_UID', '10001')
+    vi.stubEnv('RUNTIME_BUILD_CHILD_GID', '10001')
+    try {
+      expect(readRuntimeBuildWorkerCredential()).toBe('secret-value')
+    } finally {
+      vi.unstubAllEnvs()
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 

@@ -15,7 +15,6 @@ import {
   symlink,
   writeFile,
 } from 'fs/promises'
-import os from 'os'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
 
 import { normalizeRuntimeModulePath } from '../shared/runtime-preview'
@@ -23,6 +22,9 @@ import {
   RuntimeBuildWorkerProcessError,
   RuntimeDiagnosticsWorker,
   normalizeDiagnosticsWorkerTimeoutMs,
+  prepareChildWritableDir,
+  resolveRuntimeBuildChildIdentity,
+  resolveRuntimeTaskWorkRoot,
   runRuntimeViteBuildInWorker,
 } from './runtime-build-worker'
 
@@ -377,8 +379,12 @@ export async function createDisposableRuntimeWorkspace(
   prefix = 'web-presentation-runtime-build-',
 ): Promise<string> {
   const normalizedRuntimeRoot = resolve(runtimeRoot)
-  const tempRoot = await mkdtemp(join(os.tmpdir(), prefix))
+  const workRoot = resolveRuntimeTaskWorkRoot()
+  await mkdir(workRoot, { recursive: true })
+  const tempRoot = await mkdtemp(join(workRoot, prefix))
   try {
+    // 执行隔离：工作区必须可被降权子进程写入（AR-01/W01）。
+    await prepareChildWritableDir(tempRoot, resolveRuntimeBuildChildIdentity())
     for (const relativePath of COPY_TARGETS) {
       await restoreRuntimePath(normalizedRuntimeRoot, tempRoot, relativePath)
     }

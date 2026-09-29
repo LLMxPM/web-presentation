@@ -19,6 +19,7 @@
 | [备份与恢复](./backup-restore.md) | 数据库、资源、构建产物和密钥备份 |
 | [升级与回滚](./upgrade-rollback.md) | 镜像升级、数据库迁移和回滚注意事项 |
 | [部署排障](./troubleshooting.md) | 健康检查、Runtime、AI 设置和数据库迁移问题 |
+| [执行隔离与权限矩阵](./execution-isolation.md) | 构建领取器 / 编译子进程边界、单任务 token 与 M02 验收要点（AR-01/W01） |
 | [Lite 规模与隔离决策](./lite-scale-and-isolation.md) | 推荐规模（5–10 人 / 并发 3，D2 前非 SLA）、Lite 故障域、G1 不拆容器与 G5 Renderer 隔离决策 |
 
 常规部署涉及三个业务镜像：

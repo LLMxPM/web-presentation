@@ -2,9 +2,10 @@
  * 文件用途：隔离 Runtime 构建阶段的 Vite/Rollup 与 ZIP 归档执行，避免构建/压缩 OOM 阻塞或终止 Runtime 主进程。
  */
 
-import { spawn, type ChildProcess } from 'child_process'
+import { spawn, type ChildProcess, type SpawnOptions } from 'child_process'
 import { randomUUID } from 'crypto'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { chmod, chown, mkdir, readFile, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
 import { resolve } from 'path'
 
 import { RuntimeTaskAbortedError } from './runtime-task-deadline'
@@ -42,6 +43,105 @@ export function createRuntimeBuildChildEnv(overrides: Record<string, string> = {
     delete env[key]
   }
   return env
+}
+
+/**
+ * 构建子进程降权身份（POSIX UID/GID）。
+ * 生产形态下编译不可信 SFC 的进程必须与持有全局 Worker 凭证的领取器不同 UID，
+ * 否则删环境变量无法阻止子进程读取 `/run/secrets` 下的凭证文件（AR-01/W01）。
+ */
+export interface RuntimeBuildChildIdentity {
+  uid?: number
+  gid?: number
+}
+
+/**
+ * 解析子进程降权身份；未配置时返回空对象（开发/受限形态，仅保留删键）。
+ * @param env 环境源，默认 process.env
+ * @returns 子进程 uid/gid（若配置）
+ */
+export function resolveRuntimeBuildChildIdentity(
+  env: NodeJS.ProcessEnv = process.env,
+): RuntimeBuildChildIdentity {
+  const uid = parsePositiveIntEnv(env.RUNTIME_BUILD_CHILD_UID)
+  const gid = parsePositiveIntEnv(env.RUNTIME_BUILD_CHILD_GID)
+  if (uid == null && gid == null) {
+    return {}
+  }
+  return { uid, gid }
+}
+
+/**
+ * 解析正整数环境变量；空串、0、负数、非数字均视为未配置。
+ */
+function parsePositiveIntEnv(raw: string | undefined): number | undefined {
+  const text = String(raw ?? '').trim()
+  if (!text || !/^\d+$/.test(text)) {
+    return undefined
+  }
+  const value = Number(text)
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined
+}
+
+/**
+ * 把降权身份转换为 spawn 选项。Windows 无 POSIX uid/gid，原样返回空对象。
+ * @param identity 子进程身份
+ * @returns spawn 可用的 uid/gid 字段
+ */
+export function toSpawnIdentityOptions(
+  identity: RuntimeBuildChildIdentity,
+): Pick<SpawnOptions, 'uid' | 'gid'> {
+  if (process.platform === 'win32') {
+    return {}
+  }
+  return {
+    ...(identity.uid != null ? { uid: identity.uid } : {}),
+    ...(identity.gid != null ? { gid: identity.gid } : {}),
+  }
+}
+
+/**
+ * 准备供降权子进程写入的任务目录。
+ * 父进程保持目录属主以便继续写入；通过 setgid + 属组可写让 rtchild 能写。
+ * @param dir 任务目录
+ * @param identity 子进程身份
+ */
+export async function prepareChildWritableDir(
+  dir: string,
+  identity: RuntimeBuildChildIdentity,
+): Promise<void> {
+  await mkdir(dir, { recursive: true })
+  if (process.platform === 'win32' || (identity.uid == null && identity.gid == null)) {
+    return
+  }
+  // 属主（领取器）可写；setgid 让子文件继承属组。chmod 不需要 CAP_CHOWN。
+  try {
+    await chmod(dir, 0o2770)
+  } catch {
+    try {
+      await chmod(dir, 0o2777)
+    } catch {
+      // 权限不可改时保持 mkdir 默认；M02 验证子进程写失败是否可观测。
+    }
+  }
+  // 尝试把属组对齐子进程（父目录已 setgid 时通常已继承；此处兜底）。
+  if (identity.gid != null) {
+    try {
+      await chown(dir, -1, identity.gid)
+    } catch {
+      // 无 CAP_CHOWN 时依赖父目录 setgid 继承。
+    }
+  }
+}
+
+/**
+ * 解析任务工作区根目录：优先 `RUNTIME_TASK_WORK_ROOT`（生产镜像指向 setgid 目录），
+ * 否则回落系统临时目录。
+ * @returns 工作区根路径
+ */
+export function resolveRuntimeTaskWorkRoot(): string {
+  const configured = String(process.env.RUNTIME_TASK_WORK_ROOT || '').trim()
+  return configured || resolve(tmpdir())
 }
 
 export interface RuntimeBuildWorkerRunOptions {
@@ -326,7 +426,8 @@ export class RuntimeDiagnosticsWorker {
     }
     const workerRoot = resolve(this.tempRoot, '.runtime-worker')
     const workerScriptPath = resolve(workerRoot, 'runtime-diagnostics-worker.mjs')
-    await mkdir(workerRoot, { recursive: true })
+    const childIdentity = resolveRuntimeBuildChildIdentity()
+    await prepareChildWritableDir(workerRoot, childIdentity)
     this.assertOpen()
     await writeFile(
       workerScriptPath,
@@ -342,6 +443,7 @@ export class RuntimeDiagnosticsWorker {
       env: createRuntimeBuildChildEnv(),
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      ...toSpawnIdentityOptions(childIdentity),
     })
     this.child = child
     this.childStartedAt = Date.now()
@@ -635,7 +737,8 @@ export async function runRuntimeViteBuildInWorker(options: RuntimeBuildWorkerRun
   const taskRoot = options.taskRoot
     ? resolve(options.taskRoot)
     : resolve(tempRoot, '.runtime-task', randomUUID())
-  await mkdir(taskRoot, { recursive: true })
+  const childIdentity = resolveRuntimeBuildChildIdentity()
+  await prepareChildWritableDir(taskRoot, childIdentity)
   const inputPath = resolve(taskRoot, 'runtime-build-worker-input.json')
   const outputPath = resolve(taskRoot, 'runtime-build-worker-output.json')
   const workerScriptPath = resolve(taskRoot, 'runtime-build-worker.mjs')
@@ -660,6 +763,7 @@ export async function runRuntimeViteBuildInWorker(options: RuntimeBuildWorkerRun
       maxOldSpaceMb: normalizeWorkerMaxOldSpaceMb(options.maxOldSpaceMb),
       timeoutMs: normalizeWorkerTimeoutMs(options.timeoutMs),
       signal: options.signal,
+      identity: childIdentity,
     })
   } catch (error) {
     throwIfSignalAborted(options.signal)
@@ -696,7 +800,8 @@ export async function runZipArchiveInWorker(options: RuntimeZipArchiveOptions): 
   const outputPath = resolve(options.outputPath)
   const compressionLevel = normalizeArchiveCompressionLevel(options.compressionLevel)
   const taskRoot = resolve(outputPath, '..', '.runtime-archive')
-  await mkdir(taskRoot, { recursive: true })
+  const childIdentity = resolveRuntimeBuildChildIdentity()
+  await prepareChildWritableDir(taskRoot, childIdentity)
   const inputPath = resolve(taskRoot, 'runtime-archive-worker-input.json')
   const workerOutputPath = resolve(taskRoot, 'runtime-archive-worker-output.json')
   const workerScriptPath = resolve(taskRoot, 'runtime-archive-worker.mjs')
@@ -723,6 +828,7 @@ export async function runZipArchiveInWorker(options: RuntimeZipArchiveOptions): 
       maxOldSpaceMb: normalizeWorkerMaxOldSpaceMb(options.maxOldSpaceMb),
       timeoutMs: normalizeArchiveWorkerTimeoutMs(options.timeoutMs),
       signal: options.signal,
+      identity: childIdentity,
     })
   } catch (error) {
     throwIfSignalAborted(options.signal)
@@ -1212,6 +1318,8 @@ interface SpawnRuntimeBuildWorkerOptions {
   timeoutMs: number
   /** 外部中止信号：触发后立即终止子进程，不等待其自然结束。 */
   signal?: AbortSignal
+  /** 子进程降权身份；省略时从环境解析。 */
+  identity?: RuntimeBuildChildIdentity
 }
 
 /**
@@ -1229,6 +1337,7 @@ function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promi
     return Promise.reject(toAbortError(abortSignal.reason))
   }
   return new Promise((resolve, reject) => {
+    const identity = options.identity ?? resolveRuntimeBuildChildIdentity()
     const child = spawn(process.execPath, [
       `--max-old-space-size=${options.maxOldSpaceMb}`,
       options.workerScriptPath,
@@ -1239,6 +1348,7 @@ function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promi
       env: createRuntimeBuildChildEnv(),
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
+      ...toSpawnIdentityOptions(identity),
     })
     let stdout = ''
     let stderr = ''

@@ -492,17 +492,40 @@ export function readRuntimeBuildWorkerCredential(): string {
   const credentialFile = String(process.env.RUNTIME_BUILD_WORKER_CREDENTIAL_FILE || '').trim()
   if (credentialFile) {
     try {
-      // 该文件与执行不可信构建代码的进程同容器共存，权限过宽时应显式暴露而不是静默接受。
-      // Windows 不上报：POSIX 权限位在 NTFS 上没有对应语义。
+      // 该文件与执行不可信构建代码的进程同容器共存。已配置子进程降权（AR-01/W01）
+      // 时，凭证对组/其他用户可读会让降权失效，必须 fail-closed；未配置降权的
+      // 开发/受限形态只告警。Windows 不上报：POSIX 权限位在 NTFS 上没有对应语义。
       const stat = statSync(credentialFile)
-      if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
-        logRuntimeServer('warn', 'runtime.build.worker.credential_loose_mode', '构建 Worker 凭证文件对所有用户可读。', {
+      const looseMode = process.platform !== 'win32' && (stat.mode & 0o077) !== 0
+      if (looseMode) {
+        const isolationConfigured =
+          Boolean(String(process.env.RUNTIME_BUILD_CHILD_UID || '').trim()) ||
+          Boolean(String(process.env.RUNTIME_BUILD_CHILD_GID || '').trim())
+        const detail = {
           module: 'runtime.build',
           mode: (stat.mode & 0o777).toString(8),
-        })
+          isolation_configured: isolationConfigured,
+        }
+        if (isolationConfigured) {
+          logRuntimeServer(
+            'error',
+            'runtime.build.worker.credential_loose_mode',
+            '构建 Worker 凭证文件对组/其他用户可读，且已配置子进程降权；拒绝启动以维持执行隔离边界。',
+            detail,
+          )
+          throw new RuntimeBuildError(
+            503,
+            'RUNTIME_BUILD_CREDENTIAL_LOOSE_MODE',
+            '构建 Worker 凭证文件权限过宽（非 0400/0600），与子进程降权边界冲突。请将 secret 限制为属主可读。',
+          )
+        }
+        logRuntimeServer('warn', 'runtime.build.worker.credential_loose_mode', '构建 Worker 凭证文件对所有用户可读。', detail)
       }
       return readFileSync(credentialFile, 'utf-8').trim()
-    } catch {
+    } catch (error) {
+      if (error instanceof RuntimeBuildError) {
+        throw error
+      }
       return ''
     }
   }

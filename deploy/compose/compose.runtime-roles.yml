@@ -302,8 +302,14 @@ secrets:
     file: ../secrets/render_service_credential
   # Runtime Build Worker 与 Backend 共用的内部服务凭证；文件内容为强随机字符串。
   # 生成示例：python -c "import secrets; print(secrets.token_urlsafe(32))"
+  # 执行隔离（AR-01/W01）：uid/gid 对齐 Runtime 镜像内 rtworker（10000），mode 0400，
+  # 使降权到 rtchild（10001）的编译子进程无法读取该文件。详见 execution-isolation.md。
+  # Compose 需支持 secrets 的 uid/gid/mode（Docker Compose v2.23+）。
   build_worker_credential:
     file: ../secrets/build_worker_credential
+    mode: 0400
+    uid: "10000"
+    gid: "10000"
 
 volumes:
   backend-data:

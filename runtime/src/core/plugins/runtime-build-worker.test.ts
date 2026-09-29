@@ -19,8 +19,12 @@ import {
   normalizeDiagnosticsWorkerTimeoutMs,
   normalizeWorkerMaxOldSpaceMb,
   normalizeWorkerTimeoutMs,
+  prepareChildWritableDir,
+  resolveRuntimeBuildChildIdentity,
+  resolveRuntimeTaskWorkRoot,
   runRuntimeViteBuildInWorker,
   runZipArchiveInWorker,
+  toSpawnIdentityOptions,
 } from './runtime-build-worker'
 import { RuntimeTaskAbortedError } from './runtime-task-deadline'
 
@@ -535,6 +539,61 @@ describe('runtime build child environment', () => {
     } finally {
       restoreEnvValue('RUNTIME_BUILD_WORKER_CREDENTIAL', originalCredential)
       restoreEnvValue('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', originalCredentialFile)
+    }
+  })
+})
+
+describe('runtime build child identity (W01)', () => {
+  it('未配置降权身份时返回空对象，开发形态仅保留删键', () => {
+    expect(resolveRuntimeBuildChildIdentity({})).toEqual({})
+    expect(resolveRuntimeBuildChildIdentity({ RUNTIME_BUILD_CHILD_UID: '', RUNTIME_BUILD_CHILD_GID: '  ' })).toEqual({})
+    expect(resolveRuntimeBuildChildIdentity({ RUNTIME_BUILD_CHILD_UID: '0', RUNTIME_BUILD_CHILD_GID: '-1' })).toEqual({})
+    expect(resolveRuntimeBuildChildIdentity({ RUNTIME_BUILD_CHILD_UID: 'abc' })).toEqual({})
+  })
+
+  it('解析正整数 UID/GID；单项配置也生效', () => {
+    expect(
+      resolveRuntimeBuildChildIdentity({ RUNTIME_BUILD_CHILD_UID: '10001', RUNTIME_BUILD_CHILD_GID: '10001' }),
+    ).toEqual({ uid: 10001, gid: 10001 })
+    expect(resolveRuntimeBuildChildIdentity({ RUNTIME_BUILD_CHILD_UID: '10001' })).toEqual({ uid: 10001 })
+    expect(resolveRuntimeBuildChildIdentity({ RUNTIME_BUILD_CHILD_GID: '10001' })).toEqual({ gid: 10001 })
+  })
+
+  it('spawn 降权选项在 Windows 上为空，POSIX 上透传 uid/gid', () => {
+    const identity = { uid: 10001, gid: 10001 }
+    const options = toSpawnIdentityOptions(identity)
+    if (process.platform === 'win32') {
+      expect(options).toEqual({})
+    } else {
+      expect(options).toEqual({ uid: 10001, gid: 10001 })
+    }
+  })
+
+  it('任务工作区根优先使用 RUNTIME_TASK_WORK_ROOT', () => {
+    const original = process.env.RUNTIME_TASK_WORK_ROOT
+    try {
+      process.env.RUNTIME_TASK_WORK_ROOT = '/var/tmp/runtime-tasks'
+      expect(resolveRuntimeTaskWorkRoot()).toBe('/var/tmp/runtime-tasks')
+      delete process.env.RUNTIME_TASK_WORK_ROOT
+      expect(resolveRuntimeTaskWorkRoot()).toBeTruthy()
+    } finally {
+      restoreEnvValue('RUNTIME_TASK_WORK_ROOT', original)
+    }
+  })
+
+  it('prepareChildWritableDir 为降权子进程准备可写目录', async () => {
+    const tempRoot = await createWorkerFixture()
+    try {
+      const taskDir = join(tempRoot, 'task')
+      await prepareChildWritableDir(taskDir, { uid: 10001, gid: 10001 })
+      const stat = await import('fs/promises').then(fs => fs.stat(taskDir))
+      expect(stat.isDirectory()).toBe(true)
+      if (process.platform !== 'win32') {
+        // setgid + 属主/属组可写，保证降权子进程可写任务目录。
+        expect(stat.mode & 0o2770).toBe(0o2770)
+      }
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
     }
   })
 })
