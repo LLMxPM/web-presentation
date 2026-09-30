@@ -71,7 +71,7 @@ class AiAgentRun(TimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 进程归属（hostname:pid:uuid）：启动恢复只收敛本机已死进程的遗留，禁止全局扫杀。
+    # 进程实例（hostname:pid:uuid）：新实例通过持久化心跳收敛，历史 owner 保留启动过滤。
     process_owner: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
 
 

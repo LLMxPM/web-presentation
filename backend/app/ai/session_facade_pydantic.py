@@ -33,6 +33,8 @@ from app.ai.pydantic_model_resolver import PydanticLlmModelResolver
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.ai.pydantic_tools import build_pydantic_tools
 from app.ai.run_write_fence import AgentRunWriteFence
+from app.ai.run_write_fence import AgentRunWriteFenceLost
+from app.ai.process_liveness import bind_ordinary_run_owner
 from app.ai.agent.runtime_context import AgentRuntimeContext, prepend_runtime_context_to_user_message
 from app.ai.runtime_context_builder import build_agent_runtime_context
 from app.ai.visual_tool_runtime import resolve_visual_tool_runtime
@@ -492,6 +494,10 @@ class AgentSessionFacade(AgentRunStreamMixin):
         if run_model.status not in {"pending", "running", "cancelling"}:
             return
         try:
+            execution_fence = await bind_ordinary_run_owner(self._session, run_model)
+            self._store = PlatformAgentRuntimeStore(
+                self._session, user_id=self._current.user.id, write_fence=execution_fence,
+            )
             descriptor = self._app.state.ai_registry.get_descriptor(run_model.agent_id)
             llm_config = await self.resolve_run_llm_config(
                 run_model=run_model,
@@ -540,6 +546,7 @@ class AgentSessionFacade(AgentRunStreamMixin):
                 unavailable_group_keys=visual_unavailable,
                 image_generation_model=image_generation_model,
                 image_generation_config_id=image_generation_config_id,
+                write_fence=execution_fence,
             )
             await PydanticAgentRunner(self._store).run_to_store(
                 run_model=run_model,
@@ -564,6 +571,9 @@ class AgentSessionFacade(AgentRunStreamMixin):
                 fallback_message="Backend 已停止，当前智能体运行未继续执行。",
             )
             raise
+        except AgentRunWriteFenceLost:
+            await self._session.rollback()
+            return
         except AppException as exc:
             await self._store.mark_terminal(
                 run_model,

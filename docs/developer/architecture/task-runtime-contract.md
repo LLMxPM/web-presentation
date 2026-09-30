@@ -272,12 +272,13 @@
 | ExternalTask | 部分（对账） | 部分 | 领域 Job 终态写穿为主 |
 | MutationJob | ✅ | ✅ | — |
 | Render | ✅（协调器收敛 unknown/expired） | ✅ | — |
-| **AI Run** | — | owner 过滤启动收敛 | 已按 owner 过滤（见 §6.3）；产品已接受「会丢」 |
+| **AI Run** | 进程实例心跳 | 普通执行 owner 过期 CAS；历史 owner 启动过滤 | 见 §6.3；终态收敛不恢复模型执行，实机 M04 待验 |
 
 ### 6.3 契约外：普通 AI Run
 
 - **产品决策（H1，2026-09-28）**：普通 AI Run **承诺「会丢」**。进程退出/重启导致的中断是接受的边界，**不做**可恢复 Run。
-- 启动恢复 `recover_interrupted_agent_runs_on_startup` 已按 **owner 过滤**（WS-C C1，2026-09-29）：Run 启动时打 `process_owner = hostname:pid:uuid`；启动只收敛「无主遗留」（单进程部署）与「本机已死进程」的 Run，**不碰其它主机/仍存活 sibling 的活跃 Run**。09-30 复核确认 `recover_stale_active_run` 尚无生产调用点，跨容器遗留当前依赖用户 `force_cancel`，自动有界收敛仍待实现（AR-05b）。该能力仍在 A2 运行时统一范围外，不得伪装成「已统一」。
+- W05b 新实例按 `process_owner = hostname:pid:uuid` 登记 `ai_agent_process_owners`，心跳不依赖模型事件；`process_reaper` 复用 `claim_rows_by_cas`，同事务解除失效 owner、写终态与事件。普通执行/工具传播实例写围栏，过期实例不能续期复活；人工继续重新绑定实际 owner，自动外部续跑仍用 Batch 围栏。paused、waiting_external 和未完成外部 Batch 交接不由普通收敛器接管。
+- 默认 owner TTL 90 秒、心跳/扫描各 10 秒，TTL 至少为心跳周期三倍；在数据库可用、时钟同步且无额外调度/写重试延迟时，最后有效心跳后约 TTL + 扫描周期收敛，实机上界需按环境预算验 M04。历史未登记 owner 不自动回填租约，仍按 hostname/PID 启动过滤，跨容器历史遗留由 `force_cancel` 处理；升级前排空旧 Run。模型不自动续跑，SSE 只观察，不能把存活心跳表称为可恢复 Run 队列。
 - Run 状态机：`running / waiting_external / paused / cancelling → completed / cancelled / failed`；进程停止 → `AI_RUN_PROCESS_STOPPED`。
 - UI/文档标注（区分「取消」与「进程停止、不续跑」）归 **WS-G7**。
 

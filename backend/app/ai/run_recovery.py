@@ -2,7 +2,7 @@
 
 多副本语义：只收敛「无主遗留」与「本机已死进程」的 Run，禁止全局扫杀其它副本
 正在执行的活跃 Run。产品决策（H1）承诺普通 Run「会丢」，因此不做跨进程续跑；
-跨副本僵尸由 `recover_stale_active_run` 空闲超时与用户 `force_cancel` 兜底。
+已登记进程实例由 `process_reaper` 按存活租约独立收敛；本模块处理历史未登记 owner。
 """
 
 from __future__ import annotations
@@ -10,12 +10,13 @@ from __future__ import annotations
 import os
 import socket
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
 from app.db.profile import resolve_deployment_profile
 from app.models.ai_agent_runtime import AiAgentRun
+from app.models.ai_process_owner import AiAgentProcessOwner
 
 
 def parse_process_owner(owner: str | None) -> tuple[str, int] | None:
@@ -84,7 +85,7 @@ def should_recover_run(
 
     已知边界（W05/M04，详见 compatibility-matrix.md §5）：
     - 容器重建导致 hostname 改变时，原 Run 不会被新容器启动恢复收敛，
-      依赖空闲超时与用户 force_cancel。
+      历史未登记 owner 依赖用户 force_cancel；新实例由存活租约收敛。
     - PID 重用会把已死进程误判为存活，推迟收敛；uuid 段当前不参与存活判定。
     - 同名主机、不同 PID namespace 可能误判；多副本应保证 hostname 唯一。
     """
@@ -121,7 +122,13 @@ async def recover_interrupted_agent_runs_on_startup(
         runs = list(
             (
                 await session.scalars(
-                    select(AiAgentRun).where(AiAgentRun.status.in_(("pending", "running", "cancelling")))
+                    select(AiAgentRun).where(
+                        AiAgentRun.status.in_(("pending", "running", "cancelling")),
+                        # 已登记实例只由存活租约收敛，禁止用 PID namespace 探测覆盖它。
+                        ~exists(select(AiAgentProcessOwner.owner_id).where(
+                            AiAgentProcessOwner.owner_id == AiAgentRun.process_owner,
+                        )),
+                    )
                 )
             ).all()
         )

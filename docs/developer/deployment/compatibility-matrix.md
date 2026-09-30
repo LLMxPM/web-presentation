@@ -83,9 +83,15 @@ Runtime 在 HTML 入口收到 `x-expected-runtime-version-fingerprint`（`runtim
 - 滚动时按 §3.1 排空，避免 HTML 与模块来自不同版本；
 - 检查角色缓存指纹包含 Runtime Kit 清单 hash（`CodeCheckFingerprintBuilder`），升级编译器后缓存自然失效。
 
-## 5. Run 收敛边界（hostname / PID）
+## 5. Run 收敛边界（实例心跳 / 历史 owner）
 
-普通 AI Run 使用进程内执行，产品承诺「中断不自动续跑」。启动恢复见 `backend/app/ai/run_recovery.py`：
+普通 AI Run 使用进程内执行，产品承诺「中断不自动续跑」。W05b 已新增实例心跳表与独立后台收敛，本地验证通过，真实多副本 M04 仍待执行：
+
+- 新 Run 使用同一进程实例的 `hostname:pid:uuid`，登记 `ai_agent_process_owners`；容器/主机名改变或 PID 重用不会让过期的 UUID 重新存活。心跳不依赖模型输出，默认 TTL 90 秒、心跳/扫描各 10 秒；过期实例不能续期复活，当前执行器停止接收普通 Run，须重启实例。
+- `process_reaper` 复用统一 CAS 时序；复核 owner、状态、取消快照与外部交接，在同事务写终态/事件、解除会话占用。普通执行与工具提交传播存活写围栏，迟到结果被拒绝。paused、waiting_external、未完成外部 Batch 交接保持原路径，人工继续绑定新 owner。
+- 在数据库可用、时钟同步且无额外调度/重试延迟时，最后有效心跳后约 TTL + 扫描周期收敛。实机应记录配置、写冲突/数据库不可用时长与完整收敛时间，不能只拿一次恢复耗时与 TTL 比较。
+
+历史未登记 owner 不自动补造心跳。升级前排空旧 Run；下表仅是 `run_recovery.py` 的历史兼容路径，跨容器历史遗留继续用 `force_cancel`：
 
 | 条件 | 启动恢复是否收敛 | 说明 |
 | :--- | :--- | :--- |
@@ -94,10 +100,10 @@ Runtime 在 HTML 入口收到 `x-expected-runtime-version-fingerprint`（`runtim
 | hostname = 本机且 PID 仍存活 | **否** | 含当前进程与同机 sibling |
 | hostname = 本机且 PID 已死 | 是 | 终态为 `AI_RUN_PROCESS_STOPPED` 或取消 |
 
-**已知边界（M04 需覆盖）：**
+**历史路径边界（M04 需区分新/旧实例）：**
 
-1. **容器重建 / hostname 改变**：原 Run 归属旧 hostname，启动恢复不会收敛。`recover_stale_active_run()` 尚无生产调用点，SSE 只观察，当前需要用户 `force_cancel`；自动有界终态仍是待实现目标。
-2. **PID 重用**：若原 PID 被新无关进程占用，`process_is_alive` 为真，启动恢复跳过；当前无后台空闲收敛补偿。`process_owner` 中的 uuid 不参与存活判定。
+1. **容器重建 / hostname 改变**：历史未登记 Run 归属旧 hostname，启动恢复不收敛，需 `force_cancel`；新登记实例按过期心跳处理。SSE 始终只观察。
+2. **PID 重用**：历史未登记 Run 的 `process_is_alive` 为真时跳过；新实例以 UUID/持久化租约区分，不依赖 PID 存活探测。
 3. **同名主机、不同 PID namespace**：可能把异 namespace 进程误判为存活或死亡；多副本部署应保证 hostname 唯一（Docker 默认 container id 即可）。
 
 ## 6. 验收用例（M05 / M04）
@@ -106,7 +112,7 @@ Runtime 在 HTML 入口收到 `x-expected-runtime-version-fingerprint`（`runtim
 2. 组合 C：Backend N + Renderer/Runtime N-1（协议未变）完成截图；破坏性变更样本应明确失败。
 3. 组合 B/E：除登录外，执行 N-1 页面任务入队与 Batch ORM 查询；缺列必须判不兼容。按既定 schema 恢复后再验证旧版完整业务。
 4. 指纹：人工失配入口返回 409；另用正常浏览器让 HTML/模块落到不同版本，验证版本传播或稳定路由。
-5. Run：强杀 Backend-A 后重建容器（hostname 变）→ B 的活跃 Run 不被误杀；实现独立 owner 收敛后验证旧 Run 有界终态。当前手动取消不算自动恢复通过。
+5. Run：强杀 Backend-A 后重建容器（hostname 变）→ 新登记的失效 Run 有界终态、会话可再发起，B 活跃 Run 不被误杀；历史未登记 Run 单独验证手动补偿，不算新实例自动收敛通过。
 6. Run：PID 重用模拟 → 启动恢复不误杀；记录收敛延迟。
 
 ## 7. 相关文档

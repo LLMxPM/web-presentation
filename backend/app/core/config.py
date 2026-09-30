@@ -161,6 +161,9 @@ class AppSettings(BaseSettings):
     ai_tool_auth_window_seconds: int = 1800
     ai_tool_auth_max_seconds: int = 7200
     ai_agent_stream_idle_timeout_seconds: float = 180.0
+    ai_run_owner_ttl_seconds: float = Field(default=90.0, ge=3)
+    ai_run_owner_heartbeat_seconds: float = Field(default=10.0, ge=1)
+    ai_run_owner_sweep_seconds: float = Field(default=10.0, ge=1)
     ai_agent_tool_stream_idle_timeout_seconds: float = 600.0
     ai_external_task_enqueue_timeout_seconds: float = 30.0
     ai_llm_http_trace_enabled: bool = False
@@ -238,6 +241,14 @@ class AppSettings(BaseSettings):
     asset_staging_retention_hours: int = 2
     pat_max_active_tokens: int = 25
     pat_max_ttl_days: int = 365
+
+    @model_validator(mode="after")
+    def validate_ai_run_owner_budget(self) -> "AppSettings":
+        """存活租约至少覆盖三个心跳周期，避免正常调度抖动误判失效。"""
+
+        if self.ai_run_owner_ttl_seconds < self.ai_run_owner_heartbeat_seconds * 3:
+            raise ValueError("AI_RUN_OWNER_TTL_SECONDS 必须至少为心跳周期的三倍。")
+        return self
 
     @field_validator("app_timezone")
     @classmethod

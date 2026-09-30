@@ -83,7 +83,7 @@ from app.schemas.agent import (
     AgentTimelineToolItem,
 )
 from app.services.agent_image_attachment_service import AgentImageAttachmentService
-from app.services.durable_job_lease_service import build_durable_worker_id
+from app.ai.process_liveness import ensure_agent_process_owner
 
 TERMINAL_RUN_STATUSES = {"completed", "cancelled", "failed"}
 STALE_ACTIVE_RUN_ERROR_CODE = "AI_AGENT_STREAM_IDLE_TIMEOUT"
@@ -350,7 +350,7 @@ class PlatformAgentRuntimeStore:
             source=scope.source,
             llm_config_id=llm_config_id,
             llm_config_snapshot_json=dict(llm_metadata) if llm_metadata is not None else None,
-            process_owner=build_durable_worker_id(),
+            process_owner=await ensure_agent_process_owner(self._session),
             input_payload_json={
                 "message": message,
                 "image_attachment_ids": list(image_attachment_ids or []),
@@ -476,6 +476,7 @@ class PlatformAgentRuntimeStore:
     ) -> AgentRunEvent:
         """在当前事务内原子分配游标、保存事件并同步运行态投影。"""
 
+        await self.ensure_write_fence()
         _normalize_tool_event_arguments(event)
         await self._enrich_visual_tool_event_attachments(run_model, event)
         now = _utc_now()
@@ -634,6 +635,7 @@ class PlatformAgentRuntimeStore:
         content: str | None = None,
         error_code: str | None = None,
         error_message: str | None = None,
+        commit: bool = True,
     ) -> AgentRunEvent:
         """把运行标记为终态并写入对应终态事件。"""
 
@@ -686,6 +688,7 @@ class PlatformAgentRuntimeStore:
                 content=content,
                 data=event_data,
             ),
+            commit=commit,
         )
 
     async def _append_running_tool_error_events(self, run_model: AiAgentRun, *, message: str) -> None:

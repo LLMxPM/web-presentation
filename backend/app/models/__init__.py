@@ -11,6 +11,7 @@ from app.models.ai_agent_runtime import (
     AiAgentToolCall,
 )
 from app.models.ai_page_mutation import AiPageMutationBatch, AiPageMutationJob
+from app.models.ai_process_owner import AiAgentProcessOwner
 from app.models.ai_image_generation import AiImageGenerationJob
 from app.models.ai_external_task import AiAgentExternalBatch, AiAgentExternalTask, AiComponentMutationTask
 from app.models.ai_image_model import AiImageModelConfig, AiImageProviderConfig, AiImageSlotBinding
@@ -57,6 +58,7 @@ __all__ = [
     "AiAgentImageAttachment",
     "AiAgentSession",
     "AiAgentRun",
+    "AiAgentProcessOwner",
     "AiAgentRunEvent",
     "AiAgentMessage",
     "AiAgentToolCall",

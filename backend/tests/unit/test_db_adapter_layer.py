@@ -130,6 +130,7 @@ def test_write_retry_consumers_use_shared_helper() -> None:
     expected = {
         "app/ai/page_mutation_executor.py",
         "app/ai/platform_runtime.py",
+        "app/ai/process_reaper.py",
         "app/services/page_screenshot_job_service.py",
     }
     consumers = {

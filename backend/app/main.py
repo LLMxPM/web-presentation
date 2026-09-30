@@ -19,6 +19,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.ai.registry import AgentRegistry
 from app.ai.background_run_manager import AgentBackgroundRunManager
 from app.ai.run_recovery import recover_interrupted_agent_runs_on_startup
+from app.ai.process_liveness import ensure_agent_process_owner
+from app.ai.process_reaper import run_agent_process_monitor
 from app.ai.external_task_queue import run_ai_external_task_coordinator
 from app.ai.component_mutation_queue import (
     recover_interrupted_component_mutation_tasks,
@@ -92,6 +94,7 @@ async def lifespan(app: FastAPI):
     ai_external_task_coordinator_task: asyncio.Task[None] | None = None
     ai_component_mutation_queue_task: asyncio.Task[None] | None = None
     model_catalog_sync_task: asyncio.Task[None] | None = None
+    ai_process_monitor_task: asyncio.Task[None] | None = None
     api_mutation_worker_task: asyncio.Task[None] | None = None
     api_mutation_sweeper_task: asyncio.Task[None] | None = None
     project_build_queue_task: asyncio.Task[None] | None = None
@@ -114,7 +117,14 @@ async def lifespan(app: FastAPI):
         ensure_redis_runtime_available()
         _log_runtime_state_startup(app)
         if get_settings().ai_enabled:
+            async with session_factory() as owner_session:
+                await ensure_agent_process_owner(owner_session)
+                await owner_session.commit()
             await recover_interrupted_agent_runs_on_startup(session_factory)
+            ai_process_monitor_task = asyncio.create_task(
+                run_agent_process_monitor(session_factory, agent_background_run_manager),
+                name="ai-process-monitor",
+            )
         await recover_interrupted_build_jobs_on_startup(session_factory)
         await recover_interrupted_screenshot_jobs_on_startup(session_factory)
         await recover_interrupted_asset_render_hint_backfill_jobs_on_startup(session_factory)
@@ -176,6 +186,8 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await agent_background_run_manager.shutdown()
+        if ai_process_monitor_task is not None:
+            await _stop_background_task(ai_process_monitor_task)
         if page_screenshot_queue_task is not None:
             await _stop_background_task(page_screenshot_queue_task)
         if render_coordinator_task is not None:
