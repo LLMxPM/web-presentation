@@ -31,13 +31,18 @@ COPY renderer/pyproject.toml ./renderer/
 COPY packages/render-contracts /app/packages/render-contracts
 COPY renderer/wp_renderer /app/renderer/wp_renderer
 
+RUN uv sync --package web-presentation-renderer --frozen --no-dev
+
+# 默认 Debian 源使用 HTTPS，避免代理环境只允许 TLS 时大包下载不断超时；
+# Python 同步独立成层，浏览器/系统依赖重试不需要重新下载整套 Python 包。
 RUN set -eux; \
+    find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 \
+      | xargs -0 -r sed -i 's|http://deb.debian.org|https://deb.debian.org|g'; \
     if [ -n "${DEBIAN_MIRROR}" ]; then \
       find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 \
         | xargs -0 -r sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g"; \
     fi; \
-    uv sync --package web-presentation-renderer --frozen --no-dev \
-    && playwright install --with-deps chromium \
+    playwright install --with-deps chromium \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
