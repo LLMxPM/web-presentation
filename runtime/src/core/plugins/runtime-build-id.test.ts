@@ -50,13 +50,15 @@ afterEach(() => {
 })
 
 describe('Runtime 发布身份', () => {
-  it('相同发布输入在不同目录重复构建得到同一身份，测试文件不影响发布', () => {
+  it('相同发布输入在不同目录重复构建得到同一身份', () => {
     const first = fixture()
     const second = fixture()
-    writeFileSync(join(second.root, 'src/extra.test.ts'), 'test-only')
     const id = computeRuntimeBuildId(first.root, first.lock)
     expect(id).toMatch(/^sha256-[0-9a-f]{64}$/)
     expect(computeRuntimeBuildId(second.root, second.lock)).toBe(id)
+    // 交付中的测试源码也可能被 Tailwind 扫描，必须纳入发布输入。
+    writeFileSync(join(second.root, 'src/extra.test.ts'), 'class="text-red-500"')
+    expect(computeRuntimeBuildId(second.root, second.lock)).not.toBe(id)
   })
 
   it('源码、模块路径或锁文件变化都会改变发布身份', () => {

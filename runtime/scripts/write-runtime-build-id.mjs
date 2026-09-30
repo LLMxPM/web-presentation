@@ -4,12 +4,12 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** 收集执行输入；测试文件不属于发布身份，目录顺序和构建架构不影响结果。 */
+/** 收集全部交付输入；Tailwind 也扫描测试源码，不能把这些文件排除在身份之外。 */
 function collect(root, relative) {
   return readdirSync(join(root, relative), { withFileTypes: true }).flatMap(entry => {
     const path = `${relative}/${entry.name}`
     if (entry.isDirectory()) return collect(root, path)
-    return /\.(test|spec)\./.test(entry.name) ? [] : [path]
+    return [path]
   })
 }
 
