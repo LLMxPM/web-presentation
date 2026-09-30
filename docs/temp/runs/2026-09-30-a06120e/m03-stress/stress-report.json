@@ -1,0 +1,239 @@
+{
+  "started_at": "2026-09-30T04:03:59Z",
+  "phases": [
+    {
+      "label": "c4",
+      "workers": 4,
+      "seconds": 90,
+      "ops": {
+        "screenshot": 16,
+        "build": 4,
+        "page_update": 8
+      },
+      "errors": {
+        "screenshot": 0,
+        "build": 0,
+        "page_update": 0
+      },
+      "success_rate": 1.0,
+      "latency_s": {
+        "screenshot": {
+          "n": 16,
+          "p50": 18.572601391000717,
+          "p95": 20.225759454999206,
+          "p99": 20.513247355000203,
+          "max": 20.513247355000203,
+          "mean": 14.542731894562507
+        },
+        "build": {
+          "n": 4,
+          "p50": 56.0916993539995,
+          "p95": 67.24631901400062,
+          "p99": 67.24631901400062,
+          "max": 67.24631901400062,
+          "mean": 48.41407162475025
+        },
+        "page_update": {
+          "n": 8,
+          "p50": 0.1974829079990741,
+          "p95": 0.6445476259996212,
+          "p99": 0.6445476259996212,
+          "max": 0.6445476259996212,
+          "mean": 0.21946833799984233
+        }
+      },
+      "combined_p50": 15.351028348999535,
+      "combined_p95": 56.0916993539995,
+      "combined_p99": 67.24631901400062,
+      "peak_cpu_pct": {
+        "wp-m01-fix-platform-lite-1": 174.11,
+        "wp-m01-fix-renderer-1": 102.31
+      },
+      "peak_mem_gib": {
+        "wp-m01-fix-platform-lite-1": 1.663,
+        "wp-m01-fix-renderer-1": 0.45458984375
+      },
+      "max_queue_pending_running": 4,
+      "max_runtime_state_bytes": 2951255,
+      "write_conflicts_delta": 0,
+      "busy_timeouts_delta": 0,
+      "samples": 17
+    },
+    {
+      "label": "c8",
+      "workers": 8,
+      "seconds": 90,
+      "ops": {
+        "screenshot": 24,
+        "build": 1,
+        "page_update": 2
+      },
+      "errors": {
+        "screenshot": 0,
+        "build": 0,
+        "page_update": 0
+      },
+      "success_rate": 1.0,
+      "latency_s": {
+        "screenshot": {
+          "n": 24,
+          "p50": 40.70617070700064,
+          "p95": 43.81867110100029,
+          "p99": 43.920127739000236,
+          "max": 43.920127739000236,
+          "mean": 35.988907470791524
+        },
+        "build": {
+          "n": 1,
+          "p50": 30.825984439999957,
+          "p95": 30.825984439999957,
+          "p99": 30.825984439999957,
+          "max": 30.825984439999957,
+          "mean": 30.825984439999957
+        },
+        "page_update": {
+          "n": 2,
+          "p50": 0.1717984009992506,
+          "p95": 0.33241437099968607,
+          "p99": 0.33241437099968607,
+          "max": 0.33241437099968607,
+          "mean": 0.25210638599946833
+        }
+      },
+      "combined_p50": 40.52592735399958,
+      "combined_p95": 43.81867110100029,
+      "combined_p99": 43.920127739000236,
+      "peak_cpu_pct": {
+        "wp-m01-fix-platform-lite-1": 167.3,
+        "wp-m01-fix-renderer-1": 96.87
+      },
+      "peak_mem_gib": {
+        "wp-m01-fix-platform-lite-1": 1.818,
+        "wp-m01-fix-renderer-1": 0.458203125
+      },
+      "max_queue_pending_running": 8,
+      "max_runtime_state_bytes": 4284269,
+      "write_conflicts_delta": 0,
+      "busy_timeouts_delta": 0,
+      "samples": 16
+    },
+    {
+      "label": "c12",
+      "workers": 12,
+      "seconds": 120,
+      "ops": {
+        "screenshot": 33,
+        "build": 0,
+        "page_update": 0
+      },
+      "errors": {
+        "screenshot": 0,
+        "build": 0,
+        "page_update": 0
+      },
+      "success_rate": 1.0,
+      "latency_s": {
+        "screenshot": {
+          "n": 33,
+          "p50": 63.96457024800111,
+          "p95": 68.2348730499998,
+          "p99": 68.5829679540002,
+          "max": 68.5829679540002,
+          "mean": 54.974672425060625
+        },
+        "build": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "p99": null,
+          "max": null,
+          "mean": null
+        },
+        "page_update": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "p99": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "combined_p50": 63.96457024800111,
+      "combined_p95": 68.2348730499998,
+      "combined_p99": 68.5829679540002,
+      "peak_cpu_pct": {
+        "wp-m01-fix-platform-lite-1": 109.16,
+        "wp-m01-fix-renderer-1": 118.08
+      },
+      "peak_mem_gib": {
+        "wp-m01-fix-platform-lite-1": 0.85810546875,
+        "wp-m01-fix-renderer-1": 0.54580078125
+      },
+      "max_queue_pending_running": 12,
+      "max_runtime_state_bytes": 6116897,
+      "write_conflicts_delta": 0,
+      "busy_timeouts_delta": 0,
+      "samples": 23
+    },
+    {
+      "label": "c16",
+      "workers": 16,
+      "seconds": 120,
+      "ops": {
+        "screenshot": 35,
+        "build": 0,
+        "page_update": 0
+      },
+      "errors": {
+        "screenshot": 0,
+        "build": 0,
+        "page_update": 0
+      },
+      "success_rate": 1.0,
+      "latency_s": {
+        "screenshot": {
+          "n": 35,
+          "p50": 86.9548199009987,
+          "p95": 98.05734644699987,
+          "p99": 98.1575666280005,
+          "max": 98.1575666280005,
+          "mean": 74.49743441188564
+        },
+        "build": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "p99": null,
+          "max": null,
+          "mean": null
+        },
+        "page_update": {
+          "n": 0,
+          "p50": null,
+          "p95": null,
+          "p99": null,
+          "max": null,
+          "mean": null
+        }
+      },
+      "combined_p50": 86.9548199009987,
+      "combined_p95": 98.05734644699987,
+      "combined_p99": 98.1575666280005,
+      "peak_cpu_pct": {
+        "wp-m01-fix-platform-lite-1": 111.3,
+        "wp-m01-fix-renderer-1": 112.63
+      },
+      "peak_mem_gib": {
+        "wp-m01-fix-platform-lite-1": 0.8869140625,
+        "wp-m01-fix-renderer-1": 0.56484375
+      },
+      "max_queue_pending_running": 16,
+      "max_runtime_state_bytes": 8060621,
+      "write_conflicts_delta": 0,
+      "busy_timeouts_delta": 0,
+      "samples": 25
+    }
+  ],
+  "users": 16,
+  "finished_at": "2026-09-30T04:15:46Z"
+}

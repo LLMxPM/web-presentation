@@ -1,0 +1,63 @@
+{
+  "attempt_id": "image-smoke-attempt",
+  "request_id": "image-smoke-request",
+  "worker_id": "img0",
+  "worker_epoch": "bfbc68d2989c4224a674c6fe9763d592",
+  "slot_generation": 1,
+  "request_digest": "image-smoke-input",
+  "status": "succeeded",
+  "resource_state": "retained",
+  "accepted_at": "2026-09-30T01:36:38.676560Z",
+  "stage": "terminal",
+  "started_at": "2026-09-30T01:36:38.701305Z",
+  "finished_at": "2026-09-30T01:36:40.130022Z",
+  "cleaned_at": null,
+  "error": null,
+  "result_descriptor": {
+    "result": {
+      "request_id": "image-smoke-request",
+      "attempt_id": "image-smoke-attempt",
+      "worker_id": "img0",
+      "worker_epoch": "bfbc68d2989c4224a674c6fe9763d592",
+      "slot_generation": 1,
+      "operation": "page.capture",
+      "input_digest": "image-smoke-input",
+      "render_profile_digest": "profile.v1",
+      "request_digest": "image-smoke-input",
+      "result_schema_version": "render-result.v1",
+      "environment_summary": {
+        "render_profile_digest": "profile.v1",
+        "runtime_protocol_version": "render-ready.v1",
+        "worker_id": "img0",
+        "worker_epoch": "bfbc68d2989c4224a674c6fe9763d592"
+      },
+      "artifacts": [
+        {
+          "name": "page.png",
+          "content_type": "image/png",
+          "byte_length": 803,
+          "sha256": "c14decf6694a2df09cc639828b2d2d3afe9f20a298deca6d0cd3e31fd95688c9",
+          "width": 320,
+          "height": 240
+        }
+      ],
+      "diagnostics": [],
+      "layout": null,
+      "scenarios": [],
+      "finished_at": "2026-09-30T01:36:40.061377Z",
+      "cleaned_at": "",
+      "resource_state": "retained",
+      "truncated": false
+    },
+    "artifacts": [
+      {
+        "name": "page.png",
+        "content_type": "image/png",
+        "byte_length": 803,
+        "sha256": "c14decf6694a2df09cc639828b2d2d3afe9f20a298deca6d0cd3e31fd95688c9",
+        "width": 320,
+        "height": 240
+      }
+    ]
+  }
+}

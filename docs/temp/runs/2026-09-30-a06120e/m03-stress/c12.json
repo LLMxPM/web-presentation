@@ -1,0 +1,58 @@
+{
+  "label": "c12",
+  "workers": 12,
+  "seconds": 120,
+  "ops": {
+    "screenshot": 33,
+    "build": 0,
+    "page_update": 0
+  },
+  "errors": {
+    "screenshot": 0,
+    "build": 0,
+    "page_update": 0
+  },
+  "success_rate": 1.0,
+  "latency_s": {
+    "screenshot": {
+      "n": 33,
+      "p50": 63.96457024800111,
+      "p95": 68.2348730499998,
+      "p99": 68.5829679540002,
+      "max": 68.5829679540002,
+      "mean": 54.974672425060625
+    },
+    "build": {
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "max": null,
+      "mean": null
+    },
+    "page_update": {
+      "n": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "max": null,
+      "mean": null
+    }
+  },
+  "combined_p50": 63.96457024800111,
+  "combined_p95": 68.2348730499998,
+  "combined_p99": 68.5829679540002,
+  "peak_cpu_pct": {
+    "wp-m01-fix-platform-lite-1": 109.16,
+    "wp-m01-fix-renderer-1": 118.08
+  },
+  "peak_mem_gib": {
+    "wp-m01-fix-platform-lite-1": 0.85810546875,
+    "wp-m01-fix-renderer-1": 0.54580078125
+  },
+  "max_queue_pending_running": 12,
+  "max_runtime_state_bytes": 6116897,
+  "write_conflicts_delta": 0,
+  "busy_timeouts_delta": 0,
+  "samples": 23
+}

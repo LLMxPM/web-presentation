@@ -1,0 +1,12 @@
+{
+  "variant": "renderer",
+  "requested_image": "llmxpm/web-presentation-renderer:m01-a06120e",
+  "image_id": "sha256:1719abb341a1f6cb110d628ecbc23eb9b6a703284887126faf105e5ebc46e452",
+  "repo_digests": [
+    "llmxpm/web-presentation-renderer@sha256:1719abb341a1f6cb110d628ecbc23eb9b6a703284887126faf105e5ebc46e452"
+  ],
+  "os": "linux",
+  "architecture": "amd64",
+  "health": "pending",
+  "execution": "not_run"
+}

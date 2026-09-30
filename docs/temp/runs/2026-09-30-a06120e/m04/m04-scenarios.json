@@ -1,0 +1,65 @@
+{
+  "scenario": "M04",
+  "results": {
+    "S2_dual_build": [
+      {
+        "pid": 2,
+        "ok": true,
+        "sec": 20.0,
+        "job": 4,
+        "sha": "1868379732c83a5e7e5631b73b36a5d5502aff77951d71d82e6f4e740e2110d3"
+      },
+      {
+        "pid": 3,
+        "ok": true,
+        "sec": 18.96,
+        "job": 5,
+        "sha": "fbebf131f53aeb91ba816deb6be04cb8cef7f90e97267a412e714079f9a828a2"
+      }
+    ],
+    "S3_backendA_restart": {
+      "shots": [
+        2,
+        2,
+        2
+      ],
+      "ok": 0,
+      "details": [
+        {
+          "job": 2,
+          "result": "timeout"
+        },
+        {
+          "job": 2,
+          "result": "timeout"
+        },
+        {
+          "job": 2,
+          "result": "timeout"
+        }
+      ],
+      "restart_elapsed": 244.4
+    },
+    "S4_worker_removal_cli": "[Errno 2] No such file or directory: 'uv'",
+    "renderer_renderer-1": "healthy",
+    "renderer_renderer-2": "healthy",
+    "S5_cancel": {
+      "err": "api/pages/screenshot-jobs/2/cancel->404:{\"detail\":\"Not Found\"}"
+    }
+  },
+  "findings": [
+    {
+      "id": "S2",
+      "note": "两项目并发构建：若均成功则双 build worker 并行；同项目并发被 409 串行属预期"
+    },
+    {
+      "id": "S3",
+      "note": "重启 backend-a 后经 gateway(backend-b)继续轮询；成功则证明跨副本会话/任务状态共享"
+    },
+    {
+      "id": "S4",
+      "note": "check_render_worker_removal 需在有 Backend DB 的环境执行；本拓扑以 API 验证双 Renderer 在线"
+    }
+  ],
+  "finished_at": "2026-09-30T04:59:36Z"
+}

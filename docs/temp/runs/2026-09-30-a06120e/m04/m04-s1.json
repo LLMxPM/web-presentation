@@ -1,0 +1,40 @@
+{
+  "scenario": "M04-S1-cross-replica-pipeline",
+  "findings": [],
+  "ids": {
+    "ws": 1,
+    "proj": 1,
+    "page": 1
+  },
+  "shot_jobs": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "shots_ok": 4,
+  "png": {
+    "w": 1920,
+    "h": 1080,
+    "bytes": 9709,
+    "is_latest": true
+  },
+  "builds": [
+    {
+      "i": 0,
+      "ok": false,
+      "err": "api/projects/1/build-jobs->409:{\"code\":\"PROJECT_BUILD_ALREADY_RUNNING\",\"message\":\"当前项目已有构建任务正在执行，请等待完成后再发起构建。\",\"data\":{\"active_job_id\":1,\"active_job_status\":\"pending\"}}"
+    },
+    {
+      "i": 1,
+      "ok": false,
+      "err": "timeout"
+    },
+    {
+      "i": 2,
+      "ok": false,
+      "err": "api/projects/1/build-jobs->409:{\"code\":\"PROJECT_BUILD_ALREADY_RUNNING\",\"message\":\"当前项目已有构建任务正在执行，请等待完成后再发起构建。\",\"data\":{\"active_job_id\":1,\"active_job_status\":\"pending\"}}"
+    }
+  ],
+  "status": "partial"
+}

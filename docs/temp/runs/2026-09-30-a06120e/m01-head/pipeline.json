@@ -1,0 +1,82 @@
+{
+  "status": "passed_with_findings",
+  "candidate": "a06120e",
+  "topology": "head-shared-netns-clean-volume",
+  "findings": [
+    {
+      "id": "M01-F5",
+      "summary": "page_screenshot_service browser preview_url uses Backend loopback, ignores RENDER_RUNTIME_NAVIGATION_BASE_URL"
+    },
+    {
+      "id": "M01-F6",
+      "summary": "Runtime Vite allowedHosts rejects docker service hostname with 403"
+    },
+    {
+      "id": "M01-F7",
+      "summary": "render_workers registration INSERT with worker_epoch=pending hits UNIQUE(worker_id,worker_epoch); coordinator tick PendingRollbackError loop after worker URL/epoch change"
+    },
+    {
+      "id": "M01-F2",
+      "summary": "screenshot_is_latest is false when capture viewport != project default viewport"
+    },
+    {
+      "id": "M01-F1",
+      "summary": "published sqlite-lite fails --network none (tiktoken download); HEAD lite has preseed"
+    },
+    {
+      "id": "IMG0-PASS",
+      "summary": "renderer root Chromium without --no-sandbox produced valid 320x240 PNG"
+    }
+  ],
+  "screenshot_job_id": 1,
+  "page_after_shot": {
+    "screenshot_is_latest": true,
+    "viewport": [
+      1920,
+      1080
+    ],
+    "versions": [
+      1,
+      1
+    ]
+  },
+  "screenshot": {
+    "sha256": "a8c7797d662644983f06989bfad73839d04e56caf77a2a79d9a57e1be98629ce",
+    "bytes": 15294,
+    "width": 1920,
+    "height": 1080,
+    "decoded": true
+  },
+  "build_job_id": 1,
+  "build": {
+    "sha256": "b8bd9d124120bc2a4e4261138205da8e6b857739f9addaf200985bca39ec0187",
+    "bytes": 15220246,
+    "entry_count": 19,
+    "has_index_html": true,
+    "sample_entries": [
+      "assets/NotFoundPage-C0zz0AzG.css",
+      "assets/NotFoundPage-DQA_rlOX.js",
+      "assets/PG20260930001-DC3d4Nfy.css",
+      "assets/PG20260930001-DQHTIOUV.js",
+      "assets/RuntimeProjectShell-B0gOQAKg.css",
+      "assets/RuntimeProjectShell-Dorpu9OX.js",
+      "assets/SourceCodePro-Regular.ttf-CBOlD63d.woff2",
+      "assets/SourceHanSansSC-VF.otf-C66EjbRv.woff2",
+      "assets/__vite-browser-external-CKnVkMRn.js",
+      "assets/build-release-main-CElYF-XC.js",
+      "assets/build-release-main-DY_6R5DF.css",
+      "assets/html2canvas-CJ4rRp4d.js",
+      "assets/index-BUCe-bRS.js",
+      "assets/index.es-5tTcsJzE.js",
+      "assets/purify.es-7fJ1DZ6H.js",
+      "assets/rolldown-runtime-Dd_uD5pT.js",
+      "assets/route-generator-C0rGZX-n.js",
+      "assets/vendor-BLeZzwIm.js",
+      "index.html"
+    ]
+  },
+  "credential_negatives": {
+    "empty_password": "api/auth/login->422:{\"code\":\"VALIDATION_ERROR\",\"message\":\"请求参数 password 不符合要求：String should have at least 8 characters\",\"detail\":[{\"type\":\"string_too_short\",\"lo",
+    "wrong_password": "api/auth/login->401:{\"code\":\"AUTH_INVALID\",\"message\":\"用户名或密码错误。\"}"
+  }
+}

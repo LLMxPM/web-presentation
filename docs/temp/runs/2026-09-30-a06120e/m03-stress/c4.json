@@ -1,0 +1,58 @@
+{
+  "label": "c4",
+  "workers": 4,
+  "seconds": 90,
+  "ops": {
+    "screenshot": 16,
+    "build": 4,
+    "page_update": 8
+  },
+  "errors": {
+    "screenshot": 0,
+    "build": 0,
+    "page_update": 0
+  },
+  "success_rate": 1.0,
+  "latency_s": {
+    "screenshot": {
+      "n": 16,
+      "p50": 18.572601391000717,
+      "p95": 20.225759454999206,
+      "p99": 20.513247355000203,
+      "max": 20.513247355000203,
+      "mean": 14.542731894562507
+    },
+    "build": {
+      "n": 4,
+      "p50": 56.0916993539995,
+      "p95": 67.24631901400062,
+      "p99": 67.24631901400062,
+      "max": 67.24631901400062,
+      "mean": 48.41407162475025
+    },
+    "page_update": {
+      "n": 8,
+      "p50": 0.1974829079990741,
+      "p95": 0.6445476259996212,
+      "p99": 0.6445476259996212,
+      "max": 0.6445476259996212,
+      "mean": 0.21946833799984233
+    }
+  },
+  "combined_p50": 15.351028348999535,
+  "combined_p95": 56.0916993539995,
+  "combined_p99": 67.24631901400062,
+  "peak_cpu_pct": {
+    "wp-m01-fix-platform-lite-1": 174.11,
+    "wp-m01-fix-renderer-1": 102.31
+  },
+  "peak_mem_gib": {
+    "wp-m01-fix-platform-lite-1": 1.663,
+    "wp-m01-fix-renderer-1": 0.45458984375
+  },
+  "max_queue_pending_running": 4,
+  "max_runtime_state_bytes": 2951255,
+  "write_conflicts_delta": 0,
+  "busy_timeouts_delta": 0,
+  "samples": 17
+}

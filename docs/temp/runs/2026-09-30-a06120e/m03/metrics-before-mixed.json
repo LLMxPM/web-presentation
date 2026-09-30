@@ -1,0 +1,326 @@
+{
+  "ts": 1790739816.316684,
+  "db_write": {
+    "enabled": true,
+    "uptime_seconds": 1529.935,
+    "totals": {
+      "sql_total": 141181,
+      "sql_read": 134524,
+      "sql_write": 6657,
+      "sql_avg_ms": 1.253,
+      "sql_max_ms": 467.645,
+      "write_conflicts": 0,
+      "invalid_writes": 1534,
+      "effective_writes": 5068,
+      "empty_polls": 5765,
+      "total_polls": 5765,
+      "empty_poll_ratio": 1.0,
+      "tick_count": 10406,
+      "tick_p50_ms": 515.046,
+      "tick_p95_ms": 597.253,
+      "busy_timeouts": 0
+    },
+    "loops": {
+      "ai-external-task-coordinator": {
+        "sql_total": 31065,
+        "sql_read": 31065,
+        "sql_write": 0,
+        "sql_avg_ms": 1.589,
+        "sql_max_ms": 196.816,
+        "write_conflicts": 0,
+        "invalid_writes": 0,
+        "effective_writes": 0,
+        "empty_polls": 2822,
+        "total_polls": 2822,
+        "empty_poll_ratio": 1.0,
+        "tick_count": 2821,
+        "tick_p50_ms": 532.947,
+        "tick_p95_ms": 577.296,
+        "busy_timeouts": 0
+      },
+      "ai-image-generation-queue": {
+        "sql_total": 11772,
+        "sql_read": 11772,
+        "sql_write": 0,
+        "sql_avg_ms": 1.462,
+        "sql_max_ms": 193.379,
+        "write_conflicts": 0,
+        "invalid_writes": 0,
+        "effective_writes": 0,
+        "empty_polls": 2943,
+        "total_polls": 2943,
+        "empty_poll_ratio": 1.0,
+        "tick_count": 2942,
+        "tick_p50_ms": 513.109,
+        "tick_p95_ms": 547.667,
+        "busy_timeouts": 0
+      },
+      "render-coordinator": {
+        "sql_total": 79101,
+        "sql_read": 74121,
+        "sql_write": 4980,
+        "sql_avg_ms": 0.832,
+        "sql_max_ms": 467.645,
+        "write_conflicts": 0,
+        "invalid_writes": 0,
+        "effective_writes": 4978,
+        "empty_polls": 0,
+        "total_polls": 0,
+        "empty_poll_ratio": 0.0,
+        "tick_count": 4643,
+        "tick_p50_ms": 72.695,
+        "tick_p95_ms": 100.128,
+        "busy_timeouts": 0
+      },
+      "unknown": {
+        "sql_total": 19243,
+        "sql_read": 17566,
+        "sql_write": 1677,
+        "sql_avg_ms": 2.311,
+        "sql_max_ms": 237.313,
+        "write_conflicts": 0,
+        "invalid_writes": 1534,
+        "effective_writes": 90,
+        "empty_polls": 0,
+        "total_polls": 0,
+        "empty_poll_ratio": 0.0,
+        "tick_count": 0,
+        "tick_p50_ms": 0.0,
+        "tick_p95_ms": 0.0,
+        "busy_timeouts": 0
+      }
+    }
+  },
+  "job_queues": {
+    "schema_version": 2,
+    "checked_at": "2026-09-30T03:43:36.576512+00:00",
+    "queues": {
+      "page_mutation": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "image_generation": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": 0,
+        "missing_provider_poll": 0,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "component_mutation": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "page_screenshot": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {
+          "failed": 4,
+          "succeeded": 1
+        },
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "project_build": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {
+          "succeeded": 1
+        },
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "asset_render_hint_backfill": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "api_mutation": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "external_task": {
+        "layer": "projection",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "external_batch": {
+        "layer": "continuation",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "render_request": {
+        "layer": "execution_request",
+        "age_origin": "created_at",
+        "states": {
+          "cancelled": 8,
+          "expired": 4,
+          "succeeded": 1
+        },
+        "pending": 0,
+        "running": 0,
+        "lease_supported": false,
+        "expired_lease_running": null,
+        "missing_lease_running": null,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "render_attempt": {
+        "layer": "execution_slot",
+        "age_origin": "reserved_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      }
+    },
+    "totals": {
+      "unit": "domain_job_rows",
+      "included_queues": [
+        "page_mutation",
+        "image_generation",
+        "component_mutation",
+        "page_screenshot",
+        "project_build",
+        "asset_render_hint_backfill",
+        "api_mutation"
+      ],
+      "pending": 0,
+      "running": 0,
+      "expired_lease_running": 0,
+      "missing_lease_running": 0,
+      "waiting_provider": 0,
+      "oldest_pending_age_seconds": null
+    }
+  },
+  "runtime_state": {
+    "backend_kind": "memory",
+    "ephemeral": true,
+    "active_keys": 5,
+    "approx_bytes": 55895,
+    "max_bytes": 134217728,
+    "max_item_bytes": 16777216,
+    "capacity_rejections": 0,
+    "sweep_count": 50,
+    "sweep_failures": 0,
+    "last_sweep_at": "2026-09-30T03:43:11.404463+00:00",
+    "last_sweep_seconds": 2.5e-05
+  },
+  "host": {
+    "docker_stats": {
+      "wp-m01-fix-platform-lite-1": {
+        "cpu": "29.87%",
+        "mem_usage": "743.1MiB / 3.824GiB",
+        "mem_pct": "18.98%"
+      },
+      "wp-m01-fix-renderer-1": {
+        "cpu": "1.13%",
+        "mem_usage": "207MiB / 3.824GiB",
+        "mem_pct": "5.29%"
+      }
+    },
+    "meminfo": {
+      "MemTotal": "4009884 kB",
+      "MemAvailable": "2457260 kB",
+      "SwapTotal": "4194300 kB",
+      "SwapFree": "4141424 kB"
+    },
+    "ts": 1790739818.8277433
+  }
+}

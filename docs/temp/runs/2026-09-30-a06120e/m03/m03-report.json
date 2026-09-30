@@ -1,0 +1,286 @@
+{
+  "m03": "lite-2c4g-capacity-baseline",
+  "candidate": "a06120e+f5f6f7f9",
+  "topology": "head-dual-container",
+  "started_at": "2026-09-30T03:33:21Z",
+  "config": {
+    "idle_seconds": 600,
+    "mixed_seconds": 300,
+    "concurrency": 3,
+    "users": 5,
+    "note": "探索性基线：开跑前无已批准 P95 阈值，容量门保持开放"
+  },
+  "idle_sample_count": 35,
+  "users_active": 5,
+  "users_created": 4,
+  "mixed": {
+    "ops_total": {
+      "screenshot": 36,
+      "build": 17,
+      "page_update": 29
+    },
+    "latency_count": 82,
+    "latency_p50_s": 6.3748156929996185,
+    "latency_p95_s": 97.9586495780004,
+    "latency_max_s": 113.89699442099845,
+    "latency_mean_s": 20.49420007980488,
+    "error_count": 0,
+    "errors_sample": [],
+    "success_rate": 1.0
+  },
+  "db_write_delta": {
+    "enabled": true,
+    "sql_total_delta": 50142,
+    "sql_read_delta": 47424,
+    "sql_write_delta": 2718,
+    "write_conflicts_delta": 0,
+    "busy_timeouts_delta": 0,
+    "sql_avg_ms_after": 4.479,
+    "sql_max_ms_after": 654.828,
+    "tick_p50_ms_after": 515.046,
+    "tick_p95_ms_after": 597.253
+  },
+  "job_queues_after": {
+    "schema_version": 2,
+    "checked_at": "2026-09-30T03:49:47.995950+00:00",
+    "queues": {
+      "page_mutation": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "image_generation": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": 0,
+        "missing_provider_poll": 0,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "component_mutation": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "page_screenshot": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {
+          "failed": 4,
+          "succeeded": 37
+        },
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "project_build": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {
+          "succeeded": 18
+        },
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "asset_render_hint_backfill": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "api_mutation": {
+        "layer": "domain",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "external_task": {
+        "layer": "projection",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "external_batch": {
+        "layer": "continuation",
+        "age_origin": "created_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "render_request": {
+        "layer": "execution_request",
+        "age_origin": "created_at",
+        "states": {
+          "cancelled": 8,
+          "expired": 4,
+          "succeeded": 37
+        },
+        "pending": 0,
+        "running": 0,
+        "lease_supported": false,
+        "expired_lease_running": null,
+        "missing_lease_running": null,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      },
+      "render_attempt": {
+        "layer": "execution_slot",
+        "age_origin": "reserved_at",
+        "states": {},
+        "pending": 0,
+        "running": 0,
+        "lease_supported": true,
+        "expired_lease_running": 0,
+        "missing_lease_running": 0,
+        "oldest_pending_age_seconds": null,
+        "waiting_provider": 0,
+        "overdue_provider_polls": null,
+        "missing_provider_poll": null,
+        "oldest_provider_poll_overdue_seconds": null
+      }
+    },
+    "totals": {
+      "unit": "domain_job_rows",
+      "included_queues": [
+        "page_mutation",
+        "image_generation",
+        "component_mutation",
+        "page_screenshot",
+        "project_build",
+        "asset_render_hint_backfill",
+        "api_mutation"
+      ],
+      "pending": 0,
+      "running": 0,
+      "expired_lease_running": 0,
+      "missing_lease_running": 0,
+      "waiting_provider": 0,
+      "oldest_pending_age_seconds": null
+    }
+  },
+  "runtime_state_after": {
+    "backend_kind": "memory",
+    "ephemeral": true,
+    "active_keys": 166,
+    "approx_bytes": 2061900,
+    "max_bytes": 134217728,
+    "max_item_bytes": 16777216,
+    "capacity_rejections": 0,
+    "sweep_count": 63,
+    "sweep_failures": 0,
+    "last_sweep_at": "2026-09-30T03:49:41.886736+00:00",
+    "last_sweep_seconds": 7.7e-05
+  },
+  "host_after": {
+    "docker_stats": {
+      "wp-m01-fix-platform-lite-1": {
+        "cpu": "34.33%",
+        "mem_usage": "815.4MiB / 3.824GiB",
+        "mem_pct": "20.82%"
+      },
+      "wp-m01-fix-renderer-1": {
+        "cpu": "1.10%",
+        "mem_usage": "187.7MiB / 3.824GiB",
+        "mem_pct": "4.79%"
+      }
+    },
+    "meminfo": {
+      "MemTotal": "4009884 kB",
+      "MemAvailable": "2403624 kB",
+      "SwapTotal": "4194300 kB",
+      "SwapFree": "4081564 kB"
+    },
+    "ts": 1790740190.2635057
+  },
+  "peak_rss_gib": {
+    "idle": {
+      "wp-m01-fix-platform-lite-1": 0.725390625,
+      "wp-m01-fix-renderer-1": 0.2037109375
+    },
+    "mixed": {
+      "wp-m01-fix-platform-lite-1": 1.768,
+      "wp-m01-fix-renderer-1": 0.50791015625
+    }
+  },
+  "finished_at": "2026-09-30T03:49:50Z"
+}
