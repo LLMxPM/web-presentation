@@ -19,48 +19,15 @@
     </PageHeader>
 
     <div class="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] gap-2 overflow-hidden">
-      <ToolPanel class="min-h-0" title="筛选资源" description="按状态、类型和标签缩小范围。">
-        <template #toolbar>
-          <SimpleSearchBar
-            v-model="searchKeyword"
-            placeholder="搜索资源..."
-            aria-label="搜索资源"
-            @submit="refreshAssets"
-          />
-        </template>
-        <div class="space-y-3">
-          <section class="rounded-xl border border-border bg-surface p-3">
-            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-text-disabled">状态</h3>
-            <LibrarySegmentedControl
-              :model-value="activeView"
-              :options="viewTabs"
-              :columns="3"
-              @update:model-value="handleSelectView"
-            />
-          </section>
-
-          <section class="rounded-xl border border-border bg-surface p-3">
-            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-text-disabled">资源类型</h3>
-            <LibrarySegmentedControl
-              :model-value="assetTypeFilter"
-              :options="assetTypeSegmentOptions"
-              :columns="2"
-              aria-label="资源类型筛选"
-              @update:model-value="handleSelectAssetType"
-            />
-          </section>
-
-          <section class="rounded-xl border border-border bg-surface p-3">
-            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-text-disabled">标签</h3>
-            <LibraryChipFilter v-model="activeTagFilter" :options="availableTagOptions" />
-          </section>
-
-          <section class="rounded-xl border border-border bg-surface p-3">
-            <h3 class="mb-2 text-[11px] font-black uppercase tracking-widest text-text-disabled">排序</h3>
-            <UiSelect v-model="sortValue" :options="assetSortOptions" />
-          </section>
-        </div>
-      </ToolPanel>
+      <AssetFilterSidebar
+        v-model:active-view="activeView"
+        v-model:asset-type-filter="assetTypeFilter"
+        v-model:search-keyword="searchKeyword"
+        v-model:sort-value="sortValue"
+        v-model:active-tag-filter="activeTagFilter"
+        :available-tag-options="availableTagOptions"
+        @submit-search="refreshAssets"
+      />
 
       <ToolPanel class="min-h-0 min-w-0">
         <template #header>
@@ -673,7 +640,6 @@ import {
   exportWorkspaceAssetPackage,
   getWorkspaceAssetContent,
   importWorkspaceAssetPackage,
-  listWorkspaceAssetTags,
   listWorkspaceAssets,
   previewWorkspaceAssetReferences,
   replaceWorkspaceAssetFile,
@@ -688,42 +654,32 @@ import { getErrorCode, getErrorMessage } from '@/api/http'
 import DataState from '@/components/patterns/DataState.vue'
 import PageHeader from '@/components/patterns/PageHeader.vue'
 import SelectionToolbar from '@/components/patterns/SelectionToolbar.vue'
-import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import ToolPanel from '@/components/patterns/ToolPanel.vue'
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import { ASSET_UPLOAD_ACCEPT, getAcceptedAssetExtensionText, isAcceptedAssetFile } from '@/components/project/asset-manager'
 import type { AgentMutationRefreshEvent } from '@/components/agent/agent-mutation-refresh'
-import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
-import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import { UiButton, UiCheckbox, UiDialog, UiIconButton, UiInput, UiRadioGroup, UiSelect } from '@/components/ui'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
-import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetRenderHintBackfillJobGroup, AssetRenderHintBackfillMode, AssetResponse, AssetType, RecordStatus } from '@/types/api'
+import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetRenderHintBackfillJobGroup, AssetRenderHintBackfillMode, AssetResponse, AssetType } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
 import { downloadBlob } from '@/utils/zip-download'
+import AssetFilterSidebar from '@/views/assets/AssetFilterSidebar.vue'
+import { useAssetListFilters } from '@/views/assets/useAssetListFilters'
 import {
-  ASSET_SORT_OPTIONS,
   ASSET_TYPE_OPTIONS,
-  ASSET_TYPE_SEGMENT_OPTIONS,
   BACKFILLABLE_ASSET_TYPES,
   CREATABLE_ASSET_TYPES,
   DETAIL_TABS,
   REFERENCE_GROUP_LABELS,
-  VIEW_TABS,
   type AssetReferenceItem,
-  type AssetView,
   type BackfillableAssetType,
   type DetailTab,
 } from '@/views/asset-view-options'
 
 const route = useRoute()
 const router = useRouter()
-const activeView = ref<AssetView>('active')
-const assetTypeFilter = ref<AssetType | ''>('')
-const activeTag = ref<string | null>(null)
-const searchKeyword = ref('')
-const sortValue = ref('updated_at:desc')
 const loading = ref(false)
 const assetsLoadError = ref(false)
 const saving = ref(false)
@@ -740,7 +696,23 @@ const assets = ref<AssetResponse[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(24)
-const availableTags = ref<string[]>([])
+
+function resetPage(): void {
+  page.value = 1
+}
+
+const {
+  activeView,
+  assetTypeFilter,
+  activeTag,
+  searchKeyword,
+  sortValue,
+  activeTagFilter,
+  availableTagOptions,
+  emptyAssetText,
+  buildListQueryParams,
+  loadTags: loadTagsRaw,
+} = useAssetListFilters({ onFilterResetPage: resetPage })
 const selectedAsset = ref<AssetResponse | null>(null)
 const selectedAssetIds = ref<Set<number>>(new Set())
 const selectionMode = ref(false)
@@ -763,11 +735,8 @@ const editForm = reactive({
 const editTagsText = ref('')
 const originalApproxAspectRatioText = ref('')
 
-const viewTabs = VIEW_TABS
 const detailTabs = DETAIL_TABS
 const assetTypeOptions = ASSET_TYPE_OPTIONS
-const assetSortOptions = ASSET_SORT_OPTIONS
-const assetTypeSegmentOptions = ASSET_TYPE_SEGMENT_OPTIONS
 const creatableTypes = CREATABLE_ASSET_TYPES
 const createForm = reactive({
   asset_type: 'icon' as AssetType,
@@ -805,29 +774,7 @@ const workspaceTitle = computed(() => {
   const workspaceName = workspaceQuery.data.value?.name
   return workspaceName ? `${workspaceName} · 资源库` : '资源库'
 })
-const sortParts = computed(() => {
-  const [sortBy, sortOrder] = sortValue.value.split(':')
-  return {
-    sortBy: sortBy || 'updated_at',
-    sortOrder: sortOrder === 'asc' ? 'asc' as const : 'desc' as const,
-  }
-})
-const activeTagFilter = computed({
-  get: () => activeTag.value || '',
-  set: value => {
-    activeTag.value = value || null
-    resetPage()
-  },
-})
-const availableTagOptions = computed(() => availableTags.value.map(tag => ({ label: tag, value: tag })))
 const activeUploadAccept = computed(() => ASSET_UPLOAD_ACCEPT[uploadForm.asset_type])
-const emptyAssetText = computed(() => {
-  if (searchKeyword.value.trim()) return '未找到相关资源'
-  if (activeTag.value) return '当前标签下暂无资源'
-  if (activeView.value === 'archived') return '暂无归档资源'
-  if (activeView.value === 'history') return '暂无写入历史副本'
-  return '暂无资源'
-})
 const canSaveContent = computed(() => (
   Boolean(detailAsset.value?.content_editable)
   && detailAsset.value?.status === 'active'
@@ -951,25 +898,17 @@ watch(
   },
 )
 
-watch(searchKeyword, resetPage)
-watch(sortValue, resetPage)
+
 
 async function refreshAssets(): Promise<void> {
   if (!Number.isFinite(workspaceId.value)) return
   loading.value = true
   assetsLoadError.value = false
   try {
-    const statusScope = resolveAssetStatusScope()
     const response = await listWorkspaceAssets(workspaceId.value, {
-      ...statusScope,
-      assetType: assetTypeFilter.value || undefined,
-      excludeAssetType: assetTypeFilter.value ? undefined : 'font',
-      tag: activeTag.value || undefined,
-      keyword: searchKeyword.value.trim() || undefined,
+      ...buildListQueryParams(),
       page: page.value,
       page_size: pageSize.value,
-      sort_by: sortParts.value.sortBy,
-      sort_order: sortParts.value.sortOrder,
     })
     assets.value = response.items
     total.value = response.total
@@ -985,29 +924,8 @@ async function refreshAssets(): Promise<void> {
 }
 
 async function loadTags(): Promise<void> {
-  try {
-    const tags = await listWorkspaceAssetTags(workspaceId.value, {
-      ...resolveAssetStatusScope(),
-      assetType: assetTypeFilter.value || undefined,
-      excludeAssetType: assetTypeFilter.value ? undefined : 'font',
-    })
-    availableTags.value = tags
-    if (activeTag.value && !tags.includes(activeTag.value)) {
-      activeTag.value = null
-      resetPage()
-    }
-  } catch {
-    availableTags.value = []
-    activeTag.value = null
-  }
-}
-
-function resolveAssetStatusScope(): { status: RecordStatus; includeHistory: boolean; historyOnly: boolean } {
-  return {
-    status: activeView.value === 'active' ? 'active' : 'archived',
-    includeHistory: activeView.value === 'history',
-    historyOnly: activeView.value === 'history',
-  }
+  if (!Number.isFinite(workspaceId.value)) return
+  await loadTagsRaw(workspaceId.value)
 }
 
 function syncSelectionAfterListLoad(): void {
@@ -1180,15 +1098,7 @@ async function loadReferences(): Promise<void> {
   }
 }
 
-function handleSelectView(value: string): void {
-  activeView.value = value === 'archived' || value === 'history' ? value : 'active'
-  resetPage()
-}
 
-function handleSelectAssetType(value: string): void {
-  assetTypeFilter.value = assetTypeOptions.some(item => item.value === value) ? value as AssetType : ''
-  resetPage()
-}
 
 function openUploadForm(): void {
   uploadForm.asset_type = assetTypeFilter.value || 'image'
@@ -1839,10 +1749,6 @@ function handlePageChange(nextPage: number): void {
 
 function handlePageSizeChange(nextPageSize: number): void {
   pageSize.value = nextPageSize
-  page.value = 1
-}
-
-function resetPage(): void {
   page.value = 1
 }
 
