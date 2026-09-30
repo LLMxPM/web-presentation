@@ -372,13 +372,10 @@ export function attachRemoteModulePreviewToken(remoteModuleId: string, previewTo
   const pathPart = questionIndex >= 0 ? normalizedId.slice(0, questionIndex) : normalizedId
   const queryPart = questionIndex >= 0 ? normalizedId.slice(questionIndex + 1) : ''
   const encodedToken = encodeURIComponent(previewToken)
-  const existingCtxPattern = /(^|&)ctx=[^&]*/
-  let nextQuery: string
-  if (existingCtxPattern.test(queryPart)) {
-    nextQuery = queryPart.replace(existingCtxPattern, (_match, prefix: string) => `${prefix}ctx=${encodedToken}`)
-  } else {
-    nextQuery = queryPart ? `${queryPart}&ctx=${encodedToken}` : `ctx=${encodedToken}`
-  }
+  // Vite 按 ID 的末尾 .css 识别样式；ctx 必须前置，保留 Vue 的 lang.css 尾段。
+  // 不用 URLSearchParams 序列化其余参数，避免把 lang.css 改写成 lang.css=。
+  const remainingQuery = queryPart.split('&').filter(part => part && !part.startsWith('ctx=')).join('&')
+  const nextQuery = `ctx=${encodedToken}${remainingQuery ? `&${remainingQuery}` : ''}`
   return `${pathPart}?${nextQuery}`
 }
 

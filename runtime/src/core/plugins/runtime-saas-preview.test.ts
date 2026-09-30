@@ -589,7 +589,7 @@ describe('runtime saas preview 服务令牌可恢复', () => {
     )
 
     expect(resolved).toBe(
-      '/@runtime-preview/artifact-1/src/views/Foo.vue?vue&type=style&index=0&lang.css&ctx=preview-token-value',
+      '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value&vue&type=style&index=0&lang.css',
     )
     // 回填后的子请求不依赖进程内 previewTokenCache 也能解析出 ctx
     expect(String(resolved)).toContain('ctx=preview-token-value')

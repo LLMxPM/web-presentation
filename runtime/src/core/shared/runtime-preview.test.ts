@@ -98,7 +98,7 @@ describe('runtime preview shared helpers', () => {
     const recovered = attachRemoteModulePreviewToken(subRequestId, 'signed-preview-token')
 
     expect(recovered).toBe(
-      '/@runtime-preview/artifact_1/src/workspace-components/CMP_DEMO/v/1.vue?vue&type=style&index=0&lang.css&ctx=signed-preview-token',
+      '/@runtime-preview/artifact_1/src/workspace-components/CMP_DEMO/v/1.vue?ctx=signed-preview-token&vue&type=style&index=0&lang.css',
     )
     const parsed = parseRemoteModuleId(recovered)
     expect(parsed?.previewToken).toBe('signed-preview-token')

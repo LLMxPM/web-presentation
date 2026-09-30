@@ -7,6 +7,7 @@ import vue from '@vitejs/plugin-vue'
 import { describe, expect, it } from 'vitest'
 import { createServer, type ViteDevServer } from 'vite'
 import { prepareRemoteSfcSubrequest } from './runtime-remote-sfc'
+import { attachRemoteModulePreviewToken } from '../shared/runtime-preview'
 
 describe('无主模块缓存的远程 SFC 子请求', () => {
   it('首次 scoped CSS 请求先加载主模块，Vue loader 不会读取虚拟文件系统路径', async () => {
@@ -36,9 +37,14 @@ describe('无主模块缓存的远程 SFC 子请求', () => {
       })
       await server.listen()
       const origin = `http://127.0.0.1:${(server.httpServer!.address() as { port: number }).port}`
-      const response = await fetch(origin + '/@runtime-preview/fixture/src/Page.vue?vue&type=style&index=0&scoped=test&lang.css&ctx=fixture')
+      const subrequest = attachRemoteModulePreviewToken('/@runtime-preview/fixture/src/Page.vue?vue&type=style&index=0&scoped=test&lang.css', 'fixture')
+      const response = await fetch(origin + subrequest)
       expect(response.status).toBe(200)
-      expect(await response.text()).toContain('color: red')
+      const body = await response.text()
+      expect(body).toContain('color: red')
+      // 200 的原始 CSS 仍会令浏览器 import 报 SyntaxError，必须得到 Vite 的 JS 样式模块。
+      expect(body).toContain('__vite__updateStyle')
+      expect(response.headers.get('content-type')).toContain('javascript')
       expect(mainLoads).toBe(1)
     } finally {
       await server?.close()
