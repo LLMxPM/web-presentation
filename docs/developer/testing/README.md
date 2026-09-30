@@ -10,6 +10,7 @@
 | [测试命令](./commands.md) | 根仓 `pnpm`、Backend `uv` 和 Runtime 委托命令 |
 | [契约测试](./contract-tests.md) | 跨模块协议、E2E 集合与仓库边界检查 |
 | [E2E smoke](./e2e-smoke.md) | Playwright smoke、测试数据和报告目录 |
+| [本地 Docker 架构演练](./docker-architecture-drill.md) | 隔离多副本、Run 故障回收、旧 ORM、浏览器版本、实际截图/构建与凭证负例 |
 | [E2E 治理设计记录](./e2e-redesign.md) | project 分层、环境准备与测试隔离的设计背景 |
 
 ## 选择原则

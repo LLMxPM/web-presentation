@@ -162,6 +162,8 @@ Runtime Kit 约束：
 
 优先运行与改动范围匹配的最小测试集，并在最终说明中写清楚已运行和未运行的测试。
 
+本地多副本架构演练使用 `scripts/testing/docker-architecture.py`；必须创建专属数据库、Redis、卷和回环端口，不能复用开发数据。阶段操作按依赖串行执行，结束后仅清理本项目；命令与证据边界见[本地 Docker 架构演练](./docs/developer/testing/docker-architecture-drill.md)。
+
 常用入口：
 
 ```powershell
