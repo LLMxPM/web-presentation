@@ -1,0 +1,40 @@
+{
+  "backend": {
+    "command": "uv run --project backend pytest -c backend/pyproject.toml <files> -q",
+    "files": [
+      "backend/tests/unit/test_render_lifecycle.py",
+      "backend/tests/unit/test_render_attempt_late_failure.py",
+      "backend/tests/unit/test_render_result_conflict.py",
+      "backend/tests/unit/test_render_control_plane.py",
+      "backend/tests/unit/test_page_screenshot_job_service.py",
+      "backend/tests/unit/test_page_screenshot_queue_worker.py",
+      "backend/tests/integration/test_page_screenshot_job_durability.py",
+      "backend/tests/api/test_page_screenshot.py",
+      "backend/tests/unit/test_db_adapter_layer.py",
+      "backend/tests/unit/test_durable_job_lease_service.py"
+    ],
+    "passed": 85,
+    "elapsed_seconds": 22.03,
+    "exit_code": 0
+  },
+  "root": [
+    {"command": "pnpm run test:contracts", "passed": 41, "exit_code": 0},
+    {"command": "pnpm run test:repository", "passed": 13, "exit_code": 0},
+    {"command": "pnpm run test:contracts:docker-context", "status": "passed", "exit_code": 0}
+  ],
+  "images": [
+    {"command": "docker build --file deploy/docker/Dockerfile.lite --tag wp-lite-lifecycle:local .", "exit_code": 0},
+    {"command": "docker build --file renderer/Dockerfile --tag wp-renderer-lifecycle:local .", "exit_code": 0},
+    {"command": "uv run --project backend python scripts/contracts/check-image-startup.py --image wp-lite-lifecycle:local --variant lite --output-dir test-results/images/lifecycle-lite-lease-final", "exit_code": 0},
+    {"command": "uv run --project backend python scripts/contracts/check-image-startup.py --image wp-renderer-lifecycle:local --variant renderer --output-dir test-results/images/lifecycle-renderer-init-final", "exit_code": 0}
+  ],
+  "drill": {
+    "driver": "uv run --project backend python scripts/testing/docker-architecture.py",
+    "project": "wp-arch-drill-2c42908d",
+    "setup_args": "setup --fault-injection --backend-image wp-lite-lifecycle:local --runtime-image wp-runtime-w05h:local --renderer-image wp-renderer-lifecycle:local",
+    "sequential_phases": ["seed", "render-cancel", "render-cancel-result", "render-kill", "render-late", "render-timeout", "pipeline", "browser-build", "credentials", "cleanup"],
+    "phase_args": "--directory .tmp/docker-architecture/wp-arch-drill-2c42908d",
+    "final_phase_exit_codes": 0
+  },
+  "not_run": ["full Backend/Editor/Runtime/E2E", "full M02 isolation", "build attempt faults", "external Batch handoff", "full M05 old image/rollback", "formal capacity", "platform/arm64/Registry release matrix"]
+}

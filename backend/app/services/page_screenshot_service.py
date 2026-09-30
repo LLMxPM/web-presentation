@@ -28,6 +28,7 @@ from app.services.capture_viewport_resolver import CaptureViewport, CaptureViewp
 from app.services.object_storage_service import ObjectStorageService
 from app.services.page_preview_service import PagePreviewResult, PagePreviewService
 from app.services.page_service import PageService
+from app.services.page_screenshot_render_lifecycle import screenshot_render_owner_key
 from app.services.project_config_service import ProjectConfigService
 from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
 from app.services.rendering.target_resolver import RenderTargetResolver
@@ -308,9 +309,9 @@ class PageScreenshotService:
                 capture_target.preview_url,
                 viewport,
                 extra_http_headers=capture_target.extra_http_headers,
-                logical_owner_key=(
-                    f"page-screenshot:{page.id}:v{target_page_version_no}:"
-                    f"{config_hash}:{viewport.width}x{viewport.height}"
+                logical_owner_key=screenshot_render_owner_key(
+                    page_id=page.id, version_no=target_page_version_no, config_hash=config_hash,
+                    width=viewport.width, height=viewport.height,
                 ),
                 workspace_id=page.workspace_id,
                 project_id=page.project_id,

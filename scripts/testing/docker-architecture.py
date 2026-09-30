@@ -11,6 +11,7 @@ from docker_architecture_cases import owner_drill, seed
 from docker_architecture_credentials import credentials
 from docker_architecture_env import DockerDrill, command, create_environment
 from docker_architecture_jobs import competing_jobs
+from docker_architecture_lifecycle import lifecycle
 from docker_architecture_migration import legacy
 from docker_architecture_pipeline import (
     browser,
@@ -22,7 +23,8 @@ from docker_architecture_pipeline import (
 
 def setup(args) -> DockerDrill:
     """先启动依赖、创建密钥并由单独迁移容器升级，然后启动应用副本。"""
-    drill = create_environment(args.backend_image, args.runtime_image, args.renderer_image, defer_renderer=args.defer_renderer)
+    drill = create_environment(args.backend_image, args.runtime_image, args.renderer_image, defer_renderer=args.defer_renderer,
+                               fault_injection=args.fault_injection)
     print(f"演练目录：{drill.directory}", flush=True)
     try:
         start_services(drill, args.defer_renderer)
@@ -37,6 +39,9 @@ def setup(args) -> DockerDrill:
 def start_services(drill: DockerDrill, defer_renderer: bool) -> None:
     """串行完成数据库迁移与默认用户初始化，再启动可并行执行的业务副本。"""
     drill.compose("up", "-d", "--wait", "postgres", "redis", "mock")
+    if drill.context.get("fault_injection"):
+        drill.compose("up", "-d", "gate")
+        drill.wait_http(drill.context["origins"]["gate"], "/_drill/status")
     drill.compose("run", "--rm", "init")
     drill.compose("run", "--rm", "--entrypoint", "alembic", "backend_a", "upgrade", "head")
     services = ["backend_a", "preview_a", "preview_b", "check"]
@@ -54,13 +59,14 @@ def start_services(drill: DockerDrill, defer_renderer: bool) -> None:
 def main() -> None:
     """各阶段可独立重跑；cleanup 仅删除本次专属项目及其数据卷。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("setup", "backend", "renderer", "runtime", "seed", "owner", "owner-pause", "owner-hostname", "legacy", "browser-same", "browser-cross", "pipeline", "jobs", "credentials", "credentials-runtime", "browser-build", "cleanup"))
+    parser.add_argument("phase", choices=("setup", "backend", "renderer", "runtime", "seed", "owner", "owner-pause", "owner-hostname", "legacy", "browser-same", "browser-cross", "pipeline", "jobs", "credentials", "credentials-runtime", "browser-build", "render-cancel", "render-cancel-result", "render-timeout", "render-kill", "render-late", "cleanup"))
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--backend-image", default="wp-lite:drill")
     parser.add_argument("--runtime-image", default="wp-runtime:drill")
     parser.add_argument("--renderer-image", default="wp-renderer:drill")
     parser.add_argument("--other-runtime-image", help="browser-cross 使用真实旧 Runtime 镜像；省略时只覆盖测试发布身份")
     parser.add_argument("--defer-renderer", action="store_true", help="镜像构建期间先验证控制面；构建完成后执行 renderer 阶段")
+    parser.add_argument("--fault-injection", action="store_true", help="setup 创建真实响应延迟代理，并使用演练专属的 20 秒期限/6 秒租约")
     args = parser.parse_args()
     if args.phase != "setup" and args.directory is None:
         parser.error("后续阶段必须显式提供 --directory")
@@ -97,6 +103,9 @@ def main() -> None:
         elif args.phase == "jobs":
             data = json.loads((drill.output / "seed.json").read_text(encoding="utf-8"))
             competing_jobs(drill, data)
+        elif args.phase.startswith("render-"):
+            data = json.loads((drill.output / "seed.json").read_text(encoding="utf-8"))
+            lifecycle(drill, data, args.phase.removeprefix("render-"))
         elif args.phase.startswith("credentials"):
             credentials(drill, ("runtime",) if args.phase == "credentials-runtime" else ("runtime", "renderer"))
         elif args.phase == "cleanup":

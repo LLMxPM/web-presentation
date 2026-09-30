@@ -50,6 +50,13 @@ WORKDIR /app/renderer
 
 RUN python -c "import render_contracts, wp_renderer"
 
+# 浏览器可能留下被 PID 1 接管的子进程；init 负责转发信号和回收孤儿，
+# 单独成层避免仅调整容器入口时重复下载 Chromium。
+RUN apt-get -o Acquire::Retries=3 update \
+    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends tini \
+    && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 7400
 
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["uvicorn", "wp_renderer.main:app", "--host", "0.0.0.0", "--port", "7400"]

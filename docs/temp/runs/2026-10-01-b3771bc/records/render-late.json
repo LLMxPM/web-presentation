@@ -1,0 +1,620 @@
+{
+  "status": "passed",
+  "mode": "late",
+  "page_id": 5,
+  "samples": [
+    {
+      "job": {
+        "id": 4,
+        "status": "running",
+        "attempt_count": 1,
+        "error_code": null,
+        "cancel_requested_at": null,
+        "worker_id": "d592c2e70010:1:3982f8bbf406445baba7f6572353664c",
+        "lease_expires_at": "2026-09-30T22:46:38.955134+00:00",
+        "finished_at": null
+      },
+      "requests": [
+        {
+          "id": 4,
+          "status": "executing",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": null,
+          "error_code": null,
+          "deadline_at": "2026-09-30T22:41:58.994573+00:00",
+          "finished_at": null
+        }
+      ],
+      "attempts": [
+        {
+          "id": 5,
+          "request_id": 4,
+          "attempt_uid": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "accepted",
+          "active_occupancy": 1,
+          "cleanup_status": "pending",
+          "error_code": null,
+          "lease_expires_at": "2026-09-30T22:41:46.400451+00:00",
+          "finished_at": null
+        }
+      ],
+      "results": [],
+      "active_total": 1,
+      "page_published": false,
+      "elapsed_seconds": 2.804
+    },
+    {
+      "job": {
+        "id": 4,
+        "status": "running",
+        "attempt_count": 1,
+        "error_code": null,
+        "cancel_requested_at": null,
+        "worker_id": "d592c2e70010:1:3982f8bbf406445baba7f6572353664c",
+        "lease_expires_at": "2026-09-30T22:46:38.955134+00:00",
+        "finished_at": null
+      },
+      "requests": [
+        {
+          "id": 4,
+          "status": "retry_wait",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": null,
+          "error_code": "RENDER_RESULT_LOST",
+          "deadline_at": "2026-09-30T22:41:58.994573+00:00",
+          "finished_at": null
+        }
+      ],
+      "attempts": [
+        {
+          "id": 5,
+          "request_id": 4,
+          "attempt_uid": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "error_code": "RENDER_DEADLINE_EXCEEDED",
+          "lease_expires_at": "2026-09-30T22:41:46.400451+00:00",
+          "finished_at": "2026-09-30T22:41:57.234448+00:00"
+        }
+      ],
+      "results": [],
+      "active_total": 0,
+      "page_published": false,
+      "elapsed_seconds": 20.385
+    },
+    {
+      "job": {
+        "id": 4,
+        "status": "running",
+        "attempt_count": 2,
+        "error_code": null,
+        "cancel_requested_at": null,
+        "worker_id": "d592c2e70010:1:20042819a113407a85a9042436c5fe04",
+        "lease_expires_at": "2026-09-30T22:46:59.257876+00:00",
+        "finished_at": null
+      },
+      "requests": [
+        {
+          "id": 4,
+          "status": "expired",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": null,
+          "error_code": "RENDER_DEADLINE_EXCEEDED",
+          "deadline_at": "2026-09-30T22:41:58.994573+00:00",
+          "finished_at": "2026-09-30T22:41:59.024022+00:00"
+        },
+        {
+          "id": 5,
+          "status": "executing",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": null,
+          "error_code": null,
+          "deadline_at": "2026-09-30T22:42:19.304409+00:00",
+          "finished_at": null
+        }
+      ],
+      "attempts": [
+        {
+          "id": 5,
+          "request_id": 4,
+          "attempt_uid": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "error_code": "RENDER_DEADLINE_EXCEEDED",
+          "lease_expires_at": "2026-09-30T22:41:46.400451+00:00",
+          "finished_at": "2026-09-30T22:41:57.234448+00:00"
+        },
+        {
+          "id": 6,
+          "request_id": 5,
+          "attempt_uid": "3d0458c8-9847-4181-a493-77b101600b83",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "accepted",
+          "active_occupancy": 1,
+          "cleanup_status": "pending",
+          "error_code": null,
+          "lease_expires_at": "2026-09-30T22:42:05.458933+00:00",
+          "finished_at": null
+        }
+      ],
+      "results": [],
+      "active_total": 1,
+      "page_published": false,
+      "elapsed_seconds": 21.021
+    },
+    {
+      "job": {
+        "id": 4,
+        "status": "running",
+        "attempt_count": 2,
+        "error_code": null,
+        "cancel_requested_at": null,
+        "worker_id": "d592c2e70010:1:20042819a113407a85a9042436c5fe04",
+        "lease_expires_at": "2026-09-30T22:46:59.257876+00:00",
+        "finished_at": null
+      },
+      "requests": [
+        {
+          "id": 4,
+          "status": "expired",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": null,
+          "error_code": "RENDER_DEADLINE_EXCEEDED",
+          "deadline_at": "2026-09-30T22:41:58.994573+00:00",
+          "finished_at": "2026-09-30T22:41:59.024022+00:00"
+        },
+        {
+          "id": 5,
+          "status": "executing",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": null,
+          "error_code": null,
+          "deadline_at": "2026-09-30T22:42:19.304409+00:00",
+          "finished_at": null
+        }
+      ],
+      "attempts": [
+        {
+          "id": 5,
+          "request_id": 4,
+          "attempt_uid": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "error_code": "RENDER_DEADLINE_EXCEEDED",
+          "lease_expires_at": "2026-09-30T22:41:46.400451+00:00",
+          "finished_at": "2026-09-30T22:41:57.234448+00:00"
+        },
+        {
+          "id": 6,
+          "request_id": 5,
+          "attempt_uid": "3d0458c8-9847-4181-a493-77b101600b83",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "accepted",
+          "active_occupancy": 1,
+          "cleanup_status": "pending",
+          "error_code": null,
+          "lease_expires_at": "2026-09-30T22:42:06.296872+00:00",
+          "finished_at": null
+        }
+      ],
+      "results": [],
+      "active_total": 1,
+      "page_published": false,
+      "elapsed_seconds": 21.971
+    },
+    {
+      "job": {
+        "id": 4,
+        "status": "running",
+        "attempt_count": 2,
+        "error_code": null,
+        "cancel_requested_at": null,
+        "worker_id": "d592c2e70010:1:20042819a113407a85a9042436c5fe04",
+        "lease_expires_at": "2026-09-30T22:46:59.257876+00:00",
+        "finished_at": null
+      },
+      "requests": [
+        {
+          "id": 4,
+          "status": "expired",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": null,
+          "error_code": "RENDER_DEADLINE_EXCEEDED",
+          "deadline_at": "2026-09-30T22:41:58.994573+00:00",
+          "finished_at": "2026-09-30T22:41:59.024022+00:00"
+        },
+        {
+          "id": 5,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": 7,
+          "error_code": null,
+          "deadline_at": "2026-09-30T22:42:19.304409+00:00",
+          "finished_at": "2026-09-30T22:42:01.339949+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": 5,
+          "request_id": 4,
+          "attempt_uid": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "error_code": "RENDER_DEADLINE_EXCEEDED",
+          "lease_expires_at": "2026-09-30T22:41:46.400451+00:00",
+          "finished_at": "2026-09-30T22:41:57.234448+00:00"
+        },
+        {
+          "id": 6,
+          "request_id": 5,
+          "attempt_uid": "3d0458c8-9847-4181-a493-77b101600b83",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "error_code": null,
+          "lease_expires_at": "2026-09-30T22:42:07.186392+00:00",
+          "finished_at": "2026-09-30T22:42:01.339949+00:00"
+        }
+      ],
+      "results": [
+        {
+          "id": 7,
+          "request_id": 5,
+          "attempt_id": 6
+        }
+      ],
+      "active_total": 0,
+      "page_published": false,
+      "elapsed_seconds": 22.927
+    },
+    {
+      "job": {
+        "id": 4,
+        "status": "succeeded",
+        "attempt_count": 2,
+        "error_code": null,
+        "cancel_requested_at": null,
+        "worker_id": "d592c2e70010:1:20042819a113407a85a9042436c5fe04",
+        "lease_expires_at": null,
+        "finished_at": "2026-09-30T22:42:01.42772+00:00"
+      },
+      "requests": [
+        {
+          "id": 4,
+          "status": "expired",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": null,
+          "error_code": "RENDER_DEADLINE_EXCEEDED",
+          "deadline_at": "2026-09-30T22:41:58.994573+00:00",
+          "finished_at": "2026-09-30T22:41:59.024022+00:00"
+        },
+        {
+          "id": 5,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": 7,
+          "error_code": null,
+          "deadline_at": "2026-09-30T22:42:19.304409+00:00",
+          "finished_at": "2026-09-30T22:42:01.339949+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": 5,
+          "request_id": 4,
+          "attempt_uid": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "error_code": "RENDER_DEADLINE_EXCEEDED",
+          "lease_expires_at": "2026-09-30T22:41:46.400451+00:00",
+          "finished_at": "2026-09-30T22:41:57.234448+00:00"
+        },
+        {
+          "id": 6,
+          "request_id": 5,
+          "attempt_uid": "3d0458c8-9847-4181-a493-77b101600b83",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "error_code": null,
+          "lease_expires_at": "2026-09-30T22:42:07.186392+00:00",
+          "finished_at": "2026-09-30T22:42:01.339949+00:00"
+        }
+      ],
+      "results": [
+        {
+          "id": 7,
+          "request_id": 5,
+          "attempt_id": 6
+        }
+      ],
+      "active_total": 0,
+      "page_published": true,
+      "elapsed_seconds": 23.856
+    }
+  ],
+  "worker_observations": [
+    {
+      "point": "before_fault",
+      "worker_id": "renderer-1",
+      "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+      "slot_state": "idle",
+      "init_process": {
+        "name": "tini",
+        "executable": "tini"
+      },
+      "receipt": {
+        "http_status": null,
+        "status": "succeeded",
+        "resource_state": "retained",
+        "cleaned_at": null,
+        "finished_at": "2026-09-30T22:41:40.674126Z"
+      },
+      "error_code": null,
+      "processes": [],
+      "artifact_files": 1,
+      "artifact_bytes": 22589
+    },
+    {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "c8c8cac25c4a413da3054bbd7e88d37e",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  ],
+  "candidate": "b3771bc8eb3ed9eceb8dbd3cbf061cc26fc2737e",
+  "images": {
+    "backend": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac",
+    "runtime": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+    "renderer": "sha256:936a3647eaceda79261705a9c3065d8e1af2d1209a78ad7d1a9ddfa5ed35db68"
+  },
+  "parameters": {
+    "request_timeout_seconds": 20,
+    "attempt_lease_seconds": 6,
+    "result_ttl_seconds": 10
+  },
+  "job_id": 4,
+  "gate_before": {
+    "mode": "artifact",
+    "released": false,
+    "records": [
+      {
+        "kind": "artifact",
+        "attempt_id": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+        "bytes": 22589,
+        "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+      }
+    ]
+  },
+  "before_late_delivery": {
+    "job": {
+      "id": 4,
+      "status": "running",
+      "attempt_count": 1,
+      "error_code": null,
+      "cancel_requested_at": null,
+      "worker_id": "d592c2e70010:1:3982f8bbf406445baba7f6572353664c",
+      "lease_expires_at": "2026-09-30T22:46:38.955134+00:00",
+      "finished_at": null
+    },
+    "requests": [
+      {
+        "id": 4,
+        "status": "retry_wait",
+        "attempt_count": 1,
+        "cancel_requested": false,
+        "result_id": null,
+        "error_code": "RENDER_RESULT_LOST",
+        "deadline_at": "2026-09-30T22:41:58.994573+00:00",
+        "finished_at": null
+      }
+    ],
+    "attempts": [
+      {
+        "id": 5,
+        "request_id": 4,
+        "attempt_uid": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+        "attempt_no": 1,
+        "worker_id": "renderer-1",
+        "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+        "status": "terminal",
+        "active_occupancy": 0,
+        "cleanup_status": "released",
+        "error_code": "RENDER_DEADLINE_EXCEEDED",
+        "lease_expires_at": "2026-09-30T22:41:46.400451+00:00",
+        "finished_at": "2026-09-30T22:41:57.234448+00:00"
+      }
+    ],
+    "results": [],
+    "active_total": 0,
+    "page_published": false,
+    "elapsed_seconds": 20.385
+  },
+  "gate_release": {
+    "mode": "artifact",
+    "released": true,
+    "records": [
+      {
+        "kind": "artifact",
+        "attempt_id": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+        "bytes": 22589,
+        "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+      },
+      {
+        "kind": "artifact",
+        "attempt_id": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+        "bytes": 22589,
+        "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+      },
+      {
+        "kind": "artifact",
+        "attempt_id": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+        "bytes": 22589,
+        "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+      }
+    ]
+  },
+  "final": {
+    "job": {
+      "id": 4,
+      "status": "succeeded",
+      "attempt_count": 2,
+      "error_code": null,
+      "cancel_requested_at": null,
+      "worker_id": "d592c2e70010:1:20042819a113407a85a9042436c5fe04",
+      "lease_expires_at": null,
+      "finished_at": "2026-09-30T22:42:01.42772+00:00"
+    },
+    "requests": [
+      {
+        "id": 4,
+        "status": "expired",
+        "attempt_count": 1,
+        "cancel_requested": false,
+        "result_id": null,
+        "error_code": "RENDER_DEADLINE_EXCEEDED",
+        "deadline_at": "2026-09-30T22:41:58.994573+00:00",
+        "finished_at": "2026-09-30T22:41:59.024022+00:00"
+      },
+      {
+        "id": 5,
+        "status": "succeeded",
+        "attempt_count": 1,
+        "cancel_requested": false,
+        "result_id": 7,
+        "error_code": null,
+        "deadline_at": "2026-09-30T22:42:19.304409+00:00",
+        "finished_at": "2026-09-30T22:42:01.339949+00:00"
+      }
+    ],
+    "attempts": [
+      {
+        "id": 5,
+        "request_id": 4,
+        "attempt_uid": "7d56ae9e-5c89-42e7-aba3-c61c2dbf66f7",
+        "attempt_no": 1,
+        "worker_id": "renderer-1",
+        "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+        "status": "terminal",
+        "active_occupancy": 0,
+        "cleanup_status": "released",
+        "error_code": "RENDER_DEADLINE_EXCEEDED",
+        "lease_expires_at": "2026-09-30T22:41:46.400451+00:00",
+        "finished_at": "2026-09-30T22:41:57.234448+00:00"
+      },
+      {
+        "id": 6,
+        "request_id": 5,
+        "attempt_uid": "3d0458c8-9847-4181-a493-77b101600b83",
+        "attempt_no": 1,
+        "worker_id": "renderer-1",
+        "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+        "status": "terminal",
+        "active_occupancy": 0,
+        "cleanup_status": "released",
+        "error_code": null,
+        "lease_expires_at": "2026-09-30T22:42:07.186392+00:00",
+        "finished_at": "2026-09-30T22:42:01.339949+00:00"
+      }
+    ],
+    "results": [
+      {
+        "id": 7,
+        "request_id": 5,
+        "attempt_id": 6
+      }
+    ],
+    "active_total": 0,
+    "page_published": true,
+    "elapsed_seconds": 23.856
+  },
+  "download": {
+    "bytes": 22589,
+    "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+    "file": "render-late-4.png"
+  },
+  "scope": "真实截图/Renderer 生命周期；不覆盖构建强杀、页面变更/图片/组件 Batch 交接或正式容量",
+  "elapsed_seconds": 26.09
+}

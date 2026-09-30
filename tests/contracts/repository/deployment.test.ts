@@ -11,7 +11,9 @@ function yaml(file: string) {
 }
 
 it('全部交付 Dockerfile 均进入发布与镜像验证矩阵', () => {
-  const dockerfiles = execFileSync('git', ['ls-files', '--', '*Dockerfile*'], { encoding: 'utf8' }).trim().split('\n')
+  // docs 内的历史构建配方仅是证据；实际交付目录仍逐文件检查发布与执行门禁。
+  const dockerfiles = execFileSync('git', ['ls-files', '--', '*Dockerfile*'], { encoding: 'utf8' })
+    .trim().split('\n').filter(file => file && !file.startsWith('docs/'))
   const smoke = yaml('.github/workflows/platform-test.yml').jobs['platform-image-build-smoke'].strategy.matrix.include
   const releaseJobs = Object.values(yaml('.github/workflows/platform-release.yml').jobs) as any[]
   const published = releaseJobs.flatMap(job => [

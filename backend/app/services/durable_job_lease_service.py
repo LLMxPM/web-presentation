@@ -309,8 +309,9 @@ async def request_job_cancellation(
     job_id: int,
     now: datetime | None = None,
     vocabulary: JobColumnVocabulary | None = None,
+    commit: bool = True,
 ) -> bool:
-    """请求取消任务；pending 立即终止，running 由执行者在安全边界确认。"""
+    """请求协作取消；commit=False 允许领域在同一事务写穿子任务，默认保持独立提交。"""
 
     vocab = vocabulary or STANDARD_JOB_VOCABULARY
     status_col = vocab.attribute(model, vocab.status)
@@ -343,7 +344,8 @@ async def request_job_cancellation(
             .values(**{cancel_name: requested_at})
             .execution_options(synchronize_session=False)
         )
-    await session.commit()
+    if commit:
+        await session.commit()
     pending_count = pending_result.rowcount or 0
     running_count = running_result.rowcount if running_result is not None else 0
     return pending_count + (running_count or 0) > 0

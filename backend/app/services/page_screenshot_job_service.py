@@ -36,6 +36,7 @@ from app.services.durable_job_lease_service import (
 )
 from app.services.object_storage_service import ObjectStorageService
 from app.services.page_screenshot_job_group_service import PageScreenshotJobGroupService
+from app.services.page_screenshot_render_lifecycle import cancel_screenshot_render_requests
 from app.services.page_screenshot_service import (
     PageScreenshotCaptureArtifact,
     PageScreenshotResult,
@@ -185,9 +186,13 @@ class PageScreenshotJobService:
 
         job = await self.get_job_by_id(job_id)
         await self.page_service.get(job.page_id, user_id=current.user.id)
-        await request_job_cancellation(self.session, PageScreenshotJob, job_id=job_id)
+        await request_job_cancellation(self.session, PageScreenshotJob, job_id=job_id, commit=False)
         self.session.expire_all()
-        return PageScreenshotJobResponse.model_validate(await self.get_job_by_id(job_id))
+        job = await self.get_job_by_id(job_id)
+        if job.status == "running" and job.cancel_requested_at is not None:
+            await cancel_screenshot_render_requests(self.session, job)
+        await self.session.commit()
+        return PageScreenshotJobResponse.model_validate(job)
 
     async def get_job_by_id(self, job_id: int) -> PageScreenshotJob:
         """按 ID 读取截图任务。"""
@@ -488,6 +493,7 @@ class PageScreenshotJobService:
             )
             if not completed:
                 await self.session.rollback()
+                await self._acknowledge_cancelled_job(job_id=job_id, worker_id=worker_id)
                 return
             await self.session.commit()
             logger.info(
@@ -772,6 +778,7 @@ class PageScreenshotJobService:
             job_id=job_id,
             worker_id=worker_id,
             require_active_lease=True,
+            extra_conditions=[PageScreenshotJob.cancel_requested_at.is_not(None)],
             values={
                 "status": "cancelled",
                 "lease_expires_at": None,

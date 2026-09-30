@@ -28,7 +28,7 @@ async def test_result_conflict_does_not_read_expired_attempt(monkeypatch) -> Non
             return 7
 
     attempt = ExpiringAttempt()
-    request = SimpleNamespace(input_digest="input", render_profile_digest="profile", request_digest="request")
+    request = SimpleNamespace(input_digest="input", render_profile_digest="profile", request_digest="request", cancel_requested=False)
 
     async def save_result(**_kwargs) -> None:
         """模拟另一协调器已保存结果，当前事务回滚并返回冲突。"""

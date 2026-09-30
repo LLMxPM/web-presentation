@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "page_id": 1,
+  "project_id": 1,
+  "screenshot_job_id": 18,
+  "screenshot": {
+    "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+    "bytes": 22589,
+    "width": 1920,
+    "height": 1080,
+    "page_version": 1
+  },
+  "build_job_id": 1,
+  "build": {
+    "sha256": "f3bfcdf13e10d8f84cee0f14c32d0ade1ab6394de80b412bdd3862420421d1eb",
+    "bytes": 15220399,
+    "entry": "index.html",
+    "attempt_id": "ca6c9fe552bf4e399bdb3def4529af86"
+  }
+}

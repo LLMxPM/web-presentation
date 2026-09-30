@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "workers": [
+    {
+      "worker_id": "renderer-1",
+      "safe_to_remove": true,
+      "unreleased_attempt_count": 0,
+      "unreleased_attempts": []
+    },
+    {
+      "worker_id": "renderer-2",
+      "safe_to_remove": true,
+      "unreleased_attempt_count": 0,
+      "unreleased_attempts": []
+    }
+  ]
+}

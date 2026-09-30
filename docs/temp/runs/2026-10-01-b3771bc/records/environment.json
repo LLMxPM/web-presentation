@@ -1,0 +1,111 @@
+{
+  "project": "wp-arch-drill-2c42908d",
+  "candidate": "b3771bc8eb3ed9eceb8dbd3cbf061cc26fc2737e",
+  "images": {
+    "backend": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac",
+    "runtime": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+    "renderer": "sha256:936a3647eaceda79261705a9c3065d8e1af2d1209a78ad7d1a9ddfa5ed35db68"
+  },
+  "topology": [
+    {
+      "service": "backend_a",
+      "state": "running",
+      "health": "",
+      "image": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac",
+      "image_id": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac"
+    },
+    {
+      "service": "backend_b",
+      "state": "running",
+      "health": "",
+      "image": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac",
+      "image_id": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac"
+    },
+    {
+      "service": "build_a",
+      "state": "running",
+      "health": "healthy",
+      "image": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+      "image_id": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23"
+    },
+    {
+      "service": "build_b",
+      "state": "running",
+      "health": "healthy",
+      "image": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+      "image_id": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23"
+    },
+    {
+      "service": "check",
+      "state": "running",
+      "health": "healthy",
+      "image": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+      "image_id": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23"
+    },
+    {
+      "service": "gate",
+      "state": "running",
+      "health": "",
+      "image": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac",
+      "image_id": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac"
+    },
+    {
+      "service": "gateway",
+      "state": "running",
+      "health": "",
+      "image": "nginx:1.28-alpine",
+      "image_id": "sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236"
+    },
+    {
+      "service": "mock",
+      "state": "running",
+      "health": "",
+      "image": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac",
+      "image_id": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac"
+    },
+    {
+      "service": "postgres",
+      "state": "running",
+      "health": "healthy",
+      "image": "postgres:16-alpine",
+      "image_id": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea"
+    },
+    {
+      "service": "preview_a",
+      "state": "running",
+      "health": "healthy",
+      "image": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+      "image_id": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23"
+    },
+    {
+      "service": "preview_b",
+      "state": "running",
+      "health": "healthy",
+      "image": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+      "image_id": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23"
+    },
+    {
+      "service": "redis",
+      "state": "running",
+      "health": "",
+      "image": "redis:7-alpine",
+      "image_id": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499"
+    },
+    {
+      "service": "renderer_1",
+      "state": "running",
+      "health": "",
+      "image": "sha256:936a3647eaceda79261705a9c3065d8e1af2d1209a78ad7d1a9ddfa5ed35db68",
+      "image_id": "sha256:936a3647eaceda79261705a9c3065d8e1af2d1209a78ad7d1a9ddfa5ed35db68"
+    },
+    {
+      "service": "renderer_2",
+      "state": "running",
+      "health": "",
+      "image": "sha256:936a3647eaceda79261705a9c3065d8e1af2d1209a78ad7d1a9ddfa5ed35db68",
+      "image_id": "sha256:936a3647eaceda79261705a9c3065d8e1af2d1209a78ad7d1a9ddfa5ed35db68"
+    }
+  ],
+  "database_revision": "20260930_0300",
+  "docker": "linux/x86_64 16 CPUs 15074521088 bytes"
+}

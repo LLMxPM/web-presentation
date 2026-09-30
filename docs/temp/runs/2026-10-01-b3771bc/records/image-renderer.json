@@ -1,0 +1,12 @@
+{
+  "variant": "renderer",
+  "requested_image": "wp-renderer-lifecycle:local",
+  "image_id": "sha256:936a3647eaceda79261705a9c3065d8e1af2d1209a78ad7d1a9ddfa5ed35db68",
+  "repo_digests": [
+    "wp-renderer-lifecycle@sha256:936a3647eaceda79261705a9c3065d8e1af2d1209a78ad7d1a9ddfa5ed35db68"
+  ],
+  "os": "linux",
+  "architecture": "amd64",
+  "health": "passed",
+  "execution": "renderer_control_api_capture_passed"
+}

@@ -703,7 +703,7 @@ class RenderRepository:
         render_profile_digest: str,
         request_digest: str,
     ) -> RenderResult | None:
-        """保存有界结果并条件更新请求终态与槽位释放。"""
+        """仅有效租约与未取消、未超期请求可提交结果，并原子释放槽位。"""
 
         now = utc_now()
         result_obj = RenderResult(
@@ -721,7 +721,7 @@ class RenderRepository:
         )
         self.session.add(result_obj)
         await self.session.flush()
-        # 条件更新：仅占用中的 attempt 可以写入终态，避免并发重复释放。
+        # 即使回收器尚未处理过期租约，迟到结果也不得提升。
         occupy_statuses = tuple(ATTEMPT_OCCUPYING_STATUSES)
         update_result = await self.session.execute(
             update(RenderAttempt)
@@ -729,6 +729,7 @@ class RenderRepository:
                 RenderAttempt.id == attempt.id,
                 RenderAttempt.active_occupancy == 1,
                 RenderAttempt.status.in_(occupy_statuses),
+                RenderAttempt.lease_expires_at > now,
             )
             .values(
                 status=ATTEMPT_STATUS_TERMINAL,
@@ -752,6 +753,8 @@ class RenderRepository:
             .where(
                 RenderRequest.id == request.id,
                 RenderRequest.status.notin_(tuple(REQUEST_TERMINAL_STATUSES)),
+                RenderRequest.cancel_requested.is_(False),
+                RenderRequest.deadline_at > now,
             )
             .values(
                 status="succeeded",
@@ -761,6 +764,10 @@ class RenderRepository:
                 error_message=None,
             )
         )
+        if not request_update.rowcount:
+            # 取消/总期限可能发生在产物下载期间；整笔回滚，不能留下成功结果或提前释放。
+            await self.session.rollback()
+            return None
         if request_update.rowcount:
             request.status = "succeeded"
             request.result_id = result_obj.id

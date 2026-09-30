@@ -129,6 +129,7 @@ Editor 是创作工作台，负责登录、工作空间、项目、页面、组�
 - 不导入 `backend/app`；页面布局分析脚本由 `wp_renderer/engine/page_render_*.py` 与 `layout_scripts.py` 统一维护，不得复制多份。组件远程渲染诊断协议保留在契约与 Renderer，内容助手业务入口本迭代不调用。
 - 控制 API 使用服务身份凭证；浏览器网络不能访问控制 API。凭证缺失/空文件必须 fail-closed。
 - 每 attempt 新建 Chromium 与 Context，不跨请求复用；禁止对 Playwright asyncio Task 直接 `cancel()`。
+- Renderer 交付镜像使用 tini 作为 PID 1，负责信号转发和浏览器孤儿回收；生命周期演练须检查存活进程、僵尸进程、临时产物及槽位全部释放。
 - 改动执行、取消、期限或产物协议时，同步更新 `packages/render-contracts` 与 Backend 协调器测试。
 
 ### runtime/

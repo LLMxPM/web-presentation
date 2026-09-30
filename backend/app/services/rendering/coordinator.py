@@ -28,6 +28,7 @@ from render_contracts.constants import (
     SCHEDULE_CATEGORY_INTERACTIVE,
 )
 from render_contracts.errors import (
+    ERROR_CODE_CANCELLED,
     ERROR_CODE_CONTRACT_MISMATCH,
     ERROR_CODE_DEADLINE_EXCEEDED,
     ERROR_CODE_INTERNAL_ERROR,
@@ -432,12 +433,10 @@ class RenderCoordinator:
                     )
                     processed += 1
                 else:
-                    # 网络/服务不可用时延长租约，等待下一轮核对；租约超时由
-                    # release_expired_attempt_leases 兜底收敛，避免容量永久泄漏。
-                    async with self.session_factory() as lease_session:
-                        lease_repo = RenderRepository(lease_session)
-                        await lease_repo.extend_attempt_lease(attempt_id)
-                        await lease_session.commit()
+                    # 不可达不证明执行仍存活；保留原租约，让独立 tick 到期收敛。
+                    # 仅后续真实 accepted/running/cleaning 回执允许续租。
+                    logger.debug("Renderer 不可达，保留原 attempt 租约等待收敛。",
+                                 extra={"event": "render.attempt.await_lease_expiry", "attempt_id": attempt_id})
                 continue
             if receipt.status in {"accepted", "running", "cleaning"}:
                 async with self.session_factory() as lease_session:
@@ -453,6 +452,18 @@ class RenderCoordinator:
                 attempt = await result_repo.get_attempt(attempt_id)
                 request = await result_repo.get_request(attempt.request_id) if attempt else None
                 if attempt is None or request is None:
+                    continue
+                if request.cancel_requested and receipt.status in {"succeeded", "success", "terminal"} and not receipt.error:
+                    # 浏览器已结束但产物尚未提升；丢弃成功回执并释放 Worker 临时产物。
+                    await result_session.commit()
+                    await self.client.confirm_result_consumption(endpoint, attempt_uid)
+                    await result_repo.fail_attempt(
+                        request=request, attempt=attempt, error_code=ERROR_CODE_CANCELLED,
+                        error_message="渲染结果提升前请求已取消。", retryable=False,
+                        retry_after=None, release_slot=True, terminal=True,
+                    )
+                    await result_session.commit()
+                    processed += 1
                     continue
                 # 失败/取消必须优先于成功分支：Renderer 历史回执可能把失败也标成 terminal。
                 if receipt.error:

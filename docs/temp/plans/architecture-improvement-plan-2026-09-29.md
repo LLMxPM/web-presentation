@@ -254,13 +254,13 @@ pnpm run test:contracts:cli-skill
 | 项 | 有效状态 | 下一步 |
 | :--- | :--- | :--- |
 | W02/W03 | 核心实现与本地门禁完成 | M08 行为回归；M03 延迟分解、压力下对账 |
-| W01/M02 | 降权与全局凭证不可读有局部实机描述，完整门开放 | 跨任务权限/token/网络与进程回收负例 |
-| W04/M01 | 最终本地候选经 Gateway 真实 PNG/ZIP、ZIP 浏览器入口、Runtime/Lite/Renderer 实际入口及六种凭证负例通过；正常任务槽位释放通过 | Renderer 默认下载配方未完整构建，执行镜像使用同源码/冻结依赖的缓存下载配方；正式 platform、Registry/digest、取消与超时回收继续验收 |
+| W01/M02 | 降权与全局凭证不可读有局部实机描述；截图取消/超时/故障后无浏览器、驱动或僵尸残留，完整门开放 | 跨任务权限/token/网络与其它业务进程回收负例 |
+| W04/M01 | 本轮 HEAD + 补丁经 Gateway 真实 PNG/ZIP、ZIP 浏览器入口、Lite/Renderer 实际入口及六种凭证负例通过；Renderer 默认下载配方完整构建，截图取消/硬期限及资源回收通过 | 正式 platform、Registry/digest/arm64；其它执行域取消与超时回收继续验收 |
 | W03/M03 | 探索性容量已采集，正式门开放 | 先分业务定义目标；独立负载生成、排队/执行耗时、M03-F1 定位与角色/槽位对照 |
 | W05a/M05 | 前向补偿、SQLite/双库迁移已通过；本轮真实 PG 上 `4c7eee8` 页面入队幂等、完整 Batch ORM 读写、过期恢复/取消及旧迁移器拒绝通过 | 使用当前 Python 依赖，完整旧镜像入口、自动 deferred 续跑、迁移中断与完整回滚仍待验；真实部署范围仍需核对，保持停机前滚与关闭旧迁移器 |
 | W05b/M04 | 本轮双 Backend 实测强杀、暂停、hostname 改变/PID=1 重用；13.299/11.635/11.479 秒收敛，静默 B 保护、唯一终态、会话解除及迟到写拒绝通过 | paused/waiting_external/有效续跑租约保护和取消竞争继续补齐；本轮 12/2/1 秒配置不是默认生产 SLA，历史未登记 Run 保留原补偿路径 |
 | W05c/M05 | 正常 iframe 同版双副本与真实旧 Runtime 跨版拒绝通过；修复预优化 hash、版本 URL 字体编码、SFC descriptor、CSS query 与固定截图入口；实际 scoped CSS/字体及 Runtime/Lite HTTP/HMR 门禁通过 | 当前候选浏览器定向门已通过；补完整 N/N-1 公共能力/产物组合与实际部署模板，继续同版池及排空切换 |
-| M04 其余场景 | 双 Build/双 Renderer 执行四个独立构建和四个独立截图，均一次成功；产物摘要、运行期 owner/attempt、终态释放留证；`a0779df` 修复并复测迟到 410 覆盖已提交 attempt | 正常竞争定向门已通过；按 §4.5 补强杀/迟到上传、取消竞争、额度、外部交接与 Batch 一次消费，完整门开放 |
+| M04 其余场景 | 双 Build/双 Renderer 正常独立任务竞争已通过；本轮截图导航取消、PNG 返回取消竞争、硬期限、Renderer SIGKILL/自然租约回收及迟到真实 PNG 拒绝均通过，两个 Worker 无进程/临时文件/占用残留 | 截图生命周期定向门已通过；按 §4.5 补构建强杀/迟到上传、额度饱和、外部交接与 Batch 一次消费，完整门开放 |
 | W06/M07 | 脚本与清单完成，业务恢复未执行 | 隔离目标中恢复 DB/资源/密钥/版本并验登录、凭据解密、预览/截图/构建及 RPO/RTO |
 | W04/M06 | 发布定义存在，远端/双架构验收未执行 | 拉取/digest/arm64 真实产物、外部 OpenAPI、required checks |
 | W07/M08 | 资产筛选/批量/详情拆分完成；联合回归未执行 | UI、权限、富文本、双入口及 Agent Kit 匹配版本 |
@@ -275,3 +275,5 @@ W05a 本地修复新增前向迁移，未改已存在的删列 revision；旧 OR
 最终代码候选 `aab57cd` 已在本机 Docker Desktop/Linux amd64 构建 Runtime 与 Lite，生产依赖裁剪后真实入口、模块/CSS/Vite、跨版 HTTP 与 HMR 拒绝通过；两种交付形态的 Runtime 指纹一致。另验证 Runtime 缺身份实际启动失败。原始镜像身份与具体边界见[本地实施记录](../runs/2026-09-30-w05-local/summary.md)；没有新的 Renderer 截图/ZIP 或双架构证据，不关闭 M01/M06；未推送或发布候选。
 
 上述 `aab57cd` 是上一轮镜像记录。本轮最终 Runtime 来源 `e82c793`，Backend/Lite 来源 `a0779df`；原始证据、镜像构建差异及分步提交见[09-30 至 10-01 Docker 演练](../runs/2026-09-30-docker/summary.md)。可重跑脚本和命令见[测试说明](../../developer/testing/docker-architecture-drill.md)。本轮定向 Runtime 52 项及类型检查、Backend 56 项、根 contracts 41 项通过；普通 Run、浏览器、真实产物、凭证和独立任务的已通过场景不再列为待执行，完整门按本节剩余条件保留开放。
+
+10-01 后续截图生命周期演练基线为 `b3771bc` + 本轮补丁（镜像构建时尚未提交，随后代码与记录一并提交），最终 Lite/Renderer 官方镜像分别为本地 `191a9ca…` / `936a364…`，Runtime 复用 `e82c793`；精确身份及源码/补丁摘要见[本轮记录](../runs/2026-10-01-b3771bc/summary.md)。实测修复取消未传递、Worker 不可达仍续租、结果提交取消/期限/租约竞争及 PID 1 僵尸残留；两个隔离项目清理完成。Backend 85 项、根 contracts 41 项、repository 13 项、Docker 上下文、最终五场景及正常 PNG/ZIP/浏览器链路通过。没有推送或发布，不把本轮定向结果视为完整 M01/M02/M04/M05/M06 关闭；下一步按剩余条件推进 M05 完整旧镜像入口/回滚和公共能力组合。

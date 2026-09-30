@@ -135,6 +135,8 @@
 3. 过期恢复时若 `cancel_requested_at` 非空 → 收敛为 `cancelled`，不重试。
 4. 业务强依赖「父级取消」（如 Run cancelled）时，领域服务应在同一事务写穿子任务取消，不依赖轮询。
 
+`request_job_cancellation(..., commit=False)` 允许领域服务把父 Job 与子任务取消合并提交，默认调用仍独立提交。截图取消在同一事务按工作空间、页面、版本、配置与视口关联到未终态 RenderRequest；每个活动截图执行另有短会话取消观察者，补偿「取消已提交、渲染请求随后才入队」的竞争。观察者只有当前 Job 拥有者及有效租约才可继续传播，执行结束即退出。
+
 ### 2.3 心跳与续租
 
 | 队列 | lease 默认 | heartbeat 默认 | 比例 | 备注 |
@@ -150,6 +152,8 @@
 - 心跳必须是**拥有者 + 未过期租约 + running** 的条件更新。
 - 空闲期心跳不得变成写放大源（render worker 心跳 5s 节流是可接受实现）。
 - `waiting_provider` 状态**不占用** Worker 租约；存活依据是 `next_poll_at`，不是 `lease_expires_at`。
+- RenderAttempt 只有真实 `accepted/running/cleaning` 回执才续租；网络不可达保留原租约，由后续独立 tick 执行到期恢复。成功结果提交同时复核 attempt 占用、有效租约、请求取消标记与总期限；即使回收器尚未处理过期租约，也拒绝迟到结果。竞争失败整笔回滚，不留下孤立 RenderResult。
+- Renderer 容器入口由 tini 承担 PID 1，转发信号并回收被接管的浏览器子进程；资源释放需同时检查槽位、临时文件和 `/proc`，僵尸残留不算完整回收。
 
 ---
 

@@ -95,14 +95,14 @@ class DockerDrill:
                                       "docker": command("docker", "info", "--format", "{{.OSType}}/{{.Architecture}} {{.NCPU}} CPUs {{.MemTotal}} bytes")})
 
 
-def create_environment(backend_image: str, runtime_image: str, renderer_image: str, *, defer_renderer: bool = False) -> DockerDrill:
+def create_environment(backend_image: str, runtime_image: str, renderer_image: str, *, defer_renderer: bool = False, fault_injection: bool = False) -> DockerDrill:
     """固定镜像 ID，创建双 Backend/预览/构建/Renderer 与单 Check 的独立环境。"""
     project = "wp-arch-drill-" + secrets.token_hex(4)
     directory = ROOT / ".tmp" / "docker-architecture" / project
     directory.mkdir(parents=True)
     output = Path("test-results/docker-architecture") / project
     (ROOT / output).mkdir(parents=True)
-    ports = {key: free_port() for key in ("gateway", "backend_a", "backend_b", "mock")}
+    ports = {key: free_port() for key in ("gateway", "backend_a", "backend_b", "mock", "gate")}
     origins = {key: f"http://127.0.0.1:{port}" for key, port in ports.items()}
     password = secrets.token_urlsafe(24)
     render_secret = secrets.token_urlsafe(36)
@@ -148,9 +148,18 @@ def create_environment(backend_image: str, runtime_image: str, renderer_image: s
     services["check"] = {"image": images["runtime"], "environment": {**runtime_env, "RUNTIME_ROLE": "check"}}
     for i in (1, 2):
         services[f"renderer_{i}"] = {"image": images["renderer"] or renderer_image, "environment": {"RENDER_WORKER_ID": f"renderer-{i}", "RENDER_SERVICE_CREDENTIAL": render_secret}}
+    if fault_injection:
+        backend_env.update(RENDER_REQUEST_TIMEOUT_SECONDS="20", RENDER_ATTEMPT_LEASE_SECONDS="6",
+                           RENDER_UNKNOWN_RECONCILE_AFTER_SECONDS="3",
+                           RENDER_WORKERS_CONFIG=json.dumps([{"worker_id": f"renderer-{i}", "base_url": f"http://gate:{8091+i}"} for i in (1, 2)]))
+        services["gate"] = {"image": images["backend"], "entrypoint": ["python", "/drill/docker_architecture_gate.py"],
+                            "volumes": [f"{(ROOT / 'scripts/testing').as_posix()}:/drill:ro"],
+                            "ports": [f"127.0.0.1:{ports['gate']}:8091"]}
+        for i in (1, 2):
+            services[f"renderer_{i}"]["environment"]["RENDER_RESULT_TTL_SECONDS"] = "10"
     services["gateway"] = {"image": "nginx:1.28-alpine", "ports": [f"127.0.0.1:{ports['gateway']}:80"], "volumes": [f"{directory.as_posix()}/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]}
     (directory / "compose.json").write_text(json.dumps({"services": services, "volumes": {name: {} for name in ("pg", "data", "build_secret")}}, indent=2), encoding="utf-8")
-    (directory / "context.json").write_text(json.dumps({"project": project, "output": output.as_posix(), "origins": origins, "password": password, "images": images, "candidate": command("git", "rev-parse", "HEAD")}, indent=2), encoding="utf-8")
+    (directory / "context.json").write_text(json.dumps({"project": project, "output": output.as_posix(), "origins": origins, "password": password, "images": images, "fault_injection": fault_injection, "candidate": command("git", "rev-parse", "HEAD")}, indent=2), encoding="utf-8")
     write_gateway(directory, "same")
     return DockerDrill(directory)
 
@@ -158,11 +167,14 @@ def create_environment(backend_image: str, runtime_image: str, renderer_image: s
 def write_gateway(directory: Path, mode: str) -> None:
     """同版强制轮询、跨版强制子请求走 B；记录 upstream，令牌和请求头均沿生产链路。"""
     target = "preview_b:7373" if mode == "cross" else "preview_pool"
+    context = json.loads((directory / "context.json").read_text(encoding="utf-8"))
+    fault_location = "location = /runtime/__preview { proxy_pass http://gate:8091; proxy_read_timeout 100s; }" if context.get("fault_injection") else ""
     text = f"""# 文件功能：隔离演练 Gateway，不作为生产模板。
 map $http_upgrade $connection_upgrade {{ default upgrade; '' close; }}
 upstream preview_pool {{ server preview_a:7373; server preview_b:7373; }}
 server {{
  listen 80; access_log off; client_max_body_size 100m;
+ {fault_location}
  location /runtime/ {{
   proxy_pass http://{target}; proxy_http_version 1.1; proxy_set_header Host gateway;
   proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $connection_upgrade;

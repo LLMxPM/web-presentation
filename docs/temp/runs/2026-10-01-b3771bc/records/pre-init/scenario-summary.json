@@ -1,0 +1,673 @@
+[
+  {
+    "mode": "cancel",
+    "job_id": 13,
+    "page_id": 14,
+    "elapsed_seconds": 6.917,
+    "job_status": "cancelled",
+    "attempts": 1,
+    "results": [],
+    "max_active_total": 1,
+    "download": null,
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "dad87951a2374eeabfd827526c442b7b",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [
+            {
+              "pid": 27,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 28,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 77,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 128,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 129,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 179,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 231,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 232,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 333,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 334,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 425,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 426,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 507,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 508,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 603,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 604,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            }
+          ],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "ac3f48584af84d198e095fb41d63e126",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  },
+  {
+    "mode": "cancel-result",
+    "job_id": 14,
+    "page_id": 15,
+    "elapsed_seconds": 7.885,
+    "job_status": "cancelled",
+    "attempts": 1,
+    "results": [],
+    "max_active_total": 1,
+    "download": null,
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "dad87951a2374eeabfd827526c442b7b",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [
+            {
+              "pid": 27,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 28,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 77,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 128,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 129,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 179,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 231,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 232,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 333,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 334,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 425,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 426,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 507,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 508,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 603,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 604,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 697,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 698,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 747,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            }
+          ],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "ac3f48584af84d198e095fb41d63e126",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  },
+  {
+    "mode": "kill",
+    "job_id": 15,
+    "page_id": 16,
+    "elapsed_seconds": 17.171,
+    "job_status": "succeeded",
+    "attempts": 2,
+    "results": [
+      {
+        "id": 22,
+        "request_id": 22,
+        "attempt_id": 26
+      }
+    ],
+    "max_active_total": 1,
+    "download": {
+      "bytes": 22589,
+      "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+      "file": "render-kill-15.png"
+    },
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "d9df1d93e3f845208e1d241ec821a0b8",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [
+            {
+              "pid": 27,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 28,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 78,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            }
+          ],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "ac3f48584af84d198e095fb41d63e126",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  },
+  {
+    "mode": "late",
+    "job_id": 16,
+    "page_id": 17,
+    "elapsed_seconds": 26.712,
+    "job_status": "succeeded",
+    "attempts": 2,
+    "results": [
+      {
+        "id": 27,
+        "request_id": 24,
+        "attempt_id": 28
+      }
+    ],
+    "max_active_total": 1,
+    "download": {
+      "bytes": 22589,
+      "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+      "file": "render-late-16.png"
+    },
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "d9df1d93e3f845208e1d241ec821a0b8",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [
+            {
+              "pid": 27,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 28,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 78,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 129,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 130,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 232,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 233,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            }
+          ],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "ac3f48584af84d198e095fb41d63e126",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  },
+  {
+    "mode": "timeout",
+    "job_id": 17,
+    "page_id": 18,
+    "elapsed_seconds": 64.531,
+    "job_status": "failed",
+    "attempts": 3,
+    "results": [],
+    "max_active_total": 1,
+    "download": null,
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "d9df1d93e3f845208e1d241ec821a0b8",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [
+            {
+              "pid": 27,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 28,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 78,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 129,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 130,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 232,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 233,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 333,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 334,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 422,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 423,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 506,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 507,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            }
+          ],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "ac3f48584af84d198e095fb41d63e126",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  }
+]

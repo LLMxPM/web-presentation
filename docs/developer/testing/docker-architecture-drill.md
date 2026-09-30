@@ -57,6 +57,33 @@ browser-cross 默认覆盖测试副本发布身份；验证真实不同版本的
 
 普通 Run fixture 使用本地受控 Chat Completions 流，经过真实 API、模型适配器和后台执行器，不调用外部模型。owner TTL/心跳/扫描为 12/2/1 秒，观察预算为 16 秒；这只是演练参数，不是生产 SLA。legacy 每次只重置该专属 PG 中的 `compat_e2e` 夹具库，保证从 N-1 schema 重新前滚；旧 app 源码使用当前 Python 依赖环境，不能据此宣称完整 N-1 镜像或发布回滚已验收。
 
+## 截图取消、期限与 attempt 故障
+
+本轮故障场景使用 `setup --fault-injection` 创建专属响应代理。代理只阻塞真实 Runtime 导航或已由 Renderer 生成的 PNG 返回，不构造执行回执或成功结果。固定转发目标位于本次 Compose 网络，控制端口只绑定随机回环端口；不记录完整导航 URL、票据、服务身份头或源码。
+
+```powershell
+uv run --project backend python scripts/testing/docker-architecture.py setup --fault-injection --backend-image wp-lite:drill --runtime-image wp-runtime:drill --renderer-image wp-renderer:drill
+# 将上一步输出的专属目录赋给 $drillDirectory，再依次执行。
+uv run --project backend python scripts/testing/docker-architecture.py seed --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py render-cancel --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py render-cancel-result --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py render-timeout --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py render-kill --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py render-late --directory $drillDirectory
+```
+
+| 阶段 | 故障注入与断言 |
+| :--- | :--- |
+| `render-cancel` | 真正 Chromium 导航阻塞时调用截图取消 API；Job/RenderRequest 取消，未发布页面截图或成功结果 |
+| `render-cancel-result` | 真实 PNG 已下载到代理、attempt 仍占用时取消；随后返回原 PNG，结果 CAS 拒绝提升，Job 确认取消 |
+| `render-timeout` | 导航一直阻塞，真实 Renderer 硬期限收敛；领域截图重试耗尽后失败，错误码、无结果及资源释放可对账 |
+| `render-kill` | SIGKILL 本项目的执行中 Renderer，先证明容器已退出，等待原租约自然回收，再启动；新 attempt 成功，旧 attempt 无结果 |
+| `render-late` | 阻塞真实 PNG 返回，重启不持有截图 Job 的 Backend 协调器；租约到期接管后再交付原 PNG，旧 attempt 不提升，新 attempt 产物可下载 |
+
+这些阶段逐一创建新页面/Job，以 20 秒请求期限、6 秒 attempt 租约、10 秒 Worker 产物 TTL 缩短故障观察，属于演练配置。所有阶段串行执行；PNG gate 最多等待 90 秒。每轮记录真实 DB 状态与全局占用，结合 Worker 控制 API、`/proc` 的进程名/可执行文件/PID/状态及临时文件数量，核对 Worker 空闲、无 Chromium/Playwright 驱动进程（含僵尸）、临时产物释放。Renderer 镜像通过 tini 回收被 PID 1 接管的浏览器孤儿；历史僵尸负例仍保留。这不关闭完整 M02 进程隔离门。
+
+重复场景创建带时间戳的新报告，失败报告不覆盖。恢复截图保存 PNG 与摘要，取消/超时保留未发布的状态证据。阶段结束恢复代理与被中断服务，全部演练结束后仍执行 `cleanup`。这些证据覆盖 M01/M04 的截图生命周期，构建 attempt 故障、页面/图片/组件 Batch 交接、恢复、容量和远端发布继续按现行计划独立验收。
+
 ## 证据与清理
 
 脱敏 JSON、PNG、ZIP 和失败记录在 `test-results/docker-architecture/<项目>/`。`.tmp` 内的 `context.json` 和 `compose.json` 含测试凭证，禁止提交、分享或打印；入库证据只复制明确审核过的小型 JSON。阶段失败保持非零退出码，不能以健康接口或部分产物计成功。重复 pipeline 使用新的产物目录，不覆盖前轮失败证据。

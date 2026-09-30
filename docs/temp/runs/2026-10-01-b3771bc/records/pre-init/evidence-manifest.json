@@ -1,0 +1,90 @@
+{
+  "reviewed_at": "2026-10-01T06:36:45.221843+08:00",
+  "raw_files": [
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/render-cancel-1790807543548477100.json",
+      "bytes": 14495,
+      "sha256": "f03a9ade8b3bf450f66bb7e3d76d84dcbf1a78c206888249d4176dcd6f7e3f44"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/render-cancel-result-1790807552603721500.json",
+      "bytes": 15708,
+      "sha256": "26fc6247e1400c42c941d586d4103d2a5ae1cbb0cf35e88dc804e08cbd9147a1"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/render-kill-1790807562541636000.json",
+      "bytes": 29284,
+      "sha256": "50191ebdfe4283bfc5787b5b4a28637148a28809075c60f11771b91a2512fc0f"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/render-kill-15.png",
+      "bytes": 22589,
+      "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/render-late-1790807581754555700.json",
+      "bytes": 19168,
+      "sha256": "5134a0aa766a5c66c6ba7988b9ce0cdf6a78b5778c9a80ba445d93e5c54d9828"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/render-late-16.png",
+      "bytes": 22589,
+      "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/render-timeout-1790807610573018400.json",
+      "bytes": 156382,
+      "sha256": "49b204928aad641e24c28db32f6fce26ccd8b03cf50740775710d3591c4341b2"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/render-cancel.json",
+      "bytes": 21930,
+      "sha256": "f5674b65ad3b971a642348dbf4a4952053b8b4f39c866a5c03407c80f1db6189"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/render-kill.json",
+      "bytes": 25798,
+      "sha256": "db175e7c19dd83ec2f070398dc36a237e06d0d797a2d92896f9b060ee39756d9"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/environment.json",
+      "bytes": 4262,
+      "sha256": "b394a6f1f0686d682f18ac43a213d322ef13bcd49e092413a29260d5686e0336"
+    },
+    {
+      "path": "test-results/images/lifecycle-renderer-default/image.json",
+      "bytes": 424,
+      "sha256": "f56367bc6fea3dbc42b2c67464a980bc4987de5ac5a2cf3eecb1929e1fac0a28"
+    },
+    {
+      "path": "test-results/images/lifecycle-renderer-default/receipt.json",
+      "bytes": 1971,
+      "sha256": "f9f3dc9662df339a408923f86fd88239b7eb19dc39eab1dc9e26817594431000"
+    },
+    {
+      "path": "test-results/images/lifecycle-lite-lease-final/image.json",
+      "bytes": 723,
+      "sha256": "fdcd9b91c55af43c36c638977471ff777eae5095205c01038d3414f4dabac44e"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/pipeline/pipeline.json",
+      "bytes": 515,
+      "sha256": "059643757fa5f5217c7a44e480cdbd5d42f16a4ad317a66ad7b5ea4686a0477f"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/browser-build.json",
+      "bytes": 1328,
+      "sha256": "381543d692eda82a36b7f23d73cd2cb0a0289ad46884d5a56c6ed66a4a5f2220"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/pipeline/page.png",
+      "bytes": 22589,
+      "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+    },
+    {
+      "path": "test-results/docker-architecture/wp-arch-drill-c4fa60f6/pipeline/build.zip",
+      "bytes": 15220399,
+      "sha256": "f3bfcdf13e10d8f84cee0f14c32d0ade1ab6394de80b412bdd3862420421d1eb"
+    }
+  ]
+}

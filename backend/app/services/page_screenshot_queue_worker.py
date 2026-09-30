@@ -147,12 +147,20 @@ async def run_page_screenshot_job(
             ),
             name=f"page-screenshot-job-heartbeat-{job_id}",
         )
+        from app.services.page_screenshot_render_lifecycle import watch_screenshot_cancellation
+
+        cancellation_task = asyncio.create_task(
+            watch_screenshot_cancellation(job_id=job_id, worker_id=owner, session_factory=factory),
+            name=f"page-screenshot-job-cancellation-{job_id}",
+        )
         try:
             await service.run_claimed_job(job_id, worker_id=owner, lease_lost=lease_lost)
         finally:
-            heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat_task
+            for task in (heartbeat_task, cancellation_task):
+                task.cancel()
+            for task in (heartbeat_task, cancellation_task):
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
 
 async def recover_interrupted_screenshot_jobs_on_startup(

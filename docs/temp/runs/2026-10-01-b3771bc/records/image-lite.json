@@ -1,0 +1,18 @@
+{
+  "variant": "lite",
+  "requested_image": "wp-lite-lifecycle:local",
+  "image_id": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac",
+  "repo_digests": [
+    "wp-lite-lifecycle@sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac"
+  ],
+  "os": "linux",
+  "architecture": "amd64",
+  "health": "passed",
+  "execution": "runtime_version_guard_passed",
+  "runtime_version": {
+    "fingerprint": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55",
+    "base": "/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/",
+    "http": "passed",
+    "hmr": "passed"
+  }
+}

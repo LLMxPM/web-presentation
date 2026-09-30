@@ -461,6 +461,7 @@ async def test_page_screenshot_preview_artifact_should_use_cached_asset_base(
     monkeypatch.setenv("ASSET_STORAGE_DRIVER", "local")
     monkeypatch.setenv("BACKEND_PUBLIC_BASE_URL", "http://127.0.0.1:18080")
     monkeypatch.setenv("RUNTIME_PUBLIC_BASE_URL", "http://127.0.0.1:18080/runtime")
+    monkeypatch.setenv("RENDER_RUNTIME_NAVIGATION_BASE_URL", "http://127.0.0.1:7373")
     get_settings.cache_clear()
 
     workspace_response = await authenticated_client.post(

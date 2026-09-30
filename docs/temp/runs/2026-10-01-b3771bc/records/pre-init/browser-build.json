@@ -1,0 +1,65 @@
+{
+  "status": "passed",
+  "mode": "build",
+  "browser": "148.0.7778.96",
+  "requests": [
+    {
+      "path": "/index.html",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/index-B-gUsPMn.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/build-release-main-DY_6R5DF.css",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/rolldown-runtime-Dd_uD5pT.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/build-release-main-DUZZSwSO.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/vendor-BLeZzwIm.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/RuntimeProjectShell-B0gOQAKg.css",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/PG20261001001-BXnxVauG.css",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/PG20261001001-B0oK6TgY.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/RuntimeProjectShell-cLyOXe-W.js",
+      "query_keys": [],
+      "status": 200
+    }
+  ],
+  "failed_requests": [],
+  "errors": [],
+  "page_style": {
+    "color": "rgb(18, 52, 86)",
+    "padding": "48px",
+    "fonts_loading": 0,
+    "fonts_error": 0
+  }
+}

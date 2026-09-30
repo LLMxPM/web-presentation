@@ -1,0 +1,563 @@
+{
+  "status": "passed",
+  "mode": "cancel-result",
+  "page_id": 15,
+  "samples": [
+    {
+      "job": {
+        "id": 14,
+        "status": "running",
+        "attempt_count": 1,
+        "error_code": null,
+        "cancel_requested_at": null,
+        "worker_id": "f27364d83207:1:d789179dbf2e4322a2e7aad3ac921c57",
+        "lease_expires_at": "2026-09-30T22:37:33.173862+00:00",
+        "finished_at": null
+      },
+      "requests": [
+        {
+          "id": 21,
+          "status": "executing",
+          "attempt_count": 1,
+          "cancel_requested": false,
+          "result_id": null,
+          "error_code": null,
+          "deadline_at": "2026-09-30T22:32:53.242157+00:00",
+          "finished_at": null
+        }
+      ],
+      "attempts": [
+        {
+          "id": 24,
+          "request_id": 21,
+          "attempt_uid": "dce14661-f129-4a80-bcb0-4dd1ef2d1c1d",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "dad87951a2374eeabfd827526c442b7b",
+          "status": "accepted",
+          "active_occupancy": 1,
+          "cleanup_status": "pending",
+          "error_code": null,
+          "lease_expires_at": "2026-09-30T22:32:40.89723+00:00",
+          "finished_at": null
+        }
+      ],
+      "results": [],
+      "active_total": 1,
+      "page_published": false,
+      "elapsed_seconds": 3.171
+    },
+    {
+      "job": {
+        "id": 14,
+        "status": "running",
+        "attempt_count": 1,
+        "error_code": null,
+        "cancel_requested_at": "2026-09-30T22:32:36.994871+00:00",
+        "worker_id": "f27364d83207:1:d789179dbf2e4322a2e7aad3ac921c57",
+        "lease_expires_at": "2026-09-30T22:37:33.173862+00:00",
+        "finished_at": null
+      },
+      "requests": [
+        {
+          "id": 21,
+          "status": "executing",
+          "attempt_count": 1,
+          "cancel_requested": true,
+          "result_id": null,
+          "error_code": null,
+          "deadline_at": "2026-09-30T22:32:53.242157+00:00",
+          "finished_at": null
+        }
+      ],
+      "attempts": [
+        {
+          "id": 24,
+          "request_id": 21,
+          "attempt_uid": "dce14661-f129-4a80-bcb0-4dd1ef2d1c1d",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "dad87951a2374eeabfd827526c442b7b",
+          "status": "accepted",
+          "active_occupancy": 1,
+          "cleanup_status": "pending",
+          "error_code": null,
+          "lease_expires_at": "2026-09-30T22:32:40.89723+00:00",
+          "finished_at": null
+        }
+      ],
+      "results": [],
+      "active_total": 1,
+      "page_published": false,
+      "elapsed_seconds": 5.025
+    },
+    {
+      "job": {
+        "id": 14,
+        "status": "cancelled",
+        "attempt_count": 1,
+        "error_code": null,
+        "cancel_requested_at": "2026-09-30T22:32:36.994871+00:00",
+        "worker_id": "f27364d83207:1:d789179dbf2e4322a2e7aad3ac921c57",
+        "lease_expires_at": null,
+        "finished_at": "2026-09-30T22:32:38.085328+00:00"
+      },
+      "requests": [
+        {
+          "id": 21,
+          "status": "cancelled",
+          "attempt_count": 1,
+          "cancel_requested": true,
+          "result_id": null,
+          "error_code": "RENDER_CANCELLED",
+          "deadline_at": "2026-09-30T22:32:53.242157+00:00",
+          "finished_at": "2026-09-30T22:32:38.029263+00:00"
+        }
+      ],
+      "attempts": [
+        {
+          "id": 24,
+          "request_id": 21,
+          "attempt_uid": "dce14661-f129-4a80-bcb0-4dd1ef2d1c1d",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "worker_epoch": "dad87951a2374eeabfd827526c442b7b",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "error_code": "RENDER_CANCELLED",
+          "lease_expires_at": "2026-09-30T22:32:40.89723+00:00",
+          "finished_at": "2026-09-30T22:32:38.029263+00:00"
+        }
+      ],
+      "results": [],
+      "active_total": 0,
+      "page_published": false,
+      "elapsed_seconds": 5.68
+    }
+  ],
+  "worker_observations": [
+    {
+      "point": "before_fault",
+      "worker_id": "renderer-1",
+      "worker_epoch": "dad87951a2374eeabfd827526c442b7b",
+      "slot_state": "idle",
+      "receipt": {
+        "http_status": null,
+        "status": "succeeded",
+        "resource_state": "retained",
+        "cleaned_at": null,
+        "finished_at": "2026-09-30T22:32:35.001087Z"
+      },
+      "error_code": null,
+      "processes": [
+        {
+          "pid": 27,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 28,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 77,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 128,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 129,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 179,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 231,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 232,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 333,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 334,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 425,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 426,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 507,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 508,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 603,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 604,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 697,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 698,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        },
+        {
+          "pid": 747,
+          "name": "chrome-headless",
+          "executable": "",
+          "state": "Z",
+          "ppid": 1
+        }
+      ],
+      "artifact_files": 1,
+      "artifact_bytes": 22589
+    },
+    {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "dad87951a2374eeabfd827526c442b7b",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [
+            {
+              "pid": 27,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 28,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 77,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 128,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 129,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 179,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 231,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 232,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 333,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 334,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 425,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 426,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 507,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 508,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 603,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 604,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 697,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 698,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            },
+            {
+              "pid": 747,
+              "name": "chrome-headless",
+              "executable": "",
+              "state": "Z",
+              "ppid": 1
+            }
+          ],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "ac3f48584af84d198e095fb41d63e126",
+          "slot_state": "idle",
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  ],
+  "candidate": "b3771bc8eb3ed9eceb8dbd3cbf061cc26fc2737e",
+  "images": {
+    "backend": "sha256:191a9ca17d8c304ea8ba6ad38d6b4da9b2d74e5a57d8a5241d6e9eabee1d1eac",
+    "runtime": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+    "renderer": "sha256:0fc33da40ab3f9f24be5a922d75acc21126137f27cf5b3f6b31910c2d07c866f"
+  },
+  "parameters": {
+    "request_timeout_seconds": 20,
+    "attempt_lease_seconds": 6,
+    "result_ttl_seconds": 10
+  },
+  "job_id": 14,
+  "gate_before": {
+    "mode": "artifact",
+    "released": false,
+    "records": [
+      {
+        "kind": "artifact",
+        "attempt_id": "dce14661-f129-4a80-bcb0-4dd1ef2d1c1d",
+        "bytes": 22589,
+        "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+      },
+      {
+        "kind": "artifact",
+        "attempt_id": "dce14661-f129-4a80-bcb0-4dd1ef2d1c1d",
+        "bytes": 22589,
+        "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+      }
+    ]
+  },
+  "gate_release": {
+    "mode": "artifact",
+    "released": true,
+    "records": [
+      {
+        "kind": "artifact",
+        "attempt_id": "dce14661-f129-4a80-bcb0-4dd1ef2d1c1d",
+        "bytes": 22589,
+        "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+      },
+      {
+        "kind": "artifact",
+        "attempt_id": "dce14661-f129-4a80-bcb0-4dd1ef2d1c1d",
+        "bytes": 22589,
+        "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+      },
+      {
+        "kind": "artifact",
+        "attempt_id": "dce14661-f129-4a80-bcb0-4dd1ef2d1c1d",
+        "bytes": 22589,
+        "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a"
+      }
+    ]
+  },
+  "final": {
+    "job": {
+      "id": 14,
+      "status": "cancelled",
+      "attempt_count": 1,
+      "error_code": null,
+      "cancel_requested_at": "2026-09-30T22:32:36.994871+00:00",
+      "worker_id": "f27364d83207:1:d789179dbf2e4322a2e7aad3ac921c57",
+      "lease_expires_at": null,
+      "finished_at": "2026-09-30T22:32:38.085328+00:00"
+    },
+    "requests": [
+      {
+        "id": 21,
+        "status": "cancelled",
+        "attempt_count": 1,
+        "cancel_requested": true,
+        "result_id": null,
+        "error_code": "RENDER_CANCELLED",
+        "deadline_at": "2026-09-30T22:32:53.242157+00:00",
+        "finished_at": "2026-09-30T22:32:38.029263+00:00"
+      }
+    ],
+    "attempts": [
+      {
+        "id": 24,
+        "request_id": 21,
+        "attempt_uid": "dce14661-f129-4a80-bcb0-4dd1ef2d1c1d",
+        "attempt_no": 1,
+        "worker_id": "renderer-1",
+        "worker_epoch": "dad87951a2374eeabfd827526c442b7b",
+        "status": "terminal",
+        "active_occupancy": 0,
+        "cleanup_status": "released",
+        "error_code": "RENDER_CANCELLED",
+        "lease_expires_at": "2026-09-30T22:32:40.89723+00:00",
+        "finished_at": "2026-09-30T22:32:38.029263+00:00"
+      }
+    ],
+    "results": [],
+    "active_total": 0,
+    "page_published": false,
+    "elapsed_seconds": 5.68
+  },
+  "scope": "真实截图/Renderer 生命周期；不覆盖构建强杀、页面变更/图片/组件 Batch 交接或正式容量",
+  "elapsed_seconds": 7.885
+}

@@ -1,0 +1,114 @@
+{
+  "base_git_sha": "b3771bc8eb3ed9eceb8dbd3cbf061cc26fc2737e",
+  "candidate": "base HEAD + uncommitted lifecycle patch",
+  "tracked_source_patch_sha256": "4f8e4b70b532282d2bb73f35cc1b1834c91473b1729c3ff2ec9594b48551822d",
+  "source_files": [
+    {
+      "path": "backend/app/services/durable_job_lease_service.py",
+      "bytes": 29872,
+      "sha256": "a6d0ffb55ad17c9a6f90cf8281f17b311ad839105e16f445ac9112cb3416327a"
+    },
+    {
+      "path": "backend/app/services/page_screenshot_job_service.py",
+      "bytes": 37104,
+      "sha256": "a5ebbfc54c65c53b5398536fead9cca60c0d607b80ce3c9695223374c4faa0b5"
+    },
+    {
+      "path": "backend/app/services/page_screenshot_queue_worker.py",
+      "bytes": 9105,
+      "sha256": "6066d3cff1063bc78ab75116b11f646958ddd3343880df04fa60794867f8a581"
+    },
+    {
+      "path": "backend/app/services/page_screenshot_render_lifecycle.py",
+      "bytes": 3109,
+      "sha256": "825708d4c7e011c6dc2fa2a02c78739cba0db67aae07fabcbc93590f03937c6e"
+    },
+    {
+      "path": "backend/app/services/page_screenshot_service.py",
+      "bytes": 25546,
+      "sha256": "7ebfe43a8d95d5f8cafa170f282be9b03bdd7dc97d6a2ca6f2c199820585db9b"
+    },
+    {
+      "path": "backend/app/services/rendering/coordinator.py",
+      "bytes": 41241,
+      "sha256": "bef305485e180042220a5acd718cbf4c665fdcfb10d5be835cb886e02773026c"
+    },
+    {
+      "path": "backend/app/services/rendering/repository.py",
+      "bytes": 43335,
+      "sha256": "e85c0303f3730e1763a0548b32fa1c6ec5f52c8810404f2ba27a1bf7e84d4fcb"
+    },
+    {
+      "path": "backend/tests/api/test_page_screenshot.py",
+      "bytes": 40691,
+      "sha256": "882065ed3dc99a87e7296d5713d5ad8e09ec92c7461a73172880fc636dbd0310"
+    },
+    {
+      "path": "backend/tests/unit/test_render_lifecycle.py",
+      "bytes": 9543,
+      "sha256": "9db7778f899e89ff7c778f8cf691096818a11f1fc8a6fffbb2bca528c45d539c"
+    },
+    {
+      "path": "backend/tests/unit/test_render_result_conflict.py",
+      "bytes": 2712,
+      "sha256": "2f32eb8a8b087c5f094c228ee9e833696f73b64c13d0e5dcce698b9bfa867fd8"
+    },
+    {
+      "path": "scripts/testing/docker-architecture.py",
+      "bytes": 7606,
+      "sha256": "ff44de2846161b8ad1453a8ce35b307d62fb3c66508683a74c28c65f6d9003fd"
+    },
+    {
+      "path": "scripts/testing/docker_architecture_env.py",
+      "bytes": 13495,
+      "sha256": "4afd5d3b092c61e828aa96e3ea0c84881154db3b196ae0a8ecb72072d3bc3a44"
+    },
+    {
+      "path": "scripts/testing/docker_architecture_gate.py",
+      "bytes": 6432,
+      "sha256": "183514d3bee6dbf42cefd22ce03b35af06bf92a393fedbe92045941010b38ab1"
+    },
+    {
+      "path": "scripts/testing/docker_architecture_lifecycle.py",
+      "bytes": 9082,
+      "sha256": "f38a5d199b326e12c08298646a6a68bc705b1f6d003a80d8417f6c1477b9c0b4"
+    },
+    {
+      "path": "scripts/testing/docker_architecture_render_probe.py",
+      "bytes": 5528,
+      "sha256": "e1d28d2822e0509af636c5379f8f7d6afc47829c4fd97fced214e9f8f8adf157"
+    },
+    {
+      "path": "tests/contracts/repository/deployment.test.ts",
+      "bytes": 2488,
+      "sha256": "29999a5e2c0abefca429113f799c6e0139d5a4652fbeb2842ff7f9463959961a"
+    }
+  ],
+  "locks": [
+    {
+      "path": "uv.lock",
+      "bytes": 761279,
+      "sha256": "c527feff60cae78fb9a8ea215b66622b1c76ab915749d253c50eefd0b0595626"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 208022,
+      "sha256": "b5390aa82b1de78506d8c1c5098ce5acc763cf893e97ddc4293e634c3923ce87"
+    }
+  ],
+  "dockerfiles": [
+    {
+      "path": "deploy/docker/Dockerfile.lite",
+      "bytes": 5040,
+      "sha256": "b80535815c560aa1a8c7df3b15e6325f75276b27611e4fa4fef482b39b0ba97d"
+    },
+    {
+      "path": "renderer/Dockerfile",
+      "bytes": 2128,
+      "sha256": "2a34445da905f9e6053c953020cd529151c45c7294806160d8a364c0305c6015"
+    }
+  ],
+  "runtime_source": "e82c793; unchanged, reused wp-runtime-w05h:local",
+  "renderer_build": "official renderer/Dockerfile; default HTTPS Debian and default Playwright downloads; frozen uv lock; no build overrides",
+  "image_identity_scope": "local Docker inspect identities only; no Registry push/pull or arm64 validation"
+}

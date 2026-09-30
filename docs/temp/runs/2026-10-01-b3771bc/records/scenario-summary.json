@@ -1,0 +1,302 @@
+[
+  {
+    "mode": "cancel",
+    "job_id": 1,
+    "page_id": 2,
+    "elapsed_seconds": 6.097,
+    "job_status": "cancelled",
+    "attempts": 1,
+    "results": [],
+    "max_active_total": 1,
+    "download": null,
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "ef40ca46846446d48d5d278bf985d8be",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "c8c8cac25c4a413da3054bbd7e88d37e",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  },
+  {
+    "mode": "cancel-result",
+    "job_id": 2,
+    "page_id": 3,
+    "elapsed_seconds": 13.898,
+    "job_status": "cancelled",
+    "attempts": 1,
+    "results": [],
+    "max_active_total": 1,
+    "download": null,
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "ef40ca46846446d48d5d278bf985d8be",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "c8c8cac25c4a413da3054bbd7e88d37e",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  },
+  {
+    "mode": "kill",
+    "job_id": 3,
+    "page_id": 4,
+    "elapsed_seconds": 16.191,
+    "job_status": "succeeded",
+    "attempts": 2,
+    "results": [
+      {
+        "id": 4,
+        "request_id": 3,
+        "attempt_id": 4
+      }
+    ],
+    "max_active_total": 1,
+    "download": {
+      "bytes": 22589,
+      "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+      "file": "render-kill-3.png"
+    },
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "c8c8cac25c4a413da3054bbd7e88d37e",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  },
+  {
+    "mode": "late",
+    "job_id": 4,
+    "page_id": 5,
+    "elapsed_seconds": 26.09,
+    "job_status": "succeeded",
+    "attempts": 2,
+    "results": [
+      {
+        "id": 7,
+        "request_id": 5,
+        "attempt_id": 6
+      }
+    ],
+    "max_active_total": 1,
+    "download": {
+      "bytes": 22589,
+      "sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+      "file": "render-late-4.png"
+    },
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "c8c8cac25c4a413da3054bbd7e88d37e",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  },
+  {
+    "mode": "timeout",
+    "job_id": 5,
+    "page_id": 6,
+    "elapsed_seconds": 65.109,
+    "job_status": "failed",
+    "attempts": 3,
+    "results": [],
+    "max_active_total": 1,
+    "download": null,
+    "final_workers": {
+      "point": "cleanup",
+      "workers": [
+        {
+          "worker_id": "renderer-1",
+          "worker_epoch": "2da5b7d659b14147b8559dfec723590c",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        },
+        {
+          "worker_id": "renderer-2",
+          "worker_epoch": "c8c8cac25c4a413da3054bbd7e88d37e",
+          "slot_state": "idle",
+          "init_process": {
+            "name": "tini",
+            "executable": "tini"
+          },
+          "receipt": {
+            "http_status": null,
+            "status": null,
+            "resource_state": null,
+            "cleaned_at": null,
+            "finished_at": null
+          },
+          "error_code": null,
+          "processes": [],
+          "artifact_files": 0,
+          "artifact_bytes": 0
+        }
+      ]
+    }
+  }
+]

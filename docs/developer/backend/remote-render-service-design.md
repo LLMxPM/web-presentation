@@ -489,6 +489,8 @@ Renderer 临时产物总额度受实例磁盘上限约束，空间不足拒绝�
 
 新增独立 Renderer 镜像，构建时安装锁定的 Python Playwright、对应 Chromium、字体和系统库。Backend 镜像删除浏览器相关安装与依赖。
 
+Renderer 镜像以 tini 作为 PID 1，转发退出信号并回收被接管的浏览器子进程；实际取消、期限和故障演练须同时核对槽位、临时文件及 `/proc`，包含僵尸残留检查，不能仅用 Worker 空闲或数据库占用归零证明完整回收。
+
 开发、SQLite/lite、常规和 production compose 均包含 Renderer 服务及共享 artifact 所需依赖。lite 配置一个实例和一个全局执行额度；生产按资源预算增加实例，Backend HTTP Worker 数量不改变渲染容量。
 
 每次发布输出 Backend、Renderer、Runtime、Editor 的镜像 revision、契约版本、profile digest 和数据库迁移版本清单。部署探针必须真实打开受保护预览、加载字体与图片、生成 PNG 和诊断。
