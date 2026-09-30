@@ -631,13 +631,9 @@ import {
 
 import {
   archiveWorkspaceAsset,
-  batchArchiveWorkspaceAssets,
-  batchDeleteWorkspaceAssets,
-  batchRestoreWorkspaceAssets,
   createAssetRenderHintBackfillJobs,
   createWorkspaceAssetContent,
   deleteWorkspaceAsset,
-  exportWorkspaceAssetPackage,
   getWorkspaceAssetContent,
   importWorkspaceAssetPackage,
   listWorkspaceAssets,
@@ -661,18 +657,18 @@ import type { AgentMutationRefreshEvent } from '@/components/agent/agent-mutatio
 import { UiButton, UiCheckbox, UiDialog, UiIconButton, UiInput, UiRadioGroup, UiSelect } from '@/components/ui'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
-import type { AssetBatchOperationResponse, AssetReferenceSummary, AssetRenderHintBackfillJobGroup, AssetRenderHintBackfillMode, AssetResponse, AssetType } from '@/types/api'
+import type { AssetReferenceSummary, AssetRenderHintBackfillJobGroup, AssetRenderHintBackfillMode, AssetResponse, AssetType } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
 import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
-import { downloadBlob } from '@/utils/zip-download'
 import AssetFilterSidebar from '@/views/assets/AssetFilterSidebar.vue'
+import { useAssetBatchSelection } from '@/views/assets/useAssetBatchSelection'
 import { useAssetListFilters } from '@/views/assets/useAssetListFilters'
 import {
   ASSET_TYPE_OPTIONS,
-  BACKFILLABLE_ASSET_TYPES,
   CREATABLE_ASSET_TYPES,
   DETAIL_TABS,
   REFERENCE_GROUP_LABELS,
+  isBackfillableAssetType,
   type AssetReferenceItem,
   type BackfillableAssetType,
   type DetailTab,
@@ -685,8 +681,6 @@ const assetsLoadError = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
 const packageImporting = ref(false)
-const batchOperating = ref(false)
-const batchExporting = ref(false)
 const backfillRunning = ref(false)
 const referencesLoading = ref(false)
 const createMode = ref(false)
@@ -696,6 +690,7 @@ const assets = ref<AssetResponse[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(24)
+const workspaceId = computed(() => Number.parseInt(route.params.workspaceId as string, 10))
 
 function resetPage(): void {
   page.value = 1
@@ -713,9 +708,38 @@ const {
   buildListQueryParams,
   loadTags: loadTagsRaw,
 } = useAssetListFilters({ onFilterResetPage: resetPage })
+
+const {
+  selectionMode,
+  batchOperating,
+  batchExporting,
+  selectedCount,
+  hasBatchSelection,
+  allCurrentPageSelected,
+  selectedBackfillableAssets,
+  hasBackfillableBatchSelection,
+  isAssetSelected,
+  toggleAssetSelection,
+  toggleCurrentPageSelection,
+  clearBatchSelection,
+  toggleSelectionMode,
+  exitSelectionMode,
+  pruneBatchSelection,
+  archiveSelectedAssets,
+  restoreSelectedAssets,
+  deleteSelectedAssets,
+  exportSelectedAssets,
+} = useAssetBatchSelection({
+  workspaceId,
+  activeView,
+  assets,
+  onAfterBatch: async (assetIds) => {
+    closeDetailIfSelected(assetIds)
+    await refreshAssetsWithPageFallback()
+  },
+})
+
 const selectedAsset = ref<AssetResponse | null>(null)
-const selectedAssetIds = ref<Set<number>>(new Set())
-const selectionMode = ref(false)
 const detailAsset = ref<AssetResponse | null>(null)
 const detailTab = ref<DetailTab>('basic')
 const contentDraft = ref('')
@@ -762,7 +786,6 @@ const backfillModeOptions = [
 ]
 const backfillResult = ref<AssetRenderHintBackfillJobGroup | null>(null)
 
-const workspaceId = computed(() => Number.parseInt(route.params.workspaceId as string, 10))
 const workspaceQuery = useQuery(
   computed(() => ({
     queryKey: ['workspace', workspaceId.value],
@@ -815,20 +838,6 @@ const activeReplaceAccept = computed(() => {
   const assetType = replacingAsset.value?.asset_type || detailAsset.value?.asset_type
   return assetType ? ASSET_UPLOAD_ACCEPT[assetType] : ''
 })
-const selectedCount = computed(() => selectedAssetIds.value.size)
-const hasBatchSelection = computed(() => selectedCount.value > 0)
-const selectedBackfillableAssets = computed(() => assets.value.filter(asset => (
-  selectedAssetIds.value.has(asset.id)
-  && asset.status === 'active'
-  && !asset.history_kind
-  && isBackfillableAssetType(asset.asset_type)
-)))
-const hasBackfillableBatchSelection = computed(() => selectedBackfillableAssets.value.length > 0)
-const currentPageAssetIds = computed(() => assets.value.map(asset => asset.id))
-const allCurrentPageSelected = computed(() => (
-  currentPageAssetIds.value.length > 0
-  && currentPageAssetIds.value.every(assetId => selectedAssetIds.value.has(assetId))
-))
 const hasBackfillTypeSelection = computed(() => (
   backfillForm.image
   || backfillForm.video
@@ -941,57 +950,6 @@ function syncSelectionAfterListLoad(): void {
   }
 }
 
-function isAssetSelected(assetId: number): boolean {
-  return selectedAssetIds.value.has(assetId)
-}
-
-function toggleAssetSelection(assetId: number): void {
-  const nextIds = new Set(selectedAssetIds.value)
-  if (nextIds.has(assetId)) {
-    nextIds.delete(assetId)
-  } else {
-    nextIds.add(assetId)
-  }
-  selectedAssetIds.value = nextIds
-}
-
-function toggleCurrentPageSelection(): void {
-  const nextIds = new Set(selectedAssetIds.value)
-  if (allCurrentPageSelected.value) {
-    for (const assetId of currentPageAssetIds.value) {
-      nextIds.delete(assetId)
-    }
-  } else {
-    for (const assetId of currentPageAssetIds.value) {
-      nextIds.add(assetId)
-    }
-  }
-  selectedAssetIds.value = nextIds
-}
-
-function clearBatchSelection(): void {
-  selectedAssetIds.value = new Set()
-}
-
-/**
- * 切换批量操作选择模式；退出时清空已勾选资源。
- */
-function toggleSelectionMode(): void {
-  if (selectionMode.value) {
-    exitSelectionMode()
-    return
-  }
-  selectionMode.value = true
-}
-
-/**
- * 退出选择模式并清空勾选。
- */
-function exitSelectionMode(): void {
-  selectionMode.value = false
-  clearBatchSelection()
-}
-
 /**
  * 卡片点击：选择模式下切换勾选，否则打开资源详情。
  * @param asset 当前资源
@@ -1004,10 +962,7 @@ function handleAssetCardClick(asset: AssetResponse): void {
   void openAssetDetail(asset)
 }
 
-function pruneBatchSelection(): void {
-  const currentIds = new Set(currentPageAssetIds.value)
-  selectedAssetIds.value = new Set([...selectedAssetIds.value].filter(assetId => currentIds.has(assetId)))
-}
+
 
 function handleGlobalAgentAssetUpdated(event: Event): void {
   const detail = (event as CustomEvent<AgentMutationRefreshEvent>).detail
@@ -1326,9 +1281,7 @@ function isBackfillAssetTypeSelected(assetType: AssetType): boolean {
   return isBackfillableAssetType(assetType) && selectedBackfillAssetTypes.value.includes(assetType)
 }
 
-function isBackfillableAssetType(assetType: AssetType | string): assetType is BackfillableAssetType {
-  return BACKFILLABLE_ASSET_TYPES.includes(assetType as BackfillableAssetType)
-}
+
 
 function isBackfillGroupActive(status: AssetRenderHintBackfillJobGroup['status']): boolean {
   return status === 'pending' || status === 'running'
@@ -1454,111 +1407,6 @@ async function deleteSelected(): Promise<void> {
   } catch (error) {
     Message.error(getErrorMessage(error, '删除资源失败'))
   }
-}
-
-async function archiveSelectedAssets(): Promise<void> {
-  const assetIds = [...selectedAssetIds.value]
-  if (!Number.isFinite(workspaceId.value) || assetIds.length === 0) return
-  const confirmed = await createConfirm(`确认归档选中的 ${assetIds.length} 个资源吗？归档后现有引用仍可用。`, '批量归档资源')
-  if (!confirmed) return
-
-  batchOperating.value = true
-  try {
-    const result = await batchArchiveWorkspaceAssets(workspaceId.value, assetIds)
-    showBatchOperationResult(result, '归档')
-    closeDetailIfSelected(assetIds)
-    clearBatchSelection()
-    await refreshAssetsWithPageFallback()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '批量归档资源失败'))
-  } finally {
-    batchOperating.value = false
-  }
-}
-
-async function restoreSelectedAssets(): Promise<void> {
-  const assetIds = [...selectedAssetIds.value]
-  if (!Number.isFinite(workspaceId.value) || assetIds.length === 0) return
-  if (activeView.value !== 'archived') {
-    Message.warning('仅归档资源支持批量恢复')
-    return
-  }
-  const confirmed = await createConfirm(`确认恢复选中的 ${assetIds.length} 个归档资源吗？`, '批量恢复资源')
-  if (!confirmed) return
-
-  batchOperating.value = true
-  try {
-    const result = await batchRestoreWorkspaceAssets(workspaceId.value, assetIds)
-    showBatchOperationResult(result, '恢复')
-    closeDetailIfSelected(assetIds)
-    clearBatchSelection()
-    await refreshAssetsWithPageFallback()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '批量恢复资源失败'))
-  } finally {
-    batchOperating.value = false
-  }
-}
-
-async function deleteSelectedAssets(): Promise<void> {
-  const assetIds = [...selectedAssetIds.value]
-  if (!Number.isFinite(workspaceId.value) || assetIds.length === 0) return
-  if (activeView.value === 'active') {
-    Message.warning('启用资源需要先归档后才能删除')
-    return
-  }
-  const confirmed = await createConfirm(`确认删除选中的 ${assetIds.length} 个资源吗？该操作只允许无引用的归档或历史资源。`, '批量删除资源')
-  if (!confirmed) return
-
-  batchOperating.value = true
-  try {
-    const result = await batchDeleteWorkspaceAssets(workspaceId.value, assetIds)
-    showBatchOperationResult(result, '删除')
-    closeDetailIfSelected(assetIds)
-    clearBatchSelection()
-    await refreshAssetsWithPageFallback()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '批量删除资源失败'))
-  } finally {
-    batchOperating.value = false
-  }
-}
-
-/**
- * 导出当前选中的资源文件，前端拉取下载 Blob 后组装为单个 ZIP。
- */
-async function exportSelectedAssets(): Promise<void> {
-  const assetIds = [...selectedAssetIds.value]
-  if (!Number.isFinite(workspaceId.value) || assetIds.length === 0) return
-
-  batchOperating.value = true
-  batchExporting.value = true
-  try {
-    const { blob, filename } = await exportWorkspaceAssetPackage(workspaceId.value, assetIds)
-    downloadBlob(blob, filename)
-    Message.success(`已导出 ${assetIds.length} 个资源`)
-  } catch (error) {
-    Message.error(getErrorMessage(error, '批量导出资源失败'))
-  } finally {
-    batchExporting.value = false
-    batchOperating.value = false
-  }
-}
-
-function showBatchOperationResult(result: AssetBatchOperationResponse, actionLabel: string): void {
-  if (result.failed_count === 0) {
-    Message.success(`已${actionLabel} ${result.succeeded_count} 个资源`)
-    return
-  }
-  if (result.succeeded_count > 0) {
-    Message.warning(`已${actionLabel} ${result.succeeded_count} 个资源，${result.failed_count} 个失败：${formatBatchFailure(result)}`)
-    return
-  }
-  Message.error(`批量${actionLabel}失败：${formatBatchFailure(result)}`)
-}
-
-function formatBatchFailure(result: AssetBatchOperationResponse): string {
-  return result.failures[0]?.detail || '请检查资源状态或引用关系'
 }
 
 /**

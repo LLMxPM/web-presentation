@@ -15,6 +15,11 @@ export const BACKFILLABLE_ASSET_TYPES: BackfillableAssetType[] = [
   'formula',
 ]
 
+/** 判断资源类型是否支持渲染比例回填。 */
+export function isBackfillableAssetType(assetType: string): assetType is BackfillableAssetType {
+  return (BACKFILLABLE_ASSET_TYPES as string[]).includes(assetType)
+}
+
 export interface AssetReferenceItem {
   kind: string
   id: number
