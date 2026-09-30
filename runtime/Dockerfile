@@ -32,8 +32,9 @@ RUN pnpm --filter web-runtime-vue deploy --legacy --prod /app/runtime-dist \
     && mv /app/runtime-dist /opt/runtime \
     && rm -rf /app/runtime /app/editor /app/node_modules /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml
 
-# 执行隔离用户：rtworker=可信领取器（可读 secret），rtchild=不可信编译子进程。
-# 任务工作区使用 setgid，使父进程 mkdir 的子目录自动属组 rtchild。
+# 执行隔离用户：rtchild=不可信编译子进程（无权读 secret）。主进程以 root 运行，
+# 才能通过 spawn uid/gid 把构建子进程降到 rtchild；非 root 且无 CAP_SETUID 会 spawn EPERM
+# （compose cap_add 对非 root 无效，已实测）。任务工作区 setgid，使父进程 mkdir 的子目录自动属组 rtchild。
 RUN groupadd --system --gid 10000 rtworker \
     && useradd --system --uid 10000 --gid 10000 --home-dir /opt/runtime --shell /usr/sbin/nologin rtworker \
     && groupadd --system --gid 10001 rtchild \
@@ -41,14 +42,16 @@ RUN groupadd --system --gid 10000 rtworker \
     && mkdir -p /var/tmp/runtime-tasks \
     && chown rtworker:rtchild /var/tmp/runtime-tasks \
     && chmod 2770 /var/tmp/runtime-tasks \
-    && chown -R rtworker:rtworker /opt/runtime
+    && chown -R root:root /opt/runtime
 
 # 子进程降权身份；删除或清空即退回仅删环境变量的受限形态（不能关闭 W01）。
+# 主进程必须能 setuid（镜像默认 USER root）；缺能力时构建会以
+# RUNTIME_BUILD_CHILD_IDENTITY_EPERM 明确失败，而不是静默放弃隔离。
 ENV RUNTIME_BUILD_CHILD_UID=10001
 ENV RUNTIME_BUILD_CHILD_GID=10001
 ENV RUNTIME_TASK_WORK_ROOT=/var/tmp/runtime-tasks
 
-USER rtworker
+USER root
 WORKDIR /opt/runtime
 
 EXPOSE 7373

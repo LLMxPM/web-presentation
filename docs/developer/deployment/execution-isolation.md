@@ -7,9 +7,9 @@
 
 | 角色 | 进程 | 信任级别 | 允许持有 | 禁止持有 |
 | :--- | :--- | :--- | :--- | :--- |
-| 可信领取器 | Runtime Build Worker 主进程（`RUNTIME_ROLE=build` 内的 Node 主进程） | 受信服务身份 | 全局 `build_worker_credential`、单任务 `build_token` / `service_token` | 用户源码直接执行 |
-| 编译执行进程 | Vite/Rollup 构建子进程、ZIP 归档子进程、诊断 worker 子进程 | **不可信**（执行用户手写 SFC） | 仅任务工作区路径、Node 运行时 | 全局 Worker 凭证、其它任务的 token、Backend 控制 API 身份 |
-| 检查执行进程 | `RUNTIME_ROLE=check` 诊断子进程 | **不可信** | 任务工作区 | 任意 Worker 凭证（该角色本就不挂载） |
+| 可信领取器 | Runtime Build Worker 主进程（`RUNTIME_ROLE=build` 内的 Node 主进程，root） | 受信服务身份 | 全局 `build_worker_credential`、单任务 `build_token` / `service_token` | 用户源码直接执行 |
+| 编译执行进程 | Vite/Rollup 构建子进程、ZIP 归档子进程、诊断 worker 子进程（`rtchild`/UID 10001） | **不可信**（执行用户手写 SFC） | 仅任务工作区路径、Node 运行时 | 全局 Worker 凭证、其它任务的 token、Backend 控制 API 身份 |
+| 检查执行进程 | `RUNTIME_ROLE=check` 诊断子进程（`rtchild`） | **不可信** | 任务工作区 | 任意 Worker 凭证（该角色本就不挂载） |
 | 任务 token | claim 响应中的 `build_token` / `service_token` | 单任务短 TTL | 仅对应 job 的 renew/complete | 其它 job 的 claim/renew/complete |
 
 ## 2. 权限矩阵
@@ -29,7 +29,7 @@
 
 | 路径 | 可信领取器 | 编译执行进程 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `/run/secrets/*` | 读 | **拒绝** | 凭证目录；子进程 UID 无读权限 |
+| `/run/secrets/*` | 读 | **拒绝** | 凭证目录 `0400`；子进程 UID 无读权限 |
 | 任务工作区（`/var/tmp/runtime-tasks/<task>`） | 创建、回收 | 读写 | setgid 目录，属组 `rtchild`，子进程可写自己的任务目录 |
 | `/opt/runtime`（应用与 node_modules） | 读执行 | 读执行 | 只读共享，不写 |
 | 宿主机其它路径 | 按容器文件系统 | 按容器文件系统 | 容器边界即隔离边界；不挂载宿主机敏感目录到 build 角色 |
@@ -48,15 +48,31 @@
 
 | 用户 | UID/GID | 用途 |
 | :--- | :--- | :--- |
-| `rtworker` | 10000 | Build Worker 主进程，凭证文件属主 |
+| root | 0 | Build Worker 主进程（可信领取器），须能 setuid 降权 |
 | `rtchild` | 10001 | 编译/归档/诊断子进程，**无权读凭证** |
+| `rtworker` | 10000 | 保留作凭证属主/兼容位；主进程现以 root 运行 |
 
 要点：
 
-1. 凭证文件必须 `0400`（或 `0600`）且属主为 `rtworker`。Compose secrets 使用 `uid`/`gid`/`mode` 对齐；权限过宽时启动应 fail-closed（`RUNTIME_ROLE=build` 且已配置子进程降权时）。
-2. 子进程通过 `child_process.spawn` 的 `uid`/`gid` 降权到 `rtchild`。对应环境变量：`RUNTIME_BUILD_CHILD_UID` / `RUNTIME_BUILD_CHILD_GID`。
+1. 凭证文件必须 `0400`（或 `0600`）。Compose secrets 的 `mode`/`uid`/`gid` 必须写在**服务级长语法**（写在顶层 secrets 会被忽略并退回 0444）；权限过宽时启动会先尝试 `chmod 0400` 自动收紧（root 主进程总能成功），仍过宽则 fail-closed。
+2. 子进程通过 `child_process.spawn` 的 `uid`/`gid` 降权到 `rtchild`。对应环境变量：`RUNTIME_BUILD_CHILD_UID` / `RUNTIME_BUILD_CHILD_GID`。**主进程必须以 root 运行**才能 setuid；`cap_add: [SETUID, SETGID]` 对非 root 进程无效（已实测仍 EPERM）。不要用 file capabilities 打在 `node` 上——子进程 exec 同一二进制会重新获得能力，反而破坏隔离。降权成功后子进程 UID=10001，读 `0400` 凭证得到 EACCES。
 3. 任务工作区父目录为 setgid（`2770`，属组 `rtchild`），父进程 `mkdir` 的子目录自动继承属组，子进程可写。
-4. **环境变量删键仍保留**，作为纵深防御；缺少 UID 隔离时只能算开发/受限形态，不能宣称 W01 关闭。
+4. **环境变量删键仍保留**，作为纵深防御；缺少 UID 隔离时只能算开发/受限形态，不能宣称 W01 关闭。仅删环境变量不够：同 UID 子进程可读 `/proc/<parent>/environ`。
+
+### 3.0 为何主进程是 root
+
+`spawn(uid/gid)` 在 Linux 上走 setuid/setgid。非 root 进程默认没有 `CAP_SETUID`；Docker `cap_add` 只进 bounding set，不会进非 root 的 effective set，实测仍 `EPERM`。root 主进程天然可降权，降权后的 rtchild 无任何 capability（setuid-from-root 会清空），且读不到 `0400` 凭证。信任边界是「root 只跑 claim/renew/complete 与本地编排，不编译用户 SFC」；用户代码永远在 rtchild 里执行。
+
+### 3.1 宿主机 secret 文件（bind-mount / Compose file secrets）
+
+Compose 对 file secrets 多数实现为 bind-mount，**保留宿主机属主与权限**；服务级 `mode`/`uid`/`gid` 部分版本不生效。生产准备 secret 时：
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))" > deploy/secrets/build_worker_credential
+chmod 400 deploy/secrets/build_worker_credential
+```
+
+主进程为 root，可读任意属主的 `0400` 文件并可在启动时收紧权限；降权后的 `rtchild` 读不到。
 
 Windows 开发机不支持 POSIX `uid`/`gid`，本地测试覆盖配置解析与删键行为；不可读验证由 M02 在 Linux 测试机执行。
 

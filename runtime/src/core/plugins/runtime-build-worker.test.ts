@@ -24,6 +24,7 @@ import {
   resolveRuntimeTaskWorkRoot,
   runRuntimeViteBuildInWorker,
   runZipArchiveInWorker,
+  toSpawnFailureError,
   toSpawnIdentityOptions,
 } from './runtime-build-worker'
 import { RuntimeTaskAbortedError } from './runtime-task-deadline'
@@ -567,6 +568,22 @@ describe('runtime build child identity (W01)', () => {
     } else {
       expect(options).toEqual({ uid: 10001, gid: 10001 })
     }
+  })
+
+  it('降权 spawn EPERM 映射为可操作错误，不吞成通用启动失败（M04-F2）', () => {
+    const eperm = Object.assign(new Error('spawn node EPERM'), { code: 'EPERM' })
+    const mapped = toSpawnFailureError(eperm, { uid: 10001, gid: 10001 })
+    expect(mapped).toMatchObject({
+      code: 'RUNTIME_BUILD_CHILD_IDENTITY_EPERM',
+      statusCode: 500,
+    })
+    expect(mapped.message).toContain('root')
+    expect(mapped.message).toContain('RUNTIME_BUILD_CHILD_UID')
+  })
+
+  it('未请求降权时的 spawn 错误原样返回', () => {
+    const boom = new Error('spawn node ENOENT')
+    expect(toSpawnFailureError(boom, {})).toBe(boom)
   })
 
   it('任务工作区根优先使用 RUNTIME_TASK_WORK_ROOT', () => {

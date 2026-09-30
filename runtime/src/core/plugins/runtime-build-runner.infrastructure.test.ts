@@ -380,6 +380,24 @@ describe('runtime build credential isolation (W01)', () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  itPosix('属主可写时自动把 0644 凭证收紧为 0400 并放行（M04-F1）', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runtime-cred-heal-'))
+    const credentialFile = join(dir, 'build_worker_credential')
+    await writeFile(credentialFile, 'secret-value\n', { mode: 0o644 })
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL_FILE', credentialFile)
+    vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', '')
+    vi.stubEnv('RUNTIME_BUILD_CHILD_UID', '10001')
+    vi.stubEnv('RUNTIME_BUILD_CHILD_GID', '10001')
+    try {
+      expect(readRuntimeBuildWorkerCredential()).toBe('secret-value')
+      const { statSync } = await import('fs')
+      expect(statSync(credentialFile).mode & 0o077).toBe(0)
+    } finally {
+      vi.unstubAllEnvs()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('runtime build entry is pull-only', () => {

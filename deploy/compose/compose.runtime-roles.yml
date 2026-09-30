@@ -211,6 +211,8 @@ services:
       # 或 RUNTIME_BACKEND_API_BASE_URL 缺失会让容器直接启动失败，而不是健康地空转。
       RUNTIME_BUILD_WORKER_CREDENTIAL_FILE: "/run/secrets/build_worker_credential"
       RUNTIME_ROLE: "build"
+    # 子进程降权（W01）：镜像内置 RUNTIME_BUILD_CHILD_UID/GID=10001，主进程必须能 setuid。
+    # 镜像默认 USER root；不要改成非 root 而不给有效 CAP_SETUID（cap_add 对非 root 无效，会 spawn EPERM）。
       # 构建执行预算：2 并发 × 2048MB 老生代 ≈ 4GiB 堆；容器 8g 另留约 4GiB 给 Buffer、
       # 归档（产物会整读进内存再压缩）、文件页与主进程。改并发或老生代时必须同步改 limits。
       # project lane 并发数即领取消费者数量：这里 2 表示单实例同时最多跑 2 个构建任务。
@@ -221,8 +223,15 @@ services:
       RUNTIME_BUILD_WORKER_TIMEOUT_MS: "600000"
     expose:
       - "7373"
+    # mode/uid/gid 必须写在服务级长语法：写在顶层 secrets 会被 Compose 忽略并退回 0444。
+    # 主进程为 root 时 uid/gid 可省略；mode 0400 保证降权后的 rtchild 读不到。
+    # 部分 Compose 忽略 mode 时，Runtime 启动会 chmod 0400 自动收紧；仍失败则 fail-closed。
     secrets:
-      - build_worker_credential
+      - source: build_worker_credential
+        target: build_worker_credential
+        uid: "0"
+        gid: "0"
+        mode: 0400
     networks:
       # 只挂内部任务网络：无宿主机端口，公开 Gateway 与预览角色都不可直达。
       runtime-jobs-net:
@@ -244,6 +253,7 @@ services:
     restart: unless-stopped
     environment:
       RUNTIME_ROLE: "check"
+    # 诊断子进程同样按 RUNTIME_BUILD_CHILD_UID/GID 降权；主进程保持镜像默认 root。
       # 检查执行预算：诊断走完整 Vite 构建链路（write:false），按 2 并发 × 1536MB 老生代
       # ≈ 3GiB 堆配置；复用预热工作区并按 RSS 比例回收，控制常驻内存。
       RUNTIME_VITE_TASK_CONCURRENCY: "2"
@@ -302,14 +312,12 @@ secrets:
     file: ../secrets/render_service_credential
   # Runtime Build Worker 与 Backend 共用的内部服务凭证；文件内容为强随机字符串。
   # 生成示例：python -c "import secrets; print(secrets.token_urlsafe(32))"
-  # 执行隔离（AR-01/W01）：uid/gid 对齐 Runtime 镜像内 rtworker（10000），mode 0400，
-  # 使降权到 rtchild（10001）的编译子进程无法读取该文件。详见 execution-isolation.md。
-  # Compose 需支持 secrets 的 uid/gid/mode（Docker Compose v2.23+）。
+  # 执行隔离（AR-01/W01）：mode/uid/gid 写在**服务级** secrets 长语法（见 runtime-build），
+  # 对齐镜像内 rtworker（10000）；顶层 secrets 不接受 mode/uid/gid，写在这里会被忽略。
+  # 宿主机文件仍建议 chmod 0400，并 chown 10000:10000（bind-mount 保留属主与权限）。
+  # 详见 execution-isolation.md 与 compose.md。
   build_worker_credential:
     file: ../secrets/build_worker_credential
-    mode: 0400
-    uid: "10000"
-    gid: "10000"
 
 volumes:
   backend-data:

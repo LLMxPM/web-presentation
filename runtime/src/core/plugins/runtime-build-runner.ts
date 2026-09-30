@@ -4,7 +4,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'http'
 import { mkdir, rm, writeFile, access, readdir, readFile } from 'fs/promises'
-import { createReadStream, constants as fsConstants, readFileSync, statSync } from 'fs'
+import { chmodSync, createReadStream, constants as fsConstants, readFileSync, statSync } from 'fs'
 import { Readable } from 'stream'
 import { resolve, sep } from 'path'
 
@@ -507,6 +507,17 @@ export function readRuntimeBuildWorkerCredential(): string {
           isolation_configured: isolationConfigured,
         }
         if (isolationConfigured) {
+          // Compose file secrets 常默认挂成 0444。属主是本进程时先收紧再启动，
+          // 避免编排层默认权限把 W01 整条链路打成 fail-closed。
+          if (tightenCredentialFileMode(credentialFile)) {
+            logRuntimeServer(
+              'info',
+              'runtime.build.worker.credential_loose_mode',
+              '构建 Worker 凭证文件权限过宽，已收紧为属主可读后启动。',
+              detail,
+            )
+            return readFileSync(credentialFile, 'utf-8').trim()
+          }
           logRuntimeServer(
             'error',
             'runtime.build.worker.credential_loose_mode',
@@ -516,7 +527,9 @@ export function readRuntimeBuildWorkerCredential(): string {
           throw new RuntimeBuildError(
             503,
             'RUNTIME_BUILD_CREDENTIAL_LOOSE_MODE',
-            '构建 Worker 凭证文件权限过宽（非 0400/0600），与子进程降权边界冲突。请将 secret 限制为属主可读。',
+            '构建 Worker 凭证文件权限过宽（非 0400/0600），与子进程降权边界冲突。'
+              + '请将 secret 限制为属主可读（chmod 0400），或在 Compose 服务级 secrets 使用 mode/uid/gid，'
+              + '或改为环境变量 RUNTIME_BUILD_WORKER_CREDENTIAL（子进程删键 + UID 降权后仍受 W01 保护）。',
           )
         }
         logRuntimeServer('warn', 'runtime.build.worker.credential_loose_mode', '构建 Worker 凭证文件对所有用户可读。', detail)
@@ -530,6 +543,21 @@ export function readRuntimeBuildWorkerCredential(): string {
     }
   }
   return String(process.env.RUNTIME_BUILD_WORKER_CREDENTIAL || '').trim()
+}
+
+/**
+ * 尝试把凭证文件收紧为 0400。仅当本进程是属主（或 root）时 chmod 会成功；
+ * Compose secrets 默认 0444 且属主对齐本进程时用于自动恢复 W01。
+ * @param credentialFile 凭证文件路径
+ * @returns 是否已成功收紧到组/其他用户不可读
+ */
+function tightenCredentialFileMode(credentialFile: string): boolean {
+  try {
+    chmodSync(credentialFile, 0o400)
+    return (statSync(credentialFile).mode & 0o077) === 0
+  } catch {
+    return false
+  }
 }
 
 /**

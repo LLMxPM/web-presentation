@@ -78,7 +78,8 @@ production env 版适合把环境变量集中放在 `deploy/.env` 中维护。�
 构建拉取模型的行为边界：
 
 - **构建只有拉取这一条执行路径**：Backend 不再向 Runtime 同步派发构建，Runtime 也不暴露构建 HTTP 入口。凭证缺失导致 Worker 未启动时不会多出任何执行路径，任务只留在队列里等待人工介入。
-- **secret 文件权限**：该凭证具备跨工作空间领取任务的能力，挂载文件必须 `0400`/`0600` 且只归属 Runtime 领取器进程（镜像内 `rtworker`/UID 10000）。构建子进程（Vite/Rollup、ZIP 归档）降权到 `rtchild`（UID 10001），既不继承 `RUNTIME_BUILD_WORKER_CREDENTIAL(_FILE)`，也无权读取 secret 文件。已配置 `RUNTIME_BUILD_CHILD_UID/GID` 时，凭证对组/其他用户可读会 fail-closed（`RUNTIME_BUILD_CREDENTIAL_LOOSE_MODE`）。详见[执行隔离与权限矩阵](./execution-isolation.md)。
+- **secret 文件权限**：该凭证具备跨工作空间领取任务的能力，挂载文件必须 `0400`/`0600`。构建子进程（Vite/Rollup、ZIP 归档）降权到 `rtchild`（UID 10001），既不继承 `RUNTIME_BUILD_WORKER_CREDENTIAL(_FILE)`，也无权读取 secret 文件。已配置 `RUNTIME_BUILD_CHILD_UID/GID` 时，凭证对组/其他用户可读会先尝试 `chmod 0400` 自动收紧，仍过宽则 fail-closed（`RUNTIME_BUILD_CREDENTIAL_LOOSE_MODE`）。**Compose secrets 的 `mode`/`uid`/`gid` 必须写在服务级长语法**（顶层 secrets 不接受这些字段，写错会退回 0444）；file secrets 多数实现是 bind-mount，请在宿主机 `chmod 400`。详见[执行隔离与权限矩阵](./execution-isolation.md)。
+- **子进程降权**：镜像内置 `RUNTIME_BUILD_CHILD_UID/GID=10001`，**主进程必须以 root 运行**才能 setuid（镜像默认 `USER root`）。`cap_add: [SETUID, SETGID]` 对非 root 无效，不要依赖它。降权失败时构建以 `RUNTIME_BUILD_CHILD_IDENTITY_EPERM` 失败；不要通过清空 CHILD_UID「绕过」——那会退回同 UID，子进程可读 `/proc/<parent>/environ`，W01 不再成立。
 - **单实例并发**：pull 模式下领取消费者数量等于 project lane 并发（`RUNTIME_VITE_TASK_CONCURRENCY`，多消费者共享同一有界调度器），因此调高该预算才会真正增加单实例同时执行的构建任务数。
 - **绝对期限**：`PROJECT_BUILD_TOTAL_DEADLINE_SECONDS` 是任务创建时确定的 wall-clock 时刻，领取租约、attempt 令牌 TTL、续租后的新租约和 Runtime 执行预算都裁剪到该时刻之前；Worker 与 Backend 失联时也会在本地租约到期前主动中止构建。
 - **归档接收上限**：产物回传按分片流式写入对象存储（本地驱动临时文件 + 原子改名，S3 驱动分片上传并在失败时 abort），大小与 sha256 在写入过程中算出，超过 `PROJECT_BUILD_ARTIFACT_MAX_BYTES` 立即中止；Backend 不会把整包归档读进进程内存。

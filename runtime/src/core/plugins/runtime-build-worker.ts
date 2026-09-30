@@ -458,12 +458,15 @@ export class RuntimeDiagnosticsWorker {
     })
     child.on('message', message => this.handleMessage(child, message))
     child.on('error', error => {
-      const workerError = new RuntimeBuildWorkerProcessError(
-        500,
-        'RUNTIME_DIAGNOSTICS_WORKER_FAILED',
-        `Runtime 诊断 worker 启动失败：${error.message}。`,
-        { stdout: this.stdout, stderr: this.stderr },
-      )
+      const classified = toSpawnFailureError(error, childIdentity)
+      const workerError = classified instanceof RuntimeBuildWorkerProcessError
+        ? classified
+        : new RuntimeBuildWorkerProcessError(
+          500,
+          'RUNTIME_DIAGNOSTICS_WORKER_FAILED',
+          `Runtime 诊断 worker 启动失败：${error.message}。`,
+          { stdout: this.stdout, stderr: this.stderr },
+        )
       const pending = this.pending
       if (pending?.child === child) {
         void this.failPendingAfterRecycle(child, pending.taskId, workerError)
@@ -767,6 +770,10 @@ export async function runRuntimeViteBuildInWorker(options: RuntimeBuildWorkerRun
     })
   } catch (error) {
     throwIfSignalAborted(options.signal)
+    // 降权 EPERM 等已分类错误不得被通用「启动失败」覆盖，否则排障只剩 exitCode。
+    if (error instanceof RuntimeBuildWorkerProcessError) {
+      throw error
+    }
     throw new RuntimeBuildWorkerProcessError(
       500,
       'RUNTIME_BUILD_WORKER_FAILED',
@@ -832,6 +839,9 @@ export async function runZipArchiveInWorker(options: RuntimeZipArchiveOptions): 
     })
   } catch (error) {
     throwIfSignalAborted(options.signal)
+    if (error instanceof RuntimeBuildWorkerProcessError) {
+      throw error
+    }
     throw new RuntimeBuildWorkerProcessError(
       500,
       'RUNTIME_ARCHIVE_WORKER_FAILED',
@@ -1406,13 +1416,37 @@ function spawnRuntimeBuildWorker(options: SpawnRuntimeBuildWorkerOptions): Promi
     })
     child.on('error', error => {
       clearTimers()
-      reject(error)
+      reject(toSpawnFailureError(error, identity))
     })
     child.on('close', (code, signal) => {
       clearTimers()
       resolve({ code, signal, stdout, stderr, timedOut })
     })
   })
+}
+
+/**
+ * 把 spawn 失败转换为可操作的错误；降权 EPERM 必须指向 CAP_SETUID/根因，
+ * 否则会退化成三次 attempt 全灭后才暴露的通用「启动失败」。
+ * @param error 原始 spawn 错误
+ * @param identity 请求的子进程降权身份
+ * @returns 结构化错误
+ */
+export function toSpawnFailureError(error: unknown, identity: RuntimeBuildChildIdentity): Error {
+  const errno = error as NodeJS.ErrnoException
+  const dropPrivilegeRequested = identity.uid != null || identity.gid != null
+  if (dropPrivilegeRequested && (errno?.code === 'EPERM' || errno?.code === 'EACCES')) {
+    return new RuntimeBuildWorkerProcessError(
+      500,
+      'RUNTIME_BUILD_CHILD_IDENTITY_EPERM',
+      `构建子进程降权失败（${errno.code}）：当前进程无权 setuid/setgid 到 `
+        + `uid=${identity.uid ?? 'unchanged'} gid=${identity.gid ?? 'unchanged'}。`
+        + '主进程必须以 root 运行才能降权（compose cap_add 对非 root 无效）。'
+        + '或清空 RUNTIME_BUILD_CHILD_UID/GID 退回仅删环境变量的受限形态（不能关闭 W01）。',
+      { stdout: String(errno.message || error || '') },
+    )
+  }
+  return error instanceof Error ? error : new Error(String(error))
 }
 
 /**

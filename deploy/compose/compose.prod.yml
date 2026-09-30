@@ -62,6 +62,7 @@ services:
     <<: *production-env
     image: llmxpm/web-runtime-vue:latest
     restart: unless-stopped
+    # 子进程降权（W01）：镜像内置 RUNTIME_BUILD_CHILD_UID/GID，主进程保持镜像默认 root 才能 setuid。
     expose:
       - "7373"
     depends_on:
