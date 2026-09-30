@@ -156,7 +156,8 @@ services:
       RUNTIME_VITE_TASK_QUEUE_SIZE: "16"
       RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS: "30000"
       # 版本指纹：排空/灰度时核对副本 build_id 与 /__runtime_healthz 输出一致。
-      RUNTIME_BUILD_ID: "runtime-preview-1"
+      RUNTIME_BUILD_ID: "${RUNTIME_BUILD_ID:-}"
+      RUNTIME_INSTANCE_ID: "runtime-preview-1"
     expose:
       - "7373"
     networks:
@@ -186,7 +187,8 @@ services:
   #     RUNTIME_VITE_TASK_CONCURRENCY: "2"
   #     RUNTIME_VITE_TASK_QUEUE_SIZE: "16"
   #     RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS: "30000"
-  #     RUNTIME_BUILD_ID: "runtime-preview-2"
+  #     RUNTIME_BUILD_ID: "${RUNTIME_BUILD_ID:-}"
+  #     RUNTIME_INSTANCE_ID: "runtime-preview-2"
   #   expose:
   #     - "7373"
   #   networks:

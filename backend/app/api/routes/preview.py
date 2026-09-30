@@ -19,6 +19,7 @@ from app.db.session import get_db_session
 from app.schemas.release import PreviewArtifactCreateRequest, PreviewArtifactResponse
 from app.services.auth_service import AuthContext
 from app.services.preview_service import PreviewService
+from app.services.preview_version_binding import bind_preview_runtime_version
 from app.services.project_service import ProjectService
 from app.services.runtime_target_router import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
@@ -65,7 +66,8 @@ async def preview_artifact_proxy(
         artifact_id=str(artifact_id),
         expires_in_seconds=service_token_ttl_seconds,
     )
-    return await _proxy_runtime_preview(request, token, runtime_service_token)
+    bound_preview_token = await bind_preview_runtime_version(preview_claims)
+    return await _proxy_runtime_preview(request, bound_preview_token, runtime_service_token)
 
 
 async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_service_token: str) -> StreamingResponse:
@@ -77,6 +79,9 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
 
     headers = dict(request.headers)
     headers.pop("host", None)
+    # 期望版本来自服务端绑定的已验签票据，覆盖浏览器可能自填的请求头。
+    claims = TokenService.verify_preview_context_token(preview_token)
+    headers["x-expected-runtime-version-fingerprint"] = str(claims["runtime_version_fingerprint"])
     headers["x-runtime-preview-context"] = preview_token
     headers["x-runtime-public-base-url"] = runtime_public_base_url
     headers[RUNTIME_SERVICE_TOKEN_HEADER] = runtime_service_token
@@ -99,7 +104,12 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
     return StreamingResponse(
         iter([response.content]),
         status_code=response.status_code,
-        headers={"Content-Type": response.headers.get("Content-Type", "text/html")},
+        headers={
+            "Content-Type": response.headers.get("Content-Type", "text/html"),
+            "Cache-Control": response.headers.get("Cache-Control", "no-store"),
+            **({"x-runtime-version-fingerprint": response.headers["x-runtime-version-fingerprint"]}
+               if "x-runtime-version-fingerprint" in response.headers else {}),
+        },
     )
 
 

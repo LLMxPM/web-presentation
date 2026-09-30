@@ -1,7 +1,7 @@
 <!-- 文件功能：定义 Backend/Runtime/Renderer/DB/Runtime Kit 的 N/N-1 支持组合、升级窗口与摘流策略，支撑 AR-05/W05 与 M05。 -->
 # 版本兼容矩阵与升级窗口
 
-本文定义平台各组件在升级或回滚时的支持边界，对应 AR-05 / W05。M05 已有特定版本组合的实机记录；[09-30 复核](../../temp/architecture-assessment-2026-09-30.md)发现 `4c7eee8` 的页面 Batch ORM 仍查询 N 已删除的列，撤回 B/E 的完整业务兼容结论。入口 409 也尚未覆盖正常浏览器子请求，跨版滚动继续待验收。
+本文定义平台各组件在升级或回滚时的支持边界，对应 AR-05 / W05。M05 已有特定版本组合的实机记录；[09-30 复核](../../temp/architecture-assessment-2026-09-30.md)发现 `4c7eee8` 的页面 Batch ORM 仍查询 N 已删除的列，撤回 B/E 的完整业务兼容结论。W05a/b/c 本地修复已实现，完整业务与多副本浏览器验收继续开放，证据见[现行计划](../../temp/plans/architecture-improvement-plan-2026-09-29.md) §7。
 
 ## 1. 组件与版本轴
 
@@ -26,7 +26,7 @@ N/N-1 必须绑定具体版本。当前 M05 样本为 `a06120e + 修复` 与 `4c
 | C | ✓ | ✓ | ✓ | ✓ | — | ✓ | 特定 Renderer 混池有局部记录；协议/Kit 一致只是必要条件。N-1 Runtime 的 allowedHosts 差异与浏览器跨版子请求仍需验收；当前预览池固定同一发布版本 |
 | D | ✓ | — | — | N-1 | — | — | **迁移窗口内**旧 DB + 新 Backend：**不支持**（N ORM 需要新列）；必须先 upgrade 再启 N。N-1 + 旧 DB 可运行 |
 | E | — | — | — | ✓ | ✓ | ✓ | **完整回滚待复测**：先用新迁移器前滚到含 `20260930_0200` 的 schema，再保留 schema 回退应用并关闭旧入口的自动迁移；旧迁移器无法识别新 revision。补偿列值为 0，不能恢复删列前历史值 |
-| F | 混用不同发布版本的 Runtime 副本 | | | | | | **不支持**；入口携带失配期望头时 409 `PREVIEW_VERSION_SKEW`，正常浏览器子请求的自动拒绝尚待实现；见 §4 |
+| F | 混用不同发布版本的 Runtime 副本 | | | | | | **不承诺无中断混跑**；签名版本和版本路径失配返回 409 `PREVIEW_VERSION_SKEW`，模块/CSS/HMR 本地回归通过；正常多副本浏览器场景仍待 M05，见 §4 |
 
 ### 2.1 明确不支持 / 明确拒绝
 
@@ -35,6 +35,8 @@ N/N-1 必须绑定具体版本。当前 M05 样本为 `a06120e + 修复` 与 `4c
 | 删除或修改仍被依赖的 `@runtime-kit/...vN` 公开路径 | 旧产物/旧页面源码导入失败；必须保留旧版本文件或做迁移 |
 | Backend 调用 Renderer 时契约版本不一致 | `contract_version` 校验失败，任务失败并留错误码 |
 | 预览请求携带与 Runtime 副本不一致的 `x-expected-runtime-version-fingerprint` | 409 拒绝（指纹门禁） |
+| 正常预览签名版本或 `/__runtime_version/<指纹>/` 与当前 Runtime 不符 | HTTP 409 `PREVIEW_VERSION_SKEW`；跨版 HMR Upgrade 拒绝握手 |
+| 旧 Runtime 探针未提供非空版本/发布身份 | Backend 返回 503 `RUNTIME_VERSION_UNKNOWN`；不能静默把旧镜像当同一 dev 版本 |
 | DB `alembic_version` 指向镜像不包含的 revision | 启动失败（`Can't locate revision identified by '…'`） |
 | `4c7eee8` 页面 Batch ORM 运行在已删除 `lease_generation` 的 N schema | 完整 ORM 查询缺列失败；登录可成功，页面变更入队仍不兼容 |
 | N Backend + DB 仍停在 N-1 schema | 启动失败（`UndefinedColumnError`，如 `ai_agent_runs.process_owner`）；必须先 migration |
@@ -53,7 +55,7 @@ N/N-1 必须绑定具体版本。当前 M05 样本为 `a06120e + 修复` 与 `4c
 4. 将预览池整体切换为新版并 `reload`，再恢复入口，避免同池混版。
 5. 停止旧容器。
 
-同一预览池当前只放同一发布构建标识，不能只比较 `runtime_kit_version`。现有指纹只在 HTML 入口收到期望请求头时检查，尚不能保证正常模块子请求拒绝混版。跨版升级应先排空旧池再切换，完整传播机制验收前不承诺滚动无中断。
+同一预览池当前只放同一发布构建标识，不能只比较 `runtime_kit_version`。新实现自动传播并拒绝跨版请求；拒绝意味着预览需要刷新，不能等同无中断。旧 Runtime 没有完整版本路径门禁，任意 N/N-1 混池仍不支持。跨版升级先排空旧池再切换，完成正常浏览器实机验收前不调整此策略。
 
 ### 3.2 构建 / 检查角色：排空后替换
 
@@ -77,10 +79,13 @@ N/N-1 必须绑定具体版本。当前 M05 样本为 `a06120e + 修复` 与 `4c
 
 ## 4. 版本指纹门禁
 
-Runtime 在 HTML 入口收到 `x-expected-runtime-version-fingerprint`（`runtime_kit_version+build_id`）时拒绝失配；无该头则放行。当前 Backend/Gateway/Editor 未自动传播期望值，模块分支不执行该检查。M05 人工请求的 409 只证明入口拒绝，多副本预览必须：
+W05c 将发布身份与传播机制收口为以下链路：
 
-- 同池固定同一发布镜像，`build_id` 表示发布构建身份，各副本相同；副本 ID 独立记录；
-- 滚动时按 §3.1 排空，避免 HTML 与模块来自不同版本；
+- 独立 Runtime 与 Lite 的构建阶段按 Runtime 源码/公开配置/构建脚本、包配置、Vite 配置与根 `pnpm-lock.yaml` 生成 `.runtime-build-id`，并复制到生产依赖裁剪后的目录。`RUNTIME_BUILD_ID` 可统一覆盖该值，不能使用副本名；`RUNTIME_INSTANCE_ID` 只出现在内部健康观测。交付镜像缺发布身份时启动失败，`dev` 仅是本地开发默认值。
+- Backend 正常 iframe 入口验签原 token，再从受信 Runtime 探针绑定 `runtime_kit_version+build_id` 到子票据 `runtime_version_fingerprint`，保留原 artifact、权限和 `exp`。已绑定票据不重新探测换版；期望请求头由服务端覆盖，浏览器无需自填。
+- HTML、Vite 的嵌套模块/CSS 和 HMR 使用 `<公开挂载路径>/__runtime_version/<编码指纹>/`。HTTP 版本门禁早于 Vite/base/源码转换，失配返回 409；HMR Upgrade 在握手前拒绝。远程模块、Tailwind 与资源代理仍验签绑定声明，不依赖本进程缓存授权。
+- Backend 保留上游错误状态、版本响应头和缓存语义；探针与 HTML 恰好落到不同发布时明确拒绝。重新导航原预览入口可绑定当前发布，不延长票据有效期。
+- 同池继续固定同一发布镜像并按 §3.1 排空；本地真实 Vite 回归不能替代正常浏览器、跨副本、N/N-1 与最终镜像 M05 验收。
 - 检查角色缓存指纹包含 Runtime Kit 清单 hash（`CodeCheckFingerprintBuilder`），升级编译器后缓存自然失效。
 
 ## 5. Run 收敛边界（实例心跳 / 历史 owner）

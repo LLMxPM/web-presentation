@@ -61,6 +61,7 @@ import {
   formatRuntimeVersionFingerprint,
 } from './runtime-health'
 import { runWithPreviewBudget, RuntimeViteTaskSchedulerError } from './runtime-preview-scheduler'
+import { assertRuntimeVersion, withRuntimeVersionBase } from './runtime-version-identity'
 
 interface RuntimeSaaSPreviewOptions {
   previewPath?: string
@@ -152,6 +153,19 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
       server.middlewares.use(async (req, res, next) => {
         const rawUrl = req.url || ''
         const strippedUrl = stripBasePath(rawUrl, basePath)
+        // 模块 HTTP 请求先校验签名版本，避免 Vite 把失配包装成源码编译 500。
+        const remote = parseRemoteModuleId(strippedUrl)
+        if (remote?.previewToken) {
+          try {
+            await verifyPreviewToken(remote.previewToken, {
+              jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
+              audience: options.previewAudience || process.env.RUNTIME_PREVIEW_TOKEN_AUDIENCE || DEFAULT_PREVIEW_AUDIENCE,
+              timeoutMs: jwksTimeoutMs,
+            })
+          } catch (error) {
+            return sendPreviewError(res, error)
+          }
+        }
         if (getPathname(strippedUrl) === RUNTIME_SNAPDOM_RESOURCE_PROXY_PATH) {
           return handleSnapdomResourceProxyRequest(req, res, {
             strippedUrl,
@@ -713,6 +727,10 @@ async function verifyPreviewToken(token: string, options: { jwksUrl: string; aud
   }
 
   const claims = payload as PreviewTokenClaims
+  assertRuntimeVersion(
+    typeof claims.runtime_version_fingerprint === 'string' ? claims.runtime_version_fingerprint : undefined,
+    formatRuntimeVersionFingerprint(),
+  )
   if (
     !claims.jti
     || !claims.tenant_id
@@ -1334,10 +1352,11 @@ export function buildPreviewHtml(params: {
   previewTailwindPath?: string
   configBundle: RuntimePreloadedConfigBundle
 }): string {
-  const viteClientPath = `${params.assetBase || ''}/@vite/client`
-  const mainEntryPath = `${params.assetBase || ''}/src/main.ts`
+  const versionBase = withRuntimeVersionBase(params.assetBase)
+  const viteClientPath = `${versionBase}/@vite/client`
+  const mainEntryPath = `${versionBase}/src/main.ts`
   const previewTailwindHref = buildPreviewTailwindStylesheetHref({
-    assetBase: params.assetBase,
+    assetBase: versionBase,
     artifactId: params.publicContext.artifactId,
     previewToken: params.previewToken,
     previewTailwindPath: params.previewTailwindPath,
@@ -1345,7 +1364,7 @@ export function buildPreviewHtml(params: {
   const serializedContext = serializeForInlineScript(params.publicContext)
   const serializedToken = serializeForInlineScript(params.previewToken)
   const serializedConfig = serializeForInlineScript(params.configBundle)
-  const serializedRuntimePublicBaseUrl = serializeForInlineScript(params.assetBase)
+  const serializedRuntimePublicBaseUrl = serializeForInlineScript(versionBase)
 
   return `<!doctype html>
 <html lang="zh-CN">

@@ -155,6 +155,7 @@ Runtime Kit 约束：
 - **构建 attempt 围栏**：产物提升必须匹配 Job 当前 `attempt_id`（INV-5）；租约过期/回收一律作废 attempt，禁止迟到上传提升旧产物。
 - **检查指纹缓存**：`CodeCheckFingerprintBuilder` 覆盖源码、依赖版本、引用资源身份、Runtime Kit 清单内容 hash、主题/字体与规则版本；新增会影响检查结果的输入必须进指纹，否则缓存会返回陈旧结果。
 - **签名密钥环**：多 Backend 必须共享同一 RS256 私钥（`signing_identity`）；轮换期 JWKS 同时公布新旧钥；预览/服务令牌固定 `algorithms: ['RS256']` 且要求 `exp`。摘除 Renderer Worker 前必须跑 `python -m app.scripts.check_render_worker_removal`。
+- **预览版本**：镜像生成并携带 `.runtime-build-id`（Runtime 执行输入与根锁文件 hash），同版副本共享发布身份，`RUNTIME_INSTANCE_ID` 只作观测。Backend 对预览签名票据绑定版本，Runtime 通过版本化 Vite base 检查 HTML/模块/CSS/HMR；不得退回只依赖人工请求头或副本缓存。交付镜像缺构建身份必须拒绝启动；混版池仍按兼容矩阵的实机验收与排空策略处理。
 - **普通 AI Run**：产品承诺「会丢」；新实例通过 `ai_agent_process_owners` 的 UUID/心跳租约和 `process_reaper` 独立 CAS 收敛，普通执行与工具写入传播进程写围栏；禁止凭模型事件空闲时间扫杀活跃 Run。paused、waiting_external 与未完成外部 Batch 交接由原协调器维护。历史未登记 owner 仍按 hostname/PID 启动过滤，跨容器历史遗留使用 `force_cancel`，升级前排空旧实例。
 
 ## 4. 测试与验证

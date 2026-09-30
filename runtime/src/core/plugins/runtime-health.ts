@@ -8,7 +8,8 @@
 import type { ServerResponse } from 'http'
 import type { Plugin, ViteDevServer } from 'vite'
 
-import runtimeKitManifest from '../../runtime-kit/manifest/runtime-kit.manifest.json'
+import { buildRuntimeVersionFingerprint } from './runtime-version-identity'
+export { buildRuntimeVersionFingerprint, formatRuntimeVersionFingerprint, assertExpectedRuntimeFingerprint } from './runtime-version-identity'
 import {
   collectRuntimeCapacity,
   startRuntimeEventLoopLagMonitor,
@@ -22,7 +23,7 @@ export const RUNTIME_READINESS_PATH = '/__runtime_readyz'
 export interface RuntimeVersionFingerprint {
   /** Runtime Kit 公开清单版本（同一预览不得混用不同 Runtime Kit 版本）。 */
   runtime_kit_version: string
-  /** 部署构建标识（RUNTIME_BUILD_ID），未注入时为空串。 */
+  /** 发布构建标识：镜像内置内容 hash 或部署统一覆盖，本地开发为 dev。 */
   build_id: string
 }
 
@@ -193,6 +194,7 @@ export function buildRuntimeHealthPayload(): Record<string, unknown> {
     status: 'ok',
     role: getRuntimeRole(),
     ...buildRuntimeVersionFingerprint(),
+    instance_id: String(process.env.RUNTIME_INSTANCE_ID || '').trim(),
     ...collectRuntimeCapacity(),
   }
 }
@@ -223,49 +225,6 @@ export function buildRuntimeReadinessPayload(
     ...buildRuntimeVersionFingerprint(),
     checks: readiness.checks,
   }
-}
-
-/**
- * 读取当前进程版本指纹，供滚动发布时核对新旧副本与排空目标。
- * runtime_kit_version 来自 Runtime Kit 清单；build_id 来自部署注入的 RUNTIME_BUILD_ID。
- * @returns 版本指纹对象
- */
-export function buildRuntimeVersionFingerprint(): RuntimeVersionFingerprint {
-  return {
-    runtime_kit_version: String(runtimeKitManifest.version || ''),
-    build_id: String(process.env.RUNTIME_BUILD_ID || ''),
-  }
-}
-
-/**
- * 组装本副本版本指纹字符串（kit 版本 + build_id）。
- * @returns 稳定指纹文本
- */
-export function formatRuntimeVersionFingerprint(): string {
-  const fingerprint = buildRuntimeVersionFingerprint()
-  return `${fingerprint.runtime_kit_version || 'unknown'}+${fingerprint.build_id || 'dev'}`
-}
-
-/**
- * 校验请求方期望的 Runtime 版本指纹；不匹配时抛出业务错误码，避免跨版本混用 HTML/模块。
- * @param headers 请求头
- * @param localFingerprint 本副本指纹
- */
-export function assertExpectedRuntimeFingerprint(
-  headers: Record<string, string | string[] | undefined> | undefined,
-  localFingerprint: string,
-): void {
-  const raw = headers?.['x-expected-runtime-version-fingerprint']
-  const expected = String(Array.isArray(raw) ? raw[0] : raw || '').trim()
-  if (!expected || expected === localFingerprint) {
-    return
-  }
-  const error = new Error(
-    `预览副本版本指纹不匹配：期望 ${expected}，本副本 ${localFingerprint}。请排空旧副本或刷新预览。`,
-  ) as Error & { statusCode?: number; code?: string }
-  error.statusCode = 409
-  error.code = 'PREVIEW_VERSION_SKEW'
-  throw error
 }
 
 /**

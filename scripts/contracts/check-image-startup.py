@@ -51,6 +51,48 @@ def health_command(variant: str) -> list[str]:
     ]
 
 
+def verify_runtime_version(name: str) -> dict:
+    """在裁剪后的镜像验证非空发布身份、真实模块/CSS 与跨版 HTTP/HMR 拒绝。"""
+
+    script = r"""
+const assert = require('node:assert/strict');
+const net = require('node:net');
+(async () => {
+  const origin = 'http://127.0.0.1:7373';
+  const health = await (await fetch(origin + '/__runtime_healthz')).json();
+  assert(health.runtime_kit_version && health.build_id && health.build_id !== 'dev');
+  const fingerprint = health.runtime_kit_version + '+' + health.build_id;
+  const mount = (process.env.RUNTIME_SERVER_BASE_PATH || '/').replace(/\/+$/, '');
+  const base = mount + '/__runtime_version/' + encodeURIComponent(fingerprint) + '/';
+  const wrong = mount + '/__runtime_version/' + encodeURIComponent(fingerprint + '-wrong') + '/';
+  for (const path of ['src/main.ts', 'src/styles/global.css', '@vite/client']) {
+    const response = await fetch(origin + base + path);
+    assert.equal(response.status, 200, path + ' 正常版本不可用');
+    assert.equal(response.headers.get('x-runtime-version-fingerprint'), fingerprint);
+    const body = await response.text();
+    if (path === 'src/main.ts') assert(body.includes(base), '嵌套 import 缺版本路径');
+    const rejected = await fetch(origin + wrong + path);
+    assert.equal(rejected.status, 409);
+    assert.equal((await rejected.json()).code, 'PREVIEW_VERSION_SKEW');
+  }
+  const upgrade = await new Promise((resolve, reject) => {
+    const socket = net.connect(7373, '127.0.0.1');
+    let data = '';
+    socket.setTimeout(3000, () => { socket.destroy(); reject(Error('HMR 拒绝超时')); });
+    socket.on('error', reject);
+    socket.on('data', chunk => { data += chunk.toString(); });
+    socket.on('close', () => resolve(data));
+    socket.on('connect', () => socket.write(
+      'GET ' + wrong + ' HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: vite-hmr\r\n\r\n'
+    ));
+  });
+  assert(upgrade.includes('409 Conflict') && !upgrade.includes('101 Switching'));
+  console.log(JSON.stringify({ fingerprint, base, http: 'passed', hmr: 'passed' }));
+})().catch(error => { console.error(error); process.exit(1); });
+"""
+    return json.loads(docker("exec", name, "node", "-e", script, timeout=90).stdout)
+
+
 def verify(image: str, variant: str, output: Path) -> None:
     """启动临时镜像并等待健康；退出时始终清理本次容器，失败保留服务日志到标准错误。"""
 
@@ -114,6 +156,9 @@ def verify(image: str, variant: str, output: Path) -> None:
             time.sleep(2)
         else:
             raise RuntimeError("镜像健康检查超过 120 秒。")
+        if variant in {"runtime", "lite"}:
+            evidence["runtime_version"] = verify_runtime_version(name)
+            evidence["execution"] = "runtime_version_guard_passed"
         if variant == "renderer":
             probe = Path(__file__).with_name("renderer-image-probe.py")
             docker("cp", str(probe), f"{name}:/tmp/renderer-image-probe.py")

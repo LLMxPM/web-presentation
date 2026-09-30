@@ -27,8 +27,11 @@ COPY runtime/package.json ./runtime/
 RUN pnpm install --frozen-lockfile --filter web-runtime-vue...
 
 COPY runtime/ ./runtime/
+ENV RUNTIME_RELEASE_ID_REQUIRED=true
 # deploy 产出可独立拷贝的 node_modules，避免 workspace 符号链接失效
-RUN pnpm --filter web-runtime-vue deploy --legacy --prod /app/runtime-dist \
+RUN node runtime/scripts/write-runtime-build-id.mjs \
+    && pnpm --filter web-runtime-vue deploy --legacy --prod /app/runtime-dist \
+    && cp /app/runtime/.runtime-build-id /app/runtime-dist/.runtime-build-id \
     && mv /app/runtime-dist /opt/runtime \
     && rm -rf /app/runtime /app/editor /app/node_modules /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml
 

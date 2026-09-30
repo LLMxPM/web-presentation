@@ -7,6 +7,8 @@ import { defineConfig, loadEnv, type Logger, type LogErrorOptions, type Plugin }
 import vue from '@vitejs/plugin-vue'
 
 import runtimeHealth from './src/core/plugins/runtime-health'
+import runtimeVersionGuard from './src/core/plugins/runtime-version-guard'
+import { withRuntimeVersionBase } from './src/core/plugins/runtime-version-identity'
 import runtimeAssetRenderHintMeasurer from './src/core/plugins/runtime-asset-render-hint-measurer'
 import runtimeBuildRunner from './src/core/plugins/runtime-build-runner'
 import runtimeSaaSPreview from './src/core/plugins/runtime-saas-preview'
@@ -55,7 +57,7 @@ export default defineConfig(({ command, mode }) => {
     define: {
       __RUNTIME_BACKEND_BUILD__: 'false',
     },
-    base: runtimeServerBase,
+    base: command === 'serve' ? `${withRuntimeVersionBase(runtimeServerBase)}/` : runtimeServerBase,
     server: {
       host: runtimeServerHost,
       port: runtimeServerPort,
@@ -131,7 +133,7 @@ export function buildRuntimeServePlugins(
 ): Plugin[] {
   const plugins: Plugin[] = []
 
-  plugins.push(runtimeHealth())
+  plugins.push(runtimeVersionGuard(), runtimeHealth())
   if (surface.preview) {
     plugins.push(
       runtimeStandalonePreviewGate({ enabled: options.standalonePreviewEnabled }),

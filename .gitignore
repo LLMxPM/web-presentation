@@ -56,6 +56,7 @@ dist/
 .vite/
 coverage/
 *.tsbuildinfo
+runtime/.runtime-build-id
 playwright-report/
 test-results/
 

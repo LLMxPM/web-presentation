@@ -6,7 +6,7 @@
 
 ### Browser
 
-- 只访问 Backend 暴露的预览地址。
+- 导航 Backend 暴露的预览地址，模块请求使用平台配置的公开 Runtime/Gateway 地址。
 - 不直接访问 Runtime 内网地址。
 - 不持有 Runtime 服务级凭证。
 
@@ -16,6 +16,7 @@
 - 负责租户、项目、工作空间权限校验。
 - 创建短生命周期 `PreviewArtifact`。
 - 签发并注入 `x-runtime-preview-context: <PreviewContextToken>`。
+- 从受信 Runtime 探针绑定子票据 `runtime_version_fingerprint`，保留原有效期和权限；代理保留版本与错误响应。
 - 反向代理浏览器对 Runtime 的访问。
 - 对 Runtime 暴露内部只读 preview artifact API。
 
@@ -45,6 +46,8 @@ sequenceDiagram
     U->>B: GET /preview/artifacts/{artifactId}?token=<PreviewContextToken>
     B->>B: 校验登录态与权限
     B->>B: 校验 token 与 artifact_id 一致
+    B->>R: GET /__runtime_healthz 获取发布版本
+    B->>B: 将版本绑定到签名子票据（保留 exp）
     B->>R: 代理 GET /__preview + x-runtime-preview-context
     R->>R: 通过 JWKS 验签 token
     R->>B: GET /internal/runtime/preview-artifacts/{artifactId}/manifest
@@ -56,9 +59,8 @@ sequenceDiagram
     S-->>B: config-bundle
     B-->>R: config-bundle
     R-->>U: 返回注入上下文和配置包的 HTML
-    U->>B: 请求远程模块 /@runtime-preview/...&ctx=<PreviewContextToken>
-    B->>R: 代理模块请求
-    R->>R: 校验 ctx token
+    U->>R: 经公开 Gateway 请求 /__runtime_version/<指纹>/...&ctx=<子票据>
+    R->>R: 检查版本路径并校验 ctx token
     R->>B: GET /internal/runtime/preview-artifacts/{artifactId}/modules?path=...
     B->>S: 读取模块源码
     S-->>B: module source
@@ -101,6 +103,8 @@ sequenceDiagram
 - 普通远程模块若不是 Runtime 本地内建模块，则必须存在于 manifest 白名单中。
 - 资源路径优先命中 manifest 的 `assets` 映射，其次再拼接 `asset_base_url`。
 - 后续模块请求只依赖 `ctx=<PreviewContextToken>`，不再恢复 preview session。
+- Vite base 与 HTML 资源地址包含 `/__runtime_version/<编码指纹>/`，覆盖模块/CSS/Vite/HMR；版本失配先于源码转换返回 409 `PREVIEW_VERSION_SKEW`，HMR 拒绝 Upgrade。开发身份为 `dev`，镜像使用内置构建 hash；副本 ID 不参与版本匹配。
+- 旧 Runtime 不能提供非空版本信息时 Backend 明确拒绝。预览同版池及跨版排空策略见[兼容矩阵](../../deployment/compatibility-matrix.md)，完整多副本浏览器验收尚待 M05。
 
 ## 5. 内建页面与远程模块边界
 

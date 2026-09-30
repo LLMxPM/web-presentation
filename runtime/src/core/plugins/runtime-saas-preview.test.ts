@@ -17,6 +17,7 @@ import runtimeSaaSPreview, {
   serializeForInlineScript,
 } from './runtime-saas-preview'
 import { isAllowedSnapdomProxyResourceUrl } from './runtime-snapdom-resource-proxy'
+import { withRuntimeVersionBase } from './runtime-version-identity'
 
 const joseMocks = vi.hoisted(() => ({
   createRemoteJWKSet: vi.fn(() => vi.fn()),
@@ -81,19 +82,19 @@ describe('runtime saas preview helpers', () => {
       traceId: 'req-1',
     }
     const html = buildPreviewHtml({
-      assetBase: 'https://runtime.example.com',
+      assetBase: withRuntimeVersionBase('https://runtime.example.com'),
       publicContext: context,
       previewToken: 'preview-token',
       configBundle: {},
     })
     const href = buildPreviewTailwindStylesheetHref({
-      assetBase: 'https://runtime.example.com',
+      assetBase: withRuntimeVersionBase('https://runtime.example.com'),
       artifactId: 'artifact-1',
       previewToken: 'preview-token',
     })
 
     expect(html).toContain(`rel="stylesheet" href="${href}"`)
-    expect(html).toContain('window.__RUNTIME_PUBLIC_BASE_URL__ = "https://runtime.example.com";')
+    expect(html).toContain(`window.__RUNTIME_PUBLIC_BASE_URL__ = "${withRuntimeVersionBase('https://runtime.example.com')}";`)
     expect(html.indexOf(href)).toBeGreaterThan(html.indexOf('/@vite/client'))
     expect(html.indexOf(href)).toBeLessThan(html.indexOf('/src/main.ts'))
   })
@@ -118,9 +119,10 @@ describe('runtime saas preview helpers', () => {
       configBundle: {},
     })
 
-    expect(html).toContain('src="https://presentation.example.com/runtime/@vite/client"')
-    expect(html).toContain('src="https://presentation.example.com/runtime/src/main.ts"')
-    expect(html).toContain('href="https://presentation.example.com/runtime/__preview-tailwind.css')
+    const versionBase = withRuntimeVersionBase('https://presentation.example.com/runtime')
+    expect(html).toContain(`src="${versionBase}/@vite/client"`)
+    expect(html).toContain(`src="${versionBase}/src/main.ts"`)
+    expect(html).toContain(`href="${versionBase}/__preview-tailwind.css`)
   })
 
   it('应抓取 manifest 模块和未入 manifest 的独立入口模块用于 Tailwind 编译', async () => {
@@ -486,6 +488,36 @@ describe('runtime saas preview 服务令牌可恢复', () => {
       statusCode: 401,
       code: 'PREVIEW_CONTEXT_INVALID',
     })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('签名票据绑定其它发布时，模块回源必须在换票前拒绝', async () => {
+    joseMocks.jwtVerify.mockResolvedValue({
+      payload: { ...previewTokenPayload(), runtime_version_fingerprint: '1.0.0+other-release' },
+    })
+    await expect(callLoad(createPlugin(), '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=bound-token'))
+      .rejects.toMatchObject({ statusCode: 409, code: 'PREVIEW_VERSION_SKEW' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('模块 HTTP 入口应保留签名版本错误的 409，不能进入 Vite 转换后变成 500', async () => {
+    joseMocks.jwtVerify.mockResolvedValue({
+      payload: { ...previewTokenPayload(), runtime_version_fingerprint: '1.0.0+other-release' },
+    })
+    const plugin = createPlugin()
+    const handlers: Array<(req: unknown, res: unknown, next: () => void) => Promise<void>> = []
+    const configureServer = plugin.configureServer
+    if (typeof configureServer === 'function') {
+      configureServer.call({} as never, {
+        middlewares: { use: handler => handlers.push(handler) },
+      } as never)
+    }
+    const response = { statusCode: 0, setHeader: vi.fn(), end: vi.fn() }
+    const next = vi.fn()
+    await handlers[0]({ method: 'GET', headers: {}, url: '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=bound-token' }, response, next)
+    expect(response.statusCode).toBe(409)
+    expect(response.end).toHaveBeenCalledWith(expect.stringContaining('PREVIEW_VERSION_SKEW'))
+    expect(next).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

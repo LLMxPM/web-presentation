@@ -35,7 +35,9 @@ RUN pnpm install --frozen-lockfile --filter web-runtime-vue...
 
 COPY runtime/ ./runtime/
 # deploy 产出可独立拷贝的 node_modules，避免 workspace 符号链接跨 stage 失效
-RUN pnpm --filter web-runtime-vue deploy --legacy --prod /out/runtime
+RUN node runtime/scripts/write-runtime-build-id.mjs \
+    && pnpm --filter web-runtime-vue deploy --legacy --prod /out/runtime \
+    && cp /app/runtime/.runtime-build-id /out/runtime/.runtime-build-id
 
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS backend-deps
@@ -73,6 +75,7 @@ ENV REDIS_URL="memory://lite"
 ENV REDIS_KEY_PREFIX="web_presentation_lite"
 ENV BACKEND_PUBLIC_BASE_URL="http://127.0.0.1:8080"
 ENV RUNTIME_BASE_URL="http://127.0.0.1:7373"
+ENV RUNTIME_RELEASE_ID_REQUIRED=true
 ENV RUNTIME_PUBLIC_BASE_URL="http://127.0.0.1:8080/runtime"
 ENV RUNTIME_PREVIEW_JWKS_URL="http://127.0.0.1:8000/.well-known/jwks.json"
 ENV RUNTIME_BACKEND_API_BASE_URL="http://127.0.0.1:8000"

@@ -2,7 +2,7 @@
  * 文件用途：验证 Runtime 健康检查插件的中间件注册、容量快照响应与就绪探针语义。
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerResponse } from 'http'
 import type { ViteDevServer } from 'vite'
 
@@ -34,7 +34,12 @@ type RuntimeHealthMiddleware = (
 /** 每个用例都会注册就绪探针，必须逐个注销，避免污染其它用例的就绪汇总。 */
 const unregisterReadinessProbes: Array<() => void> = []
 
+beforeEach(() => {
+  vi.stubEnv('RUNTIME_ROLE', 'all')
+})
+
 afterEach(() => {
+  vi.unstubAllEnvs()
   while (unregisterReadinessProbes.length > 0) {
     unregisterReadinessProbes.pop()?.()
   }
@@ -108,7 +113,7 @@ describe('runtime health plugin', () => {
       delete process.env.RUNTIME_BUILD_ID
       expect(buildRuntimeVersionFingerprint()).toEqual({
         runtime_kit_version: expect.stringMatching(/^\d+\.\d+\.\d+/),
-        build_id: '',
+        build_id: 'dev',
       })
 
       process.env.RUNTIME_BUILD_ID = 'preview-b1'
