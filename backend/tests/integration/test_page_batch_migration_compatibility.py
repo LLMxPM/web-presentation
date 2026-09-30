@@ -8,11 +8,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from app.models.ai_page_mutation import AiPageMutationBatch
 from sqlalchemy import Column, Integer, MetaData, create_engine, inspect, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, registry
-
-from app.models.ai_page_mutation import AiPageMutationBatch
 
 
 def _migrate(path: Path, revision: str, *, command: str = "upgrade") -> None:

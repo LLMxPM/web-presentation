@@ -8,8 +8,8 @@ Revises: 20260930_0100
 的历史值；迁移期间应排空旧页面任务，回滚应用时保留当前 schema 并关闭旧迁移器。
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "20260930_0200"
 down_revision = "20260930_0100"
