@@ -6,15 +6,6 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, or_, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.config import get_settings
-from app.core.time_utils import utc_now
-from app.db.tx import acquire_admission_lock
-from app.models.render_attempt import RenderAttempt
-from app.models.render_execution import RenderResult, RenderSchedulerState, RenderWorker
-from app.models.render_request import RenderRequest
 from render_contracts.constants import (
     ATTEMPT_OCCUPYING_STATUSES,
     ATTEMPT_STATUS_RESERVED,
@@ -37,6 +28,15 @@ from render_contracts.errors import (
     ERROR_CODE_DEADLINE_EXCEEDED,
     ERROR_CODE_RESULT_LOST,
 )
+from sqlalchemy import func, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.core.time_utils import utc_now
+from app.db.tx import acquire_admission_lock
+from app.models.render_attempt import RenderAttempt
+from app.models.render_execution import RenderResult, RenderSchedulerState, RenderWorker
+from app.models.render_request import RenderRequest
 
 
 class RenderRepository:
@@ -789,13 +789,11 @@ class RenderRepository:
     ) -> None:
         """记录 attempt 失败并按策略重排或形成请求终态。
 
-        release_slot=True 时必须真正释放占用；条件更新失败说明已被其它路径
-        收敛，此时不得再改写请求状态，避免双写。
+        失败写入与释放都必须先取得占用条件更新；失效时不能改写 ORM 属性，
+        否则自动 flush 会绕过条件更新，污染另一协调器已保存的成功终态。
         """
 
         now = utc_now()
-        attempt.error_code = error_code
-        attempt.error_message = error_message
         occupy_statuses = tuple(ATTEMPT_OCCUPYING_STATUSES)
         released = False
         if release_slot:
@@ -835,7 +833,7 @@ class RenderRepository:
                 # 已被其它路径收敛，不再改写请求状态。
                 return
         else:
-            await self.session.execute(
+            update_result = await self.session.execute(
                 update(RenderAttempt)
                 .where(
                     RenderAttempt.id == attempt.id,
@@ -851,8 +849,14 @@ class RenderRepository:
                     + timedelta(seconds=float(get_settings().render_unknown_reconcile_after_seconds)),
                 )
             )
+            if not update_result.rowcount:
+                # 产物可能已被另一协调器保存并消费；迟到 410 不能重新打开已释放的 attempt。
+                return
             attempt.status = ATTEMPT_STATUS_UNKNOWN
             attempt.cleanup_status = "pending"
+
+        attempt.error_code = error_code
+        attempt.error_message = error_message
 
         if terminal or not retryable or request.attempt_count >= request.max_attempts:
             # attempt 级 deadline 默认可重试；仅请求总预算耗尽/达最大次数时收敛为 expired。
