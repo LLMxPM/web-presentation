@@ -1,0 +1,70 @@
+{
+  "status": "passed",
+  "mode": "cross",
+  "browser": "148.0.7778.96",
+  "requests": [
+    {
+      "path": "/healthz",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/preview/artifacts/rt_4f397a80fdd34e95abf4fdb459bf57b2",
+      "query_keys": [
+        "token"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/@vite/client",
+      "query_keys": [],
+      "status": 409,
+      "version": "1.0.0+sha256-5b25ba86fd930b3ac8d82113d0bd2533b75263deb4cc1a536149702094795db4",
+      "upstream": "172.20.0.6:7373",
+      "code": "PREVIEW_VERSION_SKEW",
+      "code_source": "exact_browser_url_http_replay",
+      "body_error": "Unexpected end of JSON input"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/main.ts",
+      "query_keys": [],
+      "status": 409,
+      "version": "1.0.0+sha256-5b25ba86fd930b3ac8d82113d0bd2533b75263deb4cc1a536149702094795db4",
+      "upstream": "172.20.0.6:7373",
+      "code": "PREVIEW_VERSION_SKEW",
+      "code_source": "exact_browser_url_http_replay",
+      "body_error": "Unexpected end of JSON input"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/__preview-tailwind.css",
+      "query_keys": [
+        "artifactId",
+        "token"
+      ],
+      "status": 409,
+      "version": "1.0.0+sha256-5b25ba86fd930b3ac8d82113d0bd2533b75263deb4cc1a536149702094795db4",
+      "upstream": "172.20.0.6:7373",
+      "code": "PREVIEW_VERSION_SKEW",
+      "code_source": "exact_browser_url_http_replay",
+      "body_error": "Unexpected end of JSON input"
+    }
+  ],
+  "failed_requests": [
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/@vite/client",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/__preview-tailwind.css",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/main.ts",
+      "error": "net::ERR_ABORTED"
+    }
+  ],
+  "errors": [],
+  "cross_mode": "older_image",
+  "other_runtime_image_id": "sha256:d94f6b493f8a9ad6a72fd2a258eae07c51b12853d7a0ae3d0a94c5b5afac64ce"
+}

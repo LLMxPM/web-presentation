@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "source_ref": "4c7eee8",
+  "dependency_environment": "当前 Lite 镜像 Python workspace，旧 app 源码只读挂载",
+  "batch_id": "ai-page-batch-7c3f2b38473663ee15c8081abde46ebb",
+  "job_id": "ai-page-job-cec55598f0191622656061f05a91c62b",
+  "duplicate_job_id": "ai-page-job-cec55598f0191622656061f05a91c62b",
+  "lease_generation": 1,
+  "legacy_batch_status": "completed",
+  "run_status": "cancelled",
+  "recovered_count": 1,
+  "scope": "完整旧 ORM SELECT/INSERT/UPDATE、真实旧页面入队幂等、过期旧 Batch 清扫、Run 取消；未执行旧模型 deferred 自动续跑与完整发布回滚",
+  "n1_revision": "20260926_0100",
+  "target_revision": "20260930_0300"
+}

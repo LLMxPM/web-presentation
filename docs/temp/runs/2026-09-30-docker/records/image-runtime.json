@@ -1,0 +1,18 @@
+{
+  "variant": "runtime",
+  "requested_image": "wp-runtime-w05h:local",
+  "image_id": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+  "repo_digests": [
+    "wp-runtime-w05h@sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23"
+  ],
+  "os": "linux",
+  "architecture": "amd64",
+  "health": "passed",
+  "execution": "runtime_version_guard_passed",
+  "runtime_version": {
+    "fingerprint": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55",
+    "base": "/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/",
+    "http": "passed",
+    "hmr": "passed"
+  }
+}

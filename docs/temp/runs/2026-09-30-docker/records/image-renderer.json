@@ -1,0 +1,12 @@
+{
+  "variant": "renderer",
+  "requested_image": "wp-renderer-drill:local",
+  "image_id": "sha256:0dd732573c943b263ecfbbb8ec895d89279769b7d8d5d580a419ee5004d35589",
+  "repo_digests": [
+    "wp-renderer-drill@sha256:0dd732573c943b263ecfbbb8ec895d89279769b7d8d5d580a419ee5004d35589"
+  ],
+  "os": "linux",
+  "architecture": "amd64",
+  "health": "passed",
+  "execution": "renderer_control_api_capture_passed"
+}

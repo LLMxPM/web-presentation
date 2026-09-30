@@ -1,0 +1,1210 @@
+{
+  "status": "passed",
+  "targets": [
+    {
+      "project_id": 6,
+      "page_id": 6,
+      "build_id": 6,
+      "screenshot_id": 7
+    },
+    {
+      "project_id": 7,
+      "page_id": 7,
+      "build_id": 8,
+      "screenshot_id": 9
+    },
+    {
+      "project_id": 8,
+      "page_id": 8,
+      "build_id": 7,
+      "screenshot_id": 8
+    },
+    {
+      "project_id": 9,
+      "page_id": 9,
+      "build_id": 9,
+      "screenshot_id": 10
+    }
+  ],
+  "samples": [
+    {
+      "builds": [
+        {
+          "id": 6,
+          "status": "running",
+          "attempt_id": "983a68190cb34843a639bc0c87a968ad",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-a",
+          "claimed_at": "2026-09-30T16:00:28.612786+00:00",
+          "started_at": "2026-09-30T16:00:28.612786+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 7,
+          "status": "pending",
+          "attempt_id": "c40b031806f14cf6a60105cace0076ad",
+          "attempt_count": 0,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": null,
+          "finished_at": null
+        },
+        {
+          "id": 8,
+          "status": "pending",
+          "attempt_id": "653a5ceba3c44a32ab78d754e0b92a2e",
+          "attempt_count": 0,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": null,
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "pending",
+          "attempt_id": "74483ded63d741e28fd12973349abb33",
+          "attempt_count": 0,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": null,
+          "finished_at": null
+        }
+      ],
+      "screenshots": [
+        {
+          "id": 7,
+          "status": "running",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:1ae9f288689040a2af9821c5d9024bff",
+          "started_at": "2026-09-30T16:00:28.597323+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 8,
+          "status": "pending",
+          "attempt_count": 0,
+          "worker_id": null,
+          "started_at": null,
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "running",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:aab17cb533ce4f01880deb192c6a4741",
+          "started_at": "2026-09-30T16:00:28.947155+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 10,
+          "status": "pending",
+          "attempt_count": 0,
+          "worker_id": null,
+          "started_at": null,
+          "finished_at": null
+        }
+      ],
+      "render_attempts": [
+        {
+          "id": 9,
+          "request_id": 9,
+          "attempt_uid": "62d68f64-2e01-4d4e-a98a-500abf8d0c84",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "accepted",
+          "active_occupancy": 1,
+          "cleanup_status": "pending",
+          "started_at": null,
+          "finished_at": null
+        },
+        {
+          "id": 10,
+          "request_id": 10,
+          "attempt_uid": "7ba5786a-9199-4201-972b-ba0f126b70dd",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "accepted",
+          "active_occupancy": 1,
+          "cleanup_status": "pending",
+          "started_at": null,
+          "finished_at": null
+        }
+      ]
+    },
+    {
+      "builds": [
+        {
+          "id": 6,
+          "status": "running",
+          "attempt_id": "983a68190cb34843a639bc0c87a968ad",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-a",
+          "claimed_at": "2026-09-30T16:00:28.612786+00:00",
+          "started_at": "2026-09-30T16:00:28.612786+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 7,
+          "status": "running",
+          "attempt_id": "a7e6f544813643f58307026bf56cb1e7",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-b",
+          "claimed_at": "2026-09-30T16:00:28.821203+00:00",
+          "started_at": "2026-09-30T16:00:28.821203+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 8,
+          "status": "pending",
+          "attempt_id": "653a5ceba3c44a32ab78d754e0b92a2e",
+          "attempt_count": 0,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": null,
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "pending",
+          "attempt_id": "74483ded63d741e28fd12973349abb33",
+          "attempt_count": 0,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": null,
+          "finished_at": null
+        }
+      ],
+      "screenshots": [
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:1ae9f288689040a2af9821c5d9024bff",
+          "started_at": "2026-09-30T16:00:28.597323+00:00",
+          "finished_at": "2026-09-30T16:00:31.515102+00:00"
+        },
+        {
+          "id": 8,
+          "status": "running",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:76247846222c49318107cad7694ff1c6",
+          "started_at": "2026-09-30T16:00:31.533262+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:aab17cb533ce4f01880deb192c6a4741",
+          "started_at": "2026-09-30T16:00:28.947155+00:00",
+          "finished_at": "2026-09-30T16:00:31.98767+00:00"
+        },
+        {
+          "id": 10,
+          "status": "running",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:08d5309c81644b6c86c94f2d683952d4",
+          "started_at": "2026-09-30T16:00:32.000102+00:00",
+          "finished_at": null
+        }
+      ],
+      "render_attempts": [
+        {
+          "id": 9,
+          "request_id": 9,
+          "attempt_uid": "62d68f64-2e01-4d4e-a98a-500abf8d0c84",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.285671+00:00"
+        },
+        {
+          "id": 10,
+          "request_id": 10,
+          "attempt_uid": "7ba5786a-9199-4201-972b-ba0f126b70dd",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.902893+00:00"
+        },
+        {
+          "id": 11,
+          "request_id": 11,
+          "attempt_uid": "3d6a9325-faa2-4ffa-b46b-85f1e8a5092f",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "accepted",
+          "active_occupancy": 1,
+          "cleanup_status": "pending",
+          "started_at": null,
+          "finished_at": null
+        },
+        {
+          "id": 12,
+          "request_id": 12,
+          "attempt_uid": "d6005ef0-093b-4cb4-8c7c-45454824fed7",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "accepted",
+          "active_occupancy": 1,
+          "cleanup_status": "pending",
+          "started_at": null,
+          "finished_at": null
+        }
+      ]
+    },
+    {
+      "builds": [
+        {
+          "id": 6,
+          "status": "running",
+          "attempt_id": "983a68190cb34843a639bc0c87a968ad",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-a",
+          "claimed_at": "2026-09-30T16:00:28.612786+00:00",
+          "started_at": "2026-09-30T16:00:28.612786+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 7,
+          "status": "running",
+          "attempt_id": "a7e6f544813643f58307026bf56cb1e7",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-b",
+          "claimed_at": "2026-09-30T16:00:28.821203+00:00",
+          "started_at": "2026-09-30T16:00:28.821203+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 8,
+          "status": "pending",
+          "attempt_id": "653a5ceba3c44a32ab78d754e0b92a2e",
+          "attempt_count": 0,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": null,
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "pending",
+          "attempt_id": "74483ded63d741e28fd12973349abb33",
+          "attempt_count": 0,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": null,
+          "finished_at": null
+        }
+      ],
+      "screenshots": [
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:1ae9f288689040a2af9821c5d9024bff",
+          "started_at": "2026-09-30T16:00:28.597323+00:00",
+          "finished_at": "2026-09-30T16:00:31.515102+00:00"
+        },
+        {
+          "id": 8,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:76247846222c49318107cad7694ff1c6",
+          "started_at": "2026-09-30T16:00:31.533262+00:00",
+          "finished_at": "2026-09-30T16:00:34.323291+00:00"
+        },
+        {
+          "id": 9,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:aab17cb533ce4f01880deb192c6a4741",
+          "started_at": "2026-09-30T16:00:28.947155+00:00",
+          "finished_at": "2026-09-30T16:00:31.98767+00:00"
+        },
+        {
+          "id": 10,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:08d5309c81644b6c86c94f2d683952d4",
+          "started_at": "2026-09-30T16:00:32.000102+00:00",
+          "finished_at": "2026-09-30T16:00:34.730096+00:00"
+        }
+      ],
+      "render_attempts": [
+        {
+          "id": 9,
+          "request_id": 9,
+          "attempt_uid": "62d68f64-2e01-4d4e-a98a-500abf8d0c84",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.285671+00:00"
+        },
+        {
+          "id": 10,
+          "request_id": 10,
+          "attempt_uid": "7ba5786a-9199-4201-972b-ba0f126b70dd",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.902893+00:00"
+        },
+        {
+          "id": 11,
+          "request_id": 11,
+          "attempt_uid": "3d6a9325-faa2-4ffa-b46b-85f1e8a5092f",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.226182+00:00"
+        },
+        {
+          "id": 12,
+          "request_id": 12,
+          "attempt_uid": "d6005ef0-093b-4cb4-8c7c-45454824fed7",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.666042+00:00"
+        }
+      ]
+    },
+    {
+      "builds": [
+        {
+          "id": 6,
+          "status": "running",
+          "attempt_id": "983a68190cb34843a639bc0c87a968ad",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-a",
+          "claimed_at": "2026-09-30T16:00:28.612786+00:00",
+          "started_at": "2026-09-30T16:00:28.612786+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 7,
+          "status": "running",
+          "attempt_id": "a7e6f544813643f58307026bf56cb1e7",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-b",
+          "claimed_at": "2026-09-30T16:00:28.821203+00:00",
+          "started_at": "2026-09-30T16:00:28.821203+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 8,
+          "status": "pending",
+          "attempt_id": "653a5ceba3c44a32ab78d754e0b92a2e",
+          "attempt_count": 0,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": null,
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "pending",
+          "attempt_id": "74483ded63d741e28fd12973349abb33",
+          "attempt_count": 0,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": null,
+          "finished_at": null
+        }
+      ],
+      "screenshots": [
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:1ae9f288689040a2af9821c5d9024bff",
+          "started_at": "2026-09-30T16:00:28.597323+00:00",
+          "finished_at": "2026-09-30T16:00:31.515102+00:00"
+        },
+        {
+          "id": 8,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:76247846222c49318107cad7694ff1c6",
+          "started_at": "2026-09-30T16:00:31.533262+00:00",
+          "finished_at": "2026-09-30T16:00:34.323291+00:00"
+        },
+        {
+          "id": 9,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:aab17cb533ce4f01880deb192c6a4741",
+          "started_at": "2026-09-30T16:00:28.947155+00:00",
+          "finished_at": "2026-09-30T16:00:31.98767+00:00"
+        },
+        {
+          "id": 10,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:08d5309c81644b6c86c94f2d683952d4",
+          "started_at": "2026-09-30T16:00:32.000102+00:00",
+          "finished_at": "2026-09-30T16:00:34.730096+00:00"
+        }
+      ],
+      "render_attempts": [
+        {
+          "id": 9,
+          "request_id": 9,
+          "attempt_uid": "62d68f64-2e01-4d4e-a98a-500abf8d0c84",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.285671+00:00"
+        },
+        {
+          "id": 10,
+          "request_id": 10,
+          "attempt_uid": "7ba5786a-9199-4201-972b-ba0f126b70dd",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.902893+00:00"
+        },
+        {
+          "id": 11,
+          "request_id": 11,
+          "attempt_uid": "3d6a9325-faa2-4ffa-b46b-85f1e8a5092f",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.226182+00:00"
+        },
+        {
+          "id": 12,
+          "request_id": 12,
+          "attempt_uid": "d6005ef0-093b-4cb4-8c7c-45454824fed7",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.666042+00:00"
+        }
+      ]
+    },
+    {
+      "builds": [
+        {
+          "id": 6,
+          "status": "succeeded",
+          "attempt_id": "983a68190cb34843a639bc0c87a968ad",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.612786+00:00",
+          "finished_at": "2026-09-30T16:00:38.4581+00:00"
+        },
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_id": "a7e6f544813643f58307026bf56cb1e7",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.821203+00:00",
+          "finished_at": "2026-09-30T16:00:38.481329+00:00"
+        },
+        {
+          "id": 8,
+          "status": "running",
+          "attempt_id": "f3c14143acea4382a76f3c16eb233fff",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-a",
+          "claimed_at": "2026-09-30T16:00:38.468426+00:00",
+          "started_at": "2026-09-30T16:00:38.468426+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "running",
+          "attempt_id": "3c7bc2f694d445bbb908cd499fdddee8",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-b",
+          "claimed_at": "2026-09-30T16:00:38.504015+00:00",
+          "started_at": "2026-09-30T16:00:38.504015+00:00",
+          "finished_at": null
+        }
+      ],
+      "screenshots": [
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:1ae9f288689040a2af9821c5d9024bff",
+          "started_at": "2026-09-30T16:00:28.597323+00:00",
+          "finished_at": "2026-09-30T16:00:31.515102+00:00"
+        },
+        {
+          "id": 8,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:76247846222c49318107cad7694ff1c6",
+          "started_at": "2026-09-30T16:00:31.533262+00:00",
+          "finished_at": "2026-09-30T16:00:34.323291+00:00"
+        },
+        {
+          "id": 9,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:aab17cb533ce4f01880deb192c6a4741",
+          "started_at": "2026-09-30T16:00:28.947155+00:00",
+          "finished_at": "2026-09-30T16:00:31.98767+00:00"
+        },
+        {
+          "id": 10,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:08d5309c81644b6c86c94f2d683952d4",
+          "started_at": "2026-09-30T16:00:32.000102+00:00",
+          "finished_at": "2026-09-30T16:00:34.730096+00:00"
+        }
+      ],
+      "render_attempts": [
+        {
+          "id": 9,
+          "request_id": 9,
+          "attempt_uid": "62d68f64-2e01-4d4e-a98a-500abf8d0c84",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.285671+00:00"
+        },
+        {
+          "id": 10,
+          "request_id": 10,
+          "attempt_uid": "7ba5786a-9199-4201-972b-ba0f126b70dd",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.902893+00:00"
+        },
+        {
+          "id": 11,
+          "request_id": 11,
+          "attempt_uid": "3d6a9325-faa2-4ffa-b46b-85f1e8a5092f",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.226182+00:00"
+        },
+        {
+          "id": 12,
+          "request_id": 12,
+          "attempt_uid": "d6005ef0-093b-4cb4-8c7c-45454824fed7",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.666042+00:00"
+        }
+      ]
+    },
+    {
+      "builds": [
+        {
+          "id": 6,
+          "status": "succeeded",
+          "attempt_id": "983a68190cb34843a639bc0c87a968ad",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.612786+00:00",
+          "finished_at": "2026-09-30T16:00:38.4581+00:00"
+        },
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_id": "a7e6f544813643f58307026bf56cb1e7",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.821203+00:00",
+          "finished_at": "2026-09-30T16:00:38.481329+00:00"
+        },
+        {
+          "id": 8,
+          "status": "running",
+          "attempt_id": "f3c14143acea4382a76f3c16eb233fff",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-a",
+          "claimed_at": "2026-09-30T16:00:38.468426+00:00",
+          "started_at": "2026-09-30T16:00:38.468426+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "running",
+          "attempt_id": "3c7bc2f694d445bbb908cd499fdddee8",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-b",
+          "claimed_at": "2026-09-30T16:00:38.504015+00:00",
+          "started_at": "2026-09-30T16:00:38.504015+00:00",
+          "finished_at": null
+        }
+      ],
+      "screenshots": [
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:1ae9f288689040a2af9821c5d9024bff",
+          "started_at": "2026-09-30T16:00:28.597323+00:00",
+          "finished_at": "2026-09-30T16:00:31.515102+00:00"
+        },
+        {
+          "id": 8,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:76247846222c49318107cad7694ff1c6",
+          "started_at": "2026-09-30T16:00:31.533262+00:00",
+          "finished_at": "2026-09-30T16:00:34.323291+00:00"
+        },
+        {
+          "id": 9,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:aab17cb533ce4f01880deb192c6a4741",
+          "started_at": "2026-09-30T16:00:28.947155+00:00",
+          "finished_at": "2026-09-30T16:00:31.98767+00:00"
+        },
+        {
+          "id": 10,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:08d5309c81644b6c86c94f2d683952d4",
+          "started_at": "2026-09-30T16:00:32.000102+00:00",
+          "finished_at": "2026-09-30T16:00:34.730096+00:00"
+        }
+      ],
+      "render_attempts": [
+        {
+          "id": 9,
+          "request_id": 9,
+          "attempt_uid": "62d68f64-2e01-4d4e-a98a-500abf8d0c84",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.285671+00:00"
+        },
+        {
+          "id": 10,
+          "request_id": 10,
+          "attempt_uid": "7ba5786a-9199-4201-972b-ba0f126b70dd",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.902893+00:00"
+        },
+        {
+          "id": 11,
+          "request_id": 11,
+          "attempt_uid": "3d6a9325-faa2-4ffa-b46b-85f1e8a5092f",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.226182+00:00"
+        },
+        {
+          "id": 12,
+          "request_id": 12,
+          "attempt_uid": "d6005ef0-093b-4cb4-8c7c-45454824fed7",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.666042+00:00"
+        }
+      ]
+    },
+    {
+      "builds": [
+        {
+          "id": 6,
+          "status": "succeeded",
+          "attempt_id": "983a68190cb34843a639bc0c87a968ad",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.612786+00:00",
+          "finished_at": "2026-09-30T16:00:38.4581+00:00"
+        },
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_id": "a7e6f544813643f58307026bf56cb1e7",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.821203+00:00",
+          "finished_at": "2026-09-30T16:00:38.481329+00:00"
+        },
+        {
+          "id": 8,
+          "status": "running",
+          "attempt_id": "f3c14143acea4382a76f3c16eb233fff",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-a",
+          "claimed_at": "2026-09-30T16:00:38.468426+00:00",
+          "started_at": "2026-09-30T16:00:38.468426+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "running",
+          "attempt_id": "3c7bc2f694d445bbb908cd499fdddee8",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-b",
+          "claimed_at": "2026-09-30T16:00:38.504015+00:00",
+          "started_at": "2026-09-30T16:00:38.504015+00:00",
+          "finished_at": null
+        }
+      ],
+      "screenshots": [
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:1ae9f288689040a2af9821c5d9024bff",
+          "started_at": "2026-09-30T16:00:28.597323+00:00",
+          "finished_at": "2026-09-30T16:00:31.515102+00:00"
+        },
+        {
+          "id": 8,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:76247846222c49318107cad7694ff1c6",
+          "started_at": "2026-09-30T16:00:31.533262+00:00",
+          "finished_at": "2026-09-30T16:00:34.323291+00:00"
+        },
+        {
+          "id": 9,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:aab17cb533ce4f01880deb192c6a4741",
+          "started_at": "2026-09-30T16:00:28.947155+00:00",
+          "finished_at": "2026-09-30T16:00:31.98767+00:00"
+        },
+        {
+          "id": 10,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:08d5309c81644b6c86c94f2d683952d4",
+          "started_at": "2026-09-30T16:00:32.000102+00:00",
+          "finished_at": "2026-09-30T16:00:34.730096+00:00"
+        }
+      ],
+      "render_attempts": [
+        {
+          "id": 9,
+          "request_id": 9,
+          "attempt_uid": "62d68f64-2e01-4d4e-a98a-500abf8d0c84",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.285671+00:00"
+        },
+        {
+          "id": 10,
+          "request_id": 10,
+          "attempt_uid": "7ba5786a-9199-4201-972b-ba0f126b70dd",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.902893+00:00"
+        },
+        {
+          "id": 11,
+          "request_id": 11,
+          "attempt_uid": "3d6a9325-faa2-4ffa-b46b-85f1e8a5092f",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.226182+00:00"
+        },
+        {
+          "id": 12,
+          "request_id": 12,
+          "attempt_uid": "d6005ef0-093b-4cb4-8c7c-45454824fed7",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.666042+00:00"
+        }
+      ]
+    },
+    {
+      "builds": [
+        {
+          "id": 6,
+          "status": "succeeded",
+          "attempt_id": "983a68190cb34843a639bc0c87a968ad",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.612786+00:00",
+          "finished_at": "2026-09-30T16:00:38.4581+00:00"
+        },
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_id": "a7e6f544813643f58307026bf56cb1e7",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.821203+00:00",
+          "finished_at": "2026-09-30T16:00:38.481329+00:00"
+        },
+        {
+          "id": 8,
+          "status": "running",
+          "attempt_id": "f3c14143acea4382a76f3c16eb233fff",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-a",
+          "claimed_at": "2026-09-30T16:00:38.468426+00:00",
+          "started_at": "2026-09-30T16:00:38.468426+00:00",
+          "finished_at": null
+        },
+        {
+          "id": 9,
+          "status": "running",
+          "attempt_id": "3c7bc2f694d445bbb908cd499fdddee8",
+          "attempt_count": 1,
+          "lease_owner": "drill-build-b",
+          "claimed_at": "2026-09-30T16:00:38.504015+00:00",
+          "started_at": "2026-09-30T16:00:38.504015+00:00",
+          "finished_at": null
+        }
+      ],
+      "screenshots": [
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:1ae9f288689040a2af9821c5d9024bff",
+          "started_at": "2026-09-30T16:00:28.597323+00:00",
+          "finished_at": "2026-09-30T16:00:31.515102+00:00"
+        },
+        {
+          "id": 8,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:76247846222c49318107cad7694ff1c6",
+          "started_at": "2026-09-30T16:00:31.533262+00:00",
+          "finished_at": "2026-09-30T16:00:34.323291+00:00"
+        },
+        {
+          "id": 9,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:aab17cb533ce4f01880deb192c6a4741",
+          "started_at": "2026-09-30T16:00:28.947155+00:00",
+          "finished_at": "2026-09-30T16:00:31.98767+00:00"
+        },
+        {
+          "id": 10,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:08d5309c81644b6c86c94f2d683952d4",
+          "started_at": "2026-09-30T16:00:32.000102+00:00",
+          "finished_at": "2026-09-30T16:00:34.730096+00:00"
+        }
+      ],
+      "render_attempts": [
+        {
+          "id": 9,
+          "request_id": 9,
+          "attempt_uid": "62d68f64-2e01-4d4e-a98a-500abf8d0c84",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.285671+00:00"
+        },
+        {
+          "id": 10,
+          "request_id": 10,
+          "attempt_uid": "7ba5786a-9199-4201-972b-ba0f126b70dd",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.902893+00:00"
+        },
+        {
+          "id": 11,
+          "request_id": 11,
+          "attempt_uid": "3d6a9325-faa2-4ffa-b46b-85f1e8a5092f",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.226182+00:00"
+        },
+        {
+          "id": 12,
+          "request_id": 12,
+          "attempt_uid": "d6005ef0-093b-4cb4-8c7c-45454824fed7",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.666042+00:00"
+        }
+      ]
+    },
+    {
+      "builds": [
+        {
+          "id": 6,
+          "status": "succeeded",
+          "attempt_id": "983a68190cb34843a639bc0c87a968ad",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.612786+00:00",
+          "finished_at": "2026-09-30T16:00:38.4581+00:00"
+        },
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_id": "a7e6f544813643f58307026bf56cb1e7",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:28.821203+00:00",
+          "finished_at": "2026-09-30T16:00:38.481329+00:00"
+        },
+        {
+          "id": 8,
+          "status": "succeeded",
+          "attempt_id": "f3c14143acea4382a76f3c16eb233fff",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:38.468426+00:00",
+          "finished_at": "2026-09-30T16:00:46.814394+00:00"
+        },
+        {
+          "id": 9,
+          "status": "succeeded",
+          "attempt_id": "3c7bc2f694d445bbb908cd499fdddee8",
+          "attempt_count": 1,
+          "lease_owner": null,
+          "claimed_at": null,
+          "started_at": "2026-09-30T16:00:38.504015+00:00",
+          "finished_at": "2026-09-30T16:00:46.555419+00:00"
+        }
+      ],
+      "screenshots": [
+        {
+          "id": 7,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:1ae9f288689040a2af9821c5d9024bff",
+          "started_at": "2026-09-30T16:00:28.597323+00:00",
+          "finished_at": "2026-09-30T16:00:31.515102+00:00"
+        },
+        {
+          "id": 8,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "a1aec26a8475:1:76247846222c49318107cad7694ff1c6",
+          "started_at": "2026-09-30T16:00:31.533262+00:00",
+          "finished_at": "2026-09-30T16:00:34.323291+00:00"
+        },
+        {
+          "id": 9,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:aab17cb533ce4f01880deb192c6a4741",
+          "started_at": "2026-09-30T16:00:28.947155+00:00",
+          "finished_at": "2026-09-30T16:00:31.98767+00:00"
+        },
+        {
+          "id": 10,
+          "status": "succeeded",
+          "attempt_count": 1,
+          "worker_id": "rebuilt-a-1790778092:1:08d5309c81644b6c86c94f2d683952d4",
+          "started_at": "2026-09-30T16:00:32.000102+00:00",
+          "finished_at": "2026-09-30T16:00:34.730096+00:00"
+        }
+      ],
+      "render_attempts": [
+        {
+          "id": 9,
+          "request_id": 9,
+          "attempt_uid": "62d68f64-2e01-4d4e-a98a-500abf8d0c84",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.285671+00:00"
+        },
+        {
+          "id": 10,
+          "request_id": 10,
+          "attempt_uid": "7ba5786a-9199-4201-972b-ba0f126b70dd",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:31.902893+00:00"
+        },
+        {
+          "id": 11,
+          "request_id": 11,
+          "attempt_uid": "3d6a9325-faa2-4ffa-b46b-85f1e8a5092f",
+          "attempt_no": 1,
+          "worker_id": "renderer-1",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.226182+00:00"
+        },
+        {
+          "id": 12,
+          "request_id": 12,
+          "attempt_uid": "d6005ef0-093b-4cb4-8c7c-45454824fed7",
+          "attempt_no": 1,
+          "worker_id": "renderer-2",
+          "status": "terminal",
+          "active_occupancy": 0,
+          "cleanup_status": "released",
+          "started_at": null,
+          "finished_at": "2026-09-30T16:00:34.666042+00:00"
+        }
+      ]
+    }
+  ],
+  "downloads": [
+    {
+      "project_id": 6,
+      "page_id": 6,
+      "build_id": 6,
+      "screenshot_id": 7,
+      "png_bytes": 22589,
+      "png_sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+      "zip_bytes": 15220414,
+      "zip_sha256": "8f789b48e3d23f0273bdaaaa69788ce29c36233a502584fbb474322f2c446868"
+    },
+    {
+      "project_id": 7,
+      "page_id": 7,
+      "build_id": 8,
+      "screenshot_id": 9,
+      "png_bytes": 22589,
+      "png_sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+      "zip_bytes": 15220425,
+      "zip_sha256": "0c71596a0ac2190a802e87758e6a9963f0c679c6a13bfff88d093588332f384b"
+    },
+    {
+      "project_id": 8,
+      "page_id": 8,
+      "build_id": 7,
+      "screenshot_id": 8,
+      "png_bytes": 22589,
+      "png_sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+      "zip_bytes": 15220443,
+      "zip_sha256": "165b5533a42bd43ea6c95d8c5de90f52c26f7894c955fa8793072943071653f2"
+    },
+    {
+      "project_id": 9,
+      "page_id": 9,
+      "build_id": 9,
+      "screenshot_id": 10,
+      "png_bytes": 22589,
+      "png_sha256": "3314b0d14ebe54859340fb434d18a696c91c68a99741491f3ac9679c3756fd3a",
+      "zip_bytes": 15220431,
+      "zip_sha256": "4f1217293eb046d482d537c34f872218eeb574bb270a2480ab94e71640ca797a"
+    }
+  ],
+  "build_workers": [
+    "drill-build-a",
+    "drill-build-b"
+  ],
+  "render_workers": [
+    "renderer-1",
+    "renderer-2"
+  ],
+  "scope": "独立 Job 正常竞争和终态槽位释放；未覆盖 attempt 强杀/迟到上传/取消竞争或容量 SLA"
+}

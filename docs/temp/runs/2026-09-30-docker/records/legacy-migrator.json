@@ -1,0 +1,6 @@
+{
+  "status": "passed",
+  "exit_code": 255,
+  "rejected_revision": "20260930_0300",
+  "reason": "旧迁移器不能识别新 revision；应用回滚须关闭自动迁移"
+}

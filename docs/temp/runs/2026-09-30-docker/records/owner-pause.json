@@ -1,0 +1,105 @@
+{
+  "status": "passed",
+  "mode": "pause",
+  "parameters": {
+    "ttl_seconds": 12,
+    "heartbeat_seconds": 2,
+    "sweep_seconds": 1,
+    "observation_budget_seconds": 16
+  },
+  "kill_to_terminal_seconds": 11.635,
+  "before": {
+    "a": {
+      "run_id": "21d3d640-24ee-4b67-8fa3-2bd42d3bba9d",
+      "status": "running",
+      "process_owner": "20b92958540b:1:c28fe26086aa417db932297cb4a0978d",
+      "error_code": null,
+      "started_at": "2026-09-30T14:06:12.376729+00:00",
+      "finished_at": null,
+      "event_index": 2,
+      "terminal_events": 0
+    },
+    "b": {
+      "run_id": "2a81a9dd-8e6f-4ff5-a230-d2ff92fe84fe",
+      "status": "running",
+      "process_owner": "53891c7db06c:1:9f99b3deb96a4e30bef78b6b493965f3",
+      "error_code": null,
+      "started_at": "2026-09-30T14:06:12.470098+00:00",
+      "finished_at": null,
+      "event_index": 2,
+      "terminal_events": 0
+    }
+  },
+  "after_kill": {
+    "run_id": "21d3d640-24ee-4b67-8fa3-2bd42d3bba9d",
+    "status": "failed",
+    "process_owner": null,
+    "error_code": "AI_RUN_PROCESS_STOPPED",
+    "started_at": "2026-09-30T14:06:12.376729+00:00",
+    "finished_at": "2026-09-30T14:06:26.53524+00:00",
+    "event_index": 3,
+    "terminal_events": 1
+  },
+  "quiet_b": {
+    "run_id": "2a81a9dd-8e6f-4ff5-a230-d2ff92fe84fe",
+    "status": "running",
+    "process_owner": "53891c7db06c:1:9f99b3deb96a4e30bef78b6b493965f3",
+    "error_code": null,
+    "started_at": "2026-09-30T14:06:12.470098+00:00",
+    "finished_at": null,
+    "event_index": 2,
+    "terminal_events": 0
+  },
+  "restarted_run": {
+    "run_id": "76a3570a-f038-42fe-b57c-50337220402b",
+    "status": "completed",
+    "process_owner": "20b92958540b:1:5b081d76aa784231b64382c16ca8817b",
+    "error_code": null,
+    "started_at": "2026-09-30T14:06:39.432077+00:00",
+    "finished_at": "2026-09-30T14:06:40.745149+00:00",
+    "event_index": 6,
+    "terminal_events": 1
+  },
+  "completed_b": {
+    "run_id": "2a81a9dd-8e6f-4ff5-a230-d2ff92fe84fe",
+    "status": "completed",
+    "process_owner": "53891c7db06c:1:9f99b3deb96a4e30bef78b6b493965f3",
+    "error_code": null,
+    "started_at": "2026-09-30T14:06:12.470098+00:00",
+    "finished_at": "2026-09-30T14:06:27.987472+00:00",
+    "event_index": 6,
+    "terminal_events": 1
+  },
+  "old_run_events": [
+    {
+      "event": "model.request.started",
+      "count": 1
+    },
+    {
+      "event": "run.error",
+      "count": 1
+    },
+    {
+      "event": "run.focus.snapshot",
+      "count": 1
+    },
+    {
+      "event": "run.started",
+      "count": 1
+    }
+  ],
+  "pause_observation": {
+    "after_unpause": {
+      "run_id": "21d3d640-24ee-4b67-8fa3-2bd42d3bba9d",
+      "status": "failed",
+      "process_owner": null,
+      "error_code": "AI_RUN_PROCESS_STOPPED",
+      "started_at": "2026-09-30T14:06:12.376729+00:00",
+      "finished_at": "2026-09-30T14:06:26.53524+00:00",
+      "event_index": 3,
+      "terminal_events": 1
+    },
+    "scope": "进程恢复后收到了模型响应，但失效写围栏阻止迟到提交"
+  },
+  "scope": "真实 API/执行器、无 SSE、重启身份隔离；未覆盖全部外部 Batch 保护矩阵"
+}

@@ -1,0 +1,15 @@
+{
+  "runtime_source": "e82c793430eb771db2951243c5b7e9bd7ef8f4dc",
+  "backend_final_source": "a0779df107f6665c0a1c80e32aed2803c3a47bf4",
+  "backend_owner_drill_source": "aab57cd0d3d4a44f1a8c2283fa9f7bdbaa22ece4",
+  "renderer_app_changes_since_backend_owner_source": [],
+  "runtime_changes_after_runtime_image_source": [],
+  "ai_changes_after_backend_owner_source": [],
+  "lock_hashes": {
+    "uv.lock": "c527feff60cae78fb9a8ea215b66622b1c76ab915749d253c50eefd0b0595626",
+    "pnpm-lock.yaml": "b5390aa82b1de78506d8c1c5098ce5acc763cf893e97ddc4293e634c3923ce87"
+  },
+  "docker_version": "Docker version 29.3.1, build c2be9cc",
+  "compose_version": "Docker Compose version v5.1.0",
+  "registry_release": "not_executed"
+}

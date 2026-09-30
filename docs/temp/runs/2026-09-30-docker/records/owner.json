@@ -1,0 +1,91 @@
+{
+  "status": "passed",
+  "parameters": {
+    "ttl_seconds": 12,
+    "heartbeat_seconds": 2,
+    "sweep_seconds": 1,
+    "observation_budget_seconds": 16
+  },
+  "kill_to_terminal_seconds": 13.299,
+  "before": {
+    "a": {
+      "run_id": "598c83db-c295-421a-83da-8eeffc0952c7",
+      "status": "running",
+      "process_owner": "20b92958540b:1:8eda374e89a245818cb5ab228bb57f20",
+      "error_code": null,
+      "started_at": "2026-09-30T13:34:51.303544+00:00",
+      "finished_at": null,
+      "event_index": 2,
+      "terminal_events": 0
+    },
+    "b": {
+      "run_id": "ca232888-1d86-4ee7-a9a6-ff0ca7fcc93b",
+      "status": "running",
+      "process_owner": "53891c7db06c:1:9f99b3deb96a4e30bef78b6b493965f3",
+      "error_code": null,
+      "started_at": "2026-09-30T13:34:51.382898+00:00",
+      "finished_at": null,
+      "event_index": 2,
+      "terminal_events": 0
+    }
+  },
+  "after_kill": {
+    "run_id": "598c83db-c295-421a-83da-8eeffc0952c7",
+    "status": "failed",
+    "process_owner": null,
+    "error_code": "AI_RUN_PROCESS_STOPPED",
+    "started_at": "2026-09-30T13:34:51.303544+00:00",
+    "finished_at": "2026-09-30T13:35:06.329904+00:00",
+    "event_index": 3,
+    "terminal_events": 1
+  },
+  "quiet_b": {
+    "run_id": "ca232888-1d86-4ee7-a9a6-ff0ca7fcc93b",
+    "status": "running",
+    "process_owner": "53891c7db06c:1:9f99b3deb96a4e30bef78b6b493965f3",
+    "error_code": null,
+    "started_at": "2026-09-30T13:34:51.382898+00:00",
+    "finished_at": null,
+    "event_index": 2,
+    "terminal_events": 0
+  },
+  "restarted_run": {
+    "run_id": "d54a8539-c157-4a22-baa6-b4c22ba3ce03",
+    "status": "completed",
+    "process_owner": "20b92958540b:1:c28fe26086aa417db932297cb4a0978d",
+    "error_code": null,
+    "started_at": "2026-09-30T13:35:08.189909+00:00",
+    "finished_at": "2026-09-30T13:35:09.466863+00:00",
+    "event_index": 6,
+    "terminal_events": 1
+  },
+  "completed_b": {
+    "run_id": "ca232888-1d86-4ee7-a9a6-ff0ca7fcc93b",
+    "status": "completed",
+    "process_owner": "53891c7db06c:1:9f99b3deb96a4e30bef78b6b493965f3",
+    "error_code": null,
+    "started_at": "2026-09-30T13:34:51.382898+00:00",
+    "finished_at": "2026-09-30T13:35:09.430307+00:00",
+    "event_index": 6,
+    "terminal_events": 1
+  },
+  "old_run_events": [
+    {
+      "event": "model.request.started",
+      "count": 1
+    },
+    {
+      "event": "run.error",
+      "count": 1
+    },
+    {
+      "event": "run.focus.snapshot",
+      "count": 1
+    },
+    {
+      "event": "run.started",
+      "count": 1
+    }
+  ],
+  "scope": "真实 API/执行器、无 SSE、同 hostname/PID 重用；未覆盖全部外部 Batch 保护矩阵"
+}

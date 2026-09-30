@@ -1,0 +1,30 @@
+{
+  "profile": "temporary_official_dependency_download_cache",
+  "official_default_build": "not_completed",
+  "source_dockerfile_sha256": "2a34445da905f9e6053c953020cd529151c45c7294806160d8a364c0305c6015",
+  "effective_recipe_sha256": "ffd8b01482b58111c9ac4431da6dc1c790660fe9859aeca568507e456554ffc2",
+  "source_app_tree": "43c6515",
+  "python_lock_sha256": "c527feff60cae78fb9a8ea215b66622b1c76ab915749d253c50eefd0b0595626",
+  "python_dependency_step": "reused_cached_official_recipe_step",
+  "final_cmd": "uvicorn wp_renderer.main:app --host 0.0.0.0 --port 7400",
+  "upstream_transport": "HTTPS with default TLS validation",
+  "apt_integrity": "APT repository signatures and package digests",
+  "cache_transport": "temporary HTTP host.docker.internal",
+  "playwright_version": "1.63.0",
+  "chromium_version": "153.0.8010.12",
+  "download_artifacts": [
+    {
+      "name": "chrome-linux64.zip",
+      "bytes": 195836009,
+      "sha256": "8aac35011c18f6e2d10696154af89a5728ac2ddd6dc6fad24ffdf243c3fcfd5a"
+    },
+    {
+      "name": "chrome-headless-shell-linux64.zip",
+      "bytes": 119809080,
+      "sha256": "a9da028861a0cf789ff25c2fed45f5f1aaf969ed9247835b6a7821a4f7af9d1d"
+    }
+  ],
+  "image_id": "sha256:0dd732573c943b263ecfbbb8ec895d89279769b7d8d5d580a419ee5004d35589",
+  "archived_recipe_canonical_sha256": "bb34c857b681c18a697452c729b4dd624762bedacc41d9e3bc35858e5ca44c3d",
+  "archive_normalization": "UTF-8 无 BOM、LF、单个结尾换行；effective_recipe_sha256 为实际构建原文件字节摘要"
+}

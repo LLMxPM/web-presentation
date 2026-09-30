@@ -1,0 +1,14 @@
+{
+  "backend_source": "aab57cd",
+  "observed_attempts": [
+    {
+      "id": 6,
+      "status": "unknown",
+      "active_occupancy": 0,
+      "cleanup_status": "pending",
+      "error_code": "RENDER_SERVICE_UNAVAILABLE",
+      "error_message": "Renderer 产物 HTTP 410。"
+    }
+  ],
+  "scope": "独立任务产物成功；另一协调器读取已消费产物得到 410，旧 ORM 绕过失效条件更新污染状态"
+}

@@ -1,0 +1,93 @@
+{
+  "status": "passed",
+  "mode": "hostname",
+  "parameters": {
+    "ttl_seconds": 12,
+    "heartbeat_seconds": 2,
+    "sweep_seconds": 1,
+    "observation_budget_seconds": 16
+  },
+  "kill_to_terminal_seconds": 11.479,
+  "before": {
+    "a": {
+      "run_id": "44e1e752-0224-4579-ab98-814ba7b20ac4",
+      "status": "running",
+      "process_owner": "20b92958540b:1:5b081d76aa784231b64382c16ca8817b",
+      "error_code": null,
+      "started_at": "2026-09-30T14:21:28.852265+00:00",
+      "finished_at": null,
+      "event_index": 2,
+      "terminal_events": 0
+    },
+    "b": {
+      "run_id": "8553d971-4ec8-413a-91e3-bc99341ba99d",
+      "status": "running",
+      "process_owner": "53891c7db06c:1:9f99b3deb96a4e30bef78b6b493965f3",
+      "error_code": null,
+      "started_at": "2026-09-30T14:21:28.961654+00:00",
+      "finished_at": null,
+      "event_index": 2,
+      "terminal_events": 0
+    }
+  },
+  "after_kill": {
+    "run_id": "44e1e752-0224-4579-ab98-814ba7b20ac4",
+    "status": "failed",
+    "process_owner": null,
+    "error_code": "AI_RUN_PROCESS_STOPPED",
+    "started_at": "2026-09-30T14:21:28.852265+00:00",
+    "finished_at": "2026-09-30T14:21:42.258483+00:00",
+    "event_index": 3,
+    "terminal_events": 1
+  },
+  "quiet_b": {
+    "run_id": "8553d971-4ec8-413a-91e3-bc99341ba99d",
+    "status": "running",
+    "process_owner": "53891c7db06c:1:9f99b3deb96a4e30bef78b6b493965f3",
+    "error_code": null,
+    "started_at": "2026-09-30T14:21:28.961654+00:00",
+    "finished_at": null,
+    "event_index": 2,
+    "terminal_events": 0
+  },
+  "restarted_run": {
+    "run_id": "9301d0c9-d30b-4411-a2c5-f0dda13c1df7",
+    "status": "completed",
+    "process_owner": "rebuilt-a-1790778092:1:e3e6f883057e417a8e8887b5c49e20de",
+    "error_code": null,
+    "started_at": "2026-09-30T14:21:43.899893+00:00",
+    "finished_at": "2026-09-30T14:21:45.151806+00:00",
+    "event_index": 6,
+    "terminal_events": 1
+  },
+  "completed_b": {
+    "run_id": "8553d971-4ec8-413a-91e3-bc99341ba99d",
+    "status": "completed",
+    "process_owner": "53891c7db06c:1:9f99b3deb96a4e30bef78b6b493965f3",
+    "error_code": null,
+    "started_at": "2026-09-30T14:21:28.961654+00:00",
+    "finished_at": "2026-09-30T14:21:45.133652+00:00",
+    "event_index": 6,
+    "terminal_events": 1
+  },
+  "old_run_events": [
+    {
+      "event": "model.request.started",
+      "count": 1
+    },
+    {
+      "event": "run.error",
+      "count": 1
+    },
+    {
+      "event": "run.focus.snapshot",
+      "count": 1
+    },
+    {
+      "event": "run.started",
+      "count": 1
+    }
+  ],
+  "pause_observation": null,
+  "scope": "真实 API/执行器、无 SSE、重启身份隔离；未覆盖全部外部 Batch 保护矩阵"
+}
