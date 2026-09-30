@@ -194,7 +194,7 @@
 
 ## 5. 现有任务模型映射表（10 套 → 契约）
 
-> **历史迁移基线（W08 已对齐当前实现）**：下表保留 A1 冻结时的 10 套任务模型、3 套认领方言映射框架。**恢复列已按当前实现更新为「循环内过期恢复 + 启动兜底」**；普通 AI Run 启动恢复为 hostname/pid 过滤，不再描述为全局扫杀。剩余差距以[现行评估](../../temp/architecture-assessment-2026-09-29.md)与[计划](../../temp/plans/architecture-improvement-plan-2026-09-29.md)为准。
+> **历史迁移基线（W08 已对齐当前实现）**：下表保留 A1 冻结时的 10 套任务模型、3 套认领方言映射框架。**恢复列已按当前实现更新为「循环内过期恢复 + 启动兜底」**；普通 AI Run 启动恢复为 hostname/pid 过滤，不再描述为全局扫杀。剩余差距以[现行评估](../../temp/architecture-assessment-2026-09-30.md)与[计划](../../temp/plans/architecture-improvement-plan-2026-09-29.md)为准。
 
 ### 5.1 总表
 
@@ -277,7 +277,7 @@
 ### 6.3 契约外：普通 AI Run
 
 - **产品决策（H1，2026-09-28）**：普通 AI Run **承诺「会丢」**。进程退出/重启导致的中断是接受的边界，**不做**可恢复 Run。
-- 启动恢复 `recover_interrupted_agent_runs_on_startup` 已按 **owner 过滤**（WS-C C1，2026-09-29）：Run 启动时打 `process_owner = hostname:pid:uuid`；启动只收敛「无主遗留」（单进程部署）与「本机已死进程」的 Run，**不碰其它主机/仍存活 sibling 的活跃 Run**。跨副本僵尸由 `recover_stale_active_run` 空闲超时与用户 `force_cancel` 兜底。仍在 A2 运行时统一范围外，不得伪装成「已统一」。
+- 启动恢复 `recover_interrupted_agent_runs_on_startup` 已按 **owner 过滤**（WS-C C1，2026-09-29）：Run 启动时打 `process_owner = hostname:pid:uuid`；启动只收敛「无主遗留」（单进程部署）与「本机已死进程」的 Run，**不碰其它主机/仍存活 sibling 的活跃 Run**。09-30 复核确认 `recover_stale_active_run` 尚无生产调用点，跨容器遗留当前依赖用户 `force_cancel`，自动有界收敛仍待实现（AR-05b）。该能力仍在 A2 运行时统一范围外，不得伪装成「已统一」。
 - Run 状态机：`running / waiting_external / paused / cancelling → completed / cancelled / failed`；进程停止 → `AI_RUN_PROCESS_STOPPED`。
 - UI/文档标注（区分「取消」与「进程停止、不续跑」）归 **WS-G7**。
 
@@ -387,4 +387,4 @@ await runtime.claim/renew/transition/cancel/recover(...)
 1. 本文是任务运行时**唯一契约**；字段/状态/错误码/恢复语义变更必须先改本文。
 2. A2/A3/A4 的实现 PR 应引用本文对应章节编号。
 3. 新发现的方言或旁路状态追加到 §5 映射表，**不得**另开文档或静默扩表。
-4. 产品边界（Run 会丢、Lite 规模、方言预算）不进本契约，见[现行评估 §6](../../temp/architecture-assessment-2026-09-29.md#6-延续的决策与承诺边界)。
+4. 产品边界（Run 会丢、Lite 规模、方言预算）不进本契约，见[现行评估 §6](../../temp/architecture-assessment-2026-09-30.md#6-决策与承诺边界)。

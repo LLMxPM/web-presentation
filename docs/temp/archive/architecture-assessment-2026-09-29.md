@@ -1,9 +1,11 @@
+> **归档说明（2026-09-30）**：本文保留 09-29 静态基线与随后实施注记。当前结论已由 [09-30 架构评估](../architecture-assessment-2026-09-30.md) 接替；正文中的未执行、缺口及完成状态只代表原记录时间。
+
 # 架构评估（2026-09-29）
 
 > **状态：现行基线评估，静态复核完成，测试机验收未执行。**
-> **2026-09-30 实施注记：** AR-02 契约、AR-03 指标、AR-04 探针（首批）以及 AR-01 执行隔离、AR-05 兼容矩阵/Run 边界、AR-06 备份恢复入口（第二批）的代码与本地验证已完成。下文保留 2026-09-29 基线发现，不能再把这些基线缺口当作当前未修改代码的描述；最新状态、覆盖边界与结果见[计划 §6](./plans/architecture-improvement-plan-2026-09-29.md#6-实施进度与本地证据2026-09-30-第二批)。测试机门（M01–M08）仍开放。
+> **2026-09-30 实施注记：** AR-02 契约、AR-03 指标、AR-04 探针（首批）以及 AR-01 执行隔离、AR-05 兼容矩阵/Run 边界、AR-06 备份恢复入口（第二批）的代码与本地验证已完成。下文保留 2026-09-29 基线发现，不能再把这些基线缺口当作当前未修改代码的描述；最新状态、覆盖边界与结果见[计划 §6](../plans/architecture-improvement-plan-2026-09-29.md#6-实施进度与本地证据2026-09-30-第二批)。测试机门（M01–M08）仍开放。
 > 代码基线：`7bff842b306503e894b4cde5b24b8f2a8319421b`，分支 `arch-eval`；开始审查时工作区无未提交改动。
-> 执行入口：[新一轮改进与验证计划](./plans/architecture-improvement-plan-2026-09-29.md)。历史材料见[归档索引](./archive/README.md)。
+> 执行入口：[新一轮改进与验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。历史材料见[归档索引](../archive/README.md)。
 
 ## 1. 结论
 
@@ -63,7 +65,7 @@ flowchart LR
 | 跨端契约 | OpenAPI 导出、TS 生成、previewSchema JSON、错误码单源、Kit 导入闸门存在 | 错误码和导入闸门可保留；类型与结构约束仍有 AR-02 缺口 |
 | 交付 | Release 定义 Runtime/Renderer/platform/lite 镜像，含启动探针 | 发布定义不是当前 registry 可用性或最终镜像完整业务链路的证据 |
 
-依据：[租约服务](../../backend/app/services/durable_job_lease_service.py)、[列词汇](../../backend/app/services/job_runtime_vocabulary.py)、[写围栏](../../backend/app/ai/run_write_fence.py)、[Run 恢复](../../backend/app/ai/run_recovery.py)、[渲染协调器](../../backend/app/services/rendering/coordinator.py)、[质量流水线](../../.github/workflows/reusable-quality.yml)、[发布流水线](../../.github/workflows/platform-release.yml)。
+依据：[租约服务](../../../backend/app/services/durable_job_lease_service.py)、[列词汇](../../../backend/app/services/job_runtime_vocabulary.py)、[写围栏](../../../backend/app/ai/run_write_fence.py)、[Run 恢复](../../../backend/app/ai/run_recovery.py)、[渲染协调器](../../../backend/app/services/rendering/coordinator.py)、[质量流水线](../../../.github/workflows/reusable-quality.yml)、[发布流水线](../../../.github/workflows/platform-release.yml)。
 
 ## 4. 现行问题
 
@@ -73,7 +75,7 @@ flowchart LR
 
 因此，删环境变量不能证明子进程无法读取已挂载的 secret。当前静态审查确认的是信任边界不足，**没有证明用户 SFC 可直接执行任意 Node 代码，也没有进行逃逸实验**。其威胁条件应写清：编译器、插件或输入处理路径被利用后，执行进程可能取得 Worker 级身份。
 
-出口：W01 定义可信领取器与执行子进程的最小权限边界；M02 在测试机验证凭证不可读、不能领取其他任务和取消后进程回收。Lite 的同容器风险接受不能自动替代生产角色隔离。依据：[子进程环境](../../runtime/src/core/plugins/runtime-build-worker.ts)、[Runtime 镜像](../../runtime/Dockerfile)、[角色编排](../../deploy/compose/compose.runtime-roles.yml)。
+出口：W01 定义可信领取器与执行子进程的最小权限边界；M02 在测试机验证凭证不可读、不能领取其他任务和取消后进程回收。Lite 的同容器风险接受不能自动替代生产角色隔离。依据：[子进程环境](../../../runtime/src/core/plugins/runtime-build-worker.ts)、[Runtime 镜像](../../../runtime/Dockerfile)、[角色编排](../../../deploy/compose/compose.runtime-roles.yml)。
 
 ### AR-02 · 契约机械化没有形成完整的约束链（P1）
 
@@ -85,7 +87,7 @@ flowchart LR
 
 出口：W02 让生成物进入真实消费链，CI 对当前 Backend 重生成；结构校验实际消费 Schema，保留业务导入规则；对未覆盖操作逐项补精确方法/路径和行为测试。不要以增加更多字段名正则代替这一闭环。
 
-依据：[API 漂移门禁](../../tests/contracts/editor-api-types-drift.test.ts)、[手写 API 类型](../../editor/src/types/api.ts)、[生产 Schema 解析](../../backend/app/core/component_preview_schema.py)、[结构 Schema](../../backend/app/core/component_preview_schema.v1.json)、[TS 对拍](../../tests/contracts/preview-schema-parity.test.ts)、[双入口测试](../../backend/tests/contracts/test_dual_entry_contract_matrix.py)。
+依据：[API 漂移门禁](../../../tests/contracts/editor-api-types-drift.test.ts)、[手写 API 类型](../../../editor/src/types/api.ts)、[生产 Schema 解析](../../../backend/app/core/component_preview_schema.py)、[结构 Schema](../../../backend/app/core/component_preview_schema.v1.json)、[TS 对拍](../../../tests/contracts/preview-schema-parity.test.ts)、[双入口测试](../../../backend/tests/contracts/test_dual_entry_contract_matrix.py)。
 
 ### AR-03 · 队列指标会漏报渲染积压，汇总口径不适合直接做容量门槛（P1）
 
@@ -95,7 +97,7 @@ flowchart LR
 
 出口：W03 区分业务任务数、执行占用、批次续跑与供应商等待，按真实状态和租约拥有者统计。M03 容量采集必须在 W03 完成后进行。现有接口可用于粗略观察，不能直接作为 D2 验收数字。
 
-依据：[指标实现](../../backend/app/services/job_queue_metrics.py)、[RenderRequest](../../backend/app/models/render_request.py)、[渲染仓储](../../backend/app/services/rendering/repository.py)、[ExternalBatch/Task](../../backend/app/models/ai_external_task.py)、[当前指标单测](../../backend/tests/unit/test_job_queue_metrics.py)。
+依据：[指标实现](../../../backend/app/services/job_queue_metrics.py)、[RenderRequest](../../../backend/app/models/render_request.py)、[渲染仓储](../../../backend/app/services/rendering/repository.py)、[ExternalBatch/Task](../../../backend/app/models/ai_external_task.py)、[当前指标单测](../../../backend/tests/unit/test_job_queue_metrics.py)。
 
 ### AR-04 · 交付探针与真实执行链路之间仍有空档（P1）
 
@@ -107,7 +109,7 @@ Release 已定义 Renderer 发布项，不再说“没有发布流水线”；�
 
 出口：W04 完成真实业务探针和发布清单；M01/M06 验证最终镜像、两种架构与 registry。旧 Lite 合并方案保留为候选，不标记为已实施或本轮新批准。
 
-依据：[镜像探针](../../scripts/contracts/check-image-startup.py)、[check-image action](../../.github/actions/check-image/action.yml)、[Lite Dockerfile](../../deploy/docker/Dockerfile.lite)、[Lite 入口](../../deploy/docker/entrypoints/start_lite.sh)、[Lite 编排](../../deploy/compose/compose.sqlite-lite.yml)、[Renderer 执行器](../../renderer/wp_renderer/engine/executor.py)。
+依据：[镜像探针](../../../scripts/contracts/check-image-startup.py)、[check-image action](../../../.github/actions/check-image/action.yml)、[Lite Dockerfile](../../../deploy/docker/Dockerfile.lite)、[Lite 入口](../../../deploy/docker/entrypoints/start_lite.sh)、[Lite 编排](../../../deploy/compose/compose.sqlite-lite.yml)、[Renderer 执行器](../../../renderer/wp_renderer/engine/executor.py)。
 
 ### AR-05 · 多副本、重启恢复与版本兼容仍缺联合验收（P1）
 
@@ -115,7 +117,7 @@ Release 已定义 Renderer 发布项，不再说“没有发布流水线”；�
 
 Run owner 包含 hostname/pid/uuid，但恢复判定解析后只用 hostname/pid。容器重新创建导致 hostname 改变、PID 重用以及不同 PID namespace 下同名主机，都是下一轮应覆盖的条件；不能把“按 owner 过滤”升级为无条件的跨副本生命周期保证。异主机残留仍依赖空闲收敛和用户取消，验收需量化可见终态时间。
 
-Runtime 版本指纹不符时拒绝请求只说明失配能被识别。Backend/Runtime/Renderer/DB revision/Kit 的支持组合、迁移窗口和回滚次序仍需明确；[升级回滚文档](../developer/deployment/upgrade-rollback.md)目前主要要求一起回滚到兼容版本，不能替代 N/N-1 矩阵与实测。
+Runtime 版本指纹不符时拒绝请求只说明失配能被识别。Backend/Runtime/Renderer/DB revision/Kit 的支持组合、迁移窗口和回滚次序仍需明确；[升级回滚文档](../../developer/deployment/upgrade-rollback.md)目前主要要求一起回滚到兼容版本，不能替代 N/N-1 矩阵与实测。
 
 出口：W05 明确支持矩阵与降级策略；M04/M05 验证跨副本和版本组合。继续保持多副本未验收、Lite 禁止共享 SQLite 卷多副本的边界。
 
@@ -125,7 +127,7 @@ Runtime 版本指纹不符时拒绝请求只说明失配能被识别。Backend/R
 
 恢复对象是 DB、资源/产物存储、AI 加密密钥、RSA keyring、服务凭据与对应版本的组合。恢复空数据库、健康返回 200 或容器能起，均不能证明页面资源、AI 凭据解密和构建产物可用。
 
-出口：W06 编写限定测试环境的备份恢复入口与恢复清单；M07 在隔离数据副本演练，记录实际 RPO/RTO，不预填成功。依据：[备份恢复文档](../developer/deployment/backup-restore.md)、[部署脚本](../../deploy/scripts/)。
+出口：W06 编写限定测试环境的备份恢复入口与恢复清单；M07 在隔离数据副本演练，记录实际 RPO/RTO，不预填成功。依据：[备份恢复文档](../../developer/deployment/backup-restore.md)、[部署脚本](../../../deploy/scripts)。
 
 ### AR-07 · 拆分已改善改动范围，仍未消除领域耦合与大模块（P2）
 
@@ -142,11 +144,11 @@ Runtime 版本指纹不符时拒绝请求只说明失配能被识别。Backend/R
 | `editor/src/views/AssetsView.vue` | 1885 | 静态选项已抽出，筛选/详情/批量主体仍在 |
 | `editor/src/types/api.ts` | 1708 | 优先通过 W02 减少重复维护，不单纯按行拆 |
 
-分层 AST 门禁冻结了既有 `services → ai` 和路由 ORM 依赖，没有消除这些存量依赖。后续以具体变更风险决定拆分顺序，避免在契约补齐与故障验收前再进行全量目录重排。依据：[分层门禁](../../backend/tests/unit/test_layering_gates.py)。流式上传/归档内存优化保留为测量驱动项，M03 未见压力证据前不宣称它是瓶颈。
+分层 AST 门禁冻结了既有 `services → ai` 和路由 ORM 依赖，没有消除这些存量依赖。后续以具体变更风险决定拆分顺序，避免在契约补齐与故障验收前再进行全量目录重排。依据：[分层门禁](../../../backend/tests/unit/test_layering_gates.py)。流式上传/归档内存优化保留为测量驱动项，M03 未见压力证据前不宣称它是瓶颈。
 
 ### AR-08 · 文档同时混用现状、决策与历史完成记录（P2）
 
-**静态缺口，本轮部分处理。** 旧评估的问题表、能力表、计划完成表互相矛盾；[任务运行时契约](../developer/architecture/task-runtime-contract.md)前部映射还保留“仅启动恢复/启动全局收敛”等迁移前描述，本轮已标注为历史迁移基线；[Lite 决策文档](../developer/deployment/lite-scale-and-isolation.md)原先把 `docs/temp` 称为 gitignore 内部资料，本轮已修正，但已发布与目标镜像形态仍需进一步区分。
+**静态缺口，本轮部分处理。** 旧评估的问题表、能力表、计划完成表互相矛盾；[任务运行时契约](../../developer/architecture/task-runtime-contract.md)前部映射还保留“仅启动恢复/启动全局收敛”等迁移前描述，本轮已标注为历史迁移基线；[Lite 决策文档](../../developer/deployment/lite-scale-and-isolation.md)原先把 `docs/temp` 称为 gitignore 内部资料，本轮已修正，但已发布与目标镜像形态仍需进一步区分。
 
 本轮归档旧材料、统一现行入口、保留问题迁移表。正式契约和部署文档的语义更新列入 W08，按照当前代码、历史发布、目标方案三种标签分别表述；不能通过改文档宣称实现已经改变。
 
@@ -173,7 +175,7 @@ Runtime 版本指纹不符时拒绝请求只说明失配能被识别。Backend/R
 | :--- | :--- | :--- |
 | Lite 与双库 | Lite 为长期一等公民；目标 5–10 人、预览并发约 3，验收前不是 SLA | M03 低于目标，或产品目标变更 |
 | 普通 Run | 允许因 Backend 进程停止而中断，不承诺自动恢复；external job 另按租约处理 | 产品提出可恢复普通 Run |
-| 方言成本 | 保持现有从宽预算，不因本轮新增一套阈值 | 按[方言预算](../developer/architecture/dialect-budget.md)既有触发器复审 |
+| 方言成本 | 保持现有从宽预算，不因本轮新增一套阈值 | 按[方言预算](../../developer/architecture/dialect-budget.md)既有触发器复审 |
 | 截图环境指纹、手填 profile、事件进程锁 | 历史已接受项不自动升为 P1 | 强一致目标变化或出现具体故障 |
 | SQLite 内存库拓扑边角 | 原 R-CP5 指 `sqlite :memory:`，不要误写为 Redis `memory://` 未拒多实例 | 成为真实受支持部署需求时 |
 | Lite 同容器风险与合并方案 | 保留旧决策的自用/内部团队威胁模型；Renderer 内置仍是待实现候选 | 不可信成员代码、多租户、容量不达标或产品改变交付要求 |
@@ -183,4 +185,4 @@ Runtime 版本指纹不符时拒绝请求只说明失配能被识别。Backend/R
 
 本轮仅交付本评估、新计划、历史归档和导航修复。代码缺口没有在本轮修改；测试源码的存在、历史测试成功以及本地文档静态检查，均不写作本轮应用测试通过。
 
-全部需要测试机器的动作统一安排在[计划 §4](./plans/architecture-improvement-plan-2026-09-29.md#4-下一轮测试机执行矩阵)，状态为**未执行**：最终镜像截图与下载、权限隔离验证、Lite 容量、双库竞争、跨副本故障、版本组合、registry/发布验证、系统恢复和 UI/跨仓回归。没有可核对的结果记录前，不关闭相应问题。
+全部需要测试机器的动作统一安排在[计划 §4](../plans/architecture-improvement-plan-2026-09-29.md#4-下一轮测试机执行矩阵)，状态为**未执行**：最终镜像截图与下载、权限隔离验证、Lite 容量、双库竞争、跨副本故障、版本组合、registry/发布验证、系统恢复和 UI/跨仓回归。没有可核对的结果记录前，不关闭相应问题。

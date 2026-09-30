@@ -1,4 +1,4 @@
-> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/temp/image-delivery-research-2026-09-29.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构评估](../architecture-assessment-2026-09-29.md) · [改进与下一轮验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。
+> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/temp/image-delivery-research-2026-09-29.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构评估](../architecture-assessment-2026-09-30.md) · [改进与下一轮验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。
 
 <!-- 文件功能：镜像交付现状专项调研（实测证据快照，2026-09-29）；供 WS-G1/G3/G5 与专项计划 plans/deployment-image-consolidation-2026-09-29.md 使用。 -->
 # 镜像交付现状调研（Lite 单镜像 / Renderer 拆分）

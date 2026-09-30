@@ -1,4 +1,4 @@
-> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/developer/runtime-integration/rich-text-source-range-hardening-plan.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构评估](../architecture-assessment-2026-09-29.md) · [改进与下一轮验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。
+> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/developer/runtime-integration/rich-text-source-range-hardening-plan.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构评估](../architecture-assessment-2026-09-30.md) · [改进与下一轮验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。
 
 # 富文本源码范围定位加固计划
 

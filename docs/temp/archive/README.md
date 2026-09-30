@@ -1,13 +1,14 @@
 # 历史评估与计划归档
 
-整理日期：2026-09-29。本文是历史材料索引；[现行评估](../architecture-assessment-2026-09-29.md)与[现行计划](../plans/architecture-improvement-plan-2026-09-29.md)是后续工作入口。
+整理日期：2026-09-30。本文是历史材料索引；[现行评估](../architecture-assessment-2026-09-30.md)与[现行计划](../plans/architecture-improvement-plan-2026-09-29.md)是后续工作入口。
 
-归档不是删除证据，也不是确认旧计划全部完成。历史文档内的“现行”“已完成”、测试数字、registry 状态和排期只代表当时记录。未完成项已在新评估和计划中重新分类；测试机工作统一留到下一轮。
+归档不是删除证据，也不是确认旧计划全部完成。历史文档内的“现行”“已完成”、测试数字、registry 状态和排期只代表当时记录。未完成项在现行评估与计划中维护；随后实机证据见 [09-30 运行记录](../runs/2026-09-30-a06120e/summary.md)。
 
 ## 本次归档
 
 | 文档 | 原位置 | 接续方式 |
 | :--- | :--- | :--- |
+| [09-29 架构基线评估](./architecture-assessment-2026-09-29.md) | `docs/temp/architecture-assessment-2026-09-29.md` | 09-30 纳入实机进展，复现旧 ORM 缺列，收紧 Run 收敛、版本传播与完整验收范围 |
 | [09-28 架构评估](./architecture-assessment-2026-09-28.md) | `docs/temp/architecture-assessment-2026-09-28.md` | 新评估按当前代码重核，修正多处过期结论 |
 | [09-28 残留工作计划](./remaining-work-2026-09-28.md) | `docs/temp/plans/remaining-work-2026-09-28.md` | WS-A–H 完成/残留映射见新评估 §5 |
 | [镜像交付调研](./image-delivery-research-2026-09-29.md) | `docs/temp/image-delivery-research-2026-09-29.md` | 保留历史镜像证据；本轮不重新背书体积、tag 与 registry 状态 |
@@ -15,7 +16,7 @@
 | [旧测试机执行清单](./test-machine-runbook-2026-09-29.md) | `docs/temp/plans/test-machine-runbook-2026-09-29.md` | 由新计划 M01–M08 替代；原清单也未开跑 |
 | [富文本源码范围加固计划](./rich-text-source-range-hardening-plan.md) | `docs/developer/runtime-integration/rich-text-source-range-hardening-plan.md` | 当前 shell 分类、降级与测试源码已存在；下一轮 M08 验证交互 |
 
-以上六份正文保留；仅添加归档说明并调整相对链接。其他历史材料中指向已移动文档的链接同步修复。
+以上历史正文保留；仅添加归档说明并调整相对链接。其他历史材料中指向已移动文档的链接同步修复。
 
 ## 既有历史评估
 
