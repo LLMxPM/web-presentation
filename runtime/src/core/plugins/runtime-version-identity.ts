@@ -5,6 +5,11 @@ import runtimeKitManifest from '../../runtime-kit/manifest/runtime-kit.manifest.
 export const RUNTIME_VERSION_PATH = '/__runtime_version/'
 let imageBuildId: string | undefined
 
+/** 使用纯 URL 安全字符，避免 Vite 对已转义的 +/% 再编码而破坏字体与图片地址。 */
+export function encodeRuntimeVersionPath(fingerprint: string): string {
+  return `v1.${Buffer.from(fingerprint, 'utf8').toString('base64url')}`
+}
+
 /** 读取镜像构建时生成的身份；本地开发可用 dev，交付镜像缺身份必须失败。 */
 export function resolveRuntimeBuildId(): string {
   const configured = String(process.env.RUNTIME_BUILD_ID || '').trim()
@@ -52,7 +57,7 @@ export function assertExpectedRuntimeFingerprint(
 /** 给公开地址/Vite base 增加版本路径，重复调用保持同一个挂载路径。 */
 export function withRuntimeVersionBase(base: string, fingerprint = formatRuntimeVersionFingerprint()): string {
   const normalized = base === './' ? '' : base.replace(/\/+$/, '')
-  const suffix = `${RUNTIME_VERSION_PATH}${encodeURIComponent(fingerprint)}`
+  const suffix = `${RUNTIME_VERSION_PATH}${encodeRuntimeVersionPath(fingerprint)}`
   if (normalized.endsWith(suffix)) return normalized
   return `${normalized}${suffix}`
 }
@@ -65,7 +70,13 @@ export function assertRuntimeVersionPath(url: string, local: string): void {
   const encoded = pathname.slice(marker + RUNTIME_VERSION_PATH.length).split('/')[0]
   let expected: string
   try {
-    expected = decodeURIComponent(encoded || '')
+    if (encoded.startsWith('v1.')) {
+      expected = Buffer.from(encoded.slice(3), 'base64url').toString('utf8')
+      if (encodeRuntimeVersionPath(expected) !== encoded) throw new Error('非法版本路径编码')
+    } else {
+      // 保留历史路径的失配诊断，新 HTML 与子请求统一生成 v1 URL 安全编码。
+      expected = decodeURIComponent(encoded || '')
+    }
   } catch {
     expected = 'invalid-version-path'
   }

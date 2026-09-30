@@ -63,8 +63,9 @@ const net = require('node:net');
   assert(health.runtime_kit_version && health.build_id && health.build_id !== 'dev');
   const fingerprint = health.runtime_kit_version + '+' + health.build_id;
   const mount = (process.env.RUNTIME_SERVER_BASE_PATH || '/').replace(/\/+$/, '');
-  const base = mount + '/__runtime_version/' + encodeURIComponent(fingerprint) + '/';
-  const wrong = mount + '/__runtime_version/' + encodeURIComponent(fingerprint + '-wrong') + '/';
+  const encodeVersion = value => 'v1.' + Buffer.from(value).toString('base64url');
+  const base = mount + '/__runtime_version/' + encodeVersion(fingerprint) + '/';
+  const wrong = mount + '/__runtime_version/' + encodeVersion(fingerprint + '-wrong') + '/';
   for (const path of ['src/main.ts', 'src/styles/global.css', '@vite/client']) {
     const response = await fetch(origin + base + path);
     assert.equal(response.status, 200, path + ' 正常版本不可用');

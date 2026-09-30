@@ -22,9 +22,12 @@ describe('真实 Vite 版本路径', () => {
       writeFile(join(root, 'main.js'), 'import "./style.css"; import { value } from "./dep.js"; console.log(value)'),
       writeFile(join(root, 'dep.js'), 'export const value = "same-release"'),
       writeFile(join(root, 'style.css'), 'body { color: red }'),
+      writeFile(join(root, 'font.js'), 'export const url = new URL("./font.svg", import.meta.url).href'),
+      writeFile(join(root, 'font.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><text>asset</text></svg>'),
     ])
     server = await createServer({
       configFile: false, root, base, plugins: [runtimeVersionGuard(identity)],
+      build: { assetsInlineLimit: 0 },
       server: { host: '127.0.0.1', port: 0 }, logLevel: 'silent',
     })
     await server.listen()
@@ -58,6 +61,15 @@ describe('真实 Vite 版本路径', () => {
       expect(response.status).toBe(409)
       expect(await response.json()).toMatchObject({ code: 'PREVIEW_VERSION_SKEW' })
     }
+  })
+
+  it('Vite 转换 new URL 静态资源时不会再次编码版本路径，字体/图片仍可读取', async () => {
+    const source = await (await fetch(`${origin}${base}font.js`)).text()
+    expect(source).toContain(`${base}font.svg`)
+    const path = source.match(/new URL\(\s*['"]([^'"\n]+font\.svg)['"]/)?.[1]
+    expect(path).toBe(`${base}font.svg`)
+    expect(path).not.toContain('%25')
+    expect((await fetch(origin + path!)).status).toBe(200)
   })
 
   it('跨版本 HMR Upgrade 不得先完成 WebSocket 握手', async () => {
