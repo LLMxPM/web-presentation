@@ -211,7 +211,13 @@
 
     </div>
 
-    <input ref="replaceFileInput" type="file" class="hidden" :accept="activeReplaceAccept" @change="handleReplaceFileChange" />
+    <input
+      ref="replaceFileInput"
+      type="file"
+      class="hidden"
+      :accept="detail.activeReplaceAccept.value"
+      @change="handleReplaceFileChange"
+    />
     <input
       ref="uploadFileInput"
       type="file"
@@ -390,224 +396,20 @@
       </template>
     </UiDialog>
 
-    <UiDialog
-      :open="!!detailAsset"
-      size="workbench"
-      body-preset="immersive"
-      :show-header="false"
-      overlay-class="bg-overlay/70 backdrop-blur-sm"
-      :z-index="220"
-      @update:open="handleDetailDialogVisibleChange"
-    >
-      <div v-if="detailAsset" class="grid h-full min-h-0 grid-rows-[minmax(280px,0.95fr)_minmax(0,1.05fr)] overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_460px] xl:grid-rows-1">
-        <section class="flex min-h-0 flex-col bg-canvas">
-          <header class="flex shrink-0 items-center justify-between border-b border-border bg-surface px-5 py-4">
-            <div class="min-w-0">
-              <h2 class="truncate text-base font-bold text-text">{{ detailAsset.name }}</h2>
-              <p class="mt-1 truncate font-mono text-xs text-text-disabled">{{ detailAsset.original_name }}</p>
-            </div>
-            <BaseCloseButton label="关闭资源详情" @click="closeAssetDetail" />
-          </header>
-          <div class="min-h-0 flex-1 p-5">
-            <AssetPreviewFrame
-              :key="`${detailAsset.id}:${detailAsset.file_hash}`"
-              class="h-full"
-              :workspace-id="workspaceId"
-              :asset="detailAsset"
-            />
-          </div>
-        </section>
-
-        <aside class="flex min-h-0 flex-col border-t border-border bg-surface xl:border-l xl:border-t-0">
-              <div class="shrink-0 border-b border-border-muted bg-surface">
-                <div class="px-5 pb-3 pt-4">
-                  <div class="grid grid-cols-3 rounded-xl bg-surface-muted p-1">
-                    <UiButton
-                      v-for="tab in detailTabs"
-                      :key="tab.value"
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      class="h-8 rounded-lg px-3 text-xs font-bold transition-colors"
-                      :class="detailTab === tab.value ? 'bg-surface text-accent shadow-sm' : 'text-text-muted hover:text-text'"
-                      @click="detailTab = tab.value"
-                    >
-                      {{ tab.label }}
-                    </UiButton>
-                  </div>
-                </div>
-                <div class="flex items-center justify-between gap-3 border-t border-border-muted bg-canvas/80 px-5 py-3">
-                  <span class="shrink-0 text-xs font-black uppercase tracking-widest text-text-disabled">资源操作</span>
-                  <div class="flex min-w-0 flex-wrap justify-end gap-2">
-                    <UiButton
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      title="替换文件"
-                      @click="triggerReplace(detailAsset)"
-                    >
-                      <Replace class="h-3.5 w-3.5" />
-                      替换
-                    </UiButton>
-                    <UiButton
-                      v-if="detailAsset.status === 'active'"
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      title="归档资源"
-                      @click="archiveSelected"
-                    >
-                      <Archive class="h-3.5 w-3.5" />
-                      归档
-                    </UiButton>
-                    <UiButton
-                      v-if="detailAsset.status === 'archived' && !detailAsset.history_kind"
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      title="恢复资源"
-                      @click="restoreSelected"
-                    >
-                      <RotateCcw class="h-3.5 w-3.5" />
-                      恢复
-                    </UiButton>
-                    <UiButton
-                      v-if="detailAsset.status === 'archived'"
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      title="删除资源"
-                      @click="deleteSelected"
-                    >
-                      <Trash2 class="h-3.5 w-3.5" />
-                      删除
-                    </UiButton>
-                  </div>
-                </div>
-              </div>
-
-              <div class="min-h-0 flex-1 overflow-y-auto p-3">
-                <div v-if="detailTab === 'basic'" class="space-y-4">
-                  <section class="rounded-xl border border-border bg-canvas p-4">
-                    <div class="flex items-start justify-between gap-3">
-                      <div class="min-w-0">
-                        <h3 class="truncate text-sm font-bold text-text">资源摘要</h3>
-                        <p class="mt-1 truncate font-mono text-xs text-text-disabled">{{ detailAsset.file_hash }}</p>
-                      </div>
-                      <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black" :class="detailAsset.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-border text-text-secondary'">
-                        {{ resolveAssetStatusBadgeText(detailAsset) }}
-                      </span>
-                    </div>
-                    <dl class="mt-4 grid grid-cols-2 gap-3 text-xs">
-                      <div><dt class="text-text-muted">类型</dt><dd class="mt-1 font-bold text-text">{{ detailAsset.asset_type }}</dd></div>
-                      <div><dt class="text-text-muted">大小</dt><dd class="mt-1 font-bold text-text">{{ formatBytes(detailAsset.file_size) }}</dd></div>
-                      <div><dt class="text-text-muted">Content-Type</dt><dd class="mt-1 truncate font-mono text-text-emphasis">{{ detailAsset.content_type || '-' }}</dd></div>
-                      <div><dt class="text-text-muted">引用数</dt><dd class="mt-1 font-bold text-text">{{ referenceCountText }}</dd></div>
-                      <div><dt class="text-text-muted">近似比例</dt><dd class="mt-1 font-bold text-text">{{ formatAssetAspectRatio(detailAsset) }}</dd></div>
-                      <div><dt class="text-text-muted">比例来源</dt><dd class="mt-1 font-bold text-text">{{ formatAspectRatioSource(detailAsset.aspect_ratio_source) }}</dd></div>
-                    </dl>
-                    <UiButton
-                      v-if="canRecalculateDetailAspectRatio"
-                      class="mt-4"
-                      variant="ghost"
-                      size="sm"
-                      :disabled="backfillRunning"
-                      @click="recalculateDetailAssetAspectRatio"
-                    >
-                      <RefreshCw class="h-3.5 w-3.5" />
-                      重新计算比例
-                    </UiButton>
-                  </section>
-                  <div>
-                    <label class="mb-1 block text-xs font-bold text-text-muted">资源 name</label>
-                    <UiInput v-model="editForm.name" />
-                  </div>
-                  <div>
-                    <label class="mb-1 block text-xs font-bold text-text-muted">展示文件名</label>
-                    <UiInput v-model="editForm.original_name" />
-                  </div>
-                  <div>
-                    <label class="mb-1 block text-xs font-bold text-text-muted">描述</label>
-                    <UiInput v-model="editForm.description" type="textarea" :rows="4" />
-                  </div>
-                  <div>
-                    <label class="mb-1 block text-xs font-bold text-text-muted">标签，逗号分隔</label>
-                    <UiInput v-model="editTagsText" />
-                  </div>
-                  <div v-if="canEditAssetAspectRatio(detailAsset)">
-                    <label class="mb-1 block text-xs font-bold text-text-muted">近似比例</label>
-                    <UiInput v-model="editForm.approx_aspect_ratio" placeholder="16:9" />
-                  </div>
-                </div>
-
-                <div v-else-if="detailTab === 'content'" class="flex h-full min-h-0 flex-col">
-                  <div v-if="!detailAsset.content_editable" class="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border bg-canvas p-6 text-center">
-                    <div>
-                      <FileText class="mx-auto mb-3 h-10 w-10 text-text-faint" />
-                      <p class="text-sm font-bold text-text-secondary">该资源不支持文本内容编辑</p>
-                      <p class="mt-2 text-xs leading-6 text-text-disabled">位图图标和位图图片只能复制、归档、删除或维护元数据。</p>
-                    </div>
-                  </div>
-                  <template v-else>
-                    <UiInput v-model="contentDraft" type="textarea" textarea-mode="fill" class="font-mono text-xs leading-5" />
-                    <p class="mt-3 text-xs text-text-muted">写入内容会自动保留写入前副本。</p>
-                  </template>
-                </div>
-
-                <div v-else-if="detailTab === 'references'" class="space-y-4">
-                  <div class="flex items-center justify-between">
-                    <h3 class="text-sm font-bold text-text-emphasis">引用明细</h3>
-                    <UiButton type="button" variant="ghost" size="xs" @click="loadReferences">刷新</UiButton>
-                  </div>
-                  <div v-if="referencesLoading" class="text-sm text-text-muted">正在检查引用...</div>
-                  <div v-else-if="!referenceSummary?.has_references" class="rounded-xl bg-success-muted p-4 text-sm font-bold text-success-strong">未发现引用阻断。</div>
-                  <div v-else class="space-y-3">
-                    <div class="rounded-xl bg-danger-muted p-4 text-xs leading-6 text-danger-strong">
-                      页面 {{ referenceSummary.page_count }}，组件 {{ referenceSummary.component_count }}，组件版本 {{ referenceSummary.component_version_count }}，主题 {{ referenceSummary.theme_count }}，字体 {{ referenceSummary.font_count }}。
-                    </div>
-                    <section v-for="group in referenceGroups" :key="group.kind" class="rounded-xl border border-border bg-surface p-4">
-                      <div class="mb-3 flex items-center justify-between">
-                        <h4 class="text-sm font-bold text-text-emphasis">{{ group.label }}</h4>
-                        <span class="rounded-full bg-surface-muted px-2 py-0.5 text-xs font-bold text-text-muted">{{ group.items.length }}</span>
-                      </div>
-                      <div class="space-y-2">
-                        <UiButton
-                          v-for="item in group.items"
-                          :key="`${item.kind}-${item.id}-${item.version_no || ''}`"
-                          type="button"
-                          class="flex w-full items-center justify-between rounded-lg bg-canvas px-3 py-2 text-left text-xs transition-colors hover:bg-surface-selected"
-                          @click="goToReference(item)"
-                        >
-                          <span class="min-w-0 truncate font-semibold text-text-emphasis">{{ formatReferenceName(item) }}</span>
-                          <ArrowUpRight v-if="canOpenReference(item)" class="h-3.5 w-3.5 shrink-0 text-text-disabled" />
-                        </UiButton>
-                      </div>
-                    </section>
-                  </div>
-                </div>
-              </div>
-
-              <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-border-muted bg-canvas px-5 py-4">
-                <UiButton variant="ghost" size="sm" @click="closeAssetDetail">关闭</UiButton>
-                <UiButton v-if="detailTab === 'basic'" size="sm" :disabled="saving" @click="saveAssetMetadata">保存信息</UiButton>
-                <UiButton v-if="detailTab === 'content' && detailAsset.content_editable" size="sm" :disabled="saving || !canSaveContent" @click="saveContent">
-                  <Save class="h-3.5 w-3.5" />
-                  写入内容
-                </UiButton>
-              </footer>
-            </aside>
-      </div>
-    </UiDialog>
+    <AssetDetailDialog
+      :workspace-id="workspaceId"
+      :detail="detail"
+      :backfill-running="backfillRunning"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
 import {
   Archive,
-  ArrowUpRight,
   BarChart3,
   Copy,
   Download,
@@ -617,10 +419,8 @@ import {
   ListChecks,
   PenTool,
   RefreshCw,
-  Replace,
   RotateCcw,
   Ruler,
-  Save,
   Sigma,
   Trash2,
   Upload,
@@ -630,18 +430,10 @@ import {
 } from '@lucide/vue'
 
 import {
-  archiveWorkspaceAsset,
   createAssetRenderHintBackfillJobs,
   createWorkspaceAssetContent,
-  deleteWorkspaceAsset,
-  getWorkspaceAssetContent,
   importWorkspaceAssetPackage,
   listWorkspaceAssets,
-  previewWorkspaceAssetReferences,
-  replaceWorkspaceAssetFile,
-  restoreWorkspaceAsset,
-  updateWorkspaceAsset,
-  updateWorkspaceAssetContent,
   uploadWorkspaceAsset,
   waitForAssetRenderHintBackfillJobGroup,
 } from '@/api/assets'
@@ -651,38 +443,31 @@ import DataState from '@/components/patterns/DataState.vue'
 import PageHeader from '@/components/patterns/PageHeader.vue'
 import SelectionToolbar from '@/components/patterns/SelectionToolbar.vue'
 import ToolPanel from '@/components/patterns/ToolPanel.vue'
-import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
-import { ASSET_UPLOAD_ACCEPT, getAcceptedAssetExtensionText, isAcceptedAssetFile } from '@/components/project/asset-manager'
+import { ASSET_UPLOAD_ACCEPT } from '@/components/project/asset-manager'
 import type { AgentMutationRefreshEvent } from '@/components/agent/agent-mutation-refresh'
 import { UiButton, UiCheckbox, UiDialog, UiIconButton, UiInput, UiRadioGroup, UiSelect } from '@/components/ui'
-import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
-import type { AssetReferenceSummary, AssetRenderHintBackfillJobGroup, AssetRenderHintBackfillMode, AssetResponse, AssetType } from '@/types/api'
+import type { AssetRenderHintBackfillJobGroup, AssetRenderHintBackfillMode, AssetResponse, AssetType } from '@/types/api'
 import { createConfirm, Message } from '@/utils/message'
-import { buildWorkspaceComponentsPath } from '@/utils/workspace-routes'
+import AssetDetailDialog from '@/views/assets/AssetDetailDialog.vue'
 import AssetFilterSidebar from '@/views/assets/AssetFilterSidebar.vue'
 import { useAssetBatchSelection } from '@/views/assets/useAssetBatchSelection'
+import { useAssetDetail } from '@/views/assets/useAssetDetail'
 import { useAssetListFilters } from '@/views/assets/useAssetListFilters'
 import {
   ASSET_TYPE_OPTIONS,
   CREATABLE_ASSET_TYPES,
-  DETAIL_TABS,
-  REFERENCE_GROUP_LABELS,
   isBackfillableAssetType,
-  type AssetReferenceItem,
   type BackfillableAssetType,
-  type DetailTab,
 } from '@/views/asset-view-options'
 
 const route = useRoute()
-const router = useRouter()
 const loading = ref(false)
 const assetsLoadError = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
 const packageImporting = ref(false)
 const backfillRunning = ref(false)
-const referencesLoading = ref(false)
 const createMode = ref(false)
 const uploadMode = ref(false)
 const backfillDialogVisible = ref(false)
@@ -709,6 +494,31 @@ const {
   loadTags: loadTagsRaw,
 } = useAssetListFilters({ onFilterResetPage: resetPage })
 
+const detail = useAssetDetail({
+  workspaceId,
+  activeView,
+  page,
+  assets,
+  backfillRunning,
+  onRefresh: () => refreshAssets(),
+  onRefreshWithPageFallback: () => refreshAssetsWithPageFallback(),
+  onRefreshTags: () => loadTags(),
+})
+
+const {
+  detailAsset,
+  selectedAsset,
+  openAssetDetail,
+  syncDetailAssetAfterBackfill,
+  resolveAssetStatusBadgeText,
+  handleReplaceFileChange,
+} = detail
+
+const replaceFileInput = ref<HTMLInputElement | null>(null)
+watch(replaceFileInput, (el) => {
+  detail.replaceFileInput.value = el
+}, { immediate: true })
+
 const {
   selectionMode,
   batchOperating,
@@ -734,32 +544,15 @@ const {
   activeView,
   assets,
   onAfterBatch: async (assetIds) => {
-    closeDetailIfSelected(assetIds)
+    detail.closeDetailIfSelected(assetIds)
     await refreshAssetsWithPageFallback()
   },
 })
 
-const selectedAsset = ref<AssetResponse | null>(null)
-const detailAsset = ref<AssetResponse | null>(null)
-const detailTab = ref<DetailTab>('basic')
-const contentDraft = ref('')
-const originalContent = ref('')
-const referenceSummary = ref<AssetReferenceSummary | null>(null)
-const replaceFileInput = ref<HTMLInputElement | null>(null)
 const uploadFileInput = ref<HTMLInputElement | null>(null)
 const packageFileInput = ref<HTMLInputElement | null>(null)
-const replacingAsset = ref<AssetResponse | null>(null)
 const openedQueryAssetId = ref<number | null>(null)
-const editForm = reactive({
-  name: '',
-  original_name: '',
-  description: '',
-  approx_aspect_ratio: '',
-})
-const editTagsText = ref('')
-const originalApproxAspectRatioText = ref('')
 
-const detailTabs = DETAIL_TABS
 const assetTypeOptions = ASSET_TYPE_OPTIONS
 const creatableTypes = CREATABLE_ASSET_TYPES
 const createForm = reactive({
@@ -798,46 +591,6 @@ const workspaceTitle = computed(() => {
   return workspaceName ? `${workspaceName} · 资源库` : '资源库'
 })
 const activeUploadAccept = computed(() => ASSET_UPLOAD_ACCEPT[uploadForm.asset_type])
-const canSaveContent = computed(() => (
-  Boolean(detailAsset.value?.content_editable)
-  && detailAsset.value?.status === 'active'
-  && !detailAsset.value?.history_kind
-  && contentDraft.value.trim() !== ''
-  && contentDraft.value !== originalContent.value
-))
-const referenceItems = computed<AssetReferenceItem[]>(() => {
-  return (referenceSummary.value?.references || []).map(item => ({
-    kind: String(item.kind || ''),
-    id: Number(item.id),
-    component_id: item.component_id == null ? undefined : Number(item.component_id),
-    name: item.name == null ? undefined : String(item.name),
-    version_no: item.version_no == null ? undefined : Number(item.version_no),
-  }))
-})
-const referenceGroups = computed(() => {
-  return Object.entries(REFERENCE_GROUP_LABELS)
-    .map(([kind, label]) => ({
-      kind,
-      label,
-      items: referenceItems.value.filter(item => item.kind === kind),
-    }))
-    .filter(group => group.items.length > 0)
-})
-const referenceCountText = computed(() => {
-  if (referencesLoading.value) return '检查中'
-  if (!referenceSummary.value?.has_references) return '0'
-  return String(
-    referenceSummary.value.page_count
-    + referenceSummary.value.component_count
-    + referenceSummary.value.component_version_count
-    + referenceSummary.value.theme_count
-    + referenceSummary.value.font_count,
-  )
-})
-const activeReplaceAccept = computed(() => {
-  const assetType = replacingAsset.value?.asset_type || detailAsset.value?.asset_type
-  return assetType ? ASSET_UPLOAD_ACCEPT[assetType] : ''
-})
 const hasBackfillTypeSelection = computed(() => (
   backfillForm.image
   || backfillForm.video
@@ -869,16 +622,7 @@ const canApplyBackfillPreview = computed(() => (
   && backfillPreviewUpdatableAssetIds.value.length > 0
   && Boolean(backfillResult.value)
 ))
-const canRecalculateDetailAspectRatio = computed(() => {
-  const asset = detailAsset.value
-  return Boolean(
-    asset
-    && asset.status === 'active'
-    && !asset.history_kind
-    && isBackfillableAssetType(asset.asset_type)
-    && (!asset.approx_aspect_ratio || asset.aspect_ratio_source === 'auto')
-  )
-})
+
 
 watch(
   [workspaceId, activeView, assetTypeFilter, activeTag, searchKeyword, sortValue, page, pageSize],
@@ -940,7 +684,7 @@ async function loadTags(): Promise<void> {
 function syncSelectionAfterListLoad(): void {
   if (!selectedAsset.value) {
     selectedAsset.value = assets.value[0] ?? null
-    referenceSummary.value = null
+    detail.referenceSummary.value = null
     return
   }
   const latest = assets.value.find(asset => asset.id === selectedAsset.value?.id) ?? null
@@ -965,22 +709,22 @@ function handleAssetCardClick(asset: AssetResponse): void {
 
 
 function handleGlobalAgentAssetUpdated(event: Event): void {
-  const detail = (event as CustomEvent<AgentMutationRefreshEvent>).detail
-  if (!detail) {
+  const payload = (event as CustomEvent<AgentMutationRefreshEvent>).detail
+  if (!payload) {
     return
   }
-  if (detail.workspaceId !== null && detail.workspaceId !== undefined && Number(detail.workspaceId) !== workspaceId.value) {
+  if (payload.workspaceId !== null && payload.workspaceId !== undefined && Number(payload.workspaceId) !== workspaceId.value) {
     return
   }
-  const updatedAssetId = Number(detail.assetId)
+  const updatedAssetId = Number(payload.assetId)
   void refreshAssets()
   void loadTags()
-  if (Number.isFinite(updatedAssetId) && detailAsset.value?.id === updatedAssetId) {
-    if (detailTab.value === 'content') {
-      void loadContent()
+  if (Number.isFinite(updatedAssetId) && detail.detailAsset.value?.id === updatedAssetId) {
+    if (detail.detailTab.value === 'content') {
+      void detail.loadContent()
     }
-    if (detailTab.value === 'references') {
-      void loadReferences()
+    if (detail.detailTab.value === 'references') {
+      void detail.loadReferences()
     }
   }
 }
@@ -993,67 +737,6 @@ function openQueryAssetIfNeeded(): void {
   openedQueryAssetId.value = assetId
   void openAssetDetail(matched)
 }
-
-async function openAssetDetail(asset: AssetResponse): Promise<void> {
-  selectedAsset.value = asset
-  detailAsset.value = asset
-  detailTab.value = 'basic'
-  syncEditForm(asset)
-  referenceSummary.value = null
-  contentDraft.value = ''
-  originalContent.value = ''
-  await Promise.all([loadContent(), loadReferences()])
-}
-
-function closeAssetDetail(): void {
-  detailAsset.value = null
-}
-
-/**
- * 同步资源详情弹窗显隐状态，关闭时清空当前详情资源。
- * @param value 弹窗目标可见状态
- */
-function handleDetailDialogVisibleChange(value: boolean): void {
-  if (!value) {
-    closeAssetDetail()
-  }
-}
-
-function syncEditForm(asset: AssetResponse): void {
-  editForm.name = asset.name
-  editForm.original_name = asset.original_name
-  editForm.description = asset.description ?? ''
-  editForm.approx_aspect_ratio = asset.approx_aspect_ratio ?? ''
-  originalApproxAspectRatioText.value = editForm.approx_aspect_ratio
-  editTagsText.value = (asset.tags ?? []).join(', ')
-}
-
-async function loadContent(): Promise<void> {
-  const asset = detailAsset.value
-  if (!Number.isFinite(workspaceId.value) || !asset?.content_editable) return
-  try {
-    const result = await getWorkspaceAssetContent(workspaceId.value, asset.id)
-    contentDraft.value = result.content
-    originalContent.value = result.content
-  } catch (error) {
-    Message.error(getErrorMessage(error, '读取资源内容失败'))
-  }
-}
-
-async function loadReferences(): Promise<void> {
-  const asset = detailAsset.value || selectedAsset.value
-  if (!Number.isFinite(workspaceId.value) || !asset) return
-  referencesLoading.value = true
-  try {
-    referenceSummary.value = await previewWorkspaceAssetReferences(workspaceId.value, asset.id)
-  } catch (error) {
-    Message.error(getErrorMessage(error, '读取引用关系失败'))
-  } finally {
-    referencesLoading.value = false
-  }
-}
-
-
 
 function openUploadForm(): void {
   uploadForm.asset_type = assetTypeFilter.value || 'image'
@@ -1082,7 +765,7 @@ async function handleUploadFileChange(event: Event): Promise<void> {
   let successCount = 0
   let firstUploaded: AssetResponse | null = null
   let firstError = ''
-  const tags = normalizeTags(uploadTagsText.value)
+  const tags = uploadTagsText.value.split(/[,，]/).map(item => item.trim()).filter(Boolean)
   try {
     for (const file of files) {
       try {
@@ -1225,21 +908,6 @@ async function applyBackfillPreview(): Promise<void> {
   }
 }
 
-async function recalculateDetailAssetAspectRatio(): Promise<void> {
-  const asset = detailAsset.value
-  if (!Number.isFinite(workspaceId.value) || !asset || !isBackfillableAssetType(asset.asset_type)) return
-  try {
-    const completed = await executeBackfill({
-      mode: 'apply',
-      assetIds: [asset.id],
-      assetTypes: [asset.asset_type],
-    })
-    showBackfillResultMessage(completed, 'apply')
-  } catch (error) {
-    Message.error(getErrorMessage(error, '重新计算资源比例失败。'))
-  }
-}
-
 async function executeBackfill(options: {
   mode: AssetRenderHintBackfillMode
   assetIds?: number[]
@@ -1300,115 +968,6 @@ function showBackfillResultMessage(group: AssetRenderHintBackfillJobGroup, mode:
   Message.warning(`资源比例${actionText}部分完成：失败 ${group.failed_count} 个，${group.failures[0]?.detail || '请查看结果列表。'}`)
 }
 
-function syncDetailAssetAfterBackfill(): void {
-  if (!detailAsset.value) return
-  const refreshed = assets.value.find(asset => asset.id === detailAsset.value?.id)
-  if (refreshed) {
-    detailAsset.value = refreshed
-    selectedAsset.value = refreshed
-    syncEditForm(refreshed)
-  }
-}
-
-async function saveAssetMetadata(): Promise<void> {
-  if (!Number.isFinite(workspaceId.value) || !detailAsset.value) return
-  if (!editForm.name.trim() || !editForm.original_name.trim()) {
-    Message.error('资源 name 和展示文件名不能为空')
-    return
-  }
-  saving.value = true
-  try {
-    const approxAspectRatio = buildAspectRatioUpdateValue()
-    const updated = await updateWorkspaceAsset(
-      workspaceId.value,
-      detailAsset.value.id,
-      editForm.name.trim(),
-      editForm.original_name.trim(),
-      normalizeTags(editTagsText.value),
-      editForm.description.trim() || null,
-      approxAspectRatio,
-    )
-    Message.success('资源信息已保存')
-    detailAsset.value = updated
-    selectedAsset.value = updated
-    syncEditForm(updated)
-    await Promise.all([refreshAssets(), loadTags()])
-  } catch (error) {
-    Message.error(getErrorMessage(error, '保存资源信息失败'))
-  } finally {
-    saving.value = false
-  }
-}
-
-async function saveContent(): Promise<void> {
-  if (!Number.isFinite(workspaceId.value) || !detailAsset.value || !canSaveContent.value) return
-  saving.value = true
-  try {
-    const updated = await updateWorkspaceAssetContent(workspaceId.value, detailAsset.value.id, {
-      content: contentDraft.value,
-      change_note: '资源库页面写入内容',
-    })
-    Message.success('资源内容已写入，写入前副本已自动归档')
-    detailAsset.value = updated
-    selectedAsset.value = updated
-    originalContent.value = contentDraft.value
-    await refreshAssets()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '写入资源内容失败'))
-  } finally {
-    saving.value = false
-  }
-}
-
-async function archiveSelected(): Promise<void> {
-  const asset = detailAsset.value || selectedAsset.value
-  if (!Number.isFinite(workspaceId.value) || !asset) return
-  try {
-    await archiveWorkspaceAsset(workspaceId.value, asset.id)
-    Message.success('资源已归档，现有引用仍可用')
-    closeAssetDetail()
-    await refreshAssets()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '归档资源失败'))
-  }
-}
-
-async function restoreSelected(): Promise<void> {
-  const asset = detailAsset.value || selectedAsset.value
-  if (!Number.isFinite(workspaceId.value) || !asset) return
-  try {
-    const restored = await restoreWorkspaceAsset(workspaceId.value, asset.id)
-    Message.success('资源已恢复')
-    activeView.value = 'active'
-    page.value = 1
-    await refreshAssets()
-    await openAssetDetail(restored)
-  } catch (error) {
-    Message.error(getErrorMessage(error, '恢复资源失败'))
-  }
-}
-
-async function deleteSelected(): Promise<void> {
-  const asset = detailAsset.value || selectedAsset.value
-  if (!Number.isFinite(workspaceId.value) || !asset) return
-  await loadReferences()
-  if (referenceSummary.value?.has_references) {
-    Message.error('资源仍存在引用，不能删除')
-    return
-  }
-  const confirmed = await createConfirm(`确认删除资源「${asset.name}」吗？该操作只允许无引用归档资源。`, '删除资源')
-  if (!confirmed) return
-  try {
-    await deleteWorkspaceAsset(workspaceId.value, asset.id)
-    Message.success('资源已删除')
-    closeAssetDetail()
-    selectedAsset.value = null
-    await refreshAssetsWithPageFallback()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '删除资源失败'))
-  }
-}
-
 /**
  * 打开资源包文件选择器。
  */
@@ -1447,55 +1006,6 @@ async function handlePackageFileChange(event: Event): Promise<void> {
   }
 }
 
-function closeDetailIfSelected(assetIds: number[]): void {
-  if (detailAsset.value && assetIds.includes(detailAsset.value.id)) {
-    closeAssetDetail()
-  }
-  if (selectedAsset.value && assetIds.includes(selectedAsset.value.id)) {
-    selectedAsset.value = null
-  }
-}
-
-function triggerReplace(asset: AssetResponse): void {
-  replacingAsset.value = asset
-  replaceFileInput.value?.click()
-}
-
-async function handleReplaceFileChange(event: Event): Promise<void> {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
-  const asset = replacingAsset.value
-  if (!file || !asset || !Number.isFinite(workspaceId.value)) {
-    target.value = ''
-    replacingAsset.value = null
-    return
-  }
-  if (!isAcceptedAssetFile(file, asset.asset_type)) {
-    Message.warning(`${resolveAssetTypeLabel(asset.asset_type)}资源仅支持 ${getAcceptedAssetExtensionText(asset.asset_type)} 文件。`)
-    target.value = ''
-    replacingAsset.value = null
-    return
-  }
-  const confirmed = await createConfirm(`确认用 "${file.name}" 替换资源 "${asset.name}" 当前文件吗？`, '替换资源文件')
-  if (!confirmed) {
-    target.value = ''
-    replacingAsset.value = null
-    return
-  }
-  try {
-    const updated = await replaceWorkspaceAssetFile(workspaceId.value, asset.id, file)
-    Message.success('资源文件已替换')
-    detailAsset.value = updated
-    selectedAsset.value = updated
-    await refreshAssets()
-  } catch (error) {
-    Message.error(getErrorMessage(error, '替换资源文件失败'))
-  } finally {
-    target.value = ''
-    replacingAsset.value = null
-  }
-}
-
 async function copyAssetName(asset: AssetResponse): Promise<void> {
   try {
     await navigator.clipboard.writeText(asset.name)
@@ -1515,63 +1025,6 @@ function resolveAssetCardClass(asset: AssetResponse): string {
   return 'border-border'
 }
 
-function resolveAssetStatusBadgeText(asset: AssetResponse): string {
-  if (asset.history_kind) return '历史副本'
-  return asset.status === 'archived' ? '已归档' : '启用'
-}
-
-function resolveAssetTypeLabel(assetType: AssetType): string {
-  return assetTypeOptions.find(item => item.value === assetType)?.label || assetType
-}
-
-function formatReferenceName(item: AssetReferenceItem): string {
-  if (item.kind === 'component_version') {
-    return `${item.name || '组件'} v${item.version_no || '-'}`
-  }
-  return item.name || `${item.kind} #${item.id}`
-}
-
-function canOpenReference(item: AssetReferenceItem): boolean {
-  return item.kind === 'component'
-}
-
-function goToReference(item: AssetReferenceItem): void {
-  if (!canOpenReference(item)) return
-  if (item.kind === 'component') {
-    void router.push(buildWorkspaceComponentsPath(workspaceId.value, item.id))
-  }
-}
-
-function normalizeTags(value: string): string[] {
-  return value.split(/[,，]/).map(item => item.trim()).filter(Boolean)
-}
-
-function normalizeAspectRatioText(value: string): string {
-  return value.trim()
-}
-
-function buildAspectRatioUpdateValue(): string | null | undefined {
-  const nextValue = normalizeAspectRatioText(editForm.approx_aspect_ratio)
-  const previousValue = normalizeAspectRatioText(originalApproxAspectRatioText.value)
-  if (nextValue === previousValue) return undefined
-  return nextValue || null
-}
-
-function canEditAssetAspectRatio(asset: AssetResponse): boolean {
-  return ['image', 'icon', 'video', 'drawio', 'mermaid', 'formula'].includes(asset.asset_type)
-}
-
-function formatAssetAspectRatio(asset: AssetResponse): string {
-  return asset.approx_aspect_ratio || '-'
-}
-
-function formatAspectRatioSource(source: string | null | undefined): string {
-  if (source === 'auto') return '自动'
-  if (source === 'manual') return '人工'
-  if (source === 'agent') return '内容助手'
-  return '-'
-}
-
 function formatBackfillJobStatus(status: string): string {
   if (status === 'pending') return '等待中'
   if (status === 'running') return '计算中'
@@ -1579,12 +1032,6 @@ function formatBackfillJobStatus(status: string): string {
   if (status === 'skipped') return '已跳过'
   if (status === 'failed') return '失败'
   return status || '-'
-}
-
-function formatBytes(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
 function isImage(name: string): boolean {
