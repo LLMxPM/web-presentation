@@ -6,6 +6,7 @@ import type { ServerResponse } from 'http'
 import type { Plugin, ViteDevServer } from 'vite'
 
 import { RUNTIME_SNAPDOM_RESOURCE_PROXY_PATH } from '../shared/runtime-preview'
+import { stripRuntimeRequestBase as stripBasePath } from './runtime-request-path'
 
 interface RuntimeStandalonePreviewGateOptions {
   enabled?: boolean
@@ -189,25 +190,6 @@ function normalizeBasePath(rawBase: string): string {
     .replace(/^\/+|\/+$/g, '')
 
   return stripped ? `/${stripped}` : ''
-}
-
-/**
- * 去掉 Runtime 挂载路径前缀，避免同域 /runtime 部署下误拦截 Vite 资源。
- * @param pathname 请求路径
- * @param basePath Runtime 挂载路径前缀
- * @returns 去掉前缀后的路径
- */
-function stripBasePath(pathname: string, basePath: string): string {
-  if (!basePath) {
-    return pathname
-  }
-  if (pathname === basePath) {
-    return '/'
-  }
-  if (pathname.startsWith(`${basePath}/`)) {
-    return pathname.slice(basePath.length) || '/'
-  }
-  return pathname
 }
 
 /**

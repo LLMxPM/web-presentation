@@ -63,6 +63,7 @@ import {
 import { runWithPreviewBudget, RuntimeViteTaskSchedulerError } from './runtime-preview-scheduler'
 import { assertRuntimeVersion, withRuntimeVersionBase } from './runtime-version-identity'
 import { prepareRemoteSfcSubrequest } from './runtime-remote-sfc'
+import { stripRuntimeRequestBase as stripBasePath } from './runtime-request-path'
 
 interface RuntimeSaaSPreviewOptions {
   previewPath?: string
@@ -664,22 +665,6 @@ function normalizeBasePath(rawBase: string): string {
     .replace(/^\/+|\/+$/g, '')
 
   return stripped ? `/${stripped}` : ''
-}
-
-/**
- * 去掉 URL 中的 base 前缀。
- * @param rawUrl 原始 URL
- * @param basePath 规范化前缀
- * @returns 去前缀后的 URL
- */
-function stripBasePath(rawUrl: string, basePath: string): string {
-  if (!basePath || rawUrl === basePath) {
-    return rawUrl
-  }
-  if (rawUrl.startsWith(`${basePath}/`)) {
-    return rawUrl.slice(basePath.length)
-  }
-  return rawUrl
 }
 
 /**

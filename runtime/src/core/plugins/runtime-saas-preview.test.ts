@@ -580,6 +580,21 @@ describe('runtime saas preview 服务令牌可恢复', () => {
     expect(html).not.toContain('service-token-value-should-not-leak')
   })
 
+  it('版本化 Vite base 下未带版本的截图入口仍由 SaaS 进行票据鉴权', async () => {
+    const plugin = createPlugin()
+    const configResolved = plugin.configResolved as (config: unknown) => void
+    configResolved.call({}, { base: '/runtime/__runtime_version/v1.fixture/' })
+    const handlers: Array<(req: unknown, res: unknown, next: () => void) => Promise<void>> = []
+    const configureServer = plugin.configureServer as (server: unknown) => void
+    configureServer.call({}, { middlewares: { use: handler => handlers.push(handler) } })
+    const response = { statusCode: 0, setHeader: vi.fn(), end: vi.fn() }
+    const next = vi.fn()
+    await handlers[0]({ method: 'GET', headers: {}, url: '/runtime/__preview?artifact=fixture' }, response, next)
+    expect(response.statusCode).toBe(401)
+    expect(response.end).toHaveBeenCalledWith(expect.stringContaining('PREVIEW_CONTEXT_REQUIRED'))
+    expect(next).not.toHaveBeenCalled()
+  })
+
   it('Vue SFC 子请求丢失 ctx 时 resolveId 应回填预览令牌', async () => {
     const plugin = createPlugin()
     const resolved = await callResolveId(
