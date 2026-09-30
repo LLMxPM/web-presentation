@@ -30,6 +30,7 @@ from app.services.page_preview_service import PagePreviewResult, PagePreviewServ
 from app.services.page_service import PageService
 from app.services.project_config_service import ProjectConfigService
 from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
+from app.services.rendering.target_resolver import RenderTargetResolver
 from app.services.runtime_target_router import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
 
@@ -417,11 +418,13 @@ class PageScreenshotService:
             artifact_id=artifact_id,
             expires_in_seconds=self._resolve_runtime_service_token_ttl(preview_claims),
         )
-        runtime_public_base_url = self._resolve_browser_runtime_public_base_url()
+        # 浏览器（含远程 Renderer）必须访问 navigation/asset 基址，不能使用 Backend→Runtime 回环。
+        targets = RenderTargetResolver(settings)
+        runtime_public_base_url = self._resolve_browser_runtime_public_base_url(targets)
         # artifact_id / preview_token 必须显式下传：Runtime render-ready.v1 从 URL 查询串
         # 读取 artifact，仅放请求头会导致协议绑定失败。
         return PageScreenshotCaptureTarget(
-            preview_url=f"{settings.resolve_runtime_role_base_url('preview')}/__preview",
+            preview_url=f"{targets.navigation_base_url()}/__preview",
             extra_http_headers={
                 RUNTIME_PREVIEW_CONTEXT_HEADER: preview_token,
                 RUNTIME_SERVICE_TOKEN_HEADER: runtime_service_token,
@@ -442,19 +445,19 @@ class PageScreenshotService:
         return f"http://127.0.0.1:{settings.app_port}"
 
     @staticmethod
-    def _resolve_browser_runtime_public_base_url() -> str:
-        """返回截图浏览器可访问的 Runtime 基址，用于 Runtime HTML 中脚本和样式 URL。"""
+    def _resolve_browser_runtime_public_base_url(targets: RenderTargetResolver | None = None) -> str:
+        """返回截图浏览器可访问的 Runtime 资源基址，用于 HTML 中脚本和样式 URL。
+
+        必须保留 Vite base 路径（通常 `/runtime`）：`/@vite/client`、`/src/main.ts`
+        挂在该路径下，缺省会让模块图 404，`render-ready.v1` 永远不会就绪。
+        """
 
         settings = get_settings()
         configured = str(settings.page_screenshot_runtime_public_base_url or "").strip().rstrip("/")
         if configured:
             return configured
-
-        runtime_base_url = settings.resolve_runtime_role_base_url("preview")
-        public_path = urlsplit(str(settings.runtime_public_base_url or "")).path.strip("/")
-        if public_path:
-            return f"{runtime_base_url}/{public_path}"
-        return runtime_base_url
+        resolver = targets or RenderTargetResolver(settings)
+        return resolver.asset_base_url()
 
     @staticmethod
     def _extract_artifact_id(preview_url: str) -> str | None:

@@ -57,7 +57,26 @@ async def wait_for_render_ready(
         }
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
-      return { ok: false, message: '等待 render-ready.v1 协议超时' };
+      // 超时时带回页面现场，区分「错误页无协议」与「挂载未完成」。
+      const resources = [];
+      try {
+        for (const e of performance.getEntriesByType('resource') || []) {
+          resources.push(e.name + '|' + (e.responseStatus || e.transferSize || 0));
+        }
+      } catch (e) {}
+      return {
+        ok: false,
+        message: '等待 render-ready.v1 协议超时',
+        url: String(location.href || ''),
+        hasBridge: Boolean(window.__RENDER_READY__),
+        bridge: window.__RENDER_READY__
+          ? JSON.stringify(window.__RENDER_READY__).slice(0, 800)
+          : null,
+        bodyStart: document.body ? String(document.body.innerText || '').slice(0, 240) : null,
+        htmlStart: String(document.documentElement ? document.documentElement.outerHTML || '' : '').slice(0, 600),
+        scripts: Array.from(document.scripts || []).map((s) => s.src || '(inline)').slice(0, 12),
+        resources: resources.slice(0, 20),
+      };
     }
     """
     return await page.evaluate(

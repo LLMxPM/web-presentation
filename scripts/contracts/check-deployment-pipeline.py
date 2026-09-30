@@ -33,10 +33,8 @@ def verify_pipeline(
         page = client.json(f"api/pages/{page_id}")
         if project["workspace_id"] != page["workspace_id"]:
             raise ValueError("测试页面与项目必须属于同一工作空间")
-        screenshot = client.json(
-            f"api/pages/{page_id}/screenshot-jobs",
-            {"viewport_width": 320, "viewport_height": 240},
-        )
+        # 使用项目默认视口：screenshot_is_latest 要求截图视口与当前项目展示配置一致。
+        screenshot = client.json(f"api/pages/{page_id}/screenshot-jobs", {})
         report["screenshot_job_id"] = screenshot["id"]
         save()
         screenshot = client.wait_job(

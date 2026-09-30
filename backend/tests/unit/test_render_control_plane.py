@@ -918,3 +918,106 @@ def test_list_unreleased_attempts_covers_all_epochs_of_worker() -> None:
         assert "worker_id" in str(stmt)
 
     asyncio.run(_run())
+
+
+def test_ensure_workers_from_config_reuses_pending_epoch_row() -> None:
+    """配置变更时复用 pending 占位行，禁止重复 INSERT 撞 UNIQUE(worker_id, worker_epoch)。"""
+
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.services.rendering.repository import RenderRepository
+
+    pending = SimpleNamespace(
+        worker_id="renderer-lite",
+        worker_epoch="pending",
+        service_base_url="http://renderer:7400",
+        render_profile_digest="profile.v1",
+        status="registered",
+        isolated=False,
+    )
+    session = MagicMock()
+    session.scalar = AsyncMock(return_value=pending)
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    repo = RenderRepository(session)
+
+    async def _run() -> None:
+        workers = await repo.ensure_workers_from_config(
+            [{"worker_id": "renderer-lite", "base_url": "http://127.0.0.1:7400"}],
+            profile_digest="profile.v1",
+        )
+        assert workers == [pending]
+        assert pending.service_base_url == "http://127.0.0.1:7400"
+        session.add.assert_not_called()
+        session.flush.assert_not_awaited()
+
+    asyncio.run(_run())
+
+
+def test_asset_base_url_appends_vite_path_for_host_only_config() -> None:
+    """RENDER_RUNTIME_ASSET_BASE_URL 仅写主机时必须补上 Vite base，否则 /@vite/client 404。"""
+
+    from app.core.config import AppSettings
+    from app.services.rendering.target_resolver import RenderTargetResolver
+
+    settings = AppSettings(
+        _env_file=None,
+        render_runtime_navigation_base_url="http://platform-lite:7373",
+        render_runtime_asset_base_url="http://platform-lite:7373",
+        runtime_public_base_url="http://127.0.0.1:8080/runtime",
+    )
+    resolver = RenderTargetResolver(settings)
+    assert resolver.asset_base_url() == "http://platform-lite:7373/runtime"
+    # 显式带路径时不再追加
+    settings2 = AppSettings(
+        _env_file=None,
+        render_runtime_asset_base_url="http://cdn.example.com/runtime",
+        runtime_public_base_url="http://127.0.0.1:8080/runtime",
+    )
+    assert RenderTargetResolver(settings2).asset_base_url() == "http://cdn.example.com/runtime"
+
+
+def test_capture_target_uses_browser_navigation_base_url() -> None:
+    """截图 preview_url 必须是浏览器/远程 Renderer 可达的 navigation 基址。"""
+
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from app.core.config import AppSettings
+    from app.services import page_screenshot_service as screenshot_module
+    from app.services.page_screenshot_service import PageScreenshotService
+
+    settings = AppSettings(
+        _env_file=None,
+        render_runtime_navigation_base_url="http://platform-lite:7373",
+        runtime_base_url="http://127.0.0.1:7373",
+        runtime_public_base_url="http://127.0.0.1:8080/runtime",
+    )
+    original_get_settings = screenshot_module.get_settings
+    original_verify = screenshot_module.TokenService.verify_preview_context_token
+    original_issue = screenshot_module.TokenService.generate_runtime_service_access_token
+    try:
+        screenshot_module.get_settings = lambda: settings
+        screenshot_module.TokenService.verify_preview_context_token = MagicMock(  # type: ignore[method-assign]
+            return_value={"artifact_id": "art-1", "exp": int(__import__("time").time()) + 600}
+        )
+        screenshot_module.TokenService.generate_runtime_service_access_token = MagicMock(  # type: ignore[method-assign]
+            return_value="runtime-service-token"
+        )
+        service = PageScreenshotService.__new__(PageScreenshotService)
+        preview = SimpleNamespace(preview_url="http://127.0.0.1:8080/__preview?token=ctx&artifact=art-1")
+        target = service._build_browser_capture_target(preview)  # noqa: SLF001
+    finally:
+        screenshot_module.get_settings = original_get_settings
+        screenshot_module.TokenService.verify_preview_context_token = original_verify  # type: ignore[method-assign]
+        screenshot_module.TokenService.generate_runtime_service_access_token = original_issue  # type: ignore[method-assign]
+
+    assert target.preview_url.startswith("http://platform-lite:7373/__preview")
+    assert "127.0.0.1:7373" not in target.preview_url
+    assert target.extra_http_headers is not None
+    # 资源基址必须保留 Vite base 路径，否则 /@vite/client、/src/main.ts 会 404。
+    asset_base = target.extra_http_headers["x-runtime-public-base-url"]
+    assert asset_base.startswith("http://platform-lite:7373")
+    assert asset_base.rstrip("/").endswith("/runtime") or asset_base.rstrip("/") == "http://platform-lite:7373"

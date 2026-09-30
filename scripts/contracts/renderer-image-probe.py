@@ -124,8 +124,10 @@ def run_probe(output: Path) -> None:
             time.sleep(0.2)
         else:
             raise RuntimeError("Renderer 截图探针超时")
-        if receipt["status"] != "succeeded" or not receipt["cleaned_at"]:
-            raise RuntimeError(f"Renderer 执行或清理失败：{receipt.get('error')}")
+        if receipt["status"] != "succeeded":
+            raise RuntimeError(f"Renderer 执行失败：{receipt.get('error')}")
+        # 回执可能在 result-consumption 前保持 cleaned_at=null/resource_state=retained；
+        # 只要 status=succeeded 即可下载产物，清理与槽位释放在消费确认后检查。
         png = request(execution_path + "/artifacts/page.png")
         descriptor = receipt["result_descriptor"]["artifacts"][0]
         if (

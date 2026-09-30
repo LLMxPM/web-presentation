@@ -113,12 +113,31 @@ class RenderRepository:
         return list(latest_by_worker.values())
 
     async def ensure_workers_from_config(self, endpoints: list[dict[str, str]], *, profile_digest: str) -> list[RenderWorker]:
-        """根据受信部署配置登记 Worker 地址。"""
+        """根据受信部署配置登记 Worker 地址。
+
+        同一 worker_id 至多保留一行 `worker_epoch=pending` 占位；配置变更时就地更新该行，
+        避免重复 INSERT 撞 `UNIQUE(worker_id, worker_epoch)` 后把会话拖入 PendingRollback。
+        """
 
         workers: list[RenderWorker] = []
         for item in endpoints:
             worker_id = item["worker_id"]
             base_url = item["base_url"]
+            pending = await self.session.scalar(
+                select(RenderWorker).where(
+                    RenderWorker.worker_id == worker_id,
+                    RenderWorker.worker_epoch == "pending",
+                )
+            )
+            if pending is not None:
+                if pending.service_base_url != base_url or pending.render_profile_digest != profile_digest:
+                    pending.service_base_url = base_url
+                    pending.render_profile_digest = profile_digest
+                    pending.status = "registered"
+                    pending.isolated = False
+                workers.append(pending)
+                continue
+
             worker = await self.session.scalar(
                 select(RenderWorker)
                 .where(RenderWorker.worker_id == worker_id)

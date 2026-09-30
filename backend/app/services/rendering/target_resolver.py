@@ -34,10 +34,23 @@ class RenderTargetResolver:
         return str(configured).rstrip("/")
 
     def asset_base_url(self) -> str:
-        """返回浏览器访问 Runtime 静态资源的基址。"""
+        """返回浏览器访问 Runtime 静态资源的基址（含 Vite base 路径）。"""
 
-        configured = self.settings.render_runtime_asset_base_url or self.navigation_base_url()
-        return str(configured).rstrip("/")
+        configured = str(self.settings.render_runtime_asset_base_url or "").strip().rstrip("/")
+        base = configured or self.navigation_base_url().rstrip("/")
+        public_path = ""
+        try:
+            from urllib.parse import urlsplit
+
+            public_path = urlsplit(str(self.settings.runtime_public_base_url or "")).path.strip("/")
+            configured_path = urlsplit(base).path.strip("/") if configured else ""
+        except Exception:  # noqa: BLE001
+            public_path = ""
+            configured_path = ""
+        # 显式配置仅给出主机时，仍需拼上 Vite base，否则 /@vite/client 会 404。
+        if public_path and not configured_path:
+            return f"{base}/{public_path}"
+        return base
 
     def platform_asset_base_url(self) -> str:
         """返回浏览器访问平台资源的基址。"""

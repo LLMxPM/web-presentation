@@ -40,8 +40,12 @@ export default defineConfig(({ command, mode }) => {
     : './'
   const runtimeAllowedHosts = resolveRuntimeServerAllowedHosts(env.RUNTIME_SERVER_ALLOWED_HOSTS, [
     'runtime',
+    'localhost',
+    '127.0.0.1',
     env.RUNTIME_PUBLIC_BASE_URL,
     env.BACKEND_PUBLIC_BASE_URL,
+    env.RUNTIME_BASE_URL,
+    env.RUNTIME_PREVIEW_BASE_URL,
   ])
   // RUNTIME_ROLE 决定本进程开放的执行面；非法值在启动期直接抛错。
   const runtimeRole = resolveRuntimeRole(env.RUNTIME_ROLE)

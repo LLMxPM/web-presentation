@@ -86,6 +86,17 @@ describe('runtime vite allowed hosts', () => {
       ]),
     ).toEqual(['runtime', 'presentation.example.com', 'extra.example.com', '.preview.example.com'])
   })
+
+  it('should keep loopback and docker service navigation hosts', () => {
+    expect(
+      resolveRuntimeServerAllowedHosts('', [
+        'runtime',
+        'localhost',
+        '127.0.0.1',
+        'http://platform-lite:7373',
+      ]),
+    ).toEqual(['runtime', 'localhost', '127.0.0.1', 'platform-lite'])
+  })
 })
 
 describe('runtime vite base path', () => {

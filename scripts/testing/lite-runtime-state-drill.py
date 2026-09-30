@@ -71,7 +71,14 @@ class LiteContainer:
     def start(self) -> None:
         """启动容器；数据目录用于验证重启后的持久数据。"""
 
+        import base64
+        import os as _os
+        import secrets as _secrets
+
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        # 强密钥：启动期会拒绝示例占位值（WS-G3），演练必须自带合法 Fernet 与管理员口令。
+        fernet_key = base64.urlsafe_b64encode(_os.urandom(32)).decode()
+        admin_password = _secrets.token_urlsafe(16)
         options = [
             "run",
             "--detach",
@@ -84,12 +91,15 @@ class LiteContainer:
             "-e",
             "DEFAULT_ADMIN_USERNAME=" + DEFAULT_ADMIN_USERNAME,
             "-e",
-            "DEFAULT_ADMIN_PASSWORD=" + DEFAULT_ADMIN_PASSWORD,
+            "DEFAULT_ADMIN_PASSWORD=" + admin_password,
+            "-e",
+            "AI_SECRET_ENCRYPTION_KEY=" + fernet_key,
             "-e",
             "AI_ENABLED=false",
             "-e",
             "ACCESS_LOG_ENABLED=false",
         ]
+        self._admin_password = admin_password
         if self.cpus:
             options += ["--cpus", self.cpus]
         if self.memory:
@@ -200,10 +210,11 @@ class LiteContainer:
 class ApiClient:
     """带 Cookie 会话的轻量 API 客户端，用于驱动真实业务接口。"""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, *, admin_password: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
         self.failures = 0
+        self.admin_password = admin_password or DEFAULT_ADMIN_PASSWORD
 
     def request(
         self,
@@ -242,7 +253,7 @@ class ApiClient:
         self.request(
             "POST",
             "/api/auth/login",
-            body={"username": DEFAULT_ADMIN_USERNAME, "password": DEFAULT_ADMIN_PASSWORD},
+            body={"username": DEFAULT_ADMIN_USERNAME, "password": self.admin_password},
         )
 
     def request_ignoring_status(self, method: str, path: str, **kwargs: Any) -> tuple[int, Any]:
@@ -574,7 +585,7 @@ def run_baseline(args: argparse.Namespace) -> dict[str, Any]:
         samples: list[dict[str, Any]] = []
         try:
             container.start()
-            api = ApiClient(container.base_url)
+            api = ApiClient(container.base_url, admin_password=getattr(container, "_admin_password", None))
             drill = DrillContext(container, api)
             drill.bootstrap(page_sizes={"small": 8 * 1024, "medium": 256 * 1024, "large": 2 * 1024 * 1024})
             _sample(container, samples, "idle", started)
@@ -646,7 +657,7 @@ def run_restart_drill(args: argparse.Namespace) -> dict[str, Any]:
         )
         try:
             container.start()
-            api = ApiClient(container.base_url)
+            api = ApiClient(container.base_url, admin_password=getattr(container, "_admin_password", None))
             drill = DrillContext(container, api)
             drill.bootstrap(page_sizes={"small": 4 * 1024})
             _, old_preview_url = drill.create_project_preview()
@@ -738,7 +749,7 @@ def run_redis_drill(args: argparse.Namespace) -> dict[str, Any]:
                 "redis:7-alpine",
             )
             container.start()
-            api = ApiClient(container.base_url)
+            api = ApiClient(container.base_url, admin_password=getattr(container, "_admin_password", None))
             drill = DrillContext(container, api)
             drill.bootstrap(page_sizes={"small": 4 * 1024})
             _, healthy_preview_url = drill.create_project_preview()

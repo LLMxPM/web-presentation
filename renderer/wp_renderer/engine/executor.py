@@ -194,10 +194,18 @@ class RenderExecutor:
                 stage="ready",
             )
             if not ready.get("ok"):
+                detail = str(ready.get("message") or "Runtime 渲染协议未就绪。")
+                extra = []
+                for key in ("url", "hasBridge", "bridge", "bodyStart", "htmlStart", "scripts", "resources"):
+                    val = ready.get(key)
+                    if val not in (None, "", [], {}):
+                        extra.append(f"{key}={str(val)[:500]}")
+                if extra:
+                    detail = f"{detail}；" + "；".join(extra)
                 raise RenderExecutionError(
                     RenderError.from_code(
                         ERROR_CODE_ASSET_NOT_READY,
-                        message=str(ready.get("message") or "Runtime 渲染协议未就绪。"),
+                        message=detail,
                         stage="ready",
                     )
                 )
