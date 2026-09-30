@@ -170,7 +170,7 @@ pnpm run test:contracts:cli-skill
 | W01 | 代码与权限矩阵已落地，M02 开放 | 执行隔离文档；rtworker/rtchild 分 UID、spawn 降权、任务工作区 setgid；凭证宽松权限在已配置降权时 fail-closed。**M02 测试机证明不可读/不可越权仍未执行** |
 | W05 | 兼容矩阵与 Run 边界已文档化并补测，M04/M05 开放 | N/N-1 组合、停机/滚动/排空策略；修正 multi-backend 误写的全局收敛；hostname/PID/PID 重用边界与验收用例。实测组合仍未执行 |
 | W06 | PG 备份恢复入口与清单已交付，M07 开放 | `pg-backup.sh`/`pg-restore.sh`（校验和、alembic、隔离目标）；备份清单、一致性顺序、RPO/RTO、隔离演练与验证/负例。真实演练未执行 |
-| W07 | 按改动范围推进 | 队列观测拆为词汇/聚合/汇总三层，codegen 拆为公共转换与独立入口；AssetsView 仅修正可选标签消费，未声称完成 UI 模块拆分 |
+| W07 | 筛选/批量/详情已拆出 | `useAssetListFilters`+`AssetFilterSidebar`、`useAssetBatchSelection`、`useAssetDetail`+`AssetDetailDialog`；AssetsView 约 1885→1009 行，19 项集成测试通过。新建/上传/回填弹窗与 asset_service 后续按改动再拆 |
 | W08 | 随本批更新 | 更新计划进度、任务运行时契约恢复列与 Run 收敛描述；兼容矩阵/执行隔离/备份恢复已入部署文档导航。其余历史专题矛盾继续按实际修改维护 |
 
 本地验证（第二批）：
