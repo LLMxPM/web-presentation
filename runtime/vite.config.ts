@@ -9,6 +9,7 @@ import vue from '@vitejs/plugin-vue'
 import runtimeHealth from './src/core/plugins/runtime-health'
 import runtimeVersionGuard from './src/core/plugins/runtime-version-guard'
 import { withRuntimeVersionBase } from './src/core/plugins/runtime-version-identity'
+import { runtimeDependencyOptimization } from './src/core/plugins/runtime-dependency-optimization'
 import runtimeAssetRenderHintMeasurer from './src/core/plugins/runtime-asset-render-hint-measurer'
 import runtimeBuildRunner from './src/core/plugins/runtime-build-runner'
 import runtimeSaaSPreview from './src/core/plugins/runtime-saas-preview'
@@ -58,6 +59,7 @@ export default defineConfig(({ command, mode }) => {
       __RUNTIME_BACKEND_BUILD__: 'false',
     },
     base: command === 'serve' ? `${withRuntimeVersionBase(runtimeServerBase)}/` : runtimeServerBase,
+    optimizeDeps: runtimeDependencyOptimization(),
     server: {
       host: runtimeServerHost,
       port: runtimeServerPort,
