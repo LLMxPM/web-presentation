@@ -62,6 +62,7 @@ import {
 } from './runtime-health'
 import { runWithPreviewBudget, RuntimeViteTaskSchedulerError } from './runtime-preview-scheduler'
 import { assertRuntimeVersion, withRuntimeVersionBase } from './runtime-version-identity'
+import { prepareRemoteSfcSubrequest } from './runtime-remote-sfc'
 
 interface RuntimeSaaSPreviewOptions {
   previewPath?: string
@@ -143,6 +144,8 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
   return {
     name: 'runtime-saas-preview',
     apply: 'serve',
+    // 必须先于 Vue resolveId 为子请求补入当前 importer 的 ctx；Vue 会直接接管 ?vue ID。
+    enforce: 'pre',
 
     configResolved(resolvedConfig) {
       basePath = normalizeBasePath(resolvedConfig.base)
@@ -155,13 +158,17 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
         const strippedUrl = stripBasePath(rawUrl, basePath)
         // 模块 HTTP 请求先校验签名版本，避免 Vite 把失配包装成源码编译 500。
         const remote = parseRemoteModuleId(strippedUrl)
-        if (remote?.previewToken) {
+        if (remote) {
           try {
+            if (!remote.previewToken) {
+              throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '缺少预览上下文令牌。')
+            }
             await verifyPreviewToken(remote.previewToken, {
               jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
               audience: options.previewAudience || process.env.RUNTIME_PREVIEW_TOKEN_AUDIENCE || DEFAULT_PREVIEW_AUDIENCE,
               timeoutMs: jwksTimeoutMs,
             })
+            await prepareRemoteSfcSubrequest(server, strippedUrl)
           } catch (error) {
             return sendPreviewError(res, error)
           }
@@ -349,6 +356,8 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
       if (!parsed) {
         return null
       }
+      // 子块由 Vue loader 从刚恢复的描述符读取，不能把完整 SFC 当作 CSS/script 返回。
+      if (new URL(id, 'http://runtime.local').searchParams.has('vue')) return null
       const moduleLoadStartedAt = Date.now()
       try {
         // 只认模块 ID 自带的 previewToken（来自本次请求链），绝不从进程内缓存取凭证。
