@@ -13,6 +13,7 @@ import runtimeSaaSPreview, {
   assertManifestMatchesContext,
   buildPreviewHtml,
   resolvePreviewAssetBase,
+  sendPreviewError,
   serializeForInlineScript,
 } from './runtime-saas-preview'
 import { isAllowedSnapdomProxyResourceUrl } from './runtime-snapdom-resource-proxy'
@@ -46,6 +47,25 @@ describe('runtime saas preview helpers', () => {
     expect(serialized).toContain('\\u003C/script\\u003E')
     expect(serialized).toContain('\\u0026')
     expect(serialized).not.toContain('</script>')
+  })
+
+  it('指纹门禁错误必须保留 409/PREVIEW_VERSION_SKEW，不得收成 500（M05 组合 F）', () => {
+    const chunks: string[] = []
+    const res = {
+      statusCode: 0,
+      setHeader: vi.fn(),
+      end: (body: string) => {
+        chunks.push(body)
+      },
+    } as unknown as Parameters<typeof sendPreviewError>[0]
+    const skew = Object.assign(new Error('预览副本版本指纹不匹配'), {
+      statusCode: 409,
+      code: 'PREVIEW_VERSION_SKEW',
+    })
+    sendPreviewError(res, skew)
+    expect(res.statusCode).toBe(409)
+    expect(chunks.join('')).toContain('PREVIEW_VERSION_SKEW')
+    expect(chunks.join('')).toContain('HTTP 409')
   })
 
   it('预览 HTML 应注入 artifact Tailwind CSS 链接并放在应用入口前', () => {

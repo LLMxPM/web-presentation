@@ -1459,12 +1459,21 @@ function sendPreviewTailwindErrorCss(res: RuntimeNodeResponse, error: unknown): 
  * @param res Node 响应对象
  * @param error 错误对象
  */
-function sendPreviewError(res: RuntimeNodeResponse, error: unknown): void {
+export function sendPreviewError(res: RuntimeNodeResponse, error: unknown): void {
+  // 指纹门禁等业务错误带 statusCode/code；不得被统一收成 500，
+  // 否则 M05/组合 F 无法用 409 识别版本失配（PREVIEW_VERSION_SKEW）。
+  const rawStatus = (error as { statusCode?: number } | null | undefined)?.statusCode
+  const rawCode = (error as { code?: string } | null | undefined)?.code
+  const message = error instanceof Error ? error.message : '预览网关异常。'
   const previewError = error instanceof PreviewGatewayError
     ? error
     : error instanceof RuntimeViteTaskSchedulerError
       ? new PreviewGatewayError(error.statusCode, error.code, error.message)
-      : new PreviewGatewayError(500, 'PREVIEW_GATEWAY_ERROR', error instanceof Error ? error.message : '预览网关异常。')
+      : new PreviewGatewayError(
+        typeof rawStatus === 'number' && rawStatus >= 400 && rawStatus <= 599 ? rawStatus : 500,
+        rawCode || 'PREVIEW_GATEWAY_ERROR',
+        message,
+      )
 
   res.statusCode = previewError.statusCode
   res.setHeader('Content-Type', 'text/html; charset=utf-8')

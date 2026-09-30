@@ -19,14 +19,14 @@
 
 N 表示当前 Release，N-1 表示上一个稳定 Release。**下表是支持目标，不是已通过 M05 的结论。**
 
-| 组合 | Backend N | Runtime N | Renderer N | DB revision N | Backend N-1 | Runtime/Renderer N-1 | 结论 |
+| 组合 | Backend N | Runtime N | Renderer N | DB revision N | Backend N-1 | Runtime/Renderer N-1 | 结论（M05 实测后） |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | A | ✓ | ✓ | ✓ | ✓ | — | — | 同版本全量，支持 |
-| B | ✓ | ✓ | ✓ | ✓ | ✓ | — | Backend 灰度期间 N-1 HTTP 副本可共存（需共享密钥/存储）；支持 |
-| C | ✓ | ✓ | ✓ | ✓ | — | ✓ | **仅当**内部协议仍为 `internal/render/v1` 且 Runtime Kit 公开路径未删 `.vN`；条件支持 |
-| D | ✓ | — | — | N-1 | — | — | **迁移窗口内**旧 DB + 新 Backend：仅当 migration 可前滚且无强制 schema 拒绝；不支持长期运行 |
-| E | — | — | — | ✓ | ✓ | ✓ | 回滚到 N-1 镜像 + DB 已迁到 N：**不支持**，除非 N 的 migration 可逆且已按序 downgrade |
-| F | 混用不同 `runtime_kit_version` 的 Runtime 副本 | | | | | | **不支持**（指纹不符时预览/构建拒绝）；见 §4 |
+| B | ✓ | ✓ | ✓ | ✓ | ✓ | — | **仅当 DB 已迁到 N**：N-1 对 N schema 向后兼容（多出的列可忽略）。**N 不可跑在 N-1 schema**（缺 `process_owner` 等列会启动失败）。灰度顺序：先 `upgrade head` → 再混跑/替换 Backend |
+| C | ✓ | ✓ | ✓ | ✓ | — | ✓ | **仅当**内部协议仍为 `internal/render/v1` 且 Runtime Kit 公开路径未删 `.vN`；条件支持。N-1 Runtime 缺 F6 allowedHosts 修复时，跨主机名预览可能 403 |
+| D | ✓ | — | — | N-1 | — | — | **迁移窗口内**旧 DB + 新 Backend：**不支持**（N ORM 需要新列）；必须先 upgrade 再启 N。N-1 + 旧 DB 可运行 |
+| E | — | — | — | ✓ | ✓ | ✓ | 回滚到 N-1 镜像 + DB 已迁到 N：`alembic` 明确拒绝（`Can't locate revision`）；N-1 **应用**在 N DB 上可运行（多列无害），但 **不得**再跑 N-1 的 `upgrade head`。需回退 schema 时按序 `downgrade` |
+| F | 混用不同 `runtime_kit_version` 的 Runtime 副本 | | | | | | **不支持**（指纹不符 409 `PREVIEW_VERSION_SKEW`）；见 §4 |
 
 ### 2.1 明确不支持 / 明确拒绝
 
@@ -36,6 +36,8 @@ N 表示当前 Release，N-1 表示上一个稳定 Release。**下表是支持�
 | Backend 调用 Renderer 时契约版本不一致 | `contract_version` 校验失败，任务失败并留错误码 |
 | 预览请求携带与 Runtime 副本不一致的 `x-expected-runtime-version-fingerprint` | 409 拒绝（指纹门禁） |
 | DB `alembic_version` 指向镜像不包含的 revision | 启动失败（`Can't locate revision identified by '…'`） |
+| N Backend + DB 仍停在 N-1 schema | 启动失败（`UndefinedColumnError`，如 `ai_agent_runs.process_owner`）；必须先 migration |
+| 预览请求 `x-expected-runtime-version-fingerprint` 与副本不符 | **409** `PREVIEW_VERSION_SKEW`（不得收成 500） |
 | 破坏性 External API 字段变更未做消费者迁移 | CLI/Skill/Editor 契约门禁失败；禁止静默兼容 |
 
 ## 3. 升级窗口与摘流策略

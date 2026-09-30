@@ -66,7 +66,7 @@ SQLite 轻量模式不依赖外部 PostgreSQL/Redis。`memory://` 是**受支持
 | `RENDER_ATTEMPT_LEASE_SECONDS` | attempt 占用租约时长，超时由协调器收敛释放 |
 | `RENDER_UNKNOWN_RECONCILE_AFTER_SECONDS` | 未知结果 attempt 进入可回收窗口的等待秒数 |
 | `RENDER_ARTIFACT_MAX_BYTES` | 单产物字节上限，默认 32MiB |
-| `RENDER_RUNTIME_NAVIGATION_BASE_URL` | 浏览器访问预览文档的基址 |
+| `RENDER_RUNTIME_NAVIGATION_BASE_URL` | 浏览器访问预览文档的基址；**远程 Renderer 必须可达**，不得使用 Backend 回环。双容器示例：`http://platform-lite:7373` |
 | `RENDER_RUNTIME_ASSET_BASE_URL` | 浏览器访问 Runtime 静态资源的基址 |
 | `RENDER_PLATFORM_ASSET_BASE_URL` | 浏览器访问平台资源的基址 |
 | `RUNTIME_ARTIFACT_SWEEP_INTERVAL_SECONDS` | `memory://` artifact 过期扫描周期，默认 `30` 秒 |
@@ -92,6 +92,7 @@ openssl rand -base64 48 | Out-File -Encoding ascii deploy/secrets/render_service
 | `RUNTIME_PREVIEW/CHECK_BASE_URL` | 分角色部署时按职责覆盖的内网目标；留空回退 `RUNTIME_BASE_URL`。构建不在这里配置：Runtime Build Worker 主动向 Backend 领取任务 |
 | `RUNTIME_CHECK_BASE_URLS` | 计算角色多副本目标列表（JSON 数组或逗号分隔）；留空回退对应单地址。Backend 轮询选址，满载自动换副本 |
 | `RUNTIME_TARGET_FAILURE_THRESHOLD` / `RUNTIME_TARGET_COOLDOWN_SECONDS` | 选址冷却：目标连续失败达到阈值后短暂跳过，冷却到期自动恢复 |
+| `RUNTIME_SERVER_ALLOWED_HOSTS` | Vite `allowedHosts` 追加主机名（逗号/分号/空白分隔）。双容器需包含 Renderer 访问 Runtime 时使用的主机名（如 `platform-lite`）；已默认合并 `runtime`、回环与 `RUNTIME_PUBLIC_BASE_URL`/`BACKEND_PUBLIC_BASE_URL`/`RUNTIME_BASE_URL`/`RUNTIME_PREVIEW_BASE_URL` 主机名 |
 | `RUNTIME_CHECK_MAX_INFLIGHT` / `RUNTIME_LIGHT_MAX_INFLIGHT` | 全链路准入：Backend 同时在途的 check/light 内部调用上限，超限返回 `RUNTIME_ADMISSION_FULL`；全部副本满载返回 `RUNTIME_CAPACITY_EXCEEDED`（503，可重试） |
 | `RUNTIME_BACKEND_API_BASE_URL` | Runtime 回源 Backend 的内网地址 |
 | `RUNTIME_BUILD_ID` | 部署构建标识，输出到 `/__runtime_healthz` 的 `build_id`；滚动发布时用于核对新旧副本版本指纹 |
