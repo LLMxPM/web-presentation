@@ -14,7 +14,11 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import DateTime, Integer, String, Text, delete, select, update
+from app.core.time_utils import utc_now
+from app.db.tx import row_locks_hold_until_commit
+from app.db.types import UTCDateTime
+from app.services.durable_job_lease_service import claim_pending_jobs, claim_rows_by_cas
+from sqlalchemy import Integer, String, Text, select, update
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -22,10 +26,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
-from app.core.time_utils import utc_now
-from app.db.tx import row_locks_hold_until_commit
-from app.services.durable_job_lease_service import claim_pending_jobs, claim_rows_by_cas
 
 pytestmark = pytest.mark.integration
 
@@ -44,15 +44,15 @@ class PgClaimJob(PgClaimBase):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
 
 
 def _require_pg_url() -> str:
@@ -261,15 +261,15 @@ class PgClaimJoinedJob(PgClaimBase):
     run_id: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
 
 
 @pytest.mark.asyncio
