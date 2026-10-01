@@ -675,3 +675,119 @@ async def test_assert_attempt_fence_should_reject_when_lease_owner_missing(
         with pytest.raises(AppException) as exc_info:
             service.assert_attempt_fence(job=job, attempt_id="dead-attempt", lease_owner="worker-a")
         assert exc_info.value.code == "BUILD_LEASE_MISSING"
+
+
+@pytest.mark.asyncio
+async def test_late_upload_after_success_should_reject_and_preserve_promoted_artifact(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """终态成功后旧 attempt 迟到上传必须被拒且回收，不得覆盖或删除已提升产物。"""
+
+    from app.services.object_storage_service import ObjectStorageService
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
+    job_id = job_payload["id"]
+
+    # 1. Worker A 认领任务，拿到 attempt_a
+    async with get_session_factory()() as session:
+        service = ProjectBuildService(session, lease_owner="worker-a")
+        claimed = await service.claim_job(job_id=job_id)
+        assert claimed is not None
+        attempt_a = claimed.attempt_id
+        release_id = claimed.snapshot_release_id
+
+    archive_a = build_zip_bytes({"index.html": b"<html>stale attempt a</html>"})
+    token_a = TokenService.generate_runtime_build_command_token(
+        job_id=job_id,
+        artifact_id=str(release_id),
+        project_id=project_id,
+        workspace_id=workspace_id,
+        base_url="./",
+        attempt_id=attempt_a,
+        lease_owner="worker-a",
+    )
+
+    # 2. 模拟 Worker A 超时/崩溃，任务恢复为 pending，Worker B 认领拿到 attempt_b
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        job.status = "pending"
+        job.lease_owner = None
+        job.lease_expires_at = None
+        job.attempt_id = None
+        await session.commit()
+
+    async with get_session_factory()() as session:
+        reclaimed = await ProjectBuildService(session, lease_owner="worker-b").claim_job(job_id=job_id)
+        assert reclaimed is not None
+        attempt_b = reclaimed.attempt_id
+        assert attempt_b != attempt_a
+
+    # 3. Worker B 上传产物并完成，任务成为 succeeded
+    archive_b = build_zip_bytes({"index.html": b"<html>promoted attempt b</html>"})
+    token_b = TokenService.generate_runtime_build_command_token(
+        job_id=job_id,
+        artifact_id=str(release_id),
+        project_id=project_id,
+        workspace_id=workspace_id,
+        base_url="./",
+        attempt_id=attempt_b,
+        lease_owner="worker-b",
+    )
+    upload_b = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=token_b,
+        archive_content=archive_b,
+        sha256=hashlib.sha256(archive_b).hexdigest(),
+    )
+    assert upload_b.status_code == 200
+
+    async with get_session_factory()() as session:
+        service_b = ProjectBuildService(session, lease_owner="worker-b")
+        completed = await service_b.complete_job(
+            job_id=job_id,
+            lease_owner="worker-b",
+            success=True,
+        )
+        assert completed is True
+        await session.commit()
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        assert job.status == "succeeded"
+        promoted_key = job.artifact_storage_key
+        assert promoted_key and f"/attempts/{attempt_b}/" in promoted_key
+        promoted_sha256 = job.artifact_sha256
+
+    # 4. 迟到的 attempt_a 上传
+    late_upload = await upload_build_archive_stream(
+        authenticated_client,
+        job_id=job_id,
+        build_token=token_a,
+        archive_content=archive_a,
+        sha256=hashlib.sha256(archive_a).hexdigest(),
+    )
+    assert late_upload.status_code == 409
+    assert late_upload.json()["code"] == "BUILD_JOB_NOT_EXECUTABLE"
+
+    # 5. 校验：attempt_a 未提升的对象已被物理回收（删除）
+    storage = ObjectStorageService()
+    attempt_a_key = f"build-artifacts/{project_id}/{job_id}/attempts/{attempt_a}/dist.zip"
+    with pytest.raises(AppException) as exc_info:
+        await storage.read_object(attempt_a_key)
+    assert exc_info.value.code == "OBJECT_NOT_FOUND"
+
+    # 6. 校验：attempt_b 的最终产物仍完整保留在对象存储中且元数据未受污染
+    promoted_obj = await storage.read_object(promoted_key)
+    assert hashlib.sha256(promoted_obj).hexdigest() == promoted_sha256
+
+    async with get_session_factory()() as session:
+        refreshed_job = await session.get(ProjectBuildJob, job_id)
+        assert refreshed_job is not None
+        assert refreshed_job.status == "succeeded"
+        assert refreshed_job.artifact_storage_key == promoted_key
+        assert refreshed_job.artifact_sha256 == promoted_sha256
