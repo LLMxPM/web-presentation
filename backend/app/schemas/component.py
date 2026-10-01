@@ -6,6 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.component_import import build_component_import_usage
 from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.schemas.common import ListQuery, SchemaBase
 from app.schemas.component_preview_options import ComponentPreviewOptions
@@ -136,6 +137,24 @@ class WorkspaceComponentItem(SchemaBase):
     updated_at: datetime
     created_by: int | None
     updated_by: int | None
+    import_path: str | None = None
+    import_statement: str | None = None
+
+    @model_validator(mode="after")
+    def _populate_import_usage(self) -> WorkspaceComponentItem:
+        if self.current_version_no > 0 and self.code:
+            usage = build_component_import_usage(
+                self.code,
+                self.current_version_no,
+                self.name,
+                self.import_name,
+            )
+            self.import_path = usage["import_path"]
+            self.import_statement = usage["import_statement"]
+        else:
+            self.import_path = None
+            self.import_statement = None
+        return self
 
 
 class SuggestedComponentItem(SchemaBase):
@@ -150,6 +169,24 @@ class SuggestedComponentItem(SchemaBase):
     current_version_no: int
     available: bool = True
     unavailable_reason: str | None = None
+    import_path: str | None = None
+    import_statement: str | None = None
+
+    @model_validator(mode="after")
+    def _populate_import_usage(self) -> SuggestedComponentItem:
+        if self.current_version_no > 0 and self.code:
+            usage = build_component_import_usage(
+                self.code,
+                self.current_version_no,
+                self.name,
+                self.import_name,
+            )
+            self.import_path = usage["import_path"]
+            self.import_statement = usage["import_statement"]
+        else:
+            self.import_path = None
+            self.import_statement = None
+        return self
 
 
 class SuggestedComponentsResponse(BaseModel):

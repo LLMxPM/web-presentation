@@ -38213,6 +38213,28 @@
               }
             ],
             "title": "Unavailable Reason"
+          },
+          "import_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Path"
+          },
+          "import_statement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Statement"
           }
         },
         "type": "object",
@@ -39109,6 +39131,28 @@
               }
             ],
             "title": "Updated By"
+          },
+          "import_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Path"
+          },
+          "import_statement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Statement"
           }
         },
         "type": "object",

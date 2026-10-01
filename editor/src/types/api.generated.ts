@@ -2364,6 +2364,8 @@ export type SuggestedComponentItem = {
   "current_version_no": number
   "available"?: boolean
   "unavailable_reason"?: (string) | (null)
+  "import_path"?: (string) | (null)
+  "import_statement"?: (string) | (null)
 }
 
 export type SuggestedComponentsResponse = {
@@ -2523,6 +2525,8 @@ export type WorkspaceComponentItem = {
   "updated_at": string
   "created_by": (number) | (null)
   "updated_by": (number) | (null)
+  "import_path"?: (string) | (null)
+  "import_statement"?: (string) | (null)
 }
 
 export type WorkspaceComponentPageReferenceItem = {

@@ -59,6 +59,7 @@ PAGE_CODE_STANDARD = """
 - 如果只有标题栏或单个内容模块重复，而整页标题区、主体区和辅助区的空间关系不稳定，则分别考虑原子组件或内容组件。只有当前页面独特叙事、没有稳定复用结构的一次性排版和包装容器才直接保留在页面源码中。新组件创建后完成校验、发布并更新项目 suggested_components。
 - 跨页面或跨项目复用的结构才应进入工作空间组件；组件接口稳定后优先使用 props/slots 表达变化，避免把当前项目内容写死在组件源码中。
 - 不要为了预先抽象、减少当前文件长度或替换一小段局部标记而拆分组件；组件的创建时机应由可复用的页面类型、重复的内容职责和稳定的接口共同决定。
+- 页面源码引用工作空间组件时，必须使用版本化别名路径 `@workspace-components/<component_code>/v/<version_no>`（例如 `import MetricCard from '@workspace-components/CMP20260503001/v/1'`）。其中编码必须为组件真实编码 code，不可使用自增 ID 或相对路径；版本号必须为已发布的正式版本 current_version_no（必须大于 0），未发布或草稿状态的组件不可在页面中引用。组件导入标识符优先使用组件的 import_name。
 """.strip()
 
 
@@ -67,6 +68,7 @@ COMPONENT_CODE_STANDARD = """
 
 - 组件按页面组件、内容组件和原子组件选择正确的 component_type；页面组件负责整页骨架，内容组件负责页面内内容块，原子组件保持单一职责。
 - 组件 content 必须是完整、可运行的 Vue SFC；优先使用 `<script setup lang="ts">`、Composition API、`defineProps`/`defineEmits`、顶层静态 import 和 Vue 响应式能力，不使用 Node API、服务端文件系统 API、远程脚本、未声明依赖、全局副作用或运行时动态拼接 import。
+- 组件源码或 preview_schema 的 slot component 中引用其它工作空间组件时，必须使用版本化别名路径 `@workspace-components/<component_code>/v/<version_no>`，且被引用组件必须已经发布正式版本（current_version_no > 0），不得使用本地相对路径、自增 ID 或未发布的草稿。
 - 页面组件用于封面、目录、章节页、页面骨架、报告页模板、数据页模板或重复内容页模板，应以 DefaultContainer 或已发布页面骨架为根部，并具备独立的整页画布承载能力，不依赖父页面偶然提供的 h-full/w-full 高度上下文；通过 props 或具名 slot 接收可变标题区和主体内容，不硬编码具体页面文案。
 - 页面组件只承载可复用的整页壳和空间关系；页面特有的正文、图表和数据应通过 props/slots 或页面内内容组件注入。跨页面或跨项目复用的结构才应进入工作空间组件，组件接口稳定后避免把当前项目内容写死在组件源码中。
 - 内容组件必须在 preview_schema.props 中声明至少一个尺寸控制字段，例如 width、height、minHeight 或 aspectRatio；所有组件都必须提供合法的 preview_schema。
