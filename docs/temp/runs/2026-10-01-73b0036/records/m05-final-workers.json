@@ -1,0 +1,45 @@
+{
+  "status": "passed",
+  "observations": [
+    {
+      "worker_id": "renderer-1",
+      "worker_epoch": "0078e27ec4c0431cb91c0ad9da70ab40",
+      "slot_state": "idle",
+      "init_process": {
+        "name": "tini",
+        "executable": "tini"
+      },
+      "receipt": {
+        "http_status": null,
+        "status": null,
+        "resource_state": null,
+        "cleaned_at": null,
+        "finished_at": null
+      },
+      "error_code": null,
+      "processes": [],
+      "artifact_files": 0,
+      "artifact_bytes": 0
+    },
+    {
+      "worker_id": "renderer-2",
+      "worker_epoch": "14dd029826494854bad96a9f265fdcf2",
+      "slot_state": "idle",
+      "init_process": {
+        "name": "tini",
+        "executable": "tini"
+      },
+      "receipt": {
+        "http_status": null,
+        "status": null,
+        "resource_state": null,
+        "cleaned_at": null,
+        "finished_at": null
+      },
+      "error_code": null,
+      "processes": [],
+      "artifact_files": 0,
+      "artifact_bytes": 0
+    }
+  ]
+}

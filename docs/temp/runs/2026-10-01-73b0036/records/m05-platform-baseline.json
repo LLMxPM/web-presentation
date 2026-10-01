@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "revision": [
+    {
+      "version_num": "20260926_0100"
+    }
+  ],
+  "image": "sha256:1be21571a63b4c285de0381d0bf052f598e5c67f4e560ff9155280a54d21bfa1",
+  "entrypoint": "原始镜像 CMD，自动迁移开启"
+}

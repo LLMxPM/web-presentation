@@ -77,7 +77,12 @@ class DockerDrill:
         """写入脱敏的小型 JSON 证据，禁止写入上下文凭证。"""
         if Path(name).name != name:
             raise ValueError("证据名称不能包含目录")
-        (self.output / name).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        target = self.output / name
+        if target.exists():
+            previous = json.loads(target.read_text(encoding="utf-8"))
+            if isinstance(previous, dict) and previous.get("status") == "failed" and previous != data:
+                target.with_name(target.stem + "-failure-" + str(time.time_ns()) + ".json").write_bytes(target.read_bytes())
+        target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def snapshot(self) -> None:
         """逐阶段记录实际容器、镜像与拓扑，不把尚未启动的 Renderer 记作已就绪。"""

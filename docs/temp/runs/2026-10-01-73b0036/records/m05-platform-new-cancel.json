@@ -1,0 +1,163 @@
+{
+  "status": "passed",
+  "label": "new-cancel",
+  "cancel": true,
+  "observations": [
+    {
+      "seconds": 3.006,
+      "state": {
+        "run": [
+          {
+            "run_id": "c498a489-a418-418d-b039-801dbba56e78",
+            "status": "waiting_external",
+            "error_code": null,
+            "event_index": 7
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-3604f89e0245519b08eff6b2d0bf6b64",
+            "batch_id": "ai-page-batch-cc3f4a833cb921a71cd4a5fac1e03a32",
+            "status": "running",
+            "result_page_id": null,
+            "error_code": null
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-cc3f4a833cb921a71cd4a5fac1e03a32",
+            "status": "waiting_tasks",
+            "lease_generation": 0,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-3604f89e0245519b08eff6b2d0bf6b64",
+            "status": "running",
+            "result_consumed_at": null,
+            "result_cleared": true,
+            "error_code": null
+          }
+        ]
+      }
+    },
+    {
+      "seconds": 6.668,
+      "state": {
+        "run": [
+          {
+            "run_id": "c498a489-a418-418d-b039-801dbba56e78",
+            "status": "cancelling",
+            "error_code": null,
+            "event_index": 9
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-3604f89e0245519b08eff6b2d0bf6b64",
+            "batch_id": "ai-page-batch-cc3f4a833cb921a71cd4a5fac1e03a32",
+            "status": "running",
+            "result_page_id": null,
+            "error_code": null
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-cc3f4a833cb921a71cd4a5fac1e03a32",
+            "status": "cancelled",
+            "lease_generation": 0,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-3604f89e0245519b08eff6b2d0bf6b64",
+            "status": "running",
+            "result_consumed_at": null,
+            "result_cleared": true,
+            "error_code": null
+          }
+        ]
+      }
+    },
+    {
+      "seconds": 9.675,
+      "state": {
+        "run": [
+          {
+            "run_id": "c498a489-a418-418d-b039-801dbba56e78",
+            "status": "cancelled",
+            "error_code": null,
+            "event_index": 11
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-3604f89e0245519b08eff6b2d0bf6b64",
+            "batch_id": "ai-page-batch-cc3f4a833cb921a71cd4a5fac1e03a32",
+            "status": "cancelled",
+            "result_page_id": null,
+            "error_code": "AI_RUN_CANCELLED"
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-cc3f4a833cb921a71cd4a5fac1e03a32",
+            "status": "cancelled",
+            "lease_generation": 0,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-3604f89e0245519b08eff6b2d0bf6b64",
+            "status": "cancelled",
+            "result_consumed_at": null,
+            "result_cleared": true,
+            "error_code": "AI_RUN_CANCELLED"
+          }
+        ]
+      }
+    }
+  ],
+  "run_id": "c498a489-a418-418d-b039-801dbba56e78",
+  "session_id": "session-e0717dd12526477a9dcdd88d26007ef2",
+  "final": {
+    "run": [
+      {
+        "run_id": "c498a489-a418-418d-b039-801dbba56e78",
+        "status": "cancelled",
+        "error_code": null,
+        "event_index": 11
+      }
+    ],
+    "jobs": [
+      {
+        "job_id": "ai-page-job-3604f89e0245519b08eff6b2d0bf6b64",
+        "batch_id": "ai-page-batch-cc3f4a833cb921a71cd4a5fac1e03a32",
+        "status": "cancelled",
+        "result_page_id": null,
+        "error_code": "AI_RUN_CANCELLED"
+      }
+    ],
+    "batches": [
+      {
+        "batch_id": "ai-external-batch-cc3f4a833cb921a71cd4a5fac1e03a32",
+        "status": "cancelled",
+        "lease_generation": 0,
+        "error_code": null
+      }
+    ],
+    "tasks": [
+      {
+        "task_id": "ai-external-task-3604f89e0245519b08eff6b2d0bf6b64",
+        "status": "cancelled",
+        "result_consumed_at": null,
+        "result_cleared": true,
+        "error_code": "AI_RUN_CANCELLED"
+      }
+    ]
+  },
+  "elapsed_seconds": 9.675
+}

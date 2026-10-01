@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import path from 'node:path'
 
 const [directory, mode = 'same'] = process.argv.slice(2)
-if (!directory || !['same', 'cross', 'build'].includes(mode)) throw new Error('需要演练目录和 same/cross/build 场景')
+if (!directory || !['same', 'single', 'cross', 'build'].includes(mode)) throw new Error('需要演练目录和 same/single/cross/build 场景')
 const root = path.resolve(import.meta.dirname, '../..')
 const folder = path.resolve(directory)
 if (!folder.startsWith(path.join(root, '.tmp', 'docker-architecture') + path.sep)) throw new Error('无效演练目录')
@@ -47,6 +47,13 @@ page.on('requestfailed', request => failedRequests.push({ path: new URL(request.
 const report = { status: 'failed', mode, browser: browser.version(), requests, failed_requests: failedRequests, errors }
 try {
   let url
+  if (data.preview_gateway_override) {
+    // 只改专属容器名对应的回环端口，不修改请求票据、版本头或模块内容。
+    await page.route(/^http:\/\/m05_(platform|lite)\//, async route => {
+      const requestUrl = new URL(route.request().url())
+      await route.continue({ url: new URL(requestUrl.pathname + requestUrl.search, context.origins.gateway).href })
+    })
+  }
   if (mode === 'build') {
     const latest = JSON.parse(await readFile(path.join(output, 'pipeline-current.json'), 'utf8'))
     const site = path.resolve(output, latest.build_site)
@@ -75,11 +82,18 @@ try {
     const preview = await page.request.post(origin + `/api/pages/${data.page_id}/versions/${version}/preview-artifact`, { data: {} })
     if (!preview.ok()) throw new Error(`预览创建失败 ${preview.status()}`)
     url = (await preview.json()).preview_url
+    if (data.preview_gateway_override) {
+      // Docker 服务地址供真实 Renderer 使用；主机 Chromium 经同一入口的回环映射访问。
+      const internal = new URL(url)
+      if (!['m05_platform', 'm05_lite'].includes(internal.hostname)) throw new Error('预览地址不属于本次专属入口')
+      url = new URL(internal.pathname + internal.search, origin).href
+      report.preview_address_mapping = { internal_host: internal.hostname, external_origin: origin }
+    }
     // 工作台与 iframe 同源；先导航该 Gateway，再替换父页面，避免 about:blank 的 opaque origin。
     await page.goto(origin + '/healthz')
     await page.setContent('<iframe title="architecture-preview" style="width:1920px;height:1080px;border:0"></iframe>')
     await page.locator('iframe').evaluate((element, value) => { element.src = value }, url)
-    if (mode === 'same') {
+    if (mode === 'same' || mode === 'single') {
       await page.frameLocator('iframe').getByRole('heading', { name: 'Docker architecture probe' }).waitFor({ timeout: 45_000 })
       await page.frameLocator('iframe').getByText('Rendered by Runtime', { exact: true }).waitFor()
     } else {
@@ -89,7 +103,7 @@ try {
     }
   }
   if (mode !== 'cross') {
-    const frame = mode === 'same' ? page.frames().find(item => item.parentFrame()) : page.mainFrame()
+    const frame = mode === 'same' || mode === 'single' ? page.frames().find(item => item.parentFrame()) : page.mainFrame()
     report.page_style = await frame.evaluate(async () => {
       // 目标样式必须真正生效；字体下载和解析也应完成，不能以响应 200 代替可用性。
       await document.fonts.ready
@@ -97,6 +111,14 @@ try {
       return { color: style.color, padding: style.paddingTop, fonts_loading: [...document.fonts].filter(font => font.status === 'loading').length, fonts_error: [...document.fonts].filter(font => font.status === 'error').length }
     })
     if (report.page_style.color !== 'rgb(18, 52, 86)' || report.page_style.padding !== '48px' || report.page_style.fonts_error || report.page_style.fonts_loading) throw new Error('目标 scoped CSS 或字体未实际生效')
+    if (data.public_kit) {
+      report.public_kit = await frame.evaluate(() => {
+        // 构建站点还会渲染缩略图；选择实际最大页面画布，避免把缩略图副本计成公共组件重复。
+        const canvas = [...document.querySelectorAll('.probe')].sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0]
+        return { tables: canvas.querySelectorAll('[data-runtime-kit-table="v1"]').length, text: canvas.querySelector('[data-runtime-kit-table="v1"]')?.textContent, size: canvas.querySelector('[data-kit-size]')?.textContent }
+      })
+      if (report.public_kit.tables !== 1 || !report.public_kit.text.includes('Kit v1') || report.public_kit.size !== '1920 × 1080') throw new Error('旧版公开 Kit 表格或尺寸能力没有实际生效')
+    }
     if (failedRequests.length) throw new Error('浏览器存在失败网络请求')
   }
   const collected = await Promise.allSettled(pending)
@@ -117,6 +139,9 @@ try {
       if (!relevant.some(item => item.path.endsWith(suffix) && item.status === 409 && item.code === 'PREVIEW_VERSION_SKEW')) throw new Error(`未覆盖 ${suffix} 的明确版本拒绝`)
     }
     if (await page.frameLocator('iframe').getByRole('heading', { name: 'Docker architecture probe' }).count()) throw new Error('跨版页面意外加载')
+  } else if (mode === 'single') {
+    if (relevant.some(item => item.status >= 400) || errors.length) throw new Error('单副本预览有失败请求或页面异常')
+    report.versions = [...new Set(relevant.map(item => item.version).filter(Boolean))]
   } else if (requests.some(item => item.status >= 400) || errors.length) {
     throw new Error('构建入口加载有失败请求或页面异常')
   }
@@ -133,7 +158,12 @@ try {
   throw error
 } finally {
   await Promise.allSettled(pending)
-  await writeFile(path.join(output, `browser-${mode}.json`), JSON.stringify(report, null, 2))
+  const reportPath = path.join(output, `browser-${mode}.json`)
+  const previous = await readFile(reportPath, 'utf8').catch(() => null)
+  if (previous && JSON.parse(previous).status === 'failed') {
+    await writeFile(path.join(output, `browser-${mode}-failure-${Date.now()}.json`), previous)
+  }
+  await writeFile(reportPath, JSON.stringify(report, null, 2))
   await browser.close()
   if (server) await new Promise(resolve => server.close(resolve))
 }

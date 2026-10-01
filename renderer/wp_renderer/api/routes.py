@@ -8,12 +8,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from render_contracts.constants import RESOURCE_STATE_RELEASED
+from render_contracts.errors import RenderContractError
+from render_contracts.schema import ExecutionRequest
 
 from wp_renderer.config import get_renderer_settings
 from wp_renderer.control.slot import SlotController
 from wp_renderer.security.auth import require_service_token
-from render_contracts.constants import RESOURCE_STATE_RELEASED
-from render_contracts.schema import ExecutionRequest
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +78,14 @@ async def accept_execution(
 
     try:
         request = ExecutionRequest.from_dict(payload)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=400, detail={"code": "RENDER_CONTRACT_MISMATCH", "message": str(exc)}) from exc
     slot = get_slot()
-    status_code, receipt = await slot.accept(request)
+    try:
+        # Slot 先返回已有回执，再校验新请求；保留过期票据重试的幂等顺序。
+        status_code, receipt = await slot.accept(request)
+    except RenderContractError as exc:
+        raise HTTPException(status_code=400, detail={"code": "RENDER_CONTRACT_MISMATCH", "message": str(exc)}) from exc
     if status_code == 429:
         raise HTTPException(
             status_code=429,

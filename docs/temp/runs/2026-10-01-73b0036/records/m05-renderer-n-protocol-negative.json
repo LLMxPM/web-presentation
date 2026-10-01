@@ -1,0 +1,7 @@
+{
+  "status": "passed",
+  "http_status": 400,
+  "code": "RENDER_CONTRACT_MISMATCH",
+  "protocol_version": "internal/render/v1",
+  "slot_generation_unchanged": true
+}

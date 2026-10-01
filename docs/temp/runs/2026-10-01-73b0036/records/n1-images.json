@@ -1,0 +1,33 @@
+{
+  "source_ref": "4c7eee809d19a268e2c919ed5865a62ca388e6df",
+  "locks": {
+    "uv.lock": "a982d79788029efb84b3c2664de32830bd8cf83bc9a4a93ca158ae1d71562d77",
+    "pnpm-lock.yaml": "2b281dff33e807e5661c367323d13cec7d7b9bafb61267fd91a45c9fe484d91b"
+  },
+  "images": {
+    "lite": {
+      "tag": "wp-lite-m05-4c7eee8:local",
+      "exit_code": 0,
+      "dockerfile_sha256": "fda97bea8d3206e1d529cf07ce4796bcb72e2d1867388ea044187f1f9de29620",
+      "id": "sha256:67bbfdebf833d7e4a1af25c45b448b62483b813fe84cd00619ef40d66d48fb20"
+    },
+    "platform": {
+      "tag": "wp-platform-m05-4c7eee8:local",
+      "exit_code": 0,
+      "dockerfile_sha256": "11fb42c229bfc33df42b5be4c63a037c6fcbddcc0f64f50245aba0b0de1f5965",
+      "id": "sha256:1be21571a63b4c285de0381d0bf052f598e5c67f4e560ff9155280a54d21bfa1"
+    },
+    "runtime": {
+      "tag": "wp-runtime-m05-4c7eee8:local",
+      "exit_code": 0,
+      "dockerfile_sha256": "529a46bc501873ad39ed87aca911cc8726c46ea9c89ec8760c389fa87ef1ae1f",
+      "id": "sha256:10616bef9eb858abcba99c7626954ee278d2abe83b6c5914164e21812606fd90"
+    },
+    "renderer": {
+      "tag": "wp-renderer-m05-4c7eee8:local",
+      "exit_code": 0,
+      "dockerfile_sha256": "48932338fa81fd5ea7a509df3cffeba6d5a3f6c592be530d3f3e364b830a359f",
+      "id": "sha256:bb37ab6fa079d0a18bc3535e0ac4461239f8236098b35809172f449a2ed30b08"
+    }
+  }
+}

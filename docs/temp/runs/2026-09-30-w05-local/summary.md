@@ -65,6 +65,6 @@ python scripts/contracts/check-image-startup.py --variant lite --image wp-lite-w
 
 ## 4. 仍需测试机的场景
 
-固定该候选与最终部署镜像后，按[现行计划](../../plans/architecture-improvement-plan-2026-09-29.md)执行：M01 真实截图/构建链路，M04 容器强杀、owner/PID 重用与跨副本保护/一次消费，M05 正常 iframe 同版跨副本/跨版请求、旧应用完整任务业务及真实升级/回滚入口。PG 基础认领/迁移通过不替代这些场景。
+固定该候选与最终部署镜像后，按[当时计划（已归档）](../../archive/architecture-improvement-plan-2026-09-29.md)执行：M01 真实截图/构建链路，M04 容器强杀、owner/PID 重用与跨副本保护/一次消费，M05 正常 iframe 同版跨副本/跨版请求、旧应用完整任务业务及真实升级/回滚入口。PG 基础认领/迁移通过不替代这些场景。
 
 M02 权限隔离、M03 受限容量、M06 双架构与发布、M07 完整恢复、M08 UI/权限/跨仓仍按计划保留各自未完成条件。升级继续排空旧 Run/页面任务并停旧业务实例；应用回滚保留前向补偿 schema、关闭旧迁移器；预览池保持同版并排空切换。

@@ -1,0 +1,27 @@
+{
+  "status": "passed",
+  "page_id": 1,
+  "project_id": 1,
+  "screenshot_job_id": 3,
+  "screenshot": {
+    "sha256": "7ab1bee0b2c6dec4d00e3854452f804413fba2840e3b0db3027310e312cdc158",
+    "bytes": 28949,
+    "width": 1920,
+    "height": 1080,
+    "page_version": 1
+  },
+  "build_job_id": 2,
+  "build": {
+    "sha256": "1dec7429160e79b2d38e35fdfaaadbcf53ba141da80d5195a9d3ff028731e299",
+    "bytes": 15232995,
+    "entry": "index.html",
+    "attempt_id": "bb711a7bd889449c9f2c7c93983ff0d9"
+  },
+  "artifact_directory": "pipeline-1790814468213929000",
+  "build_site": "pipeline-1790814468213929000/build-site",
+  "images": {
+    "backend": "sha256:536c8234c381756502e8fdeecf7c355683b8eb53bc1d232f7cdd7d8c005c9782",
+    "runtime": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+    "renderer": "sha256:9adcddc490cfd72a1c1780af988c812a069e27214b2a139f361b5e145cdddb02"
+  }
+}

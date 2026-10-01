@@ -1,4 +1,4 @@
-> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/temp/architecture-assessment-2026-09-28.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构评估](../architecture-assessment-2026-09-30.md) · [改进与下一轮验证计划](../plans/architecture-improvement-plan-2026-09-29.md)。
+> **归档说明（2026-09-29）**：本文已由新一轮静态评估与计划接替，不再作为现行状态或执行入口。原位置：`docs/temp/architecture-assessment-2026-09-28.md`。历史完成标记、测试结果、发布状态和建议均只代表当时记录；本轮没有重新验证。现行入口：[架构调整收尾工作计划](../plans/architecture-closeout-plan-2026-10-01.md)。
 
 <!-- 文件功能：docs/temp 现行架构评估（对照仓库代码重核版，2026-09-28）；执行计划见 plans/remaining-work-2026-09-28.md。 -->
 # 架构评估（现状与问题）

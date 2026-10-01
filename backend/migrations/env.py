@@ -6,23 +6,23 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
-
 from app.core.config import get_settings
 from app.db.base import Base
+from app.db.migrations import configure_migration_transactions
 from app.models import (
     AiLlmConfig,
     AiLlmProviderConfig,
     AiLlmSlotBinding,
-    UserSession,
-    User,
     Page,
     Project,
+    User,
+    UserSession,
     Workspace,
-    WorkspaceMember,
     WorkspaceFontConfig,
-)  # noqa: F401
+    WorkspaceMember,
+)
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 config = context.config
 
@@ -51,7 +51,7 @@ def run_migrations_offline() -> None:
 def do_run_migrations(connection) -> None:
     """在线模式下使用真实连接执行业务迁移。"""
 
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, transactional_ddl=True)
     with context.begin_transaction():
         context.run_migrations()
 
@@ -64,6 +64,7 @@ async def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+    configure_migration_transactions(connectable)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

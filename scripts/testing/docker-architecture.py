@@ -8,16 +8,30 @@ import time
 from pathlib import Path
 
 from docker_architecture_cases import owner_drill, seed
+from docker_architecture_compatibility import combinations
 from docker_architecture_credentials import credentials
+from docker_architecture_current_entries import current_entries
 from docker_architecture_env import DockerDrill, command, create_environment
+from docker_architecture_evidence import provenance, removal_gate
 from docker_architecture_jobs import competing_jobs
 from docker_architecture_lifecycle import lifecycle
 from docker_architecture_migration import legacy
+from docker_architecture_old_entries import old_entries
 from docker_architecture_pipeline import (
     browser,
     pipeline,
     update_backend,
     update_runtime,
+)
+from docker_architecture_startup import startup_negatives
+from docker_architecture_upgrade import baseline as m05_baseline
+from docker_architecture_upgrade import upgrade as m05_upgrade
+
+PHASES = (
+    "setup", "backend", "renderer", "runtime", "seed", "owner", "owner-pause", "owner-hostname", "legacy",
+    "m05-baseline", "m05-upgrade", "m05-combinations", "m05-old-entries", "m05-current-entries", "m05-provenance", "m05-startup-negatives",
+    "browser-same", "browser-cross", "pipeline", "jobs", "credentials", "credentials-runtime", "browser-build",
+    "render-cancel", "render-cancel-result", "render-timeout", "render-kill", "render-late", "cleanup",
 )
 
 
@@ -57,9 +71,9 @@ def start_services(drill: DockerDrill, defer_renderer: bool) -> None:
 
 
 def main() -> None:
-    """各阶段可独立重跑；cleanup 仅删除本次专属项目及其数据卷。"""
+    """按前置状态执行独立阶段；baseline/upgrade 需旧 head 基线，cleanup 只删除本次专属项目。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("setup", "backend", "renderer", "runtime", "seed", "owner", "owner-pause", "owner-hostname", "legacy", "browser-same", "browser-cross", "pipeline", "jobs", "credentials", "credentials-runtime", "browser-build", "render-cancel", "render-cancel-result", "render-timeout", "render-kill", "render-late", "cleanup"))
+    parser.add_argument("phase", choices=PHASES)
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--backend-image", default="wp-lite:drill")
     parser.add_argument("--runtime-image", default="wp-runtime:drill")
@@ -95,6 +109,20 @@ def main() -> None:
             update_backend(drill, args.backend_image)
         elif args.phase == "legacy":
             legacy(drill)
+        elif args.phase == "m05-baseline":
+            m05_baseline(drill)
+        elif args.phase == "m05-upgrade":
+            m05_upgrade(drill)
+        elif args.phase == "m05-combinations":
+            combinations(drill)
+        elif args.phase == "m05-provenance":
+            provenance(drill)
+        elif args.phase == "m05-current-entries":
+            current_entries(drill)
+        elif args.phase == "m05-old-entries":
+            old_entries(drill)
+        elif args.phase == "m05-startup-negatives":
+            startup_negatives(drill)
         elif args.phase.startswith("browser-"):
             browser(drill, args.phase.removeprefix("browser-"), args.other_runtime_image)
         elif args.phase == "pipeline":
@@ -109,6 +137,8 @@ def main() -> None:
         elif args.phase.startswith("credentials"):
             credentials(drill, ("runtime",) if args.phase == "credentials-runtime" else ("runtime", "renderer"))
         elif args.phase == "cleanup":
+            if drill.context.get("m05_images"):
+                removal_gate(drill)
             try:
                 drill.snapshot()
             except RuntimeError as exc:
@@ -125,7 +155,7 @@ def main() -> None:
             drill.snapshot()
         print(f"阶段 {args.phase} 完成，耗时 {time.monotonic()-started:.1f}s；证据：{drill.output}", flush=True)
     except Exception as exc:
-        drill.save(args.phase + "-failure.json", {"status": "failed", "error_type": type(exc).__name__, "elapsed_seconds": round(time.monotonic()-started, 3)})
+        drill.save(args.phase + "-failure-" + str(time.time_ns()) + ".json", {"status": "failed", "error_type": type(exc).__name__, "elapsed_seconds": round(time.monotonic()-started, 3)})
         raise
 
 

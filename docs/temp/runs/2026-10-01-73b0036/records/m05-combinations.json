@@ -1,0 +1,488 @@
+{
+  "status": "passed",
+  "source_n1": "4c7eee8",
+  "combinations": [
+    {
+      "backend": "N",
+      "runtime": "N",
+      "renderer": "N",
+      "result": {
+        "status": "passed",
+        "page_id": 1,
+        "project_id": 1,
+        "screenshot_job_id": 8,
+        "screenshot": {
+          "sha256": "7ab1bee0b2c6dec4d00e3854452f804413fba2840e3b0db3027310e312cdc158",
+          "bytes": 28949,
+          "width": 1920,
+          "height": 1080,
+          "page_version": 2
+        },
+        "build_job_id": 7,
+        "build": {
+          "sha256": "255fbe2d5826b3c79cf9f32fea741e4b96cae8a346a4ee7fdeacc60eddbbf744",
+          "bytes": 15233000,
+          "entry": "index.html",
+          "attempt_id": "e48c98c7ea2a47edb046bf8c3003a70e"
+        },
+        "artifact_directory": "pipeline-1790813430591996400",
+        "build_site": "pipeline-1790813430591996400/build-site",
+        "images": {
+          "backend": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536",
+          "runtime": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+          "renderer": "sha256:9adcddc490cfd72a1c1780af988c812a069e27214b2a139f361b5e145cdddb02"
+        },
+        "reused_evidence": "m05-all-n-pipeline.json"
+      }
+    },
+    {
+      "backend": "N",
+      "runtime": "N",
+      "renderer": "N-1",
+      "result": {
+        "status": "passed",
+        "page_id": 1,
+        "project_id": 1,
+        "screenshot_job_id": 9,
+        "screenshot": {
+          "sha256": "7ab1bee0b2c6dec4d00e3854452f804413fba2840e3b0db3027310e312cdc158",
+          "bytes": 28949,
+          "width": 1920,
+          "height": 1080,
+          "page_version": 2
+        },
+        "build_job_id": 8,
+        "build": {
+          "sha256": "ce174f57c6cfc644a956f9a2e2575710cc9e7ea4d0c4a1d8c2c7c072cb0fc04a",
+          "bytes": 15233002,
+          "entry": "index.html",
+          "attempt_id": "c399c396709c4eedbf02f944e4aea8d6"
+        },
+        "artifact_directory": "pipeline-1790813461057016000",
+        "build_site": "pipeline-1790813461057016000/build-site",
+        "images": {
+          "backend": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536",
+          "runtime": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+          "renderer": "sha256:bb37ab6fa079d0a18bc3535e0ac4461239f8236098b35809172f449a2ed30b08"
+        },
+        "reused_evidence": "m05-old-renderer-pipeline.json"
+      }
+    },
+    {
+      "backend": "N",
+      "runtime": "N-1",
+      "renderer": "N-1",
+      "preview": {
+        "status": "passed",
+        "behavior": "rejected",
+        "http_status": 503,
+        "code": "RUNTIME_VERSION_UNKNOWN"
+      },
+      "result": {
+        "status": "passed",
+        "supported": false,
+        "request_timeout_seconds": 20,
+        "images": {
+          "backend": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536",
+          "runtime": "sha256:10616bef9eb858abcba99c7626954ee278d2abe83b6c5914164e21812606fd90",
+          "renderer": "sha256:bb37ab6fa079d0a18bc3535e0ac4461239f8236098b35809172f449a2ed30b08"
+        },
+        "screenshot": {
+          "id": 11,
+          "status": "failed",
+          "attempt_count": 3,
+          "error_code": "RENDER_DEADLINE_EXCEEDED"
+        },
+        "requests": [
+          {
+            "id": 15,
+            "status": "expired",
+            "result_id": null,
+            "error_code": "RENDER_DEADLINE_EXCEEDED"
+          },
+          {
+            "id": 16,
+            "status": "cancelled",
+            "result_id": null,
+            "error_code": "RENDER_CANCELLED"
+          },
+          {
+            "id": 17,
+            "status": "expired",
+            "result_id": null,
+            "error_code": "RENDER_DEADLINE_EXCEEDED"
+          }
+        ],
+        "build": {
+          "id": 9,
+          "sha256": "d2a4806a1bcb226ac198e1f608c8eea82f31c003b78057fd115a02559b26b71c",
+          "bytes": 15232950,
+          "directory": "unsupported-build-1790813844362913700"
+        },
+        "browser": {
+          "status": "passed",
+          "mode": "build",
+          "browser": "148.0.7778.96",
+          "requests": [
+            {
+              "path": "/index.html",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/index-CHPQkqgM.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/rolldown-runtime-Dd_uD5pT.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/build-release-main-BVyaGkJP.css",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/build-release-main-DWpjnwQx.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/config-MbuuV2do.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/vendor-BP6-Jd5m.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/RuntimeProjectShell-B0gOQAKg.css",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/PG20261001001-DwP86alA.css",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/PG20261001001-CQN-lf_k.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/RuntimeProjectShell-LXxlm25y.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/SourceHanSansSC-VF.otf-C66EjbRv.woff2",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/SourceCodePro-Regular.ttf-CBOlD63d.woff2",
+              "query_keys": [],
+              "status": 200
+            }
+          ],
+          "failed_requests": [],
+          "errors": [],
+          "page_style": {
+            "color": "rgb(18, 52, 86)",
+            "padding": "48px",
+            "fonts_loading": 0,
+            "fonts_error": 0
+          },
+          "public_kit": {
+            "tables": 1,
+            "text": "版本状态Kit v1保留可用",
+            "size": "1920 × 1080"
+          }
+        },
+        "scope": "预期截图失败与独立构建验证通过；不支持预览/截图整链路"
+      }
+    },
+    {
+      "backend": "N",
+      "runtime": "N-1",
+      "renderer": "N",
+      "preview": {
+        "status": "passed",
+        "behavior": "rejected",
+        "http_status": 503,
+        "code": "RUNTIME_VERSION_UNKNOWN"
+      },
+      "result": {
+        "status": "passed",
+        "supported": false,
+        "request_timeout_seconds": 20,
+        "images": {
+          "backend": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536",
+          "runtime": "sha256:10616bef9eb858abcba99c7626954ee278d2abe83b6c5914164e21812606fd90",
+          "renderer": "sha256:9adcddc490cfd72a1c1780af988c812a069e27214b2a139f361b5e145cdddb02"
+        },
+        "screenshot": {
+          "id": 12,
+          "status": "failed",
+          "attempt_count": 3,
+          "error_code": "RENDER_DEADLINE_EXCEEDED"
+        },
+        "requests": [
+          {
+            "id": 18,
+            "status": "expired",
+            "result_id": null,
+            "error_code": "RENDER_DEADLINE_EXCEEDED"
+          },
+          {
+            "id": 19,
+            "status": "expired",
+            "result_id": null,
+            "error_code": "RENDER_DEADLINE_EXCEEDED"
+          },
+          {
+            "id": 20,
+            "status": "cancelled",
+            "result_id": null,
+            "error_code": "RENDER_CANCELLED"
+          }
+        ],
+        "build": {
+          "id": 10,
+          "sha256": "8a01b5e9e0a25a53292cadb934a9d45ed4f5138550c7fe47bcba4e6731d82740",
+          "bytes": 15232944,
+          "directory": "unsupported-build-1790813946136228000"
+        },
+        "browser": {
+          "status": "passed",
+          "mode": "build",
+          "browser": "148.0.7778.96",
+          "requests": [
+            {
+              "path": "/index.html",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/index-DBQV4fMk.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/rolldown-runtime-Dd_uD5pT.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/build-release-main-BVyaGkJP.css",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/build-release-main-D9s5sFn9.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/config-CkErufaE.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/vendor-BP6-Jd5m.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/RuntimeProjectShell-B0gOQAKg.css",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/PG20261001001-DwP86alA.css",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/PG20261001001-ceY75lRI.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/RuntimeProjectShell-DkyNSan8.js",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/SourceHanSansSC-VF.otf-C66EjbRv.woff2",
+              "query_keys": [],
+              "status": 200
+            },
+            {
+              "path": "/assets/SourceCodePro-Regular.ttf-CBOlD63d.woff2",
+              "query_keys": [],
+              "status": 200
+            }
+          ],
+          "failed_requests": [],
+          "errors": [],
+          "page_style": {
+            "color": "rgb(18, 52, 86)",
+            "padding": "48px",
+            "fonts_loading": 0,
+            "fonts_error": 0
+          },
+          "public_kit": {
+            "tables": 1,
+            "text": "版本状态Kit v1保留可用",
+            "size": "1920 × 1080"
+          }
+        },
+        "scope": "预期截图失败与独立构建验证通过；不支持预览/截图整链路"
+      }
+    },
+    {
+      "backend": "N-1",
+      "runtime": "N-1",
+      "renderer": "N-1",
+      "dialect": "platform",
+      "result": {
+        "status": "passed",
+        "page_id": 1,
+        "project_id": 1,
+        "screenshot_job_id": 2,
+        "screenshot": {
+          "sha256": "7ab1bee0b2c6dec4d00e3854452f804413fba2840e3b0db3027310e312cdc158",
+          "bytes": 28949,
+          "width": 1920,
+          "height": 1080,
+          "page_version": 1
+        },
+        "build_job_id": 1,
+        "build": {
+          "sha256": "f2287ebdb674488e37f112d6337735568e0c198f9942ea0d47d37f0902cf77af",
+          "bytes": 15232950,
+          "entry": "index.html",
+          "attempt_id": "632f2a6f6f3049dbadaa40afaff46086"
+        },
+        "artifact_directory": "pipeline-1790813995618621700",
+        "build_site": "pipeline-1790813995618621700/build-site",
+        "images": {
+          "backend": "sha256:1be21571a63b4c285de0381d0bf052f598e5c67f4e560ff9155280a54d21bfa1",
+          "runtime": "sha256:10616bef9eb858abcba99c7626954ee278d2abe83b6c5914164e21812606fd90",
+          "renderer": "sha256:bb37ab6fa079d0a18bc3535e0ac4461239f8236098b35809172f449a2ed30b08"
+        }
+      },
+      "reused_evidence": "m05-platform-old-artifact-on-n.json"
+    },
+    {
+      "backend": "N-1",
+      "runtime": "N-1",
+      "renderer": "N-1",
+      "db": "N 保留补偿",
+      "dialect": "lite",
+      "result": {
+        "status": "passed",
+        "page_id": 1,
+        "project_id": 2,
+        "screenshot_job_id": 2,
+        "screenshot": {
+          "sha256": "7ab1bee0b2c6dec4d00e3854452f804413fba2840e3b0db3027310e312cdc158",
+          "bytes": 28949,
+          "width": 1920,
+          "height": 1080,
+          "page_version": 1
+        },
+        "build_job_id": 1,
+        "build": {
+          "sha256": "09800c5f57d9edb28831b160bb4afca682b77203eb23196edd184d8f030eae8c",
+          "bytes": 15232952,
+          "entry": "index.html",
+          "attempt_id": "23ecd14647ed4e2c97c5f1e2ed2bee58"
+        },
+        "artifact_directory": "pipeline-1790814335354095200",
+        "build_site": "pipeline-1790814335354095200/build-site",
+        "images": {
+          "backend": "sha256:67bbfdebf833d7e4a1af25c45b448b62483b813fe84cd00619ef40d66d48fb20",
+          "runtime": "sha256:67bbfdebf833d7e4a1af25c45b448b62483b813fe84cd00619ef40d66d48fb20",
+          "renderer": "sha256:bb37ab6fa079d0a18bc3535e0ac4461239f8236098b35809172f449a2ed30b08"
+        }
+      }
+    }
+  ],
+  "renderer_n1_image": "sha256:bb37ab6fa079d0a18bc3535e0ac4461239f8236098b35809172f449a2ed30b08",
+  "completion": "旧 Lite 回环地址负例后定向 m05-old-entries 复测；各成功阶段分别留证，前四项复用已通过原记录",
+  "current_entry_cases": [
+    {
+      "dialect": "platform",
+      "backend": "N",
+      "runtime": "N",
+      "renderer": "N",
+      "result": {
+        "status": "passed",
+        "page_id": 1,
+        "project_id": 1,
+        "screenshot_job_id": 3,
+        "screenshot": {
+          "sha256": "7ab1bee0b2c6dec4d00e3854452f804413fba2840e3b0db3027310e312cdc158",
+          "bytes": 28949,
+          "width": 1920,
+          "height": 1080,
+          "page_version": 1
+        },
+        "build_job_id": 2,
+        "build": {
+          "sha256": "1dec7429160e79b2d38e35fdfaaadbcf53ba141da80d5195a9d3ff028731e299",
+          "bytes": 15232995,
+          "entry": "index.html",
+          "attempt_id": "bb711a7bd889449c9f2c7c93983ff0d9"
+        },
+        "artifact_directory": "pipeline-1790814468213929000",
+        "build_site": "pipeline-1790814468213929000/build-site",
+        "images": {
+          "backend": "sha256:536c8234c381756502e8fdeecf7c355683b8eb53bc1d232f7cdd7d8c005c9782",
+          "runtime": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+          "renderer": "sha256:9adcddc490cfd72a1c1780af988c812a069e27214b2a139f361b5e145cdddb02"
+        }
+      }
+    },
+    {
+      "dialect": "lite",
+      "backend": "N",
+      "runtime": "N",
+      "renderer": "N",
+      "result": {
+        "status": "passed",
+        "page_id": 1,
+        "project_id": 2,
+        "screenshot_job_id": 3,
+        "screenshot": {
+          "sha256": "7ab1bee0b2c6dec4d00e3854452f804413fba2840e3b0db3027310e312cdc158",
+          "bytes": 28949,
+          "width": 1920,
+          "height": 1080,
+          "page_version": 1
+        },
+        "build_job_id": 2,
+        "build": {
+          "sha256": "470276927c89e4775473c53ce787bd718a4222e90c5634357e3aab00ab42b603",
+          "bytes": 15232940,
+          "entry": "index.html",
+          "attempt_id": "6352925dbb3942aea3ee41a49df10605"
+        },
+        "artifact_directory": "pipeline-1790814510318379200",
+        "build_site": "pipeline-1790814510318379200/build-site",
+        "images": {
+          "backend": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536",
+          "runtime": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536",
+          "renderer": "sha256:9adcddc490cfd72a1c1780af988c812a069e27214b2a139f361b5e145cdddb02"
+        }
+      }
+    }
+  ]
+}

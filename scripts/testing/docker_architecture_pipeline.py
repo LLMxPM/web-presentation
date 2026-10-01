@@ -41,11 +41,26 @@ def update_runtime(drill: DockerDrill, image: str) -> None:
         config["services"][role]["image"] = image_id
     path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     drill.compose("up", "-d", "--force-recreate", "preview_a", "preview_b", "build_a", "build_b", "check")
+    for role in ("preview_a", "preview_b", "build_a", "build_b", "check"):
+        wait_runtime(drill, role)
     drill.compose("restart", "gateway")
     drill.context["images"]["runtime"] = image_id
     drill.context["candidate"] = command("git", "rev-parse", "HEAD")
     (drill.directory / "context.json").write_text(json.dumps(drill.context, indent=2), encoding="utf-8")
     drill.save("runtime-image.json", {"image_id": image_id, "candidate": drill.context["candidate"]})
+
+
+def wait_runtime(drill: DockerDrill, service: str) -> None:
+    """实际 Runtime 就绪后再检查版本语义，避免把启动期连接失败当作旧版本拒绝。"""
+    code = "fetch('http://127.0.0.1:7373/__runtime_readyz').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"
+    container = drill.container(service)
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        result = subprocess.run(["docker", "exec", container, "node", "-e", code], capture_output=True, check=False)
+        if result.returncode == 0:
+            return
+        time.sleep(0.5)
+    raise TimeoutError("Runtime 未在观察预算内就绪")
 
 
 def browser(drill: DockerDrill, mode: str, other_runtime_image: str | None = None) -> None:
@@ -90,13 +105,40 @@ def pipeline(drill: DockerDrill, data: dict) -> None:
     """完成真实截图 PNG 与构建 ZIP 下载；入口浏览器加载另由 browser-build 阶段执行。"""
     folder = drill.output / ("pipeline" if not (drill.output / "pipeline").exists() else f"pipeline-{time.time_ns()}")
     env = {**os.environ, "WP_SMOKE_USERNAME": "admin", "WP_SMOKE_PASSWORD": drill.context["password"]}
-    result = subprocess.run([sys.executable, str(ROOT / "scripts/contracts/check-deployment-pipeline.py"),
+    args = [sys.executable, str(ROOT / "scripts/contracts/check-deployment-pipeline.py"),
                              "--base-url", drill.context["origins"]["gateway"], "--page-id", str(data["page_id"]),
-                             "--project-id", str(data["project_id"]), "--output-dir", str(folder), "--timeout", "180"],
+                             "--project-id", str(data["project_id"]), "--output-dir", str(folder), "--timeout", "180"]
+    if data.get("probe_service"):
+        # 旧入口的公开地址在 Docker 网络内可达；探针与 Renderer 使用同一地址，避免主机 DNS 差异。
+        service = data["probe_service"]
+        if service not in ("m05_platform_migrate", "m05_lite_migrate"):
+            raise ValueError("探针容器必须属于本次 M05 专属入口")
+        origin = "http://" + service.removesuffix("_migrate")
+        probe_args = ["/probe/check-deployment-pipeline.py", "--base-url", origin, "--page-id", str(data["page_id"]),
+                      "--project-id", str(data["project_id"]), "--output-dir", "/evidence/" + folder.name, "--timeout", "180"]
+        code = "import os,sys,runpy; sys.path.insert(0,'/probe'); os.environ['WP_SMOKE_USERNAME']='admin'; os.environ['WP_SMOKE_PASSWORD']=os.environ['DEFAULT_ADMIN_PASSWORD']; sys.argv=" + repr(probe_args) + "; runpy.run_path('/probe/check-deployment-pipeline.py',run_name='__main__')"
+        args = ["docker", "compose", "-p", drill.project, "-f", str(drill.directory / "compose.json"), "run", "--rm", "--no-deps",
+                "-v", f"{(ROOT / 'scripts/contracts').as_posix()}:/probe:ro", "-v", f"{drill.output.as_posix()}:/evidence",
+                "--entrypoint", "python", service, "-c", code]
+    result = subprocess.run(args,
                             env=env, capture_output=True, text=True, encoding="utf-8", timeout=420, check=False)
     if result.returncode:
         raise RuntimeError(result.stderr[-2400:])
     print(result.stdout, flush=True)
+    prepare_build_site(drill, folder)
+    report = json.loads((folder / "pipeline.json").read_text(encoding="utf-8"))
+    build_id = report["build_job_id"]
+    if data.get("probe_service"):
+        from docker_architecture_upgrade_env import rows
+        role = "platform" if data["probe_service"] == "m05_platform_migrate" else "lite"
+        jobs = rows(drill, role, "id,status,attempt_id,attempt_count,lease_owner,claimed_at", "project_build_jobs", f"id={int(build_id)}")
+    else:
+        jobs = sql(drill, f"SELECT coalesce(json_agg(t),'[]'::json) FROM (SELECT id,status,attempt_id,attempt_count,lease_owner,claimed_at FROM project_build_jobs WHERE id={int(build_id)}) t")
+    drill.save("pipeline-workers.json", jobs)
+
+
+def prepare_build_site(drill: DockerDrill, folder) -> None:
+    """有界安全展开实际 ZIP，并记录供浏览器加载的原产物目录。"""
     destination = folder / "build-site"
     destination.mkdir(exist_ok=False)
     with ZipFile(folder / "build.zip") as archive:
@@ -111,9 +153,5 @@ def pipeline(drill: DockerDrill, data: dict) -> None:
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(archive.read(entry))
-    report = json.loads((folder / "pipeline.json").read_text(encoding="utf-8"))
-    build_id = report["build_job_id"]
-    jobs = sql(drill, f"SELECT coalesce(json_agg(t),'[]'::json) FROM (SELECT id,status,attempt_id,attempt_count,lease_owner,claimed_at FROM project_build_jobs WHERE id={int(build_id)}) t")
-    drill.save("pipeline-workers.json", jobs)
     drill.save("pipeline-current.json", {"directory": folder.relative_to(drill.output).as_posix(),
                                         "build_site": destination.relative_to(drill.output).as_posix()})

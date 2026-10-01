@@ -1,0 +1,85 @@
+{
+  "status": "passed",
+  "mode": "build",
+  "browser": "148.0.7778.96",
+  "requests": [
+    {
+      "path": "/index.html",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/index-5FZOBhcR.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/rolldown-runtime-Dd_uD5pT.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/build-release-main-BVyaGkJP.css",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/build-release-main-C1HRc8JW.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/config-CQ_2pJIX.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/vendor-BP6-Jd5m.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/RuntimeProjectShell-B0gOQAKg.css",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/PG20261001001-DwP86alA.css",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/PG20261001001-I8D2XsyW.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/RuntimeProjectShell-C3-4bVfz.js",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/SourceHanSansSC-VF.otf-C66EjbRv.woff2",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/assets/SourceCodePro-Regular.ttf-CBOlD63d.woff2",
+      "query_keys": [],
+      "status": 200
+    }
+  ],
+  "failed_requests": [],
+  "errors": [],
+  "page_style": {
+    "color": "rgb(18, 52, 86)",
+    "padding": "48px",
+    "fonts_loading": 0,
+    "fonts_error": 0
+  },
+  "public_kit": {
+    "tables": 1,
+    "text": "版本状态Kit v1保留可用",
+    "size": "1920 × 1080"
+  }
+}

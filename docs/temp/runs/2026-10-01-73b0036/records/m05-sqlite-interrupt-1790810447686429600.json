@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "fault": "SIGKILL 真实 ALTER ADD COLUMN 执行后、revision 写入前",
+  "revision_after_kill": [
+    {
+      "version_num": "20260926_0100"
+    }
+  ],
+  "orphan_process_owner": true
+}

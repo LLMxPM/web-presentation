@@ -1,0 +1,56 @@
+{
+  "status": "passed",
+  "dialect": "postgresql",
+  "steps": [
+    {
+      "status": "passed",
+      "fault": "SIGKILL 实际迁移容器，阻塞于真实 DROP COLUMN",
+      "revision_after_kill": [
+        {
+          "version_num": "20260926_0100"
+        }
+      ],
+      "migration_exit_code": 137
+    },
+    {
+      "checkpoint": "20260930_0100",
+      "revision": [
+        {
+          "version_num": "20260930_0100"
+        }
+      ],
+      "old_orm": {
+        "status": "rejected",
+        "exit_code": 1,
+        "error_column": "lease_generation"
+      }
+    },
+    {
+      "checkpoint": "forward-compensation",
+      "revision": [
+        {
+          "version_num": "20260930_0300"
+        }
+      ],
+      "old_orm": {
+        "status": "passed",
+        "rows": 10,
+        "updated_batch": "ai-page-batch-d0527e458fb5e67f1c77aa975d0c270a",
+        "before": 0,
+        "after": 1
+      }
+    },
+    {
+      "checkpoint": "old-entry-migrator",
+      "exit_code": 255,
+      "error_signature": "Can't locate revision",
+      "status": "rejected"
+    }
+  ],
+  "retained_revision": [
+    {
+      "version_num": "20260930_0300"
+    }
+  ],
+  "rollback": "仅回退完整旧应用镜像；关闭旧入口自动迁移，保留前向补偿 schema 与历史业务数据"
+}

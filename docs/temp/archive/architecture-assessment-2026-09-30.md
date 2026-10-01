@@ -1,12 +1,14 @@
+> **归档说明（2026-10-01）**：本文保留归档时的完整正文和历史验收要求，不再作为现行状态或执行入口。后续工作统一见[架构调整收尾工作计划](../plans/architecture-closeout-plan-2026-10-01.md)。正文中的缺口、完成状态与下一步仅代表当时记录；运行证据保留原位置。
+
 # 架构评估（2026-09-30）
 
 **现有模块边界继续成立，当前应优先修正升级兼容、普通 Run 收敛和版本指纹传播，再完成容量与恢复验收。** 平台已经有真实截图、构建、多副本执行和故障恢复记录，可以支持继续开展受控的内部部署试用；现有证据还不足以支持任意混版、零中断升级、完整多租户隔离或固定容量承诺。
 
-本轮基线为 `9ebc414af6c7a2983072c21dd86b59daabcdc791`，分支 `dev`，审查开始时工作区干净。本报告接替 [09-29 基线评估](./archive/architecture-assessment-2026-09-29.md)，继续沿用 AR/W/M 编号与[现行工作计划](./plans/architecture-improvement-plan-2026-09-29.md)，避免另起一套任务清单。
+本轮基线为 `9ebc414af6c7a2983072c21dd86b59daabcdc791`，分支 `dev`，审查开始时工作区干净。本报告接替 [09-29 基线评估](./architecture-assessment-2026-09-29.md)，继续沿用 AR/W/M 编号与[现行工作计划](./architecture-improvement-plan-2026-09-29.md)，避免另起一套任务清单。
 
 ## 1. 本轮证据范围
 
-本轮读取当前代码、部署模板、CI、Git 历史和已入库的 [09-30 实机记录](./runs/2026-09-30-a06120e/summary.md)，运行针对性本地检查，并在独立内存数据库复现一个旧 ORM 与新表结构的兼容错误。没有连接测试机、重启业务服务、修改业务数据库、构建或发布镜像，也没有重新执行历史实机演练。
+本轮读取当前代码、部署模板、CI、Git 历史和已入库的 [09-30 实机记录](../runs/2026-09-30-a06120e/summary.md)，运行针对性本地检查，并在独立内存数据库复现一个旧 ORM 与新表结构的兼容错误。没有连接测试机、重启业务服务、修改业务数据库、构建或发布镜像，也没有重新执行历史实机演练。
 
 | 证据 | 本次如何使用 |
 | :--- | :--- |
@@ -50,7 +52,7 @@ no such column: ai_page_mutation_batches.lease_generation
 
 **建议：** 当前组合先按停机升级约束操作，禁止 N-1 页面写入流量在删列后继续运行。若要支持滚动和仅回退应用镜像，应跨发布保留旧列：先发布停止使用旧列的代码，确认旧实例退出和回滚窗口结束，再执行删除迁移。是否通过补偿迁移恢复列，应在实施时结合该 revision 的发布状态决定。
 
-验收必须覆盖 N-1 在 N schema 上的页面任务入队、Batch 读取/写入、取消及外部续跑，不能只检查登录。依据：[删列迁移](../../backend/migrations/versions/20260930_0100_drop_page_mutation_batch_lease_generation.py)、[当前入队路径](../../backend/app/ai/page_mutation_enqueue.py)、[M05 记录](./runs/2026-09-30-a06120e/m05/summary.md)。旧代码可用 `git show 4c7eee8:backend/app/models/ai_page_mutation.py` 与相同 ref 下的入队文件核对。
+验收必须覆盖 N-1 在 N schema 上的页面任务入队、Batch 读取/写入、取消及外部续跑，不能只检查登录。依据：[删列迁移](../../../backend/migrations/versions/20260930_0100_drop_page_mutation_batch_lease_generation.py)、[当前入队路径](../../../backend/app/ai/page_mutation_enqueue.py)、[M05 记录](../runs/2026-09-30-a06120e/m05/summary.md)。旧代码可用 `git show 4c7eee8:backend/app/models/ai_page_mutation.py` 与相同 ref 下的入队文件核对。
 
 ### AR-05b 普通 Run 的跨容器遗留收敛没有生产闭环
 
@@ -60,7 +62,7 @@ no such column: ai_page_mutation_batches.lease_generation
 
 **建议：** 增加独立于 SSE 的 owner 存活登记与过期收敛路径，以持久化心跳、实例身份和 CAS 决定谁可以写终态；继续维持普通 Run 不自动续跑。不要直接按“多久没有模型事件”全局失败化 Run，长工具执行和慢模型可能仍然存活。若暂不实现后台收敛，应明确只提供手动解除，撤回自动有界恢复描述。
 
-验收场景是强杀 A、重建为新 hostname/PID、保持 B 的长任务活跃，并确认旧 Run 在约定时间内终态且会话可重新发起。依据：[启动恢复](../../backend/app/ai/run_recovery.py)、[空闲方法与活跃检查](../../backend/app/ai/platform_runtime.py)、[SSE 观察链路](../../backend/app/ai/run_sse_stream.py)、[会话门面](../../backend/app/ai/session_facade_pydantic.py)。
+验收场景是强杀 A、重建为新 hostname/PID、保持 B 的长任务活跃，并确认旧 Run 在约定时间内终态且会话可重新发起。依据：[启动恢复](../../../backend/app/ai/run_recovery.py)、[空闲方法与活跃检查](../../../backend/app/ai/platform_runtime.py)、[SSE 观察链路](../../../backend/app/ai/run_sse_stream.py)、[会话门面](../../../backend/app/ai/session_facade_pydantic.py)。
 
 ### AR-05c 版本指纹没有覆盖正常浏览器预览的完整链路
 
@@ -72,7 +74,7 @@ M05-F 已证明“人工携带失配头的入口请求返回 409”，没有证�
 
 **建议：** 发布时注入同一源码/镜像构建标识，副本 ID 单独保存；由服务端创建预览时绑定版本，并把版本约束传播到 HTML、模块、CSS 和其他相关子请求，或采用明确的版本路由与整池切换。在此之前，同池只放同一发布版本，升级按排空/停机处理。
 
-验收应真实打开浏览器，让 HTML 与至少一个模块落到不同版本，确认得到明确拒绝或稳定路由。依据：[指纹检查](../../runtime/src/core/plugins/runtime-health.ts)、[入口与模块分支](../../runtime/src/core/plugins/runtime-saas-preview.ts)、[Backend 代理](../../backend/app/api/routes/preview.py)、[模板](../../deploy/compose/compose.runtime-roles.yml)、[Runtime 镜像](../../runtime/Dockerfile)。
+验收应真实打开浏览器，让 HTML 与至少一个模块落到不同版本，确认得到明确拒绝或稳定路由。依据：[指纹检查](../../../runtime/src/core/plugins/runtime-health.ts)、[入口与模块分支](../../../runtime/src/core/plugins/runtime-saas-preview.ts)、[Backend 代理](../../../backend/app/api/routes/preview.py)、[模板](../../../deploy/compose/compose.runtime-roles.yml)、[Runtime 镜像](../../../runtime/Dockerfile)。
 
 ### AR-04 与 AR-08 验收完成标记超过了入库证据范围
 
@@ -89,15 +91,15 @@ M05-F 已证明“人工携带失配头的入口请求返回 409”，没有证�
 | M07 | 脚本与恢复清单 | DB、资源、密钥、版本一致的完整业务恢复和实际 RPO/RTO |
 | M08 | 本地代码与部分既有测试记录 | UI、权限与匹配 Agent Kit 版本的联合回归 |
 
-尤其是 [M04 初次场景 JSON](./runs/2026-09-30-a06120e/m04/m04-scenarios.json) 仍记录重启超时、CLI 缺 uv、取消路径 404；[S1 JSON](./runs/2026-09-30-a06120e/m04/m04-s1.json) 的四次截图返回同一个 job ID，构建为 partial。后续摘要描述的修复不应被否定，但缺少对应复测 JSON。相同 job 被重复查询成功不能证明四个独立 attempt，更不能证明竞争认领没有重复。
+尤其是 [M04 初次场景 JSON](../runs/2026-09-30-a06120e/m04/m04-scenarios.json) 仍记录重启超时、CLI 缺 uv、取消路径 404；[S1 JSON](../runs/2026-09-30-a06120e/m04/m04-s1.json) 的四次截图返回同一个 job ID，构建为 partial。后续摘要描述的修复不应被否定，但缺少对应复测 JSON。相同 job 被重复查询成功不能证明四个独立 attempt，更不能证明竞争认领没有重复。
 
 **建议：** 以“场景—输入—唯一 job/attempt/batch—执行者—终态—产物”逐项记录。补入最终复测文件、脚本、Compose 差异与镜像 digest。原摘要的“门关闭”作为历史记录保留，本轮按完整完成条件重新开放剩余范围。
 
 ## 4. 容量结果与下一步执行策略
 
-[混合负载](./runs/2026-09-30-a06120e/m03/summary.md) 记录 5 用户、并发 3、82 次操作、成功率 100%、合并 P95 97.96 秒、无 OOM、SQLite 写冲突与 busy timeout 均为 0。这证明该有限负载完成，不能推出 5–10 人持续并发的体验保证；机器使用 swap，且没有图片生成或独立交互预览的完整样本。
+[混合负载](../runs/2026-09-30-a06120e/m03/summary.md) 记录 5 用户、并发 3、82 次操作、成功率 100%、合并 P95 97.96 秒、无 OOM、SQLite 写冲突与 busy timeout 均为 0。这证明该有限负载完成，不能推出 5–10 人持续并发的体验保证；机器使用 swap，且没有图片生成或独立交互预览的完整样本。
 
-[阶梯原始报告](./runs/2026-09-30-a06120e/m03-stress/stress-report.json) 更明确地揭示排队延迟：
+[阶梯原始报告](../runs/2026-09-30-a06120e/m03-stress/stress-report.json) 更明确地揭示排队延迟：
 
 | 负载工人数 | 截图样本 | 截图 P50 | 截图 P95 | 页更样本 | 构建样本 |
 | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -112,7 +114,7 @@ M05-F 已证明“人工携带失配头的入口请求返回 409”，没有证�
 
 下一轮建议先补 `queue_wait_ms`、`execution_ms`、端到端时间、拒绝/超时、到达/完成数量和停止负载后的排空时间。独立发送预览、页更、截图和构建请求，分别统计；避免把成功结束的样本当全部到达请求。2C 上保持默认单槽，4C 上对比角色拆分与第二个单槽 Renderer，再决定是否提高全局预算。Renderer 继续保持单槽契约，多槽不是本轮推荐实现。
 
-M03-F1 仍为待定位问题。当前内存后端会检查 String 的 key+value、Hash 的单 field+value 和总量，不能仅凭“总量 6.9 MB 小于 128 MiB”排除单项超限。但 drill 的 small/medium/large 循环实际反复创建同一整项目预览，既不是三种独立大小，也不是重复刷新同一个 artifact。先取得拒绝操作、实际 UTF-8 大小、命中的预算及清扫状态，再决定修实现还是修测试；不要先提高上限。依据：[内存预算](../../backend/app/services/runtime_state/memory_backend.py)、[运行态错误映射](../../backend/app/services/runtime_artifact_store.py)、[drill](../../scripts/testing/lite-runtime-state-drill.py)。
+M03-F1 仍为待定位问题。当前内存后端会检查 String 的 key+value、Hash 的单 field+value 和总量，不能仅凭“总量 6.9 MB 小于 128 MiB”排除单项超限。但 drill 的 small/medium/large 循环实际反复创建同一整项目预览，既不是三种独立大小，也不是重复刷新同一个 artifact。先取得拒绝操作、实际 UTF-8 大小、命中的预算及清扫状态，再决定修实现还是修测试；不要先提高上限。依据：[内存预算](../../../backend/app/services/runtime_state/memory_backend.py)、[运行态错误映射](../../../backend/app/services/runtime_artifact_store.py)、[drill](../../../scripts/testing/lite-runtime-state-drill.py)。
 
 ## 5. 应保留的边界与剩余维护成本
 

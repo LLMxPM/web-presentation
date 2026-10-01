@@ -1,0 +1,96 @@
+{
+  "status": "passed",
+  "backend": "N",
+  "created_by": "N-1",
+  "dialect": "lite",
+  "backend_image": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536",
+  "build_job_id": 1,
+  "sha256": "09800c5f57d9edb28831b160bb4afca682b77203eb23196edd184d8f030eae8c",
+  "bytes": 15232952,
+  "unchanged": true,
+  "browser": {
+    "status": "passed",
+    "mode": "build",
+    "browser": "148.0.7778.96",
+    "requests": [
+      {
+        "path": "/index.html",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/index-C12KSkuy.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/rolldown-runtime-Dd_uD5pT.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/build-release-main-DSwvJ0Wy.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/config-BZRUrjWQ.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/vendor-BP6-Jd5m.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/build-release-main-BVyaGkJP.css",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/RuntimeProjectShell-B0gOQAKg.css",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/PG20261001001-DwP86alA.css",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/PG20261001001-qst8YbHU.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/RuntimeProjectShell-CR3vdmyy.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/SourceHanSansSC-VF.otf-C66EjbRv.woff2",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/SourceCodePro-Regular.ttf-CBOlD63d.woff2",
+        "query_keys": [],
+        "status": 200
+      }
+    ],
+    "failed_requests": [],
+    "errors": [],
+    "page_style": {
+      "color": "rgb(18, 52, 86)",
+      "padding": "48px",
+      "fonts_loading": 0,
+      "fonts_error": 0
+    },
+    "public_kit": {
+      "tables": 1,
+      "text": "版本状态Kit v1保留可用",
+      "size": "1920 × 1080"
+    }
+  }
+}

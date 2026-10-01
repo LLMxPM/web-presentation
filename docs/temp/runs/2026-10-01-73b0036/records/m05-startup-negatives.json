@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "cases": [
+    {
+      "dialect": "platform",
+      "revision": "20260926_0100",
+      "auto_migrate": false,
+      "exit_code": 3,
+      "error_signature": "process_owner",
+      "status": "rejected"
+    },
+    {
+      "dialect": "lite",
+      "revision": "20260926_0100",
+      "auto_migrate": false,
+      "exit_code": 3,
+      "error_signature": "process_owner",
+      "status": "rejected"
+    }
+  ]
+}

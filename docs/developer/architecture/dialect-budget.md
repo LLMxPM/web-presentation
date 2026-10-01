@@ -1,7 +1,7 @@
 <!-- 文件功能：双库（SQLite / PostgreSQL）方言维护预算治理文档；定义固定税口径、复审触发器与每季粗记账模板。 -->
 # 双库方言维护预算（WS-G6）
 
-> **状态**：已定（2026-09-28 产品拍板，2026-09-29 写入治理）。本文自包含结论；完整论证与代码锚点见内部评估 `docs/temp/architecture-assessment-2026-09-28.md` §3 / §4.1（`docs/temp` 为 gitignore 的内部文档，不对外发布）。
+> **状态**：已定（2026-09-28 产品拍板，2026-09-29 写入治理）。本文自包含结论；历史论证与代码锚点见[已归档 09-28 评估](../../temp/archive/architecture-assessment-2026-09-28.md) §3 / §4.1。`docs/temp` 已纳入版本控制，当前工作边界见[收尾计划](../../temp/plans/architecture-closeout-plan-2026-10-01.md)。
 > **适用范围**：Backend 在 SQLite 与 PostgreSQL 上的迁移方言、认领/租约方言、事务与锁原语差异，以及为维持「Lite 一等公民」而保留的双库兼容成本。
 
 ---

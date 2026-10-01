@@ -1,0 +1,56 @@
+{
+  "status": "passed",
+  "dialect": "sqlite",
+  "steps": [
+    {
+      "status": "passed",
+      "fault": "SIGKILL 真实 ALTER ADD COLUMN 执行后、revision 写入前",
+      "revision_after_kill": [
+        {
+          "version_num": "20260926_0100"
+        }
+      ],
+      "orphan_process_owner": false
+    },
+    {
+      "checkpoint": "20260930_0100",
+      "revision": [
+        {
+          "version_num": "20260930_0100"
+        }
+      ],
+      "old_orm": {
+        "status": "rejected",
+        "exit_code": 1,
+        "error_column": "lease_generation"
+      }
+    },
+    {
+      "checkpoint": "forward-compensation",
+      "revision": [
+        {
+          "version_num": "20260930_0300"
+        }
+      ],
+      "old_orm": {
+        "status": "passed",
+        "rows": 2,
+        "updated_batch": "ai-page-batch-51c61aac7a1cd1f3838f573063f9f8fb",
+        "before": 0,
+        "after": 1
+      }
+    },
+    {
+      "checkpoint": "old-entry-migrator",
+      "exit_code": 255,
+      "error_signature": "Can't locate revision",
+      "status": "rejected"
+    }
+  ],
+  "retained_revision": [
+    {
+      "version_num": "20260930_0300"
+    }
+  ],
+  "rollback": "仅回退完整旧应用镜像；关闭旧入口自动迁移，保留前向补偿 schema 与历史业务数据"
+}

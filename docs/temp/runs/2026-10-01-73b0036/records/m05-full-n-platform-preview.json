@@ -1,0 +1,463 @@
+{
+  "status": "passed",
+  "mode": "single",
+  "browser": "148.0.7778.96",
+  "requests": [
+    {
+      "path": "/healthz",
+      "query_keys": [],
+      "status": 200
+    },
+    {
+      "path": "/preview/artifacts/rt_1c45e16609984b71af98b255dc111ca5",
+      "query_keys": [
+        "token"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/main.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/@vite/client",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/__preview-tailwind.css",
+      "query_keys": [
+        "artifactId",
+        "token"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/node_modules/.vite/deps/vue.js",
+      "query_keys": [
+        "v"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/static-icons.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/composables/useTheme.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/config.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/favicon.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/App.vue",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/visual-edit/browser/selection-bridge.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/path.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/font-registry.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/page-preview-parent.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/visual-assets.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/render-ready.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/client-logger.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/node_modules/.pnpm/vite@8.3.0_@types+node@22.20.4_jiti@1.21.7_yaml@2.9.1/node_modules/vite/dist/client/env.mjs",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/node_modules/.vite/deps/vue.runtime.esm-bundler-SgbQlNp5.js",
+      "query_keys": [
+        "v"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/page-transition.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/icon-registry.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-kit/public/composables/theme/useTheme.v1.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/styles/global.css",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/node_modules/.vite/deps/yaml.js",
+      "query_keys": [
+        "v"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-shell/feedback/ToastContainer.vue",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/App.vue",
+      "query_keys": [
+        "vue",
+        "type",
+        "index",
+        "lang.css"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/view-module.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/@id/__x00__plugin-vue:export-helper",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/visual-edit/protocol.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/visual-edit/instrumentation/markers.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/visual-edit/browser/selection-overlay.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/shared/runtime-preview.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/shared/page-preview.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/node_modules/.vite/deps/rolldown-runtime-B-lAHAz2.js",
+      "query_keys": [
+        "v"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/composables/useToast.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-shell/feedback/ToastContainer.vue",
+      "query_keys": [
+        "vue",
+        "type",
+        "index",
+        "scoped",
+        "lang.css"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/build-release-view-modules.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/node_modules/.vite/deps/@lucide_vue.js",
+      "query_keys": [
+        "v"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/router/index.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/router/project-router.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/router/runtime-session.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/route-generator.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/node_modules/.vite/deps/vue-router.js",
+      "query_keys": [
+        "v"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/route-path-builder.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/views/StandalonePreviewView.vue",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/views/StandalonePreviewView.vue",
+      "query_keys": [
+        "vue",
+        "type",
+        "index",
+        "scoped",
+        "lang.css"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-shell/preview/ViewPreview.vue",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-kit/internal/components/viewport/ScaledCanvasViewport.vue",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/resize-observer.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/core/utils/page-scale.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-shell/preview/ViewPreview.vue",
+      "query_keys": [
+        "vue",
+        "type",
+        "index",
+        "scoped",
+        "lang.css"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-kit/internal/components/viewport/ScaledCanvasViewport.vue",
+      "query_keys": [
+        "vue",
+        "type",
+        "index",
+        "scoped",
+        "lang.css"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/@runtime-preview/rt_1c45e16609984b71af98b255dc111ca5/src/views/PG20261001001.vue",
+      "query_keys": [
+        "ctx"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/@runtime-preview/rt_1c45e16609984b71af98b255dc111ca5/src/views/PG20261001001.vue",
+      "query_keys": [
+        "ctx",
+        "vue",
+        "type",
+        "index",
+        "scoped",
+        "lang.css"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-kit/public/components/data/DataTable.v1.vue",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-kit/public/composables/page/usePageSize.v1.ts",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/node_modules/.vite/deps/clsx.js",
+      "query_keys": [
+        "v"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/runtime-kit/public/components/data/DataTable.v1.vue",
+      "query_keys": [
+        "vue",
+        "type",
+        "index",
+        "scoped",
+        "lang.css"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/node_modules/.vite/deps/tailwind-merge.js",
+      "query_keys": [
+        "v"
+      ],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/assets/runtime-shell/fonts/SourceHanSansSC-VF.otf.woff2",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    {
+      "path": "/runtime/__runtime_version/v1.MS4wLjArc2hhMjU2LWU1MzVhMDNjNDFlNTk1Mjc2ZGYzYzYxYTg2NGU3OWUwMDYzNTIxZGY0ZGI1MzViNjllOWFjYWE5YjEzMzhmNTU/src/assets/runtime-shell/fonts/SourceCodePro-Regular.ttf.woff2",
+      "query_keys": [],
+      "status": 200,
+      "version": "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    }
+  ],
+  "failed_requests": [],
+  "errors": [],
+  "preview_address_mapping": {
+    "internal_host": "m05_platform",
+    "external_origin": "http://127.0.0.1:55389"
+  },
+  "page_style": {
+    "color": "rgb(18, 52, 86)",
+    "padding": "48px",
+    "fonts_loading": 0,
+    "fonts_error": 0
+  },
+  "public_kit": {
+    "tables": 1,
+    "text": "版本状态Kit v1保留可用",
+    "size": "1920 × 1080"
+  },
+  "versions": [
+    "1.0.0+sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+  ]
+}

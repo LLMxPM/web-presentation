@@ -1,0 +1,7 @@
+{
+  "status": "observed_legacy_limitation",
+  "http_status": 500,
+  "code": null,
+  "protocol_version": "internal/render/v1",
+  "slot_generation_unchanged": true
+}

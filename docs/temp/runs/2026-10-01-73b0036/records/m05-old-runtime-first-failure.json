@@ -1,0 +1,24 @@
+{
+  "status": "unsupported_observed",
+  "preview_http": 503,
+  "preview_code": "RUNTIME_VERSION_UNKNOWN",
+  "screenshot_job_id": 7,
+  "probe_wait_seconds": 180,
+  "attempts": [
+    {
+      "attempt_uid": "93b6cdd8-45a8-4ba8-9cb4-61309e762dc4",
+      "request_id": 7,
+      "status": "terminal",
+      "active_occupancy": 0,
+      "error_code": "RENDER_ASSET_NOT_READY"
+    }
+  ],
+  "job": [
+    {
+      "id": 7,
+      "status": "cancelled",
+      "error_code": null
+    }
+  ],
+  "cleanup": "普通取消 API 后占用释放"
+}

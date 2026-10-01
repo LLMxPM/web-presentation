@@ -84,6 +84,44 @@ uv run --project backend python scripts/testing/docker-architecture.py render-la
 
 重复场景创建带时间戳的新报告，失败报告不覆盖。恢复截图保存 PNG 与摘要，取消/超时保留未发布的状态证据。阶段结束恢复代理与被中断服务，全部演练结束后仍执行 `cleanup`。这些证据覆盖 M01/M04 的截图生命周期，构建 attempt 故障、页面/图片/组件 Batch 交接、恢复、容量和远端发布继续按现行计划独立验收。
 
+## M05 完整旧镜像、迁移与公共能力
+
+`legacy` 是旧源码配当前依赖的领域探针。完整 N-1 演练另从固定 Git 对象导出全部源码，以其原始 Dockerfile、两份锁文件和 CMD 构建 platform、Lite、Runtime、Renderer；不覆盖旧源码，不把继承的 uv 基镜像 OCI revision 当应用来源。
+
+```powershell
+uv run --project backend python scripts/testing/docker_architecture_images.py
+docker build -f deploy/docker/Dockerfile.platform -t wp-platform-m05-n:local .
+docker build -f deploy/docker/Dockerfile.lite -t wp-lite-m05-n:local .
+docker build -f renderer/Dockerfile -t wp-renderer-m05-n:local .
+uv run --project backend python scripts/testing/docker-architecture.py setup --backend-image wp-lite-m05-n:local --runtime-image wp-runtime:drill --renderer-image wp-renderer-m05-n:local
+# 将该次 setup 输出赋给 $drillDirectory，再依次执行。
+uv run --project backend python scripts/testing/docker-architecture.py seed --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py m05-baseline --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py m05-upgrade --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py m05-startup-negatives --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py m05-combinations --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py m05-current-entries --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py m05-provenance --directory $drillDirectory
+```
+
+旧镜像脚本默认固定 `4c7eee8`；M05 阶段也绑定这些标签，改变样本时须同步修改并保存确切 Git SHA/镜像 ID。N Runtime 标签须预先按本文构建，不能直接复用来源不明的本地镜像。旧四镜像日志和锁摘要写入 `test-results/docker-architecture-images/4c7eee8/`。
+
+| 阶段 | 真实边界与证据 |
+| :--- | :--- |
+| `m05-baseline` | 新建专属 `m05_pg` 库与 `m05.db` 卷，使用完整旧 platform/Lite 原始 CMD 自动迁移到旧 head；API 创建历史数据，受控供应商调用真实页面工具、生产队列、远程校验、取消与 deferred 自动续跑 |
+| `m05-upgrade` | 停旧入口；PG 阻塞真实 DDL 后强杀迁移器，SQLite 在实际 ADD DDL 后强杀；检查列与 revision 原子回退。随后记录删列窗口旧 ORM 拒绝、前向补偿、旧入口未知 revision 拒绝、N 业务与关闭旧迁移器的完整应用回滚 |
+| `m05-startup-negatives` | 在另建的专属 PG 库/SQLite 文件构造旧 schema，N platform/Lite 真实 CMD 关闭自动迁移，必须非零退出；不改业务演练库 |
+| `m05-combinations` | 按版本组合分别核对正常 iframe、协议拒绝、真实 PNG/ZIP 与 ZIP 浏览器加载；完整旧 platform/Lite 生成的 ZIP 再由 N 应用原产物接口下载，摘要保持相同；旧镜像历史限制单独记录 |
+| `m05-current-entries` | 在保留历史库的 N platform/Lite 真实 CMD 上，分别完成全 N 预览、PNG、ZIP 与浏览器加载；不重新播种 |
+| `m05-old-entries` | 完整组合失败后的旧入口定向续跑；旧 Lite 使用远程 Worker 可达的 Runtime 角色基址，原始源码/CMD 保留。只有旧镜像与 N 下载入口身份、原 ZIP 摘要都匹配才复用旧产物记录 |
+| `m05-provenance` | 无网络容器逐文件比较 N/N-1 Backend/Renderer 源码与记录候选，核对全部旧 Kit 公开路径/源码 hash；实际浏览器样本是 `DataTable.v1` 与 `usePageSize.v1`，不代表每项能力均已渲染 |
+
+baseline/upgrade 是状态相关阶段：须从本次新演练的旧 head 执行，升级完成后不得为了重跑降库或 stamp；失败后先保留报告并恢复该专属快照，或创建新的隔离项目。其它阶段也须满足前置状态，Compose/context 改动串行执行。mock 只控制供应商工具调用，不替换生产队列、终态或续跑实现。
+
+组合负例给 N Backend 临时配置 20 秒渲染期限，并真实执行截图重试到失败；记录无结果及占用释放后恢复配置。缺发布身份的旧 Runtime 预览/截图不支持，独立 ZIP 构建和 HTTP 加载另验。复用先前通过记录必须匹配实际三镜像、页面版本及原 ZIP 摘要；记录标记 `reused_evidence`，不冒充新的执行样本。
+
+platform/Lite 使用真实交付 Nginx。旧入口产物地址是专属容器名，官方 HTTP 探针在本项目独立迁移容器中执行；主机 Chromium 将这些固定容器名映射到对应回环入口，映射单独留证，不注入版本头、不修改票据或响应。Renderer 浏览器仍在独立 Worker 执行。
+
 ## 证据与清理
 
 脱敏 JSON、PNG、ZIP 和失败记录在 `test-results/docker-architecture/<项目>/`。`.tmp` 内的 `context.json` 和 `compose.json` 含测试凭证，禁止提交、分享或打印；入库证据只复制明确审核过的小型 JSON。阶段失败保持非零退出码，不能以健康接口或部分产物计成功。重复 pipeline 使用新的产物目录，不覆盖前轮失败证据。
@@ -94,4 +132,4 @@ uv run --project backend python scripts/testing/docker-architecture.py render-la
 uv run --project backend python scripts/testing/docker-architecture.py cleanup --directory $drillDirectory
 ```
 
-cleanup 保存清理前拓扑并删除本项目容器/数据卷，不执行全局 prune，不修改已有开发容器。Windows 不执行 POSIX 子进程权限测试时，应使用这些真实 Linux 容器补证；完整跨任务权限、attempt 故障/取消、Batch 一次消费、备份恢复、容量目标、arm64 和 Registry/远端部署仍需各自矩阵验收。
+M05 cleanup 先对本次三个库、两个 Worker 分别执行只读 `app.scripts.check_render_worker_removal`，要求无未释放 attempt；任一门禁失败即停止摘除。随后保存清理前拓扑并删除本项目容器/数据卷，不执行全局 prune，不修改已有开发容器。失败阶段与浏览器失败报告带时间戳保留。Windows 不执行 POSIX 子进程权限测试时，应使用这些真实 Linux 容器补证；完整跨任务权限、attempt 故障/取消、Batch 一次消费、备份恢复、容量目标、arm64 和 Registry/远端部署仍需各自矩阵验收。

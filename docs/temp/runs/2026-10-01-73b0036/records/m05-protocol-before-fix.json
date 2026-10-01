@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "renderer_image": "sha256:936a3647eaceda79261705a9c3065d8e1af2d1209a78ad7d1a9ddfa5ed35db68",
+  "invalid_contract_version": "internal/render/v999",
+  "expected_http_status": 400,
+  "actual_http_status": 500,
+  "body_type": "text/plain; charset=utf-8",
+  "body_bytes": 21,
+  "slot_taken": false
+}

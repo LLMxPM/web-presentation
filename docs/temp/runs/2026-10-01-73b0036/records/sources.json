@@ -1,0 +1,216 @@
+{
+  "generated_at_utc": "2026-10-01T03:13:23.661136+00:00",
+  "head": "73b003680827b11a1fae0bbc31207d103bf0f349",
+  "n1_ref": "4c7eee809d19a268e2c919ed5865a62ca388e6df",
+  "candidate_committed": false,
+  "source_snapshot_scope": "本轮已修改/新增源码和文档，CRLF 统一 LF；摘要不是 Git commit 或发布 digest",
+  "modified_files": [
+    {
+      "path": "backend/app/db/migrations.py",
+      "normalized_lf_sha256": "fc4eb3676a32eac5aa4a32286d7e80f8579f04d813ed96618be78af8bd175e42",
+      "lines": 20
+    },
+    {
+      "path": "backend/migrations/env.py",
+      "normalized_lf_sha256": "1fdc15e533a0fd932ff2f963b063f68e8a4a341b228608d61a7c3ab5b943c865",
+      "lines": 80
+    },
+    {
+      "path": "backend/tests/integration/test_migration_interruption.py",
+      "normalized_lf_sha256": "4a216f6f3729cf5f730b509629ea7eb649063fd780e54a4e9b27f850f5961597",
+      "lines": 48
+    },
+    {
+      "path": "docs/developer/deployment/compatibility-matrix.md",
+      "normalized_lf_sha256": "de5150e7126e284de58e391bd0965f0be196f1c7b46742c04400e7f540e96410",
+      "lines": 140
+    },
+    {
+      "path": "docs/developer/deployment/upgrade-rollback.md",
+      "normalized_lf_sha256": "d39b2db82ab04e4bf1ffdf36b24433a089c1138ce183a91dd6e29113d220b3d3",
+      "lines": 63
+    },
+    {
+      "path": "docs/developer/testing/docker-architecture-drill.md",
+      "normalized_lf_sha256": "89d1d4025880d76fe477a4c65d82fd9c44fffae71081bdb1ff9cb30bb0ccfe15",
+      "lines": 135
+    },
+    {
+      "path": "docs/temp/plans/architecture-improvement-plan-2026-09-29.md",
+      "normalized_lf_sha256": "20e433027dd165445f8eb1da68eb24b1ce6f19a870d6d4bd4a4545f4d764c43e",
+      "lines": 283
+    },
+    {
+      "path": "docs/temp/runs/2026-10-01-73b0036/summary.md",
+      "normalized_lf_sha256": "4dfb3178c8ceba3fd4d582ee077825c33513919430f8db33032610b48f336ced",
+      "lines": 75
+    },
+    {
+      "path": "renderer/tests/test_api_contract_rejection.py",
+      "normalized_lf_sha256": "d36c2eec68cafdc99b2944e869c41197336931283f3f5f8e05962b1adf37bbd0",
+      "lines": 55
+    },
+    {
+      "path": "renderer/wp_renderer/api/routes.py",
+      "normalized_lf_sha256": "1dcaeb53b8f922be02b926a6f3b19703182484a70a5bf0fb0034822f9e753958",
+      "lines": 196
+    },
+    {
+      "path": "scripts/testing/docker-architecture-browser.mjs",
+      "normalized_lf_sha256": "5f151d3bcda23b523e7eb780a29a5ffd2378e2842d6523aba84d635fbe320376",
+      "lines": 169
+    },
+    {
+      "path": "scripts/testing/docker-architecture.py",
+      "normalized_lf_sha256": "76a2abe87deb709b98873647145ec2d6913b4ff1c0fd5ba131192ad1144dc061",
+      "lines": 163
+    },
+    {
+      "path": "scripts/testing/docker_architecture_artifacts.py",
+      "normalized_lf_sha256": "63c3dcb6330723b9bd95b152fc1ef842aa280684e9b708d4e64e6e884ad0ab60",
+      "lines": 43
+    },
+    {
+      "path": "scripts/testing/docker_architecture_compatibility.py",
+      "normalized_lf_sha256": "1746f52a25bcd28a0a9106edf3af10bb5b72bda3034b336b46f9b61daa7fbc7c",
+      "lines": 171
+    },
+    {
+      "path": "scripts/testing/docker_architecture_current_entries.py",
+      "normalized_lf_sha256": "122b8ee5804348a93246b213828be388c265c1d8e9f2cf46bff5e78bd53e84c1",
+      "lines": 36
+    },
+    {
+      "path": "scripts/testing/docker_architecture_env.py",
+      "normalized_lf_sha256": "5b1e4d4392802e8901abba5ccbb7e9322627c4adef060c8dc61d17132fc802ba",
+      "lines": 191
+    },
+    {
+      "path": "scripts/testing/docker_architecture_evidence.py",
+      "normalized_lf_sha256": "ae6cad76e20ddf9777b1bc346bbe65dac27c57b3f78cbba19a334867fc8d6f75",
+      "lines": 75
+    },
+    {
+      "path": "scripts/testing/docker_architecture_images.py",
+      "normalized_lf_sha256": "1c939193a4dcaef9a05f0d7de522cdb8d1785be287b236afb1c18936220eb36d",
+      "lines": 44
+    },
+    {
+      "path": "scripts/testing/docker_architecture_migration_gate.py",
+      "normalized_lf_sha256": "52073de6e6622b6e3a5ebbfd34934901192e825852f505c81c284bededf30fe7",
+      "lines": 25
+    },
+    {
+      "path": "scripts/testing/docker_architecture_mock.py",
+      "normalized_lf_sha256": "ffc18bb8901e3519552abf1f8195b01b2a0a396899713f998d8144dea7d22357",
+      "lines": 75
+    },
+    {
+      "path": "scripts/testing/docker_architecture_old_entries.py",
+      "normalized_lf_sha256": "1a5ee4353fa93176d4ce7369134d9571b714e4946d9f8984057fb268a1b7202f",
+      "lines": 68
+    },
+    {
+      "path": "scripts/testing/docker_architecture_pipeline.py",
+      "normalized_lf_sha256": "b66b93b6e6808baecdefadce5c81213d8b64173b195e55b64fe8c77e95d0038c",
+      "lines": 157
+    },
+    {
+      "path": "scripts/testing/docker_architecture_startup.py",
+      "normalized_lf_sha256": "510b1971d07fe8ee35d8fcb6ec7f57662f22db7dfee2a012fe677fef7853f220",
+      "lines": 45
+    },
+    {
+      "path": "scripts/testing/docker_architecture_unsupported.py",
+      "normalized_lf_sha256": "f98743d7e8eaa4dce55e5cc0f48bdfa741f1fabe0b59f9a956503eab9a2f5e18",
+      "lines": 86
+    },
+    {
+      "path": "scripts/testing/docker_architecture_upgrade.py",
+      "normalized_lf_sha256": "656d93a9c758e170980ee3e006a7a646b90825e99552575830090686793f625e",
+      "lines": 227
+    },
+    {
+      "path": "scripts/testing/docker_architecture_upgrade_business.py",
+      "normalized_lf_sha256": "a0e08c69ea4ce9aa64b8fc9bc50549614ae05353510c60d47c87ad026e554ba0",
+      "lines": 121
+    },
+    {
+      "path": "scripts/testing/docker_architecture_upgrade_env.py",
+      "normalized_lf_sha256": "ac5fe1dee569526ec912a5a1d0dd480ebdf28687b5ea48b0e76c26ec25f263bc",
+      "lines": 111
+    }
+  ],
+  "tracked_diff_sha256": "61aab077c53c9885c50ccd3fbbeda84d6d11266a46745b5c95ba245734c3fee6",
+  "locks": [
+    {
+      "path": "uv.lock",
+      "bytes": 761279,
+      "sha256": "c527feff60cae78fb9a8ea215b66622b1c76ab915749d253c50eefd0b0595626"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 208022,
+      "sha256": "b5390aa82b1de78506d8c1c5098ce5acc763cf893e97ddc4293e634c3923ce87"
+    }
+  ],
+  "build_identities": [
+    {
+      "stage": "迁移与应用回滚初版",
+      "image_id": "sha256:9b08e3f2fcfc0f234370f4c4bb8143e74afebb446acac99f17cdb4612b0ae497",
+      "build_log": {
+        "path": "test-results/docker-architecture-images/lite-n-fixed.log",
+        "bytes": 5906,
+        "sha256": "85d1fd334ac7af40594409d442fffc9de6f1eb95b02069c180263d8430a56b0d"
+      }
+    },
+    {
+      "stage": "迁移与应用回滚初版",
+      "image_id": "sha256:acef7410b4cc040aa4bf2b0905bcc83346506b8be651701e5232dd8d24df9326",
+      "build_log": {
+        "path": "test-results/docker-architecture-images/platform-n-fixed.log",
+        "bytes": 5160,
+        "sha256": "4a5e604a6301c1da9e3c06f463a7eaad1fab1623648d5e1fa1f2a27016739371"
+      }
+    },
+    {
+      "stage": "最终 N 入口与产物",
+      "image_id": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536",
+      "build_log": {
+        "path": "test-results/docker-architecture-images/lite-n-final.log",
+        "bytes": 5776,
+        "sha256": "6ae27c4aa163b9ae979ed4ec8b474404c64af3f76db9618fc3939abc51451114"
+      }
+    },
+    {
+      "stage": "最终 N 入口与产物",
+      "image_id": "sha256:536c8234c381756502e8fdeecf7c355683b8eb53bc1d232f7cdd7d8c005c9782",
+      "build_log": {
+        "path": "test-results/docker-architecture-images/platform-n-final.log",
+        "bytes": 5248,
+        "sha256": "1cdfb147cf97716a8dbfc481a5dea38ed7e16d67f369aaee4931ba578f28679f"
+      }
+    },
+    {
+      "stage": "HTTP 语义错误修复后的最终 Renderer",
+      "image_id": "sha256:9adcddc490cfd72a1c1780af988c812a069e27214b2a139f361b5e145cdddb02",
+      "build_log": {
+        "path": "test-results/docker-architecture-images/renderer-n-final.log",
+        "bytes": 65027,
+        "sha256": "7441eba5d4a60427927294e44a627f027ee7b7d331fa749d931e3c5b111787e1"
+      }
+    }
+  ],
+  "image_source_check": "m05-provenance.json",
+  "historical_image_build": "n1-images.json",
+  "runtime_n": {
+    "source_ref": "e82c793",
+    "image_id": "sha256:03a6187ff277ec58d7e530d136ec84a10425ce770599f41162e149f84d38bc23",
+    "scope": "复用上轮官方 Runtime 镜像；本轮全部 23 个旧公开入口源码对拍，实际渲染两项"
+  },
+  "limits": [
+    "旧 OCI label 继承基础镜像，不能作为应用来源",
+    "早期迁移镜像 ID 不倒填最终镜像 ID",
+    "归档阶段仅调整探针和文档；生产源码与 m05-provenance 对拍时保持一致"
+  ]
+}

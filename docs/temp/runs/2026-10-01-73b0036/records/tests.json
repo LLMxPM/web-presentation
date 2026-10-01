@@ -1,0 +1,131 @@
+{
+  "status": "passed",
+  "tests": [
+    {
+      "command": "uv run --project backend pytest backend/tests/integration/test_migration_interruption.py backend/tests/integration/test_page_batch_migration_compatibility.py backend/tests/integration/test_sqlite_migration.py backend/tests/integration/test_migration_behavior_contracts.py backend/tests/unit/test_db_adapter_layer.py -q",
+      "exit_code": 0,
+      "passed": 31,
+      "skipped": 2,
+      "seconds": 185.17,
+      "log": {
+        "path": "test-results/docker-architecture/wp-arch-drill-1594afc0/migration-tests-after.log",
+        "bytes": 124,
+        "sha256": "7fa86de80e7bc6770ed1e1df79fea471a6613fa1ccc28b87a08d388f1cfbe004"
+      },
+      "scope": "两个跳过按原测试条件；修复前同集合含两个新回归失败，保留 migration-tests-before.log"
+    },
+    {
+      "exit_code": 0,
+      "passed": 27,
+      "seconds": 22.77,
+      "log": {
+        "path": "test-results/docker-architecture/wp-arch-drill-1594afc0/renderer-tests-after.log",
+        "bytes": 2309,
+        "sha256": "450d343a250322cb560b104e68e5a33e4f3c8700a91e324b60d1937c6e8acad5"
+      },
+      "warnings": "Windows asyncio 子进程 transport 关闭警告；Linux 实机另验清理",
+      "test_scope": "uv run --project renderer pytest renderer/tests -q",
+      "command_record_scope": "保留已执行 pytest 范围；精确 shell 包装命令未写入原始日志，最终检查命令另有完整记录"
+    },
+    {
+      "exit_code": 0,
+      "passed": 3,
+      "seconds": 0.65,
+      "evidence": "最终测试夹具 monkeypatch 隔离调整后的会话工具输出；完整集合日志另存",
+      "test_scope": "uv run --project renderer pytest renderer/tests/test_api_contract_rejection.py -q",
+      "command_record_scope": "保留已执行 pytest 范围；精确 shell 包装命令未写入原始日志，最终检查命令另有完整记录"
+    },
+    {
+      "exit_code": 0,
+      "passed": 22,
+      "seconds": 0.13,
+      "log": {
+        "path": "test-results/docker-architecture/wp-arch-drill-1594afc0/render-contracts-tests.log",
+        "bytes": 101,
+        "sha256": "f52c515579c4507fb39d9c68f83b6ca223095a5a6faf79be74f78dc87989d4ae"
+      },
+      "test_scope": "uv run --project packages/render-contracts pytest packages/render-contracts/tests -q",
+      "command_record_scope": "保留已执行 pytest 范围；精确 shell 包装命令未写入原始日志，最终检查命令另有完整记录"
+    }
+  ],
+  "final_checks": [
+    {
+      "name": "repository",
+      "command": "C:\\Users\\李立国\\AppData\\Roaming\\npm\\pnpm.cmd run test:repository",
+      "exit_code": 0,
+      "started_at_utc": "2026-10-01T03:10:21.316530+00:00",
+      "finished_at_utc": "2026-10-01T03:10:22.627888+00:00",
+      "log": {
+        "path": "test-results/docker-architecture/wp-arch-drill-1594afc0/final-repository.log",
+        "bytes": 362,
+        "sha256": "f5e0d87f588ae0c073705f796cd2103b7519cb7fb979ed2936c645440fd5bd94"
+      },
+      "passed": 13
+    },
+    {
+      "name": "ruff",
+      "command": "uv run --project backend ruff check backend\\app\\db\\migrations.py backend\\migrations\\env.py backend\\tests\\integration\\test_migration_interruption.py renderer\\tests\\test_api_contract_rejection.py renderer\\wp_renderer\\api\\routes.py scripts\\testing\\docker-architecture.py scripts\\testing\\docker_architecture_artifacts.py scripts\\testing\\docker_architecture_compatibility.py scripts\\testing\\docker_architecture_current_entries.py scripts\\testing\\docker_architecture_env.py scripts\\testing\\docker_architecture_evidence.py scripts\\testing\\docker_architecture_images.py scripts\\testing\\docker_architecture_migration_gate.py scripts\\testing\\docker_architecture_mock.py scripts\\testing\\docker_architecture_old_entries.py scripts\\testing\\docker_architecture_pipeline.py scripts\\testing\\docker_architecture_startup.py scripts\\testing\\docker_architecture_unsupported.py scripts\\testing\\docker_architecture_upgrade.py scripts\\testing\\docker_architecture_upgrade_business.py scripts\\testing\\docker_architecture_upgrade_env.py",
+      "exit_code": 0,
+      "started_at_utc": "2026-10-01T03:10:21.772271+00:00",
+      "finished_at_utc": "2026-10-01T03:10:21.881964+00:00",
+      "log": {
+        "path": "test-results/docker-architecture/wp-arch-drill-1594afc0/final-ruff.log",
+        "bytes": 19,
+        "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+      }
+    },
+    {
+      "name": "node",
+      "command": "node --check scripts/testing/docker-architecture-browser.mjs",
+      "exit_code": 0,
+      "started_at_utc": "2026-10-01T03:10:21.574539+00:00",
+      "finished_at_utc": "2026-10-01T03:10:21.622027+00:00",
+      "log": {
+        "path": "test-results/docker-architecture/wp-arch-drill-1594afc0/final-node.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "diff",
+      "command": "git diff --check",
+      "exit_code": 0,
+      "started_at_utc": "2026-10-01T03:10:21.978996+00:00",
+      "finished_at_utc": "2026-10-01T03:10:22.042473+00:00",
+      "log": {
+        "path": "test-results/docker-architecture/wp-arch-drill-1594afc0/final-diff.log",
+        "bytes": 1503,
+        "sha256": "108d9fb98956b07756a4b98fe7c3ab93ee8c3b6a3db15939a0987ca32a0cd7d2"
+      }
+    }
+  ],
+  "docker_scope": {
+    "project": "wp-arch-drill-1594afc0",
+    "passed_reports": [
+      "m05-provenance.json",
+      "m05-startup-negatives.json",
+      "m05-old-entries.json",
+      "m05-current-entries.json",
+      "m05-platform-upgrade.json",
+      "m05-lite-upgrade.json",
+      "worker-removal.json",
+      "cleanup.json"
+    ],
+    "combination_scope": "原整组命令在旧 Lite 回环配置处失败；保留失败，按镜像/页面/产物校验复用已通过组合，定向补旧两入口和最终 N 两入口后汇总",
+    "negative_scope": "旧 Runtime 入口拒绝与截图失败为预期负例；旧 Renderer 500 记录为历史限制，未标成新 HTTP 400 门禁通过"
+  },
+  "not_run": [
+    "完整 Backend、Editor、Runtime 质量门",
+    "无理由重复上轮 85 项 Backend 与 41 项根 contracts",
+    "DTO/Kit 未改，无需重新 codegen",
+    "M02/M04 其它场景、正式容量、M06 远端发布/双架构/最终模板、M07、M08"
+  ],
+  "evidence_consistency": {
+    "status": "passed",
+    "record": {
+      "path": "test-results/docker-architecture/wp-arch-drill-1594afc0/final-evidence-audit.json",
+      "bytes": 2927,
+      "sha256": "ae520c52615d6a083b31c8aa0f2e8ad830bb76dd942beb96e96600398802207d"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 <!-- 文件功能：定义 Backend/Runtime/Renderer/DB/Runtime Kit 的 N/N-1 支持组合、升级窗口与摘流策略，支撑 AR-05/W05 与 M05。 -->
 # 版本兼容矩阵与升级窗口
 
-本文定义平台各组件在升级或回滚时的支持边界，对应 AR-05 / W05。M05 已有特定版本组合的实机记录；[09-30 复核](../../temp/architecture-assessment-2026-09-30.md)发现 `4c7eee8` 的页面 Batch ORM 仍查询 N 已删除的列，撤回 B/E 的完整业务兼容结论。W05a/b/c 修复后已在[本地 Docker](../../temp/runs/2026-09-30-docker/summary.md)通过旧源码 PG 领域探针、普通 Run 强杀/暂停/重建和正常 iframe 同版双副本/真实旧 Runtime 跨版拒绝；完整业务、回滚与外部任务保护矩阵继续开放，见[现行计划](../../temp/plans/architecture-improvement-plan-2026-09-29.md) §7。
+本文定义平台各组件在升级或回滚时的支持边界，对应 AR-05 / W05。[09-30 历史复核](../../temp/archive/architecture-assessment-2026-09-30.md)撤回了旧 ORM 缺列时的兼容结论；补偿后，[10-01 M05 实机](../../temp/runs/2026-10-01-73b0036/summary.md)以完整 `4c7eee8` 镜像和自己的锁文件验证 PG/SQLite 旧入口、迁移中断、N 业务及保留 schema 的旧应用回滚。此前[双副本浏览器定向证据](../../temp/runs/2026-09-30-docker/summary.md)保持有效；本轮补公共 Kit 与产物组合。M04 外部交接及其它发布/容量门仍见[现行收尾计划](../../temp/plans/architecture-closeout-plan-2026-10-01.md#7-验收状态与责任域)。
 
 ## 1. 组件与版本轴
 
@@ -17,31 +17,39 @@
 
 ## 2. N / N-1 支持矩阵（目标约定）
 
-N/N-1 必须绑定具体版本。当前 M05 样本为 `a06120e + 修复` 与 `4c7eee8`，后者是选定 Git 稳定点，不是任意前一 Release 的兼容保证。下表结合该样本与 09-30 复核；局部成功不能代替完整业务验收。
+N/N-1 必须绑定具体版本。本轮 N 为 `73b0036 + 迁移事务/Renderer 错误映射补丁`，Runtime 复用 `e82c793`；N-1 固定 `4c7eee8`，是选定 Git 稳定点，不是任意前一 Release 的兼容保证。本地镜像 ID 和源码对拍见实机记录，未推送 Registry。
 
 | 组合 | Backend N | Runtime N | Renderer N | DB revision N | Backend N-1 | Runtime/Renderer N-1 | 结论（M05 实测后） |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | A | ✓ | ✓ | ✓ | ✓ | — | — | 同版本全量，支持 |
-| B | ✓ | ✓ | ✓ | ✓ | ✓ | — | **完整业务混跑待复测**：补偿列与 SQLite 旧/新 ORM 已通过；真实 PG 上 `4c7eee8` 完整 Batch 读写、页面入队幂等、过期清扫和取消通过，但使用当前 Python 依赖，未覆盖完整旧镜像/自动续跑。迁移仍先删列再恢复，必须排空旧任务并停旧实例 |
-| C | ✓ | ✓ | ✓ | ✓ | — | ✓ | 特定 Renderer 混池有局部记录；协议/Kit 一致只是必要条件。当前浏览器跨版明确拒绝已有证据，完整 N-1 Runtime/Renderer 截图组合及 allowedHosts 差异仍待验；当前预览池固定同一发布版本 |
+| B | ✓ | ✓ | ✓ | ✓ | ✓ | — | **补偿 schema 上的逐版本业务通过，迁移中混跑不支持**：完整旧依赖/镜像的 ORM 读写、页面创建/取消/自动续跑通过；仍先排空停旧，再迁移并启 N，未承诺 N/N-1 同时抢业务队列 |
+| C | ✓ | ✓ | ✓ | ✓ | — | ✓ | **按角色判定**：N Runtime + 旧 Renderer 的实际 PNG/ZIP 与加载通过；`4c7eee8` Runtime 缺发布身份，N 正常预览 503，截图链路不能支持。独立构建与产物加载另记，协议/Kit 一致不能代替入口兼容 |
 | D | ✓ | — | — | N-1 | — | — | **迁移窗口内**旧 DB + 新 Backend：**不支持**（N ORM 需要新列）；必须先 upgrade 再启 N。N-1 + 旧 DB 可运行 |
-| E | — | — | — | ✓ | ✓ | ✓ | **完整回滚待复测**：先用新迁移器前滚到含 `20260930_0200` 的 schema，再保留 schema 回退应用并关闭旧入口的自动迁移；旧迁移器无法识别新 revision。补偿列值为 0，不能恢复删列前历史值 |
-| F | 混用不同发布版本的 Runtime 副本 | | | | | | **不承诺无中断混跑**；正常 iframe 同版跨两个副本可用，当前 Runtime HTML + 实际旧 Runtime 子请求明确 409，HTTP/HMR 门禁通过；局部拒绝不代表任意 N/N-1 滚动兼容，见 §4 |
+| E | — | — | — | ✓ | ✓ | ✓ | **固定样本完整应用回滚通过**：两种数据库均保留含 `20260930_0200` 补偿的 head，关闭旧入口自动迁移；完整旧镜像业务、取消与自动续跑通过。补偿列值为 0，不能恢复删列前历史值 |
+| F | 混用不同发布版本的 Runtime 副本 | | | | | | **不承诺无中断混跑**；此前同版双副本可用，具备版本门禁的实际旧镜像收到当前子请求明确 409。`4c7eee8` 更早且没有完整版本路由门禁，不能把该 409 证据外推；继续整池排空切换 |
 
 ### 2.1 明确不支持 / 明确拒绝
 
 | 场景 | 行为 |
 | :--- | :--- |
 | 删除或修改仍被依赖的 `@runtime-kit/...vN` 公开路径 | 旧产物/旧页面源码导入失败；必须保留旧版本文件或做迁移 |
-| Backend 调用 Renderer 时契约版本不一致 | `contract_version` 校验失败，任务失败并留错误码 |
+| N Renderer 接管时契约版本或画布尺寸语义错误 | HTTP 400 `RENDER_CONTRACT_MISMATCH`，不接管且不改变槽位代次；已有回执的过期票据幂等保留 |
+| 完整 `4c7eee8` Renderer 收到错误 `contract_version` | 历史镜像实测 500，未接管；不符合 N 的 400 错误映射，旧镜像源码保持原样 |
 | 预览请求携带与 Runtime 副本不一致的 `x-expected-runtime-version-fingerprint` | 409 拒绝（指纹门禁） |
 | 正常预览签名版本或 `/__runtime_version/<指纹>/` 与当前 Runtime 不符 | HTTP 409 `PREVIEW_VERSION_SKEW`；跨版 HMR Upgrade 拒绝握手 |
 | 旧 Runtime 探针未提供非空版本/发布身份 | Backend 返回 503 `RUNTIME_VERSION_UNKNOWN`；不能静默把旧镜像当同一 dev 版本 |
 | DB `alembic_version` 指向镜像不包含的 revision | 启动失败（`Can't locate revision identified by '…'`） |
 | `4c7eee8` 页面 Batch ORM 运行在已删除 `lease_generation` 的 N schema | 完整 ORM 查询缺列失败；登录可成功，页面变更入队仍不兼容 |
 | N Backend + DB 仍停在 N-1 schema | 启动失败（`UndefinedColumnError`，如 `ai_agent_runs.process_owner`）；必须先 migration |
+| 完整 `4c7eee8` Lite + 远程 Renderer，Runtime 角色基址仍为容器回环 | 截图 `RENDER_INTERNAL_ERROR`；须配置同一受信网络内可达的 `RUNTIME_PREVIEW_BASE_URL`。本轮 `http://m05_lite:7373` 通过，不改旧源码或 CMD；端口未向主机发布 |
 | 预览请求 `x-expected-runtime-version-fingerprint` 与副本不符 | **409** `PREVIEW_VERSION_SKEW`（不得收成 500） |
 | 破坏性 External API 字段变更未做消费者迁移 | CLI/Skill/Editor 契约门禁失败；禁止静默兼容 |
+
+### 2.2 固定样本的产物组合
+
+全 N 主 Gateway、N Runtime + N-1 Renderer、完整旧 platform/Lite（补偿 schema）、最终 N platform/Lite 真实入口均通过 1920×1080 PNG、ZIP 下载与实际 HTTP 加载。完整旧两入口的同一 ZIP 再由 N 应用认证产物接口下载，摘要/字节数不变。23 个旧 Kit 入口路径/源码 hash 一致，实际渲染样本为 `DataTable.v1` 与 `usePageSize.v1`。
+
+N Backend + 无发布身份的 `4c7eee8` Runtime，在 N/N-1 两种 Renderer 下正常预览均 503；20 秒期限的真实截图重试均失败，Job `RENDER_DEADLINE_EXCEEDED`，没有成功结果且占用释放。独立旧 Runtime 构建 ZIP 与加载通过，不能计作截图整链路成功。具体 Job/Attempt、产物摘要及浏览器记录见[组合证据](../../temp/runs/2026-10-01-73b0036/summary.md#公共能力与产物)。
 
 ## 3. 升级窗口与摘流策略
 
@@ -73,9 +81,11 @@ N/N-1 必须绑定具体版本。当前 M05 样本为 `a06120e + 修复` 与 `4c
 1. 备份数据库（见[备份与恢复](./backup-restore.md)）。
 2. 兼容检查须同时覆盖新增与删除字段；当前含删除旧 ORM 仍映射的列时，先排空并停止旧业务实例，再只跑一次 `alembic upgrade head`（`backend-migrate` 或入口脚本）。
 3. 再滚动/启动业务副本。
-4. 回滚前确认旧镜像包含当前 `alembic_version`；不可逆 migration 只能前滚或从备份恢复。
+4. 当前旧迁移器不包含新 revision，应用回滚须关闭它并保留补偿后的 schema；数据库恢复另走一致备份方案。
 
 `20260930_0200` 是 W05a 的前向补偿：恢复旧 ORM 需要的兼容列并设置服务端默认 0，当前 ORM 无需重新使用它。已应用的 `20260930_0100` 保持不变，补偿不能恢复历史代次。升级前排空页面任务并停旧实例；应用回滚保留补偿 schema，通过 `PLATFORM_SIMPLE_RUN_MIGRATIONS=false` / `PLATFORM_LITE_RUN_MIGRATIONS=false` 关闭旧镜像迁移器。旧列删除须另等旧实例退出和回滚窗口结束，不将数据库降回删列 revision 当应用回滚步骤。
+
+独立 SQLite Alembic 引擎显式 BEGIN，使 DDL 与 revision 原子提交；真实 ADD 后强杀已复测。历史旧迁移器可能留下 orphan 列，不能据旧 revision 推断 schema 完整，详见[中断处理](./upgrade-rollback.md#迁移中断)。PG 的真实迁移强杀同样回退到旧 head。
 
 ## 4. 版本指纹门禁
 
@@ -87,7 +97,7 @@ W05c 将发布身份与传播机制收口为以下链路：
 - 同版副本使用固定依赖预优化集合；跨副本 Vue 子请求在本次票据验签后恢复主模块描述符，ctx 前置保留样式转换。正常浏览器样本覆盖页面、scoped CSS 和字体；新增依赖及公共能力组合继续补对应冷启动验收。
 - 固定 `/__preview` 入口与版本资源路径共用挂载解析；本轮真实 Renderer 截图、ZIP 下载及构建入口浏览器加载通过。两个协调器同时读取结果时，迟到产物 410 的失败写入也必须先取得占用条件更新，不能由 ORM 自动 flush 重开已释放的 attempt。
 - Backend 保留上游错误状态、版本响应头和缓存语义；探针与 HTML 恰好落到不同发布时明确拒绝。重新导航原预览入口可绑定当前发布，不延长票据有效期。
-- 同池继续固定同一发布镜像并按 §3.1 排空；本地 Docker 浏览器定向结果只覆盖记录的候选和场景，不能替代完整 N/N-1、最终模板与公共能力 M05 验收。
+- 同池继续固定同一发布镜像并按 §3.1 排空；本轮完整 N-1 与两项公开 Kit 样本另有 M05 证据，最终模板、任意旧版本混池与每项公开能力渲染仍不外推。
 - 检查角色缓存指纹包含 Runtime Kit 清单 hash（`CodeCheckFingerprintBuilder`），升级编译器后缓存自然失效。
 
 ## 5. Run 收敛边界（实例心跳 / 历史 owner）
@@ -116,7 +126,7 @@ W05c 将发布身份与传播机制收口为以下链路：
 ## 6. 验收用例（M05 / M04）
 
 1. 组合 A：全 N 完成一次登录 → 预览 → 截图 → 构建下载。
-2. 组合 C：Backend N + Renderer/Runtime N-1（协议未变）完成截图；破坏性变更样本应明确失败。
+2. 组合 C：逐角色验证 Backend N 与 Renderer/Runtime N-1；先核对发布身份与入口，再执行截图。协议一致但 Runtime 缺身份的组合应按本轮负例明确失败，独立构建与加载另记。
 3. 组合 B/E：除登录外，执行 N-1 页面任务入队与 Batch ORM 查询；缺列必须判不兼容。按既定 schema 恢复后再验证旧版完整业务。
 4. 指纹：人工失配入口返回 409；另用正常浏览器让 HTML/模块落到不同版本，验证版本传播或稳定路由。
 5. Run：强杀 Backend-A 后重建容器（hostname 变）→ 新登记的失效 Run 有界终态、会话可再发起，B 活跃 Run 不被误杀；历史未登记 Run 单独验证手动补偿，不算新实例自动收敛通过。

@@ -1,0 +1,169 @@
+{
+  "status": "passed",
+  "label": "rollback-resume",
+  "cancel": false,
+  "observations": [
+    {
+      "seconds": 5.619,
+      "state": {
+        "run": [
+          {
+            "run_id": "49cd6d34-148e-4497-9673-054091751cc0",
+            "status": "waiting_external",
+            "error_code": null,
+            "event_index": 7
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-89a9036ec3af7d09532988af46fe2b26",
+            "batch_id": "ai-page-batch-75071d26b2778f03928f9dbb69edce6f",
+            "status": "running",
+            "result_page_id": null,
+            "error_code": null
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-75071d26b2778f03928f9dbb69edce6f",
+            "status": "waiting_tasks",
+            "lease_generation": 0,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-89a9036ec3af7d09532988af46fe2b26",
+            "status": "running",
+            "result_consumed_at": null,
+            "result_cleared": 1,
+            "error_code": null
+          }
+        ]
+      }
+    },
+    {
+      "seconds": 16.558,
+      "state": {
+        "run": [
+          {
+            "run_id": "49cd6d34-148e-4497-9673-054091751cc0",
+            "status": "waiting_external",
+            "error_code": null,
+            "event_index": 8
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-89a9036ec3af7d09532988af46fe2b26",
+            "batch_id": "ai-page-batch-75071d26b2778f03928f9dbb69edce6f",
+            "status": "running",
+            "result_page_id": null,
+            "error_code": null
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-75071d26b2778f03928f9dbb69edce6f",
+            "status": "waiting_tasks",
+            "lease_generation": 0,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-89a9036ec3af7d09532988af46fe2b26",
+            "status": "succeeded",
+            "result_consumed_at": null,
+            "result_cleared": 0,
+            "error_code": null
+          }
+        ]
+      }
+    },
+    {
+      "seconds": 22.263,
+      "state": {
+        "run": [
+          {
+            "run_id": "49cd6d34-148e-4497-9673-054091751cc0",
+            "status": "completed",
+            "error_code": null,
+            "event_index": 17
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-89a9036ec3af7d09532988af46fe2b26",
+            "batch_id": "ai-page-batch-75071d26b2778f03928f9dbb69edce6f",
+            "status": "succeeded",
+            "result_page_id": null,
+            "error_code": null
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-75071d26b2778f03928f9dbb69edce6f",
+            "status": "completed",
+            "lease_generation": 1,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-89a9036ec3af7d09532988af46fe2b26",
+            "status": "succeeded",
+            "result_consumed_at": "2026-09-30 23:32:09.067963",
+            "result_cleared": 1,
+            "error_code": null
+          }
+        ]
+      }
+    }
+  ],
+  "run_id": "49cd6d34-148e-4497-9673-054091751cc0",
+  "session_id": "session-6ed4daa62bdc45cbb15bd4ee274594e3",
+  "created_pages": [
+    {
+      "id": 4,
+      "current_version_no": 1
+    }
+  ],
+  "final": {
+    "run": [
+      {
+        "run_id": "49cd6d34-148e-4497-9673-054091751cc0",
+        "status": "completed",
+        "error_code": null,
+        "event_index": 17
+      }
+    ],
+    "jobs": [
+      {
+        "job_id": "ai-page-job-89a9036ec3af7d09532988af46fe2b26",
+        "batch_id": "ai-page-batch-75071d26b2778f03928f9dbb69edce6f",
+        "status": "succeeded",
+        "result_page_id": null,
+        "error_code": null
+      }
+    ],
+    "batches": [
+      {
+        "batch_id": "ai-external-batch-75071d26b2778f03928f9dbb69edce6f",
+        "status": "completed",
+        "lease_generation": 1,
+        "error_code": null
+      }
+    ],
+    "tasks": [
+      {
+        "task_id": "ai-external-task-89a9036ec3af7d09532988af46fe2b26",
+        "status": "succeeded",
+        "result_consumed_at": "2026-09-30 23:32:09.067963",
+        "result_cleared": 1,
+        "error_code": null
+      }
+    ]
+  },
+  "elapsed_seconds": 23.609
+}

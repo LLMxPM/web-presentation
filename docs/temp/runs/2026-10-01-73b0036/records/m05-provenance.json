@@ -1,0 +1,296 @@
+{
+  "candidate": "73b003680827b11a1fae0bbc31207d103bf0f349",
+  "n1_ref": "4c7eee809d19a268e2c919ed5865a62ca388e6df",
+  "locks": {
+    "uv.lock": "c527feff60cae78fb9a8ea215b66622b1c76ab915749d253c50eefd0b0595626",
+    "pnpm-lock.yaml": "b5390aa82b1de78506d8c1c5098ce5acc763cf893e97ddc4293e634c3923ce87"
+  },
+  "source_checks": {
+    "backend_n": {
+      "status": "passed",
+      "files": 450,
+      "normalized_sources_sha256": "0fad6bc3c90b139fdc6deb987fa1d5426a156d6a915eb3c6d5d95681784edda5",
+      "image_id": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536"
+    },
+    "platform_n": {
+      "status": "passed",
+      "files": 450,
+      "normalized_sources_sha256": "0fad6bc3c90b139fdc6deb987fa1d5426a156d6a915eb3c6d5d95681784edda5",
+      "image_id": "sha256:536c8234c381756502e8fdeecf7c355683b8eb53bc1d232f7cdd7d8c005c9782"
+    },
+    "backend_n1": {
+      "status": "passed",
+      "files": 429,
+      "normalized_sources_sha256": "3bff9cd78a5e9d8ffbe879478db9ccb6e03a6f718ea1fd0767b6f2e5a2e199c3",
+      "image_id": "sha256:67bbfdebf833d7e4a1af25c45b448b62483b813fe84cd00619ef40d66d48fb20"
+    },
+    "platform_n1": {
+      "status": "passed",
+      "files": 429,
+      "normalized_sources_sha256": "3bff9cd78a5e9d8ffbe879478db9ccb6e03a6f718ea1fd0767b6f2e5a2e199c3",
+      "image_id": "sha256:1be21571a63b4c285de0381d0bf052f598e5c67f4e560ff9155280a54d21bfa1"
+    },
+    "renderer_n": {
+      "status": "passed",
+      "files": 27,
+      "normalized_sources_sha256": "3bfee176ff4adbf9273b0d148bbf2d051e71d4272df2ac15d0a28d280314bbbd",
+      "image_id": "sha256:9adcddc490cfd72a1c1780af988c812a069e27214b2a139f361b5e145cdddb02"
+    },
+    "renderer_n1": {
+      "status": "passed",
+      "files": 27,
+      "normalized_sources_sha256": "8c982141452ba82f1f76596c794ef57ac3efd39a2a15f6add8d0f7e8d523a42f",
+      "image_id": "sha256:bb37ab6fa079d0a18bc3535e0ac4461239f8236098b35809172f449a2ed30b08"
+    }
+  },
+  "kit": {
+    "status": "passed",
+    "n1": {
+      "version": "1.0.0",
+      "exports": [
+        {
+          "name": "AssetImage.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetImage.v1.vue",
+          "sha256": "c6fc233e1e94c105fccabc24eb71f656a45a5ef3b59d7bcdbeae22903f149cfa"
+        },
+        {
+          "name": "AssetVideo.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetVideo.v1.vue",
+          "sha256": "0ff9d3590dd0ec39a2390e11af2413f40e6316dd6e4a6151e6fef75ae0c5188a"
+        },
+        {
+          "name": "AssetDrawio.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetDrawio.v1.vue",
+          "sha256": "8630a39ec36fdf735ab68834e08d596c91cad8a33d144ff6d8b248bbcf4fc653"
+        },
+        {
+          "name": "AssetMermaid.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetMermaid.v1.vue",
+          "sha256": "6159dd199668228498fbbc852cab63cec05253af3b8d51d8e867cd854c78e9ce"
+        },
+        {
+          "name": "AssetChart.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetChart.v1.vue",
+          "sha256": "6592cc81b65d7f487daad2844d2733716cedcf40e1f5d10b859f14997bee0a3d"
+        },
+        {
+          "name": "AssetFormula.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetFormula.v1.vue",
+          "sha256": "718e70d50dd4b4d0ff4cc663eaaf4d78df65e0e8371a5e9644c404034f157eec"
+        },
+        {
+          "name": "DefaultContainer.v1",
+          "import_path": "@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue",
+          "sha256": "2df62e91cb10efc077b3412b9ade67fad6bdabf454cfaabf6bacee27f7d6a149"
+        },
+        {
+          "name": "Icon.v1",
+          "import_path": "@runtime-kit/public/components/primitives/Icon.v1.vue",
+          "sha256": "add4bee2a50d377ed6a0faaa30f48acbcb1406d7ccb9ef57c115453703c99fd6"
+        },
+        {
+          "name": "ThemeLogo.v1",
+          "import_path": "@runtime-kit/public/components/primitives/ThemeLogo.v1.vue",
+          "sha256": "a31e06b4b86853d31103ec2536f382c261ad88d322bab6157e42567641cf8e05"
+        },
+        {
+          "name": "DataTable.v1",
+          "import_path": "@runtime-kit/public/components/data/DataTable.v1.vue",
+          "sha256": "b6111bf5471e7b4e912e8dbcb9f1e5a534e745aa315184fcfe8a91b4bdc6c396"
+        },
+        {
+          "name": "Connector.v1",
+          "import_path": "@runtime-kit/public/components/primitives/Connector.v1.vue",
+          "sha256": "124ec686e73ea83112a569e0e10d105e64e2efcbe9d45a6f2b33bdb9917f2329"
+        },
+        {
+          "name": "useTheme.v1",
+          "import_path": "@runtime-kit/public/composables/theme/useTheme.v1",
+          "sha256": "cd50669555bc0e756b55ae7c57b59c5a5e96dc8fc59a2ec8fa7411939ab5fa91"
+        },
+        {
+          "name": "useAssetSrc.v1",
+          "import_path": "@runtime-kit/public/composables/assets/useAssetSrc.v1",
+          "sha256": "cc58e849a620c0ebb922c2b26520000c19a1722cd8bd9e268bbab6e83bca1484"
+        },
+        {
+          "name": "useAssetBackground.v1",
+          "import_path": "@runtime-kit/public/composables/assets/useAssetBackground.v1",
+          "sha256": "68d60f818996001ac7fca0352c3ac761c2e5f61f79154a6510a491c5c2421e50"
+        },
+        {
+          "name": "useAssetFontFamily.v1",
+          "import_path": "@runtime-kit/public/composables/assets/useAssetFontFamily.v1",
+          "sha256": "878f1949a582121c8b776d7fcee04cbdfef97a8d2e58435af425a988eefd6d16"
+        },
+        {
+          "name": "usePageSize.v1",
+          "import_path": "@runtime-kit/public/composables/page/usePageSize.v1",
+          "sha256": "7a7894dcea44765053d111e1e80e9e41dc5533adb9c63a6275c4de1b4f80110c"
+        },
+        {
+          "name": "buildPageCanvasStyle.v1",
+          "import_path": "@runtime-kit/public/composables/page/buildPageCanvasStyle.v1",
+          "sha256": "4d1dac195b1a62325e8e7509f0b634355908c79d4504712d1328748237c6ab14"
+        },
+        {
+          "name": "useCurrentPage.v1",
+          "import_path": "@runtime-kit/public/composables/page/useCurrentPage.v1",
+          "sha256": "cf09267035efeb646ac383d3514668d980a53c517eba773abf5e904c714a08cb"
+        },
+        {
+          "name": "useRouteCatalog.v1",
+          "import_path": "@runtime-kit/public/composables/page/useRouteCatalog.v1",
+          "sha256": "79fac02e30036a50936dc76a79a6a4a27843cc34703b6fb6119a05d790c2135e"
+        },
+        {
+          "name": "usePageNavigation.v1",
+          "import_path": "@runtime-kit/public/composables/page/usePageNavigation.v1",
+          "sha256": "952cc64bc67eca3bae95952dbf177dbeff483998145f46ab389e9c8cbe95ba90"
+        },
+        {
+          "name": "resolveResourcePath.v1",
+          "import_path": "@runtime-kit/public/utils/assets.v1",
+          "sha256": "862da40056069382e5231c3f9288caa79bce34d4950cf117da812dcc231042f1"
+        },
+        {
+          "name": "resolveAssetFontFamily.v1",
+          "import_path": "@runtime-kit/public/utils/fonts.v1",
+          "sha256": "04876e25dfffd24fec74018ee70f872d735cf7f2a8a645890a6106c44faeac8a"
+        },
+        {
+          "name": "resolveColor.v1",
+          "import_path": "@runtime-kit/public/utils/colors.v1",
+          "sha256": "68b4388b24fc7629c10f26d3c96a4913d2205ce81f12ff0a24da4cb213f8e104"
+        }
+      ],
+      "build_id": null
+    },
+    "n": {
+      "version": "1.0.0",
+      "exports": [
+        {
+          "name": "AssetImage.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetImage.v1.vue",
+          "sha256": "c6fc233e1e94c105fccabc24eb71f656a45a5ef3b59d7bcdbeae22903f149cfa"
+        },
+        {
+          "name": "AssetVideo.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetVideo.v1.vue",
+          "sha256": "0ff9d3590dd0ec39a2390e11af2413f40e6316dd6e4a6151e6fef75ae0c5188a"
+        },
+        {
+          "name": "AssetDrawio.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetDrawio.v1.vue",
+          "sha256": "8630a39ec36fdf735ab68834e08d596c91cad8a33d144ff6d8b248bbcf4fc653"
+        },
+        {
+          "name": "AssetMermaid.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetMermaid.v1.vue",
+          "sha256": "6159dd199668228498fbbc852cab63cec05253af3b8d51d8e867cd854c78e9ce"
+        },
+        {
+          "name": "AssetChart.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetChart.v1.vue",
+          "sha256": "6592cc81b65d7f487daad2844d2733716cedcf40e1f5d10b859f14997bee0a3d"
+        },
+        {
+          "name": "AssetFormula.v1",
+          "import_path": "@runtime-kit/public/components/assets/AssetFormula.v1.vue",
+          "sha256": "718e70d50dd4b4d0ff4cc663eaaf4d78df65e0e8371a5e9644c404034f157eec"
+        },
+        {
+          "name": "DefaultContainer.v1",
+          "import_path": "@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue",
+          "sha256": "2df62e91cb10efc077b3412b9ade67fad6bdabf454cfaabf6bacee27f7d6a149"
+        },
+        {
+          "name": "Icon.v1",
+          "import_path": "@runtime-kit/public/components/primitives/Icon.v1.vue",
+          "sha256": "add4bee2a50d377ed6a0faaa30f48acbcb1406d7ccb9ef57c115453703c99fd6"
+        },
+        {
+          "name": "ThemeLogo.v1",
+          "import_path": "@runtime-kit/public/components/primitives/ThemeLogo.v1.vue",
+          "sha256": "a31e06b4b86853d31103ec2536f382c261ad88d322bab6157e42567641cf8e05"
+        },
+        {
+          "name": "DataTable.v1",
+          "import_path": "@runtime-kit/public/components/data/DataTable.v1.vue",
+          "sha256": "b6111bf5471e7b4e912e8dbcb9f1e5a534e745aa315184fcfe8a91b4bdc6c396"
+        },
+        {
+          "name": "Connector.v1",
+          "import_path": "@runtime-kit/public/components/primitives/Connector.v1.vue",
+          "sha256": "124ec686e73ea83112a569e0e10d105e64e2efcbe9d45a6f2b33bdb9917f2329"
+        },
+        {
+          "name": "useTheme.v1",
+          "import_path": "@runtime-kit/public/composables/theme/useTheme.v1",
+          "sha256": "cd50669555bc0e756b55ae7c57b59c5a5e96dc8fc59a2ec8fa7411939ab5fa91"
+        },
+        {
+          "name": "useAssetSrc.v1",
+          "import_path": "@runtime-kit/public/composables/assets/useAssetSrc.v1",
+          "sha256": "cc58e849a620c0ebb922c2b26520000c19a1722cd8bd9e268bbab6e83bca1484"
+        },
+        {
+          "name": "useAssetBackground.v1",
+          "import_path": "@runtime-kit/public/composables/assets/useAssetBackground.v1",
+          "sha256": "68d60f818996001ac7fca0352c3ac761c2e5f61f79154a6510a491c5c2421e50"
+        },
+        {
+          "name": "useAssetFontFamily.v1",
+          "import_path": "@runtime-kit/public/composables/assets/useAssetFontFamily.v1",
+          "sha256": "878f1949a582121c8b776d7fcee04cbdfef97a8d2e58435af425a988eefd6d16"
+        },
+        {
+          "name": "usePageSize.v1",
+          "import_path": "@runtime-kit/public/composables/page/usePageSize.v1",
+          "sha256": "7a7894dcea44765053d111e1e80e9e41dc5533adb9c63a6275c4de1b4f80110c"
+        },
+        {
+          "name": "buildPageCanvasStyle.v1",
+          "import_path": "@runtime-kit/public/composables/page/buildPageCanvasStyle.v1",
+          "sha256": "4d1dac195b1a62325e8e7509f0b634355908c79d4504712d1328748237c6ab14"
+        },
+        {
+          "name": "useCurrentPage.v1",
+          "import_path": "@runtime-kit/public/composables/page/useCurrentPage.v1",
+          "sha256": "cf09267035efeb646ac383d3514668d980a53c517eba773abf5e904c714a08cb"
+        },
+        {
+          "name": "useRouteCatalog.v1",
+          "import_path": "@runtime-kit/public/composables/page/useRouteCatalog.v1",
+          "sha256": "79fac02e30036a50936dc76a79a6a4a27843cc34703b6fb6119a05d790c2135e"
+        },
+        {
+          "name": "usePageNavigation.v1",
+          "import_path": "@runtime-kit/public/composables/page/usePageNavigation.v1",
+          "sha256": "952cc64bc67eca3bae95952dbf177dbeff483998145f46ab389e9c8cbe95ba90"
+        },
+        {
+          "name": "resolveResourcePath.v1",
+          "import_path": "@runtime-kit/public/utils/assets.v1",
+          "sha256": "862da40056069382e5231c3f9288caa79bce34d4950cf117da812dcc231042f1"
+        },
+        {
+          "name": "resolveAssetFontFamily.v1",
+          "import_path": "@runtime-kit/public/utils/fonts.v1",
+          "sha256": "04876e25dfffd24fec74018ee70f872d735cf7f2a8a645890a6106c44faeac8a"
+        },
+        {
+          "name": "resolveColor.v1",
+          "import_path": "@runtime-kit/public/utils/colors.v1",
+          "sha256": "68b4388b24fc7629c10f26d3c96a4913d2205ce81f12ff0a24da4cb213f8e104"
+        }
+      ],
+      "build_id": "sha256-e535a03c41e595276df3c61a864e79e0063521df4db535b69e9acaa9b1338f55"
+    },
+    "rendered_sample": [
+      "DataTable.v1",
+      "usePageSize.v1"
+    ],
+    "scope": "全部公开入口存在/源码一致，实际渲染样本为表格与尺寸能力"
+  }
+}

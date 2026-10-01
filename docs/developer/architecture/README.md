@@ -15,7 +15,7 @@
 | [统一任务运行时契约](./task-runtime-contract.md) | Worker/Lease/Attempt/Terminal 角色、字段与状态词汇、错误码族、恢复语义、10 套任务模型映射 |
 | [双库方言维护预算](./dialect-budget.md) | 双库固定税口径、重开 D1 的复审触发器、每季粗记账模板 |
 | [契约生成与队列观测](./contract-and-queue-observation.md) | API/previewSchema 的生成与生产校验、队列 v2 分层及汇总口径 |
-| [现行架构评估与计划](../../temp/README.md) | 2026-09-30 实机进展复核、旧 ORM 兼容问题、Run 收敛与版本传播、剩余验收门 |
+| [架构收尾计划与验收记录](../../temp/README.md) | 现行唯一执行入口、工程与交付停止点、范围边界、剩余验收与历史证据 |
 
 ## 使用建议
 

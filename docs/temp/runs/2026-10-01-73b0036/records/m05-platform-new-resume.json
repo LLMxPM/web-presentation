@@ -1,0 +1,208 @@
+{
+  "status": "passed",
+  "label": "new-resume",
+  "cancel": false,
+  "observations": [
+    {
+      "seconds": 2.7,
+      "state": {
+        "run": [
+          {
+            "run_id": "42230723-fe50-4156-9a96-ad095fd33a76",
+            "status": "waiting_external",
+            "error_code": null,
+            "event_index": 7
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-7801d96efbcc50b870950a60d2679f3b",
+            "batch_id": "ai-page-batch-c335d9f4746803a47cd020e46f173bcf",
+            "status": "running",
+            "result_page_id": null,
+            "error_code": null
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-c335d9f4746803a47cd020e46f173bcf",
+            "status": "waiting_tasks",
+            "lease_generation": 0,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-7801d96efbcc50b870950a60d2679f3b",
+            "status": "running",
+            "result_consumed_at": null,
+            "result_cleared": true,
+            "error_code": null
+          }
+        ]
+      }
+    },
+    {
+      "seconds": 5.755,
+      "state": {
+        "run": [
+          {
+            "run_id": "42230723-fe50-4156-9a96-ad095fd33a76",
+            "status": "waiting_external",
+            "error_code": null,
+            "event_index": 8
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-7801d96efbcc50b870950a60d2679f3b",
+            "batch_id": "ai-page-batch-c335d9f4746803a47cd020e46f173bcf",
+            "status": "running",
+            "result_page_id": null,
+            "error_code": null
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-c335d9f4746803a47cd020e46f173bcf",
+            "status": "waiting_tasks",
+            "lease_generation": 0,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-7801d96efbcc50b870950a60d2679f3b",
+            "status": "running",
+            "result_consumed_at": null,
+            "result_cleared": true,
+            "error_code": null
+          }
+        ]
+      }
+    },
+    {
+      "seconds": 15.065,
+      "state": {
+        "run": [
+          {
+            "run_id": "42230723-fe50-4156-9a96-ad095fd33a76",
+            "status": "waiting_external",
+            "error_code": null,
+            "event_index": 8
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-7801d96efbcc50b870950a60d2679f3b",
+            "batch_id": "ai-page-batch-c335d9f4746803a47cd020e46f173bcf",
+            "status": "running",
+            "result_page_id": null,
+            "error_code": null
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-c335d9f4746803a47cd020e46f173bcf",
+            "status": "waiting_tasks",
+            "lease_generation": 0,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-7801d96efbcc50b870950a60d2679f3b",
+            "status": "succeeded",
+            "result_consumed_at": null,
+            "result_cleared": false,
+            "error_code": null
+          }
+        ]
+      }
+    },
+    {
+      "seconds": 18.143,
+      "state": {
+        "run": [
+          {
+            "run_id": "42230723-fe50-4156-9a96-ad095fd33a76",
+            "status": "completed",
+            "error_code": null,
+            "event_index": 17
+          }
+        ],
+        "jobs": [
+          {
+            "job_id": "ai-page-job-7801d96efbcc50b870950a60d2679f3b",
+            "batch_id": "ai-page-batch-c335d9f4746803a47cd020e46f173bcf",
+            "status": "succeeded",
+            "result_page_id": null,
+            "error_code": null
+          }
+        ],
+        "batches": [
+          {
+            "batch_id": "ai-external-batch-c335d9f4746803a47cd020e46f173bcf",
+            "status": "completed",
+            "lease_generation": 1,
+            "error_code": null
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "ai-external-task-7801d96efbcc50b870950a60d2679f3b",
+            "status": "succeeded",
+            "result_consumed_at": "2026-09-30T23:29:05.799818+00:00",
+            "result_cleared": true,
+            "error_code": null
+          }
+        ]
+      }
+    }
+  ],
+  "run_id": "42230723-fe50-4156-9a96-ad095fd33a76",
+  "session_id": "session-599acd7a73d84a9eaf58eae6912c1239",
+  "created_pages": [
+    {
+      "id": 7,
+      "current_version_no": 1
+    }
+  ],
+  "final": {
+    "run": [
+      {
+        "run_id": "42230723-fe50-4156-9a96-ad095fd33a76",
+        "status": "completed",
+        "error_code": null,
+        "event_index": 17
+      }
+    ],
+    "jobs": [
+      {
+        "job_id": "ai-page-job-7801d96efbcc50b870950a60d2679f3b",
+        "batch_id": "ai-page-batch-c335d9f4746803a47cd020e46f173bcf",
+        "status": "succeeded",
+        "result_page_id": null,
+        "error_code": null
+      }
+    ],
+    "batches": [
+      {
+        "batch_id": "ai-external-batch-c335d9f4746803a47cd020e46f173bcf",
+        "status": "completed",
+        "lease_generation": 1,
+        "error_code": null
+      }
+    ],
+    "tasks": [
+      {
+        "task_id": "ai-external-task-7801d96efbcc50b870950a60d2679f3b",
+        "status": "succeeded",
+        "result_consumed_at": "2026-09-30T23:29:05.799818+00:00",
+        "result_cleared": true,
+        "error_code": null
+      }
+    ]
+  },
+  "elapsed_seconds": 18.798
+}

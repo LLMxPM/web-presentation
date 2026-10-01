@@ -6,7 +6,7 @@
 **Lite 与截图能力的两种形态（勿混用）：**
 
 - **已发布 `sqlite-lite`（当前用户可拉取）**：单容器自带浏览器，截图在容器内完成；**不需要**独立 Renderer 容器，也**不需要** `deploy/secrets/` 渲染凭证文件。NAS 图形界面（群晖 / 飞牛）走的就是这条路径。
-- **HEAD / compose 模板形态（待发布预演）**：`deploy/compose/compose.sqlite-lite.yml` 另起独立 Renderer 容器执行截图；但 `web-presentation-renderer` 镜像**尚未发布、当前不可拉取**，该双容器组合在首次 Release 验证前不可用。HEAD 开发中的 lite 渲染能力形态见内部镜像计划（`docs/temp/plans/deployment-image-consolidation-2026-09-29.md`），不以未发布形态指导用户。
+- **HEAD / compose 模板形态（待发布预演）**：`deploy/compose/compose.sqlite-lite.yml` 另起独立 Renderer 容器执行截图；但 `web-presentation-renderer` 镜像**尚未发布、当前不可拉取**，该双容器组合在首次 Release 验证前不可用。本轮交付与 Lite 形态边界见[收尾计划](../../temp/plans/architecture-closeout-plan-2026-10-01.md#2-本轮范围与后续边界)，旧合并方案见[归档镜像计划](../../temp/archive/deployment-image-consolidation-2026-09-29.md)，不以未发布形态指导用户。
 
 ## 文档导航
 

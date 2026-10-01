@@ -1,0 +1,128 @@
+{
+  "status": "passed",
+  "supported": false,
+  "request_timeout_seconds": 20,
+  "images": {
+    "backend": "sha256:b3b7070cfce1bbb8b6cb89f2a57c81de643d6414312c726651bb2cb6c90ba536",
+    "runtime": "sha256:10616bef9eb858abcba99c7626954ee278d2abe83b6c5914164e21812606fd90",
+    "renderer": "sha256:bb37ab6fa079d0a18bc3535e0ac4461239f8236098b35809172f449a2ed30b08"
+  },
+  "screenshot": {
+    "id": 11,
+    "status": "failed",
+    "attempt_count": 3,
+    "error_code": "RENDER_DEADLINE_EXCEEDED"
+  },
+  "requests": [
+    {
+      "id": 15,
+      "status": "expired",
+      "result_id": null,
+      "error_code": "RENDER_DEADLINE_EXCEEDED"
+    },
+    {
+      "id": 16,
+      "status": "cancelled",
+      "result_id": null,
+      "error_code": "RENDER_CANCELLED"
+    },
+    {
+      "id": 17,
+      "status": "expired",
+      "result_id": null,
+      "error_code": "RENDER_DEADLINE_EXCEEDED"
+    }
+  ],
+  "build": {
+    "id": 9,
+    "sha256": "d2a4806a1bcb226ac198e1f608c8eea82f31c003b78057fd115a02559b26b71c",
+    "bytes": 15232950,
+    "directory": "unsupported-build-1790813844362913700"
+  },
+  "browser": {
+    "status": "passed",
+    "mode": "build",
+    "browser": "148.0.7778.96",
+    "requests": [
+      {
+        "path": "/index.html",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/index-CHPQkqgM.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/rolldown-runtime-Dd_uD5pT.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/build-release-main-BVyaGkJP.css",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/build-release-main-DWpjnwQx.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/config-MbuuV2do.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/vendor-BP6-Jd5m.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/RuntimeProjectShell-B0gOQAKg.css",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/PG20261001001-DwP86alA.css",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/PG20261001001-CQN-lf_k.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/RuntimeProjectShell-LXxlm25y.js",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/SourceHanSansSC-VF.otf-C66EjbRv.woff2",
+        "query_keys": [],
+        "status": 200
+      },
+      {
+        "path": "/assets/SourceCodePro-Regular.ttf-CBOlD63d.woff2",
+        "query_keys": [],
+        "status": 200
+      }
+    ],
+    "failed_requests": [],
+    "errors": [],
+    "page_style": {
+      "color": "rgb(18, 52, 86)",
+      "padding": "48px",
+      "fonts_loading": 0,
+      "fonts_error": 0
+    },
+    "public_kit": {
+      "tables": 1,
+      "text": "版本状态Kit v1保留可用",
+      "size": "1920 × 1080"
+    }
+  },
+  "scope": "预期截图失败与独立构建验证通过；不支持预览/截图整链路"
+}
