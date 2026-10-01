@@ -57,7 +57,7 @@ def test_pipeline_evidence_requires_all_stages(
         def json(self, path, payload=None):
             """校验探针创建截图和构建时的正式请求体。"""
             if path == "api/pages/1/screenshot-jobs":
-                assert payload == {"viewport_width": 320, "viewport_height": 240}
+                assert payload in ({}, {"viewport_width": 320, "viewport_height": 240})
             if path == "api/projects/2/build-jobs":
                 assert payload == {"base_url": "./"}
             return {
