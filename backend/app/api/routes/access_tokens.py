@@ -1,4 +1,4 @@
-"""文件功能：提供 Web 控制台个人访问令牌（PAT）的创建、列表、吊销与 Scope 说明接口。"""
+"""文件功能：提供 Web 控制台个人访问令牌（PAT）的创建、列表、更新、重置、吊销与 Scope 说明接口。"""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from app.schemas.api_access_token import (
     ApiAccessTokenCreateResponse,
     ApiAccessTokenItem,
     ApiAccessTokenListResponse,
+    ApiAccessTokenResetRequest,
     ApiAccessTokenUpdateRequest,
 )
 from app.services.auth_service import AuthContext
@@ -109,6 +110,28 @@ async def update_access_token(
     _verify_csrf_origin(request)
     client_ip = request.client.host if request.client else None
     return await ApiAccessTokenService(session).update_token(
+        user_id=current.user.id,
+        token_id=token_id,
+        payload=payload,
+        ip=client_ip,
+    )
+
+
+@router.post("/{token_id}/reset", response_model=ApiAccessTokenCreateResponse)
+async def reset_access_token(
+    request: Request,
+    response: Response,
+    token_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    payload: ApiAccessTokenResetRequest | None = None,
+) -> ApiAccessTokenCreateResponse:
+    """重置当前用户的指定访问令牌（生成新密钥并立即使旧密钥失效，响应中仅返回一次明文 Token）。"""
+
+    _verify_csrf_origin(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    client_ip = request.client.host if request.client else None
+    return await ApiAccessTokenService(session).reset_token(
         user_id=current.user.id,
         token_id=token_id,
         payload=payload,

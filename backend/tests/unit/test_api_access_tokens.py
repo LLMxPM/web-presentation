@@ -12,7 +12,11 @@ from app.models.api_access_token import ApiAccessToken
 from app.models.enums import RecordStatus, UserRole
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
-from app.schemas.api_access_token import ApiAccessTokenCreateRequest, ApiAccessTokenUpdateRequest
+from app.schemas.api_access_token import (
+    ApiAccessTokenCreateRequest,
+    ApiAccessTokenResetRequest,
+    ApiAccessTokenUpdateRequest,
+)
 from app.schemas.preview_size_preset import build_default_preview_size_presets
 from app.services.api_access_token_service import ApiAccessTokenService
 from app.core.time_utils import utc_now
@@ -332,3 +336,94 @@ async def test_pat_update_respects_active_token_limit(
             payload=ApiAccessTokenUpdateRequest(expires_in_days=30),
         )
     assert exc_info.value.code == "PAT_MAX_ACTIVE_LIMIT_REACHED"
+
+
+@pytest.mark.asyncio
+async def test_pat_reset_token_in_place(app_session: AsyncSession) -> None:
+    """测试重置 PAT 能够生成新密钥使旧密钥失效，同时保留工作空间与 Scope 授权。"""
+
+    user = User(
+        username="pat_reset_user",
+        password_hash="hash123",
+        display_name="PAT Reset User",
+        role=UserRole.WORKSPACE_USER.value,
+        preview_size_presets=build_default_preview_size_presets(),
+    )
+    app_session.add(user)
+    await app_session.flush()
+
+    ws = Workspace(
+        code="ws-pat-reset",
+        name="Reset Test WS",
+        created_by=user.id,
+        updated_by=user.id,
+        status=RecordStatus.ACTIVE.value,
+    )
+    app_session.add(ws)
+    await app_session.flush()
+    w_id = ws.id
+    u_id = user.id
+    member = WorkspaceMember(workspace_id=w_id, user_id=u_id, role="owner", status=RecordStatus.ACTIVE.value)
+    app_session.add(member)
+    await app_session.commit()
+
+    service = ApiAccessTokenService(app_session)
+    orig_res = await service.create_token(
+        user_id=u_id,
+        payload=ApiAccessTokenCreateRequest(
+            name="Deploy-Token",
+            workspace_ids=[w_id],
+            scopes=["project:read", "page:read"],
+            expires_in_days=10,
+        ),
+    )
+    old_plain_token = orig_res.token
+    old_public_id = orig_res.token_public_id
+
+    # 1. 验证旧 token 可正常鉴权并记录使用痕迹
+    auth_old = await service.authenticate_pat(old_plain_token, ip="192.0.2.1")
+    assert auth_old.id == orig_res.id
+    await app_session.rollback()
+    token_in_db = await app_session.get(ApiAccessToken, orig_res.id)
+    assert token_in_db is not None
+    assert token_in_db.last_used_at is not None
+    assert token_in_db.last_used_ip == "192.0.2.1"
+
+    # 2. 执行重置操作
+    reset_res = await service.reset_token(
+        user_id=u_id,
+        token_id=orig_res.id,
+        payload=ApiAccessTokenResetRequest(expires_in_days=60),
+    )
+
+    # 3. 验证返回数据结构
+    assert reset_res.id == orig_res.id
+    assert reset_res.name == "Deploy-Token"
+    assert reset_res.token != old_plain_token
+    assert reset_res.token_public_id != old_public_id
+    assert reset_res.workspace_ids == [w_id]
+    assert reset_res.scopes == ["page:read", "project:read"]
+
+    # 4. 验证数据库状态更新（last_used 重置）
+    app_session.expire_all()
+    token_in_db = await app_session.get(ApiAccessToken, orig_res.id)
+    assert token_in_db is not None
+    assert token_in_db.token_public_id == reset_res.token_public_id
+    assert token_in_db.last_used_at is None
+    assert token_in_db.last_used_ip is None
+
+    # 5. 旧 token 立即失效
+    with pytest.raises(AppException) as exc_info:
+        await service.authenticate_pat(old_plain_token)
+    assert exc_info.value.code == "UNAUTHENTICATED"
+
+    # 6. 新 token 正常鉴权
+    auth_new = await service.authenticate_pat(reset_res.token, ip="192.0.2.2")
+    assert auth_new.id == orig_res.id
+
+    # 7. 吊销后再重置应抛出 409 PAT_REVOKED
+    await service.revoke_token(user_id=u_id, token_id=orig_res.id)
+    with pytest.raises(AppException) as exc_info:
+        await service.reset_token(user_id=u_id, token_id=orig_res.id)
+    assert exc_info.value.code == "PAT_REVOKED"
+

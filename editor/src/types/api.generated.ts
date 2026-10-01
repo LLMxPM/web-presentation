@@ -437,6 +437,10 @@ export type ApiAccessTokenListResponse = {
   "max_active_tokens": number
 }
 
+export type ApiAccessTokenResetRequest = {
+  "expires_in_days"?: (number) | (null)
+}
+
 export type ApiAccessTokenUpdateRequest = {
   "name"?: (string) | (null)
   "workspace_ids"?: ((number)[]) | (null)

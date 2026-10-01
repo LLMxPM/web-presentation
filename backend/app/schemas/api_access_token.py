@@ -106,6 +106,19 @@ class ApiAccessTokenUpdateRequest(BaseModel):
         return self
 
 
+class ApiAccessTokenResetRequest(BaseModel):
+    """Web 控制台重置个人访问令牌请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expires_in_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=365,
+        description="从重置时间起的有效天数；显式传 null 表示长期有效；不传则保持原有效设置（若已过期则默认延长 30 天）",
+    )
+
+
 class ApiAccessTokenCreateResponse(BaseModel):
     """创建个人访问令牌响应（仅此一次返回明文 Token）。"""
 

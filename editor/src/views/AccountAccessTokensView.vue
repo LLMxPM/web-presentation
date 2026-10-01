@@ -1,4 +1,4 @@
-<!-- 文件功能：管理用户个人访问令牌（PAT），提供创建、配置编辑、明文密钥单次展示与即时吊销功能。 -->
+<!-- 文件功能：管理用户个人访问令牌（PAT），提供创建、配置编辑、密钥重置、明文密钥单次展示与即时吊销功能。 -->
 <template>
   <div class="space-y-4 pb-12">
     <PageHeader
@@ -65,7 +65,7 @@
               <th class="w-28 px-4 py-3.5">状态</th>
               <th class="w-40 px-4 py-3.5">最后使用</th>
               <th class="w-40 px-4 py-3.5">到期时间</th>
-              <th class="w-36 px-4 py-3.5 text-right">操作</th>
+              <th class="w-48 px-4 py-3.5 text-right">操作</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border-muted">
@@ -115,6 +115,15 @@
                   >
                     <template #icon><SquarePen class="h-3.5 w-3.5" /></template>
                     编辑
+                  </UiButton>
+                  <UiButton
+                    v-if="!item.revoked_at"
+                    variant="ghost"
+                    size="sm"
+                    @click="openResetConfirm(item)"
+                  >
+                    <template #icon><RotateCw class="h-3.5 w-3.5" /></template>
+                    重置
                   </UiButton>
                   <UiButton
                     v-if="item.is_active"
@@ -233,10 +242,56 @@
       </template>
     </UiDialog>
 
+    <!-- Reset Confirm Dialog -->
+    <UiDialog
+      :open="resetDialogOpen"
+      title="重置访问令牌"
+      size="standard"
+      @update:open="resetDialogOpen = $event"
+    >
+      <div class="space-y-4">
+        <div class="p-3.5 rounded-lg bg-warning-muted/40 border border-warning-strong/30 flex items-start gap-3">
+          <ShieldAlert class="w-5 h-5 text-warning-strong flex-shrink-0 mt-0.5" />
+          <div class="text-xs text-text space-y-1">
+            <p class="font-semibold text-warning-strong">确定要重置令牌「{{ tokenToReset?.name }}」吗？</p>
+            <p>
+              重置将<strong>立即使当前的旧令牌失效</strong>，并为您生成一个全新密钥。使用旧密钥的所有 CLI、自动化脚本及 API 请求将立即无法访问。
+            </p>
+          </div>
+        </div>
+
+        <p class="text-xs text-text-secondary">
+          原令牌的名称、工作空间授权和权限 Scope 将完全保留。新令牌明文仅在重置成功后展示一次。
+        </p>
+
+        <UiFormField
+          :label="tokenToReset && !tokenToReset.is_active ? '有效期限（当前已过期，请重新指定）' : '有效期限'"
+          :required="Boolean(tokenToReset && !tokenToReset.is_active)"
+          v-slot="field"
+        >
+          <UiSelect
+            v-model="resetForm.expires_in_days"
+            :options="tokenToReset && !tokenToReset.is_active ? expiresOptions : editExpiresOptions"
+            :input-id="field.inputId"
+          />
+          <p v-if="tokenToReset && !tokenToReset.is_active" class="mt-2 text-xs text-warning-strong">
+            当前令牌已过期；重置后将重新激活并按所选期限生效。
+          </p>
+        </UiFormField>
+      </div>
+
+      <template #footer>
+        <UiButton variant="ghost" @click="resetDialogOpen = false">取消</UiButton>
+        <UiButton variant="danger" :loading="resetting" @click="handleResetToken">
+          确认重置并生成新密钥
+        </UiButton>
+      </template>
+    </UiDialog>
+
     <!-- Token Created Success Dialog -->
     <UiDialog
       :open="successDialogOpen"
-      title="令牌创建成功"
+      :title="successDialogTitle"
       size="standard"
       @update:open="successDialogOpen = $event"
     >
@@ -304,12 +359,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Copy, Key, ShieldAlert, SquarePen } from '@lucide/vue'
+import { Copy, Key, RotateCw, ShieldAlert, SquarePen } from '@lucide/vue'
 
 import {
   createAccessToken,
   listAccessTokens,
   listAccessTokenScopes,
+  resetAccessToken,
   revokeAccessToken,
   updateAccessToken,
 } from '@/api/accessTokens'
@@ -320,6 +376,7 @@ import { PageHeader } from '@/components/patterns'
 import type { SelectOption } from '@/components/ui/select'
 import type {
   ApiAccessTokenItem,
+  ApiAccessTokenResetRequest,
   ApiAccessTokenScopeInfo,
   ApiAccessTokenUpdateRequest,
 } from '@/types/accessTokens'
@@ -369,7 +426,15 @@ const formErrors = reactive({
   scopes: '',
 })
 
+const resetDialogOpen = ref(false)
+const resetting = ref(false)
+const tokenToReset = ref<ApiAccessTokenItem | null>(null)
+const resetForm = reactive({
+  expires_in_days: 'unchanged' as ExpirationSelection,
+})
+
 const successDialogOpen = ref(false)
+const successDialogTitle = ref('令牌创建成功')
 const createdTokenSecret = ref('')
 
 const revokeDialogOpen = ref(false)
@@ -539,6 +604,7 @@ async function handleTokenSubmit() {
     const res = await createAccessToken(payload)
     closeTokenDialog()
     createdTokenSecret.value = res.token
+    successDialogTitle.value = '令牌创建成功'
     successDialogOpen.value = true
     await loadData()
   } catch (err) {
@@ -554,6 +620,35 @@ async function copySecret() {
     Message.success('令牌已复制到剪贴板')
   } catch {
     Message.warning('复制失败，请手动选中文本进行复制')
+  }
+}
+
+function openResetConfirm(item: ApiAccessTokenItem) {
+  if (item.revoked_at) return
+  tokenToReset.value = item
+  resetForm.expires_in_days = item.is_active ? 'unchanged' : 30
+  resetDialogOpen.value = true
+}
+
+async function handleResetToken() {
+  if (!tokenToReset.value) return
+  resetting.value = true
+  try {
+    const payload: ApiAccessTokenResetRequest = {}
+    if (resetForm.expires_in_days !== 'unchanged') {
+      payload.expires_in_days = resetForm.expires_in_days === 'never' ? null : resetForm.expires_in_days
+    }
+    const res = await resetAccessToken(tokenToReset.value.id, payload)
+    resetDialogOpen.value = false
+    createdTokenSecret.value = res.token
+    successDialogTitle.value = '令牌重置成功'
+    successDialogOpen.value = true
+    await loadData()
+    Message.success('访问令牌已成功重置')
+  } catch (err) {
+    Message.error(getErrorMessage(err, '重置访问令牌失败'))
+  } finally {
+    resetting.value = false
   }
 }
 

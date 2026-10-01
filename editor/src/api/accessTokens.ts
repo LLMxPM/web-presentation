@@ -8,6 +8,7 @@ import type {
   ApiAccessTokenListResponse,
   ApiAccessTokenScopeInfo,
   ApiAccessTokenItem,
+  ApiAccessTokenResetRequest,
   ApiAccessTokenUpdateRequest,
 } from '@/types/accessTokens'
 
@@ -27,6 +28,19 @@ export async function createAccessToken(
   payload: ApiAccessTokenCreateRequest,
 ): Promise<ApiAccessTokenCreateResponse> {
   const { data } = await http.post<ApiAccessTokenCreateResponse>('/access-tokens', payload)
+  return data
+}
+
+/**
+ * 重置指定的访问令牌，生成新密钥并立即使旧密钥失效。
+ * @param tokenId 令牌 ID
+ * @param payload 可选的重置请求（例如重设有效期天数）
+ */
+export async function resetAccessToken(
+  tokenId: number,
+  payload?: ApiAccessTokenResetRequest,
+): Promise<ApiAccessTokenCreateResponse> {
+  const { data } = await http.post<ApiAccessTokenCreateResponse>(`/access-tokens/${tokenId}/reset`, payload)
   return data
 }
 

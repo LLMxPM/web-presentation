@@ -53,6 +53,29 @@ class PatAuditService:
         )
 
     @staticmethod
+    def log_token_reset(
+        *,
+        user_id: int,
+        token_id: int,
+        old_public_id: str,
+        new_public_id: str,
+        ip: str | None = None,
+    ) -> None:
+        """记录 PAT 密钥重置审计事件。"""
+
+        logger.info(
+            "PAT 访问令牌密钥已重置。",
+            extra={
+                "event": "pat.reset",
+                "user_id": user_id,
+                "token_id": token_id,
+                "old_token_public_id": old_public_id,
+                "new_token_public_id": new_public_id,
+                "ip": ip or "unknown",
+            },
+        )
+
+    @staticmethod
     def log_token_updated(
         *,
         user_id: int,

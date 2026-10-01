@@ -285,3 +285,43 @@ async def test_update_access_token_hides_other_user_token(authenticated_client: 
         headers={"Origin": "http://testserver"},
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_reset_access_token_endpoint(authenticated_client: AsyncClient) -> None:
+    """测试重置 PAT 接口的 CSRF 校验、Cache-Control 头、返回新明文 Token 及旧 Token 即刻失效。"""
+
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        token_id, workspace_id = await _seed_admin_token(session, "reset-test")
+
+    # 1. 缺少 CSRF 头应被 403 拦截
+    csrf_fail_response = await authenticated_client.post(f"/api/access-tokens/{token_id}/reset")
+    assert csrf_fail_response.status_code == 403
+    assert csrf_fail_response.json()["code"] == "CSRF_CHECK_FAILED"
+
+    # 2. 正常请求重置
+    reset_response = await authenticated_client.post(
+        f"/api/access-tokens/{token_id}/reset",
+        json={"expires_in_days": 15},
+        headers={"Origin": "http://testserver"},
+    )
+    assert reset_response.status_code == 200
+    assert "no-store" in reset_response.headers.get("Cache-Control", "")
+
+    data = reset_response.json()
+    assert data["id"] == token_id
+    assert data["token"].startswith("wp_pat_")
+    new_token = data["token"]
+    new_public_id = data["token_public_id"]
+    assert new_public_id in new_token
+
+    # 3. 使用新 Token 调用 External API
+    ext_response = await authenticated_client.get(
+        "/api/v1/workspaces",
+        headers={"Authorization": f"Bearer {new_token}"},
+    )
+    assert ext_response.status_code == 200
+    workspaces = ext_response.json()
+    assert any(w["id"] == workspace_id for w in workspaces)
+

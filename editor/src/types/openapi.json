@@ -8656,6 +8656,82 @@
         }
       }
     },
+    "/api/access-tokens/{token_id}/reset": {
+      "post": {
+        "tags": [
+          "access-tokens"
+        ],
+        "summary": "Reset Access Token",
+        "description": "重置当前用户的指定访问令牌（生成新密钥并立即使旧密钥失效，响应中仅返回一次明文 Token）。",
+        "operationId": "reset_access_token_api_access_tokens__token_id__reset_post",
+        "parameters": [
+          {
+            "name": "token_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Token Id"
+            }
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApiAccessTokenResetRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiAccessTokenCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/access-tokens/{token_id}/revoke": {
       "post": {
         "tags": [
@@ -26018,6 +26094,28 @@
         ],
         "title": "ApiAccessTokenListResponse",
         "description": "个人访问令牌列表响应。"
+      },
+      "ApiAccessTokenResetRequest": {
+        "properties": {
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365,
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days",
+            "description": "从重置时间起的有效天数；显式传 null 表示长期有效；不传则保持原有效设置（若已过期则默认延长 30 天）"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ApiAccessTokenResetRequest",
+        "description": "Web 控制台重置个人访问令牌请求。"
       },
       "ApiAccessTokenUpdateRequest": {
         "properties": {

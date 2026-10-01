@@ -29,6 +29,7 @@ from app.schemas.api_access_token import (
     ApiAccessTokenCreateResponse,
     ApiAccessTokenItem,
     ApiAccessTokenListResponse,
+    ApiAccessTokenResetRequest,
     ApiAccessTokenUpdateRequest,
 )
 from app.services.pat_security_service import PatAuditService, PatRateLimitService
@@ -289,6 +290,108 @@ class ApiAccessTokenService:
             ip=ip,
         )
         return self._to_item(token, now=now)
+
+    async def reset_token(
+        self,
+        *,
+        user_id: int,
+        token_id: int,
+        payload: ApiAccessTokenResetRequest | None = None,
+        ip: str | None = None,
+    ) -> ApiAccessTokenCreateResponse:
+        """重置当前用户的指定 PAT（重新生成密钥并立即使旧密钥失效）。"""
+
+        stmt = (
+            select(ApiAccessToken)
+            .options(
+                selectinload(ApiAccessToken.workspaces),
+                selectinload(ApiAccessToken.scopes),
+            )
+            .where(ApiAccessToken.id == token_id)
+            .where(ApiAccessToken.user_id == user_id)
+        )
+        token = await self.session.scalar(stmt)
+        if token is None:
+            raise AppException(status_code=404, code="OBJECT_NOT_FOUND", detail="访问令牌不存在。")
+        if token.revoked_at is not None:
+            raise AppException(
+                status_code=409,
+                code="PAT_REVOKED",
+                detail="已吊销的访问令牌不能重置，请重新创建令牌。",
+            )
+
+        now = utc_now()
+        was_active = token.is_active
+
+        # 计算新的 expires_at
+        provided_fields = payload.model_fields_set if payload else set()
+        if "expires_in_days" in provided_fields:
+            if payload and payload.expires_in_days is not None:
+                ttl_days = min(payload.expires_in_days, self.settings.pat_max_ttl_days)
+                next_expires_at = now + timedelta(days=ttl_days)
+            else:
+                next_expires_at = None
+        else:
+            # 未传有效天数时：若原令牌已过期，默认恢复并延期 30 天；若未过期，保持原到期时间
+            if token.expires_at is not None and normalize_utc(token.expires_at) <= now:
+                ttl_days = min(30, self.settings.pat_max_ttl_days)
+                next_expires_at = now + timedelta(days=ttl_days)
+            else:
+                next_expires_at = token.expires_at
+
+        # 若从非活跃（已过期）恢复为活跃，需校验活跃令牌数量上限
+        will_be_active = next_expires_at is None or normalize_utc(next_expires_at) > now
+        if not was_active and will_be_active:
+            await self._ensure_active_token_limit(
+                user_id=user_id,
+                now=now,
+                exclude_token_id=token.id,
+            )
+
+        old_public_id = token.token_public_id
+
+        # 生成新密钥 (256-bit secret, 16 字符 public_id)
+        public_id = secrets.token_hex(8)
+        secret_hex = secrets.token_hex(32)
+        plain_token = f"wp_pat_{public_id}.{secret_hex}"
+        token_hash = hashlib.sha256(plain_token.encode("utf-8")).hexdigest()
+
+        token.token_public_id = public_id
+        token.token_hash = token_hash
+        token.expires_at = next_expires_at
+        token.last_used_at = None
+        token.last_used_ip = None
+        token.updated_at = now
+
+        await self.session.commit()
+
+        # 清除 Redis 节流缓存（若有）
+        try:
+            runtime = get_redis_runtime_client()
+            throttle_key = runtime.key(f"pat:last_used_throttle:{token.id}")
+            runtime.delete(throttle_key)
+        except Exception as exc:
+            logger.warning("清理 PAT 运行态节流缓存失败: %s", exc)
+
+        PatAuditService.log_token_reset(
+            user_id=user_id,
+            token_id=token.id,
+            old_public_id=old_public_id,
+            new_public_id=public_id,
+            ip=ip,
+        )
+
+        return ApiAccessTokenCreateResponse(
+            id=token.id,
+            name=token.name,
+            token_public_id=public_id,
+            token=plain_token,
+            expires_at=token.expires_at,
+            all_workspaces=token.all_workspaces,
+            workspace_ids=[workspace.workspace_id for workspace in token.workspaces],
+            scopes=[scope.scope for scope in token.scopes],
+            created_at=token.created_at,
+        )
 
     async def list_tokens(self, *, user_id: int) -> ApiAccessTokenListResponse:
         """列出当前用户的所有访问令牌（支持展示活跃与已吊销历史，脱敏展示）。"""

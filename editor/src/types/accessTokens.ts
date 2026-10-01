@@ -34,6 +34,10 @@ export interface ApiAccessTokenUpdateRequest {
   expires_in_days?: number | null
 }
 
+export interface ApiAccessTokenResetRequest {
+  expires_in_days?: number | null
+}
+
 export interface ApiAccessTokenCreateResponse {
   id: number
   name: string
