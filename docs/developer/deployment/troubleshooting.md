@@ -22,9 +22,11 @@
 
 先检查 `renderer` 容器健康与日志，再核对 Backend 的 `RENDER_WORKERS_CONFIG`、Renderer 的 `RENDER_WORKER_ID`、两侧共享凭据及 `RENDER_PROFILE_DIGEST`。Renderer 还必须能访问 Runtime 的预览文档和静态资源；Backend 不在本进程内执行 Chromium。
 
-## AI 设置保存后无法解密
+## AI 设置保存后无法解密或启动报密钥占位错误
 
-通常是 `AI_SECRET_ENCRYPTION_KEY` 改变导致。恢复原密钥后重启 Backend；如果原密钥丢失，已有用户模型凭证无法自动恢复，需要用户重新配置。
+若后端启动报 `SigningIdentityError: AI_SECRET_ENCRYPTION_KEY 禁止使用默认/示例占位值`，说明配置了内置示例弱密钥被安全拦截；若启动后进入 AI 页面解密失败（报 `500 AI_LLM_API_KEY_INVALID`），通常是 `AI_SECRET_ENCRYPTION_KEY` 改变导致。
+- 若需要更换密钥并保留现有凭证，必须按照 [AI 凭证密钥轮换与迁移指南](../backend/ai-secret-rotation.md) 运行平滑重密迁移脚本。
+- 若原密钥完全丢失，已有用户模型凭证无法自动解密恢复，可按指南执行 `reset_ai_model_configuration` 清空配置后重新录入。
 
 ## 图片、字体或构建产物无法访问
 

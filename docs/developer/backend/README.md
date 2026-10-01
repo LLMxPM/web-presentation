@@ -10,6 +10,7 @@ Backend 是平台控制面，负责 API、权限、数据持久化、AI Agent、
 | [AI Agent 运行态](./ai-agent.md) | 会话、run、HITL、诊断 CLI 和模型 trace |
 | [AI 模型配置与目录](./ai-model-configuration.md) | 聊天模型、图片模型、Models.dev 目录和协议白名单 |
 | [AI 模型能力与推理策略](./ai-model-capabilities.md) | 模型能力档案、三态四档、上下文预算和兼容快照 |
+| [AI 凭证密钥轮换与迁移](./ai-secret-rotation.md) | Fernet 密钥机制、安全检查与数据库凭证平滑重密迁移 |
 | [AI 工具规格](./ai-tool-specs.md) | `tool_specs.py` 单一事实源和防漂移要求 |
 | [重资源队列与复用运行态](./resource-queues.md) | AI 页面变更、截图、Runtime 与 Chromium 的限流、恢复和排障 |
 | [运行态存储适配器](./runtime-state-adapter.md) | Redis / `memory://` 契约、Lite 正式适配器边界与禁止事项 |

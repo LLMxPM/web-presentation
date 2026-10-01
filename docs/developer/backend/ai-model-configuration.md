@@ -19,3 +19,7 @@ uv run --project backend python -m app.scripts.reset_ai_model_configuration --co
 模型能力按“用户覆盖、当前目录、保守默认”合并。助手槽位只保存模型绑定，不保存推理或 token 策略。输入预算直接采用模型目录的 input limit；输出预算统一封顶 32,768 tokens，并继续服从模型更小的 output limit。推理策略在发起每个 Run 时以当前模型的 Models.dev `reasoning_options` 为事实源，并写入不可变 Run 快照；通用 OpenAI-compatible 连接可转换目录明确声明的标准 `effort`，toggle 和 token budget 等供应商方言仍要求固定转换器。目录后续更新不改变已经开始或完成的 Run。
 
 本次拆表迁移会清理旧模型配置、绑定、AI 会话和持久化 AI 任务，不迁移历史记录；用户、工作空间、项目、页面、资源和已生成文件不受影响。
+
+## 凭证加密与密钥轮换
+
+数据库中的供应商 API Key 使用 `AI_SECRET_ENCRYPTION_KEY`（Fernet 对称密钥）加密存储。若需更换密钥或从示例占位值升级为安全随机密钥，禁止直接在配置中更换（会导致已有凭证解密失败）；请按照 [AI 凭证密钥轮换与迁移指南](./ai-secret-rotation.md) 运行平滑重密迁移脚本。

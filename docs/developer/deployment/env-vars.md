@@ -42,7 +42,7 @@ SQLite 轻量模式不依赖外部 PostgreSQL/Redis。`memory://` 是**受支持
 | `AI_AGENT_STREAM_IDLE_TIMEOUT_SECONDS` | 模型请求流连续无事件时的失败阈值，默认 `180` 秒 |
 | `AI_AGENT_TOOL_STREAM_IDLE_TIMEOUT_SECONDS` | 工具执行流连续无事件时的失败阈值，默认 `600` 秒；成员委派等长工具使用该阈值 |
 
-`AI_SECRET_ENCRYPTION_KEY` 必须是 32 字节随机值的 URL-safe base64 编码，通常长度为 44 个字符并以 `=` 结尾。更换该值会导致已有用户模型凭证无法解密。
+`AI_SECRET_ENCRYPTION_KEY` 必须是 32 字节随机值的 URL-safe base64 编码，通常长度为 44 个字符并以 `=` 结尾。直接更换该值会导致已有用户模型凭证无法解密；需要更换时请参见 [AI 凭证密钥轮换与迁移指南](../backend/ai-secret-rotation.md) 进行平滑重密迁移。
 
 ## 重资源队列
 
