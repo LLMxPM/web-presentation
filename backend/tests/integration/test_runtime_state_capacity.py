@@ -261,3 +261,53 @@ async def test_concurrent_writes_should_never_exceed_budget(
     assert stats.approx_bytes is not None and stats.approx_bytes <= 20_000
     assert stats.active_keys is not None and stats.active_keys < 16
     assert any(results)
+
+
+@pytest.mark.asyncio
+async def test_repeated_preview_creation_capacity_accounting_and_sweep_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """定向验证 M03-F1：同项目多次新建预览累积达到总量预算时被拒（503），过期清扫后容量完全恢复。"""
+
+    _apply_memory_budget(monkeypatch, max_bytes=6_000, max_item_bytes=4_000)
+    store = RuntimeArtifactStore()
+
+    # 1. 循环创建短 TTL artifact (每个约 2KB) 直至累计突破 6,000 字节总预算被拒 (M03-F1 根本成因)
+    created_ids: list[str] = []
+    with pytest.raises(AppException) as exc_info:
+        for idx in range(10):
+            art = await store.put_artifact(
+                tenant_id="tenant_cap",
+                workspace_id=1,
+                project_id=1,
+                artifact_kind="page-preview",
+                manifest={"preview_kind": "page"},
+                config_bundle={},
+                modules_data=[{"logical_path": f"src/views/p{idx}.vue", "content": "x" * 1_500}],
+                ttl_seconds=1,
+            )
+            created_ids.append(art)
+
+    assert len(created_ids) >= 1  # 至少第一个成功创建
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "RUNTIME_STATE_CAPACITY_EXCEEDED"
+    assert "超过进程内预算" in exc_info.value.detail or "容量已满" in exc_info.value.detail
+
+    # 2. 等待 TTL 过期并执行主动清扫
+    await asyncio.sleep(1.2)
+    purged_count = await store.sweep_expired()
+    assert purged_count >= len(created_ids) * 4
+
+    # 3. 容量已恢复，再次创建应立即成功
+    art_after = await store.put_artifact(
+        tenant_id="tenant_cap",
+        workspace_id=1,
+        project_id=1,
+        artifact_kind="page-preview",
+        manifest={"preview_kind": "page"},
+        config_bundle={},
+        modules_data=[{"logical_path": "src/views/new.vue", "content": "e" * 1_500}],
+        ttl_seconds=60,
+    )
+    assert art_after is not None
+    assert await store.get_manifest(art_after) is not None
