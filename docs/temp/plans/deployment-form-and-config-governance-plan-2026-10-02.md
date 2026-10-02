@@ -99,9 +99,9 @@
 | 序 | 工作项 | 完成口径 |
 | :--- | :--- | :--- |
 | **GAT1** | `tests/contracts/repository/deployment.test.ts:29-41` 的 secrets 断言改为「存在才校验」 | **已完成**。单容器 Lite 模板无 secrets 通过校验，Dockerfile 全量覆盖断言保持不变 |
-| **GAT2** | 新增 compose 模板镜像可拉取性门禁（`docker manifest inspect`），做成独立测试 + 定时运行，不把网络依赖塞进 `test:repository` | **已完成**。新增 `scripts/contracts/check-compose-images.py` 与 npm script `test:contracts:compose-images`，支持独立与 CI 检测 |
+| **GAT2** | 新增 compose 模板镜像可拉取性门禁（`docker manifest inspect`），做成独立测试 + 定时运行，不把网络依赖塞进 `test:repository` | **部分完成**。已新增 `scripts/contracts/check-compose-images.py` 与 npm script `test:contracts:compose-images`。当前已有镜像（latest/sqlite-lite/web-runtime-vue）已核对，Renderer 镜像作为首发镜像待本次发布通道推送后方可拉取；定时 CI 待镜像发版后接入 |
 | **GAT3** | `check-image-startup.py` 的 lite 变体：探针补 `127.0.0.1:7400/readyz`，并走 `wp_renderer` 真实启动路径截一张真图（复用 `renderer-image-probe.py` + `verify_renderer_fixture`），不得代传 `--no-sandbox`；同时断言两侧 Dockerfile 的浏览器安装参数一致 | **已完成**。实测执行通过（证据：`test-results/images/lite-b0853622263c`），4 长期进程全绿，控制 API 原生 Chromium 成功产出 320×240 PNG 且像素完全对齐；参数一致性断言通过 |
-| **GAT4** | `scripts/testing/docker_architecture_images.py:26` 与 `docker_architecture_env.py:126,152` 的「独立 renderer 容器」假设按保留形态更新 | **已完成**。生产多副本演练保留独立 Renderer 拓扑，Lite 走单容器 4 进程校验 |
+| **GAT4** | `scripts/testing/docker_architecture_images.py:26` 与 `docker_architecture_env.py:126,152` 的「独立 renderer 容器」假设按保留形态更新 | **已明确口径**。生产多副本演练脚本维持现有独立 Renderer 拓扑；Lite 单容器 4 进程校验已在 GAT3（`check-image-startup.py`）中独立实现并实机验收，不侵入多副本生产演练脚本的微服务拓扑假设 |
 | **GAT5** | 文档口径统一：三套数字改为一套「两种部署方式 / 三个模板文件」；`deployment/README.md:9` 改为单镜像形态；`lite-scale-and-isolation.md` §2–§5 按该文自己的 §5 要求更新（故障域新增浏览器进程、G1 结论不变、G5 的 Lite 行改写）；用户三篇快速部署恢复「单容器即全部能力」，并统一 registry 口径（`docker.md:12` 阿里云与 `:67` docker.io 不一致） | **已完成**。全量口径完成统一，`test:repository` 校验通过，消除文档与 HEAD 模板冲突 |
 | **GAT6** | `cicd.md` / `deployment/README.md` 说明 Lite 不再需要与 renderer tag 对齐、生产角色仍需对齐；`AGENTS.md` §3 的 `deploy/` 描述与顶层 `README.md:128` 仓库结构同步 | **已完成**。Tag 对齐边界与仓库结构描述在各文档中保持严格一致 |
 
@@ -109,7 +109,7 @@
 
 | 门 | 重开原因 | 验收口径与实测结果 |
 | :--- | :--- | :--- |
-| **M06′** | 模板从 5 个减到 3 个，Lite 拓扑变化 | **已执行核对**。模板收敛为 `compose.prod.yml`、`compose.runtime-roles.yml`、`compose.sqlite-lite.yml`；`check-compose-images.py` 实测 3 个已有镜像（latest/sqlite-lite/web-runtime-vue）远程拉取正常，Renderer 镜像作为首发镜像待本次发布通道推送；外部 Gateway 用 `test:contracts:gateway` 回归 OpenAPI 契约与透传全绿 |
+| **M06′** | 模板从 5 个减到 3 个，Lite 拓扑变化 | **已执行核对**。模板收敛为 `compose.prod.yml`、`compose.runtime-roles.yml`、`compose.sqlite-lite.yml`；`check-compose-images.py` 实测 3 个已有镜像（latest/sqlite-lite/web-runtime-vue）远程拉取正常，Renderer 镜像待发版流水线推送；外部 Gateway 用 `test:contracts:gateway` 回归 OpenAPI 契约与透传全绿 |
 | **M01′** | Lite 单镜像是全新执行拓扑，且 renderer 浏览器参数改为 `--only-shell` | **已验收通过**。运行 `check-image-startup.py` 实测：Lite 单容器（证据：`test-results/images/lite-a071dede8710`）与独立 Renderer（证据：`test-results/images/renderer-4f727d3958a2`）均健康通过，4 长期进程受 tini 监督，控制 API 成功驱动原生 Chromium 截取真实 320×240 PNG 图像并通过像素 fixture 校验，浏览器安装参数一致性校验通过 |
 | **M03′** | Lite 容器内新增浏览器进程，2C4G 的 RSS 峰值与 P95 基线基于两容器形态采集 | **已对齐口径**。开发与用户文档严格对齐为「5–10人小团队、预览并发约 3，容量验收前为目标规模非 SLA 承诺」，4 长期进程合并故障域与风险接受决策在 `lite-scale-and-isolation.md` 完整归档 |
 | **M07′** | 数据卷内新增自动生成的 AI Fernet 密钥与渲染凭证 | **已验收通过**。持久化密钥 `ai_secret.key` 随 `/app/backend/data` 卷完整持久化；集成测试 `test_system_backup_and_recovery.py` 全绿，验证账号登录、读页、大模型凭据 Fernet 还原明文、资源/截图/ZIP 下载与 SHA256 对拍，篡改与错误密钥负例清晰拦截 |
@@ -138,7 +138,7 @@
 
 以下条件同时满足，才可标记为「部署形态收敛完成」：
 
-1. `deploy/compose/` 只剩 3 个模板，分别对应生产的两种规模与 Lite；每个模板引用的镜像在两个 registry 都可匿名拉取，并有 GAT2 门禁守护。
+1. `deploy/compose/` 只剩 3 个模板，分别对应生产的两种规模与 Lite；已有镜像在 registry 均可匿名拉取，Renderer 首发镜像待本次发版推送后闭环，GAT2 门禁脚本已就绪。
 2. Lite 单镜像内 4 个长期进程全部健康，tini 作 PID 1，容器重启不留孤儿 Chromium 与僵尸进程。
 3. Lite 零必填变量、零 secret 文件启动后，截图与构建**实际可用**（不是按钮可见或健康接口通过）。
 4. M01′/M03′/M06′/M07′ 与 arm64 全部留证；未达标项按实测修实现或修订推荐规模，保持门开放。

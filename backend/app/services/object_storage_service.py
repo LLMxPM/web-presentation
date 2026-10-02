@@ -14,7 +14,7 @@ from typing import AsyncIterator
 from urllib.parse import quote
 from uuid import uuid4
 
-from app.core.config import get_settings
+from app.core.config import AppSettings, get_settings
 from app.core.exceptions import AppException
 
 try:

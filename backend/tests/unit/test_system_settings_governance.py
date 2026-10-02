@@ -1,6 +1,7 @@
 """文件功能：系统设置三层优先级、Safe-Mode 降级防 Crash-Loop 与多副本守卫单元测试。"""
 
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 from app.core.config import (
@@ -22,8 +23,9 @@ from app.services.system_settings_service import SystemSettingsService
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings_fixture():
-    """每次测试前后重置 settings 缓存状态。"""
+def _reset_settings_fixture(monkeypatch: pytest.MonkeyPatch):
+    """每次测试前后重置 settings 缓存状态，并隔离本地开发环境 .env 文件对单元测试的污染。"""
+    monkeypatch.setattr("app.core.config._iter_settings_env_files", lambda: [])
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -124,11 +126,22 @@ def test_multi_instance_storage_driver_guard(monkeypatch: pytest.MonkeyPatch, ca
     get_settings.cache_clear()
     assert get_settings().backend_multi_instance is True
 
+    # 先初始化为 s3 驱动
+    apply_system_settings_override({
+        "asset_storage_driver": "s3",
+        "s3_bucket": "test-bucket",
+        "s3_access_key": "AKTEST",
+        "s3_secret_key": "SKTEST",
+    })
+    assert get_settings().asset_storage_driver == "s3"
+
     # 尝试切换为 local 驱动
     with caplog.at_level(logging.WARNING):
         settings = apply_system_settings_override({"asset_storage_driver": "local"})
 
-    # 验证本地存储被守卫拦截，记录告警并保持合法配置
+    # 验证本地存储被守卫拦截，记录告警且当前生效驱动依然保持 s3
+    assert settings.asset_storage_driver == "s3"
+    assert get_settings().asset_storage_driver == "s3"
     warnings = get_settings_safe_mode_warnings()
     assert any(w["key"] == "asset_storage_driver" for w in warnings)
 
@@ -157,7 +170,7 @@ async def test_system_settings_service_dry_run_validation():
 
 @pytest.mark.asyncio
 async def test_system_settings_service_env_lock_immutability(monkeypatch: pytest.MonkeyPatch):
-    """测试 SystemSettingsService 对 ENV 锁定的配置禁止通过 Web UI 修改。"""
+    """测试 SystemSettingsService 对 ENV 锁定的配置禁止通过 Web UI 篡改。"""
     monkeypatch.setenv("APP_NAME", "环境变量固定的名称")
     get_settings.cache_clear()
 
@@ -170,11 +183,82 @@ async def test_system_settings_service_env_lock_immutability(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
+async def test_system_settings_service_env_lock_allows_idempotent_submission(monkeypatch: pytest.MonkeyPatch):
+    """测试 SystemSettingsService 对全量表单中未变动的 ENV 锁定配置幂等放行。"""
+    monkeypatch.setenv("APP_NAME", "环境变量固定的名称")
+    get_settings.cache_clear()
+
+    mock_session = AsyncMock()
+    mock_session.add = MagicMock()
+    mock_result = MagicMock()
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = []
+    mock_result.scalars.return_value = mock_scalars
+    mock_session.execute.return_value = mock_result
+    service = SystemSettingsService(mock_session)
+
+    # 传入与当前环境变量相同的值（如前端全量提交）
+    res = await service.update_settings({
+        "app_name": "环境变量固定的名称",
+        "session_ttl_hours": 48,
+    })
+    assert res is not None
+
+
+def test_priority_dotenv_overrides_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """测试 .env 配置文件声明的优先级高于 DB（支持运维改 .env 救砖）。"""
+    fake_env = tmp_path / ".env"
+    fake_env.write_text("APP_TIMEZONE=Europe/Rome\nLOG_LEVEL=ERROR\n", encoding="utf-8")
+    monkeypatch.setattr("app.core.config._iter_settings_env_files", lambda: [fake_env])
+    get_settings.cache_clear()
+
+    assert is_env_overridden("app_timezone") is True
+    assert is_env_overridden("log_level") is True
+    assert is_env_overridden("session_ttl_hours") is False
+
+    # 尝试用 DB 覆盖
+    updated = apply_system_settings_override({
+        "app_timezone": "America/New_York",
+        "log_level": "DEBUG",
+        "session_ttl_hours": 72,
+    })
+    # app_timezone 和 log_level 被 .env 锁死，保持 Europe/Rome 与 ERROR
+    assert updated.app_timezone == "Europe/Rome"
+    assert updated.log_level == "ERROR"
+    # session_ttl_hours 未在 .env 声明，DB 成功生效
+    assert updated.session_ttl_hours == 72
+
+
+@pytest.mark.asyncio
+async def test_system_settings_service_rejects_incomplete_s3():
+    """测试切为 S3 存储但未提供完整凭证时拒绝保存。"""
+    mock_session = AsyncMock()
+    service = SystemSettingsService(mock_session)
+
+    with pytest.raises(AppException) as exc_info:
+        await service.update_settings({"asset_storage_driver": "s3", "s3_bucket": ""})
+    assert exc_info.value.code == "S3_CONFIG_INCOMPLETE"
+
+
+def test_ai_image_transport_mode_values_and_aliases():
+    """测试 ai_image_transport_mode 支持 auto, url, base64 并将 s3/data_url 别名平滑映射。"""
+    spec = SYSTEM_SETTING_SPECS["ai_image_transport_mode"]
+    assert spec.validator("auto") == "auto"
+    assert spec.validator("url") == "url"
+    assert spec.validator("base64") == "base64"
+    # 别名映射
+    assert spec.validator("s3") == "url"
+    assert spec.validator("data_url") == "base64"
+    with pytest.raises(ValueError):
+        spec.validator("invalid_mode")
+
+
+@pytest.mark.asyncio
 async def test_system_settings_service_secret_masking():
     """测试敏感字段（如 S3_ACCESS_KEY）返回掩码，且传入掩码时不覆盖原值。"""
     spec = SYSTEM_SETTING_SPECS["s3_access_key"]
     assert spec.is_secret is True
-    assert spec.mask_value("AKIA1234567890ABCDEF") == "AKI******DEF"
+    assert spec.mask_value("AKIA1234567890ABCDEF") == "******"
     assert spec.mask_value("123456") == "******"
     assert spec.mask_value(None) is None
 

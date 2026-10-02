@@ -494,8 +494,8 @@ const logLevelOptions = [
 
 const imageTransportOptions = [
   { label: '自动判定 (auto)', value: 'auto' },
-  { label: '对象存储直链 (s3)', value: 's3' },
-  { label: '内嵌 Base64 Data URL (data_url)', value: 'data_url' },
+  { label: '对象存储直链 (url)', value: 'url' },
+  { label: '内嵌二进制 / Base64 (base64)', value: 'base64' },
 ]
 
 function getItemByKey(key: string): SystemSettingItem | undefined {
@@ -534,7 +534,13 @@ async function loadSettings() {
 async function handleSave() {
   saving.value = true
   try {
-    const res = await updateAdminSettings(formData)
+    const payload: Record<string, any> = {}
+    for (const [k, v] of Object.entries(formData)) {
+      if (!isKeyEnvOverridden(k)) {
+        payload[k] = v
+      }
+    }
+    const res = await updateAdminSettings(payload)
     items.value = res.items
     safeModeWarnings.value = (res.safe_mode_warnings as unknown as Array<Record<string, any>>) ?? []
     for (const item of res.items) {

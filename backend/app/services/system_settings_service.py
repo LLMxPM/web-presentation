@@ -130,27 +130,50 @@ class SystemSettingsService:
                     detail=f"不支持的系统配置项：{key}。",
                 )
 
-        # 2. 环境变量锁定（ENV 否决权）不可篡改校验
-        for key in updates:
+        # 2. 环境变量锁定（ENV 否决权）不可篡改校验：允许与当前生效值一致的幂等提交，仅拦截真篡改
+        keys_to_skip: set[str] = set()
+        for key, val in updates.items():
             if is_env_overridden(key):
+                current_active_val = getattr(current_settings, key, None)
+                spec = SYSTEM_SETTING_SPECS[key]
+                if spec.is_secret and (val is None or "******" in str(val)):
+                    keys_to_skip.add(key)
+                    continue
+                converted_val, _ = safe_mode_convert_value(key, val)
+                if converted_val == current_active_val:
+                    keys_to_skip.add(key)
+                    continue
                 raise AppException(
                     status_code=400,
                     code="ENV_OVERRIDDEN_IMMUTABLE",
                     detail=f"配置项 {key} 已被环境变量强制覆盖锁定，无法通过 Web UI 修改。",
                 )
 
-        # 3. 守卫复核：多副本集群禁止切回 local 存储
-        if updates.get("asset_storage_driver") == "local":
+        # 3. 守卫复核：存储驱动合法性与 S3 凭证完整性校验
+        driver_candidate = str(updates.get("asset_storage_driver") or "").strip().lower()
+        if driver_candidate == "local":
             if current_settings.backend_multi_instance and not current_settings.object_storage_shared_volume:
                 raise AppException(
                     status_code=400,
                     code="INVALID_STORAGE_DRIVER",
                     detail="多 Backend 集群部署下对象存储必须为 S3，不支持切换为本地存储（local）。",
                 )
+        elif driver_candidate == "s3":
+            effective_bucket = updates.get("s3_bucket") or current_settings.s3_bucket
+            effective_ak = updates.get("s3_access_key") or current_settings.s3_access_key
+            effective_sk = updates.get("s3_secret_key") or current_settings.s3_secret_key
+            if not effective_bucket or not effective_ak or not effective_sk:
+                raise AppException(
+                    status_code=400,
+                    code="S3_CONFIG_INCOMPLETE",
+                    detail="切换为 S3 存储驱动必须提供完整的 Bucket 名称、Access Key 与 Secret Key。",
+                )
 
         # 4. 前置 Dry-Run 校验（Pydantic / Spec validator 实测）
         validated_values: dict[str, Any] = {}
         for key, val in updates.items():
+            if key in keys_to_skip:
+                continue
             spec = SYSTEM_SETTING_SPECS[key]
             # 对 secret 字段如果传入包含掩码字符，则跳过修改以保持原密码
             if spec.is_secret and val is not None and "******" in str(val):

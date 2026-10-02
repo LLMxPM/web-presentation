@@ -4,6 +4,7 @@ from pathlib import Path
 from functools import lru_cache
 import json
 import logging
+import os
 import threading
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -58,14 +59,42 @@ def parse_runtime_target_list(raw: str) -> list[str]:
     return resolved
 
 
+def _iter_settings_env_files() -> list[Path]:
+    """列出配置可能读取的 .env 文件路径，供废弃键扫描与统一加载。"""
+
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return []
+
+    candidates = [
+        _REPO_ROOT / ".env",
+        _BACKEND_DIR / ".env",
+    ]
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved in seen or not resolved.is_file():
+            continue
+        seen.add(resolved)
+        result.append(resolved)
+    return result
+
+
 class AppSettings(BaseSettings):
     """应用配置模型，负责约束数据库、鉴权和跨域等关键参数。"""
 
     model_config = SettingsConfigDict(
-        env_file=(_REPO_ROOT / ".env", _BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    def __init__(self, _env_file: Any = None, **values: Any) -> None:
+        if _env_file is None:
+            _env_file = _iter_settings_env_files()
+        super().__init__(_env_file=_env_file, **values)
 
     app_name: str = "页面管理后台"
     app_version: str = "1.0.0"
@@ -83,7 +112,7 @@ class AppSettings(BaseSettings):
     # SQLite 写路径打点：默认关闭，仅基线采集期开启（监听器本身有开销）
     database_write_path_metrics_enabled: bool = False
     default_admin_username: str = "admin"
-    default_admin_password: str = "Admin123456"
+    default_admin_password: str = ""
     default_admin_display_name: str = "平台系统管理员"
     session_cookie_name: str = "wp_user_session"
     session_ttl_hours: int = 24
@@ -794,25 +823,6 @@ class AppSettings(BaseSettings):
         return (Path(__file__).resolve().parents[2] / configured_path).resolve()
 
 
-def _iter_settings_env_files() -> list[Path]:
-    """列出配置可能读取的 .env 文件路径，供废弃键扫描。"""
-
-    candidates = [
-        _REPO_ROOT / ".env",
-        _BACKEND_DIR / ".env",
-    ]
-    seen: set[Path] = set()
-    result: list[Path] = []
-    for path in candidates:
-        try:
-            resolved = path.resolve()
-        except OSError:
-            continue
-        if resolved in seen or not resolved.is_file():
-            continue
-        seen.add(resolved)
-        result.append(resolved)
-    return result
 
 
 _current_settings: AppSettings | None = None
@@ -846,26 +856,28 @@ def _build_effective_settings(
             continue
 
         # 第二优先级：数据库配置进行 Safe-Mode 校验转换
+        safe_raw = "******" if SYSTEM_SETTING_SPECS[key].is_secret else raw_val
         converted_val, err = safe_mode_convert_value(key, raw_val)
         if err:
             logger.warning(
                 "系统设置 %s 的数据库存储值非法：%r（原因：%s），已触发 Safe-Mode 降级为默认安全值",
                 key,
-                raw_val,
+                safe_raw,
                 err,
                 extra={"event": "system_settings.safe_mode_fallback", "setting_key": key},
             )
             warnings.append({
                 "key": key,
-                "raw_value": raw_val,
+                "raw_value": safe_raw,
                 "error": err,
                 "fallback_value": SYSTEM_SETTING_SPECS[key].default_value,
             })
             continue
 
         # 启动期/运行时守卫复核：多 Backend 必须使用 S3 或显式确认的共享文件卷
-        if key == "asset_storage_driver" and converted_val == "local":
+        if key == "asset_storage_driver" and str(converted_val).strip().lower() == "local":
             if base.backend_multi_instance and not base.object_storage_shared_volume:
+                fallback_driver = _current_settings.asset_storage_driver if _current_settings else "s3"
                 guard_err = "多 Backend 部署下不支持切换为本地对象存储（local），已拦截并保持安全配置"
                 logger.warning(
                     guard_err,
@@ -873,10 +885,11 @@ def _build_effective_settings(
                 )
                 warnings.append({
                     "key": key,
-                    "raw_value": raw_val,
+                    "raw_value": safe_raw,
                     "error": guard_err,
-                    "fallback_value": base.asset_storage_driver,
+                    "fallback_value": fallback_driver,
                 })
+                valid_updates[key] = fallback_driver
                 continue
 
         valid_updates[key] = converted_val

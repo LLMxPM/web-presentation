@@ -369,6 +369,10 @@ def resolve_ai_secret_key(settings: AppSettings) -> str:
     new_key = Fernet.generate_key().decode("utf-8")
     key_path.parent.mkdir(parents=True, exist_ok=True)
     key_path.write_text(new_key, encoding="utf-8")
+    try:
+        key_path.chmod(0o600)
+    except OSError:
+        pass
     settings.ai_secret_encryption_key = new_key
     logger.warning(
         "已自动生成单实例 AI 加密密钥并持久化（仅限单实例/Lite）：%s",

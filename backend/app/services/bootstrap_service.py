@@ -21,9 +21,20 @@ class BootstrapService:
         async with self.session_factory() as session:
             repository = UserRepository(session)
             if await repository.count_users() == 0:
+                password = (settings.default_admin_password or "").strip()
+                if not password:
+                    import logging
+                    import secrets
+
+                    password = secrets.token_urlsafe(16)
+                    logging.getLogger(__name__).warning(
+                        "系统首启且未指定 DEFAULT_ADMIN_PASSWORD，已自动生成初始管理员密码：%s",
+                        password,
+                        extra={"event": "bootstrap.admin_password_generated"},
+                    )
                 await repository.create_user(
                     username=settings.default_admin_username,
-                    password_hash=hash_password(settings.default_admin_password),
+                    password_hash=hash_password(password),
                     display_name=settings.default_admin_display_name,
                     role=UserRole.PLATFORM_ADMIN.value,
                 )

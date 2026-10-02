@@ -122,4 +122,29 @@ describe('AdminSettingsView', () => {
 
     unmount()
   })
+
+  it('保存时应自动过滤环境变量锁定的配置项', async () => {
+    const updateSpy = vi.spyOn(adminSettingsApi, 'updateAdminSettings').mockResolvedValue(mockSettingsData)
+    const { unmount } = render(AdminSettingsView)
+
+    await waitFor(() => {
+      expect(adminSettingsApi.fetchAdminSettings).toHaveBeenCalled()
+    })
+
+    const saveBtn = screen.getByText('保存设置')
+    saveBtn.click()
+
+    await waitFor(() => {
+      expect(updateSpy).toHaveBeenCalled()
+    })
+
+    const sentPayload = updateSpy.mock.calls[0][0]
+    // app_name 在 mockSettingsData 中 is_env_overridden: true，应该被过滤
+    expect(sentPayload).not.toHaveProperty('app_name')
+    // 未锁定的键应该正常包含
+    expect(sentPayload).toHaveProperty('asset_storage_driver')
+    expect(sentPayload).toHaveProperty('app_timezone')
+
+    unmount()
+  })
 })

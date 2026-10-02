@@ -209,6 +209,14 @@ def test_single_instance_should_reject_placeholder_secrets(tmp_path: Path) -> No
         with pytest.raises(SigningIdentityError, match="DEFAULT_ADMIN_PASSWORD"):
             validate_shared_identity_deployment(weak_admin)
 
+    # 空密码（如二次重启场景，已由数据库保存真实凭证）必须放行，不得误拦截
+    reboot_settings = _settings(
+        tmp_path,
+        ai_secret_encryption_key=_VALID_AI_SECRET_KEY,
+        default_admin_password="",
+    )
+    validate_shared_identity_deployment(reboot_settings)
+
     # 包含模板大写下划线与 shared secret 占位
     for bad_cred in ["change-build-worker-credential", "REPLACE_WITH_STRONG_BUILD_CREDENTIAL", "replace-with-strong-shared-secret"]:
         weak_build = _settings(

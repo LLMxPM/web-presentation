@@ -32,9 +32,7 @@ class SystemSettingSpec:
         text = str(value).strip()
         if not text:
             return ""
-        if len(text) <= 6:
-            return "******"
-        return f"{text[:3]}******{text[-3:]}"
+        return "******"
 
 
 def _validate_timezone(value: Any) -> str:
@@ -68,8 +66,12 @@ def _validate_log_level(value: Any) -> str:
 def _validate_ai_image_transport_mode(value: Any) -> str:
     """校验 AI 图片传输模式。"""
     normalized = str(value or "").strip().lower()
-    if normalized not in {"auto", "s3", "data_url"}:
-        raise ValueError(f"AI 图片传输模式仅支持 auto, s3, data_url，收到：{value}")
+    if normalized == "s3":
+        normalized = "url"
+    elif normalized == "data_url":
+        normalized = "base64"
+    if normalized not in {"auto", "url", "base64"}:
+        raise ValueError(f"AI 图片传输模式仅支持 auto, url, base64，收到：{value}")
     return normalized
 
 
@@ -263,7 +265,7 @@ SYSTEM_SETTING_SPECS: dict[str, SystemSettingSpec] = {
     "ai_image_transport_mode": SystemSettingSpec(
         key="ai_image_transport_mode",
         category="ai",
-        description="AI 图片传输与预览模式（auto / s3 / data_url）",
+        description="AI 图片传输与预览模式（auto / url / base64）",
         value_type=str,
         default_value="auto",
         validator=_validate_ai_image_transport_mode,
@@ -297,14 +299,32 @@ SYSTEM_SETTING_SPECS: dict[str, SystemSettingSpec] = {
 
 
 def is_env_overridden(key: str) -> bool:
-    """检查指定配置项是否被系统环境变量显式覆盖（非空）。
+    """检查指定配置项是否被系统环境变量或 .env 显式覆盖（非空）。
 
     契约规定：生效配置 = 环境变量 (ENV 覆盖) ≻ 数据库 Web UI 配置 ≻ 代码默认常量。
-    如果系统环境变量中存在且非空，返回 True，表示环境强制覆盖生效。
+    如果系统环境变量或任何生效的 .env 文件中存在且非空，返回 True，表示环境强制覆盖生效。
     """
     env_name = key.upper()
     val = os.environ.get(env_name)
-    return val is not None and val.strip() != ""
+    if val is not None and val.strip() != "":
+        return True
+
+    from app.core.config import _iter_settings_env_files
+
+    for env_path in _iter_settings_env_files():
+        try:
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or "=" not in stripped:
+                    continue
+                k, v = stripped.split("=", 1)
+                if k.strip().strip('"').strip("'").upper() == env_name:
+                    cleaned_val = v.strip().strip('"').strip("'")
+                    if cleaned_val != "":
+                        return True
+        except OSError:
+            continue
+    return False
 
 
 def safe_mode_convert_value(key: str, raw_value: Any) -> tuple[Any, str | None]:
