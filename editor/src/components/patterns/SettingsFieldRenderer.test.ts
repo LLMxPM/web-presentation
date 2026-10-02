@@ -21,7 +21,7 @@ describe('SettingsFieldRenderer', () => {
     expect(screen.getByText('平台对外展示名称')).toBeInTheDocument()
     expect(screen.getByText('ENV 覆盖')).toBeInTheDocument()
 
-    const input = screen.getByRole('textbox')
+    const input = screen.getByRole('textbox', { name: '应用名称' })
     expect(input).toBeDisabled()
   })
 
@@ -36,13 +36,15 @@ describe('SettingsFieldRenderer', () => {
       },
     })
 
-    const input = screen.getByRole('spinbutton')
+    const input = screen.getByRole('spinbutton', { name: '会话时长' })
     expect(input).toHaveAttribute('min', '1')
     expect(input).toHaveAttribute('max', '720')
 
     await fireEvent.update(input, '48')
     expect(emitted()['update:modelValue']).toBeTruthy()
     expect(emitted()['update:modelValue'][0]).toEqual([48])
+    await fireEvent.update(input, '')
+    expect(emitted()['update:modelValue'][1]).toEqual([''])
   })
 
   it('正确渲染布尔开关字段', async () => {
@@ -57,6 +59,6 @@ describe('SettingsFieldRenderer', () => {
 
     expect(screen.getByText('启用抓包')).toBeInTheDocument()
     expect(screen.getByText('记录原始 HTTP 请求')).toBeInTheDocument()
-    expect(screen.getByRole('checkbox')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '启用抓包' })).toBeInTheDocument()
   })
 })

@@ -8,7 +8,7 @@
       badge-tone="accent"
     >
       <template #actions>
-        <UiButton variant="secondary" size="sm" :disabled="loading || saving" @click="loadData">
+        <UiButton variant="secondary" size="sm" :disabled="loading || saving || savingSlot" @click="loadData">
           <RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': loading }" />
           <span>刷新</span>
         </UiButton>
@@ -37,6 +37,7 @@
                   <div class="text-xs text-text-muted">关闭后全平台禁用 AI 创作者助手与自动化任务生成</div>
                 </div>
                 <UiCheckbox
+                  aria-label="平台 AI 总开关"
                   v-model="systemSettingsForm.ai_enabled"
                   :disabled="isKeyDisabled('ai_enabled')"
                 />
@@ -45,10 +46,13 @@
               <!-- 图片传输模式 -->
               <UiFormField
                 label="AI 图片传输与预览模式"
+                v-slot="field"
                 description="auto 自动择优，url 使用对象存储直链，base64 内嵌二进制 Base64"
               >
                 <div class="flex items-center gap-2">
                   <UiSelect
+                    :id="field.inputId"
+                    :aria-describedby="field.describedBy"
                     v-model="systemSettingsForm.ai_image_transport_mode"
                     :options="imageTransportOptions"
                     :disabled="isKeyDisabled('ai_image_transport_mode')"
@@ -61,10 +65,13 @@
               <!-- 流式空闲超时 -->
               <UiFormField
                 label="AI 流式生成无响应空闲超时 (秒)"
+                v-slot="field"
                 description="防止长上下文或复杂推理模型因下游网络挂死持续占用协调器任务租约"
               >
                 <div class="flex items-center gap-2">
                   <UiInput
+                    :input-id="field.inputId"
+                    :described-by="field.describedBy"
                     v-model.number="systemSettingsForm.ai_agent_stream_idle_timeout_seconds"
                     type="number"
                     :disabled="isKeyDisabled('ai_agent_stream_idle_timeout_seconds')"
@@ -80,6 +87,7 @@
                   <div class="text-xs text-text-muted">开启后在服务端日志中记录发往模型供应商的完整 HTTP 请求与响应报文（自动脱敏密钥）</div>
                 </div>
                 <UiCheckbox
+                  aria-label="LLM HTTP 协议网络跟踪"
                   v-model="systemSettingsForm.ai_llm_http_trace_enabled"
                   :disabled="isKeyDisabled('ai_llm_http_trace_enabled')"
                 />
@@ -120,6 +128,7 @@
                   <div class="text-xs text-text-muted">系统后台定期拉取 Models.dev 最新模型能力、上下文窗口与推理选项</div>
                 </div>
                 <UiCheckbox
+                  aria-label="模型目录自动定时同步"
                   v-model="systemSettingsForm.ai_model_catalog_sync_enabled"
                   :disabled="isKeyDisabled('ai_model_catalog_sync_enabled')"
                 />
@@ -163,11 +172,14 @@
             </div>
 
             <div class="max-w-xl space-y-4">
-              <UiFormField label="平台默认内容助手模型" description="全平台用户默认的内容生成与结构化编辑模型">
+              <UiFormField label="平台默认内容助手模型" description="全平台用户默认的内容生成与结构化编辑模型" v-slot="field">
                 <div class="flex items-center gap-3">
                   <UiSelect
+                    :id="field.inputId"
+                    :aria-describedby="field.describedBy"
                     v-model="globalSlotModelId"
                     :options="globalModelOptions"
+                    :disabled="loading || savingSlot || !loaded"
                     placeholder="请选择全局默认模型"
                     class="w-full"
                   />
@@ -175,7 +187,7 @@
                     variant="primary"
                     size="sm"
                     :loading="savingSlot"
-                    :disabled="!isSlotDirty"
+                    :disabled="loading || !isSlotDirty"
                     @click="handleSaveGlobalSlot"
                   >
                     保存槽位
@@ -223,15 +235,16 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useQueryClient } from '@tanstack/vue-query'
+import { useRoute, useRouter } from 'vue-router'
 import { RotateCw, Save } from '@lucide/vue'
 
-import { fetchAdminSettings, updateAdminSettings } from '@/api/adminSettings'
+import { ADMIN_SETTINGS_QUERY_KEY, fetchAdminSettings, updateAdminSettings } from '@/api/adminSettings'
 import {
   getModelCatalogSyncState,
   listLlmConfigs,
   listLlmProviderConfigs,
-  listLlmSlots,
+  getChatSlotBinding,
   refreshModelCatalog,
   updateLlmSlotBinding,
   type ModelCatalogSyncState,
@@ -250,10 +263,15 @@ import {
 import type { SelectOption } from '@/components/ui/select'
 import type { LlmConfigItem, LlmProviderConfigItem, LlmSlotBindingItem, SystemSettingItem } from '@/types/api'
 import { Message } from '@/utils/message'
+import { formatDateTimeInAppTimezone } from '@/utils/timezone'
+import { resolveGlobalReturnPath } from '@/utils/global-page-navigation'
 
 const router = useRouter()
+const route = useRoute()
+const queryClient = useQueryClient()
 const activeTab = ref('runtime')
 const loading = ref(false)
+const loaded = ref(false)
 const saving = ref(false)
 const savingSlot = ref(false)
 const syncingCatalog = ref(false)
@@ -290,14 +308,14 @@ const imageTransportOptions = [
 
 const globalModelOptions = computed<SelectOption[]>(() => [
   { label: '未指定全局默认模型', value: 0 },
-  ...globalModels.value.map(item => ({
+  ...globalModels.value.filter(item => item.model_type === 'chat' && item.status === 'active').map(item => ({
     label: `${item.name} (${item.model_id})`,
     value: item.id,
   })),
 ])
 
 const isDirty = computed(() => {
-  return (
+  return loaded.value && (
     systemSettingsForm.ai_enabled !== initialSystemSettingsForm.ai_enabled ||
     systemSettingsForm.ai_model_catalog_sync_enabled !== initialSystemSettingsForm.ai_model_catalog_sync_enabled ||
     systemSettingsForm.ai_image_transport_mode !== initialSystemSettingsForm.ai_image_transport_mode ||
@@ -306,25 +324,24 @@ const isDirty = computed(() => {
   )
 })
 
-const isSlotDirty = computed(() => globalSlotModelId.value !== initialGlobalSlotModelId.value)
+const isSlotDirty = computed(() => loaded.value && globalSlotModelId.value !== initialGlobalSlotModelId.value)
 
+/** 未取得快照时保持只读，环境变量覆盖项由部署配置管理。 */
 function isKeyDisabled(key: string): boolean {
   const item = settingsItems.value.find(s => s.key === key)
-  return loading.value || saving.value || Boolean(item?.is_env_overridden)
+  return loading.value || saving.value || !loaded.value || Boolean(item?.is_env_overridden)
 }
 
+/** 查询字段的环境变量覆盖状态，用于展示来源。 */
 function isKeyEnvOverridden(key: string): boolean {
   const item = settingsItems.value.find(s => s.key === key)
   return Boolean(item?.is_env_overridden)
 }
 
+/** 同步时间遵循后端业务时区；历史无时区值统一补 UTC。 */
 function formatTimestamp(ts: string | null | undefined): string {
   if (!ts) return '无记录'
-  try {
-    return new Date(ts).toLocaleString()
-  } catch {
-    return ts
-  }
+  return formatDateTimeInAppTimezone(ts)
 }
 
 /**
@@ -333,33 +350,26 @@ function formatTimestamp(ts: string | null | undefined): string {
 async function loadData(): Promise<void> {
   loading.value = true
   try {
-    const [settingsRes, catalogRes, allModels, allProviders, allSlots] = await Promise.all([
+    const [settingsRes, catalogRes, allModels, allProviders, coordinatorSlot] = await Promise.all([
       fetchAdminSettings(),
-      getModelCatalogSyncState().catch(() => null),
-      listLlmConfigs().catch(() => []),
-      listLlmProviderConfigs().catch(() => []),
-      listLlmSlots().catch(() => []),
+      getModelCatalogSyncState(),
+      listLlmConfigs(),
+      listLlmProviderConfigs(),
+      getChatSlotBinding('agent_coordinator', 'global'),
     ])
 
-    settingsItems.value = settingsRes.items
+    applySettingsSnapshot(settingsRes)
     catalogSyncState.value = catalogRes
-
-    for (const item of settingsRes.items) {
-      if (item.key in systemSettingsForm) {
-        systemSettingsForm[item.key] = item.value
-        initialSystemSettingsForm[item.key] = item.value
-      }
-    }
 
     // 过滤 global scope 的模型与凭据
     globalModels.value = allModels.filter(m => m.scope === 'global')
     globalProviders.value = allProviders.filter(p => p.scope === 'global')
 
     // 获取全局默认槽位
-    const coordinatorSlot = allSlots.find(s => s.slot === 'agent_coordinator')
-    globalSlotBinding.value = coordinatorSlot ?? null
+    globalSlotBinding.value = coordinatorSlot
     globalSlotModelId.value = coordinatorSlot?.llm_config_id ?? 0
     initialGlobalSlotModelId.value = coordinatorSlot?.llm_config_id ?? 0
+    loaded.value = true
   } catch (err) {
     Message.error(getErrorMessage(err, '加载平台 AI 管理数据失败'))
   } finally {
@@ -367,22 +377,31 @@ async function loadData(): Promise<void> {
   }
 }
 
+/** 更新策略表单与共享告警快照，不覆盖尚未保存的全局槽位草稿。 */
+function applySettingsSnapshot(snapshot: Awaited<ReturnType<typeof fetchAdminSettings>>): void {
+  settingsItems.value = snapshot.items
+  queryClient.setQueryData(ADMIN_SETTINGS_QUERY_KEY, snapshot)
+  for (const item of snapshot.items) {
+    if (item.key in systemSettingsForm) {
+      systemSettingsForm[item.key] = item.value
+      initialSystemSettingsForm[item.key] = item.value
+    }
+  }
+}
+
 /**
  * 保存 AI 运行策略与系统参数。
  */
 async function handleSaveSettings(): Promise<void> {
+  if (!loaded.value || loading.value || saving.value) return
   saving.value = true
   try {
-    const payload = {
-      ai_enabled: systemSettingsForm.ai_enabled,
-      ai_model_catalog_sync_enabled: systemSettingsForm.ai_model_catalog_sync_enabled,
-      ai_image_transport_mode: systemSettingsForm.ai_image_transport_mode,
-      ai_agent_stream_idle_timeout_seconds: Number(systemSettingsForm.ai_agent_stream_idle_timeout_seconds),
-      ai_llm_http_trace_enabled: systemSettingsForm.ai_llm_http_trace_enabled,
+    const payload = Object.fromEntries(Object.entries(systemSettingsForm).filter(([key]) => !isKeyEnvOverridden(key)))
+    if ('ai_agent_stream_idle_timeout_seconds' in payload) {
+      payload.ai_agent_stream_idle_timeout_seconds = Number(payload.ai_agent_stream_idle_timeout_seconds)
     }
-    await updateAdminSettings(payload)
+    applySettingsSnapshot(await updateAdminSettings(payload))
     Message.success('平台 AI 策略已更新并即时热生效。')
-    await loadData()
   } catch (err) {
     Message.error(getErrorMessage(err, '保存平台 AI 策略失败'))
   } finally {
@@ -394,12 +413,13 @@ async function handleSaveSettings(): Promise<void> {
  * 保存全局默认模型槽位绑定。
  */
 async function handleSaveGlobalSlot(): Promise<void> {
+  if (!loaded.value || loading.value || savingSlot.value) return
   savingSlot.value = true
   try {
     const targetId = globalSlotModelId.value === 0 ? null : globalSlotModelId.value
-    await updateLlmSlotBinding('agent_coordinator', targetId, 'global')
+    globalSlotBinding.value = await updateLlmSlotBinding('agent_coordinator', targetId, 'global')
     Message.success('全局默认模型槽位已更新。')
-    initialGlobalSlotModelId.value = globalSlotModelId.value
+    initialGlobalSlotModelId.value = targetId ?? 0
   } catch (err) {
     Message.error(getErrorMessage(err, '更新全局默认模型槽位失败'))
   } finally {
@@ -423,8 +443,10 @@ async function handleSyncCatalog(): Promise<void> {
   }
 }
 
+/** 进入配置工作台时保留工作空间来源，以便完成配置后返回。 */
 function navigateToAccountAi(): void {
-  void router.push('/settings/account/ai')
+  const returnTo = resolveGlobalReturnPath(route.query.returnTo)
+  void router.push({ name: 'accountAiSettings', query: returnTo ? { returnTo } : {} })
 }
 
 onMounted(() => {

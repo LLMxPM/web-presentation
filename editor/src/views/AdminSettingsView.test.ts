@@ -4,6 +4,7 @@
 import { render, screen, waitFor } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 
 import AdminSettingsView from '@/views/AdminSettingsView.vue'
 import * as adminSettingsApi from '@/api/adminSettings'
@@ -99,13 +100,17 @@ const mockSettingsData: SystemSettingsListResponse = {
 }
 
 describe('AdminSettingsView', () => {
+  /** 为配置页装配独立查询缓存，验证共享快照更新。 */
+  function renderView() {
+    return render(AdminSettingsView, { global: { plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]] } })
+  }
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.spyOn(adminSettingsApi, 'fetchAdminSettings').mockResolvedValue(mockSettingsData)
   })
 
   it('挂载后应获取设置列表并渲染 Safe-Mode 警告与 5 个分类标签', async () => {
-    const { unmount } = render(AdminSettingsView)
+    const { unmount } = renderView()
 
     await waitFor(() => {
       expect(adminSettingsApi.fetchAdminSettings).toHaveBeenCalled()
@@ -124,7 +129,7 @@ describe('AdminSettingsView', () => {
 
   it('保存时应自动过滤环境变量锁定的配置项', async () => {
     const updateSpy = vi.spyOn(adminSettingsApi, 'updateAdminSettings').mockResolvedValue(mockSettingsData)
-    const { unmount } = render(AdminSettingsView)
+    const { unmount } = renderView()
 
     await waitFor(() => {
       expect(adminSettingsApi.fetchAdminSettings).toHaveBeenCalled()

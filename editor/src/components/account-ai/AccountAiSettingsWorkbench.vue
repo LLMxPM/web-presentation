@@ -46,8 +46,8 @@
                   <h3 class="text-base font-bold text-text-strong">模型配置</h3>
                   <p class="mt-1 text-xs text-text-muted">分别绑定内容生成、图片理解与图片生成模型；每一行独立保存。</p>
                 </div>
-                <div class="overflow-hidden rounded-ui-lg border border-border">
-                  <table class="w-full min-w-[760px] table-fixed text-left text-sm">
+                <div class="overflow-x-auto rounded-ui-lg border border-border">
+                  <table class="w-full min-w-[980px] table-fixed text-left text-sm">
                     <thead class="bg-canvas text-xs font-semibold text-text-muted">
                       <tr>
                         <th class="w-36 px-4 py-3">能力</th>

@@ -8,6 +8,9 @@ import type {
   SystemSettingsListResponse,
 } from '@/types/api'
 
+/** 管理中心概况与配置页面共用快照，保存后即时更新 Safe-Mode 告警。 */
+export const ADMIN_SETTINGS_QUERY_KEY = ['admin-settings'] as const
+
 /** 获取平台全量系统设置列表及分类信息。 */
 export async function fetchAdminSettings(): Promise<SystemSettingsListResponse> {
   const { data } = await http.get<SystemSettingsListResponse>('/v1/admin/settings')

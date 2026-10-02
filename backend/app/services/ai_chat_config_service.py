@@ -214,10 +214,15 @@ class AiChatConfigService:
         await self.session.delete(row)
         await self.session.commit()
 
-    async def get_binding(self, slot: str) -> ChatBindingItem:
-        """读取个人绑定，未配置时回落到全局绑定。"""
+    async def get_binding(self, slot: str, scope: AiLlmConfigScope | None = None) -> ChatBindingItem:
+        """指定 scope 时读取该范围原始绑定；缺省仍按个人优先、全局兜底返回。"""
 
         self._validate_chat_slot(slot)
+        if scope is not None:
+            self._require_scope_write(scope)
+            user_id = None if scope == AiLlmConfigScope.GLOBAL else self.user_id
+            binding = await self._binding(slot, scope.value, user_id)
+            return await self._binding_item(slot, binding, inherited=False)
         personal = await self._binding(slot, AiLlmConfigScope.PERSONAL.value, self.user_id)
         binding = personal or await self._binding(slot, AiLlmConfigScope.GLOBAL.value, None)
         return await self._binding_item(slot, binding, inherited=personal is None and binding is not None)

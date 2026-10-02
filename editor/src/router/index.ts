@@ -112,22 +112,10 @@ const routes = [
       },
       {
         path: 'settings',
+        name: 'settingsRoot',
         component: () => import('@/layouts/SettingsLayout.vue'),
         meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
         children: [
-          {
-            path: '',
-            name: 'settingsRoot',
-            redirect: (to: RouteLocation) => {
-              const authStore = useAuthStore()
-              const returnTo = to.query.returnTo
-              const query = returnTo ? { returnTo } : undefined
-              if (authStore.user?.role === 'platform_admin') {
-                return { path: '/settings/platform/users', query }
-              }
-              return { path: '/settings/account/ai', query }
-            },
-          },
           {
             path: 'account/ai',
             name: 'accountAiSettings',
@@ -194,6 +182,14 @@ router.beforeEach(async (to) => {
 
   if (to.meta.guestOnly && authStore.user) {
     return { path: '/' }
+  }
+
+  // 登录态完成加载后再决定管理中心入口，保证直接打开和刷新时角色判断一致。
+  if (to.name === 'settingsRoot') {
+    return {
+      name: authStore.user?.role === 'platform_admin' ? 'users' : 'accountAiSettings',
+      query: to.query,
+    }
   }
 
   return true

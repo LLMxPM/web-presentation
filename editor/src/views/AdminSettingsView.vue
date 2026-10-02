@@ -1,9 +1,9 @@
-<!-- 文件功能：平台系统设置管理视图，支持存储、常规、安全、AI 运营与诊断配置的热更新及 S3 连通性测试。 -->
+<!-- 文件功能：平台系统设置管理视图，支持存储、常规、安全与诊断配置的热更新及 S3 连通性测试。 -->
 <template>
   <div class="mx-auto max-w-5xl space-y-6 pb-16">
     <SettingsPageHeader
       title="系统设置"
-      description="管理存储驱动、业务时区、安全策略与 AI 运营参数。类 B 配置修改后即时热生效，无须重启服务。"
+      description="管理存储驱动、业务时区、安全策略与日志级别。类 B 配置修改后即时热生效，无须重启服务。"
     >
       <template #actions>
         <UiButton variant="secondary" size="sm" :disabled="loading || saving" @click="loadSettings">
@@ -248,14 +248,6 @@
                 :env-overridden="isKeyEnvOverridden('log_level')"
               />
 
-              <SettingsFieldRenderer
-                type="boolean"
-                label="LLM HTTP 抓包追踪"
-                description="将向大模型发起的真实 HTTP Raw 请求落盘至 trace 目录便于排障"
-                v-model="formData.ai_llm_http_trace_enabled"
-                :disabled="isKeyDisabled('ai_llm_http_trace_enabled')"
-                :env-overridden="isKeyEnvOverridden('ai_llm_http_trace_enabled')"
-              />
             </div>
           </div>
         </template>
@@ -266,6 +258,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useQueryClient } from '@tanstack/vue-query'
 import {
   AlertTriangle,
   Radio,
@@ -275,6 +268,7 @@ import {
 
 import {
   fetchAdminSettings,
+  ADMIN_SETTINGS_QUERY_KEY,
   testS3StorageConnection,
   updateAdminSettings,
 } from '@/api/adminSettings'
@@ -293,6 +287,7 @@ import type { SystemSettingItem } from '@/types/api'
 import { Message } from '@/utils/message'
 
 const activeTab = ref('storage')
+const queryClient = useQueryClient()
 const loading = ref(false)
 const saving = ref(false)
 const testingS3 = ref(false)
@@ -371,6 +366,7 @@ async function loadSettings() {
   loading.value = true
   try {
     const res = await fetchAdminSettings()
+    queryClient.setQueryData(ADMIN_SETTINGS_QUERY_KEY, res)
     items.value = res.items
     safeModeWarnings.value = (res.safe_mode_warnings as unknown as Array<Record<string, any>>) ?? []
 
@@ -398,6 +394,7 @@ async function handleSave() {
       }
     }
     const res = await updateAdminSettings(payload)
+    queryClient.setQueryData(ADMIN_SETTINGS_QUERY_KEY, res)
     items.value = res.items
     safeModeWarnings.value = (res.safe_mode_warnings as unknown as Array<Record<string, any>>) ?? []
     for (const item of res.items) {

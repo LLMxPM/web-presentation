@@ -1,10 +1,10 @@
 <!-- 文件功能：设置与管理中心的统一页面头部组件，承载页面标题、说明文本、状态徽标与右侧操作按钮槽位。 -->
 <template>
-  <header class="settings-page-header flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5 mb-6">
+  <header class="settings-page-header mb-6 flex min-w-0 items-start justify-between gap-3 border-b border-border pb-5">
     <div class="min-w-0 flex-1 space-y-1">
-      <div class="flex items-center gap-2.5">
-        <h1 class="truncate text-2xl font-bold tracking-tight text-text-strong">{{ title }}</h1>
-        <UiBadge v-if="badge" :tone="badgeTone || 'neutral'" size="sm">
+      <div class="flex min-w-0 items-center gap-2.5">
+        <h1 class="min-w-0 truncate text-2xl font-bold tracking-tight text-text-strong">{{ title }}</h1>
+        <UiBadge v-if="badge" :tone="badgeTone || 'neutral'" size="sm" class="shrink-0">
           {{ badge }}
         </UiBadge>
         <slot name="meta" />
@@ -14,7 +14,7 @@
       </p>
     </div>
 
-    <div v-if="$slots.actions" class="flex shrink-0 items-center gap-3">
+    <div v-if="$slots.actions" class="flex max-w-[60%] shrink-0 items-center gap-1.5 overflow-x-auto">
       <slot name="actions" />
     </div>
   </header>

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.db.session import get_db_session
+from app.models.enums import AiLlmConfigScope
 from app.schemas.common import MessageResponse
 from app.schemas.model_config import (
     ChatBindingItem, ChatBindingUpdate, ChatModelConfigCreate, ChatModelConfigItem, ChatModelConfigUpdate,
@@ -78,8 +79,9 @@ async def delete_chat_model(row_id: int, current: Annotated[AuthContext, Depends
 
 
 @router.get("/chat-model-bindings/{slot}", response_model=ChatBindingItem)
-async def get_chat_binding(slot: str, current: Annotated[AuthContext, Depends(get_current_user)], session: Annotated[AsyncSession, Depends(get_db_session)]):
-    return await _chat(session, current).get_binding(slot)
+async def get_chat_binding(slot: str, current: Annotated[AuthContext, Depends(get_current_user)], session: Annotated[AsyncSession, Depends(get_db_session)], scope: AiLlmConfigScope | None = None):
+    """查询当前生效绑定或指定范围绑定；全局原始绑定仅平台管理员可读。"""
+    return await _chat(session, current).get_binding(slot, scope)
 
 
 @router.put("/chat-model-bindings/{slot}", response_model=ChatBindingItem)

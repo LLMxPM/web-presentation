@@ -12050,6 +12050,7 @@
           "model-configs"
         ],
         "summary": "Get Chat Binding",
+        "description": "查询当前生效绑定或指定范围绑定；全局原始绑定仅平台管理员可读。",
         "operationId": "get_chat_binding_api_ai_chat_model_bindings__slot__get",
         "parameters": [
           {
@@ -12059,6 +12060,22 @@
             "schema": {
               "type": "string",
               "title": "Slot"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AiLlmConfigScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
             }
           },
           {

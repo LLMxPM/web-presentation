@@ -11,9 +11,15 @@ vi.mock('@/api/http', () => ({
   },
 }))
 
-import { listLlmProviders } from '@/api/llm'
+import { getChatSlotBinding, listLlmProviders } from '@/api/llm'
 
 describe('llm catalog facade', () => {
+  it('平台读取槽位时显式传递 global 范围，返回模型 ID 保持聊天投影', async () => {
+    getMock.mockResolvedValueOnce({ data: { model_config_id: 101, binding_ready: true } })
+    const binding = await getChatSlotBinding('agent_coordinator', 'global')
+    expect(getMock).toHaveBeenCalledWith('/ai/chat-model-bindings/agent_coordinator', { params: { scope: 'global' } })
+    expect(binding.llm_config_id).toBe(101)
+  })
   it('目录已有默认地址时不要求用户重复填写 Base URL', async () => {
     getMock
       .mockResolvedValueOnce({

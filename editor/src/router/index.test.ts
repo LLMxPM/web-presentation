@@ -24,6 +24,19 @@ import { router } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 
 describe('router guard', () => {
+  it('首次直达管理中心必须先加载管理员身份再分流，并保留来源', async () => {
+    const store = useAuthStore()
+    store.user = null
+    vi.spyOn(store, 'ensureLoaded').mockImplementation(async () => {
+      store.user = {
+        id: 1, username: 'admin', display_name: '管理员', role: 'platform_admin',
+        status: 'active', last_login_at: null, preview_size_presets: [],
+      }
+    })
+    await router.push('/settings?returnTo=/workspaces/1/home')
+    expect(router.currentRoute.value.name).toBe('users')
+    expect(router.currentRoute.value.query.returnTo).toBe('/workspaces/1/home')
+  })
   beforeEach(async () => {
     setActivePinia(createPinia())
     const store = useAuthStore()

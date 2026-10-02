@@ -59,12 +59,15 @@
     </aside>
 
     <!-- 右侧设置子页面主内容区 -->
-    <main class="settings-content min-h-0 min-w-0 flex-1 overflow-y-auto p-6 md:p-8">
-      <div class="mx-auto max-w-5xl">
+    <main
+      class="settings-content min-h-0 min-w-0 flex-1 p-6 md:p-8"
+      :class="isWorkbenchRoute ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'"
+    >
+      <div class="mx-auto w-full" :class="isWorkbenchRoute ? 'flex min-h-0 flex-1 flex-col' : 'max-w-5xl'">
         <!-- 全局 Safe-Mode 警告横幅（仅在访问平台管理页面且存在降级警告时常驻） -->
         <div
           v-if="isPlatformRoute && safeModeWarnings.length > 0"
-          class="mb-6 rounded-xl border border-warning-muted bg-warning-muted/20 p-4 text-sm text-warning-strong"
+          class="mb-6 shrink-0 rounded-ui-xl border border-warning-border bg-warning-muted/20 p-4 text-sm text-warning-strong"
         >
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2.5">
@@ -73,10 +76,10 @@
               <span class="text-xs text-text-secondary">检测到 {{ safeModeWarnings.length }} 项配置存在非法值，系统已自动回退安全默认值以防止崩溃。</span>
             </div>
             <RouterLink
-              :to="resolveItemLocation('/settings/platform/settings')"
+              :to="resolveItemLocation(safeModeRepairPath)"
               class="shrink-0 text-xs font-semibold text-accent hover:underline"
             >
-              前往系统设置修复 &rarr;
+              前往{{ safeModeRepairPath === '/settings/platform/ai' ? 'AI 管理' : '系统设置' }}修复 &rarr;
             </RouterLink>
           </div>
         </div>
@@ -92,11 +95,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { AlertTriangle, Bot, Key, Settings, ShieldCheck, UserCog } from '@lucide/vue'
 
-import { fetchAdminSettings } from '@/api/adminSettings'
+import { ADMIN_SETTINGS_QUERY_KEY, fetchAdminSettings } from '@/api/adminSettings'
 import { useAuthStore } from '@/stores/auth'
 import { UiBadge } from '@/components/ui'
 
@@ -105,7 +109,16 @@ const authStore = useAuthStore()
 
 const isPlatformAdmin = computed(() => authStore.user?.role === 'platform_admin')
 const isPlatformRoute = computed(() => route.path.startsWith('/settings/platform') || route.path.startsWith('/admin'))
-const safeModeWarnings = ref<Array<Record<string, unknown>>>([])
+const isWorkbenchRoute = computed(() => route.name === 'accountAiSettings')
+const adminSettingsQuery = useQuery({
+  queryKey: ADMIN_SETTINGS_QUERY_KEY,
+  queryFn: fetchAdminSettings,
+  enabled: isPlatformAdmin,
+})
+const safeModeWarnings = computed(() => isPlatformAdmin.value ? adminSettingsQuery.data.value?.safe_mode_warnings ?? [] : [])
+// AI 参数已迁入独立页面，修复入口必须按首个待处理配置的归属跳转。
+const safeModeRepairPath = computed(() => String(safeModeWarnings.value[0]?.key ?? '').startsWith('ai_')
+  ? '/settings/platform/ai' : '/settings/platform/settings')
 
 /** 个人设置导航项列表 */
 const accountNavItems = [
@@ -125,23 +138,6 @@ const platformNavItems = computed(() => [
     warningCount: safeModeWarnings.value.length,
   },
 ])
-
-/**
- * 若为平台管理员，加载系统配置概况以获取 Safe-Mode 告警。
- */
-async function loadAdminSummary() {
-  if (!isPlatformAdmin.value) return
-  try {
-    const res = await fetchAdminSettings()
-    safeModeWarnings.value = res.safe_mode_warnings ?? []
-  } catch {
-    // 忽略加载失败，不阻塞正常页面导航
-  }
-}
-
-onMounted(() => {
-  void loadAdminSummary()
-})
 
 /**
  * 判断当前导航项是否处于激活状态（支持前缀匹配与兼容旧路由匹配）。

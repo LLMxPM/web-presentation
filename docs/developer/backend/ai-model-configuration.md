@@ -20,6 +20,12 @@ uv run --project backend python -m app.scripts.reset_ai_model_configuration --co
 
 本次拆表迁移会清理旧模型配置、绑定、AI 会话和持久化 AI 任务，不迁移历史记录；用户、工作空间、项目、页面、资源和已生成文件不受影响。
 
+## 聊天槽位读取范围
+
+`GET /api/ai/chat-model-bindings/{slot}` 缺省返回当前用户的生效绑定，个人绑定优先，未配置时继承平台全局默认。可选查询参数 `scope=personal|global` 返回指定范围的原始绑定，未配置时返回 `model_config_id=null`、`binding_ready=false`，不进行继承回退。
+
+显式读取 `scope=global` 仅允许平台管理员，普通用户返回 HTTP 403 和 `AI_CHAT_GLOBAL_ADMIN_REQUIRED`；非法范围返回 HTTP 422。平台 AI 管理页使用 `scope=global` 读取默认内容助手槽位，保存仍通过 `PUT /api/ai/chat-model-bindings/{slot}` 的 `scope` 字段指定范围。个人设置继续使用缺省读取语义。
+
 ## 凭证加密与密钥轮换
 
 数据库中的供应商 API Key 使用 `AI_SECRET_ENCRYPTION_KEY`（Fernet 对称密钥）加密存储。若需更换密钥或从示例占位值升级为安全随机密钥，禁止直接在配置中更换（会导致已有凭证解密失败）；请按照 [AI 凭证密钥轮换与迁移指南](./ai-secret-rotation.md) 运行平滑重密迁移脚本。

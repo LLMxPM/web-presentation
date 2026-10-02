@@ -61,8 +61,8 @@
     </div>
 
     <!-- 用户列表数据表格 -->
-    <div class="overflow-hidden rounded-xl border border-border bg-surface shadow-xs">
-      <table class="w-full table-fixed text-left text-sm">
+    <div class="overflow-x-auto rounded-ui-xl border border-border bg-surface shadow-xs">
+      <table class="w-full min-w-[880px] table-fixed text-left text-sm">
         <thead class="bg-canvas text-xs font-semibold uppercase text-text-muted">
           <tr>
             <th class="w-48 px-4 py-3">用户名</th>
@@ -75,9 +75,9 @@
         <tbody class="divide-y divide-border-muted">
           <tr v-for="user in filteredUsers" :key="user.id" class="transition-colors hover:bg-surface-hover/50">
             <td class="px-4 py-3">
-              <div class="flex items-center gap-2">
-                <span class="font-semibold text-text">{{ user.username }}</span>
-                <UiBadge v-if="isCurrentUser(user)" tone="accent" size="sm">当前账号</UiBadge>
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="min-w-0 truncate font-semibold text-text" :title="user.username">{{ user.username }}</span>
+                <UiBadge v-if="isCurrentUser(user)" tone="accent" size="sm" class="shrink-0">当前账号</UiBadge>
               </div>
             </td>
             <td class="px-4 py-3 text-text-emphasis truncate">{{ user.display_name }}</td>

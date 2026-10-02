@@ -2,12 +2,13 @@
 <template>
   <div v-if="type === 'boolean'" class="flex items-center justify-between rounded-lg border border-border-muted p-4 bg-surface-muted/20">
     <div class="space-y-0.5">
-      <div class="text-sm font-semibold text-text">{{ label }}</div>
+      <div :id="booleanLabelId" class="text-sm font-semibold text-text">{{ label }}</div>
       <div v-if="description" class="text-xs text-text-muted">{{ description }}</div>
     </div>
     <div class="flex items-center gap-2">
       <UiBadge v-if="envOverridden" tone="accent">ENV 覆盖</UiBadge>
       <UiCheckbox
+        :aria-labelledby="booleanLabelId"
         :model-value="Boolean(modelValue)"
         :disabled="disabled || envOverridden"
         @update:model-value="emit('update:modelValue', $event)"
@@ -15,12 +16,14 @@
     </div>
   </div>
 
-  <UiFormField v-else :label="label" :description="description">
+  <UiFormField v-else :label="label" :description="description" v-slot="field">
     <div class="flex items-center gap-2">
       <UiSelect
         v-if="type === 'select'"
         :model-value="(modelValue as any)"
         :options="options || []"
+        :id="field.inputId"
+        :aria-describedby="field.describedBy"
         :disabled="disabled || envOverridden"
         class="w-full"
         @update:model-value="emit('update:modelValue', $event)"
@@ -30,17 +33,21 @@
         v-else-if="type === 'number'"
         :model-value="(modelValue as any)"
         type="number"
+        :input-id="field.inputId"
+        :described-by="field.describedBy"
         :min="min"
         :max="max"
         :placeholder="placeholder"
         :disabled="disabled || envOverridden"
-        @update:model-value="emit('update:modelValue', Number($event))"
+        @update:model-value="emit('update:modelValue', $event === '' ? '' : Number($event))"
       />
 
       <UiInput
         v-else-if="type === 'password'"
         :model-value="(modelValue as any)"
         type="password"
+        :input-id="field.inputId"
+        :described-by="field.describedBy"
         password-toggle
         :placeholder="placeholder"
         :disabled="disabled || envOverridden"
@@ -49,6 +56,8 @@
 
       <UiInput
         v-else
+        :input-id="field.inputId"
+        :described-by="field.describedBy"
         :model-value="(modelValue as any)"
         :placeholder="placeholder"
         :disabled="disabled || envOverridden"
@@ -61,8 +70,11 @@
 </template>
 
 <script setup lang="ts">
+import { useId } from 'vue'
 import { UiBadge, UiCheckbox, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import type { SelectOption } from '@/components/ui/select'
+
+const booleanLabelId = `setting-label-${useId()}`
 
 /**
  * 设置字段渲染器输入属性。

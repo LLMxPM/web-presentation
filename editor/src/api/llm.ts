@@ -173,6 +173,12 @@ export async function deleteLlmConfig(id: number) {
   return (await http.delete<{ message: string }>(`/ai/${path}-model-configs/${Math.abs(id)}`)).data
 }
 
+/** 按明确范围读取聊天槽位，平台管理不能使用个人优先的生效绑定。 */
+export async function getChatSlotBinding(slot: string, scope: AiLlmConfigScope) {
+  const { data } = await http.get(`/ai/chat-model-bindings/${slot}`, { params: { scope } })
+  return toBinding(data, slot, slot === 'agent_coordinator' ? '内容助手' : '图片理解', 'chat')
+}
+
 export async function listLlmSlots() {
   const [agent, vision, image] = await Promise.all([
     http.get('/ai/chat-model-bindings/agent_coordinator'), http.get('/ai/chat-model-bindings/image_understanding'),
