@@ -61,6 +61,26 @@
     <!-- 右侧设置子页面主内容区 -->
     <main class="settings-content min-h-0 min-w-0 flex-1 overflow-y-auto p-6 md:p-8">
       <div class="mx-auto max-w-5xl">
+        <!-- 全局 Safe-Mode 警告横幅（仅在访问平台管理页面且存在降级警告时常驻） -->
+        <div
+          v-if="isPlatformRoute && safeModeWarnings.length > 0"
+          class="mb-6 rounded-xl border border-warning-muted bg-warning-muted/20 p-4 text-sm text-warning-strong"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+              <AlertTriangle class="h-4 w-4 shrink-0 text-warning" />
+              <span class="font-semibold">系统正处于 Safe-Mode 保护运行状态</span>
+              <span class="text-xs text-text-secondary">检测到 {{ safeModeWarnings.length }} 项配置存在非法值，系统已自动回退安全默认值以防止崩溃。</span>
+            </div>
+            <RouterLink
+              :to="resolveItemLocation('/settings/platform/settings')"
+              class="shrink-0 text-xs font-semibold text-accent hover:underline"
+            >
+              前往系统设置修复 &rarr;
+            </RouterLink>
+          </div>
+        </div>
+
         <RouterView v-slot="{ Component }">
           <Transition name="fade" mode="out-in">
             <component :is="Component" />
@@ -72,10 +92,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { Bot, Key, Settings, ShieldCheck, UserCog } from '@lucide/vue'
+import { AlertTriangle, Bot, Key, Settings, ShieldCheck, UserCog } from '@lucide/vue'
 
+import { fetchAdminSettings } from '@/api/adminSettings'
 import { useAuthStore } from '@/stores/auth'
 import { UiBadge } from '@/components/ui'
 
@@ -83,6 +104,8 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 const isPlatformAdmin = computed(() => authStore.user?.role === 'platform_admin')
+const isPlatformRoute = computed(() => route.path.startsWith('/settings/platform') || route.path.startsWith('/admin'))
+const safeModeWarnings = ref<Array<Record<string, unknown>>>([])
 
 /** 个人设置导航项列表 */
 const accountNavItems = [
@@ -95,8 +118,30 @@ const accountNavItems = [
 const platformNavItems = computed(() => [
   { label: '用户管理', path: '/settings/platform/users', icon: UserCog },
   { label: 'AI 管理', path: '/settings/platform/ai', icon: Bot },
-  { label: '系统设置', path: '/settings/platform/settings', icon: Settings, warningCount: 0 },
+  {
+    label: '系统设置',
+    path: '/settings/platform/settings',
+    icon: Settings,
+    warningCount: safeModeWarnings.value.length,
+  },
 ])
+
+/**
+ * 若为平台管理员，加载系统配置概况以获取 Safe-Mode 告警。
+ */
+async function loadAdminSummary() {
+  if (!isPlatformAdmin.value) return
+  try {
+    const res = await fetchAdminSettings()
+    safeModeWarnings.value = res.safe_mode_warnings ?? []
+  } catch {
+    // 忽略加载失败，不阻塞正常页面导航
+  }
+}
+
+onMounted(() => {
+  void loadAdminSummary()
+})
 
 /**
  * 判断当前导航项是否处于激活状态（支持前缀匹配与兼容旧路由匹配）。

@@ -165,28 +165,24 @@
             </div>
 
             <div class="space-y-4 max-w-xl">
-              <UiFormField label="平台品牌名称 (APP_NAME)" description="显示于浏览器标题与导航栏">
-                <div class="flex items-center gap-2">
-                  <UiInput
-                    v-model="formData.app_name"
-                    placeholder="页面管理后台"
-                    :disabled="isKeyDisabled('app_name')"
-                  />
-                  <UiBadge v-if="isKeyEnvOverridden('app_name')" tone="accent">ENV 覆盖</UiBadge>
-                </div>
-              </UiFormField>
+              <SettingsFieldRenderer
+                label="平台品牌名称 (APP_NAME)"
+                description="显示于浏览器标题与导航栏"
+                v-model="formData.app_name"
+                placeholder="页面管理后台"
+                :disabled="isKeyDisabled('app_name')"
+                :env-overridden="isKeyEnvOverridden('app_name')"
+              />
 
-              <UiFormField label="业务时区 (APP_TIMEZONE)" description="系统时间呈现与任务时间戳所依附的业务时区">
-                <div class="flex items-center gap-2">
-                  <UiSelect
-                    v-model="formData.app_timezone"
-                    :options="timezoneOptions"
-                    :disabled="isKeyDisabled('app_timezone')"
-                    class="w-full"
-                  />
-                  <UiBadge v-if="isKeyEnvOverridden('app_timezone')" tone="accent">ENV 覆盖</UiBadge>
-                </div>
-              </UiFormField>
+              <SettingsFieldRenderer
+                type="select"
+                label="业务时区 (APP_TIMEZONE)"
+                description="系统时间呈现与任务时间戳所依附的业务时区"
+                v-model="formData.app_timezone"
+                :options="timezoneOptions"
+                :disabled="isKeyDisabled('app_timezone')"
+                :env-overridden="isKeyEnvOverridden('app_timezone')"
+              />
             </div>
           </div>
         </template>
@@ -200,43 +196,38 @@
             </div>
 
             <div class="space-y-4 max-w-xl">
-              <UiFormField label="用户会话有效期 (小时)" description="Cookie 登录态在浏览器端的有效持续时间">
-                <div class="flex items-center gap-2">
-                  <UiInput
-                    type="number"
-                    v-model.number="formData.session_ttl_hours"
-                    :disabled="isKeyDisabled('session_ttl_hours')"
-                  />
-                  <UiBadge v-if="isKeyEnvOverridden('session_ttl_hours')" tone="accent">ENV 覆盖</UiBadge>
-                </div>
-              </UiFormField>
+              <SettingsFieldRenderer
+                type="number"
+                label="用户会话有效期 (小时)"
+                description="Cookie 登录态在浏览器端的有效持续时间"
+                v-model="formData.session_ttl_hours"
+                :min="1"
+                :disabled="isKeyDisabled('session_ttl_hours')"
+                :env-overridden="isKeyEnvOverridden('session_ttl_hours')"
+              />
 
-              <UiFormField label="单用户 PAT 最大活跃数量" description="防止生成过多长期未收回的访问凭证">
-                <div class="flex items-center gap-2">
-                  <UiInput
-                    type="number"
-                    v-model.number="formData.pat_max_active_tokens"
-                    :disabled="isKeyDisabled('pat_max_active_tokens')"
-                  />
-                  <UiBadge v-if="isKeyEnvOverridden('pat_max_active_tokens')" tone="accent">ENV 覆盖</UiBadge>
-                </div>
-              </UiFormField>
+              <SettingsFieldRenderer
+                type="number"
+                label="单用户 PAT 最大活跃数量"
+                description="防止生成过多长期未收回的访问凭证"
+                v-model="formData.pat_max_active_tokens"
+                :min="1"
+                :disabled="isKeyDisabled('pat_max_active_tokens')"
+                :env-overridden="isKeyEnvOverridden('pat_max_active_tokens')"
+              />
 
-              <UiFormField label="PAT 最长有效期 (天)" description="签发访问令牌所能允许的最长时间跨度">
-                <div class="flex items-center gap-2">
-                  <UiInput
-                    type="number"
-                    v-model.number="formData.pat_max_ttl_days"
-                    :disabled="isKeyDisabled('pat_max_ttl_days')"
-                  />
-                  <UiBadge v-if="isKeyEnvOverridden('pat_max_ttl_days')" tone="accent">ENV 覆盖</UiBadge>
-                </div>
-              </UiFormField>
+              <SettingsFieldRenderer
+                type="number"
+                label="PAT 最长有效期 (天)"
+                description="签发访问令牌所能允许的最长时间跨度"
+                v-model="formData.pat_max_ttl_days"
+                :min="1"
+                :disabled="isKeyDisabled('pat_max_ttl_days')"
+                :env-overridden="isKeyEnvOverridden('pat_max_ttl_days')"
+              />
             </div>
           </div>
         </template>
-
-
 
         <!-- 系统诊断 Tab -->
         <template #diagnostic>
@@ -247,28 +238,24 @@
             </div>
 
             <div class="space-y-5 max-w-xl">
-              <UiFormField label="运行时日志级别 (LOG_LEVEL)" description="动态调整 Backend 进程的日志过滤级别，立即生效">
-                <div class="flex items-center gap-2">
-                  <UiSelect
-                    v-model="formData.log_level"
-                    :options="logLevelOptions"
-                    :disabled="isKeyDisabled('log_level')"
-                    class="w-full"
-                  />
-                  <UiBadge v-if="isKeyEnvOverridden('log_level')" tone="accent">ENV 覆盖</UiBadge>
-                </div>
-              </UiFormField>
+              <SettingsFieldRenderer
+                type="select"
+                label="运行时日志级别 (LOG_LEVEL)"
+                description="动态调整 Backend 进程的日志过滤级别，立即生效"
+                v-model="formData.log_level"
+                :options="logLevelOptions"
+                :disabled="isKeyDisabled('log_level')"
+                :env-overridden="isKeyEnvOverridden('log_level')"
+              />
 
-              <div class="flex items-center justify-between rounded-lg border border-border-muted p-4">
-                <div>
-                  <div class="text-sm font-semibold text-text">LLM HTTP 抓包追踪</div>
-                  <div class="text-xs text-text-muted">将向大模型发起的真实 HTTP Raw 请求落盘至 trace 目录便于排障</div>
-                </div>
-                <UiCheckbox
-                  v-model="formData.ai_llm_http_trace_enabled"
-                  :disabled="isKeyDisabled('ai_llm_http_trace_enabled')"
-                />
-              </div>
+              <SettingsFieldRenderer
+                type="boolean"
+                label="LLM HTTP 抓包追踪"
+                description="将向大模型发起的真实 HTTP Raw 请求落盘至 trace 目录便于排障"
+                v-model="formData.ai_llm_http_trace_enabled"
+                :disabled="isKeyDisabled('ai_llm_http_trace_enabled')"
+                :env-overridden="isKeyEnvOverridden('ai_llm_http_trace_enabled')"
+              />
             </div>
           </div>
         </template>
@@ -293,14 +280,13 @@ import {
 } from '@/api/adminSettings'
 import { getErrorMessage } from '@/api/http'
 import SettingsPageHeader from '@/components/layout/SettingsPageHeader.vue'
+import { SettingsFieldRenderer } from '@/components/patterns'
 import {
   UiBadge,
   UiButton,
-  UiCheckbox,
   UiFormField,
   UiInput,
   UiRadioGroup,
-  UiSelect,
   UiTabs,
 } from '@/components/ui'
 import type { SystemSettingItem } from '@/types/api'
