@@ -1,14 +1,16 @@
 <!-- 文件功能：提供平台管理员维护用户账号、角色、状态和重置密码的管理页。 -->
 <template>
   <section class="space-y-5">
-    <div class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-bold text-text-strong">用户管理</h1>
-      </div>
-      <UiButton variant="primary" @click="openCreate">
-        新建用户
-      </UiButton>
-    </div>
+    <SettingsPageHeader
+      title="用户管理"
+      description="管理平台系统用户、分配用户角色权限与维护账户启用状态。"
+    >
+      <template #actions>
+        <UiButton variant="primary" @click="openCreate">
+          新建用户
+        </UiButton>
+      </template>
+    </SettingsPageHeader>
 
     <div class="overflow-hidden rounded-lg border border-border bg-surface">
       <table class="w-full table-fixed text-left text-sm">
@@ -113,6 +115,7 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query'
 
 import { createUser, listUsers, resetUserPassword, updateUser } from '@/api/users'
 import { getErrorMessage } from '@/api/http'
+import SettingsPageHeader from '@/components/layout/SettingsPageHeader.vue'
 import { UiButton, UiDialog, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import type { SelectOption } from '@/components/ui/select'
 import { Message } from '@/utils/message'

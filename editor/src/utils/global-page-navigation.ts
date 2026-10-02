@@ -6,6 +6,14 @@ import type { RouteLocationRaw } from 'vue-router'
 const globalPagePaths = new Set(['/account/ai-settings', '/account/access-tokens', '/admin/users', '/admin/settings'])
 
 /**
+ * 判断指定路径是否属于全局管理或设置页面。
+ * @param pathname 路径名
+ */
+function isGlobalSettingsPath(pathname: string): boolean {
+  return globalPagePaths.has(pathname) || pathname === '/settings' || pathname.startsWith('/settings/')
+}
+
+/**
  * 校验全局页面携带的返回路径，仅允许 Editor 内部绝对路径并阻止全局页面之间循环返回。
  * @param value 路由查询参数中的候选返回路径
  */
@@ -16,7 +24,7 @@ export function resolveGlobalReturnPath(value: unknown): string | null {
   }
 
   const pathname = candidate.split(/[?#]/, 1)[0]
-  if (globalPagePaths.has(pathname)) {
+  if (isGlobalSettingsPath(pathname)) {
     return null
   }
   return candidate
@@ -39,7 +47,14 @@ export function parseWorkspaceIdFromPath(path: string | null): number | null {
  * @param currentFullPath 当前 Editor 路径
  */
 export function buildGlobalPageLocation(
-  name: 'accountAiSettings' | 'accountAccessTokens' | 'users' | 'adminSettings',
+  name:
+    | 'accountAiSettings'
+    | 'accountAccessTokens'
+    | 'accountSecurity'
+    | 'users'
+    | 'adminSettings'
+    | 'platformUsers'
+    | 'platformSettings',
   currentFullPath: string,
 ): RouteLocationRaw {
   const returnTo = resolveGlobalReturnPath(currentFullPath)

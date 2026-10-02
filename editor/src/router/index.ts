@@ -96,27 +96,69 @@ const routes = [
       },
       {
         path: 'account/ai-settings',
-        name: 'accountAiSettings',
-        component: () => import('@/views/AccountAiSettingsView.vue'),
-        meta: { hideSidebars: true, fullHeight: true, globalPageTitle: 'AI 设置' },
+        redirect: (to: RouteLocation) => ({ path: '/settings/account/ai', query: to.query }),
       },
       {
         path: 'account/access-tokens',
-        name: 'accountAccessTokens',
-        component: () => import('@/views/AccountAccessTokensView.vue'),
-        meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '访问令牌' },
+        redirect: (to: RouteLocation) => ({ path: '/settings/account/tokens', query: to.query }),
       },
       {
         path: 'admin/users',
-        name: 'users',
-        component: () => import('@/views/UsersView.vue'),
-        meta: { hideSidebars: true, platformAdmin: true, globalPageTitle: '用户管理' },
+        redirect: (to: RouteLocation) => ({ path: '/settings/platform/users', query: to.query }),
       },
       {
         path: 'admin/settings',
-        name: 'adminSettings',
-        component: () => import('@/views/AdminSettingsView.vue'),
-        meta: { hideSidebars: true, platformAdmin: true, globalPageTitle: '系统设置' },
+        redirect: (to: RouteLocation) => ({ path: '/settings/platform/settings', query: to.query }),
+      },
+      {
+        path: 'settings',
+        component: () => import('@/layouts/SettingsLayout.vue'),
+        meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
+        children: [
+          {
+            path: '',
+            name: 'settingsRoot',
+            redirect: (to: RouteLocation) => {
+              const authStore = useAuthStore()
+              const returnTo = to.query.returnTo
+              const query = returnTo ? { returnTo } : undefined
+              if (authStore.user?.role === 'platform_admin') {
+                return { path: '/settings/platform/users', query }
+              }
+              return { path: '/settings/account/ai', query }
+            },
+          },
+          {
+            path: 'account/ai',
+            name: 'accountAiSettings',
+            component: () => import('@/views/AccountAiSettingsView.vue'),
+            meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
+          },
+          {
+            path: 'account/tokens',
+            name: 'accountAccessTokens',
+            component: () => import('@/views/AccountAccessTokensView.vue'),
+            meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
+          },
+          {
+            path: 'account/security',
+            name: 'accountSecurity',
+            component: () => import('@/views/AccountSecurityView.vue'),
+            meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
+          },
+          {
+            path: 'platform/users',
+            name: 'users',
+            component: () => import('@/views/UsersView.vue'),
+            meta: { hideSidebars: true, platformAdmin: true, globalPageTitle: '设置与管理' },
+          },
+          {
+            path: 'platform/settings',
+            name: 'adminSettings',
+            component: () => import('@/views/AdminSettingsView.vue'),
+            meta: { hideSidebars: true, platformAdmin: true, globalPageTitle: '设置与管理' },
+          },
+        ],
       },
       {
         path: ':pathMatch(.*)*',

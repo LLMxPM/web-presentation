@@ -1,22 +1,11 @@
 <!-- 文件功能：平台系统设置管理视图，支持存储、常规、安全、AI 运营与诊断配置的热更新及 S3 连通性测试。 -->
 <template>
   <div class="mx-auto max-w-5xl space-y-6 pb-16">
-    <!-- 顶部导航与标题栏 -->
-    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
-      <div class="space-y-1">
-        <div class="flex items-center gap-3">
-          <UiButton v-if="returnToPath" variant="ghost" size="sm" class="gap-1.5 px-2" @click="handleGoBack">
-            <ArrowLeft class="h-4 w-4" />
-            <span>返回</span>
-          </UiButton>
-          <h1 class="text-2xl font-bold tracking-tight text-text-strong">系统设置</h1>
-        </div>
-        <p class="text-sm text-text-muted">
-          管理存储驱动、业务时区、安全策略与 AI 运营参数。类 B 配置修改后即时热生效，无须重启服务。
-        </p>
-      </div>
-
-      <div class="flex items-center gap-3">
+    <SettingsPageHeader
+      title="系统设置"
+      description="管理存储驱动、业务时区、安全策略与 AI 运营参数。类 B 配置修改后即时热生效，无须重启服务。"
+    >
+      <template #actions>
         <UiButton variant="secondary" size="sm" :disabled="loading || saving" @click="loadSettings">
           <RotateCw class="h-3.5 w-3.5" :class="{ 'animate-spin': loading }" />
           <span>刷新</span>
@@ -25,8 +14,8 @@
           <Save class="h-3.5 w-3.5" />
           <span>保存设置</span>
         </UiButton>
-      </div>
-    </div>
+      </template>
+    </SettingsPageHeader>
 
     <!-- Safe-Mode 降级警告横条 -->
     <div
@@ -374,10 +363,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import {
   AlertTriangle,
-  ArrowLeft,
   Radio,
   RotateCw,
   Save,
@@ -394,6 +381,7 @@ import {
   refreshModelCatalog,
   type ModelCatalogSyncState,
 } from '@/api/llm'
+import SettingsPageHeader from '@/components/layout/SettingsPageHeader.vue'
 import {
   UiBadge,
   UiButton,
@@ -405,21 +393,7 @@ import {
   UiTabs,
 } from '@/components/ui'
 import type { SystemSettingItem } from '@/types/api'
-import { resolveGlobalReturnPath } from '@/utils/global-page-navigation'
 import { Message } from '@/utils/message'
-
-const route = useRoute()
-const router = useRouter()
-
-const returnToPath = computed(() => resolveGlobalReturnPath(route.query.returnTo))
-
-function handleGoBack() {
-  if (returnToPath.value) {
-    router.push(returnToPath.value)
-  } else {
-    router.push('/')
-  }
-}
 
 const activeTab = ref('storage')
 const loading = ref(false)

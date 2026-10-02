@@ -1,11 +1,9 @@
 <!-- 文件功能：管理用户个人访问令牌（PAT），提供创建、配置编辑、密钥重置、明文密钥单次展示与即时吊销功能。 -->
 <template>
   <div class="space-y-4 pb-12">
-    <PageHeader
-      :icon="Key"
+    <SettingsPageHeader
       title="个人访问令牌 (PAT)"
       description="用于通过 External API、CLI（wp）及桌面开发工具安全访问工作空间资源。"
-      description-label="查看 PAT 使用说明"
     >
       <template #actions>
         <UiButton variant="primary" @click="openCreateDialog">
@@ -13,7 +11,7 @@
           创建新令牌
         </UiButton>
       </template>
-    </PageHeader>
+    </SettingsPageHeader>
 
     <section class="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="访问令牌概览">
       <div class="rounded-lg border border-border bg-surface px-4 py-3">
@@ -372,7 +370,7 @@ import {
 import { listWorkspaces } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
 import { UiBadge, UiButton, UiCheckbox, UiDialog, UiFormField, UiInput, UiSegmentedControl, UiSelect } from '@/components/ui'
-import { PageHeader } from '@/components/patterns'
+import SettingsPageHeader from '@/components/layout/SettingsPageHeader.vue'
 import type { SelectOption } from '@/components/ui/select'
 import type {
   ApiAccessTokenItem,
