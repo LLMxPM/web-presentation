@@ -15,8 +15,11 @@
 | [统一任务运行时契约](./task-runtime-contract.md) | Worker/Lease/Attempt/Terminal 角色、字段与状态词汇、错误码族、恢复语义、10 套任务模型映射 |
 | [双库方言维护预算](./dialect-budget.md) | 双库固定税口径、重开 D1 的复审触发器、每季粗记账模板 |
 | [契约生成与队列观测](./contract-and-queue-observation.md) | API/previewSchema 的生成与生产校验、队列 v2 分层及汇总口径 |
-| [架构收尾计划与验收记录](../../temp/README.md) | 现行唯一执行入口、工程与交付停止点、范围边界、剩余验收与历史证据 |
+| [环境变量治理与配置 Web UI 迁移](./environment-variable-governance.md) | 环境变量三分类、两种部署形态的必填差异、配置解析优先级与防变砖、热更新边界、密钥自动生成契约与五道防线 |
+| [架构计划与验收记录](../../temp/README.md) | 现行唯一执行入口、批次与停止条件、逐门验收状态、历史归档与运行证据 |
 
 ## 使用建议
 
 开发跨模块能力前先阅读 [模块边界](./module-boundaries.md)。涉及预览、截图、构建或 Runtime Kit 时，同时阅读 [预览与构建链路](./preview-and-build-flow.md) 和 [Runtime 接入架构](./runtime-integration.md)。
+
+涉及部署模板、环境变量、密钥或新增配置项时，先读 [环境变量治理与配置 Web UI 迁移](./environment-variable-governance.md) 确定该配置属于哪一类、能否热更新、是否必须留在 ENV；批次与验收状态在 [架构计划目录](../../temp/README.md) 维护，本目录不放排期。

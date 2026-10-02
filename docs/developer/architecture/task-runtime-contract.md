@@ -198,7 +198,7 @@
 
 ## 5. 现有任务模型映射表（10 套 → 契约）
 
-> **历史迁移基线（W08 已对齐当前实现）**：下表保留 A1 冻结时的 10 套任务模型、3 套认领方言映射框架。**恢复列已按当前实现更新为「循环内过期恢复 + 启动兜底」**；普通 AI Run 的历史启动路径按 hostname/pid 过滤，新登记实例由 UUID/心跳租约与 CAS 收敛。剩余验证与支持范围以[现行收尾计划](../../temp/plans/architecture-closeout-plan-2026-10-01.md)为准。
+> **历史迁移基线（W08 已对齐当前实现）**：下表保留 A1 冻结时的 10 套任务模型、3 套认领方言映射框架。**恢复列已按当前实现更新为「循环内过期恢复 + 启动兜底」**；普通 AI Run 的历史启动路径按 hostname/pid 过滤，新登记实例由 UUID/心跳租约与 CAS 收敛。剩余验证与支持范围以[已归档收尾计划](../../temp/archive/architecture-closeout-plan-2026-10-01.md)为准（M01–M08 已关闭）。
 
 ### 5.1 总表
 
@@ -392,4 +392,4 @@ await runtime.claim/renew/transition/cancel/recover(...)
 1. 本文是任务运行时**唯一契约**；字段/状态/错误码/恢复语义变更必须先改本文。
 2. A2/A3/A4 的实现 PR 应引用本文对应章节编号。
 3. 新发现的方言或旁路状态追加到 §5 映射表，**不得**另开文档或静默扩表。
-4. 产品边界（Run 会丢、Lite 规模、方言预算）见[收尾计划的范围与边界](../../temp/plans/architecture-closeout-plan-2026-10-01.md#2-本轮范围与后续边界)及[双库方言维护预算](./dialect-budget.md)，不由本契约扩展产品承诺。
+4. 产品边界（Run 会丢、Lite 规模、方言预算）见[已归档收尾计划的范围与边界](../../temp/archive/architecture-closeout-plan-2026-10-01.md#2-本轮范围与后续边界)及[双库方言维护预算](./dialect-budget.md)，不由本契约扩展产品承诺。Lite 单镜像形态对规模与故障域的影响由[现行执行计划](../../temp/plans/deployment-form-and-config-governance-plan-2026-10-02.md)重开验收后回填。

@@ -1,8 +1,16 @@
 # 历史评估与计划归档
 
-整理日期：2026-10-01。本文是历史材料索引；[架构调整收尾工作计划](../plans/architecture-closeout-plan-2026-10-01.md)是唯一现行执行入口，状态与证据导航见[目录索引](../README.md)。
+整理日期：2026-10-02。本文是历史材料索引；[部署形态收敛与配置治理工作计划](../plans/deployment-form-and-config-governance-plan-2026-10-02.md)是唯一现行执行入口，状态与证据导航见[目录索引](../README.md)。
 
-归档不是删除证据，也不是确认旧计划全部完成。历史文档内的“现行”“已完成”、测试数字、registry 状态和排期只代表当时记录。未完成项在现行收尾计划维护；运行证据保留原位置，包括修复前失败与复测结果。
+归档不是删除证据，也不是确认旧计划全部完成。历史文档内的“现行”“已完成”、测试数字、registry 状态和排期只代表当时记录。未完成项在现行计划维护；运行证据保留原位置，包括修复前失败与复测结果。
+
+## 2026 年 10 月 2 日归档
+
+| 文档 | 原位置 | 接续方式 |
+| :--- | :--- | :--- |
+| [架构调整收尾工作计划](./architecture-closeout-plan-2026-10-01.md) | `docs/temp/plans/architecture-closeout-plan-2026-10-01.md` | M01–M08 全部关闭，工程阶段与完整交付两个停止点均已达成；保留原始停止条件、批次与逐门验收口径，供现行计划重开 M01′/M03′/M06′/M07′ 时对照复用依据 |
+
+正文只增加归档说明并修正相对链接，原始要求、逐门状态与证据链接没有删除或删除性改写。`runs/` 中的实施与验收目录保留原位置。
 
 ## 2026 年 10 月 1 日归档
 
@@ -21,7 +29,7 @@
 | [09-28 架构评估](./architecture-assessment-2026-09-28.md) | `docs/temp/architecture-assessment-2026-09-28.md` | 新评估按当前代码重核，修正多处过期结论 |
 | [09-28 残留工作计划](./remaining-work-2026-09-28.md) | `docs/temp/plans/remaining-work-2026-09-28.md` | WS-A–H 完成/残留映射见新评估 §5 |
 | [镜像交付调研](./image-delivery-research-2026-09-29.md) | `docs/temp/image-delivery-research-2026-09-29.md` | 保留历史镜像证据；本轮不重新背书体积、tag 与 registry 状态 |
-| [镜像收口与 Lite 合并计划](./deployment-image-consolidation-2026-09-29.md) | `docs/temp/plans/deployment-image-consolidation-2026-09-29.md` | IMG0–IMG12 由新计划 §3 接续；内置 Renderer 为条件候选 |
+| [镜像收口与 Lite 合并计划](./deployment-image-consolidation-2026-09-29.md) | `docs/temp/plans/deployment-image-consolidation-2026-09-29.md` | IMG0–IMG12 由[现行计划](../plans/deployment-form-and-config-governance-plan-2026-10-02.md) §8 接续映射；D-Img1=C 双轨与体积实测沿用，前置条件已解除 |
 | [旧测试机执行清单](./test-machine-runbook-2026-09-29.md) | `docs/temp/plans/test-machine-runbook-2026-09-29.md` | 由新计划 M01–M08 替代；原清单也未开跑 |
 | [富文本源码范围加固计划](./rich-text-source-range-hardening-plan.md) | `docs/developer/runtime-integration/rich-text-source-range-hardening-plan.md` | 当前 shell 分类、降级与测试源码已存在；下一轮 M08 验证交互 |
 

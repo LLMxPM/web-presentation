@@ -1,7 +1,7 @@
 <!-- 文件功能：定义 Backend/Runtime/Renderer/DB/Runtime Kit 的 N/N-1 支持组合、升级窗口与摘流策略，支撑 AR-05/W05 与 M05。 -->
 # 版本兼容矩阵与升级窗口
 
-本文定义平台各组件在升级或回滚时的支持边界，对应 AR-05 / W05。[09-30 历史复核](../../temp/archive/architecture-assessment-2026-09-30.md)撤回了旧 ORM 缺列时的兼容结论；补偿后，[10-01 M05 实机](../../temp/runs/2026-10-01-73b0036/summary.md)以完整 `4c7eee8` 镜像和自己的锁文件验证 PG/SQLite 旧入口、迁移中断、N 业务及保留 schema 的旧应用回滚。此前[双副本浏览器定向证据](../../temp/runs/2026-09-30-docker/summary.md)保持有效；本轮补公共 Kit 与产物组合。M04 外部交接及其它发布/容量门仍见[现行收尾计划](../../temp/plans/architecture-closeout-plan-2026-10-01.md#7-验收状态与责任域)。
+本文定义平台各组件在升级或回滚时的支持边界，对应 AR-05 / W05。[09-30 历史复核](../../temp/archive/architecture-assessment-2026-09-30.md)撤回了旧 ORM 缺列时的兼容结论；补偿后，[10-01 M05 实机](../../temp/runs/2026-10-01-73b0036/summary.md)以完整 `4c7eee8` 镜像和自己的锁文件验证 PG/SQLite 旧入口、迁移中断、N 业务及保留 schema 的旧应用回滚。此前[双副本浏览器定向证据](../../temp/runs/2026-09-30-docker/summary.md)保持有效；本轮补公共 Kit 与产物组合。M04 外部交接及其它发布/容量门的状态见[已归档收尾计划](../../temp/archive/architecture-closeout-plan-2026-10-01.md#7-验收状态与责任域)；部署形态收敛后需要重开的门见[现行执行计划](../../temp/plans/deployment-form-and-config-governance-plan-2026-10-02.md)。
 
 ## 1. 组件与版本轴
 

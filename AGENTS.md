@@ -217,7 +217,7 @@ pnpm run test:e2e:all
 
 ## 5. 文档维护规则
 
-架构收尾采用 [现行收尾计划](./docs/temp/plans/architecture-closeout-plan-2026-10-01.md) 作为唯一执行入口：在同一计划更新范围与逐门状态，详细验收进入 `docs/temp/runs/`，历史评估和旧方案进入 `docs/temp/archive/`。工程阶段与完整交付分别按计划停止条件验收；新增任务先判断是否属于已冻结范围，归档或排期到期不代表验收完成。模块拆分随相关风险修改推进，不因文件行数开启全仓重构。
+架构工作采用 [现行执行计划](./docs/temp/plans/deployment-form-and-config-governance-plan-2026-10-02.md) 作为唯一执行入口：在同一计划更新范围与逐门状态，详细验收进入 `docs/temp/runs/`，历史评估和旧方案进入 `docs/temp/archive/`。上一轮架构收尾的 M01–M08 已全部关闭并归档为[收尾计划](./docs/temp/archive/architecture-closeout-plan-2026-10-01.md)；部署形态或执行拓扑变化后，按现行计划重开受影响门的定向验收，不沿用旧拓扑证据。新增任务先判断是否属于已冻结范围，归档或排期到期不代表验收完成。模块拆分随相关风险修改推进，不因文件行数开启全仓重构。
 
 出现以下情况时，同步更新顶层 `README.md`：
 

@@ -4,7 +4,7 @@
 - 演练日期：2026-10-01
 - 主仓提交基线：`4127b8c`
 - Agent Kit 提交基线：`f6a75ecd`
-- 关联计划：[架构收尾计划 2026-10-01](../../plans/architecture-closeout-plan-2026-10-01.md)
+- 关联计划：[架构收尾计划 2026-10-01（已归档）](../../archive/architecture-closeout-plan-2026-10-01.md)
 
 ---
 
