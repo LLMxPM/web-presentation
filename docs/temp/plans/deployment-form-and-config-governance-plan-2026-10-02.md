@@ -127,9 +127,8 @@
 ### B6 · 动态运营与文档（原治理规划 P2 剩余）
 
 | 序 | 工作项 | 完成口径 |
-| :--- | :--- | :--- |
-| **CFG8** | AI 运营配置（全局开关、Models.dev 手动同步触发、图片传输与思考超时）+ 运行时动态日志调级与 HTTP trace 开关 | 供应商级与模型级 `npm` 仍只能通过服务端白名单映射到已实现的 `protocol_key`，Web UI 不得成为动态加载 SDK 的新入口；日志调级用 `logging.getLogger().setLevel()` 即时生效 |
-| **CFG9** | 重写快速部署文档（Docker / 群晖 / 飞牛） | 必须在 B1/B3 定稿之后写；突出「0 变量一键启动」，且每条命令实跑可复现 |
+| **CFG8** | AI 运营配置（全局开关、Models.dev 手动同步触发、图片传输与思考超时）+ 运行时动态日志调级与 HTTP trace 开关 | **已完成**。实现 `update_app_log_level` 动态即时调级 root_logger、托管 StreamHandler 与 uvicorn 系列日志级别；HTTP trace 支持热生效与自动清理缓存；Models.dev 维持白名单协议映射守卫；AdminSettingsView 增加模型目录状态展示与手动同步按钮；单测全部通过 |
+| **CFG9** | 重写快速部署文档（Docker / 群晖 / 飞牛） | **已完成**。全面重写 `docs/user/quick-deployment/`（README/docker/synology/fnos/maintenance），突出「0 变量一键启动」、内置截图浏览器与密码自省流程，每条命令实跑验证，`test:repository` 全绿 |
 
 ---
 

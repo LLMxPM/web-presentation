@@ -278,6 +278,35 @@
                 />
               </div>
 
+              <!-- Models.dev 目录同步与状态 -->
+              <div class="rounded-lg border border-border-muted p-4 space-y-3 bg-surface-muted/30">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-sm font-semibold text-text">Models.dev 模型目录缓存</div>
+                    <div class="text-xs text-text-muted">
+                      平台仅对接已实现的白名单协议；不支持动态加载未受信 npm SDK。
+                    </div>
+                  </div>
+                  <UiButton
+                    variant="secondary"
+                    size="sm"
+                    :loading="syncingCatalog"
+                    :disabled="loading || saving || syncingCatalog"
+                    @click="handleSyncCatalog"
+                  >
+                    立即同步目录
+                  </UiButton>
+                </div>
+
+                <div v-if="catalogSyncState" class="text-xs text-text-muted grid grid-cols-2 gap-2 pt-2 border-t border-border-muted">
+                  <div>目录版本: <span class="text-text font-mono">{{ catalogSyncState.catalog_version || '未同步' }}</span></div>
+                  <div>上次同步: <span class="text-text font-mono">{{ catalogSyncState.last_success_at ? new Date(catalogSyncState.last_success_at).toLocaleString() : '无记录' }}</span></div>
+                  <div v-if="catalogSyncState.last_error" class="col-span-2 text-danger">
+                    同步异常: {{ catalogSyncState.last_error }}
+                  </div>
+                </div>
+              </div>
+
               <UiFormField label="AI 图片传输与预览模式" description="auto 自动择优，s3 使用对象存储，data_url 直接内嵌 Base64">
                 <div class="flex items-center gap-2">
                   <UiSelect
@@ -361,6 +390,11 @@ import {
 } from '@/api/adminSettings'
 import { getErrorMessage } from '@/api/http'
 import {
+  getModelCatalogSyncState,
+  refreshModelCatalog,
+  type ModelCatalogSyncState,
+} from '@/api/llm'
+import {
   UiBadge,
   UiButton,
   UiCheckbox,
@@ -391,10 +425,12 @@ const activeTab = ref('storage')
 const loading = ref(false)
 const saving = ref(false)
 const testingS3 = ref(false)
+const syncingCatalog = ref(false)
 
 const items = ref<SystemSettingItem[]>([])
 const safeModeWarnings = ref<Array<Record<string, any>>>([])
 const s3TestResult = ref<{ success: boolean; message: string } | null>(null)
+const catalogSyncState = ref<ModelCatalogSyncState | null>(null)
 
 // 表单响应式数据
 const formData = reactive<Record<string, any>>({
@@ -541,7 +577,28 @@ async function handleTestS3() {
   }
 }
 
+async function loadCatalogSyncState() {
+  try {
+    catalogSyncState.value = await getModelCatalogSyncState()
+  } catch {
+    // 忽略加载同步状态失败，不影响主设置表单展示
+  }
+}
+
+async function handleSyncCatalog() {
+  syncingCatalog.value = true
+  try {
+    catalogSyncState.value = await refreshModelCatalog()
+    Message.success('模型目录同步成功')
+  } catch (err) {
+    Message.error(getErrorMessage(err, '同步模型目录失败'))
+  } finally {
+    syncingCatalog.value = false
+  }
+}
+
 onMounted(() => {
   loadSettings()
+  loadCatalogSyncState()
 })
 </script>

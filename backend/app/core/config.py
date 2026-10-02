@@ -916,10 +916,20 @@ def apply_system_settings_override(db_settings: dict[str, Any]) -> AppSettings:
         _safe_mode_warnings = warnings
 
         # 动态联动调整日志等级
-        level_name = str(new_settings.log_level).upper()
-        level_val = getattr(logging, level_name, None)
-        if level_val is not None:
-            logging.getLogger().setLevel(level_val)
+        try:
+            from app.core.logging_config import update_app_log_level
+
+            update_app_log_level(new_settings.log_level)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger().warning("动态联动调整日志等级失败: %s", exc)
+
+        # 清除 LLM HTTP Trace 客户端缓存以确保按最新配置重新建立
+        try:
+            from app.ai.llm_http_trace import clear_llm_http_trace_client_cache
+
+            clear_llm_http_trace_client_cache()
+        except Exception:  # noqa: BLE001
+            pass
 
         return _current_settings
 

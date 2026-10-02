@@ -1,8 +1,17 @@
 # 快速部署
 
-本章节只覆盖“尽快跑起来”的 SQLite 单体版，适合体验、个人使用和小团队使用。三种方式使用同一个镜像：`llmxpm/web-presentation:sqlite-lite`。如果需要 HTTPS、外部数据库、对象存储、备份策略或多实例，请直接阅读[生产部署指南](../../developer/deployment/README.md)。
+本章节只覆盖“尽快跑起来”的 SQLite 单体版，适合体验、个人使用和小团队使用。三种部署方式（Docker 命令行、飞牛 fnOS、群晖 DSM）使用同一个统一镜像：`llmxpm/web-presentation:sqlite-lite`。如果需要 HTTPS、外部数据库、对象存储、备份策略或多实例，请直接阅读[生产部署指南](../../developer/deployment/README.md)。
 
-**形态说明（已发布镜像）**：`sqlite-lite` 是**单容器**部署，Backend、Runtime、Gateway 与截图用浏览器都在同一镜像内。你**不需要**准备 secret 文件，也**不需要**再启动第二个 Renderer 容器——群晖 Container Manager、飞牛 fnOS 等图形界面路径也只创建一个容器即可。页面截图能力由**该已发布镜像内置的浏览器**提供；若升级到未来改为「独立渲染进程/容器」的版本，以届时发布说明为准。
+**形态说明（单容器即全部能力）**：`sqlite-lite` 是**单容器**部署，Backend、Runtime、Gateway 与页面截图 Chromium 浏览器均打包在同一个镜像内。你**不需要**准备任何 secret 密钥文件，**不需要**再启动第二个 Renderer 容器，也**不需要**配置复杂的必填环境变量——群晖 Container Manager、飞牛 fnOS 等图形界面路径也只需要创建一个容器即可完整运行。
+
+## 核心特性：零必填变量、零密钥文件
+
+- **0 必填环境变量**：直接启动容器即可运行；默认管理端口为 `8080:80`。
+- **凭据与密钥自动生成**：
+  - **AI 凭证加密密钥**：首次启动时自动生成 32 字节 Fernet 密钥并持久化保存在数据卷内（`/app/backend/data/ai_secret.key`），容器重启不丢失，无需手动生成与保管。
+  - **管理员初始密码**：若未显式指定 `DEFAULT_ADMIN_PASSWORD`，系统首次启动会自动生成高强度随机密码并打印在容器启动日志中，登录后可通过系统设置随时修改。
+  - **内部通信凭证**：各子进程间共享密钥自动就地派生，杜绝占位符泄露。
+- **内置截图引擎**：已发布镜像内置轻量 Chromium 与渲染服务，页面缩略图、幻灯片快照开箱即用。
 
 ## 选择部署方式
 
@@ -13,65 +22,51 @@
 | 群晖 DSM | 群晖 NAS | [群晖 Container Manager 快速部署](./synology.md) |
 | 日常运维与升级 | 升级容器、备份还原数据、反代网络排障 | [SQLite 单体版日常维护指南](./maintenance.md) |
 
-三种方式都需要：
+## 一键极简启动示例（零变量）
 
-- 可以访问 Docker Hub，并能拉取 `llmxpm/web-presentation:sqlite-lite`。
-- 将 `DEFAULT_ADMIN_PASSWORD` 修改为正式管理员密码。
-- 生成并长期保存 `AI_SECRET_ENCRYPTION_KEY`。它用于加密模型凭证，丢失或更换后已保存的凭证无法解密。
-- 确保主机端口 `8080` 未被占用；如果修改端口映射，还要同步修改公开地址和 `CORS_ORIGINS`。
-
-## 通用配置
-
-使用仓库中的 [`deploy/compose/compose.sqlite-lite.yml`](../../../deploy/compose/compose.sqlite-lite.yml)。至少修改：
-
-| 配置 | 示例 | 作用 |
-| :--- | :--- | :--- |
-| `BACKEND_PUBLIC_BASE_URL` | `http://192.168.1.20:8080` | 浏览器访问平台的外部入口，系统用它生成平台链接 |
-| `RUNTIME_PUBLIC_BASE_URL` | `http://192.168.1.20:8080/runtime` | 浏览器访问 Runtime 预览和资源的外部路径 |
-| `CORS_ORIGINS` | `'["http://192.168.1.20:8080"]'` | 允许访问平台的浏览器来源，必须填写平台外部入口 |
-| `DEFAULT_ADMIN_PASSWORD` | 自定义强密码 | 首次登录的默认管理员密码，登录后应立即修改 |
-| `AI_SECRET_ENCRYPTION_KEY` | 由随机数生成的 Fernet 密钥 | 加密保存模型 API Key，必须长期备份且不能随意更换 |
-
-### 公网地址与容器内地址
-
-下面的地址不是都填写成浏览器访问地址。SQLite 单体版把 Backend、Runtime 和 Gateway 放在同一个容器中，用户只需要填写 3 个外部访问相关变量；其余内部变量由镜像默认值提供。
-
-| 变量 | 谁访问谁 | SQLite 单体版配置 | 是否填写外部访问地址 |
-| :--- | :--- | :--- | :--- |
-| `BACKEND_PUBLIC_BASE_URL` | 浏览器访问平台入口 | `http://主机地址:8080` | 是 |
-| `RUNTIME_BASE_URL` | Backend 访问同容器内 Runtime | `http://127.0.0.1:7373` | 否 |
-| `RUNTIME_PUBLIC_BASE_URL` | 浏览器访问 Runtime 的公开路径 | `http://主机地址:8080/runtime` | 是 |
-| `RUNTIME_PREVIEW_JWKS_URL` | Runtime 访问 Backend 的签名公钥 | `http://127.0.0.1:8000/.well-known/jwks.json` | 否 |
-| `RUNTIME_BACKEND_API_BASE_URL` | Runtime 回源 Backend API | `http://127.0.0.1:8000` | 否 |
-
-其中，`8080` 是宿主机对外映射到容器 `80` 的端口；`8000` 是容器内 Backend 端口，`7373` 是容器内 Runtime 端口，单体版不需要把这两个端口暴露给局域网或公网。Gateway 会把浏览器访问的 `/api`、`/public`、`/preview` 等路径转给 Backend，把 `/runtime/` 路径转给 Runtime。
-
-因此，部署到 NAS 或服务器时通常只需要把以下三个值中的主机地址和外部端口改成实际值：
-
-```text
-BACKEND_PUBLIC_BASE_URL=http://192.168.1.20:8080
-RUNTIME_PUBLIC_BASE_URL=http://192.168.1.20:8080/runtime
-CORS_ORIGINS=["http://192.168.1.20:8080"]
-```
-
-如果把端口映射改为 `18080:80`，上述三个值都要改为 `18080`；`RUNTIME_BASE_URL`、`RUNTIME_PREVIEW_JWKS_URL` 和 `RUNTIME_BACKEND_API_BASE_URL` 仍保持镜像内置的 `127.0.0.1` 地址，不需要填写到用户 Compose 或 `docker run` 命令中。只有改成 Backend、Runtime 分开容器或使用独立 Runtime 域名时，才需要按[详细部署指南](../../developer/deployment/README.md)重新配置内部地址和路径。
-
-生成密钥：
+只需一行命令即可在本机启动完整服务：
 
 ```bash
-python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+docker run -d \
+  --name web-presentation \
+  --restart unless-stopped \
+  -p 8080:80 \
+  -v lite-data:/app/backend/data \
+  llmxpm/web-presentation:sqlite-lite
 ```
+
+启动后查看初始管理员密码：
+
+```bash
+docker logs web-presentation
+```
+
+在日志中即可看到形如 `[Lite 首启提示] 已为平台管理员账号 (admin) 自动生成初始随机密码` 的提示，使用该密码在浏览器访问 `http://127.0.0.1:8080` 登录。
+
+## 可选外部访问配置
+
+使用仓库中的编排模板 [`deploy/compose/compose.sqlite-lite.yml`](../../../deploy/compose/compose.sqlite-lite.yml)。若在局域网 NAS、私有云或自定义域名下访问，可按需补充以下外部入口环境变量：
+
+| 配置 | 默认值 / 示例 | 作用 |
+| :--- | :--- | :--- |
+| `BACKEND_PUBLIC_BASE_URL` | `http://127.0.0.1:8080`（局域网示例：`http://192.168.1.20:8080`） | 浏览器访问平台的外部入口，系统用它生成平台链接 |
+| `RUNTIME_PUBLIC_BASE_URL` | `http://127.0.0.1:8080/runtime`（局域网示例：`http://192.168.1.20:8080/runtime`） | 浏览器访问 Runtime 预览和资源的外部路径 |
+| `CORS_ORIGINS` | `'["http://127.0.0.1:8080"]'`（局域网示例：`'["http://192.168.1.20:8080"]'`） | 允许访问平台的浏览器来源，必须填写平台外部入口 |
+| `DEFAULT_ADMIN_PASSWORD` | 留空（自动生成随机密码）或自定义强密码 | 首次建库时的管理员初始口令 |
+
+### 容器内地址与端口映射说明
+
+SQLite 单体版将 Backend（8000）、Runtime（7373）、Renderer（7400）与 Gateway（80）运行在同一容器内，外部只需将容器的 `80` 端口映射为主机端口（如 `8080:80`）。所有容器内部通信（`RUNTIME_BASE_URL`、`RUNTIME_PREVIEW_JWKS_URL` 等）默认均绑定回环地址 `127.0.0.1`，**切勿将内部地址改为外部主机或局域网 IP**。
+
+若修改宿主机映射端口（如改为 `18080:80`），且指定了外部访问地址，请将 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL` 和 `CORS_ORIGINS` 中的端口同步修改为 `18080`。
 
 ## 部署后检查
 
-浏览器访问 `http://主机地址:8080`，然后检查：
-
 ```bash
 curl -fsS http://127.0.0.1:8080/healthz
-docker compose -f compose/compose.sqlite-lite.yml ps
 ```
 
-SQLite 数据库、上传资源、截图（由镜像内置浏览器生成）、构建产物和 Runtime RSA 私钥都保存在 `lite-data` 数据卷或 `/app/backend/data` 挂载目录中。备份时必须完整备份该数据卷或目录，不要只复制 SQLite 文件；不要执行 `docker compose down -v`。
+SQLite 数据库、上传资源、截图产物和持久化密钥均保存在挂载的 `lite-data` 数据卷（容器内 `/app/backend/data`）中。备份与迁移时只需完整备份该数据卷或主机对应目录即可；不要执行 `docker compose down -v`。
 
 ## 适用规模与故障域
 

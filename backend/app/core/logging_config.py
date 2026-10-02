@@ -104,6 +104,30 @@ def configure_app_logging(settings: AppSettings) -> None:
         uvicorn_access_logger.removeHandler(handler)
 
 
+def update_app_log_level(raw_level: str) -> int:
+    """动态调整当前 Backend 进程的日志输出级别。
+
+    职责：即时修改 root_logger、托管 StreamHandler 以及 uvicorn 相关的 log level，
+    并按调试需求同步调整 sqlalchemy/alembic 第三方库的日志降噪级别。
+    """
+
+    log_level = _coerce_log_level(raw_level)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    for handler in list(root_logger.handlers):
+        if getattr(handler, _MANAGED_HANDLER_ATTR, False):
+            handler.setLevel(log_level)
+
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.asgi"):
+        logging.getLogger(logger_name).setLevel(log_level)
+
+    third_party_level = logging.INFO if log_level <= logging.DEBUG else logging.WARNING
+    for logger_name in ("sqlalchemy", "alembic"):
+        logging.getLogger(logger_name).setLevel(third_party_level)
+
+    return log_level
+
+
 def bind_request_id(request_id: str) -> contextvars.Token[str]:
     """把当前请求 ID 写入上下文，供同一协程链路中的日志自动携带。"""
 

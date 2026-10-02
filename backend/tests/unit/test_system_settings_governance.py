@@ -16,6 +16,7 @@ from app.core.system_settings_spec import (
     safe_mode_convert_value,
 )
 from app.core.exceptions import AppException
+from app.core.time_utils import utc_now
 from app.schemas.system_setting import S3TestConnectionRequest
 from app.services.system_settings_service import SystemSettingsService
 
@@ -176,3 +177,68 @@ async def test_system_settings_service_secret_masking():
     assert spec.mask_value("AKIA1234567890ABCDEF") == "AKI******DEF"
     assert spec.mask_value("123456") == "******"
     assert spec.mask_value(None) is None
+
+
+def test_dynamic_log_level_update():
+    """测试日志等级动态热调级：即时修改 root_logger、托管 handler 以及 uvicorn 的日志等级。"""
+    from app.core.logging_config import _MANAGED_HANDLER_ATTR, configure_app_logging
+
+    # 先初始化 managed logging
+    configure_app_logging(get_settings())
+
+    # 1. 动态切换为 DEBUG
+    apply_system_settings_override({"log_level": "DEBUG"})
+    root = logging.getLogger()
+    assert root.level == logging.DEBUG
+    for handler in root.handlers:
+        if getattr(handler, _MANAGED_HANDLER_ATTR, False):
+            assert handler.level == logging.DEBUG
+    assert logging.getLogger("uvicorn").level == logging.DEBUG
+
+    # 2. 动态切换为 WARNING
+    apply_system_settings_override({"log_level": "WARNING"})
+    assert root.level == logging.WARNING
+    for handler in root.handlers:
+        if getattr(handler, _MANAGED_HANDLER_ATTR, False):
+            assert handler.level == logging.WARNING
+    assert logging.getLogger("uvicorn").level == logging.WARNING
+
+    # 恢复为默认 INFO
+    apply_system_settings_override({"log_level": "INFO"})
+
+
+def test_dynamic_http_trace_toggle():
+    """测试 LLM HTTP Trace 动态热切换：配置变更即时影响 build_llm_http_trace_client 输出。"""
+    from app.ai.llm_http_trace import build_llm_http_trace_client
+    from app.models.ai_llm import AiLlmConfig, AiLlmProviderConfig
+
+    # 构造测试用的 LLM 配置
+    provider_config = AiLlmProviderConfig(
+        id=1,
+        provider_key="openai",
+        name="OpenAI Test",
+        base_url="https://api.openai.com/v1",
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+    llm_config = AiLlmConfig(
+        id=1,
+        provider_config_id=1,
+        provider_config=provider_config,
+        model_id="gpt-4o",
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+
+    # 1. 默认或显式为 False 时，trace client 为 None
+    apply_system_settings_override({"ai_llm_http_trace_enabled": False})
+    assert build_llm_http_trace_client(llm_config) is None
+
+    # 2. 动态开启 trace
+    apply_system_settings_override({"ai_llm_http_trace_enabled": True})
+    client = build_llm_http_trace_client(llm_config)
+    assert client is not None
+
+    # 3. 再次动态关闭 trace
+    apply_system_settings_override({"ai_llm_http_trace_enabled": False})
+    assert build_llm_http_trace_client(llm_config) is None
