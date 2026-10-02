@@ -61,8 +61,10 @@ test('可视化编辑应从画布选择标题并修改常用文字样式', async
 
 test('AssetImage 专用检查器应替换资源、填充和图片框圆角并保存', async ({ page, visualEditSandbox }) => {
   await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await expect(page.getByText('点击画布中的文字、区块或组件进行编辑', { exact: true })).toBeVisible()
   const visualFrame = page.frameLocator('iframe[title$="可视化编辑画布"]')
   const image = visualFrame.getByRole('img', { name: 'Smoke illustration', exact: true })
+  await expect(image).toBeVisible({ timeout: 30_000 })
   const originalSource = await image.getAttribute('src')
   await image.click()
   await expect(page.getByRole('heading', { name: /图片：Smoke illustration/ })).toBeVisible()

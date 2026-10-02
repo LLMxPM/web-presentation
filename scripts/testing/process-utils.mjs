@@ -50,7 +50,7 @@ export function spawnPersistentBackground(command, args, options = {}) {
   const child = spawn(command, args, {
     stdio: 'ignore',
     shell: process.platform === 'win32',
-    detached: process.platform !== 'win32',
+    detached: true,
     windowsHide: true,
     ...options,
   })

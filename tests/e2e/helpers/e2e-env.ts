@@ -13,3 +13,4 @@ export const STORAGE_STATE_PATH = 'test-results/e2e/storage-state.json'
  * 两侧一致性由 tests/contracts/e2e-backend 契约测试保护。
  */
 export const EXPECTED_SEED_VERSION = 2
+export const E2E_ADMIN_PASSWORD = process.env.E2E_DEFAULT_ADMIN_PASSWORD || 'StrongTestAdminPass#2026!'

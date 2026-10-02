@@ -398,6 +398,7 @@ async def test_reject_clearing_s3_credentials_even_without_driver():
 
 def test_ai_secret_encryption_key_preserved_on_hot_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """测试热更新任意配置时，启动期解析的 AI 加密密钥保持不被冲掉。"""
+    monkeypatch.delenv("AI_SECRET_ENCRYPTION_KEY", raising=False)
     fake_key = "dGVzdF9mZXJuZXRfa2V5XzMyX2J5dGVzX2xvbmdfMTIzNDU2Nzg="
     # 模拟启动期已持有单实例密钥
     settings = get_settings()

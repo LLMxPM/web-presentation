@@ -105,6 +105,8 @@ async def test_workspace_style_suggested_components_should_save_published_compon
         "current_version_no",
         "available",
         "unavailable_reason",
+        "import_path",
+        "import_statement",
     }
     assert "content" not in items[0]
     assert items[0]["current_version_no"] == 1

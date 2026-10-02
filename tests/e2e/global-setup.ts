@@ -12,7 +12,7 @@ import path from 'node:path'
 
 import { chromium } from '@playwright/test'
 
-import { E2E_BACKEND_URL, EXPECTED_SEED_VERSION, STORAGE_STATE_PATH } from './helpers/e2e-env'
+import { E2E_ADMIN_PASSWORD, E2E_BACKEND_URL, EXPECTED_SEED_VERSION, STORAGE_STATE_PATH } from './helpers/e2e-env'
 
 const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:5173'
 
@@ -69,7 +69,7 @@ export default async function globalSetup() {
     const page = await context.newPage()
     await page.goto(`${baseURL}/login`, { waitUntil: 'domcontentloaded' })
     await page.locator('[data-testid="login-username"]').fill('admin')
-    await page.locator('[data-testid="login-password"]').fill('Admin123456')
+    await page.locator('[data-testid="login-password"]').fill(E2E_ADMIN_PASSWORD)
     await page.locator('[data-testid="login-submit"]').click()
     await page.waitForURL(url => !/\/login$/.test(url.pathname), { timeout: 120_000 })
     await page.waitForSelector('[data-testid="workspace-project-list"]', { timeout: 120_000 })

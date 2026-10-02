@@ -16,6 +16,7 @@ import app.ai.run_sse_stream as run_sse_stream
 from app.ai.agent.runtime_context import AgentRuntimeContext
 from app.ai.message_history import build_context_limit_processor, build_history_budget, rebuild_agent_message_history
 from app.ai.platform_runtime import PlatformAgentRuntimeStore
+from app.ai.process_liveness import ensure_agent_process_owner
 from app.ai.pydantic_runner import PydanticAgentRunner
 from app.db.session import get_session_factory
 from app.models.ai_agent_runtime import (
@@ -89,6 +90,7 @@ async def test_platform_runtime_should_persist_events_messages_and_snapshot(
     session_id = session_response.json()["session_id"]
 
     async with get_session_factory()() as db_session:
+        await ensure_agent_process_owner(db_session)
         flush_calls: list[list[object] | None] = []
         original_flush = db_session.flush
 

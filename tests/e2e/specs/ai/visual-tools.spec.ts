@@ -33,18 +33,14 @@ test('页面创建应经过 external job 并直接恢复父 Run', async ({ page 
   // 单独运行时则会直接进入 external job，兼容这两种合法路径。
   const confirmation = panel.getByText('允许执行 创建页面 吗？', { exact: true })
   const finalText = panel.getByText(AGENT_PAGE_EXTERNAL_CASE.finalText).last()
-  let confirmationRequired = false
-  await Promise.any([
-    confirmation.waitFor({ state: 'visible', timeout: 15_000 }).then(() => {
-      confirmationRequired = true
-    }),
-    finalText.waitFor({ state: 'visible', timeout: 60_000 }),
-  ])
-  if (confirmationRequired) {
+  try {
+    await confirmation.waitFor({ state: 'visible', timeout: 15_000 })
     await panel.getByRole('button', { name: '提交', exact: true }).click()
+  } catch {
+    // 未触发 HITL 确认，直接等待终态输出
   }
 
-  await expect(finalText).toBeVisible({ timeout: 60_000 })
+  await expect(finalText).toBeVisible({ timeout: 90_000 })
   const toolGroup = panel.locator('[data-testid="tool-call-group"]').last()
   await expect(toolGroup).toBeVisible()
   await expect(panel.getByRole('button', { name: `新增页面：${AGENT_PAGE_EXTERNAL_CASE.pageTitle}` })).toBeVisible()

@@ -90,64 +90,60 @@ def test_capabilities_reports_protocol_and_idle_slot() -> None:
     assert capabilities["slot_state"] == "idle"
 
 
-def test_slot_accept_rejects_second_attempt_when_busy() -> None:
+@pytest.mark.asyncio
+async def test_slot_accept_rejects_second_attempt_when_busy() -> None:
     """忙时明确返回 429，不接管第二个 attempt。"""
 
     slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
     slot._current = object()  # noqa: SLF001 模拟占用中
-    status, receipt = asyncio.new_event_loop().run_until_complete(
-        slot.accept(_make_request(attempt_id="busy-1"))
-    )
+    status, receipt = await slot.accept(_make_request(attempt_id="busy-1"))
     assert status == 429
     assert receipt is None
 
 
-def test_same_attempt_digest_mismatch_is_conflict() -> None:
+@pytest.mark.asyncio
+async def test_same_attempt_digest_mismatch_is_conflict() -> None:
     """相同 attempt ID 不同 digest 返回 409。"""
 
     slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
     first = _make_request(attempt_id="dup", digest="d1")
     slot._receipts["dup"] = SlotExecution(request=first, accepted_at=datetime.now(UTC))
-    status, _ = asyncio.new_event_loop().run_until_complete(
-        slot.accept(_make_request(attempt_id="dup", digest="d2"))
-    )
+    status, _ = await slot.accept(_make_request(attempt_id="dup", digest="d2"))
     assert status == 409
 
 
-def test_same_attempt_retry_returns_existing_receipt_before_ticket_validation() -> None:
+@pytest.mark.asyncio
+async def test_same_attempt_retry_returns_existing_receipt_before_ticket_validation() -> None:
     """重复 POST 即使原接入票据已过期，也必须返回已有回执而不是重新拒绝。"""
 
-    async def _scenario() -> None:
-        from dataclasses import replace
+    from dataclasses import replace
 
-        slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
-        original = _make_request(attempt_id="idempotent-expired")
-        execution = SlotExecution(
-            request=original,
-            accepted_at=datetime.now(UTC),
-            slot_generation=1,
-        )
-        slot._receipts[original.attempt_id] = execution
-        expired_ticket = AdmissionTicket.issue(
-            secret=b"renderer-test-secret",
-            request_digest=original.request_digest,
-            workspace_id=original.workspace_id,
-            worker_id="renderer-local",
-            worker_epoch="epoch-1",
-            slot_generation=1,
-            accept_before=datetime.now(UTC) - timedelta(seconds=1),
-            stop_by=datetime.now(UTC) - timedelta(seconds=1),
-            attempt_id=original.attempt_id,
-        )
-        retry = replace(original, admission_ticket=expired_ticket)
+    slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
+    original = _make_request(attempt_id="idempotent-expired")
+    execution = SlotExecution(
+        request=original,
+        accepted_at=datetime.now(UTC),
+        slot_generation=1,
+    )
+    slot._receipts[original.attempt_id] = execution
+    expired_ticket = AdmissionTicket.issue(
+        secret=b"renderer-test-secret",
+        request_digest=original.request_digest,
+        workspace_id=original.workspace_id,
+        worker_id="renderer-local",
+        worker_epoch="epoch-1",
+        slot_generation=1,
+        accept_before=datetime.now(UTC) - timedelta(seconds=1),
+        stop_by=datetime.now(UTC) - timedelta(seconds=1),
+        attempt_id=original.attempt_id,
+    )
+    retry = replace(original, admission_ticket=expired_ticket)
 
-        status, receipt = await slot.accept(retry)
+    status, receipt = await slot.accept(retry)
 
-        assert status == 202
-        assert receipt is not None
-        assert receipt.attempt_id == original.attempt_id
-
-    asyncio.run(_scenario())
+    assert status == 202
+    assert receipt is not None
+    assert receipt.attempt_id == original.attempt_id
 
 
 def test_request_navigation_check_calls_playwright_method() -> None:
@@ -162,77 +158,76 @@ def test_request_navigation_check_calls_playwright_method() -> None:
     assert _request_is_navigation(_Request()) is True
 
 
-def test_admission_ticket_requires_next_slot_generation() -> None:
+@pytest.mark.asyncio
+async def test_admission_ticket_requires_next_slot_generation() -> None:
     """票据必须绑定 worker.slot_generation+1；严格相等，首次接管不得 403。"""
 
-    async def _scenario() -> None:
-        import wp_renderer.engine.executor as executor_module
+    import wp_renderer.engine.executor as executor_module
 
-        class _HoldExecutor:
-            def __init__(self, *, settings, slot, execution) -> None:
-                self.execution = execution
-                self._unblocked = asyncio.Event()
+    class _HoldExecutor:
+        def __init__(self, *, settings, slot, execution) -> None:
+            self.execution = execution
+            self._unblocked = asyncio.Event()
 
-            async def execute(self, *, artifact_dir: Path):
-                await self._unblocked.wait()
-                raise AssertionError("不应完成")
+        async def execute(self, *, artifact_dir: Path):
+            await self._unblocked.wait()
+            raise AssertionError("不应完成")
 
-            async def shutdown(self) -> None:
-                self._unblocked.set()
+        async def shutdown(self) -> None:
+            self._unblocked.set()
 
-        original = executor_module.RenderExecutor
-        executor_module.RenderExecutor = _HoldExecutor
-        slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
-        try:
-            assert slot.slot_generation == 0
-            status, receipt = await slot.accept(_make_request(attempt_id="gen-next"))
-            assert status == 202
-            assert receipt is not None
-            assert receipt.slot_generation == 1
-            assert slot.slot_generation == 1
-        finally:
-            executor_module.RenderExecutor = original
-            await slot.shutdown(grace_seconds=1.0)
+    original = executor_module.RenderExecutor
+    executor_module.RenderExecutor = _HoldExecutor
+    slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
+    try:
+        assert slot.slot_generation == 0
+        status, receipt = await slot.accept(_make_request(attempt_id="gen-next"))
+        assert status == 202
+        assert receipt is not None
+        assert receipt.slot_generation == 1
+        assert slot.slot_generation == 1
+    finally:
+        executor_module.RenderExecutor = original
+        await slot.shutdown(grace_seconds=1.0)
 
-        # 槽位释放后，仍用旧 generation=1 签发的票据必须被严格相等拒绝。
-        stale = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
-        stale.slot_generation = 1
-        secret = b"renderer-test-secret"
-        now = datetime.now(UTC)
-        stale_ticket = AdmissionTicket.issue(
-            secret=secret,
-            request_digest="digest-stale",
-            workspace_id=1,
-            worker_id="renderer-local",
-            worker_epoch="epoch-1",
-            slot_generation=1,
-            accept_before=now + timedelta(seconds=60),
-            stop_by=now + timedelta(seconds=120),
-            attempt_id="gen-stale",
-        )
-        from dataclasses import replace
+    # 槽位释放后，仍用旧 generation=1 签发的票据必须被严格相等拒绝。
+    stale = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
+    stale.slot_generation = 1
+    secret = b"renderer-test-secret"
+    now = datetime.now(UTC)
+    stale_ticket = AdmissionTicket.issue(
+        secret=secret,
+        request_digest="digest-stale",
+        workspace_id=1,
+        worker_id="renderer-local",
+        worker_epoch="epoch-1",
+        slot_generation=1,
+        accept_before=now + timedelta(seconds=60),
+        stop_by=now + timedelta(seconds=120),
+        attempt_id="gen-stale",
+    )
+    from dataclasses import replace
 
-        stale_req = replace(
-            _make_request(attempt_id="gen-stale", digest="digest-stale"),
-            admission_ticket=stale_ticket,
-        )
-        status2, receipt2 = await stale.accept(stale_req)
-        assert status2 == 403
-        assert receipt2 is not None
-        assert receipt2.error is not None
-        assert "generation" in str(receipt2.error.get("message") or "").lower()
-        assert stale.slot_generation == 1
-
-    asyncio.run(_scenario())
+    stale_req = replace(
+        _make_request(attempt_id="gen-stale", digest="digest-stale"),
+        admission_ticket=stale_ticket,
+    )
+    status2, receipt2 = await stale.accept(stale_req)
+    assert status2 == 403
+    assert receipt2 is not None
+    assert receipt2.error is not None
+    assert "generation" in str(receipt2.error.get("message") or "").lower()
+    assert stale.slot_generation == 1
 
 
-def test_cancellation_before_post_does_not_start_browser() -> None:
+@pytest.mark.asyncio
+async def test_cancellation_before_post_does_not_start_browser() -> None:
     """取消先于 POST 到达时记录标记且不启动执行。"""
 
     slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
     slot.request_cancel("pre-cancel")
     request = _make_request(attempt_id="pre-cancel")
-    status, receipt = asyncio.new_event_loop().run_until_complete(slot.accept(request))
+    status, receipt = await slot.accept(request)
     assert status == 202
     assert receipt is not None
     assert receipt.error is not None
@@ -346,55 +341,53 @@ def test_inline_placeholder_credential_rejected() -> None:
         RendererSettings(render_service_credential="change-me", render_service_credential_file=None)
 
 
-def test_receipt_snapshots_slot_generation_at_accept() -> None:
+@pytest.mark.asyncio
+async def test_receipt_snapshots_slot_generation_at_accept() -> None:
     """回执 generation 必须使用接管时快照，而非 live slot_generation。"""
 
-    async def _scenario() -> None:
-        import wp_renderer.engine.executor as executor_module
+    import wp_renderer.engine.executor as executor_module
 
-        class _HoldExecutor:
-            """模拟执行器：shutdown() 解除阻塞，避免 asyncio.run 收尾卡住。"""
+    class _HoldExecutor:
+        """模拟执行器：shutdown() 解除阻塞，避免 asyncio.run 收尾卡住。"""
 
-            def __init__(self, *, settings, slot, execution) -> None:
-                self.execution = execution
-                self._unblocked = asyncio.Event()
+        def __init__(self, *, settings, slot, execution) -> None:
+            self.execution = execution
+            self._unblocked = asyncio.Event()
 
-            async def execute(self, *, artifact_dir: Path):
-                await self._unblocked.wait()
-                raise AssertionError("不应完成")
+        async def execute(self, *, artifact_dir: Path):
+            await self._unblocked.wait()
+            raise AssertionError("不应完成")
 
-            async def shutdown(self) -> None:
-                self._unblocked.set()
+        async def shutdown(self) -> None:
+            self._unblocked.set()
 
-        original = executor_module.RenderExecutor
-        executor_module.RenderExecutor = _HoldExecutor
-        slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
-        try:
-            request = _make_request(attempt_id="gen-1")
-            status, receipt = await slot.accept(request)
-            assert status == 202
-            assert receipt is not None
-            snapshotted = receipt.slot_generation
-            # 后续 generation 递增不得污染旧回执。
-            slot.slot_generation += 10
-            execution = slot.get_execution("gen-1")
-            assert execution is not None
-            rebuilt = slot.build_receipt(execution)
-            assert rebuilt.slot_generation == snapshotted
-            assert rebuilt.slot_generation != slot.slot_generation
-            # 纯回执构建同样使用执行快照。
-            direct = SlotExecution(
-                request=request,
-                accepted_at=datetime.now(UTC),
-                slot_generation=7,
-            )
-            slot.slot_generation = 99
-            assert slot.build_receipt(direct).slot_generation == 7
-        finally:
-            executor_module.RenderExecutor = original
-            await slot.shutdown(grace_seconds=1.0)
-
-    asyncio.run(_scenario())
+    original = executor_module.RenderExecutor
+    executor_module.RenderExecutor = _HoldExecutor
+    slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
+    try:
+        request = _make_request(attempt_id="gen-1")
+        status, receipt = await slot.accept(request)
+        assert status == 202
+        assert receipt is not None
+        snapshotted = receipt.slot_generation
+        # 后续 generation 递增不得污染旧回执。
+        slot.slot_generation += 10
+        execution = slot.get_execution("gen-1")
+        assert execution is not None
+        rebuilt = slot.build_receipt(execution)
+        assert rebuilt.slot_generation == snapshotted
+        assert rebuilt.slot_generation != slot.slot_generation
+        # 纯回执构建同样使用执行快照。
+        direct = SlotExecution(
+            request=request,
+            accepted_at=datetime.now(UTC),
+            slot_generation=7,
+        )
+        slot.slot_generation = 99
+        assert slot.build_receipt(direct).slot_generation == 7
+    finally:
+        executor_module.RenderExecutor = original
+        await slot.shutdown(grace_seconds=1.0)
 
 
 def test_mark_consumed_race_keeps_released_state() -> None:
@@ -522,92 +515,88 @@ def test_diagnose_result_can_attach_layout_despite_frozen_dataclass() -> None:
     assert diagnosed.request_id == base.request_id
 
 
-def test_executor_timeout_does_not_cancel_playwright_awaitable() -> None:
+@pytest.mark.asyncio
+async def test_executor_timeout_does_not_cancel_playwright_awaitable() -> None:
     """Renderer 阶段超时只能返回错误，不能取消仍需由 shutdown 解除的底层任务。"""
 
-    async def _scenario() -> None:
-        from wp_renderer.engine.executor import DeadlineClock, RenderExecutor
+    from wp_renderer.engine.executor import DeadlineClock, RenderExecutor
 
-        request = _make_request(attempt_id="bounded-timeout")
-        execution = SlotExecution(request=request, accepted_at=datetime.now(UTC), slot_generation=1)
-        slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
-        executor = RenderExecutor(settings=slot.settings, slot=slot, execution=execution)
-        executor._deadline = DeadlineClock(deadline_monotonic=asyncio.get_running_loop().time() + 0.03)
-        finished = asyncio.Event()
+    request = _make_request(attempt_id="bounded-timeout")
+    execution = SlotExecution(request=request, accepted_at=datetime.now(UTC), slot_generation=1)
+    slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
+    executor = RenderExecutor(settings=slot.settings, slot=slot, execution=execution)
+    executor._deadline = DeadlineClock(deadline_monotonic=asyncio.get_running_loop().time() + 0.03)
+    finished = asyncio.Event()
 
-        async def _underlying() -> None:
-            await finished.wait()
+    async def _underlying() -> None:
+        await finished.wait()
 
-        task = asyncio.create_task(_underlying())
-        with pytest.raises(RenderExecutionError):
-            await executor._await_bounded(task, stage="test")
-        assert task.cancelled() is False
-        finished.set()
-        await task
-
-    asyncio.run(_scenario())
+    task = asyncio.create_task(_underlying())
+    with pytest.raises(RenderExecutionError):
+        await executor._await_bounded(task, stage="test")
+    assert task.cancelled() is False
+    finished.set()
+    await task
 
 
-def test_cancel_during_run_interrupts_and_shuts_down_executor() -> None:
+@pytest.mark.asyncio
+async def test_cancel_during_run_interrupts_and_shuts_down_executor() -> None:
     """运行中取消须置位 cancel_requested 并调用 executor.shutdown()。"""
 
-    async def _scenario() -> None:
-        import wp_renderer.engine.executor as executor_module
+    import wp_renderer.engine.executor as executor_module
 
-        shutdown_calls = {"count": 0}
+    shutdown_calls = {"count": 0}
 
-        class _FakeExecutor:
-            def __init__(self, *, settings, slot, execution) -> None:
-                self.settings = settings
-                self.slot = slot
-                self.execution = execution
-                self._shutdown_started = False
-                self._unblocked = asyncio.Event()
+    class _FakeExecutor:
+        def __init__(self, *, settings, slot, execution) -> None:
+            self.settings = settings
+            self.slot = slot
+            self.execution = execution
+            self._shutdown_started = False
+            self._unblocked = asyncio.Event()
 
-            async def execute(self, *, artifact_dir: Path):
-                try:
-                    await asyncio.wait_for(self._unblocked.wait(), timeout=2.0)
-                except (TimeoutError, asyncio.TimeoutError) as exc:
-                    raise AssertionError("shutdown 未解除执行阻塞") from exc
-                if self.execution.cancel_requested:
-                    raise RenderExecutionError(
-                        RenderError.from_code(ERROR_CODE_CANCELLED, message="执行已取消。", stage="run")
-                    )
-                raise AssertionError("取消未生效")
+        async def execute(self, *, artifact_dir: Path):
+            try:
+                await asyncio.wait_for(self._unblocked.wait(), timeout=2.0)
+            except (TimeoutError, asyncio.TimeoutError) as exc:
+                raise AssertionError("shutdown 未解除执行阻塞") from exc
+            if self.execution.cancel_requested:
+                raise RenderExecutionError(
+                    RenderError.from_code(ERROR_CODE_CANCELLED, message="执行已取消。", stage="run")
+                )
+            raise AssertionError("取消未生效")
 
-            async def shutdown(self) -> None:
-                if self._shutdown_started:
-                    self._unblocked.set()
-                    return
-                self._shutdown_started = True
-                shutdown_calls["count"] += 1
+        async def shutdown(self) -> None:
+            if self._shutdown_started:
                 self._unblocked.set()
+                return
+            self._shutdown_started = True
+            shutdown_calls["count"] += 1
+            self._unblocked.set()
 
-        original = executor_module.RenderExecutor
-        executor_module.RenderExecutor = _FakeExecutor
-        slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
-        try:
-            request = _make_request(attempt_id="cancel-run")
-            status, _receipt = await slot.accept(request)
-            assert status == 202
-            await asyncio.sleep(0.05)
-            assert slot.request_cancel("cancel-run") is True
-            task = slot._task  # noqa: SLF001
-            assert task is not None
-            await asyncio.wait({task}, timeout=2.0)
-            assert task.done()
-            execution = slot.get_execution("cancel-run")
-            assert execution is not None
-            assert execution.cancel_requested is True
-            assert execution.error is not None
-            assert execution.error["code"] == ERROR_CODE_CANCELLED
-            assert shutdown_calls["count"] >= 1
-            assert slot.busy is False
-        finally:
-            executor_module.RenderExecutor = original
-            await slot.shutdown(grace_seconds=1.0)
-
-    asyncio.run(_scenario())
+    original = executor_module.RenderExecutor
+    executor_module.RenderExecutor = _FakeExecutor
+    slot = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
+    try:
+        request = _make_request(attempt_id="cancel-run")
+        status, _receipt = await slot.accept(request)
+        assert status == 202
+        await asyncio.sleep(0.05)
+        assert slot.request_cancel("cancel-run") is True
+        task = slot._task  # noqa: SLF001
+        assert task is not None
+        await asyncio.wait({task}, timeout=2.0)
+        assert task.done()
+        execution = slot.get_execution("cancel-run")
+        assert execution is not None
+        assert execution.cancel_requested is True
+        assert execution.error is not None
+        assert execution.error["code"] == ERROR_CODE_CANCELLED
+        assert shutdown_calls["count"] >= 1
+        assert slot.busy is False
+    finally:
+        executor_module.RenderExecutor = original
+        await slot.shutdown(grace_seconds=1.0)
 
 
 def test_artifact_name_and_path_safety() -> None:
