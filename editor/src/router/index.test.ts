@@ -258,6 +258,51 @@ describe('router guard', () => {
     expect(router.currentRoute.value.name).toBe('adminSettings')
   })
 
+  it('访问 /settings 时管理员自动定向至用户管理，普通用户定向至个人 AI 设置', async () => {
+    const store = useAuthStore()
+    vi.spyOn(store, 'ensureLoaded').mockResolvedValue()
+
+    // 管理员
+    store.user = {
+      id: 1,
+      username: 'admin',
+      display_name: '管理员',
+      role: 'platform_admin',
+      status: 'active',
+    } as any
+
+    await router.push('/settings')
+    expect(router.currentRoute.value.path).toBe('/settings/platform/users')
+
+    // 普通用户
+    store.user = {
+      id: 2,
+      username: 'user',
+      display_name: '普通用户',
+      role: 'workspace_user',
+      status: 'active',
+    } as any
+
+    await router.push('/settings')
+    expect(router.currentRoute.value.path).toBe('/settings/account/ai')
+  })
+
+  it('管理员可正常访问平台级全局 AI 管理页', async () => {
+    const store = useAuthStore()
+    vi.spyOn(store, 'ensureLoaded').mockResolvedValue()
+    store.user = {
+      id: 1,
+      username: 'admin',
+      display_name: '管理员',
+      role: 'platform_admin',
+      status: 'active',
+    } as any
+
+    await router.push('/settings/platform/ai')
+    expect(router.currentRoute.value.name).toBe('platformAi')
+    expect(router.currentRoute.value.path).toBe('/settings/platform/ai')
+  })
+
   it('未登录访问未知路径时仍应先跳回登录页', async () => {
     const store = useAuthStore()
     vi.spyOn(store, 'ensureLoaded').mockResolvedValue()

@@ -84,12 +84,17 @@
       <div class="relative flex min-h-0 flex-1 overflow-hidden">
         <main
           data-testid="admin-layout-main"
-          class="min-h-0 min-w-0 flex-1 p-3"
-          :class="fullHeightPage ? 'overflow-hidden' : 'overflow-y-auto scroll-smooth'"
+          class="min-h-0 min-w-0 flex-1"
+          :class="[
+            fullHeightPage ? 'overflow-hidden' : 'overflow-y-auto scroll-smooth',
+            globalPageTitle ? 'p-0' : 'p-3',
+          ]"
         >
           <div
-            class="max-w-[1600px] mx-auto"
-            :class="fullHeightPage ? 'h-full min-h-0' : 'min-h-full'"
+            :class="[
+              globalPageTitle ? 'h-full w-full' : 'max-w-[1600px] mx-auto',
+              fullHeightPage ? 'h-full min-h-0' : 'min-h-full',
+            ]"
           >
             <RouterView v-slot="{ Component }">
               <Transition name="page" mode="out-in">
