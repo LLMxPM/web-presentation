@@ -36,25 +36,25 @@
 - `RUNTIME_*_TOKEN_AUDIENCE`：Backend 与 Runtime 之间的令牌受众声明集合。
 
 ### 2. Backend 后台变量
-- 对应模块：`backend/`（模板：`backend/.env.example` 或根目录 `.env.example`）。
-- 关键变量：`DATABASE_URL`、`REDIS_URL`、`DEFAULT_ADMIN_*`、`SESSION_*`、`RUNTIME_BASE_URL`、`AI_*`、`PAGE_SCREENSHOT_*` 与 `ASSET_STORAGE_DRIVER`。
+- 对应模块：`backend/`（统一模板：根目录 `.env.example`）。
+- 关键变量：`DATABASE_URL`、`REDIS_URL`、`DEFAULT_ADMIN_*`、`SESSION_*`、`RUNTIME_BASE_URL`、`AI_*` 与本地端口配置。
 
 ### 3. Editor 编辑器变量
-- 对应模块：`editor/`（模板：`editor/.env.example` 或根目录 `.env.example`）。
-- 关键变量：`VITE_API_PROXY_TARGET`（API 代理目标）、`VITE_CLIENT_ERROR_REPORTING`。
+- 对应模块：`editor/`（统一模板：根目录 `.env.example`）。
+- 关键变量：`VITE_API_PROXY_TARGET`（API 代理目标）。
 
 ### 4. Runtime 运行时变量
-- 对应模块：`runtime/`（模板：`runtime/.env.example` 或根目录 `.env.example`）。
-- 关键变量：`RUNTIME_PREVIEW_JWKS_URL`、`RUNTIME_BACKEND_API_BASE_URL`、`RUNTIME_SERVER_HOST`、`RUNTIME_SERVER_PORT`、`RUNTIME_SERVER_BASE_PATH` 与 Vite Worker 资源限制参数。
+- 对应模块：`runtime/`（统一模板：根目录 `.env.example`，容器化分角色模板：`deploy/runtime.env.example`）。
+- 关键变量：`RUNTIME_PREVIEW_JWKS_URL`、`RUNTIME_BACKEND_API_BASE_URL`、`RUNTIME_SERVER_HOST`、`RUNTIME_SERVER_PORT`、`RUNTIME_SERVER_BASE_PATH`。
 
 ### 5. Renderer 渲染执行服务变量
-- 对应模块：`renderer/`（模板：`renderer/.env.example` 或根目录 `.env.example`）。
+- 对应模块：`renderer/`（统一模板：根目录 `.env.example`）。
 - 关键变量：`RENDER_WORKER_ID`、`RENDER_PORT`、`RENDER_SERVICE_CREDENTIAL`（严禁弱占位符，fail-closed）、`RENDER_PROFILE_DIGEST`。
 
 ---
 
 ## 生产变量
 
-- 模板文件：`deploy/.env.example`。
-- 由 `deploy/compose/compose.prod.yml` 通过 `env_file: .env` 读取，两个简化版 compose 文件不读取该文件。
+- 模板文件：`deploy/.env.example`（通用生产模板）与 `deploy/runtime.env.example`（分角色 Runtime 非密钥模板）。
+- 由 `deploy/compose/compose.prod.yml` 与 `compose.runtime-roles.yml` 读取；单容器 Lite 模板（`compose.sqlite-lite.yml`）零配置启动，无需 env 文件。
 - 生产环境必须长期保存 `AI_SECRET_ENCRYPTION_KEY`，并使用独立的 `deploy/secrets/render_service_credential` 密钥文件。
