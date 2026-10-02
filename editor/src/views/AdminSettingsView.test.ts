@@ -117,7 +117,6 @@ describe('AdminSettingsView', () => {
     expect(screen.getByText('存储管理')).toBeTruthy()
     expect(screen.getByText('常规设置')).toBeTruthy()
     expect(screen.getByText('安全策略')).toBeTruthy()
-    expect(screen.getByText('AI 运营')).toBeTruthy()
     expect(screen.getByText('系统诊断')).toBeTruthy()
 
     unmount()

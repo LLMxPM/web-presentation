@@ -236,91 +236,7 @@
           </div>
         </template>
 
-        <!-- AI 运营 Tab -->
-        <template #ai>
-          <div class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-6">
-            <div class="border-b border-border-muted pb-4">
-              <h2 class="text-base font-semibold text-text">AI 运营参数</h2>
-              <p class="mt-1 text-xs text-text-muted">控制 AI 创作助手总开关、模型目录同步与生成超时机制。</p>
-            </div>
 
-            <div class="space-y-5 max-w-xl">
-              <div class="flex items-center justify-between rounded-lg border border-border-muted p-4">
-                <div>
-                  <div class="text-sm font-semibold text-text">AI 助手总开关</div>
-                  <div class="text-xs text-text-muted">关闭后将全面暂停智能体对话、页面生成与图片创作工具</div>
-                </div>
-                <UiCheckbox
-                  v-model="formData.ai_enabled"
-                  :disabled="isKeyDisabled('ai_enabled')"
-                />
-              </div>
-
-              <div class="flex items-center justify-between rounded-lg border border-border-muted p-4">
-                <div>
-                  <div class="text-sm font-semibold text-text">模型目录自动同步</div>
-                  <div class="text-xs text-text-muted">定期从 Models.dev 同步最新大模型规格清单</div>
-                </div>
-                <UiCheckbox
-                  v-model="formData.ai_model_catalog_sync_enabled"
-                  :disabled="isKeyDisabled('ai_model_catalog_sync_enabled')"
-                />
-              </div>
-
-              <!-- Models.dev 目录同步与状态 -->
-              <div class="rounded-lg border border-border-muted p-4 space-y-3 bg-surface-muted/30">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <div class="text-sm font-semibold text-text">Models.dev 模型目录缓存</div>
-                    <div class="text-xs text-text-muted">
-                      平台仅对接已实现的白名单协议；不支持动态加载未受信 npm SDK。
-                    </div>
-                  </div>
-                  <UiButton
-                    variant="secondary"
-                    size="sm"
-                    :loading="syncingCatalog"
-                    :disabled="loading || saving || syncingCatalog"
-                    @click="handleSyncCatalog"
-                  >
-                    立即同步目录
-                  </UiButton>
-                </div>
-
-                <div v-if="catalogSyncState" class="text-xs text-text-muted grid grid-cols-2 gap-2 pt-2 border-t border-border-muted">
-                  <div>目录版本: <span class="text-text font-mono">{{ catalogSyncState.catalog_version || '未同步' }}</span></div>
-                  <div>上次同步: <span class="text-text font-mono">{{ catalogSyncState.last_success_at ? new Date(catalogSyncState.last_success_at).toLocaleString() : '无记录' }}</span></div>
-                  <div v-if="catalogSyncState.last_error" class="col-span-2 text-danger">
-                    同步异常: {{ catalogSyncState.last_error }}
-                  </div>
-                </div>
-              </div>
-
-              <UiFormField label="AI 图片传输与预览模式" description="auto 自动择优，s3 使用对象存储，data_url 直接内嵌 Base64">
-                <div class="flex items-center gap-2">
-                  <UiSelect
-                    v-model="formData.ai_image_transport_mode"
-                    :options="imageTransportOptions"
-                    :disabled="isKeyDisabled('ai_image_transport_mode')"
-                    class="w-full"
-                  />
-                  <UiBadge v-if="isKeyEnvOverridden('ai_image_transport_mode')" tone="accent">ENV 覆盖</UiBadge>
-                </div>
-              </UiFormField>
-
-              <UiFormField label="AI 流式生成无响应空闲超时 (秒)" description="防止长上下文或复杂 Reasoning 模型由于连接悬挂占用任务队列">
-                <div class="flex items-center gap-2">
-                  <UiInput
-                    type="number"
-                    v-model.number="formData.ai_agent_stream_idle_timeout_seconds"
-                    :disabled="isKeyDisabled('ai_agent_stream_idle_timeout_seconds')"
-                  />
-                  <UiBadge v-if="isKeyEnvOverridden('ai_agent_stream_idle_timeout_seconds')" tone="accent">ENV 覆盖</UiBadge>
-                </div>
-              </UiFormField>
-            </div>
-          </div>
-        </template>
 
         <!-- 系统诊断 Tab -->
         <template #diagnostic>
@@ -376,11 +292,6 @@ import {
   updateAdminSettings,
 } from '@/api/adminSettings'
 import { getErrorMessage } from '@/api/http'
-import {
-  getModelCatalogSyncState,
-  refreshModelCatalog,
-  type ModelCatalogSyncState,
-} from '@/api/llm'
 import SettingsPageHeader from '@/components/layout/SettingsPageHeader.vue'
 import {
   UiBadge,
@@ -399,12 +310,10 @@ const activeTab = ref('storage')
 const loading = ref(false)
 const saving = ref(false)
 const testingS3 = ref(false)
-const syncingCatalog = ref(false)
 
 const items = ref<SystemSettingItem[]>([])
 const safeModeWarnings = ref<Array<Record<string, any>>>([])
 const s3TestResult = ref<{ success: boolean; message: string } | null>(null)
-const catalogSyncState = ref<ModelCatalogSyncState | null>(null)
 
 // 表单响应式数据
 const formData = reactive<Record<string, any>>({
@@ -421,12 +330,7 @@ const formData = reactive<Record<string, any>>({
   session_ttl_hours: 24,
   pat_max_active_tokens: 25,
   pat_max_ttl_days: 365,
-  ai_enabled: true,
-  ai_model_catalog_sync_enabled: true,
-  ai_image_transport_mode: 'auto',
-  ai_agent_stream_idle_timeout_seconds: 180.0,
   log_level: 'INFO',
-  ai_llm_http_trace_enabled: false,
 })
 
 // 初始快照用于 isDirty 判定
@@ -440,7 +344,6 @@ const tabItems = [
   { label: '存储管理', value: 'storage' },
   { label: '常规设置', value: 'general' },
   { label: '安全策略', value: 'security' },
-  { label: 'AI 运营', value: 'ai' },
   { label: '系统诊断', value: 'diagnostic' },
 ]
 
@@ -464,12 +367,6 @@ const logLevelOptions = [
   { label: 'WARNING (告警)', value: 'WARNING' },
   { label: 'ERROR (错误)', value: 'ERROR' },
   { label: 'CRITICAL (致命故障)', value: 'CRITICAL' },
-]
-
-const imageTransportOptions = [
-  { label: '自动判定 (auto)', value: 'auto' },
-  { label: '对象存储直链 (url)', value: 'url' },
-  { label: '内嵌二进制 / Base64 (base64)', value: 'base64' },
 ]
 
 function getItemByKey(key: string): SystemSettingItem | undefined {
@@ -557,28 +454,7 @@ async function handleTestS3() {
   }
 }
 
-async function loadCatalogSyncState() {
-  try {
-    catalogSyncState.value = await getModelCatalogSyncState()
-  } catch {
-    // 忽略加载同步状态失败，不影响主设置表单展示
-  }
-}
-
-async function handleSyncCatalog() {
-  syncingCatalog.value = true
-  try {
-    catalogSyncState.value = await refreshModelCatalog()
-    Message.success('模型目录同步成功')
-  } catch (err) {
-    Message.error(getErrorMessage(err, '同步模型目录失败'))
-  } finally {
-    syncingCatalog.value = false
-  }
-}
-
 onMounted(() => {
   loadSettings()
-  loadCatalogSyncState()
 })
 </script>

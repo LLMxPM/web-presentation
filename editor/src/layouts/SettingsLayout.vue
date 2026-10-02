@@ -94,6 +94,7 @@ const accountNavItems = [
 /** 平台管理导航项列表 */
 const platformNavItems = computed(() => [
   { label: '用户管理', path: '/settings/platform/users', icon: UserCog },
+  { label: 'AI 管理', path: '/settings/platform/ai', icon: Bot },
   { label: '系统设置', path: '/settings/platform/settings', icon: Settings, warningCount: 0 },
 ])
 
@@ -105,14 +106,20 @@ function isActive(path: string): boolean {
   if (route.path === path || route.path.startsWith(`${path}/`)) {
     return true
   }
-  // 旧路由映射高亮判定
+  // 路由映射高亮判定
   if (path === '/settings/account/ai' && (route.name === 'accountAiSettings' || route.path === '/account/ai-settings')) {
     return true
   }
   if (path === '/settings/account/tokens' && (route.name === 'accountAccessTokens' || route.path === '/account/access-tokens')) {
     return true
   }
+  if (path === '/settings/account/security' && (route.name === 'accountSecurity' || route.path === '/settings/account/security')) {
+    return true
+  }
   if (path === '/settings/platform/users' && (route.name === 'platformUsers' || route.name === 'users' || route.path === '/admin/users')) {
+    return true
+  }
+  if (path === '/settings/platform/ai' && (route.name === 'platformAi' || route.path === '/settings/platform/ai')) {
     return true
   }
   if (path === '/settings/platform/settings' && (route.name === 'platformSettings' || route.name === 'adminSettings' || route.path === '/admin/settings')) {

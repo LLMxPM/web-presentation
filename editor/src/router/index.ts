@@ -153,6 +153,12 @@ const routes = [
             meta: { hideSidebars: true, platformAdmin: true, globalPageTitle: '设置与管理' },
           },
           {
+            path: 'platform/ai',
+            name: 'platformAi',
+            component: () => import('@/views/PlatformAiManagementView.vue'),
+            meta: { hideSidebars: true, platformAdmin: true, globalPageTitle: '设置与管理' },
+          },
+          {
             path: 'platform/settings',
             name: 'adminSettings',
             component: () => import('@/views/AdminSettingsView.vue'),
