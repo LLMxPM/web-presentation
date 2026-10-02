@@ -25,6 +25,30 @@ def docker(
     )
 
 
+def assert_browser_install_parity(repo_root: Path) -> None:
+    """断言 Lite 与独立 Renderer 镜像的 Chromium 安装参数保持一致，防止参数漂移（DEP5 / GAT3）。"""
+
+    renderer_dockerfile = repo_root / "renderer" / "Dockerfile"
+    lite_dockerfile = repo_root / "deploy" / "docker" / "Dockerfile.lite"
+
+    def extract_playwright_args(path: Path) -> str:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if "playwright install" in line:
+                return line.split("playwright install", 1)[1].strip()
+        raise ValueError(f"{path} 中未找到 playwright install 指令")
+
+    renderer_args = extract_playwright_args(renderer_dockerfile)
+    lite_args = extract_playwright_args(lite_dockerfile)
+
+    if renderer_args != lite_args:
+        raise AssertionError(
+            f"浏览器安装参数不一致：\n"
+            f"renderer/Dockerfile: playwright install {renderer_args}\n"
+            f"Dockerfile.lite:     playwright install {lite_args}"
+        )
+
+
 def health_command(variant: str) -> list[str]:
     """根据镜像携带的运行时选择探针，检查每个长期进程而非仅检查容器存活。"""
 
@@ -44,6 +68,8 @@ def health_command(variant: str) -> list[str]:
     )
     if variant == "lite":
         urls.append("http://127.0.0.1:7373/__runtime_healthz")
+        urls.append("http://127.0.0.1:7400/livez")
+        urls.append("http://127.0.0.1:7400/readyz")
     return [
         "python",
         "-c",
@@ -97,6 +123,9 @@ const net = require('node:net');
 def verify(image: str, variant: str, output: Path) -> None:
     """启动临时镜像并等待健康；退出时始终清理本次容器，失败保留服务日志到标准错误。"""
 
+    repo_root = Path(__file__).resolve().parents[2]
+    assert_browser_install_parity(repo_root)
+
     name = f"wp-image-smoke-{uuid.uuid4().hex[:12]}"
     output.mkdir(parents=True, exist_ok=False)
     options = [
@@ -118,6 +147,8 @@ def verify(image: str, variant: str, output: Path) -> None:
         "AI_ENABLED=false",
         "--env",
         f"AI_SECRET_ENCRYPTION_KEY={base64.urlsafe_b64encode(os.urandom(32)).decode()}",
+        "--env",
+        "RENDER_WORKER_ID=renderer-image-smoke",
         "--env",
         f"RENDER_SERVICE_CREDENTIAL={secrets.token_urlsafe(48)}",
         "--env",
@@ -160,13 +191,19 @@ def verify(image: str, variant: str, output: Path) -> None:
         if variant in {"runtime", "lite"}:
             evidence["runtime_version"] = verify_runtime_version(name)
             evidence["execution"] = "runtime_version_guard_passed"
-        if variant == "renderer":
+        if variant in {"renderer", "lite"}:
             probe = Path(__file__).with_name("renderer-image-probe.py")
             docker("cp", str(probe), f"{name}:/tmp/renderer-image-probe.py")
-            docker("exec", name, "python", "/tmp/renderer-image-probe.py", timeout=75)
+            python_bin = (
+                "/app/.venv-renderer/bin/python" if variant == "lite" else "python"
+            )
+            docker("exec", name, python_bin, "/tmp/renderer-image-probe.py", timeout=75)
             docker("cp", f"{name}:/tmp/wp-image-evidence/.", str(output))
             verify_renderer_fixture((output / "page.png").read_bytes())
-            evidence["execution"] = "renderer_control_api_capture_passed"
+            if variant == "lite":
+                evidence["execution"] = "runtime_version_and_renderer_capture_passed"
+            else:
+                evidence["execution"] = "renderer_control_api_capture_passed"
         evidence["health"] = "passed"
         (output / "image.json").write_text(
             json.dumps(evidence, indent=2), encoding="utf-8"

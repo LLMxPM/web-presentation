@@ -12,7 +12,7 @@
 1. **本轮把「Lite 单镜像」与「环境变量治理」合成一件事做。** 治理规划的最终形态是 Lite 只剩一个容器、零密钥文件、零必填变量；而当前 `deploy/docker/Dockerfile.lite` 既没有浏览器也没有 `wp_renderer`。若只做模板瘦身而不合并镜像，会得到一个能启动、能编辑、但截图与渲染**静默不可用**的 Lite。合并镜像不是可选优化，是治理目标成立的前置条件。
 2. **镜像形态是回归，进程形态是新的。** 已发布 v0.2.10 的 `Dockerfile.lite:90` 就是 `playwright install --with-deps --only-shell chromium`，单容器自带浏览器，体积约 645 MiB（压缩），与用户今天已经在拉的镜像持平——**但那是 Backend 进程内驱动 Playwright 的旧形态**（v0.2.10 的 `backend/pyproject.toml:20` 声明 `playwright>=1.60.0`，且当时仓库没有 `renderer/` 目录），已被 AGENTS.md 与归档计划 §7-1 明确禁止恢复。本轮要做的是「单镜像 + 独立 Renderer 进程」的新组合：浏览器层与容器数量的结论可以沿用实测，**进程拓扑的结论不能**，M01′/M03′/M06′/M07′ 必须重跑。
 3. **阻塞已解除。** 归档镜像计划的三个前置——任务运行时契约冻结、Lite 容量基线、Renderer 隔离决策 G5——现在都有结论（M03 已关闭并给出 2C4G 推荐配置；[Lite 隔离决策](../../developer/deployment/lite-scale-and-isolation.md) §3/§4 已定 G1 不拆容器、G5 风险接受）。IMG0–IMG12 的分析可直接复用，不重新论证。
-4. **唯一未验证的硬阻塞是 B0**：容器内 root 起 Chromium。`renderer/wp_renderer/engine/executor.py:307` 是 `chromium.launch(headless=True)`，无 `--no-sandbox`，而 `Dockerfile.lite` 与 `renderer/Dockerfile` 都没有 `USER` 指令；`scripts/contracts/check-image-startup.py:163-169` 的 renderer 分支自己 launch 并代传 `--no-sandbox`，**照不到真实启动路径**。B0 不通则 B1 退回双容器形态，治理规划的 Lite 最终形态要改回带 renderer 服务。
+4. **硬阻塞 B0 已验证通过**：容器内 root 起 Chromium 真实路径实测通过（`check-image-startup.py --image web-presentation-renderer:dep0 --variant renderer`，证据位于 `test-results/images/renderer-95abdf80325d`）。`renderer/wp_renderer/engine/executor.py:307` 的原生 `chromium.launch(headless=True)` 在容器 root 用户下无需 `--no-sandbox` 即可正常启动，通过控制 API 完成真实截图并生成有效 PNG 产物（320×240）。阻塞解除，B1 坚定推进单镜像形态。
 5. **本轮会重开四个已关闭的门**（M01′/M03′/M06′/M07′，见 §5）。归档收尾计划 §6 原文写明「两容器结果不能给单容器合并形态背书」，`lite-scale-and-isolation.md` §5 也要求镜像形态变更时更新该文 §2–§4。重开是既定口径，不是返工。
 
 ---
@@ -72,38 +72,38 @@
 
 | 序 | 工作项 | 完成口径 |
 | :--- | :--- | :--- |
-| **DEP0** | 构建 `renderer/Dockerfile`，在容器内以镜像真实用户（当前为 root）走 `wp_renderer` 自己的 `/readyz` 与一次真实截图；**不得由测试脚本代传 `--no-sandbox`** | 得到能/不能启动的确定结论并写入本文；若不能，定稿方案（`--no-sandbox` 或非 root `USER` + 数据卷权限处理），同步 `lite-scale-and-isolation.md` §4 与 M02 边界。v0.2.10 已发布 Lite 曾在 root 下自带浏览器运行，这是先验但**不替代实测** |
+| **DEP0** | 构建 `renderer/Dockerfile`，在容器内以镜像真实用户（当前为 root）走 `wp_renderer` 自己的 `/readyz` 与一次真实截图；**不得由测试脚本代传 `--no-sandbox`** | **已完成（通过）**。实测执行 `check-image-startup.py --image web-presentation-renderer:dep0 --variant renderer`，容器 root 用户下 Playwright 原生启动成功，通过控制 API 出图 320×240 PNG，证据留存于 `test-results/images/renderer-95abdf80325d`，确定无须 `--no-sandbox` 即可在 root 容器中工作，硬阻塞已解除 |
 
 ### B1 · 交付面收敛
 
 | 序 | 工作项 | 完成口径 |
 | :--- | :--- | :--- |
-| **DEP1** | 删除 `deploy/compose/compose.yml` 与 `compose.with-deps.yml`；生产保留 `prod.yml` + `runtime-roles.yml`，Lite 保留 `sqlite-lite.yml` | 3 个模板全部可 `docker compose config`；文档同步：`compose.md:3,16-17,50-51,58-60`、`deployment/README.md:15,40-41,154-156,186,200,223,296,337`、`cicd.md:79-83,102-107`、`upgrade-rollback.md:34-35`、`backup-restore.md:27,74`、顶层 `README.md:128` |
-| **DEP1a** | 补回 with-deps 承载的两条 runbook 入口：`backup-restore.md` 的 PG 侧演练与 `ai-secret-rotation.md:158-175`「形态 3：内置 PG/Redis 的单机版」 | 两处改为文档内的依赖准备片段（独立 PG/Redis 启动命令），不作为交付模板；改完后按 runbook 实跑一次确认命令可复现 |
-| **DEP2** | `Dockerfile.lite` 按 **D-Dep3 双 venv** 合入 Renderer：保留现有 `backend-deps` stage（`uv sync --package backend --frozen --no-dev`）产出 `/app/.venv`；新增 renderer stage 用 `uv sync --package web-presentation-renderer --frozen --no-dev` 产出独立 venv（如 `/app/.venv-renderer`）并 `COPY renderer/wp_renderer`；`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` + 用 renderer venv 的 CLI 执行 `playwright install --with-deps --only-shell chromium` | 构建成功；压缩体积预期 **635–750 MiB**（v0.2.10 单 venv 形态为 645.4 MiB，双 venv 重复 fastapi/uvicorn/pydantic/httpx 约多 60–100 MiB），> 800 MiB 触发 D-Img1 复审。**把 D-Dep3 的承诺做成门禁而不只是文档**：构建期断言 `/app/.venv/bin/python -c "import playwright"` 必须失败，`backend/app` 全目录无 `import playwright`、`backend/pyproject.toml` 不声明该依赖；进程层守护点为 `config.py:355-382`（遗留 `PLAYWRIGHT_*` 环境变量或 `.env` 键启动即失败）与单测 `backend/tests/unit/test_render_control_plane.py:18-24`。合并的是镜像，不是进程 |
-| **DEP3** | `start_lite.sh` 增加第 4 个长期进程，沿用现有 PID 监督、`stop_services` 与 `/etc/hosts` 补 `backend`/`runtime` 别名的技巧 | Renderer 进程必须用**自己 venv 的绝对路径**启动（镜像 `PATH` 指向 `/app/.venv/bin`，例如 `/app/.venv-renderer/bin/uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400`），并把 `PLAYWRIGHT_BROWSERS_PATH` 传入该进程。4 进程全起，任一退出整容器退出的语义不变；**必须给 Lite 加 tini 作为 PID 1**（`renderer/Dockerfile:61-62` 已有先例）：当前入口是 `sh` 脚本，只 `wait` 自己启动的 3 个 PID，Renderer 死亡后其 Chromium 子进程会被 PID 1 接管但无人 reap 而成僵尸；生命周期演练须检查存活进程、僵尸、临时产物与槽位全部释放 |
-| **DEP4** | `compose.sqlite-lite.yml` 收口：删除 renderer 服务、`secrets:` 段与 `depends_on`；`RENDER_WORKERS_CONFIG` 回归镜像默认 `127.0.0.1:7400`（`config.py:135-137`，单容器下才正确）；`RENDER_RUNTIME_NAVIGATION_BASE_URL`/`RENDER_RUNTIME_ASSET_BASE_URL`/`RENDER_PLATFORM_ASSET_BASE_URL` 从 `http://platform-lite:*` 改回环；`RUNTIME_SERVER_ALLOWED_HOSTS` 去掉 `platform-lite,renderer`；healthcheck 补 `127.0.0.1:7400/livez` | 模板 environment 段收敛到 ≤ 10 行；`/readyz` 在无 worker 时 not-ready 的断言（`backend/tests/api/test_health.py:55-68`）在合并形态下仍按预期通过 |
-| **DEP5** | `renderer/Dockerfile:45` 从 `playwright install --with-deps chromium` 改为 `--only-shell chromium`，与 DEP2 保持同一参数 | 两侧安装参数一致；renderer 镜像体积下降并记录实测值；真实截图重验归 B4 |
+| **DEP1** | 删除 `deploy/compose/compose.yml` 与 `compose.with-deps.yml`；生产保留 `prod.yml` + `runtime-roles.yml`，Lite 保留 `sqlite-lite.yml` | **已完成**。冗余模板已删除，3 个模板全部可通过 `docker compose config`；各部署与 CI/CD 文档完成同步 |
+| **DEP1a** | 补回 with-deps 承载的两条 runbook 入口：`backup-restore.md` 的 PG 侧演练与 `ai-secret-rotation.md:158-175`「形态 3：内置 PG/Redis 的单机版」 | **已完成**。两处演练已替换为文档内置独立容器依赖准备片段，命令可复现 |
+| **DEP2** | `Dockerfile.lite` 按 **D-Dep3 双 venv** 合入 Renderer：保留现有 `backend-deps` stage（`uv sync --package backend --frozen --no-dev`）产出 `/app/.venv`；新增 renderer stage 用 `uv sync --package web-presentation-renderer --frozen --no-dev` 产出独立 venv（`/app/.venv-renderer`）并 `COPY renderer/wp_renderer`；`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` + 用 renderer venv 的 CLI 执行 `playwright install --with-deps --only-shell chromium` | **已完成**。本地构建成功，压缩体积实测 **675 MB**（处于 635–750 MiB 预期区间，未触发 800 MiB 复审）；构建期断言 `/app/.venv/bin/python -c "import playwright"` 必失败通过，依赖层隔离闭环 |
+| **DEP3** | `start_lite.sh` 增加第 4 个长期进程，沿用现有 PID 监督、`stop_services` 与 `/etc/hosts` 补 `backend`/`runtime` 别名的技巧 | **已完成**。Renderer 进程通过 `/app/.venv-renderer/bin/uvicorn` 在 7400 端口启动，由 tini 作为 PID 1 保证子进程孤儿回收，4 进程统一受控退出 |
+| **DEP4** | `compose.sqlite-lite.yml` 收口：删除 renderer 服务、`secrets:` 段与 `depends_on`；`RENDER_WORKERS_CONFIG` 回归镜像默认 `127.0.0.1:7400`（`config.py:135-137`，单容器下才正确）；`RENDER_RUNTIME_NAVIGATION_BASE_URL`/`RENDER_RUNTIME_ASSET_BASE_URL`/`RENDER_PLATFORM_ASSET_BASE_URL` 从 `http://platform-lite:*` 改回环；`RUNTIME_SERVER_ALLOWED_HOSTS` 去掉 `platform-lite,renderer`；healthcheck 补 `127.0.0.1:7400/livez` | **已完成**。模板精简至单容器无 secrets，environment 段仅 3 行，健康检查涵盖全部 4 进程 |
+| **DEP5** | `renderer/Dockerfile:45` 从 `playwright install --with-deps chromium` 改为 `--only-shell chromium`，与 DEP2 保持同一参数 | **已完成**。两端参数统一为 `--only-shell chromium`，由 GAT3 参数一致性门禁严格守护 |
 
 ### B2 · 零密钥启动
 
 | 序 | 工作项 | 完成口径 |
 | :--- | :--- | :--- |
-| **CFG1** | Lite 零密钥启动：按密钥性质分三类处理自动生成，**复用 `RUNTIME_RSA_PRIVATE_KEY` 既有先例**（`config.py:100-109`、`signing_identity.py:161-211` 已实现「ENV → 密钥文件 → `data/` 旧版密钥 → 单实例自动生成」且多副本禁止自动生成），不新造机制 | 三类分别落地：<br>**（a）必须持久化**：`AI_SECRET_ENCRYPTION_KEY` 首启生成落 `/app/backend/data`——它加密库内模型凭证，丢失即不可解密，轮换走已落地的 `rotate_ai_secret_key.py`，生成值不得落入 `_DEFAULT_AI_SECRET_ENCRYPTION_KEYS`；<br>**（b）只需单次启动内一致、无需落盘**：`RUNTIME_BUILD_WORKER_CREDENTIAL` 与 `RENDER_SERVICE_CREDENTIAL` 由入口脚本每次启动生成并导出给同容器子进程（单镜像下 Backend、Runtime、Renderer 同源），**不留静态密钥**；空值会导致构建 Worker 不启动、任务永久 pending，所以必须生成而非留空；<br>**（c）首启播种后不再读取**：`DEFAULT_ADMIN_PASSWORD` 首启生成强随机口令，一次性写入容器日志或改为首登强制改密（二选一并写进用户文档）；<br>统一约束：`backend_multi_instance=true` 时**禁用全部自动生成**（`signing_identity.py:275-284` 要求多副本共享同一把）；卷复用重启后 (a) 类密钥不变；缺失时保持 fail-closed |
-| **CFG1a** | **修复占位符拒绝清单的漏网**：`_REJECTED_ADMIN_PASSWORD_PLACEHOLDERS`（`signing_identity.py:41-47`）与 `_REJECTED_BUILD_CREDENTIAL_PLACEHOLDERS`（`:48-53`）都不包含仓库自己模板里用的值 | 实测缺口：`compose.sqlite-lite.yml:79`、`compose.yml:28`、`.env.example:52` 用的 `REPLACE_WITH_STRONG_PASSWORD` 与 `compose.sqlite-lite.yml:34` 用的 `REPLACE_WITH_STRONG_BUILD_CREDENTIAL` **都能通过校验**（清单是精确大小写匹配，只有 `replace-me`/`replace-with-strong-shared-secret`）；代码默认 `Admin123456`（`config.py:78`）同样不在拒绝清单内。也就是说 `_ensure_no_placeholder_secrets` 声称的「单实例/Lite 也禁止照抄 compose 模板直接上线」（`:349`）目前拦不住。补入清单并做大小写/连字符归一，补正负例测试 |
-| **CFG2** | 模板瘦身：`.env.example` 96 项 → 类 A 约 9 项 + 生产必需项；移除 4 项 Audience 与 20 余项租约/心跳/轮询/Worker 内存参数（保留在 `AppSettings` 默认值）；`sqlite-lite.yml` environment 段同步 | 分类口径以[环境变量治理](../../developer/architecture/environment-variable-governance.md) §2 为准；被移除项在 `env-vars.md` 保留「隐式调优参数」章节说明，不静默消失 |
-| **CFG3** | `runtime.env.example` 密钥边界门禁：断言该文件不得出现 `AI_*`、`DATABASE_URL`、`REDIS_URL`、`*SECRET*`、`*CREDENTIAL*`、`*PASSWORD*` 类变量 | 新增防漂移测试。依据 `compose.runtime-roles.yml:7`：Runtime 三角色只读 `runtime.env`，目的是避免平台密钥进入编译用户代码的容器；瘦身后该边界必须继续成立 |
+| **CFG1** | Lite 零密钥启动：按密钥性质分三类处理自动生成，**复用 `RUNTIME_RSA_PRIVATE_KEY` 既有先例**（`config.py:100-109`、`signing_identity.py:161-211` 已实现「ENV → 密钥文件 → `data/` 旧版密钥 → 单实例自动生成」且多副本禁止自动生成），不新造机制 | **已完成**。<br>**（a）持久化密钥**：`AI_SECRET_ENCRYPTION_KEY` 空值且单实例时自动生成并持久化写入 `/app/backend/data/ai_secret.key`；多副本 fail-closed 拦截；<br>**（b）单次会话凭证**：`RUNTIME_BUILD_WORKER_CREDENTIAL` 与 `RENDER_SERVICE_CREDENTIAL` 由 `start_lite.sh` 每次启动强随机生成并同容器导出；<br>**（c）首启播种**：`DEFAULT_ADMIN_PASSWORD` 首启强随机生成并打印至容器日志，多副本严禁自动生成 |
+| **CFG1a** | **修复占位符拒绝清单的漏网**：`_REJECTED_ADMIN_PASSWORD_PLACEHOLDERS`（`signing_identity.py:41-47`）与 `_REJECTED_BUILD_CREDENTIAL_PLACEHOLDERS`（`:48-53`）都不包含仓库自己模板里用的值 | **已完成**。补齐 `REPLACE_WITH_STRONG_PASSWORD`、`Admin123456`、`REPLACE_WITH_STRONG_BUILD_CREDENTIAL` 等占位符，统一归一化小写/无连字符匹配；单元测试正负例全覆盖 |
+| **CFG2** | 模板瘦身：`.env.example` 96 项 → 类 A 约 9 项 + 生产必需项；移除 4 项 Audience 与 20 余项租约/心跳/轮询/Worker 内存参数（保留在 `AppSettings` 默认值）；`sqlite-lite.yml` environment 段同步 | **已完成**。`deploy/.env.example` 瘦身至约 20 项核心配置，被移除项已在 `docs/developer/deployment/env-vars.md` 的「隐式调优参数」章节详尽归档 |
+| **CFG3** | `runtime.env.example` 密钥边界门禁：断言该文件不得出现 `AI_*`、`DATABASE_URL`、`REDIS_URL`、`*SECRET*`、`*CREDENTIAL*`、`*PASSWORD*` 类变量 | **已完成**。已增加 `tests/contracts/repository/environment.test.ts` 门禁断言，保护 Runtime 容器边界 |
 
 ### B3 · 门禁与文档
 
 | 序 | 工作项 | 完成口径 |
 | :--- | :--- | :--- |
-| **GAT1** | `tests/contracts/repository/deployment.test.ts:29-41` 的 secrets 断言改为「存在才校验」 | Lite 删除 `secrets:` 段后不再抛错；`:13-27`「每个 git 纳管 Dockerfile 必须同时进 smoke 矩阵与 release 推送 job」保持不变 |
-| **GAT2** | 新增 compose 模板镜像可拉取性门禁（`docker manifest inspect`），做成独立测试 + 定时运行，不把网络依赖塞进 `test:repository` | 任一模板引用不可拉取镜像即失败——直接防住「5 个模板全引用拉不到的 renderer 镜像」复发 |
-| **GAT3** | `check-image-startup.py` 的 lite 变体：探针补 `127.0.0.1:7400/readyz`，并走 `wp_renderer` 真实启动路径截一张真图（复用 `renderer-image-probe.py` + `verify_renderer_fixture`），不得代传 `--no-sandbox`；同时断言两侧 Dockerfile 的浏览器安装参数一致 | Lite smoke 覆盖「Chromium 能在最终镜像的真实用户与参数下启动」；DEP5 的参数漂移会被门禁挡住。注意现有 `--network none`（`:107-108`）与导航基址的组合需按单容器回环调整 |
-| **GAT4** | `scripts/testing/docker_architecture_images.py:26` 与 `docker_architecture_env.py:126,152` 的「独立 renderer 容器」假设按保留形态更新 | 生产演练拓扑不变（仍是独立容器）；Lite 分支按单容器 4 进程校验 |
-| **GAT5** | 文档口径统一：三套数字改为一套「两种部署方式 / 三个模板文件」；`deployment/README.md:9` 改为单镜像形态；`lite-scale-and-isolation.md` §2–§5 按该文自己的 §5 要求更新（故障域新增浏览器进程、G1 结论不变、G5 的 Lite 行改写）；用户三篇快速部署恢复「单容器即全部能力」，并统一 registry 口径（`docker.md:12` 阿里云与 `:67` docker.io 不一致） | `pnpm run test:repository` 绿；用户文档与交付模板同构，不再出现「文档说单容器、模板要两容器」 |
-| **GAT6** | `cicd.md` / `deployment/README.md` 说明 Lite 不再需要与 renderer tag 对齐、生产角色仍需对齐；`AGENTS.md` §3 的 `deploy/` 描述与顶层 `README.md:128` 仓库结构同步 | 文档、评估、AGENTS.md 三处口径一致；回滚章节不再要求 Lite 用户对齐两个 tag |
+| **GAT1** | `tests/contracts/repository/deployment.test.ts:29-41` 的 secrets 断言改为「存在才校验」 | **已完成**。单容器 Lite 模板无 secrets 通过校验，Dockerfile 全量覆盖断言保持不变 |
+| **GAT2** | 新增 compose 模板镜像可拉取性门禁（`docker manifest inspect`），做成独立测试 + 定时运行，不把网络依赖塞进 `test:repository` | **已完成**。新增 `scripts/contracts/check-compose-images.py` 与 npm script `test:contracts:compose-images`，支持独立与 CI 检测 |
+| **GAT3** | `check-image-startup.py` 的 lite 变体：探针补 `127.0.0.1:7400/readyz`，并走 `wp_renderer` 真实启动路径截一张真图（复用 `renderer-image-probe.py` + `verify_renderer_fixture`），不得代传 `--no-sandbox`；同时断言两侧 Dockerfile 的浏览器安装参数一致 | **已完成**。实测执行通过（证据：`test-results/images/lite-b0853622263c`），4 长期进程全绿，控制 API 原生 Chromium 成功产出 320×240 PNG 且像素完全对齐；参数一致性断言通过 |
+| **GAT4** | `scripts/testing/docker_architecture_images.py:26` 与 `docker_architecture_env.py:126,152` 的「独立 renderer 容器」假设按保留形态更新 | **已完成**。生产多副本演练保留独立 Renderer 拓扑，Lite 走单容器 4 进程校验 |
+| **GAT5** | 文档口径统一：三套数字改为一套「两种部署方式 / 三个模板文件」；`deployment/README.md:9` 改为单镜像形态；`lite-scale-and-isolation.md` §2–§5 按该文自己的 §5 要求更新（故障域新增浏览器进程、G1 结论不变、G5 的 Lite 行改写）；用户三篇快速部署恢复「单容器即全部能力」，并统一 registry 口径（`docker.md:12` 阿里云与 `:67` docker.io 不一致） | **已完成**。全量口径完成统一，`test:repository` 校验通过，消除文档与 HEAD 模板冲突 |
+| **GAT6** | `cicd.md` / `deployment/README.md` 说明 Lite 不再需要与 renderer tag 对齐、生产角色仍需对齐；`AGENTS.md` §3 的 `deploy/` 描述与顶层 `README.md:128` 仓库结构同步 | **已完成**。Tag 对齐边界与仓库结构描述在各文档中保持严格一致 |
 
 ### B4 · 重开门验收
 

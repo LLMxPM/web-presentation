@@ -125,7 +125,7 @@ web-presentation/
 ├── pnpm-workspace.yaml      # 前端 workspace（editor + runtime），唯一 pnpm-lock.yaml
 ├── pyproject.toml           # Python uv workspace，唯一 uv.lock
 └── deploy/                  # 交付部署配置中心
-    ├── compose/             # SQLite lite / with-deps / 外部依赖 / production compose 模板
+    ├── compose/             # Lite 单容器与生产（分角色/小团队）compose 模板
     ├── docker/              # 平台与 lite Dockerfile、nginx、entrypoints
     └── scripts/             # 生产备份/恢复脚本
 ```

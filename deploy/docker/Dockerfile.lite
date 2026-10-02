@@ -59,51 +59,77 @@ COPY packages/render-contracts /app/packages/render-contracts
 RUN uv sync --package backend --frozen --no-dev --no-install-project
 
 
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS renderer-deps
+
+ARG UV_INDEX_URL=https://pypi.org/simple
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_INDEX_URL=${UV_INDEX_URL} \
+    UV_DEFAULT_INDEX=${UV_INDEX_URL} \
+    UV_HTTP_TIMEOUT=180 \
+    UV_PROJECT_ENVIRONMENT=/app/.venv-renderer
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml ./backend/
+COPY renderer/pyproject.toml ./renderer/
+COPY packages/render-contracts /app/packages/render-contracts
+COPY renderer/wp_renderer /app/renderer/wp_renderer
+RUN uv sync --package web-presentation-renderer --frozen --no-dev
+
+
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS lite-runtime
 
 LABEL org.opencontainers.image.title="web-presentation-sqlite-lite"
-LABEL org.opencontainers.image.description="web-presentation SQLite lite image with Backend, Editor, Runtime and Gateway"
+LABEL org.opencontainers.image.description="web-presentation SQLite lite image with Backend, Editor, Runtime, Renderer and Gateway"
 
-ENV APP_RELOAD=false
-ENV ACCESS_LOG_ENABLED=false
-ENV PATH="/app/.venv/bin:${PATH}"
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV VIRTUAL_ENV="/app/.venv"
-ENV DATABASE_URL="sqlite+aiosqlite:////app/backend/data/web_presentation.db"
-ENV REDIS_URL="memory://lite"
-ENV REDIS_KEY_PREFIX="web_presentation_lite"
-ENV BACKEND_PUBLIC_BASE_URL="http://127.0.0.1:8080"
-ENV RUNTIME_BASE_URL="http://127.0.0.1:7373"
-ENV RUNTIME_RELEASE_ID_REQUIRED=true
-ENV RUNTIME_PUBLIC_BASE_URL="http://127.0.0.1:8080/runtime"
-ENV RUNTIME_PREVIEW_JWKS_URL="http://127.0.0.1:8000/.well-known/jwks.json"
-ENV RUNTIME_BACKEND_API_BASE_URL="http://127.0.0.1:8000"
-ENV RUNTIME_SERVER_HOST="0.0.0.0"
-ENV RUNTIME_SERVER_PORT="7373"
-ENV RUNTIME_SERVER_BASE_PATH="/runtime/"
-ENV RUNTIME_SERVICE_TOKEN_AUDIENCE="runtime-backend"
-ENV RUNTIME_PREVIEW_TOKEN_AUDIENCE="runtime-preview"
-ENV RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE="runtime-diagnostics"
-ENV RUNTIME_LOG_LEVEL="info"
-ENV RUNTIME_LOG_FORMAT="json"
-ENV RUNTIME_ACCESS_LOG_ENABLED="false"
-ENV RUNTIME_STANDALONE_PREVIEW_ENABLED="false"
-ENV VITE_CONFIG_NATIVE_IGNORE_WARNING="true"
-ENV ASSET_STORAGE_DRIVER="local"
-# 预置 tiktoken BPE 到固定缓存目录，避免离线/气隙启动时导入期联网下载。
-ENV TIKTOKEN_CACHE_DIR=/app/.cache/tiktoken
+ARG PLAYWRIGHT_DOWNLOAD_HOST=
+ENV APP_RELOAD=false \
+    ACCESS_LOG_ENABLED=false \
+    PATH="/app/.venv/bin:${PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV="/app/.venv" \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST} \
+    DATABASE_URL="sqlite+aiosqlite:////app/backend/data/web_presentation.db" \
+    REDIS_URL="memory://lite" \
+    REDIS_KEY_PREFIX="web_presentation_lite" \
+    BACKEND_PUBLIC_BASE_URL="http://127.0.0.1:8080" \
+    RUNTIME_BASE_URL="http://127.0.0.1:7373" \
+    RUNTIME_RELEASE_ID_REQUIRED=true \
+    RUNTIME_PUBLIC_BASE_URL="http://127.0.0.1:8080/runtime" \
+    RUNTIME_PREVIEW_JWKS_URL="http://127.0.0.1:8000/.well-known/jwks.json" \
+    RUNTIME_BACKEND_API_BASE_URL="http://127.0.0.1:8000" \
+    RUNTIME_SERVER_HOST="0.0.0.0" \
+    RUNTIME_SERVER_PORT="7373" \
+    RUNTIME_SERVER_BASE_PATH="/runtime/" \
+    RUNTIME_SERVICE_TOKEN_AUDIENCE="runtime-backend" \
+    RUNTIME_PREVIEW_TOKEN_AUDIENCE="runtime-preview" \
+    RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE="runtime-diagnostics" \
+    RUNTIME_LOG_LEVEL="info" \
+    RUNTIME_LOG_FORMAT="json" \
+    RUNTIME_ACCESS_LOG_ENABLED="false" \
+    RUNTIME_STANDALONE_PREVIEW_ENABLED="false" \
+    VITE_CONFIG_NATIVE_IGNORE_WARNING="true" \
+    ASSET_STORAGE_DRIVER="local" \
+    TIKTOKEN_CACHE_DIR=/app/.cache/tiktoken
+
+COPY --from=renderer-deps /app/.venv-renderer /app/.venv-renderer
+COPY --from=renderer-deps /app/renderer/wp_renderer /app/renderer/wp_renderer
 
 ARG DEBIAN_MIRROR=
 RUN set -eux; \
+    find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 \
+      | xargs -0 -r sed -i 's|http://deb.debian.org|https://deb.debian.org|g'; \
     if [ -n "${DEBIAN_MIRROR}" ]; then \
       find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 \
         | xargs -0 -r sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g"; \
-    else \
-      sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
     fi; \
     apt-get -o Acquire::Retries=3 update \
-    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates curl nginx \
+    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates curl nginx tini \
+    && /app/.venv-renderer/bin/python -m playwright install --with-deps --only-shell chromium \
     && rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default \
     && rm -rf /var/lib/apt/lists/*
 
@@ -124,8 +150,11 @@ RUN mkdir -p /app/backend/data /run/nginx /var/cache/nginx /var/log/nginx /app/.
     && chmod +x /app/docker/entrypoints/start_lite.sh \
     && node --version \
     && /app/.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" \
-    && test -n "$(ls -A /app/.cache/tiktoken)"
+    && test -n "$(ls -A /app/.cache/tiktoken)" \
+    && /app/.venv-renderer/bin/python -c "import render_contracts, wp_renderer, playwright" \
+    && ! /app/.venv/bin/python -c "import playwright"
 
-EXPOSE 80 8000 7373
+EXPOSE 80 8000 7373 7400
 
-CMD ["sh", "/app/docker/entrypoints/start_lite.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/app/docker/entrypoints/start_lite.sh"]

@@ -59,4 +59,25 @@ describe('服务环境边界', () => {
     write('runtime/.env', 'RUNTIME_BASE_URL=http://127.0.0.1:7373')
     expect(checkEnvironment(root, {}).issues.join()).toContain('Backend RUNTIME_BASE_URL 端口 7999')
   })
+
+  it('runtime.env.example 不得包含平台密钥或凭据变量（CFG3）', () => {
+    const content = fs.readFileSync('deploy/runtime.env.example', 'utf8')
+    const lines = content.split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'))
+    const forbiddenPatterns = [
+      /^AI_/,
+      /^DATABASE_URL/,
+      /^REDIS_URL/,
+      /SECRET/i,
+      /CREDENTIAL/i,
+      /PASSWORD/i,
+    ]
+    for (const line of lines) {
+      const key = line.split('=')[0].trim()
+      for (const pattern of forbiddenPatterns) {
+        expect(key).not.toMatch(pattern)
+      }
+    }
+  })
 })

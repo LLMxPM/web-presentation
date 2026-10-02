@@ -1,19 +1,12 @@
 # 文件功能：提供 SQLite + memory runtime 的轻量单容器部署编排模板，适合个人或小团队快速部署。
+# 目标形态：单镜像单容器内含 Backend、Editor、Runtime、Renderer（内置 Chromium）与 Gateway，
+# 实现「零必填变量、零密钥文件」一键启动。
 
-# 使用前请至少修改：
-# - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
-# - BACKEND_PUBLIC_BASE_URL、RUNTIME_PUBLIC_BASE_URL、CORS_ORIGINS：部署到真实域名或 IP 时改为浏览器实际访问入口。
-# - RUNTIME_BASE_URL、RUNTIME_PREVIEW_JWKS_URL、RUNTIME_BACKEND_API_BASE_URL：SQLite 单体版是容器内
-#   Backend 与 Runtime 的回源地址，保持 127.0.0.1:7373/8000，不要改成宿主机公网地址。
-# - AI_SECRET_ENCRYPTION_KEY 必须是 Fernet 密钥：32 字节随机值的 URL-safe base64 编码，
-#   通常长度为 44 个字符并以 = 结尾；可用命令生成：
-#   python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
-# - 该模板不启动 PostgreSQL/Redis；SQLite 数据库、本地资源、截图和构建产物都保存在 lite-data volume。
-# - SQLite 单实例边界：Backend 必须单进程（禁止 uvicorn --workers>1），且不得多容器挂同一 lite-data 卷。
-#   并发约束固定为 1（AI_PAGE_MUTATION_CONCURRENCY / RENDER_GLOBAL_CONCURRENCY / RENDER_WORKSPACE_CONCURRENCY）。
-#   就绪探针使用 /readyz；/healthz 仅表示进程存活。
-# - 默认拉取 Docker Hub 发布镜像。需要从源码验证镜像时，直接在仓库根目录执行：
-#   docker build -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
+# 访问地址说明：
+# - 若部署在远程服务器或自定义域名，修改 BACKEND_PUBLIC_BASE_URL、RUNTIME_PUBLIC_BASE_URL 与 CORS_ORIGINS
+#   为浏览器实际访问入口（如 http://your-domain.com:8080）。
+# - 数据持久化：SQLite 数据库、上传资源、截图产物和持久化密钥统一保存在 lite-data 卷。
+# - 管理员账号：首启若未指定 DEFAULT_ADMIN_PASSWORD，会自动生成强随机密码并输出到容器日志。
 
 services:
   platform-lite:
@@ -21,108 +14,20 @@ services:
     restart: unless-stopped
     working_dir: /app/backend
     environment:
-      DATABASE_URL: "sqlite+aiosqlite:////app/backend/data/web_presentation.db"
-      REDIS_URL: "memory://lite"
-      REDIS_KEY_PREFIX: "web_presentation_lite"
       BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"
-      RUNTIME_BASE_URL: "http://127.0.0.1:7373"
       RUNTIME_PUBLIC_BASE_URL: "http://127.0.0.1:8080/runtime"
-      RUNTIME_PREVIEW_JWKS_URL: "http://127.0.0.1:8000/.well-known/jwks.json"
-      RUNTIME_BACKEND_API_BASE_URL: "http://127.0.0.1:8000"
-      # 单容器内 Backend 与 Runtime 共用该凭证；正式部署请改为强随机值。
-      # 不配置时 claim fail-closed，且 Worker 不会启动，构建任务会一直 pending。
-      RUNTIME_BUILD_WORKER_CREDENTIAL: "REPLACE_WITH_STRONG_BUILD_CREDENTIAL"
-      RUNTIME_SERVER_HOST: "0.0.0.0"
-      RUNTIME_SERVER_PORT: "7373"
-      RUNTIME_SERVER_BASE_PATH: "/runtime/"
-      # 双容器：Renderer 浏览器经服务名访问 Runtime；单容器回环场景可省略。
-      RUNTIME_SERVER_ALLOWED_HOSTS: "platform-lite,renderer,localhost,127.0.0.1"
-      RUNTIME_SERVICE_TOKEN_AUDIENCE: "runtime-backend"
-      RUNTIME_PREVIEW_TOKEN_AUDIENCE: "runtime-preview"
-      RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE: "runtime-diagnostics"
-      RUNTIME_LOG_LEVEL: "info"
-      RUNTIME_LOG_FORMAT: "json"
-      RUNTIME_ACCESS_LOG_ENABLED: "false"
-      RUNTIME_STANDALONE_PREVIEW_ENABLED: "false"
-      RUNTIME_VITE_TASK_CONCURRENCY: "1"
-      RUNTIME_VITE_TASK_QUEUE_SIZE: "16"
-      RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS: "30000"
-      RUNTIME_VITE_DIAGNOSTICS_WEIGHT: "3"
-      RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB: "1024"
-      RUNTIME_BUILD_WORKER_TIMEOUT_MS: "600000"
-      RUNTIME_DIAGNOSTICS_WORKER_TIMEOUT_MS: "120000"
-      RUNTIME_DIAGNOSTICS_WORKER_REUSE_ENABLED: "true"
-      RUNTIME_DIAGNOSTICS_WORKER_MAX_TASKS: "25"
-      RUNTIME_DIAGNOSTICS_WORKER_MAX_AGE_MS: "1800000"
-      RUNTIME_DIAGNOSTICS_WORKER_RSS_RECYCLE_RATIO: "0.75"
-      RUNTIME_DIAGNOSTICS_REQUEST_TIMEOUT_SECONDS: "180"
-      RENDER_GLOBAL_CONCURRENCY: "1"
-      RENDER_WORKSPACE_CONCURRENCY: "1"
-      RENDER_QUEUE_SIZE: "64"
-      RENDER_REQUEST_TIMEOUT_SECONDS: "120"
-      RENDER_WORKERS_CONFIG: '[{"worker_id":"renderer-lite","base_url":"http://renderer:7400"}]'
-      RENDER_SERVICE_CREDENTIAL_FILE: "/run/secrets/render_service_credential"
-      RENDER_PROFILE_DIGEST: "profile.v1"
-      # 远程 Renderer 浏览器可达的 Runtime 预览基址（不得使用 Backend 回环）。
-      RENDER_RUNTIME_NAVIGATION_BASE_URL: "http://platform-lite:7373"
-      RENDER_RUNTIME_ASSET_BASE_URL: "http://platform-lite:7373"
-      RENDER_PLATFORM_ASSET_BASE_URL: "http://platform-lite:8000"
-      AI_PAGE_MUTATION_CONCURRENCY: "1"
-      PAGE_SCREENSHOT_QUEUE_CONCURRENCY: "1"
-      ASSET_RENDER_HINT_BACKFILL_QUEUE_CONCURRENCY: "1"
-      AI_PAGE_MUTATION_MAX_ACTIVE_JOBS: "16"
-      AI_PAGE_MUTATION_MAX_BATCH_SIZE: "16"
-      DURABLE_JOB_LEASE_SECONDS: "300"
-      DURABLE_JOB_HEARTBEAT_SECONDS: "30"
-      RUNTIME_ARTIFACT_SWEEP_INTERVAL_SECONDS: "30"
       CORS_ORIGINS: '["http://127.0.0.1:8080"]'
-      DEFAULT_ADMIN_PASSWORD: "REPLACE_WITH_STRONG_PASSWORD"
-      AI_SECRET_ENCRYPTION_KEY: "REPLACE_WITH_GENERATED_FERNET_KEY"
-      LOG_LEVEL: "INFO"
-      LOG_FORMAT: "json"
-      ACCESS_LOG_ENABLED: "false"
-      CLIENT_ERROR_LOG_ENABLED: "true"
-      CLIENT_ERROR_LOG_MAX_BYTES: "16384"
-      ASSET_STORAGE_DRIVER: "local"
     volumes:
       - lite-data:/app/backend/data
     ports:
       - "8080:80"
-    secrets:
-      - render_service_credential
-    depends_on:
-      renderer:
-        condition: service_healthy
     healthcheck:
       test:
         - CMD-SHELL
-        - curl -fsS http://127.0.0.1/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/readyz >/dev/null && curl -fsS http://127.0.0.1:7373/__runtime_healthz >/dev/null
+        - curl -fsS http://127.0.0.1/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/healthz >/dev/null && curl -fsS http://127.0.0.1:8000/readyz >/dev/null && curl -fsS http://127.0.0.1:7373/__runtime_healthz >/dev/null && curl -fsS http://127.0.0.1:7400/livez >/dev/null
       interval: 10s
       timeout: 5s
       retries: 5
-
-  renderer:
-    image: llmxpm/web-presentation-renderer:latest
-    restart: unless-stopped
-    environment:
-      RENDER_WORKER_ID: "renderer-lite"
-      RENDER_SERVICE_CREDENTIAL_FILE: "/run/secrets/render_service_credential"
-      RENDER_PROFILE_DIGEST: "profile.v1"
-    expose:
-      - "7400"
-    secrets:
-      - render_service_credential
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - curl -fsS http://127.0.0.1:7400/livez >/dev/null
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-secrets:
-  render_service_credential:
-    file: ../secrets/render_service_credential
 
 volumes:
   lite-data:

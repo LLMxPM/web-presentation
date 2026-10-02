@@ -76,11 +76,9 @@ Pre-release 只推送固定版本标签，不移动 `latest` 与 `sqlite-lite`�
 
 部署模板集中在 `deploy/` 目录：
 
-> **模板可用性（B3）**：`deploy/compose/` 下 5 个模板均引用 `web-presentation-renderer` / 自构建 `web-runtime-vue` 镜像。这些镜像**尚未发布、当前不可拉取**，因此模板**不是开箱即用**；需待下一次 Release 发布预演通过、镜像可匿名拉取后，才能按下列模板直接部署。已发布且可直接使用的轻量路径是用户文档中的单容器 `sqlite-lite`（不引用 renderer 镜像），见[快速部署](../../user/quick-deployment/README.md)。
+> **模板可用性**：`deploy/compose/` 下 3 个模板分别对应 Lite 单容器与生产环境（runtime-all 兼容与分角色）。Lite 镜像内自带 Chromium 渲染器，单容器即提供完整能力；生产模板引用生产镜像栈。
 
-- `deploy/compose/compose.yml`：外部 PostgreSQL/Redis 简化版，环境变量直接写在 compose 内。
-- `deploy/compose/compose.sqlite-lite.yml`：SQLite + memory runtime 轻量版，使用 `llmxpm/web-presentation:sqlite-lite`；模板另含 `renderer` 服务定义，但对应镜像尚未发布（见上），**该模板在 renderer 首次推送前不可直接 `pull` 启动**。已发布的 `sqlite-lite` 用户路径见[快速部署](../../user/quick-deployment/README.md)（单容器、镜像内置浏览器）。
-- `deploy/compose/compose.with-deps.yml`：内置 PostgreSQL/Redis 简化版，随应用一起启动 PostgreSQL 与 Redis，环境变量直接写在 compose 内。
+- `deploy/compose/compose.sqlite-lite.yml`：SQLite + memory runtime 轻量版，单容器包含 Backend、Editor、Runtime、Renderer 与 Gateway，开箱即用，零必填变量、零密钥文件。
 - `deploy/compose/compose.prod.yml`：runtime-all 兼容/Lite 生产版，拆分迁移、Backend、Runtime、Renderer 与 Gateway，并通过 `env_file: ../.env` 读取 `deploy/.env`；适合小团队或尚未分角色的环境。
 - `deploy/compose/compose.runtime-roles.yml`：**官方生产主路径**，分角色单机版，`runtime-preview` / `runtime-build` / `runtime-check` 各一实例，附每角色 CPU/内存 limits 与执行预算，Gateway 只代理预览；Backend 读取 `deploy/.env`，Runtime 角色只读取 `deploy/runtime.env`。
 - `deploy/.env.example`：供 production env 版与分角色单机版的 Backend 复制为 `deploy/.env` 使用。
@@ -95,16 +93,17 @@ docker compose -f compose/compose.sqlite-lite.yml pull
 docker compose -f compose/compose.sqlite-lite.yml up -d
 ```
 
-内置依赖简化版启动方式：
+生产版（以 `compose.prod.yml` 为例，分角色请使用 `compose.runtime-roles.yml`）：
 
 ```bash
 cd deploy
-docker compose -f compose/compose.with-deps.yml config
-docker compose -f compose/compose.with-deps.yml pull
-docker compose -f compose/compose.with-deps.yml up -d
+cp .env.example .env
+docker compose -f compose/compose.prod.yml config
+docker compose -f compose/compose.prod.yml pull
+docker compose -f compose/compose.prod.yml up -d
 ```
 
-外部依赖简化版使用默认 `compose/compose.yml`；production env 版需要先复制 `deploy/.env.example` 为 `deploy/.env`，再将命令中的 compose 文件改为 `compose/compose.prod.yml`。所有模板的共享密钥文件位于 `deploy/secrets/render_service_credential`，Compose 使用 `../secrets/render_service_credential` 引用。创建方法见 [环境变量说明](./env-vars.md)。完整部署、升级、回滚和运维检查流程见 [生产部署指南](./README.md)。
+完整部署、升级、回滚和运维检查流程见 [生产部署指南](./README.md)。
 
 正式部署前必须替换数据库密码、默认管理员密码和 `AI_SECRET_ENCRYPTION_KEY`。`AI_SECRET_ENCRYPTION_KEY` 必须是 Fernet 密钥，即 32 字节随机值的 URL-safe base64 编码，通常长度为 44 个字符并以 `=` 结尾；可用 `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` 生成。部署后应长期保存，随意更换会导致已有用户模型凭证密文无法解密。
 

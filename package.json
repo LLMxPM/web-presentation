@@ -29,6 +29,7 @@
     "test:python-workspace": "uv run --all-packages --all-groups --all-extras pytest tests/workspace",
     "test:contracts:gateway": "python scripts/contracts/test-gateway-openapi.py",
     "test:contracts:docker-context": "python scripts/contracts/check-docker-context.py",
+    "test:contracts:compose-images": "python scripts/contracts/check-compose-images.py",
     "test:contracts:cli-skill": "uv run --project backend pytest -c backend/pyproject.toml backend/tests/contracts/test_cli_skill_examples.py",
     "test:render-contracts": "uv run --project packages/render-contracts --extra dev pytest packages/render-contracts/tests",
     "test:renderer": "uv run --project renderer --extra dev pytest -c renderer/pyproject.toml renderer/tests",

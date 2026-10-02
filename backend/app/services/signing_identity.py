@@ -21,12 +21,14 @@ logger = logging.getLogger(__name__)
 
 # 旧版本地密钥文件名：单实例/Lite 可继续读取或自动生成；多 Backend 不得依赖该默认路径。
 LEGACY_KEY_FILENAME = "runtime_rsa_key.pem"
+AI_SECRET_KEY_FILENAME = "ai_secret.key"
 
 # 代码内置默认加密密钥：多 Backend 下必须替换为实例间一致的自定义密钥。
 _DEFAULT_AI_SECRET_ENCRYPTION_KEYS = frozenset({
     "",
     "vmgRweOsDpMtYVW7SSpceINYcXlUHFNndAby6vRv0iA=",
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "REPLACE_WITH_GENERATED_FERNET_KEY",
 })
 
 _REJECTED_RENDER_SECRET_PLACEHOLDERS = frozenset({
@@ -34,23 +36,34 @@ _REJECTED_RENDER_SECRET_PLACEHOLDERS = frozenset({
     "change-me-render-secret",
     "change-me",
     "replace-with-strong-shared-secret",
+    "replace-with-strong-render-secret",
     "replace-me",
 })
 
 # 单实例/Lite 也禁止直接采用的示例弱口令与占位构建凭证（P1-Secrets）。
 _REJECTED_ADMIN_PASSWORD_PLACEHOLDERS = frozenset({
     "change-admin-password",
+    "change-me",
     "admin",
     "password",
     "123456",
+    "admin123456",
     "replace-me",
+    "replace-with-strong-password",
 })
 _REJECTED_BUILD_CREDENTIAL_PLACEHOLDERS = frozenset({
     "change-build-worker-credential",
     "change-me",
     "replace-me",
     "replace-with-strong-shared-secret",
+    "replace-with-strong-build-credential",
 })
+
+
+def _normalize_placeholder(value: str) -> str:
+    """归一化占位符：去除首尾空白，转换为小写，并将下划线替换为连字符。"""
+
+    return value.strip().lower().replace("_", "-")
 
 
 class SigningIdentityError(RuntimeError):
@@ -325,6 +338,46 @@ def _ensure_shared_runtime_state(settings: AppSettings) -> None:
         )
 
 
+def resolve_ai_secret_key(settings: AppSettings) -> str:
+    """解析或自动生成持久化 AI 凭据对称加密密钥（单实例/Lite）。
+
+    读取顺序：
+    1. 环境变量/显式配置 AI_SECRET_ENCRYPTION_KEY（非默认占位符）；
+    2. 多 Backend 部署时禁止自动生成，缺省或占位时直接返回原值（随后由校验逻辑 fail-closed 报错）；
+    3. 单实例模式：检查 data/ai_secret.key 是否存在，若存在且合法则复用；
+    4. 若不存在，自动生成合法 Fernet 密钥并持久化写入 data/ai_secret.key。
+    """
+
+    key = (settings.ai_secret_encryption_key or "").strip()
+    multi = requires_shared_identity(settings)
+
+    # 显式提供了值（无论合法密钥还是需拦截的示例占位符），均不自动生成，由后续校验处理
+    if key:
+        return key
+
+    if multi:
+        return key
+
+    key_path = settings.page_screenshot_local_root_path / AI_SECRET_KEY_FILENAME
+    if key_path.is_file():
+        file_key = key_path.read_text(encoding="utf-8").strip()
+        if file_key and file_key not in _DEFAULT_AI_SECRET_ENCRYPTION_KEYS:
+            settings.ai_secret_encryption_key = file_key
+            logger.info("已从持久化文件加载 AI 加密密钥：%s", key_path)
+            return file_key
+
+    new_key = Fernet.generate_key().decode("utf-8")
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    key_path.write_text(new_key, encoding="utf-8")
+    settings.ai_secret_encryption_key = new_key
+    logger.warning(
+        "已自动生成单实例 AI 加密密钥并持久化（仅限单实例/Lite）：%s",
+        key_path,
+        extra={"event": "signing_identity.ai_key.generated", "path": str(key_path)},
+    )
+    return new_key
+
+
 def validate_shared_identity_deployment(settings: AppSettings | None = None) -> None:
     """启动期校验签名身份与共享密钥/对象存储前提，由应用生命周期调用。
 
@@ -334,6 +387,7 @@ def validate_shared_identity_deployment(settings: AppSettings | None = None) -> 
     """
 
     resolved = settings or get_settings()
+    resolve_ai_secret_key(resolved)
     keyring = load_signing_keyring(resolved)
     multi = requires_shared_identity(resolved)
     logger.info(
@@ -370,23 +424,24 @@ def _ensure_no_placeholder_secrets(settings: AppSettings) -> None:
             "AI_SECRET_ENCRYPTION_KEY 不是合法 Fernet 密钥；请生成 32 字节随机值的 URL-safe base64。"
         ) from exc
     admin_password = (settings.default_admin_password or "").strip()
-    if admin_password in _REJECTED_ADMIN_PASSWORD_PLACEHOLDERS:
+    if _normalize_placeholder(admin_password) in _REJECTED_ADMIN_PASSWORD_PLACEHOLDERS:
         raise SigningIdentityError(
-            "DEFAULT_ADMIN_PASSWORD 禁止使用示例弱口令；请在部署前替换为强随机口令。"
+            "DEFAULT_ADMIN_PASSWORD 禁止使用示例弱口令或占位值；请在部署前替换为强随机口令。"
         )
     build_credential = (settings.runtime_build_worker_credential or "").strip()
-    if build_credential and build_credential in _REJECTED_BUILD_CREDENTIAL_PLACEHOLDERS:
+    if build_credential and _normalize_placeholder(build_credential) in _REJECTED_BUILD_CREDENTIAL_PLACEHOLDERS:
         raise SigningIdentityError(
             "RUNTIME_BUILD_WORKER_CREDENTIAL 禁止使用示例占位值；请生成强随机共享凭证。"
         )
     render_secret = (settings.render_service_credential or "").strip()
-    if render_secret and render_secret in _REJECTED_RENDER_SECRET_PLACEHOLDERS:
+    if render_secret and _normalize_placeholder(render_secret) in _REJECTED_RENDER_SECRET_PLACEHOLDERS:
         raise SigningIdentityError(
             "RENDER_SERVICE_CREDENTIAL 禁止使用示例占位值；请生成强随机共享凭证。"
         )
 
 
 __all__ = [
+    "AI_SECRET_KEY_FILENAME",
     "LEGACY_KEY_FILENAME",
     "SigningIdentityError",
     "SigningKey",

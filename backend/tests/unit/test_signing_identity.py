@@ -65,6 +65,9 @@ def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
         "object_storage_shared_volume": False,
         # 显式固定，避免 os.environ 里其它用例写入的 AI_SECRET_ENCRYPTION_KEY 造成污染。
         "ai_secret_encryption_key": _VALID_AI_SECRET_KEY,
+        "default_admin_password": "StrongTestAdminPass#2026!",
+        "runtime_build_worker_credential": "StrongTestBuildCred#2026!",
+        "render_service_credential": "StrongTestRenderSecret#2026!",
     }
     base.update(overrides)
     return AppSettings(**base)  # type: ignore[arg-type]
@@ -187,7 +190,7 @@ def test_multi_instance_should_reject_placeholder_shared_secrets(tmp_path: Path)
 
 
 def test_single_instance_should_reject_placeholder_secrets(tmp_path: Path) -> None:
-    """单实例/Lite 也不得照抄 compose 示例弱密钥启动（P1-Secrets）。"""
+    """单实例/Lite 也不得照抄 compose 示例弱密钥启动（P1-Secrets / CFG1a）。"""
 
     settings = _settings(
         tmp_path,
@@ -196,21 +199,67 @@ def test_single_instance_should_reject_placeholder_secrets(tmp_path: Path) -> No
     with pytest.raises(SigningIdentityError, match="AI_SECRET_ENCRYPTION_KEY"):
         validate_shared_identity_deployment(settings)
 
-    weak_admin = _settings(
-        tmp_path,
-        ai_secret_encryption_key=_VALID_AI_SECRET_KEY,
-        default_admin_password="change-admin-password",
-    )
-    with pytest.raises(SigningIdentityError, match="DEFAULT_ADMIN_PASSWORD"):
-        validate_shared_identity_deployment(weak_admin)
+    # 包含模板大写下划线与默认口令
+    for bad_pwd in ["change-admin-password", "REPLACE_WITH_STRONG_PASSWORD", "Admin123456", "admin"]:
+        weak_admin = _settings(
+            tmp_path,
+            ai_secret_encryption_key=_VALID_AI_SECRET_KEY,
+            default_admin_password=bad_pwd,
+        )
+        with pytest.raises(SigningIdentityError, match="DEFAULT_ADMIN_PASSWORD"):
+            validate_shared_identity_deployment(weak_admin)
 
-    weak_build = _settings(
+    # 包含模板大写下划线与 shared secret 占位
+    for bad_cred in ["change-build-worker-credential", "REPLACE_WITH_STRONG_BUILD_CREDENTIAL", "replace-with-strong-shared-secret"]:
+        weak_build = _settings(
+            tmp_path,
+            ai_secret_encryption_key=_VALID_AI_SECRET_KEY,
+            runtime_build_worker_credential=bad_cred,
+        )
+        with pytest.raises(SigningIdentityError, match="RUNTIME_BUILD_WORKER_CREDENTIAL"):
+            validate_shared_identity_deployment(weak_build)
+
+    for bad_render in ["change-me-render-secret", "REPLACE_WITH_STRONG_RENDER_SECRET", "replace-with-strong-shared-secret"]:
+        weak_render = _settings(
+            tmp_path,
+            ai_secret_encryption_key=_VALID_AI_SECRET_KEY,
+            render_service_credential=bad_render,
+        )
+        with pytest.raises(SigningIdentityError, match="RENDER_SERVICE_CREDENTIAL"):
+            validate_shared_identity_deployment(weak_render)
+
+
+def test_single_instance_may_auto_generate_ai_secret_key(tmp_path: Path) -> None:
+    """单实例缺省 AI 加密密钥时自动生成持久化密钥，重启后保持一致（CFG1）。"""
+
+    settings = _settings(tmp_path, ai_secret_encryption_key="")
+    validate_shared_identity_deployment(settings)
+    key_file = tmp_path / "data" / "ai_secret.key"
+    assert key_file.is_file()
+    generated_key = key_file.read_text(encoding="utf-8").strip()
+    assert settings.ai_secret_encryption_key == generated_key
+    assert len(generated_key) == 44
+
+    # 重启读取持久化文件，不生成新密钥
+    reloaded_settings = _settings(tmp_path, ai_secret_encryption_key="")
+    validate_shared_identity_deployment(reloaded_settings)
+    assert reloaded_settings.ai_secret_encryption_key == generated_key
+
+
+def test_multi_instance_must_fail_closed_on_missing_ai_secret_key(tmp_path: Path) -> None:
+    """多 Backend 部署缺省 AI 加密密钥时禁止自动生成，必须 fail-closed（CFG1）。"""
+
+    shared_key = tmp_path / "shared" / "runtime_rsa_key.pem"
+    _write_key(shared_key)
+    settings = _settings(
         tmp_path,
-        ai_secret_encryption_key=_VALID_AI_SECRET_KEY,
-        runtime_build_worker_credential="change-build-worker-credential",
+        backend_multi_instance=True,
+        asset_storage_driver="s3",
+        runtime_rsa_private_key_file=str(shared_key),
+        ai_secret_encryption_key="",
     )
-    with pytest.raises(SigningIdentityError, match="RUNTIME_BUILD_WORKER_CREDENTIAL"):
-        validate_shared_identity_deployment(weak_build)
+    with pytest.raises(SigningIdentityError, match="AI_SECRET_ENCRYPTION_KEY"):
+        validate_shared_identity_deployment(settings)
 
 
 def test_single_instance_may_auto_generate_local_key(tmp_path: Path) -> None:

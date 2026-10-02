@@ -155,25 +155,22 @@ docker compose -f deploy/compose/compose.sqlite-lite.yml up -d platform-lite
 
 ---
 
-### 形态 3：内置 PG/Redis 的单机版（`compose.with-deps.yml`）
+### 独立 PG/Redis 演练环境
 
-此形态下后端服务名称为 `platform`，数据库容器名为 `postgres`。
+若在单机测试或演练中使用独立启动的 PostgreSQL 容器（例如容器名 `wp-postgres-drill`）：
 
 #### 1. 确保数据库运行并执行重密
 ```bash
-# 启动依赖数据库服务
-docker compose -f deploy/compose/compose.with-deps.yml up -d postgres
+# 若尚未启动独立演练数据库：
+docker run -d --name wp-postgres-drill -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=web_presentation -p 5432:5432 postgres:16-alpine
 
-# 执行重密
-docker compose -f deploy/compose/compose.with-deps.yml run --rm platform \
-  python -m app.scripts.rotate_ai_secret_key --old-key "<旧密钥>" --new-key "<新密钥>"
+# 使用 Python 脚本直连数据库执行重密：
+DATABASE_URL="postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/web_presentation" \
+  uv run python -m app.scripts.rotate_ai_secret_key --old-key "<旧密钥>" --new-key "<新密钥>"
 ```
 
-#### 2. 更新配置并启动平台服务
-在 `deploy/compose/compose.with-deps.yml` 中的 `platform.environment.AI_SECRET_ENCRYPTION_KEY` 更新新密钥，随后执行：
-```bash
-docker compose -f deploy/compose/compose.with-deps.yml up -d platform
-```
+#### 2. 更新配置并启动生产平台服务
+将新密钥更新至生产配置 `deploy/.env` 或对应的环境变量中，随后重启平台服务。
 
 ---
 

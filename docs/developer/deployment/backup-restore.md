@@ -24,7 +24,7 @@
 ```bash
 # 导出数据库 + alembic_version + SHA256SUMS + manifest
 sudo sh ./deploy/scripts/pg-backup.sh
-# 可选：COMPOSE_FILE=deploy/compose/compose.with-deps.yml 使用内置 postgres
+# 可选：设置 PGHOST/PGPORT/PGUSER 备份外部或独立运行的 PostgreSQL 实例
 ```
 
 同周期备份 `backend-data` volume（或宿主机数据目录）与 `deploy/secrets/`。S3 模式改为使用 bucket 版本化/复制，并记录 `S3_*` 与 `S3_PUBLIC_BASE_URL`。
@@ -67,11 +67,17 @@ sudo sh ./deploy/scripts/pg-backup.sh
 
 目标：在不碰生产数据的前提下，用同一套脚本反复验证「备份集完整、恢复后业务可用」。
 
-1. 使用独立 Compose project、数据卷、数据库与测试账号：
+1. 准备独立的演练数据库（例如启动独立的临时 PostgreSQL 容器）并执行恢复：
 
    ```bash
-   export COMPOSE_PROJECT_NAME=wp-recovery-drill
-   export COMPOSE_FILE=./deploy/compose/compose.with-deps.yml
+   # 启动演练用临时 PostgreSQL 实例
+   docker run -d --name wp-postgres-drill -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -p 55432:5432 postgres:16-alpine
+
+   # 配置演练环境变量并执行恢复
+   export PGHOST=127.0.0.1
+   export PGPORT=55432
+   export PGUSER=postgres
+   export PGPASSWORD=postgres
    export RESTORE_DATABASE=web_presentation_drill
    export BACKUP_DIR=/var/backups/web-presentation/<TIMESTAMP>
    sh ./deploy/scripts/pg-restore.sh

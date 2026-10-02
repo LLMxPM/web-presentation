@@ -42,7 +42,7 @@ RUN set -eux; \
       find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 \
         | xargs -0 -r sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g"; \
     fi; \
-    playwright install --with-deps chromium \
+    playwright install --with-deps --only-shell chromium \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 

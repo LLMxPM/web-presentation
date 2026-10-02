@@ -1,6 +1,6 @@
 # 部署环境变量
 
-production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy/.env.example`。分角色单机版的 Backend 也读取该文件，Runtime 三角色只读取由 `deploy/runtime.env.example` 复制的 `deploy/runtime.env`；两份文件中的公开地址、令牌 audience 和路径须保持一致，平台密钥只放在 Backend 的 `deploy/.env`。SQLite 轻量单容器版和两个简化版 compose 不读取这些文件，而是在 compose 文件内直接写变量。
+production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy/.env.example`。分角色单机版的 Backend 也读取该文件，Runtime 三角色只读取由 `deploy/runtime.env.example` 复制的 `deploy/runtime.env`；平台密钥只放在 Backend 的 `deploy/.env`。SQLite 轻量单容器版（`compose.sqlite-lite.yml`）不读取这些文件，支持零配置启动或在 compose 文件内覆盖变量。
 
 ## 对外访问
 
@@ -37,45 +37,19 @@ SQLite 轻量模式不依赖外部 PostgreSQL/Redis。`memory://` 是**受支持
 
 | 变量 | 说明 |
 | :--- | :--- |
-| `AI_ENABLED` | 是否启用 AI 能力 |
-| `AI_SECRET_ENCRYPTION_KEY` | 加密用户模型凭证的 Fernet 密钥，必须长期保存 |
-| `AI_AGENT_STREAM_IDLE_TIMEOUT_SECONDS` | 模型请求流连续无事件时的失败阈值，默认 `180` 秒 |
-| `AI_AGENT_TOOL_STREAM_IDLE_TIMEOUT_SECONDS` | 工具执行流连续无事件时的失败阈值，默认 `600` 秒；成员委派等长工具使用该阈值 |
+| `AI_ENABLED` | 是否启用 AI 能力，默认 `true` |
+| `AI_SECRET_ENCRYPTION_KEY` | 加密用户模型凭证的 Fernet 密钥，必须长期保存并进备份集 |
 
 `AI_SECRET_ENCRYPTION_KEY` 必须是 32 字节随机值的 URL-safe base64 编码，通常长度为 44 个字符并以 `=` 结尾。直接更换该值会导致已有用户模型凭证无法解密；需要更换时请参见 [AI 凭证密钥轮换与迁移指南](../backend/ai-secret-rotation.md) 进行平滑重密迁移。
 
-## 重资源队列
+## 远程渲染服务
 
 | 变量 | 说明 |
 | :--- | :--- |
-| `AI_PAGE_MUTATION_CONCURRENCY` | AI 页面创建/修改的持久化 Worker 数；SQLite lite 为 `1`，常规部署为 `2` |
-| `AI_PAGE_MUTATION_MAX_ACTIVE_JOBS` | 全局活跃或等待页面变更任务上限；lite 为 `16`，常规部署为 `64` |
-| `DURABLE_JOB_LEASE_SECONDS` / `DURABLE_JOB_HEARTBEAT_SECONDS` | 截图与 AI 页面任务的跨进程租约和心跳周期 |
 | `RENDER_WORKERS_CONFIG` | 受信 Renderer Worker 地址 JSON 数组；每个条目含 `worker_id` 与 `base_url` |
 | `RENDER_SERVICE_CREDENTIAL_FILE` | Backend/Renderer 共享服务密钥文件路径；与 `RENDER_SERVICE_CREDENTIAL` 二选一，禁止占位符与空文件 |
 | `RENDER_SERVICE_CREDENTIAL` | 共享服务密钥明文（不推荐生产使用；优先 secret 文件） |
 | `RENDER_PROFILE_DIGEST` | 当前发布要求的渲染环境指纹；与 Renderer 实际 profile 不一致时拒绝执行 |
-| `RENDER_PROFILE_MANIFEST` | 可选：环境清单文件路径，用于核对渲染环境身份 |
-| `RENDER_GLOBAL_CONCURRENCY` | 全局活动/未确认释放渲染执行上限；lite 为 `1` |
-| `RENDER_WORKSPACE_CONCURRENCY` | 单工作空间活动渲染执行上限，默认 `1` |
-| `RENDER_QUEUE_SIZE` | 全局待处理渲染请求上限，默认 `64` |
-| `RENDER_WORKSPACE_QUEUE_SIZE` | 单工作空间待处理上限，默认 `16` |
-| `RENDER_REQUEST_TIMEOUT_SECONDS` | 渲染阶段总预算（秒），默认 `120` |
-| `RENDER_MAX_ATTEMPTS` | 单请求执行尝试上限，默认 `3` |
-| `RENDER_SCHEDULER_POLL_INTERVAL_SECONDS` | 协调器调度轮询间隔，默认 `0.25` |
-| `RENDER_ATTEMPT_LEASE_SECONDS` | attempt 占用租约时长，超时由协调器收敛释放 |
-| `RENDER_UNKNOWN_RECONCILE_AFTER_SECONDS` | 未知结果 attempt 进入可回收窗口的等待秒数 |
-| `RENDER_ARTIFACT_MAX_BYTES` | 单产物字节上限，默认 32MiB |
-| `RENDER_RUNTIME_NAVIGATION_BASE_URL` | 浏览器访问预览文档的基址；**远程 Renderer 必须可达**，不得使用 Backend 回环。双容器示例：`http://platform-lite:7373` |
-| `RENDER_RUNTIME_ASSET_BASE_URL` | 浏览器访问 Runtime 静态资源的基址 |
-| `RENDER_PLATFORM_ASSET_BASE_URL` | 浏览器访问平台资源的基址 |
-| `RUNTIME_ARTIFACT_SWEEP_INTERVAL_SECONDS` | `memory://` artifact 过期扫描周期，默认 `30` 秒 |
-| `RUNTIME_STATE_MEMORY_MAX_BYTES` | 进程内 `memory://` 运行态总 payload 预算，默认 `134217728`（128 MiB），超限写入返回容量错误而不是拖垮容器 |
-| `RUNTIME_STATE_MEMORY_MAX_ITEM_BYTES` | 进程内 `memory://` 单项 payload 上限，默认 `16777216`（16 MiB） |
-
-Renderer 容器还应设置 `RENDER_WORKER_ID`、`RENDER_SERVICE_CREDENTIAL_FILE`、`RENDER_PROFILE_DIGEST`；可选 `RENDER_CLEANUP_GRACE_SECONDS`（默认 5）、`RENDER_RESULT_TTL_SECONDS`（默认 600）。
-
-Runtime 容器还应设置 `RUNTIME_VITE_TASK_CONCURRENCY`、`RUNTIME_VITE_TASK_QUEUE_SIZE`、`RUNTIME_DIAGNOSTICS_WORKER_REUSE_ENABLED` 和 `RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB`。完整默认值见 `runtime/.env.example`。
 
 部署 compose 使用 Docker secrets：启动前必须创建 `deploy/secrets/render_service_credential`（强随机共享密钥，Backend 与 Renderer 一致）。示例：
 
@@ -84,25 +58,13 @@ mkdir deploy/secrets
 openssl rand -base64 48 | Out-File -Encoding ascii deploy/secrets/render_service_credential
 ```
 
-## Runtime 内网关系
+## Runtime 内部通信
 
 | 变量 | 说明 |
 | :--- | :--- |
 | `RUNTIME_BASE_URL` | Backend 调用 Runtime 的内网地址 |
 | `RUNTIME_PREVIEW/CHECK_BASE_URL` | 分角色部署时按职责覆盖的内网目标；留空回退 `RUNTIME_BASE_URL`。构建不在这里配置：Runtime Build Worker 主动向 Backend 领取任务 |
-| `RUNTIME_CHECK_BASE_URLS` | 计算角色多副本目标列表（JSON 数组或逗号分隔）；留空回退对应单地址。Backend 轮询选址，满载自动换副本 |
-| `RUNTIME_TARGET_FAILURE_THRESHOLD` / `RUNTIME_TARGET_COOLDOWN_SECONDS` | 选址冷却：目标连续失败达到阈值后短暂跳过，冷却到期自动恢复 |
-| `RUNTIME_SERVER_ALLOWED_HOSTS` | Vite `allowedHosts` 追加主机名（逗号/分号/空白分隔）。双容器需包含 Renderer 访问 Runtime 时使用的主机名（如 `platform-lite`）；已默认合并 `runtime`、回环与 `RUNTIME_PUBLIC_BASE_URL`/`BACKEND_PUBLIC_BASE_URL`/`RUNTIME_BASE_URL`/`RUNTIME_PREVIEW_BASE_URL` 主机名 |
-| `RUNTIME_CHECK_MAX_INFLIGHT` / `RUNTIME_LIGHT_MAX_INFLIGHT` | 全链路准入：Backend 同时在途的 check/light 内部调用上限，超限返回 `RUNTIME_ADMISSION_FULL`；全部副本满载返回 `RUNTIME_CAPACITY_EXCEEDED`（503，可重试） |
-| `RUNTIME_BACKEND_API_BASE_URL` | Runtime 回源 Backend 的内网地址 |
-| `RUNTIME_BUILD_ID` | 部署构建标识，输出到 `/__runtime_healthz` 的 `build_id`；滚动发布时用于核对新旧副本版本指纹 |
-| `RUNTIME_PREVIEW_JWKS_URL` | Runtime 校验预览令牌的 JWKS 地址 |
-| `RUNTIME_SERVER_BASE_PATH` | Runtime Vite 资源挂载路径，同域部署通常为 `/runtime/` |
-| `RUNTIME_*_TOKEN_AUDIENCE` | 预览与诊断令牌 audience；构建 attempt 令牌的 audience 由 Backend 固定为 `runtime-build`，不经配置 |
-| `RUNTIME_ROLE` | Runtime 运行角色：`all`（单实例模板默认）或 `preview` / `build` / `check`；分角色模板 `compose.runtime-roles.yml` 按容器覆盖。角色语义由 Runtime 角色逻辑（规划 T1-1）消费。`build` 是唯一构建执行路径，凭证不可读或 `RUNTIME_BACKEND_API_BASE_URL` 缺失时进程直接启动失败，不降级成「健康但永不构建」 |
 | `RUNTIME_BUILD_WORKER_CREDENTIAL` / `RUNTIME_BUILD_WORKER_CREDENTIAL_FILE` | Backend 与 `runtime-build` 共用的领取凭证，两侧必须一致；secret 文件要求 `0400`/`0600`。未配置时 claim API fail-closed、Worker 不启动，构建任务停在 `pending`；构建不存在其它执行入口 |
-
-分角色单机模板还会按角色容器覆盖 `RUNTIME_VITE_TASK_CONCURRENCY`、`RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB` 等执行预算，并为每个容器设置 `deploy.resources.limits`；取值依据见 [Compose 部署说明](./compose.md)「分角色单机」。单个 `runtime-build` 实例的并发等于其 project lane 并发，再加副本只需增加 `runtime-build` 容器（各自独立领取，无需 Backend 选址）；Check 角色仍由 Backend 轮询扩容，用 `RUNTIME_CHECK_BASE_URLS` 注册全部副本地址并按「副本数 × 单副本执行预算」上调准入上限，详见 [Compose 部署说明](./compose.md)「计算副本扩容」。
 
 ## 签名身份与多 Backend
 
@@ -112,9 +74,7 @@ openssl rand -base64 48 | Out-File -Encoding ascii deploy/secrets/render_service
 | `RUNTIME_RSA_PRIVATE_KEY_FILE` | RS256 签名私钥文件路径（共享路径 / secret 挂载）；多 Backend 推荐 |
 | `RUNTIME_RSA_KEY_ID` | 当前签名 `kid`，默认 `default-key-1` |
 | `RUNTIME_RSA_PREVIOUS_KEYS` | 轮换期旧钥 JSON 数组，每项 `{"kid", "private_key_file"}` 或 `{"kid", "private_key"}`；仅验签与 JWKS 公布 |
-| `RUNTIME_RSA_ALLOW_AUTO_GENERATE` | 缺省密钥时是否自动生成本地私钥，默认 `true`（仅单实例/Lite） |
 | `BACKEND_MULTI_INSTANCE` | 声明多 Backend 副本部署，默认 `false`；开启后启动期强制共享密钥与对象存储前提 |
-| `OBJECT_STORAGE_SHARED_VOLUME` | local 对象目录为跨副本共享卷时置 `true` 显式确认；多 Backend 下默认要求 `s3` |
 
 私钥读取顺序：`RUNTIME_RSA_PRIVATE_KEY` → `RUNTIME_RSA_PRIVATE_KEY_FILE` → 旧版 `data/runtime_rsa_key.pem` → 单实例自动生成。多 Backend 副本必须共享同一签名私钥与对象存储；密钥轮换时旧票据在自身 TTL 内仍有效，移出旧钥后立即失效。完整前提、轮换步骤与旧票据语义见 [多 Backend 与密钥一致性](./multi-backend.md)。
 
@@ -123,10 +83,6 @@ openssl rand -base64 48 | Out-File -Encoding ascii deploy/secrets/render_service
 | 变量 | 说明 |
 | :--- | :--- |
 | `LOG_LEVEL` / `LOG_FORMAT` | Backend 业务日志等级与格式 |
-| `ACCESS_LOG_ENABLED` | Backend 访问日志开关，部署模板默认 `false` |
-| `CLIENT_ERROR_LOG_ENABLED` | 浏览器错误上报日志开关，默认保留 |
-| `RUNTIME_LOG_LEVEL` / `RUNTIME_LOG_FORMAT` | Runtime 业务日志等级与格式 |
-| `RUNTIME_ACCESS_LOG_ENABLED` | Runtime 访问日志开关，部署模板默认 `false` |
 
 Gateway Nginx 访问日志在平台镜像配置中默认关闭；错误日志仍输出到标准错误。
 
@@ -139,4 +95,80 @@ Gateway Nginx 访问日志在平台镜像配置中默认关闭；错误日志仍
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | S3 访问凭证 |
 | `S3_BUCKET` | 私有资源 bucket |
 | `S3_PUBLIC_BUCKET` | 可选公开字体 bucket |
+| `S3_REGION` | S3 区域，例如 `us-east-1` |
 | `S3_PUBLIC_BASE_URL` | 公开资源访问地址 |
+
+---
+
+## 隐式调优参数（类 C：内置常量与默认值）
+
+以下参数已从常规部署模板（`.env.example`）中精简移除，由系统代码默认值内聚管理（定义于 `backend/app/core/config.py` 中的 `AppSettings`），在绝大多数生产与 Lite 环境中无需显式配置。当处于极端负载、特殊性能调优或定制拓扑场景时，仍可通过环境变量显式覆盖：
+
+### 1. 内部通信 Audience 契约
+
+已收敛为代码常量契约，通常无需修改：
+- `RUNTIME_SERVICE_TOKEN_AUDIENCE`：Backend 调用 Runtime 内部服务令牌 Audience，默认 `runtime-backend`。
+- `RUNTIME_PREVIEW_TOKEN_AUDIENCE`：预览令牌 Audience，默认 `runtime-preview`。
+- `RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE`：编译诊断令牌 Audience，默认 `runtime-diagnostics`。
+- `AI_AGENT_OS_ID`：系统内部智能体标识常量。
+
+### 2. 调度租约与心跳控制
+
+- `DURABLE_JOB_LEASE_SECONDS`：通用持久化任务跨进程租约时长，默认 `300` 秒。
+- `DURABLE_JOB_HEARTBEAT_SECONDS`：通用持久化任务心跳续租周期，默认 `30` 秒。
+- `AI_PAGE_MUTATION_CONCURRENCY`：AI 页面生成持久化 Worker 并发数，SQLite Lite 默认 `1`，常规部署默认 `2`。
+- `AI_PAGE_MUTATION_MAX_ACTIVE_JOBS`：全局活跃与等待的页面变更任务队列上限，Lite 默认 `16`，常规部署默认 `64`。
+- `AI_PAGE_MUTATION_MAX_BATCH_SIZE`：页面变更批处理上限，默认 `16`。
+- `AI_PAGE_MUTATION_POLL_INTERVAL_SECONDS`：页面变更任务轮询间隔，默认 `0.5` 秒。
+
+### 3. AI 运行态超时与执行管理
+
+- `AI_AGENT_STREAM_IDLE_TIMEOUT_SECONDS`：模型请求流连续无事件时的超时中断阈值，默认 `180` 秒。
+- `AI_AGENT_TOOL_STREAM_IDLE_TIMEOUT_SECONDS`：工具执行流连续无事件时的超时阈值，默认 `600` 秒。
+- `AI_EXTERNAL_TASK_ENQUEUE_TIMEOUT_SECONDS`：外部异步任务入队超时，默认 `30` 秒。
+- `AI_RUN_OWNER_TTL_SECONDS`：AI Run 进程属主租约 TTL，默认 `90` 秒。
+- `AI_RUN_OWNER_HEARTBEAT_SECONDS`：AI Run 属主心跳刷新间隔，默认 `10` 秒。
+- `AI_RUN_OWNER_SWEEP_SECONDS`：属主收敛与孤儿清理间隔，默认 `10` 秒。
+
+### 4. 远程渲染细粒度并发与队列
+
+- `RENDER_GLOBAL_CONCURRENCY`：平台全局活动渲染请求上限，默认 `2`（Lite 单机固定为 `1`）。
+- `RENDER_WORKSPACE_CONCURRENCY`：单工作空间活动渲染上限，默认 `1`。
+- `RENDER_QUEUE_SIZE`：平台全局渲染等待队列上限，默认 `64`。
+- `RENDER_WORKSPACE_QUEUE_SIZE`：单工作空间等待队列上限，默认 `16`。
+- `RENDER_REQUEST_TIMEOUT_SECONDS`：单次渲染端到端总预算，默认 `120` 秒。
+- `RENDER_MAX_ATTEMPTS`：单请求最大尝试次数，默认 `3`。
+- `RENDER_SCHEDULER_POLL_INTERVAL_SECONDS`：渲染调度轮询间隔，默认 `0.25` 秒。
+- `RENDER_ATTEMPT_LEASE_SECONDS`：单个 attempt 租约时长，默认 `60` 秒。
+- `RENDER_UNKNOWN_RECONCILE_AFTER_SECONDS`：未知状态 attempt 等待对账窗口，默认 `15` 秒。
+- `RENDER_ARTIFACT_MAX_BYTES`：单次渲染产物字节上限，默认 `33554432`（32 MiB）。
+- `RENDER_RUNTIME_NAVIGATION_BASE_URL` / `RENDER_RUNTIME_ASSET_BASE_URL` / `RENDER_PLATFORM_ASSET_BASE_URL`：渲染器回源基址，默认自动根据平台与 Runtime 地址推导。
+
+### 5. 项目构建持久领取
+
+- `PROJECT_BUILD_LEASE_SECONDS`：构建任务持久领取租约，默认 `960` 秒。
+- `PROJECT_BUILD_MAX_ATTEMPTS`：构建任务最大重试次数，默认 `3`。
+- `PROJECT_BUILD_TOTAL_DEADLINE_SECONDS`：构建任务绝对硬期限，默认 `3600` 秒。
+- `PROJECT_BUILD_QUEUE_POLL_INTERVAL_SECONDS`：构建队列轮询周期，默认 `1.0` 秒。
+- `PROJECT_BUILD_ARTIFACT_MAX_BYTES`：构建结果归档包接收上限，默认 `536870912` 字节（512 MiB）。
+
+### 6. Runtime 角色扩容与 Worker 内存管理
+
+- `RUNTIME_TARGET_FAILURE_THRESHOLD`：目标连续失败熔断阈值，默认 `3`。
+- `RUNTIME_TARGET_COOLDOWN_SECONDS`：熔断后冷却时长，默认 `15` 秒。
+- `RUNTIME_CHECK_MAX_INFLIGHT` / `RUNTIME_LIGHT_MAX_INFLIGHT`：Backend 内部调用并发准入上限，默认 `16`。
+- `RUNTIME_VITE_TASK_CONCURRENCY`：Runtime Vite 任务并发，默认 `2`。
+- `RUNTIME_VITE_TASK_QUEUE_SIZE`：Runtime Vite 任务队列深度，默认 `16`。
+- `RUNTIME_VITE_TASK_QUEUE_WAIT_TIMEOUT_MS`：排队等待超时，默认 `30000` 毫秒。
+- `RUNTIME_VITE_DIAGNOSTICS_WEIGHT`：诊断任务在多任务执行时的权重，默认 `3`。
+- `RUNTIME_LIGHT_TOOL_CONCURRENCY` / `RUNTIME_LIGHT_TOOL_QUEUE_SIZE` / `RUNTIME_LIGHT_TOOL_QUEUE_WAIT_TIMEOUT_MS` / `RUNTIME_LIGHT_TOOL_TIMEOUT_MS`：轻量级内部工具独立容量与超时设置。
+- `RUNTIME_BUILD_WORKER_MAX_OLD_SPACE_MB`：构建 Worker Node.js 最大旧生代堆内存，默认 `2048` MiB。
+- `RUNTIME_BUILD_WORKER_TIMEOUT_MS`：构建 Worker 执行超时，默认 `600000` 毫秒（10 分钟）。
+- `RUNTIME_DIAGNOSTICS_WORKER_*`：编译诊断 Worker 复用、超时、最大任务数及 RSS 内存回收阈值（默认 `0.75`）。
+
+### 7. 内存型运行态缓存预算
+
+- `RUNTIME_ARTIFACT_SWEEP_INTERVAL_SECONDS`：`memory://` artifact 过期扫描周期，默认 `30` 秒。
+- `RUNTIME_STATE_MEMORY_MAX_BYTES`：进程内 `memory://` 运行态总 payload 预算，默认 `134217728` 字节（128 MiB）。
+- `RUNTIME_STATE_MEMORY_MAX_ITEM_BYTES`：进程内 `memory://` 单项 payload 上限，默认 `16777216` 字节（16 MiB）。
+- `RUNTIME_RSA_ALLOW_AUTO_GENERATE`：单实例/Lite 缺省密钥时是否自动生成，默认 `true`。

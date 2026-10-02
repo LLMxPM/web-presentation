@@ -30,8 +30,10 @@ it('Compose 的共享凭据位置与部署配置目录一致', () => {
   for (const filename of fs.readdirSync('deploy/compose').filter(name => name.endsWith('.yml'))) {
     const file = path.join('deploy/compose', filename)
     const compose = yaml(file)
-    expect(path.resolve(path.dirname(file), compose.secrets.render_service_credential.file))
-      .toBe(path.resolve('deploy/secrets/render_service_credential'))
+    if (compose.secrets?.render_service_credential) {
+      expect(path.resolve(path.dirname(file), compose.secrets.render_service_credential.file))
+        .toBe(path.resolve('deploy/secrets/render_service_credential'))
+    }
     for (const service of Object.values(compose.services) as any[]) {
       for (const envFile of service.env_file ?? []) {
         expect(fs.existsSync(path.resolve(path.dirname(file), `${envFile}.example`))).toBe(true)

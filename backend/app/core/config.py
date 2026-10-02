@@ -155,7 +155,7 @@ class AppSettings(BaseSettings):
     render_platform_asset_base_url: str | None = None
     ai_enabled: bool = True
     ai_test_mode: str = "disabled"
-    ai_secret_encryption_key: str = "vmgRweOsDpMtYVW7SSpceINYcXlUHFNndAby6vRv0iA="
+    ai_secret_encryption_key: str = ""
     ai_agent_os_id: str = "backend-agentos"
     ai_agent_token_ttl_seconds: int = 600
     ai_tool_auth_window_seconds: int = 1800
