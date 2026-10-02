@@ -89,6 +89,9 @@ async def run_agent_process_monitor(
         """心跳不依赖模型事件；过期后不允许复活相同实例。"""
 
         while True:
+            if not get_settings().ai_enabled:
+                await asyncio.sleep(2)
+                continue
             try:
                 async def renew(session):
                     """每次重试重新取时，避免数据库写冲突延长已过期的存活租约。"""
@@ -108,6 +111,9 @@ async def run_agent_process_monitor(
         """各副本可同时扫描，通过统一 CAS 防止重复终态与误收活跃 owner。"""
 
         while True:
+            if not get_settings().ai_enabled:
+                await asyncio.sleep(2)
+                continue
             try:
                 await run_with_write_retry(
                     reap_expired_agent_runs, session_factory=factory, backoff_delays=(0.05, 0.1),

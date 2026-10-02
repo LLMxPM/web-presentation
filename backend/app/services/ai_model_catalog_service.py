@@ -333,9 +333,15 @@ class AiModelCatalogService:
 
 async def run_model_catalog_sync_loop(session_factory: async_sessionmaker[AsyncSession]) -> None:
     """每天检查目录新版本；失败仅记录日志，不影响已有 AI 能力。"""
+    from app.core.config import get_settings
 
     while True:
         try:
+            settings = get_settings()
+            if not settings.ai_enabled or not settings.ai_model_catalog_sync_enabled:
+                await asyncio.sleep(10)
+                continue
+
             async with session_factory() as session:
                 await AiModelCatalogService(session).sync()
         except AppException as exc:

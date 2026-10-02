@@ -88,6 +88,9 @@ async def _run_worker(session_factory: async_sessionmaker[AsyncSession], *, work
     recovery_interval = max(1.0, min(float(settings.durable_job_heartbeat_seconds), 30.0))
     last_recovery_at = 0.0
     while True:
+        if not get_settings().ai_enabled:
+            await asyncio.sleep(2)
+            continue
         try:
             async with session_factory() as session:
                 if monotonic() - last_recovery_at >= recovery_interval:

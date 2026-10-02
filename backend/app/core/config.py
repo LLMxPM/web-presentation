@@ -828,7 +828,19 @@ class AppSettings(BaseSettings):
 _current_settings: AppSettings | None = None
 _db_settings_cache: dict[str, Any] = {}
 _safe_mode_warnings: list[dict[str, Any]] = []
+_local_settings_version: int = 0
 _settings_lock = threading.Lock()
+
+
+def get_local_settings_version() -> int:
+    """获取当前进程已同步的系统配置版本号。"""
+    return _local_settings_version
+
+
+def set_local_settings_version(ver: int) -> None:
+    """更新当前进程已同步的系统配置版本号。"""
+    global _local_settings_version
+    _local_settings_version = ver
 
 
 def _build_effective_settings(
@@ -841,6 +853,26 @@ def _build_effective_settings(
     logger = logging.getLogger(__name__)
     base = AppSettings()
     warnings: list[dict[str, Any]] = []
+
+    # 保留启动期已解析的基础设施凭据（如单实例持久化的 AI 密钥、RSA 签名私钥等），避免重新实例化被冲掉
+    if _current_settings is not None:
+        for infra_attr in (
+            "ai_secret_encryption_key",
+            "runtime_build_worker_credential",
+            "render_service_credential",
+            "runtime_rsa_private_key",
+            "runtime_rsa_key_id",
+        ):
+            curr_val = getattr(_current_settings, infra_attr, None)
+            if curr_val and not getattr(base, infra_attr, None):
+                setattr(base, infra_attr, curr_val)
+
+    if not base.ai_secret_encryption_key:
+        try:
+            from app.services.signing_identity import resolve_ai_secret_key
+            resolve_ai_secret_key(base)
+        except Exception:
+            pass
 
     target_db_overrides = db_overrides if db_overrides is not None else _db_settings_cache
     if not target_db_overrides:
@@ -919,14 +951,20 @@ def get_settings() -> AppSettings:
         return _current_settings
 
 
-def apply_system_settings_override(db_settings: dict[str, Any]) -> AppSettings:
-    """在进程内热更新数据库配置覆盖层，原子切换当前活跃的配置单例。"""
-    global _current_settings, _db_settings_cache, _safe_mode_warnings
+def apply_system_settings_override(
+    db_settings: dict[str, Any],
+    *,
+    version: int | None = None,
+) -> AppSettings:
+    """在进程内热更新数据库配置覆盖层，原子切换当前活跃的配置单例并绑定对应版本。"""
+    global _current_settings, _db_settings_cache, _safe_mode_warnings, _local_settings_version
     with _settings_lock:
         _db_settings_cache = dict(db_settings)
         new_settings, warnings = _build_effective_settings(_db_settings_cache)
         _current_settings = new_settings
         _safe_mode_warnings = warnings
+        if version is not None:
+            _local_settings_version = version
 
         # 动态联动调整日志等级
         try:
@@ -961,9 +999,11 @@ def _cache_clear() -> None:
     """清除配置缓存并重置全局状态（兼容 lru_cache 接口，供单测使用）。"""
     global _current_settings, _db_settings_cache, _safe_mode_warnings
     with _settings_lock:
+        global _local_settings_version
         _current_settings = None
         _db_settings_cache = {}
         _safe_mode_warnings = []
+        _local_settings_version = 0
 
 
 get_settings.cache_clear = _cache_clear

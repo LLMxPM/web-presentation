@@ -113,7 +113,6 @@ ENV APP_RELOAD=false \
     RUNTIME_ACCESS_LOG_ENABLED="false" \
     RUNTIME_STANDALONE_PREVIEW_ENABLED="false" \
     VITE_CONFIG_NATIVE_IGNORE_WARNING="true" \
-    ASSET_STORAGE_DRIVER="local" \
     TIKTOKEN_CACHE_DIR=/app/.cache/tiktoken
 
 COPY --from=renderer-deps /app/.venv-renderer /app/.venv-renderer

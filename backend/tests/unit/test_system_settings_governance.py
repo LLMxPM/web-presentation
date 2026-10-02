@@ -326,3 +326,335 @@ def test_dynamic_http_trace_toggle():
     # 3. 再次动态关闭 trace
     apply_system_settings_override({"ai_llm_http_trace_enabled": False})
     assert build_llm_http_trace_client(llm_config) is None
+
+def test_validate_bool_strict():
+    """测试布尔校验器严格模式：拒绝非法未知文本（如 flase），支持合法布尔文本。"""
+    spec = SYSTEM_SETTING_SPECS["ai_llm_http_trace_enabled"]
+    # 合法真值
+    assert spec.validator(True) is True
+    assert spec.validator("true") is True
+    assert spec.validator("1") is True
+    assert spec.validator("yes") is True
+    assert spec.validator("on") is True
+    assert spec.validator(1) is True
+
+    # 合法假值
+    assert spec.validator(False) is False
+    assert spec.validator("false") is False
+    assert spec.validator("0") is False
+    assert spec.validator("no") is False
+    assert spec.validator("off") is False
+    assert spec.validator("") is False
+    assert spec.validator(0) is False
+
+    # 非法字符串与类型必须抛出 ValueError，触发 Safe-Mode 降级
+    with pytest.raises(ValueError):
+        spec.validator("flase")
+    with pytest.raises(ValueError):
+        spec.validator("invalid_value")
+    with pytest.raises(ValueError):
+        spec.validator(2)
+    with pytest.raises(ValueError):
+        spec.validator([])
+
+
+def test_dotenv_export_syntax_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """测试 .env 文件支持 export APP_TIMEZONE=... 语法。"""
+    fake_env = tmp_path / ".env"
+    fake_env.write_text("export APP_TIMEZONE=Europe/Rome\nexport LOG_LEVEL=ERROR\n", encoding="utf-8")
+    monkeypatch.setattr("app.core.config._iter_settings_env_files", lambda: [fake_env])
+    get_settings.cache_clear()
+
+    assert is_env_overridden("app_timezone") is True
+    assert is_env_overridden("log_level") is True
+    assert is_env_overridden("session_ttl_hours") is False
+
+
+@pytest.mark.asyncio
+async def test_reject_clearing_s3_credentials_even_without_driver():
+    """测试即便未在 updates 中传入 asset_storage_driver，只要最终生效为 S3 且试图清空必需凭据即刻拦截。"""
+    # 先设置当前环境为 S3
+    apply_system_settings_override({
+        "asset_storage_driver": "s3",
+        "s3_bucket": "my-bucket",
+        "s3_access_key": "AK123",
+        "s3_secret_key": "SK456",
+    })
+    assert get_settings().asset_storage_driver == "s3"
+
+    mock_session = AsyncMock()
+    service = SystemSettingsService(mock_session)
+
+    # 仅提交清空 s3_bucket，未包含 asset_storage_driver
+    with pytest.raises(AppException) as exc_info:
+        await service.update_settings({"s3_bucket": ""})
+    assert exc_info.value.code == "S3_CONFIG_INCOMPLETE"
+
+    # 仅提交清空 s3_secret_key
+    with pytest.raises(AppException) as exc_info:
+        await service.update_settings({"s3_secret_key": ""})
+    assert exc_info.value.code == "S3_CONFIG_INCOMPLETE"
+
+
+def test_ai_secret_encryption_key_preserved_on_hot_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """测试热更新任意配置时，启动期解析的 AI 加密密钥保持不被冲掉。"""
+    fake_key = "dGVzdF9mZXJuZXRfa2V5XzMyX2J5dGVzX2xvbmdfMTIzNDU2Nzg="
+    # 模拟启动期已持有单实例密钥
+    settings = get_settings()
+    settings.ai_secret_encryption_key = fake_key
+    assert get_settings().ai_secret_encryption_key == fake_key
+
+    # 热更新 unrelated key
+    updated = apply_system_settings_override({"app_name": "新名称"})
+    assert updated.app_name == "新名称"
+    # 核心断言：AI 凭证密钥依然保留
+    assert updated.ai_secret_encryption_key == fake_key
+    assert get_settings().ai_secret_encryption_key == fake_key
+
+
+@pytest.mark.asyncio
+async def test_object_storage_dual_read_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """测试当前驱动为 S3 时，若远程未命中（404）能够平滑回退读取本地历史文件。"""
+    from app.services.object_storage_service import ObjectStorageService
+
+    # 构造本地历史文件
+    local_root = tmp_path / "storage"
+    monkeypatch.setenv("PAGE_SCREENSHOT_LOCAL_ROOT", str(local_root))
+    get_settings.cache_clear()
+
+    test_key = "resources/workspace_1/legacy_image.png"
+    target_file = local_root / test_key
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_bytes(b"legacy-file-content")
+
+    # 切换为 S3 驱动
+    apply_system_settings_override({
+        "asset_storage_driver": "s3",
+        "s3_bucket": "test-bucket",
+        "s3_access_key": "AKTEST",
+        "s3_secret_key": "SKTEST",
+    })
+    service = ObjectStorageService()
+    assert service.driver == "s3"
+
+    # 模拟 S3 _read_s3_object 报 404
+    async def mock_s3_read(key: str, bucket_name: str | None = None):
+        raise AppException(status_code=404, code="OBJECT_NOT_FOUND", detail="S3 不存在")
+
+    monkeypatch.setattr(service, "_read_s3_object", mock_s3_read)
+
+    # 核心验证：read_object 自动回退命中本地文件
+    content = await service.read_object(test_key)
+    assert content == b"legacy-file-content"
+
+    # 核心验证：open_object_for_read 也回退打开本地文件
+    async def mock_ensure_s3_cache(key: str, **kwargs):
+        raise AppException(status_code=404, code="OBJECT_NOT_FOUND", detail="S3 不存在")
+
+    monkeypatch.setattr(service, "_ensure_s3_cache_file", mock_ensure_s3_cache)
+    async with service.open_object_for_read(test_key) as read_path:
+        assert read_path == target_file
+        assert read_path.read_bytes() == b"legacy-file-content"
+
+@pytest.mark.asyncio
+async def test_cross_process_version_sync():
+    """测试跨进程版本同步：更新设置递增 Redis 版本号，且同步协程自动拉取 DB 更新配置。"""
+    from app.core.config import get_local_settings_version, set_local_settings_version
+    from app.models.system_setting import SystemSetting
+    from app.services.redis_runtime_client import get_redis_runtime_client
+    from app.services.system_settings_service import run_system_settings_version_sync_loop
+
+    runtime = get_redis_runtime_client()
+    ver_key = runtime.key("system_settings:version")
+    init_ver = int(runtime.get(ver_key) or 0)
+
+    # 1. 模拟一个实例保存设置
+    ver_setting = SystemSetting(
+        key="_settings_version",
+        value=str(init_ver),
+        category="system",
+        description="系统配置持久化版本号",
+        is_secret=False,
+    )
+    mock_session = AsyncMock()
+    mock_session.add = MagicMock()
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [ver_setting]
+    mock_res = MagicMock()
+    mock_res.scalars.return_value = mock_scalars
+    mock_res.scalar.return_value = 0
+    mock_session.execute.return_value = mock_res
+    service = SystemSettingsService(mock_session)
+
+    await service.update_settings({"session_ttl_hours": 96})
+    new_ver = int(runtime.get(ver_key) or 0)
+    assert new_ver > init_ver
+    assert get_local_settings_version() == new_ver
+
+    # 2. 模拟另一个实例（本地版本号落后为 init_ver）
+    set_local_settings_version(init_ver)
+    assert get_local_settings_version() == init_ver
+
+    loaded = False
+    async def mock_load(session):
+        nonlocal loaded
+        loaded = True
+        return True, new_ver
+
+    # 启动同步循环跑一小轮
+    import asyncio
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("app.services.system_settings_service.load_system_settings_on_startup", mock_load)
+        loop_task = asyncio.create_task(run_system_settings_version_sync_loop(MagicMock()))
+        await asyncio.sleep(0.1)
+        loop_task.cancel()
+        try:
+            await loop_task
+        except asyncio.CancelledError:
+            pass
+
+    assert loaded is True
+    assert get_local_settings_version() == new_ver
+
+
+@pytest.mark.asyncio
+async def test_storage_migration_guard_blocks_s3_to_local_when_assets_exist():
+    """测试当前使用 S3 且存在存量资源时，禁止直接切回本地存储（防止旧对象丢失）。"""
+    apply_system_settings_override({
+        "asset_storage_driver": "s3",
+        "s3_bucket": "my-bucket",
+        "s3_access_key": "AK123",
+        "s3_secret_key": "SK456",
+    })
+    assert get_settings().asset_storage_driver == "s3"
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalar.return_value = 5  # 模拟存在 5 个存量资源
+    mock_session.execute.return_value = mock_res
+    service = SystemSettingsService(mock_session)
+
+    with pytest.raises(AppException) as exc_info:
+        await service.update_settings({"asset_storage_driver": "local"})
+    assert exc_info.value.code == "STORAGE_MIGRATION_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_storage_migration_guard_blocks_bucket_change_when_assets_exist():
+    """测试当前存储桶有存量资源时，禁止直接更换新存储桶（防止跨桶对象丢失）。"""
+    apply_system_settings_override({
+        "asset_storage_driver": "s3",
+        "s3_bucket": "old-bucket",
+        "s3_access_key": "AK123",
+        "s3_secret_key": "SK456",
+    })
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalar.return_value = 3  # 模拟存在 3 个存量资源
+    mock_session.execute.return_value = mock_res
+    service = SystemSettingsService(mock_session)
+
+    with pytest.raises(AppException) as exc_info:
+        await service.update_settings({"s3_bucket": "new-bucket"})
+    assert exc_info.value.code == "BUCKET_MIGRATION_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_storage_migration_guard_allows_change_when_no_assets():
+    """测试当前无存量资源（count == 0）时，允许切回 local 或更换存储桶。"""
+    apply_system_settings_override({
+        "asset_storage_driver": "s3",
+        "s3_bucket": "old-bucket",
+        "s3_access_key": "AK123",
+        "s3_secret_key": "SK456",
+    })
+
+    mock_session = AsyncMock()
+    mock_session.add = MagicMock()
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = []
+    mock_res = MagicMock()
+    mock_res.scalars.return_value = mock_scalars
+    mock_res.scalar.return_value = 0  # 无存量资源
+    mock_session.execute.return_value = mock_res
+    service = SystemSettingsService(mock_session)
+
+    # 切回 local 允许通过
+    res = await service.update_settings({"asset_storage_driver": "local"})
+    assert res is not None
+
+
+@pytest.mark.asyncio
+async def test_storage_migration_guard_blocks_local_to_s3_when_assets_exist():
+    """测试当前使用 local 且存在存量资源时，禁止直接切换到 S3 存储（防止未迁移导致公开访问 404）。"""
+    apply_system_settings_override({
+        "asset_storage_driver": "local",
+    })
+    assert get_settings().asset_storage_driver == "local"
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalar.return_value = 8  # 模拟存在 8 个存量资源
+    mock_session.execute.return_value = mock_res
+    service = SystemSettingsService(mock_session)
+
+    with pytest.raises(AppException) as exc_info:
+        await service.update_settings({
+            "asset_storage_driver": "s3",
+            "s3_bucket": "target-bucket",
+            "s3_access_key": "AK123",
+            "s3_secret_key": "SK456",
+        })
+    assert exc_info.value.code == "STORAGE_MIGRATION_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_load_system_settings_safe_on_db_failure(caplog: pytest.LogCaptureFixture):
+    """测试 load_system_settings_on_startup 遭遇 DB 故障时不确认版本，返回 (False, 0) 并记录 WARNING。"""
+    from app.services.system_settings_service import load_system_settings_on_startup
+
+    mock_session = AsyncMock()
+    mock_session.execute.side_effect = Exception("DB connection refused")
+
+    with caplog.at_level(logging.WARNING):
+        ok, ver = await load_system_settings_on_startup(mock_session)
+
+    assert ok is False
+    assert ver == 0
+    assert any("应用启动加载系统设置失败" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_version_sync_loop_recovers_on_redis_reset():
+    """测试 Redis 版本重置或清空后（如 7 -> 1），非单调比对依然能触发全量对账与重载。"""
+    from app.core.config import get_local_settings_version, set_local_settings_version
+    from app.services.redis_runtime_client import get_redis_runtime_client
+    from app.services.system_settings_service import run_system_settings_version_sync_loop
+
+    runtime = get_redis_runtime_client()
+    ver_key = runtime.key("system_settings:version")
+    # 模拟本地持有一个较大版本 7
+    set_local_settings_version(7)
+    # 模拟 Redis 发生 FLUSHALL 或回滚到旧版本 1
+    runtime.set(ver_key, "1")
+
+    reloaded = False
+    async def mock_load(session):
+        nonlocal reloaded
+        reloaded = True
+        return True, 1
+
+    import asyncio
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("app.services.system_settings_service.load_system_settings_on_startup", mock_load)
+        loop_task = asyncio.create_task(run_system_settings_version_sync_loop(MagicMock()))
+        await asyncio.sleep(0.1)
+        loop_task.cancel()
+        try:
+            await loop_task
+        except asyncio.CancelledError:
+            pass
+
+    assert reloaded is True
+    assert get_local_settings_version() == 1

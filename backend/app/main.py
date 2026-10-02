@@ -51,7 +51,7 @@ from app.db.sqlite_single_process import SqliteSingleProcessGuard, ensure_sqlite
 from app.services.bootstrap_service import BootstrapService
 from app.services.ai_model_catalog_service import AiModelCatalogService, run_model_catalog_sync_loop
 from app.services.object_storage_service import ObjectStorageService
-from app.services.system_settings_service import load_system_settings_on_startup
+from app.services.system_settings_service import load_system_settings_on_startup, run_system_settings_version_sync_loop
 from app.services.asset_render_hint_backfill_job_service import (
     recover_interrupted_asset_render_hint_backfill_jobs_on_startup,
     run_asset_render_hint_backfill_queue_loop,
@@ -95,6 +95,7 @@ async def lifespan(app: FastAPI):
     ai_external_task_coordinator_task: asyncio.Task[None] | None = None
     ai_component_mutation_queue_task: asyncio.Task[None] | None = None
     model_catalog_sync_task: asyncio.Task[None] | None = None
+    system_settings_sync_task: asyncio.Task[None] | None = None
     ai_process_monitor_task: asyncio.Task[None] | None = None
     api_mutation_worker_task: asyncio.Task[None] | None = None
     api_mutation_sweeper_task: asyncio.Task[None] | None = None
@@ -112,29 +113,27 @@ async def lifespan(app: FastAPI):
         await BootstrapService(session_factory).ensure_default_admin()
         async with session_factory() as catalog_session:
             await AiModelCatalogService(catalog_session).ensure_minimal_catalog()
+        async with session_factory() as startup_session:
+            await load_system_settings_on_startup(startup_session)
         validate_runtime_state_deployment(get_settings())
         validate_runtime_role_targets(get_settings())
         validate_shared_identity_deployment(get_settings())
         ensure_redis_runtime_available()
         _log_runtime_state_startup(app)
-        async with session_factory() as startup_session:
-            await load_system_settings_on_startup(startup_session)
-        if get_settings().ai_enabled:
-            async with session_factory() as owner_session:
-                await ensure_agent_process_owner(owner_session)
-                await owner_session.commit()
-            await recover_interrupted_agent_runs_on_startup(session_factory)
-            ai_process_monitor_task = asyncio.create_task(
-                run_agent_process_monitor(session_factory, agent_background_run_manager),
-                name="ai-process-monitor",
-            )
+        async with session_factory() as owner_session:
+            await ensure_agent_process_owner(owner_session)
+            await owner_session.commit()
+        await recover_interrupted_agent_runs_on_startup(session_factory)
+        ai_process_monitor_task = asyncio.create_task(
+            run_agent_process_monitor(session_factory, agent_background_run_manager),
+            name="ai-process-monitor",
+        )
         await recover_interrupted_build_jobs_on_startup(session_factory)
         await recover_interrupted_screenshot_jobs_on_startup(session_factory)
         await recover_interrupted_asset_render_hint_backfill_jobs_on_startup(session_factory)
-        if get_settings().ai_enabled:
-            await recover_interrupted_ai_page_mutation_jobs_on_startup(session_factory)
-            await recover_interrupted_image_generation_jobs_on_startup(session_factory)
-            await recover_interrupted_component_mutation_tasks(session_factory)
+        await recover_interrupted_ai_page_mutation_jobs_on_startup(session_factory)
+        await recover_interrupted_image_generation_jobs_on_startup(session_factory)
+        await recover_interrupted_component_mutation_tasks(session_factory)
         # 远程渲染控制面：Backend 不再启动本地 Chromium，由 RenderCoordinator
         # 通过受信 Renderer Worker API 完成调度、重试与结果落库。
         page_screenshot_queue_task = _start_page_screenshot_queue_task()
@@ -159,28 +158,30 @@ async def lifespan(app: FastAPI):
             run_project_build_queue_loop(session_factory),
             name="project-build-queue",
         )
-        if get_settings().ai_enabled:
-            ai_page_mutation_queue_task = asyncio.create_task(
-                run_ai_page_mutation_queue_loop(session_factory),
-                name="ai-page-mutation-queue",
-            )
-            ai_image_generation_queue_task = asyncio.create_task(
-                run_ai_image_generation_queue_loop(session_factory, app=app),
-                name="ai-image-generation-queue",
-            )
-            ai_external_task_coordinator_task = asyncio.create_task(
-                run_ai_external_task_coordinator(session_factory, app=app),
-                name="ai-external-task-coordinator",
-            )
-            ai_component_mutation_queue_task = asyncio.create_task(
-                run_ai_component_mutation_queue_loop(session_factory),
-                name="ai-component-mutation-queue",
-            )
-        if get_settings().ai_model_catalog_sync_enabled:
-            model_catalog_sync_task = asyncio.create_task(
-                run_model_catalog_sync_loop(session_factory),
-                name="ai-model-catalog-sync",
-            )
+        ai_page_mutation_queue_task = asyncio.create_task(
+            run_ai_page_mutation_queue_loop(session_factory),
+            name="ai-page-mutation-queue",
+        )
+        ai_image_generation_queue_task = asyncio.create_task(
+            run_ai_image_generation_queue_loop(session_factory, app=app),
+            name="ai-image-generation-queue",
+        )
+        ai_external_task_coordinator_task = asyncio.create_task(
+            run_ai_external_task_coordinator(session_factory, app=app),
+            name="ai-external-task-coordinator",
+        )
+        ai_component_mutation_queue_task = asyncio.create_task(
+            run_ai_component_mutation_queue_loop(session_factory),
+            name="ai-component-mutation-queue",
+        )
+        model_catalog_sync_task = asyncio.create_task(
+            run_model_catalog_sync_loop(session_factory),
+            name="ai-model-catalog-sync",
+        )
+        system_settings_sync_task = asyncio.create_task(
+            run_system_settings_version_sync_loop(session_factory),
+            name="system-settings-sync",
+        )
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
             _raise_database_connectivity_error(exc, phase="Backend 启动时")
@@ -218,6 +219,8 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(ai_component_mutation_queue_task)
         if model_catalog_sync_task is not None:
             await _stop_background_task(model_catalog_sync_task)
+        if system_settings_sync_task is not None:
+            await _stop_background_task(system_settings_sync_task)
         # 所有后台写入任务都已停止，最后才释放单进程写锁。
         if sqlite_single_process_guard is not None:
             sqlite_single_process_guard.release()
@@ -442,11 +445,7 @@ def _sanitize_jsonable(value: Any) -> Any:
 
 
 def _mount_ai_runtime(app: FastAPI) -> None:
-    """把动态 Agent 注册表挂载到当前 FastAPI 应用。"""
-
-    settings = get_settings()
-    if not settings.ai_enabled:
-        return
+    """把动态 Agent 注册表挂载到当前 FastAPI 应用，具体调用由路由依赖守卫动态判定。"""
 
     app.state.ai_registry = AgentRegistry()
 

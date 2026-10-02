@@ -98,6 +98,9 @@ async def run_ai_image_generation_queue_loop(
 
     worker_id = f"ai-image:{build_durable_worker_id()}"
     while True:
+        if not get_settings().ai_enabled:
+            await asyncio.sleep(2)
+            continue
         loop_token = write_path_metrics.bind_loop_name("ai-image-generation-queue")
         tick_started = time.perf_counter()
         try:

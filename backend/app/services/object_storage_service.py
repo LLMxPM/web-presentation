@@ -119,13 +119,21 @@ class ObjectStorageService:
         return await self._put_local_object_stream(normalized_key, chunks, max_size_bytes=max_size_bytes)
 
     async def read_object(self, storage_key: str, *, bucket_name: str | None = None) -> bytes:
-        """读取对象原始内容。"""
+        """读取对象原始内容。若当前驱动为 S3 且远程未命中，自动平滑回退读取本地历史对象。"""
 
         normalized_key = self.normalize_storage_key(storage_key)
         if self.driver == "s3":
-            if bucket_name is not None:
-                return await self._read_s3_object(normalized_key, bucket_name=bucket_name)
-            return await self._read_s3_object(normalized_key)
+            try:
+                if bucket_name is not None:
+                    return await self._read_s3_object(normalized_key, bucket_name=bucket_name)
+                return await self._read_s3_object(normalized_key)
+            except AppException as exc:
+                if exc.code == "OBJECT_NOT_FOUND":
+                    local_path = self.resolve_local_path(normalized_key)
+                    if local_path.is_file():
+                        logger.info("S3 未命中对象 %s，触发回退从本地历史存储读取", normalized_key)
+                        return local_path.read_bytes()
+                raise
 
         file_path = self.resolve_local_path(normalized_key)
         if not file_path.is_file():
@@ -164,14 +172,23 @@ class ObjectStorageService:
             return
 
         self.sweep_object_cache_if_needed()
-        cache_path = await self._ensure_s3_cache_file(
-            normalized_key,
-            expected_sha256=expected_sha256,
-            expected_size=expected_size,
-            bucket_name=bucket_name,
-        )
-        self._touch_cache_file(cache_path)
-        yield cache_path
+        try:
+            cache_path = await self._ensure_s3_cache_file(
+                normalized_key,
+                expected_sha256=expected_sha256,
+                expected_size=expected_size,
+                bucket_name=bucket_name,
+            )
+            self._touch_cache_file(cache_path)
+            yield cache_path
+        except AppException as exc:
+            if exc.code == "OBJECT_NOT_FOUND":
+                local_path = self.resolve_local_path(normalized_key)
+                if local_path.is_file():
+                    logger.info("S3 未命中对象 %s，触发回退打开本地历史文件", normalized_key)
+                    yield local_path
+                    return
+            raise
 
     def sweep_object_cache_if_needed(self) -> None:
         """按配置的扫描间隔机会式清理 S3 本地派生缓存。"""

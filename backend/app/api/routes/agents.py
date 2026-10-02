@@ -56,8 +56,20 @@ from app.services.workspace_component_service import WorkspaceComponentService
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.ai.agent import AGENT_COORDINATOR_AGENT_ID, AgentRuntimeContext
 from app.ai.registry import RegisteredAgentDescriptor
+from app.core.config import get_settings
 
-router = APIRouter(prefix="/ai")
+
+def require_ai_enabled() -> None:
+    """守卫依赖：平台管理员禁用 AI 运营功能时统一拦截，返回 403。"""
+    if not get_settings().ai_enabled:
+        raise AppException(
+            status_code=403,
+            code="AI_FEATURE_DISABLED",
+            detail="平台管理员已禁用 AI 相关功能，请在系统设置中启用后再试。",
+        )
+
+
+router = APIRouter(prefix="/ai", dependencies=[Depends(require_ai_enabled)])
 
 
 @router.get("/agents", response_model=list[AgentDescriptor])

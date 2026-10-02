@@ -67,6 +67,9 @@ async def run_ai_external_task_coordinator(
     poll_interval = max(0.05, float(get_settings().ai_external_task_poll_interval_seconds))
     cleanup_counter = 0
     while True:
+        if not get_settings().ai_enabled:
+            await asyncio.sleep(2)
+            continue
         loop_token = write_path_metrics.bind_loop_name("ai-external-task-coordinator")
         tick_started = time.perf_counter()
         try:

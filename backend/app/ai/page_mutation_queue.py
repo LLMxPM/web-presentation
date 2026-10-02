@@ -132,6 +132,9 @@ async def _run_job_worker(
     recovery_interval = max(1.0, min(float(getattr(settings, "durable_job_heartbeat_seconds", 30)), 30.0))
     last_recovery_at = 0.0
     while True:
+        if not get_settings().ai_enabled:
+            await asyncio.sleep(2)
+            continue
         try:
             observed_generation = page_mutation_job_wakeup.generation
             async with session_factory() as session:

@@ -122,16 +122,23 @@ def _validate_optional_str(value: Any) -> str | None:
 
 
 def _validate_bool(value: Any) -> bool:
-    """规范化布尔值。"""
+    """规范化并严格校验布尔值，杜绝未知字符串被隐式转换为 True。"""
     if isinstance(value, bool):
         return value
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+        raise ValueError(f"数值 {value!r} 不是合法的布尔标识（必须为 0 或 1）。")
     if isinstance(value, str):
         normalized = value.strip().lower()
         if normalized in {"true", "1", "yes", "on"}:
             return True
-        if normalized in {"false", "0", "no", "off"}:
+        if normalized in {"false", "0", "no", "off", ""}:
             return False
-    return bool(value)
+        raise ValueError(f"无法将文本 {value!r} 解析为合法布尔值，合法值为 true/false、1/0、yes/no、on/off。")
+    raise ValueError(f"不支持的布尔值类型：{type(value).__name__}。")
 
 
 # 类 B 配置项规格字典（19 项）
@@ -311,18 +318,15 @@ def is_env_overridden(key: str) -> bool:
 
     from app.core.config import _iter_settings_env_files
 
+    import dotenv
+
     for env_path in _iter_settings_env_files():
         try:
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#") or "=" not in stripped:
-                    continue
-                k, v = stripped.split("=", 1)
-                if k.strip().strip('"').strip("'").upper() == env_name:
-                    cleaned_val = v.strip().strip('"').strip("'")
-                    if cleaned_val != "":
-                        return True
-        except OSError:
+            values = dotenv.dotenv_values(env_path)
+            for k, v in values.items():
+                if k and k.upper() == env_name and v is not None and str(v).strip() != "":
+                    return True
+        except Exception:
             continue
     return False
 

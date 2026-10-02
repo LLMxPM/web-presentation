@@ -62,6 +62,9 @@ services:
     <<: *production-env
     image: llmxpm/web-runtime-vue:latest
     restart: unless-stopped
+    environment:
+      RUNTIME_BACKEND_API_BASE_URL: ${RUNTIME_BACKEND_API_BASE_URL:-http://backend:8000}
+      RUNTIME_PREVIEW_JWKS_URL: ${RUNTIME_PREVIEW_JWKS_URL:-http://backend:8000/.well-known/jwks.json}
     # 子进程降权（W01）：镜像内置 RUNTIME_BUILD_CHILD_UID/GID，主进程保持镜像默认 root 才能 setuid。
     expose:
       - "7373"
