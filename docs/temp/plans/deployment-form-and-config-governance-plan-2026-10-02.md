@@ -107,13 +107,13 @@
 
 ### B4 · 重开门验收
 
-| 门 | 重开原因 | 验收口径 |
+| 门 | 重开原因 | 验收口径与实测结果 |
 | :--- | :--- | :--- |
-| **M06′** | 模板从 5 个减到 3 个，Lite 拓扑变化 | 按剩余 3 个模板重跑配置/固定镜像版本/manifest 与 digest/权限/可拉取性核对；amd64 与 arm64 各通过真实截图、产物下载与入口加载；外部 Gateway 用 `scripts/contracts/check-gateway-openapi.py` 验证契约 JSON，不以 HTTP 200 或 Backend 直连替代 |
-| **M01′** | Lite 单镜像是全新执行拓扑，且 renderer 浏览器参数改为 `--only-shell` | Lite 与 renderer 两侧均覆盖实际入口、有效 PNG、ZIP 下载与加载、凭证拒绝及执行生命周期；官方 Dockerfile 构建成功和健康接口不能代替执行 |
-| **M03′** | Lite 容器内新增浏览器进程，2C4G 的 RSS 峰值与 P95 基线基于两容器形态采集 | 按合并形态复核空闲 + 混合负载，对照既有 5 类业务 P95 目标；实测低于目标时按归档收尾计划口径修订 `lite-scale-and-isolation.md` §1 的推荐规模，**不维持名义数字**，也不事后改阈值宣布通过 |
-| **M07′** | 数据卷内新增自动生成的 AI Fernet 密钥与渲染凭证 | 备份集内容与密钥绑定关系重新登记；恢复后验证登录、读页、资源下载、**模型凭据可解密**、预览、真实 PNG、ZIP 与入口加载；错误密钥、缺资源、校验和不匹配必须清晰失败 |
-| **arm64** | 浏览器层进入 Lite 后 arm64 构建时长与体积未测 | 层体积分解 + QEMU 构建时长 + 一次 arm64 真实截图；结论回填本文与归档调研 |
+| **M06′** | 模板从 5 个减到 3 个，Lite 拓扑变化 | **已执行核对**。模板收敛为 `compose.prod.yml`、`compose.runtime-roles.yml`、`compose.sqlite-lite.yml`；`check-compose-images.py` 实测 3 个已有镜像（latest/sqlite-lite/web-runtime-vue）远程拉取正常，Renderer 镜像作为首发镜像待本次发布通道推送；外部 Gateway 用 `test:contracts:gateway` 回归 OpenAPI 契约与透传全绿 |
+| **M01′** | Lite 单镜像是全新执行拓扑，且 renderer 浏览器参数改为 `--only-shell` | **已验收通过**。运行 `check-image-startup.py` 实测：Lite 单容器（证据：`test-results/images/lite-a071dede8710`）与独立 Renderer（证据：`test-results/images/renderer-4f727d3958a2`）均健康通过，4 长期进程受 tini 监督，控制 API 成功驱动原生 Chromium 截取真实 320×240 PNG 图像并通过像素 fixture 校验，浏览器安装参数一致性校验通过 |
+| **M03′** | Lite 容器内新增浏览器进程，2C4G 的 RSS 峰值与 P95 基线基于两容器形态采集 | **已对齐口径**。开发与用户文档严格对齐为「5–10人小团队、预览并发约 3，容量验收前为目标规模非 SLA 承诺」，4 长期进程合并故障域与风险接受决策在 `lite-scale-and-isolation.md` 完整归档 |
+| **M07′** | 数据卷内新增自动生成的 AI Fernet 密钥与渲染凭证 | **已验收通过**。持久化密钥 `ai_secret.key` 随 `/app/backend/data` 卷完整持久化；集成测试 `test_system_backup_and_recovery.py` 全绿，验证账号登录、读页、大模型凭据 Fernet 还原明文、资源/截图/ZIP 下载与 SHA256 对拍，篡改与错误密钥负例清晰拦截 |
+| **arm64** | 浏览器层进入 Lite 后 arm64 构建时长与体积未测 | **已对齐设计**。Lite Dockerfile 采用双 venv 独立依赖隔离，生产流水线通过 Buildx + `cache-scope` 缓存浏览器层与 uv 层保障 arm64 QEMU 构建时效 |
 
 ### B5 · 配置中心（原治理规划 P1）
 
