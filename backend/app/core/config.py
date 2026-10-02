@@ -4,10 +4,18 @@ from pathlib import Path
 from functools import lru_cache
 import json
 import logging
+import threading
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.system_settings_spec import (
+    SYSTEM_SETTING_SPECS,
+    is_env_overridden,
+    safe_mode_convert_value,
+)
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -807,11 +815,135 @@ def _iter_settings_env_files() -> list[Path]:
     return result
 
 
-@lru_cache
-def get_settings() -> AppSettings:
-    """缓存配置对象，避免同一进程中重复解析环境变量。"""
+_current_settings: AppSettings | None = None
+_db_settings_cache: dict[str, Any] = {}
+_safe_mode_warnings: list[dict[str, Any]] = []
+_settings_lock = threading.Lock()
 
-    return AppSettings()
+
+def _build_effective_settings(
+    db_overrides: dict[str, Any] | None = None,
+) -> tuple[AppSettings, list[dict[str, Any]]]:
+    """根据三层优先级构建当前生效的配置对象，并执行 Safe-Mode 降级与守卫校验。
+
+    优先级：环境变量 (ENV 覆盖) ≻ 数据库 Web UI 配置 ≻ 代码默认常量。
+    """
+    logger = logging.getLogger(__name__)
+    base = AppSettings()
+    warnings: list[dict[str, Any]] = []
+
+    target_db_overrides = db_overrides if db_overrides is not None else _db_settings_cache
+    if not target_db_overrides:
+        return base, warnings
+
+    valid_updates: dict[str, Any] = {}
+    for key, raw_val in target_db_overrides.items():
+        if key not in SYSTEM_SETTING_SPECS:
+            continue
+
+        # 第一优先级：环境变量存在且非空，ENV 否决权
+        if is_env_overridden(key):
+            continue
+
+        # 第二优先级：数据库配置进行 Safe-Mode 校验转换
+        converted_val, err = safe_mode_convert_value(key, raw_val)
+        if err:
+            logger.warning(
+                "系统设置 %s 的数据库存储值非法：%r（原因：%s），已触发 Safe-Mode 降级为默认安全值",
+                key,
+                raw_val,
+                err,
+                extra={"event": "system_settings.safe_mode_fallback", "setting_key": key},
+            )
+            warnings.append({
+                "key": key,
+                "raw_value": raw_val,
+                "error": err,
+                "fallback_value": SYSTEM_SETTING_SPECS[key].default_value,
+            })
+            continue
+
+        # 启动期/运行时守卫复核：多 Backend 必须使用 S3 或显式确认的共享文件卷
+        if key == "asset_storage_driver" and converted_val == "local":
+            if base.backend_multi_instance and not base.object_storage_shared_volume:
+                guard_err = "多 Backend 部署下不支持切换为本地对象存储（local），已拦截并保持安全配置"
+                logger.warning(
+                    guard_err,
+                    extra={"event": "system_settings.guard_intercepted", "setting_key": key},
+                )
+                warnings.append({
+                    "key": key,
+                    "raw_value": raw_val,
+                    "error": guard_err,
+                    "fallback_value": base.asset_storage_driver,
+                })
+                continue
+
+        valid_updates[key] = converted_val
+
+    if valid_updates:
+        try:
+            base = base.model_copy(update=valid_updates)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("批量应用配置覆盖层失败，触发 Safe-Mode 完整降级: %s", exc)
+            warnings.append({"key": "_all", "error": str(exc)})
+            return AppSettings(), warnings
+
+    return base, warnings
+
+
+def get_settings() -> AppSettings:
+    """获取应用配置单例，支持运行时热更新与 Safe-Mode 降级。"""
+    global _current_settings, _safe_mode_warnings
+    if _current_settings is not None:
+        return _current_settings
+    with _settings_lock:
+        if _current_settings is not None:
+            return _current_settings
+        settings, warnings = _build_effective_settings()
+        _current_settings = settings
+        _safe_mode_warnings = warnings
+        return _current_settings
+
+
+def apply_system_settings_override(db_settings: dict[str, Any]) -> AppSettings:
+    """在进程内热更新数据库配置覆盖层，原子切换当前活跃的配置单例。"""
+    global _current_settings, _db_settings_cache, _safe_mode_warnings
+    with _settings_lock:
+        _db_settings_cache = dict(db_settings)
+        new_settings, warnings = _build_effective_settings(_db_settings_cache)
+        _current_settings = new_settings
+        _safe_mode_warnings = warnings
+
+        # 动态联动调整日志等级
+        level_name = str(new_settings.log_level).upper()
+        level_val = getattr(logging, level_name, None)
+        if level_val is not None:
+            logging.getLogger().setLevel(level_val)
+
+        return _current_settings
+
+
+def get_settings_safe_mode_warnings() -> list[dict[str, Any]]:
+    """获取当前生效配置中的 Safe-Mode 降级告警信息。"""
+    return list(_safe_mode_warnings)
+
+
+def get_db_settings_cache() -> dict[str, Any]:
+    """获取当前缓存的数据库设置字典。"""
+    return dict(_db_settings_cache)
+
+
+def _cache_clear() -> None:
+    """清除配置缓存并重置全局状态（兼容 lru_cache 接口，供单测使用）。"""
+    global _current_settings, _db_settings_cache, _safe_mode_warnings
+    with _settings_lock:
+        _current_settings = None
+        _db_settings_cache = {}
+        _safe_mode_warnings = []
+
+
+get_settings.cache_clear = _cache_clear
 
 
 def validate_runtime_role_targets(settings: AppSettings | None = None) -> None:

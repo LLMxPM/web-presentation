@@ -46,10 +46,27 @@ class ObjectStorageService:
     """统一管理平台对象文件的上传、读取、删除与本地可读路径获取。"""
 
     def __init__(self) -> None:
-        self.settings = get_settings()
-        self.driver = self.settings.asset_storage_driver
-        self.local_root = self.settings.page_screenshot_local_root_path
-        self.cache_root = self.local_root / "_object-cache"
+        """初始化对象存储服务。配置均通过属性动态读取，支持运行时热切换。"""
+
+    @property
+    def settings(self) -> AppSettings:
+        """动态获取当前生效的应用配置。"""
+        return get_settings()
+
+    @property
+    def driver(self) -> str:
+        """动态获取当前生效的对象存储驱动（local / s3）。"""
+        return self.settings.asset_storage_driver
+
+    @property
+    def local_root(self) -> Path:
+        """动态获取本地对象根路径。"""
+        return self.settings.page_screenshot_local_root_path
+
+    @property
+    def cache_root(self) -> Path:
+        """动态获取对象缓存根路径。"""
+        return self.local_root / "_object-cache"
 
     async def put_object(
         self,

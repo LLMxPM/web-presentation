@@ -47,8 +47,10 @@ from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.models.workspace_style import WorkspaceStyle
 from app.models.workspace_style_suggested_component import WorkspaceStyleSuggestedComponent
 from app.models.workspace_theme import WorkspaceTheme
+from app.models.system_setting import SystemSetting
 
 __all__ = [
+    "SystemSetting",
     "AiLlmConfig",
     "AiLlmProviderConfig",
     "AiLlmSlotBinding",

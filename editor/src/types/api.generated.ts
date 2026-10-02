@@ -2348,6 +2348,19 @@ export type RuntimeModuleBatchRequest = {
   "paths": (string)[]
 }
 
+export type S3TestConnectionRequest = {
+  "endpoint_url"?: (string) | (null)
+  "access_key"?: (string) | (null)
+  "secret_key"?: (string) | (null)
+  "bucket": string
+  "region"?: (string) | (null)
+}
+
+export type S3TestConnectionResponse = {
+  "success": boolean
+  "message": string
+}
+
 export type StyleConfiguration = {
   "presentation"?: PresentationConfig
   "suggested_components"?: SuggestedComponentsSelection
@@ -2378,6 +2391,34 @@ export type SuggestedComponentsResponse = {
 
 export type SuggestedComponentsSelection = {
   "component_ids"?: (number)[]
+}
+
+export type SystemSettingCategoryGroup = {
+  "category": string
+  "category_name": string
+  "items": (SystemSettingItem)[]
+}
+
+export type SystemSettingItem = {
+  "key": string
+  "category": string
+  "description": string
+  "value"?: unknown
+  "is_secret"?: boolean
+  "is_env_overridden"?: boolean
+  "source"?: string
+  "updated_at"?: (string) | (null)
+  "updated_by"?: (number) | (null)
+}
+
+export type SystemSettingsListResponse = {
+  "items": (SystemSettingItem)[]
+  "categories": (SystemSettingCategoryGroup)[]
+  "safe_mode_warnings"?: (Record<string, unknown>)[]
+}
+
+export type SystemSettingsUpdateRequest = {
+  "settings": Record<string, unknown>
 }
 
 export type ThemeBackgroundPalette = {

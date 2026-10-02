@@ -3,7 +3,7 @@
  */
 import type { RouteLocationRaw } from 'vue-router'
 
-const globalPagePaths = new Set(['/account/ai-settings', '/account/access-tokens', '/admin/users'])
+const globalPagePaths = new Set(['/account/ai-settings', '/account/access-tokens', '/admin/users', '/admin/settings'])
 
 /**
  * 校验全局页面携带的返回路径，仅允许 Editor 内部绝对路径并阻止全局页面之间循环返回。
@@ -39,7 +39,7 @@ export function parseWorkspaceIdFromPath(path: string | null): number | null {
  * @param currentFullPath 当前 Editor 路径
  */
 export function buildGlobalPageLocation(
-  name: 'accountAiSettings' | 'accountAccessTokens' | 'users',
+  name: 'accountAiSettings' | 'accountAccessTokens' | 'users' | 'adminSettings',
   currentFullPath: string,
 ): RouteLocationRaw {
   const returnTo = resolveGlobalReturnPath(currentFullPath)

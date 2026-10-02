@@ -51,6 +51,7 @@ from app.db.sqlite_single_process import SqliteSingleProcessGuard, ensure_sqlite
 from app.services.bootstrap_service import BootstrapService
 from app.services.ai_model_catalog_service import AiModelCatalogService, run_model_catalog_sync_loop
 from app.services.object_storage_service import ObjectStorageService
+from app.services.system_settings_service import load_system_settings_on_startup
 from app.services.asset_render_hint_backfill_job_service import (
     recover_interrupted_asset_render_hint_backfill_jobs_on_startup,
     run_asset_render_hint_backfill_queue_loop,
@@ -116,6 +117,8 @@ async def lifespan(app: FastAPI):
         validate_shared_identity_deployment(get_settings())
         ensure_redis_runtime_available()
         _log_runtime_state_startup(app)
+        async with session_factory() as startup_session:
+            await load_system_settings_on_startup(startup_session)
         if get_settings().ai_enabled:
             async with session_factory() as owner_session:
                 await ensure_agent_process_owner(owner_session)

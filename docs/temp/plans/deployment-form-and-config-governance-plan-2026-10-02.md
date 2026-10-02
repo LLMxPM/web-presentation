@@ -119,10 +119,10 @@
 
 | 序 | 工作项 | 完成口径 |
 | :--- | :--- | :--- |
-| **CFG4** | `system_settings` 表 + Alembic 迁移 | 时间列用 `app.db.types.UTCDateTime`、显式取值用 `utc_now()`；PG 与 SQLite 双方言迁移对拍通过（`test:backend:pg-claim`） |
-| **CFG5** | 配置解析层：ENV ≻ DB ≻ 代码默认 | **热更新机制要写实**：`get_settings()` 是 `@lru_cache`（`config.py:810`），必须定义显式失效入口与并发安全语义；存储驱动切换要重跑启动期守卫（`signing_identity.py:304-313` 的「多 Backend 必须 S3」）；防变砖三层（保存前 Dry-Run 与连通性实测、启动解析失败降级默认值并告警不进入 Crash-Loop、ENV 紧急否决救砖） |
-| **CFG6** | Editor「系统设置」视图：存储 / 常规 / 安全 / AI 运营 / 诊断 | 鉴权复用已有 `require_platform_admin`（`api/dependencies.py:32`），不新建角色体系；`api/routes/system.py:15` 现有的 `app_timezone` 公开端点改为 DB 后端；遵循根 `DESIGN.md` |
-| **CFG7** | S3 测试连通性接口 + 驱动进程内热切换 | 「测试连接」实测 AK/SK/Bucket 权限，失败禁止保存；切换后新请求即用新 driver，不重启进程 |
+| **CFG4** | `system_settings` 表 + Alembic 迁移 | **已完成**。创建 `system_settings` 模型与 Alembic 迁移 `20261002_0100_system_settings_table.py`，时间列使用 UTCDateTime 与 `utc_now()`；PG 与 SQLite 双方言迁移对拍测试全部通过（`test:backend:pg-claim`） |
+| **CFG5** | 配置解析层：ENV ≻ DB ≻ 代码默认 | **已完成**。实现 `SYSTEM_SETTING_SPECS` 19 项类 B 规格；重构 `config.py` 支持并发安全单例热替换与显式失效；实现三层优先级解析（ENV 覆盖 ≻ DB ≻ 代码常量）；防变砖三层建立：前置校验、Safe-Mode 脏数据安全降级默认值防 Crash-Loop、ENV 紧急否决救砖；多副本 local 驱动拦截守卫建立；正反例与 Safe-Mode 单元测试全部通过 |
+| **CFG6** | Editor「系统设置」视图：存储 / 常规 / 安全 / AI 运营 / 诊断 | **已完成**。提供 `GET/PUT /api/v1/admin/settings`；鉴权复用 `require_platform_admin`；公开端点 `GET /api/system/settings` 同步返回热生效时区；生成最新 OpenAPI 与类型；Editor 实现 5 个 Tab 的 `AdminSettingsView.vue`，支持 Safe-Mode 告警与 ENV 覆盖锁定展示；单测与门禁全部通过 |
+| **CFG7** | S3 测试连通性接口 + 驱动进程内热切换 | **已完成**。提供 `POST /api/v1/admin/settings/storage/test-connection`，异步实测 Bucket 权限；`ObjectStorageService` 改造为动态 property 支持零重启热更新驱动；前端提供测试连通性按钮与即时反馈 |
 
 ### B6 · 动态运营与文档（原治理规划 P2 剩余）
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     access_tokens,
+    admin_settings,
     agents,
     asset_render_hint_backfill_jobs,
     assets,
@@ -35,6 +36,8 @@ api_router.include_router(v1_router)
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(access_tokens.router, prefix="/access-tokens", tags=["access-tokens"])
 api_router.include_router(users.router, tags=["users"])
+api_router.include_router(admin_settings.router, prefix="/v1/admin/settings", tags=["admin-settings"])
+api_router.include_router(admin_settings.router, prefix="/admin/settings", tags=["admin-settings"], include_in_schema=False)
 api_router.include_router(agents.router, tags=["agents"])
 api_router.include_router(client_logs.router, prefix="/client-logs", tags=["client-logs"])
 api_router.include_router(model_configs.router, tags=["model-configs"])

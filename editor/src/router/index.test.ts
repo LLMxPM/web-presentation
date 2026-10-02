@@ -16,6 +16,7 @@ vi.mock('@/views/ThemesView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/WorkspaceStylesView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/AccountAiSettingsView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/UsersView.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/views/AdminSettingsView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/NotFoundView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/UiLabView.vue', () => ({ default: { template: '<div />' } }))
 
@@ -219,6 +220,42 @@ describe('router guard', () => {
     await router.push('/admin/users')
 
     expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  it('普通用户访问系统设置页时应回到工作空间页', async () => {
+    const store = useAuthStore()
+    vi.spyOn(store, 'ensureLoaded').mockResolvedValue()
+    store.user = {
+      id: 2,
+      username: 'user',
+      display_name: '普通用户',
+      role: 'workspace_user',
+      status: 'active',
+      last_login_at: null,
+      preview_size_presets: [],
+    }
+
+    await router.push('/admin/settings')
+
+    expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  it('管理员用户应允许进入系统设置页', async () => {
+    const store = useAuthStore()
+    vi.spyOn(store, 'ensureLoaded').mockResolvedValue()
+    store.user = {
+      id: 1,
+      username: 'admin',
+      display_name: '平台系统管理员',
+      role: 'platform_admin',
+      status: 'active',
+      last_login_at: null,
+      preview_size_presets: [],
+    }
+
+    await router.push('/admin/settings')
+
+    expect(router.currentRoute.value.name).toBe('adminSettings')
   })
 
   it('未登录访问未知路径时仍应先跳回登录页', async () => {

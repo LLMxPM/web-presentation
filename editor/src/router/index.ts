@@ -113,6 +113,12 @@ const routes = [
         meta: { hideSidebars: true, platformAdmin: true, globalPageTitle: '用户管理' },
       },
       {
+        path: 'admin/settings',
+        name: 'adminSettings',
+        component: () => import('@/views/AdminSettingsView.vue'),
+        meta: { hideSidebars: true, platformAdmin: true, globalPageTitle: '系统设置' },
+      },
+      {
         path: ':pathMatch(.*)*',
         name: 'notFound',
         component: () => import('@/views/NotFoundView.vue'),

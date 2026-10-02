@@ -26,6 +26,13 @@ export type PreviewSizePreset = GeneratedApi.PreviewSizePreset
 
 export type AuthUser = GeneratedApi.AuthUser
 
+export type SystemSettingsListResponse = GeneratedApi.SystemSettingsListResponse
+export type SystemSettingCategoryGroup = GeneratedApi.SystemSettingCategoryGroup
+export type SystemSettingItem = GeneratedApi.SystemSettingItem
+export type SystemSettingsUpdateRequest = GeneratedApi.SystemSettingsUpdateRequest
+export type S3TestConnectionRequest = GeneratedApi.S3TestConnectionRequest
+export type S3TestConnectionResponse = GeneratedApi.S3TestConnectionResponse
+
 export interface PagedResponse<T> {
   items: T[]
   total: number

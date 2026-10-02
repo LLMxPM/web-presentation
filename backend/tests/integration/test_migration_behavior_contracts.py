@@ -50,7 +50,16 @@ def test_upgrade_head_sqlite_preserves_partial_unique_contracts(tmp_path: Path) 
                 "SELECT name FROM sqlite_master WHERE type='table'"
             )
         }
-        assert {"pages", "ai_agent_runs", "ai_agent_external_batches", "page_screenshot_jobs"} <= tables
+        assert {"pages", "ai_agent_runs", "ai_agent_external_batches", "page_screenshot_jobs", "system_settings"} <= tables
+
+        connection.execute(
+            "INSERT INTO system_settings (key, value, category, is_secret, updated_at) "
+            "VALUES ('app_timezone', '\"Asia/Shanghai\"', 'general', 0, CURRENT_TIMESTAMP)"
+        )
+        row = connection.execute(
+            "SELECT key, value, category FROM system_settings WHERE key='app_timezone'"
+        ).fetchone()
+        assert row == ("app_timezone", '"Asia/Shanghai"', "general")
 
         # 行为断言：同一 session+agent 只能有一个活跃 run
         connection.execute(

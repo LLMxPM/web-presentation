@@ -43,7 +43,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bot, ChevronDown, Key, KeyRound, LogOut, UserCog } from '@lucide/vue'
+import { Bot, ChevronDown, Key, KeyRound, LogOut, Settings, UserCog } from '@lucide/vue'
 
 import { changePassword } from '@/api/auth'
 import { getErrorMessage } from '@/api/http'
@@ -84,6 +84,7 @@ const menuItems = computed<DropdownMenuEntry[]>(() => {
   ]
   if (user.value?.role === 'platform_admin') {
     items.push({ label: '用户管理', value: 'users', icon: UserCog })
+    items.push({ label: '系统设置', value: 'settings', icon: Settings })
   }
   items.push({ separator: true })
   items.push({ label: '退出登录', value: 'logout', icon: LogOut, danger: true })
@@ -105,6 +106,8 @@ async function handleCommand(command: string) {
     router.push(buildGlobalPageLocation('accountAccessTokens', route.fullPath))
   } else if (command === 'users') {
     router.push(buildGlobalPageLocation('users', route.fullPath))
+  } else if (command === 'settings') {
+    router.push(buildGlobalPageLocation('adminSettings', route.fullPath))
   } else if (command === 'password') {
     form.old_password = ''
     form.new_password = ''

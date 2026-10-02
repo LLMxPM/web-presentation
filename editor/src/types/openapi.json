@@ -9100,6 +9100,174 @@
         }
       }
     },
+    "/api/v1/admin/settings": {
+      "get": {
+        "tags": [
+          "admin-settings"
+        ],
+        "summary": "Get Admin Settings",
+        "description": "获取系统全量设置列表（按分类分组、附带掩码脱敏与 Safe-Mode 警告）。",
+        "operationId": "get_admin_settings_api_v1_admin_settings_get",
+        "parameters": [
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingsListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin-settings"
+        ],
+        "summary": "Update Admin Settings",
+        "description": "批量更新系统设置并触发进程内原子热更新。",
+        "operationId": "update_admin_settings_api_v1_admin_settings_put",
+        "parameters": [
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemSettingsUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingsListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/storage/test-connection": {
+      "post": {
+        "tags": [
+          "admin-settings"
+        ],
+        "summary": "Test S3 Storage Connection",
+        "description": "实测 S3 兼容对象存储连通性与 Bucket 读写/权限。",
+        "operationId": "test_s3_storage_connection_api_v1_admin_settings_storage_test_connection_post",
+        "parameters": [
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S3TestConnectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S3TestConnectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ai/agents": {
       "get": {
         "tags": [
@@ -38214,6 +38382,85 @@
         "title": "RuntimeModuleBatchRequest",
         "description": "Runtime 批量读取 artifact 模块的内部请求。"
       },
+      "S3TestConnectionRequest": {
+        "properties": {
+          "endpoint_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Url"
+          },
+          "access_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Key"
+          },
+          "secret_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Key"
+          },
+          "bucket": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Bucket",
+            "description": "主存储桶名称"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket"
+        ],
+        "title": "S3TestConnectionRequest",
+        "description": "S3 兼容对象存储连通性测试请求模型。"
+      },
+      "S3TestConnectionResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "S3TestConnectionResponse",
+        "description": "S3 连通性测试响应模型。"
+      },
       "StyleConfiguration": {
         "properties": {
           "presentation": {
@@ -38378,6 +38625,147 @@
         "type": "object",
         "title": "SuggestedComponentsSelection",
         "description": "有序建议组件选择；空数组表示清空。"
+      },
+      "SystemSettingCategoryGroup": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "category_name": {
+            "type": "string",
+            "title": "Category Name"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SystemSettingItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "category_name",
+          "items"
+        ],
+        "title": "SystemSettingCategoryGroup",
+        "description": "按分类组织的系统设置组模型。"
+      },
+      "SystemSettingItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "is_secret": {
+            "type": "boolean",
+            "title": "Is Secret",
+            "default": false
+          },
+          "is_env_overridden": {
+            "type": "boolean",
+            "title": "Is Env Overridden",
+            "default": false
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "default"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "category",
+          "description"
+        ],
+        "title": "SystemSettingItem",
+        "description": "单个系统设置项模型。"
+      },
+      "SystemSettingsListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SystemSettingItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/SystemSettingCategoryGroup"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "safe_mode_warnings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Safe Mode Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "categories"
+        ],
+        "title": "SystemSettingsListResponse",
+        "description": "系统设置列表接口响应。"
+      },
+      "SystemSettingsUpdateRequest": {
+        "properties": {
+          "settings": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Settings",
+            "description": "键值对字典，包含待更新的配置项"
+          }
+        },
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "SystemSettingsUpdateRequest",
+        "description": "批量更新系统设置的请求模型。"
       },
       "ThemeBackgroundPalette": {
         "properties": {
