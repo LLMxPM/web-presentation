@@ -1,0 +1,126 @@
+# 文件功能：交付镜像的统一发布步骤，先本地启动验证，再单次多架构构建同时推送 Docker Hub 与阿里云 ACR。
+name: publish-image
+description: 构建并推送单个交付镜像变体到 Docker Hub 与 ACR
+
+inputs:
+  file:
+    description: Dockerfile 路径，构建上下文固定为仓库根
+    required: true
+  variant:
+    description: full、lite、runtime 或 renderer
+    required: true
+  image:
+    description: 镜像仓库名，例如 web-presentation
+    required: true
+  cache-scope:
+    description: BuildKit 缓存范围
+    required: true
+  tag-version:
+    description: 版本标签，例如 v1.2.3
+    required: true
+  push-latest:
+    description: 是否同时推送 latest 或 sqlite-lite 稳定标签，true/false
+    required: true
+  tag-style:
+    description: version 直接使用该版本标签；sqlite-lite 使用 sqlite-lite- 前缀
+    required: false
+    default: version
+  sha-tag:
+    description: 是否额外推送 sha- 长标签，true/false
+    required: false
+    default: 'false'
+  title:
+    description: OCI 标题
+    required: true
+  description:
+    description: OCI 描述
+    required: true
+  extra-labels:
+    description: 追加的 OCI 标签片段
+    required: false
+    default: ''
+  docker-username:
+    description: Docker Hub 用户名
+    required: true
+  docker-password:
+    description: Docker Hub 访问令牌
+    required: true
+  acr-registry:
+    description: ACR 实例域名
+    required: true
+  acr-namespace:
+    description: ACR 命名空间
+    required: true
+  acr-username:
+    description: ACR 登录名
+    required: true
+  acr-password:
+    description: ACR 访问凭证密码
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: 登录 Docker Hub
+      uses: docker/login-action@v4
+      with:
+        username: ${{ inputs.docker-username }}
+        password: ${{ inputs.docker-password }}
+    - name: 登录阿里云 ACR
+      uses: docker/login-action@v4
+      with:
+        registry: ${{ inputs.acr-registry }}
+        username: ${{ inputs.acr-username }}
+        password: ${{ inputs.acr-password }}
+    - uses: docker/setup-qemu-action@v4
+    - uses: docker/setup-buildx-action@v4
+    # 先按 amd64 本地加载并验证实际入口与健康探针，再进入对外推送。
+    - uses: ./.github/actions/check-image
+      with:
+        file: ${{ inputs.file }}
+        variant: ${{ inputs.variant }}
+        tag: wp-publish-startup:${{ inputs.variant }}
+        cache-scope: ${{ inputs.cache-scope }}
+
+    - id: meta-hub
+      uses: docker/metadata-action@v6
+      with:
+        images: docker.io/llmxpm/${{ inputs.image }}
+        tags: |
+          type=raw,value=${{ inputs.tag-style == 'sqlite-lite' && format('sqlite-lite-{0}', inputs.tag-version) || inputs.tag-version }}
+          type=raw,value=${{ inputs.tag-style == 'sqlite-lite' && 'sqlite-lite' || 'latest' }},enable=${{ inputs.push-latest == 'true' }}
+          type=sha,format=long,prefix=sha-,enable=${{ inputs.sha-tag == 'true' }}
+        labels: |
+          org.opencontainers.image.title=${{ inputs.title }}
+          org.opencontainers.image.description=${{ inputs.description }}
+          org.opencontainers.image.version=${{ inputs.tag-style == 'sqlite-lite' && format('sqlite-lite-{0}', inputs.tag-version) || inputs.tag-version }}
+          org.opencontainers.image.revision=${{ github.sha }}
+          ${{ inputs.extra-labels }}
+
+    # ACR 与 Docker Hub 使用同名标签，便于国内网络按同样的标签规则拉取。
+    - id: meta-acr
+      uses: docker/metadata-action@v6
+      with:
+        images: ${{ inputs.acr-registry }}/${{ inputs.acr-namespace }}/${{ inputs.image }}
+        tags: |
+          type=raw,value=${{ inputs.tag-style == 'sqlite-lite' && format('sqlite-lite-{0}', inputs.tag-version) || inputs.tag-version }}
+          type=raw,value=${{ inputs.tag-style == 'sqlite-lite' && 'sqlite-lite' || 'latest' }},enable=${{ inputs.push-latest == 'true' }}
+          type=sha,format=long,prefix=sha-,enable=${{ inputs.sha-tag == 'true' }}
+
+    # 单次多架构构建同时推送两个仓库：两侧得到同一份镜像配置与相同 digest，可按 digest 跨仓回滚。
+    # 代价是不再生成 OCI provenance/SBOM 附件（ACR 个人版不接受附件，合并推送后只能整体关闭）。
+    - name: 构建并同时推送到 Docker Hub 与 ACR
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        file: ${{ inputs.file }}
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ steps.meta-hub.outputs.tags }}
+          ${{ steps.meta-acr.outputs.tags }}
+        labels: ${{ steps.meta-hub.outputs.labels }}
+        provenance: false
+        sbom: false
+        cache-from: type=gha,scope=${{ inputs.cache-scope }}
+        cache-to: type=gha,mode=max,scope=${{ inputs.cache-scope }}

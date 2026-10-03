@@ -3,7 +3,7 @@
 
 ## 发布边界
 
-根仓由同一次 Buildx 多架构构建同时发布到 Docker Hub 和阿里云 ACR 个人版。两个仓库使用相同的镜像标签与内容摘要；Docker Hub 作为默认公共仓库，ACR 作为中国大陆网络环境下的拉取副本。镜像仓库为：
+根仓由同一次 Buildx 多架构构建同时发布到 Docker Hub 和阿里云 ACR 个人版。两个仓库使用相同的镜像标签与内容摘要——这依赖 `.github/actions/publish-image` 用单次构建携带双仓标签，而不是分别构建；代价是发布镜像不生成 OCI provenance/SBOM 附件，因为 ACR 个人版不接受该类附件。Docker Hub 作为默认公共仓库，ACR 作为中国大陆网络环境下的拉取副本。镜像仓库为：
 
 - Docker Hub：`docker.io/llmxpm/web-presentation`、`docker.io/llmxpm/web-runtime-vue`、`docker.io/llmxpm/web-presentation-renderer`（**Renderer 尚未发布**，见下）
 - 阿里云 ACR：`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation-renderer`（**Renderer 尚未发布**）
@@ -20,10 +20,24 @@
 
 ## GitHub Actions
 
-- 质量门禁共用 `.github/workflows/reusable-quality.yml`，测试命令统一走根目录 `package.json` 的 `test:*` 脚本。
-- PR：`platform-test.yml` 调用 reusable-quality 执行快速门禁（Backend unit/api、Editor、contracts、render-contracts、renderer、gateway）；当 `runtime/` 或根 pnpm workspace、锁文件、工具链配置变化时，额外执行 Runtime 门禁。
-- 全量测试：`platform-test.yml` 在 `main` push、每周一定时任务或手动触发且 `full_tests=true` 时，在快速门禁基础上补充 Backend integration、Runtime 门禁、E2E，以及平台 / lite / runtime / renderer 四类镜像构建与实际启动 smoke（不推送）。定时与手动还会执行全部 E2E project；`cli-contract` 仅在定时/手动触发（依赖外部 agent-kit 仓库）。
-- Release：`platform-release.yml` 先调用 reusable-quality（`full=true`，E2E 全量），通过后构建镜像并复用 `.github/actions/check-image` 验证实际启动，再由本仓推送 Runtime、Renderer、常规平台、SQLite 轻量四类镜像到 Docker Hub 与阿里云 ACR。
+### 质量门禁入口
+
+- 三条流水线共用 `.github/workflows/reusable-quality.yml`，测试命令统一走根目录 `package.json` 的 `test:*` 脚本；workflow 级 `permissions` 收敛为 `contents: read`，每个 job 都带 `timeout-minutes`。
+- `platform-test.yml` 的首个 job `test-scope` 执行 `.github/scripts/resolve-test-scope.sh`，由脚本按事件与 `git diff` 产出 `full_tests`、`run_runtime`、`e2e_scope`、`image_matrix` 四个 output。YAML 内不维护第二份路径清单，也不再使用 `dorny/paths-filter`：该 action 在 push 与 schedule 事件没有 diff base 时恒为真，会让每次 main push 都白跑一遍 Runtime 门禁。
+- 分级规则：
+  - `pull_request` 与 `main` push 以变更文件为输入。只改 `docs/`、`README/AGENTS/DESIGN/LICENSE.md`、`.gitignore`、`.gitattributes` 时只跑快速门禁；其它任何改动进入全量门禁（Backend integration、Runtime 门禁、E2E smoke）。
+  - 镜像 smoke 只重建受影响变体：平台镜像构建输入（`deploy/`、`backend/`、`editor/`、`scripts/`、`Dockerfile*`、根 workspace 锁文件、`runtime/package.json`、Runtime Kit manifest）命中则重建平台 + lite；`runtime/` 命中重建 Runtime 镜像与 lite；`renderer/`、`packages/`、`uv.lock` 命中重建 Renderer 镜像。全部 leg 定义在脚本的 `FULL_MATRIX`，由 `tests/contracts/repository/deployment.test.ts` 校验四类交付 Dockerfile 都在其中。
+  - 解析不到 diff base（浅克隆、force push、`github.event.before` 不可达）时脚本保守升级为全量，绝不静默降级。
+  - `schedule`（每周一）与 `workflow_dispatch` 且 `full_tests=true` 是全量入口：始终跑完整门禁，E2E 使用 `test:e2e:all`，镜像 smoke 覆盖四个变体的多架构构建。
+  - `cli-contract` 依赖同级 `web-presentation-agent-kit` 仓库，仅在定时与手动触发。
+- 并发分组：`schedule` 使用独立 group 且 `cancel-in-progress=false`，避免定时全量被随后的 main push 中途杀掉；其余事件按 PR 号或 ref 分组并自动取消。
+- E2E 在 CI 下允许一次重试（`tests/config/playwright.config.ts` 的 `retries: process.env.CI ? 1 : 0`）：单条用例的定位抖动应在 job 内自愈，不能放大成整套门禁重跑；本地保持 `0` 以暴露真实不稳定。
+
+### Release 流水线
+
+- `platform-release.yml` 不再重复执行整套质量门禁。`verify-main-gate` 通过 `gh api repos/.../actions/runs?head_sha=<发布提交>` 检查该提交是否已有通过的 `platform-test` 运行；没有则拒绝发布。因此**合入 main 的那次 push 必须跑绿**，且 release tag 指向的提交要与该运行同 SHA。确需紧急补发时，需通过 GitHub Actions 页面使用 `workflow_dispatch` 手动触发并勾选 `allow_unverified`（GitHub Release UI 发布无法传入跳过参数），此时写入 `::warning::` 留痕。
+- `release-meta` 在构建前一次性校验 `vars.DOCKER_USERNAME`、`secrets.DOCKER_PASSWORD`、`vars.ACR_REGISTRY`、`vars.ACR_NAMESPACE`、`vars.ACR_USERNAME`、`secrets.ACR_PASSWORD` 是否缺失（只做非空判断，不输出值），避免缺配置直到 docker login 阶段才报出难以定位的错误。
+- 推送由 `.github/actions/publish-image` composite action 完成：先复用 `.github/actions/check-image` 验证镜像实际启动，再用**一次** `docker/build-push-action` 多架构构建同时携带 Docker Hub 与 ACR 两组标签。代价是关闭 OCI provenance/SBOM 附件（ACR 个人版不接受该附件），换取双仓镜像内容与摘要一致。
 - Docker Hub 配置：
   - `vars.DOCKER_USERNAME`
   - `secrets.DOCKER_PASSWORD`

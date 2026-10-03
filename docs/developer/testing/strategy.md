@@ -180,11 +180,16 @@ AI run 状态切换后无需执行 Redis run 迁移脚本；旧 Redis run key �
 
 ## 6. CI 策略
 
-PR 执行 Backend unit/api、Editor gate、根仓 contracts、render-contracts、Renderer、Python workspace、Gateway 契约与 Docker context 检查。Runtime 源码或根 pnpm 工具链变化时，额外执行 Runtime gate。
+PR 执行 Backend unit/api、PostgreSQL 认领对拍、Runtime 运行态对拍、Editor gate、根仓 contracts、render-contracts、Renderer、Python workspace、Gateway 契约与 Docker context 检查。Runtime 源码或根 pnpm 工具链变化时，额外执行 Runtime gate。
 
-`main` push、每周一定时任务和手动 `full_tests=true` 执行全量门禁：增加 Backend integration、Runtime gate 与 E2E，并对常规平台、SQLite 轻量版、Runtime、Renderer 四类镜像执行构建及实际启动检查。`main` push 运行 `test:e2e`；定时和手动全量运行 `test:e2e:all`。跨仓 CLI 契约只在定时与手动任务中运行。
+门禁范围由 `.github/scripts/resolve-test-scope.sh` 按事件与 `git diff` 分级，不在 YAML 中维护第二份路径规则：
 
-GitHub Release 的 `published` 事件或手动发布任务触发后，先执行全量质量门禁和 `test:e2e:all`，通过后再构建、检查并推送四类镜像。具体触发条件、镜像标签及发布顺序以 [CI/CD 文档](../../deployment/production/cicd.md) 和 `.github/workflows/` 为准。
+- `main` push 与非文档 PR 在全部门禁之上增加 Backend integration 与 `test:e2e`（`auth` + `smoke` project）；只改 `docs/` 与仓库元数据时停留在快速门禁。
+- 镜像构建与实际启动 smoke 只覆盖受影响变体：平台镜像构建输入变化重建常规平台与 SQLite 轻量版，`runtime/` 变化重建 Runtime 与轻量版，`renderer/`、`packages/` 与 `uv.lock` 变化重建 Renderer。`main` push 与 PR 只验证 `linux/amd64`。
+- 每周一定时任务和手动 `full_tests=true` 是全量入口：运行 `test:e2e:all`，并对四类镜像执行多架构构建 smoke。跨仓 CLI 契约只在定时与手动任务中运行。
+- E2E 在 CI 下允许一次重试，避免单条用例的定位抖动把整套门禁拖进下一次重跑。
+
+GitHub Release 的 `published` 事件或手动发布任务触发后，`verify-main-gate` 校验该提交是否已有通过的 `platform-test` 运行，不再重复执行整套质量门禁与 E2E；通过后按 Runtime、Renderer、常规平台、SQLite 轻量的顺序构建、检查并推送镜像。具体触发条件、镜像标签及发布顺序以 [CI/CD 文档](../../deployment/production/cicd.md) 和 `.github/workflows/` 为准。
 
 ## 7. 故障排查
 

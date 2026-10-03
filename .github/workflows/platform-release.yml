@@ -1,10 +1,12 @@
-# 文件功能：平台 Release 流水线。复用质量门禁后，由本仓构建并推送 Runtime / Renderer / 平台 / SQLite lite 镜像。
-# Runtime 镜像自 vendored 起由本仓 runtime/Dockerfile 构建，不再依赖外部 web-runtime-vue 子模块 SHA 镜像。
+# 文件功能：平台 Release 流水线。校验该提交已在 main 通过质量门禁后，由本仓单次多架构构建并推送 Runtime / Renderer / 平台 / SQLite lite 镜像。
+# 不再重复执行整套质量门禁：门禁结论由 platform-test 在 main 上产出，本流水线只做镜像启动验证与推送。
 
 name: platform-release
 
 permissions:
   contents: read
+  # verify-main-gate 需要读取 platform-test 的运行结论。
+  actions: read
 
 on:
   release:
@@ -20,6 +22,11 @@ on:
         required: true
         default: false
         type: boolean
+      allow_unverified:
+        description: 跳过「该提交在 main 已全绿」校验（仅用于紧急补发，会写入告警）
+        required: true
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.release_tag }}
@@ -28,6 +35,7 @@ concurrency:
 jobs:
   release-meta:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       release_tag: ${{ steps.meta.outputs.release_tag }}
       push_latest: ${{ steps.meta.outputs.push_latest }}
@@ -38,6 +46,12 @@ jobs:
           EVENT_RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
           INPUT_PUSH_LATEST: ${{ inputs.push_latest }}
+          DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          ACR_REGISTRY: ${{ vars.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
+          ACR_USERNAME: ${{ vars.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
           if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
             release_tag="${EVENT_RELEASE_TAG}"
@@ -56,272 +70,165 @@ jobs:
             exit 1
           fi
 
+          # 发布凭证与仓库变量在此一次性校验，避免缺配置时在 docker login/build 阶段才报出难以定位的错误。
+          missing=""
+          for pair in "vars.DOCKER_USERNAME:${DOCKER_USERNAME}" \
+                      "secrets.DOCKER_PASSWORD:${DOCKER_PASSWORD}" \
+                      "vars.ACR_REGISTRY:${ACR_REGISTRY}" \
+                      "vars.ACR_NAMESPACE:${ACR_NAMESPACE}" \
+                      "vars.ACR_USERNAME:${ACR_USERNAME}" \
+                      "secrets.ACR_PASSWORD:${ACR_PASSWORD}"; do
+            [ -z "${pair#*:}" ] && missing="${missing} ${pair%%:*}"
+          done
+          if [ -n "${missing}" ]; then
+            echo "缺少发布所需的配置项：${missing}" >&2
+            exit 1
+          fi
+
           echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
           echo "push_latest=${push_latest}" >> "${GITHUB_OUTPUT}"
 
-  quality:
-    needs: release-meta
-    uses: ./.github/workflows/reusable-quality.yml
-    with:
-      full: true
-      run_runtime: true
-      e2e_scope: all
-
-  build-and-push-services:
+  # 发布不再重跑整套门禁：改为复用 platform-test 在同一提交上产出的结论，
+  # 使 main push 的 ~20 分钟门禁不会被同一条提交在发布链路上重复一次。
+  verify-main-gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: release-meta
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HEAD_SHA: ${{ github.sha }}
+      ALLOW_UNVERIFIED: ${{ inputs.allow_unverified }}
+    steps:
+      - name: 校验该提交已通过 platform-test 全部门禁
+        run: |
+          conclusions="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${HEAD_SHA}&per_page=100" \
+            --jq '.workflow_runs[] | select(.name == "platform-test" and .status == "completed") | .conclusion' || true)"
+
+          if printf '%s\n' "${conclusions}" | grep -qx success; then
+            echo "提交 ${HEAD_SHA} 已有通过的 platform-test 运行，允许发布。"
+            exit 0
+          fi
+
+          if [ "${ALLOW_UNVERIFIED}" = "true" ]; then
+            echo "::warning::提交 ${HEAD_SHA} 没有通过的质量门禁运行，已按 allow_unverified 跳过校验。"
+            exit 0
+          fi
+
+          in_progress="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${HEAD_SHA}&per_page=10" \
+            --jq '.workflow_runs[] | select(.name == "platform-test" and .status != "completed") | .id' || true)"
+
+          {
+            echo "提交 ${HEAD_SHA} 没有通过的 platform-test 运行，拒绝发布镜像。"
+            echo "现有已完成结论：${conclusions:-无}"
+            if [ -n "${in_progress}" ]; then
+              echo "提示：该提交存在正在执行中的 platform-test（Run ID: ${in_progress}），请等待其完成且跑绿后再触发发布。"
+            fi
+            echo "确需紧急补发时，请通过 GitHub Actions 页面的 workflow_dispatch 手动触发并勾选 allow_unverified（GitHub Release 页面发布不支持跳过参数）。"
+          } >&2
+          exit 1
+
+  publish-service-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     needs:
       - release-meta
-      - quality
+      - verify-main-gate
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: runtime
+          - variant: runtime
             image: web-runtime-vue
             file: runtime/Dockerfile
+            cache_scope: runtime
+            title: web-runtime-vue
             description: web-presentation Runtime Vite server image
-          - name: renderer
+            sha_tag: 'true'
+            tag_style: version
+            extra_labels: ''
+          - variant: renderer
             image: web-presentation-renderer
             file: renderer/Dockerfile
+            cache_scope: renderer
+            title: web-presentation-renderer
             description: web-presentation remote Chromium Renderer image
+            sha_tag: 'true'
+            tag_style: version
+            extra_labels: ''
+    name: publish-service-images (${{ matrix.variant }})
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/login-action@v4
-        with:
-          username: ${{ vars.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ vars.ACR_REGISTRY }}
-          username: ${{ vars.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-      - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v4
-      - uses: ./.github/actions/check-image
+      - uses: ./.github/actions/publish-image
         with:
           file: ${{ matrix.file }}
-          variant: ${{ matrix.name }}
-          tag: wp-service:startup-${{ matrix.name }}
-          cache-scope: ${{ matrix.name }}
-      - id: meta-dockerhub
-        uses: docker/metadata-action@v6
-        with:
-          images: docker.io/llmxpm/${{ matrix.image }}
-          tags: |
-            type=raw,value=${{ needs.release-meta.outputs.release_tag }}
-            type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
-            type=sha,format=long,prefix=sha-
-          labels: |
-            org.opencontainers.image.title=${{ matrix.image }}
-            org.opencontainers.image.description=${{ matrix.description }}
-            org.opencontainers.image.version=${{ needs.release-meta.outputs.release_tag }}
-            org.opencontainers.image.revision=${{ github.sha }}
-      - id: meta-acr
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/${{ matrix.image }}
-          tags: |
-            type=raw,value=${{ needs.release-meta.outputs.release_tag }}
-            type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
-            type=sha,format=long,prefix=sha-
-          labels: |
-            org.opencontainers.image.title=${{ matrix.image }}
-            org.opencontainers.image.description=${{ matrix.description }}
-            org.opencontainers.image.version=${{ needs.release-meta.outputs.release_tag }}
-            org.opencontainers.image.revision=${{ github.sha }}
-      - name: Push service image to Docker Hub
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ${{ matrix.file }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-dockerhub.outputs.tags }}
-          labels: ${{ steps.meta-dockerhub.outputs.labels }}
-          annotations: ${{ steps.meta-dockerhub.outputs.annotations }}
-          provenance: true
-          sbom: true
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-      - name: Push service image to ACR
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ${{ matrix.file }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-acr.outputs.tags }}
-          labels: ${{ steps.meta-acr.outputs.labels }}
-          annotations: ${{ steps.meta-acr.outputs.annotations }}
-          provenance: false
-          sbom: false
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          variant: ${{ matrix.variant }}
+          image: ${{ matrix.image }}
+          cache-scope: ${{ matrix.cache_scope }}
+          tag-version: ${{ needs.release-meta.outputs.release_tag }}
+          push-latest: ${{ needs.release-meta.outputs.push_latest }}
+          tag-style: ${{ matrix.tag_style }}
+          sha-tag: ${{ matrix.sha_tag }}
+          title: ${{ matrix.title }}
+          description: ${{ matrix.description }}
+          docker-username: ${{ vars.DOCKER_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_PASSWORD }}
+          acr-registry: ${{ vars.ACR_REGISTRY }}
+          acr-namespace: ${{ vars.ACR_NAMESPACE }}
+          acr-username: ${{ vars.ACR_USERNAME }}
+          acr-password: ${{ secrets.ACR_PASSWORD }}
 
-  build-and-push:
+  publish-platform-images:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     needs:
       - release-meta
-      - quality
-      - build-and-push-services
+      - verify-main-gate
+      - publish-service-images
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: full
+            image: web-presentation
+            file: deploy/docker/Dockerfile.platform
+            cache_scope: platform
+            title: web-presentation
+            description: web-presentation Backend and Editor platform image
+            sha_tag: 'false'
+            tag_style: version
+            extra_labels: |
+              com.web-presentation.runtime.image=docker.io/llmxpm/web-runtime-vue:${{ needs.release-meta.outputs.release_tag }}
+              com.web-presentation.renderer.image=docker.io/llmxpm/web-presentation-renderer:${{ needs.release-meta.outputs.release_tag }}
+          - variant: lite
+            image: web-presentation
+            file: deploy/docker/Dockerfile.lite
+            cache_scope: platform-lite
+            title: web-presentation-sqlite-lite
+            description: web-presentation SQLite + memory runtime single-container image
+            sha_tag: 'false'
+            tag_style: sqlite-lite
+            extra_labels: |
+              com.web-presentation.image.variant=sqlite-lite
+              com.web-presentation.runtime.embedded=true
+    name: publish-platform-images (${{ matrix.variant }})
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/login-action@v4
+      - uses: ./.github/actions/publish-image
         with:
-          username: ${{ vars.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ vars.ACR_REGISTRY }}
-          username: ${{ vars.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-      - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v4
-      - uses: ./.github/actions/check-image
-        with:
-          file: deploy/docker/Dockerfile.platform
-          variant: full
-          tag: web-presentation:startup
-          cache-scope: platform
-      # Docker Hub 支持 BuildKit attestation，保留 provenance/SBOM。
-      - id: meta-dockerhub
-        uses: docker/metadata-action@v6
-        with:
-          images: docker.io/llmxpm/web-presentation
-          tags: |
-            type=raw,value=${{ needs.release-meta.outputs.release_tag }}
-            type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
-          labels: |
-            org.opencontainers.image.title=web-presentation
-            org.opencontainers.image.description=web-presentation Backend and Editor platform image
-            org.opencontainers.image.version=${{ needs.release-meta.outputs.release_tag }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            com.web-presentation.runtime.image=docker.io/llmxpm/web-runtime-vue:${{ needs.release-meta.outputs.release_tag }}
-            com.web-presentation.renderer.image=docker.io/llmxpm/web-presentation-renderer:${{ needs.release-meta.outputs.release_tag }}
-      # 个人版/旧版 ACR 不接受 provenance 和 SBOM 生成的 OCI 附件，单独生成 ACR 标签。
-      - id: meta-acr
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/web-presentation
-          tags: |
-            type=raw,value=${{ needs.release-meta.outputs.release_tag }}
-            type=raw,value=latest,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
-          labels: |
-            org.opencontainers.image.title=web-presentation
-            org.opencontainers.image.description=web-presentation Backend and Editor platform image
-            org.opencontainers.image.version=${{ needs.release-meta.outputs.release_tag }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            com.web-presentation.runtime.image=docker.io/llmxpm/web-runtime-vue:${{ needs.release-meta.outputs.release_tag }}
-            com.web-presentation.renderer.image=docker.io/llmxpm/web-presentation-renderer:${{ needs.release-meta.outputs.release_tag }}
-      - name: Push platform image to Docker Hub
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: deploy/docker/Dockerfile.platform
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-dockerhub.outputs.tags }}
-          labels: ${{ steps.meta-dockerhub.outputs.labels }}
-          annotations: ${{ steps.meta-dockerhub.outputs.annotations }}
-          provenance: true
-          sbom: true
-          cache-from: type=gha,scope=platform
-          cache-to: type=gha,mode=max,scope=platform
-      - name: Push platform image to ACR
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: deploy/docker/Dockerfile.platform
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-acr.outputs.tags }}
-          labels: ${{ steps.meta-acr.outputs.labels }}
-          annotations: ${{ steps.meta-acr.outputs.annotations }}
-          provenance: false
-          sbom: false
-          cache-from: type=gha,scope=platform
-          cache-to: type=gha,mode=max,scope=platform
-
-  build-and-push-lite:
-    runs-on: ubuntu-latest
-    needs:
-      - release-meta
-      - quality
-      - build-and-push-services
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v4
-        with:
-          username: ${{ vars.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: docker/login-action@v4
-        with:
-          registry: ${{ vars.ACR_REGISTRY }}
-          username: ${{ vars.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-      - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v4
-      - uses: ./.github/actions/check-image
-        with:
-          file: deploy/docker/Dockerfile.lite
-          variant: lite
-          tag: web-presentation:lite-startup
-          cache-scope: platform-lite
-      # Docker Hub 支持 BuildKit attestation，保留 provenance/SBOM。
-      - id: meta-dockerhub
-        uses: docker/metadata-action@v6
-        with:
-          images: docker.io/llmxpm/web-presentation
-          tags: |
-            type=raw,value=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
-            type=raw,value=sqlite-lite,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
-          labels: |
-            org.opencontainers.image.title=web-presentation-sqlite-lite
-            org.opencontainers.image.description=web-presentation SQLite + memory runtime single-container image
-            org.opencontainers.image.version=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            com.web-presentation.image.variant=sqlite-lite
-            com.web-presentation.runtime.embedded=true
-      # 个人版/旧版 ACR 不接受 provenance 和 SBOM 生成的 OCI 附件，单独生成 ACR 标签。
-      - id: meta-acr
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ vars.ACR_REGISTRY }}/${{ vars.ACR_NAMESPACE }}/web-presentation
-          tags: |
-            type=raw,value=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
-            type=raw,value=sqlite-lite,enable=${{ needs.release-meta.outputs.push_latest == 'true' }}
-          labels: |
-            org.opencontainers.image.title=web-presentation-sqlite-lite
-            org.opencontainers.image.description=web-presentation SQLite + memory runtime single-container image
-            org.opencontainers.image.version=sqlite-lite-${{ needs.release-meta.outputs.release_tag }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            com.web-presentation.image.variant=sqlite-lite
-            com.web-presentation.runtime.embedded=true
-      - name: Push SQLite lite image to Docker Hub
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: deploy/docker/Dockerfile.lite
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-dockerhub.outputs.tags }}
-          labels: ${{ steps.meta-dockerhub.outputs.labels }}
-          annotations: ${{ steps.meta-dockerhub.outputs.annotations }}
-          provenance: true
-          sbom: true
-          cache-from: type=gha,scope=platform-lite
-          cache-to: type=gha,mode=max,scope=platform-lite
-      - name: Push SQLite lite image to ACR
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: deploy/docker/Dockerfile.lite
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-acr.outputs.tags }}
-          labels: ${{ steps.meta-acr.outputs.labels }}
-          annotations: ${{ steps.meta-acr.outputs.annotations }}
-          provenance: false
-          sbom: false
-          cache-from: type=gha,scope=platform-lite
-          cache-to: type=gha,mode=max,scope=platform-lite
+          file: ${{ matrix.file }}
+          variant: ${{ matrix.variant }}
+          image: ${{ matrix.image }}
+          cache-scope: ${{ matrix.cache_scope }}
+          tag-version: ${{ needs.release-meta.outputs.release_tag }}
+          push-latest: ${{ needs.release-meta.outputs.push_latest }}
+          tag-style: ${{ matrix.tag_style }}
+          sha-tag: ${{ matrix.sha_tag }}
+          title: ${{ matrix.title }}
+          description: ${{ matrix.description }}
+          extra-labels: ${{ matrix.extra_labels }}
+          docker-username: ${{ vars.DOCKER_USERNAME }}
+          docker-password: ${{ secrets.DOCKER_PASSWORD }}
+          acr-registry: ${{ vars.ACR_REGISTRY }}
+          acr-namespace: ${{ vars.ACR_NAMESPACE }}
+          acr-username: ${{ vars.ACR_USERNAME }}
+          acr-password: ${{ secrets.ACR_PASSWORD }}

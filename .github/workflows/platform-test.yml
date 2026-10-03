@@ -1,4 +1,4 @@
-# 文件功能：平台 PR / main / 定时质量门禁入口，复用 reusable-quality，并附加镜像 build smoke 与 CLI 契约。
+# 文件功能：平台 PR / main / 定时质量门禁入口，按 git diff 分级触发，复用 reusable-quality，并只重建受影响的交付镜像。
 
 name: platform-test
 
@@ -18,97 +18,69 @@ on:
         default: true
         type: boolean
 
+permissions:
+  contents: read
+
+# 定时全量门禁使用独立分组且不自增取消，避免被随后的 main push 中途杀掉。
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'schedule' && format('{0}-schedule-{1}', github.workflow, github.run_id) || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
+  # 由 .github/scripts/resolve-test-scope.sh 依据事件与 diff 决定门禁范围，不在 YAML 里维护第二份路径清单。
   test-scope:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       full_tests: ${{ steps.scope.outputs.full_tests }}
+      run_runtime: ${{ steps.scope.outputs.run_runtime }}
       e2e_scope: ${{ steps.scope.outputs.e2e_scope }}
+      image_matrix: ${{ steps.scope.outputs.image_matrix }}
     steps:
+      # fetch-depth: 0 是为了拿到 diff base；缺失时脚本会保守升级为全量而不是跳过检查。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: scope
         env:
-          FULL_TESTS: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.full_tests) }}
-        run: |
-          echo "full_tests=${FULL_TESTS}" >> "${GITHUB_OUTPUT}"
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ] || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            echo "e2e_scope=all" >> "${GITHUB_OUTPUT}"
-          else
-            echo "e2e_scope=smoke" >> "${GITHUB_OUTPUT}"
-          fi
-
-  detect-runtime-change:
-    runs-on: ubuntu-latest
-    outputs:
-      runtime_changed: ${{ steps.filter.outputs.runtime_changed }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            runtime_changed:
-              - 'runtime'
-              - 'runtime/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - '.github/workflows/platform-test.yml'
-              - '.github/workflows/reusable-quality.yml'
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_FULL_TESTS: ${{ inputs.full_tests }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          BASE_REF: ${{ github.base_ref }}
+        run: bash .github/scripts/resolve-test-scope.sh
 
   quality:
-    needs:
-      - test-scope
-      - detect-runtime-change
+    needs: test-scope
+    timeout-minutes: 60
     uses: ./.github/workflows/reusable-quality.yml
     with:
       full: ${{ needs.test-scope.outputs.full_tests == 'true' }}
-      run_runtime: ${{ needs.test-scope.outputs.full_tests == 'true' || needs.detect-runtime-change.outputs.runtime_changed == 'true' }}
+      run_runtime: ${{ needs.test-scope.outputs.run_runtime == 'true' }}
       e2e_scope: ${{ needs.test-scope.outputs.e2e_scope }}
 
   platform-image-build-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # 只依赖 test-scope：与 quality 并行，main push 的总时长不会被镜像构建串到门禁之后。
     needs:
       - test-scope
-      - quality
-    if: needs.test-scope.outputs.full_tests == 'true'
+    if: needs.test-scope.outputs.image_matrix != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: full
-            file: deploy/docker/Dockerfile.platform
-            context: .
-            tag: web-presentation:ci-smoke
-            cache_scope: platform
-          - name: lite
-            file: deploy/docker/Dockerfile.lite
-            context: .
-            tag: web-presentation:sqlite-lite-ci-smoke
-            cache_scope: platform-lite
-          - name: runtime
-            file: runtime/Dockerfile
-            context: .
-            tag: web-runtime-vue:ci-smoke
-            cache_scope: runtime
-          - name: renderer
-            file: renderer/Dockerfile
-            context: .
-            tag: web-presentation-renderer:ci-smoke
-            cache_scope: renderer
+        # 当 image_matrix 为空时提供 dummy 回退，避免 GHA 在 job 预校验阶段因 include 为空数组而语法报错。
+        include: ${{ fromJSON(needs.test-scope.outputs.image_matrix == '[]' && '[{"name":"none"}]' || needs.test-scope.outputs.image_matrix) }}
     name: platform-image-build-smoke (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
-      # main push 只验证 amd64；定时/手动全量运行时再覆盖多架构。
+      # main push 与 PR 只验证 amd64；定时与手动全量运行再覆盖多架构。
       - if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
-          context: ${{ matrix.context }}
+          context: .
           file: ${{ matrix.file }}
           platforms: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           push: false
@@ -127,6 +99,7 @@ jobs:
   cli-contract:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
