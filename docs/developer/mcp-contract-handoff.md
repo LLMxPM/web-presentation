@@ -72,6 +72,12 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 
 ## 5. 分步实施证据
 
+### 批次 8：公开授权、Cookie 确认与授权管理 API
+
+生产装配 OAuth 发现/authorize/token/introspect/revoke 和 Cookie 账户确认/Grant 管理。受限 CIMD 注册不能恢复停用客户端；确认绑定 user/session/nonce，具体空间与权限仅可缩小，CAS 消费及 Grant/Code/审计同事务提交。Gateway 区分协议端点和 Editor 确认 SPA；受控真实 Nginx 回归增加对应断言。
+
+新 HTTP/确认和数据库边界验证：49 项通过、33 项 PG 因未配置专用库跳过；包含真实 Cookie、批准缩权后真实授权码兑换、错误与拒绝 issuer、失效状态、并发确认/首次注册、提交失败回滚、HTTP 服务自省交换。Editor DTO 重新生成至 256 paths/353 schemas，生成物对拍和仓库 16 项检查通过。真实 Nginx 命令已执行，因 Docker Linux 引擎不可用失败；不把静态路由配置或 ASGI 适配测试当作 Gateway/ChatGPT 连接验收。
+
 ### 批次 7：冻结 ChatGPT 网页端首批客户端
 
 按用户选择采用 ChatGPT web。2026-10-04 核对官方授权文档并通过 HTTPS 实读稳定 CIMD 文档（HTTP 200）：数组支持 `none` / `private_key_jwt`，旧单值偏好后者，固定稳定回调。新增受限元数据获取/校验、默认关闭的显式配置和 Authlib RFC 9207 扩展，成功及拒绝回调均保留 state 和精确 iss。协议/配置/CIMD 56 项通过。网页端真实账户与生产 MCP 连接仍待验收；公开路由和确认流程接续下一批。

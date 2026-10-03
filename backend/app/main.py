@@ -260,6 +260,9 @@ def create_app() -> FastAPI:
     app.include_router(preview.router_public, tags=["preview"])
     app.include_router(internal_runtime.router, tags=["internal-runtime"])
     app.include_router(well_known.router, tags=["well-known"])
+    from app.api.routes import oauth_public
+
+    app.include_router(oauth_public.router)
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> JSONResponse:

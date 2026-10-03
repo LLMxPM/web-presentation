@@ -1445,6 +1445,57 @@ export type ModelCatalogSyncItem = {
   "syncing"?: boolean
 }
 
+export type OAuthConsentBegin = {
+  "authorization_query": string
+}
+
+export type OAuthConsentDecision = {
+  "csrf_token": string
+  "approved": boolean
+  "scopes"?: (string)[]
+  "workspace_ids"?: (number)[]
+}
+
+export type OAuthConsentResult = {
+  "redirect_uri": string
+}
+
+export type OAuthConsentView = {
+  "request_id": string
+  "csrf_token": string
+  "client_name": string
+  "resource": string
+  "scopes": (OAuthScopeChoice)[]
+  "workspaces": (OAuthWorkspaceChoice)[]
+  "expires_at": string
+}
+
+export type OAuthGrantItem = {
+  "grant_id": string
+  "client_name": string
+  "resource": string
+  "scopes": (string)[]
+  "workspace_ids": (number)[]
+  "created_at": string
+  "revoked_at": (string) | (null)
+  "is_active": boolean
+}
+
+export type OAuthGrantList = {
+  "enabled": boolean
+  "items": (OAuthGrantItem)[]
+}
+
+export type OAuthScopeChoice = {
+  "scope": string
+  "operations": (string)[]
+}
+
+export type OAuthWorkspaceChoice = {
+  "id": number
+  "name": string
+}
+
 export type PageComponentResourceItem = {
   "component_name": string
   "resource_attr": string

@@ -15,6 +15,7 @@ from app.api.routes import (
     fonts,
     model_configs,
     model_catalog,
+    oauth_account,
     page_screenshot_jobs,
     page_visual_edit,
     pages,
@@ -32,6 +33,7 @@ from app.api.routes import (
 from app.api.routes.external import v1_router
 
 api_router = APIRouter()
+api_router.include_router(oauth_account.router)
 api_router.include_router(v1_router)
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(access_tokens.router, prefix="/access-tokens", tags=["access-tokens"])

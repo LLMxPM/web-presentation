@@ -1,6 +1,6 @@
 # 远程 MCP OAuth 授权基础
 
-实施状态：2026-10-04，协议核、授权存储、自省/撤销/受控交换及独立委托验证器已落地。生产 FastAPI 尚未装配 OAuth 路由或委托 Bearer 分派，登录确认页、账户 Grant 管理、Gateway 和真实宿主验收仍需后续批次。现有 External API 继续只接受 PAT。
+实施状态：2026-10-04，协议核、授权存储、自省/撤销/受控交换及独立委托验证器已落地；生产 FastAPI 已装配默认关闭的 OAuth 路由、Cookie 确认和本人 Grant 管理。首批采用 [ChatGPT 网页端](./oauth-chatgpt.md)。Editor 确认界面、委托 Bearer 分派和真实 Gateway/宿主验收仍需后续批次。现有 External API 继续只接受 PAT。
 
 ## 协议与事务分层
 

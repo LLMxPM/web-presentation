@@ -10,6 +10,7 @@ import pytest
 from tests.fixtures.app import *
 from tests.fixtures.oauth import oauth_database  # noqa: F401
 from tests.fixtures.oauth_resource import mcp_access  # noqa: F401
+from tests.fixtures.oauth_consent import oauth_http_client  # noqa: F401
 
 
 @pytest.fixture

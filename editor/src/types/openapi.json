@@ -5,6 +5,244 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/account/oauth/consents": {
+      "post": {
+        "tags": [
+          "account-oauth"
+        ],
+        "summary": "Begin Oauth Consent",
+        "description": "原始用户身份只来自 Cookie，会话与 nonce 不接受请求体覆盖。",
+        "operationId": "begin_oauth_consent_api_v1_account_oauth_consents_post",
+        "parameters": [
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthConsentBegin"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthConsentView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/oauth/consents/{request_id}/decision": {
+      "post": {
+        "tags": [
+          "account-oauth"
+        ],
+        "summary": "Decide Oauth Consent",
+        "description": "只消费当前会话本次确认，提交之后才让浏览器导航到已验证回调。",
+        "operationId": "decide_oauth_consent_api_v1_account_oauth_consents__request_id__decision_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthConsentDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthConsentResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/oauth/grants": {
+      "get": {
+        "tags": [
+          "account-oauth"
+        ],
+        "summary": "List Oauth Grants",
+        "description": "最多展示本人最近 100 条授权，并实时复核成员和客户端状态。",
+        "operationId": "list_oauth_grants_api_v1_account_oauth_grants_get",
+        "parameters": [
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthGrantList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/oauth/grants/{grant_id}/revoke": {
+      "post": {
+        "tags": [
+          "account-oauth"
+        ],
+        "summary": "Revoke Oauth Grant",
+        "description": "撤销本人整条授权；未知和他人 ID 同为 404，重复撤销幂等。",
+        "operationId": "revoke_oauth_grant_api_v1_account_oauth_grants__grant_id__revoke_post",
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Grant Id"
+            }
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/system/version": {
       "get": {
         "tags": [
@@ -33499,6 +33737,253 @@
         "type": "object",
         "title": "ModelCatalogSyncItem",
         "description": "目录同步可观测状态。"
+      },
+      "OAuthConsentBegin": {
+        "properties": {
+          "authorization_query": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Authorization Query"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "authorization_query"
+        ],
+        "title": "OAuthConsentBegin",
+        "description": "原始授权查询字符串保留重复参数证据，禁止客户端声明用户或会话。"
+      },
+      "OAuthConsentDecision": {
+        "properties": {
+          "csrf_token": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 32,
+            "title": "Csrf Token"
+          },
+          "approved": {
+            "type": "boolean",
+            "title": "Approved"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Scopes"
+          },
+          "workspace_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Workspace Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "csrf_token",
+          "approved"
+        ],
+        "title": "OAuthConsentDecision",
+        "description": "确认只能缩小原请求权限，批准时必须选择至少一个具体空间。"
+      },
+      "OAuthConsentResult": {
+        "properties": {
+          "redirect_uri": {
+            "type": "string",
+            "title": "Redirect Uri"
+          }
+        },
+        "type": "object",
+        "required": [
+          "redirect_uri"
+        ],
+        "title": "OAuthConsentResult",
+        "description": "提交成功后才返回已经校验的客户端回调地址。"
+      },
+      "OAuthConsentView": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "csrf_token": {
+            "type": "string",
+            "title": "Csrf Token"
+          },
+          "client_name": {
+            "type": "string",
+            "title": "Client Name"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/OAuthScopeChoice"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/OAuthWorkspaceChoice"
+            },
+            "type": "array",
+            "title": "Workspaces"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "csrf_token",
+          "client_name",
+          "resource",
+          "scopes",
+          "workspaces",
+          "expires_at"
+        ],
+        "title": "OAuthConsentView",
+        "description": "nonce 仅返回本次受保护响应，不进入 URL 或浏览器持久缓存。"
+      },
+      "OAuthGrantItem": {
+        "properties": {
+          "grant_id": {
+            "type": "string",
+            "title": "Grant Id"
+          },
+          "client_name": {
+            "type": "string",
+            "title": "Client Name"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "workspace_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Workspace Ids"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "grant_id",
+          "client_name",
+          "resource",
+          "scopes",
+          "workspace_ids",
+          "created_at",
+          "revoked_at",
+          "is_active"
+        ],
+        "title": "OAuthGrantItem",
+        "description": "授权管理只展示公共授权身份，不能读取原始 access/refresh。"
+      },
+      "OAuthGrantList": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OAuthGrantItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "items"
+        ],
+        "title": "OAuthGrantList",
+        "description": "默认关闭时仍允许账户界面显示服务状态。"
+      },
+      "OAuthScopeChoice": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "operations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Operations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope",
+          "operations"
+        ],
+        "title": "OAuthScopeChoice",
+        "description": "从 External operation 单一规格派生权限和相关操作说明。"
+      },
+      "OAuthWorkspaceChoice": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "OAuthWorkspaceChoice",
+        "description": "当前用户仍有成员关系的具体工作空间。"
       },
       "PageComponentResourceItem": {
         "properties": {

@@ -8,13 +8,21 @@ import subprocess
 import tempfile
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.request import HTTPRedirectHandler, build_opener, urlopen
 from uuid import uuid4
 
 
 def docker(*args: str) -> str:
     """执行 Docker 命令，失败保留原始诊断，不吞掉非零退出。"""
     return subprocess.check_output(['docker', *args], text=True).strip()
+
+
+class NoRedirect(HTTPRedirectHandler):
+    """测试只检查网关透传的 Location，不能访问任何外部回调地址。"""
+
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        """拒绝跟随重定向，使原始 302 可作为断言证据。"""
+        return None
 
 
 def main(openapi_file: Path | None = None) -> None:
@@ -37,7 +45,7 @@ def main(openapi_file: Path | None = None) -> None:
             directory.chmod(0o755)
             (directory / 'openapi.json').write_text(json.dumps(document), encoding='utf-8')
             (directory / 'index.html').write_text('<html>editor-fixture</html>', encoding='utf-8')
-            (directory / 'upstream.conf').write_text('server { listen 8000; root /fixture; location = /api/v1/system/health { default_type application/json; return 200 \'{"status":"ok"}\'; } location = /openapi.json { default_type application/json; try_files $uri =503; } }', encoding='utf-8')
+            (directory / 'upstream.conf').write_text('server { listen 8000; root /fixture; location = /api/v1/system/health { default_type application/json; return 200 \'{"status":"ok"}\'; } location = /openapi.json { default_type application/json; try_files $uri =503; } location = /.well-known/oauth-authorization-server { default_type application/json; return 200 \'{"issuer":"https://oauth-fixture.test"}\'; } location = /oauth/authorize { return 302 https://oauth-fixture.test/oauth/consent; } location ~ ^/oauth/(token|introspect|revoke)$ { default_type application/json; return 400 \'{"error":"invalid_request"}\'; } }', encoding='utf-8')
             backend = name + '-backend'
             docker('run', '-d', '--name', backend, '--network', network, '--network-alias', 'backend', '--network-alias', 'runtime', '-v', f'{directory.as_posix()}:/fixture:ro', '-v', f'{(directory / "upstream.conf").as_posix()}:/etc/nginx/conf.d/default.conf:ro', 'nginx:1.28-alpine')
             containers.append(backend)
@@ -63,6 +71,23 @@ def main(openapi_file: Path | None = None) -> None:
                 assert json.load(response)['status'] == 'ok'
             with urlopen(endpoint + '/editor/deep-link') as response:
                 assert b'editor-fixture' in response.read()
+            with urlopen(endpoint + '/oauth/consent') as response:
+                assert b'editor-fixture' in response.read()
+            with urlopen(endpoint + '/.well-known/oauth-authorization-server') as response:
+                assert json.load(response)['issuer'] == 'https://oauth-fixture.test'
+            try:
+                build_opener(NoRedirect()).open(endpoint + '/oauth/authorize')
+                raise AssertionError('OAuth 授权跳转被隐藏')
+            except HTTPError as error:
+                assert error.code == 302
+                assert error.headers['Location'] == 'https://oauth-fixture.test/oauth/consent'
+            for path in ('/oauth/token', '/oauth/introspect', '/oauth/revoke'):
+                try:
+                    urlopen(endpoint + path)
+                    raise AssertionError('OAuth 上游错误被隐藏')
+                except HTTPError as error:
+                    assert error.code == 400
+                    assert json.load(error)['error'] == 'invalid_request'
             (directory / 'openapi.json').unlink()
             try:
                 urlopen(endpoint + '/openapi.json')
