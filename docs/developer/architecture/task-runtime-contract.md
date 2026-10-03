@@ -2,7 +2,7 @@
 # 统一任务运行时契约（WS-A1 冻结）
 
 > **状态**：契约冻结（2026-09-29）。**本阶段只定契约，不写实现**。  
-> **历史输入**：[09-28 计划（已归档）](../../temp/archive/remaining-work-2026-09-28.md) WS-A 及旧评估 P1-TaskModel / P1-Recovery / P2-VocabDrift；最新状态与后续验证见[现行评估与计划](../../temp/README.md)。
+> **历史输入**：[09-28 计划（已归档）](../../archive/architecture-2026-09/reports/remaining-work-2026-09-28.md) WS-A 及旧评估 P1-TaskModel / P1-Recovery / P2-VocabDrift；最新状态与后续验证见[现行评估与计划](../../archive/architecture-2026-09/README.md)。
 > **出口**：A2 统一执行器、A3 队列迁移、A4 跨表不变量，均不得偏离本文词汇；偏离须先改本文并登记理由。  
 > **硬约束**（继承 CP 系列）：SQLite 分支语义字节级维持；PG 同事务 `SKIP LOCKED` 形态不得退回跨事务 CAS；`with_for_update(skip_locked=True)` 只允许出现在 `durable_job_lease_service`。
 
@@ -198,7 +198,7 @@
 
 ## 5. 现有任务模型映射表（10 套 → 契约）
 
-> **历史迁移基线（W08 已对齐当前实现）**：下表保留 A1 冻结时的 10 套任务模型、3 套认领方言映射框架。**恢复列已按当前实现更新为「循环内过期恢复 + 启动兜底」**；普通 AI Run 的历史启动路径按 hostname/pid 过滤，新登记实例由 UUID/心跳租约与 CAS 收敛。剩余验证与支持范围以[已归档收尾计划](../../temp/archive/architecture-closeout-plan-2026-10-01.md)为准（M01–M08 已关闭）。
+> **历史迁移基线（W08 已对齐当前实现）**：下表保留 A1 冻结时的 10 套任务模型、3 套认领方言映射框架。**恢复列已按当前实现更新为「循环内过期恢复 + 启动兜底」**；普通 AI Run 的历史启动路径按 hostname/pid 过滤，新登记实例由 UUID/心跳租约与 CAS 收敛。剩余验证与支持范围以[已归档收尾计划](../../archive/architecture-2026-09/reports/architecture-closeout-plan-2026-10-01.md)为准（M01–M08 已关闭）。
 
 ### 5.1 总表
 
@@ -214,7 +214,7 @@
 | 8 | **ExternalBatch 续跑聚合** | `ai_agent_external_batches` | **B** `lease_generation` CAS | generation 围栏 / coordinator 轮询 | `collecting/waiting_tasks/ready/resuming/completed/failed/cancelled` | **不是 Job**；保留为聚合/续跑角色，字段映射 §5.3 |
 | 9 | **MutationJob（External API）** | `api_mutation_jobs` | **B** `lease_generation` CAS（经 `claim_rows_by_cas`） | 15s 心跳 / 循环恢复 | `canceled`/`succeeded`/`failed` | `canceled` 是 §3 的 v1 兼容别名；`last_error_code` 通过列词汇映射 |
 | 10 | **渲染 RenderRequest + RenderAttempt** | `render_requests` / `render_attempts` | **C** `claim_generation` + `reserve_attempt` | Attempt 租约 / 协调器收敛 | `queued/executing/succeeded/failed/cancelled/expired` | `queued`→`pending`，`executing`→`running`；Attempt 状态机保留 |
-| — | **进程内 AI Run** | `ai_agent_runs` | **无**（非租约队列） | 进程内；UUID/心跳失效收敛，历史启动路径按 hostname/pid 过滤 | `running/waiting_external/paused/cancelling/completed/cancelled/failed` | **契约外**：产品承诺「会丢」；见 §6 与[兼容矩阵 §5](../deployment/compatibility-matrix.md#5-run-收敛边界实例心跳--历史-owner) |
+| — | **进程内 AI Run** | `ai_agent_runs` | **无**（非租约队列） | 进程内；UUID/心跳失效收敛，历史启动路径按 hostname/pid 过滤 | `running/waiting_external/paused/cancelling/completed/cancelled/failed` | **契约外**：产品承诺「会丢」；见 §6 与[兼容矩阵 §5](../../deployment/production/compatibility-matrix.md#5-run-收敛边界实例心跳--历史-owner) |
 
 ### 5.2 认领方言对照（3 套 → 1 套）
 
@@ -392,4 +392,4 @@ await runtime.claim/renew/transition/cancel/recover(...)
 1. 本文是任务运行时**唯一契约**；字段/状态/错误码/恢复语义变更必须先改本文。
 2. A2/A3/A4 的实现 PR 应引用本文对应章节编号。
 3. 新发现的方言或旁路状态追加到 §5 映射表，**不得**另开文档或静默扩表。
-4. 产品边界（Run 会丢、Lite 规模、方言预算）见[已归档收尾计划的范围与边界](../../temp/archive/architecture-closeout-plan-2026-10-01.md#2-本轮范围与后续边界)及[双库方言维护预算](./dialect-budget.md)，不由本契约扩展产品承诺。Lite 单镜像形态对规模与故障域的影响由[现行执行计划](../../temp/plans/deployment-form-and-config-governance-plan-2026-10-02.md)重开验收后回填。
+4. 产品边界（Run 会丢、Lite 规模、方言预算）见[已归档收尾计划的范围与边界](../../archive/architecture-2026-09/reports/architecture-closeout-plan-2026-10-01.md#2-本轮范围与后续边界)及[双库方言维护预算](./dialect-budget.md)，不由本契约扩展产品承诺。Lite 单镜像形态对规模与故障域的影响由[现行执行计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md)重开验收后回填。

@@ -211,7 +211,7 @@ DATABASE_URL="postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/web_presenta
 ## 7. 相关参考
 
 - [AI 模型配置与目录](./ai-model-configuration.md)
-- [部署环境变量](../deployment/env-vars.md)
-- [部署排障指南](../deployment/troubleshooting.md)
-- [升级与回滚指南](../deployment/upgrade-rollback.md)
-- [备份与恢复](../deployment/backup-restore.md)
+- [部署环境变量](../../deployment/production/env-vars.md)
+- [部署排障指南](../../deployment/operations/troubleshooting.md)
+- [升级与回滚指南](../../deployment/operations/upgrade-rollback.md)
+- [备份与恢复](../../deployment/operations/backup-restore.md)

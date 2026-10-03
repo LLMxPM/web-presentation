@@ -5,7 +5,7 @@
 状态：架构契约（永久文档）
 面向对象：平台架构师、后端与前端开发者、运维交付人员
 
-> 本文只维护**长期成立的契约**：变量三分类、按部署形态的差异、配置解析优先级、热更新边界、密钥治理与安全防线。批次、排期、门禁改动与验收状态见[现行执行计划](../../temp/plans/deployment-form-and-config-governance-plan-2026-10-02.md)；本文不复制排期，避免两处漂移。
+> 本文只维护**长期成立的契约**：变量三分类、按部署形态的差异、配置解析优先级、热更新边界、密钥治理与安全防线。批次、排期、门禁改动与验收状态见[现行执行计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md)；本文不复制排期，避免两处漂移。
 
 ---
 
@@ -77,7 +77,7 @@ pie title 环境变量治理分类占比
 
 1. **内部通信 Audience 契约**：`RUNTIME_SERVICE_TOKEN_AUDIENCE`、`RUNTIME_PREVIEW_TOKEN_AUDIENCE`、`RUNTIME_DIAGNOSTICS_TOKEN_AUDIENCE`、`AI_AGENT_OS_ID` 收敛为代码常量。
 2. **容器内网默认通信地址与挂载路径**：`RUNTIME_BASE_URL`、`RUNTIME_BACKEND_API_BASE_URL`、`RUNTIME_PREVIEW_JWKS_URL`、`RUNTIME_SERVER_BASE_PATH`（自动从 `RUNTIME_PUBLIC_BASE_URL` 提取路径）。
-3. **微观调度与算法参数**：`DURABLE_JOB_LEASE_SECONDS`、`AI_PAGE_MUTATION_*`、`MUTATION_JOB_*`、`PROJECT_BUILD_*`、`RENDER_SCHEDULER_*` 等租约/心跳/轮询/重试参数；禁止污染常规部署模板，移除后须在 `docs/developer/deployment/env-vars.md` 保留「隐式调优参数」说明，不静默消失。
+3. **微观调度与算法参数**：`DURABLE_JOB_LEASE_SECONDS`、`AI_PAGE_MUTATION_*`、`MUTATION_JOB_*`、`PROJECT_BUILD_*`、`RENDER_SCHEDULER_*` 等租约/心跳/轮询/重试参数；禁止污染常规部署模板，移除后须在 `docs/deployment/production/env-vars.md` 保留「隐式调优参数」说明，不静默消失。
 4. **机器间通信凭证**：`RUNTIME_BUILD_WORKER_CREDENTIAL`、`RENDER_SERVICE_CREDENTIAL` 在单容器形态下由入口脚本生成并对齐，免去人工创建（见 §4.2）。
 
 > 注意分类边界：`AI_SECRET_ENCRYPTION_KEY` **不属于本类**。它不是内部通信密钥，而是数据静态加密密钥，丢失即导致库内模型凭证不可解密，因此归入类 A（§2.1）。
@@ -223,11 +223,11 @@ flowchart LR
 
 ### 4.3 Lite 单镜像的故障域与隔离边界
 
-Lite 单容器内同时运行 Backend、Runtime、Renderer（浏览器）与 Gateway 四个长期进程，属**合并故障域**；浏览器与 Backend 同文件系统与网络命名空间。在「自用 / 小团队内部」威胁模型下已接受该风险，决策与复审触发条件见[Lite 规模、故障域与隔离决策](../deployment/lite-scale-and-isolation.md) §3–§4，本文不重复其结论，也不得改写为「已具备多租户隔离」。
+Lite 单容器内同时运行 Backend、Runtime、Renderer（浏览器）与 Gateway 四个长期进程，属**合并故障域**；浏览器与 Backend 同文件系统与网络命名空间。在「自用 / 小团队内部」威胁模型下已接受该风险，决策与复审触发条件见[Lite 规模、故障域与隔离决策](../../deployment/operations/lite-scale-and-isolation.md) §3–§4，本文不重复其结论，也不得改写为「已具备多租户隔离」。
 
 **Lite 面向多用户且渲染不可信页面代码时必须重开该决策**：此时 root + 无沙箱 Chromium 可读数据卷内的 SQLite 与 `/proc/1/environ` 中的密钥，属跨用户越权。
 
-进程、代码与依赖三层边界都不受镜像合并影响：**浏览器始终由独立 Renderer 进程持有，Backend 代码不 import playwright、不在 Backend 进程内启动浏览器，且 Backend 使用的 venv 内不安装 playwright**。Lite 单镜像因此采用**双 venv 布局**（Backend venv + 独立 Renderer venv），使依赖层隔离可被静态断言而不是只写在文档里。守护点：`config.py:355-382`（遗留 `PLAYWRIGHT_*` 环境变量或 `.env` 键启动即失败）、单测 `backend/tests/unit/test_render_control_plane.py:18-24`，以及 Lite 镜像构建期断言「Backend venv 内 `import playwright` 必须失败」。合并的是镜像，不是进程；[Lite 隔离决策](../deployment/lite-scale-and-isolation.md) §3 的既有表述继续成立，无需改写。
+进程、代码与依赖三层边界都不受镜像合并影响：**浏览器始终由独立 Renderer 进程持有，Backend 代码不 import playwright、不在 Backend 进程内启动浏览器，且 Backend 使用的 venv 内不安装 playwright**。Lite 单镜像因此采用**双 venv 布局**（Backend venv + 独立 Renderer venv），使依赖层隔离可被静态断言而不是只写在文档里。守护点：`config.py:355-382`（遗留 `PLAYWRIGHT_*` 环境变量或 `.env` 键启动即失败）、单测 `backend/tests/unit/test_render_control_plane.py:18-24`，以及 Lite 镜像构建期断言「Backend venv 内 `import playwright` 必须失败」。合并的是镜像，不是进程；[Lite 隔离决策](../../deployment/operations/lite-scale-and-isolation.md) §3 的既有表述继续成立，无需改写。
 
 ---
 
@@ -316,12 +316,12 @@ RUNTIME_BUILD_WORKER_CREDENTIAL=<强随机共享凭证>
 
 | 主题 | 归属文档 |
 | :--- | :--- |
-| 批次、排期、门禁改动、重开门与验收状态 | [现行执行计划](../../temp/plans/deployment-form-and-config-governance-plan-2026-10-02.md) |
-| Lite 规模、故障域与 Renderer 隔离决策 | [Lite 规模、故障域与隔离决策](../deployment/lite-scale-and-isolation.md) |
-| 变量逐项说明与创建方法 | [环境变量说明](../deployment/env-vars.md) |
-| 部署模板与迁移步骤 | [Compose 模板说明](../deployment/compose.md)、[生产部署指南](../deployment/README.md) |
-| 多副本前提与升级排空 | [多 Backend 部署](../deployment/multi-backend.md)、[兼容矩阵](../deployment/compatibility-matrix.md) |
+| 批次、排期、门禁改动、重开门与验收状态 | [现行执行计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md) |
+| Lite 规模、故障域与 Renderer 隔离决策 | [Lite 规模、故障域与隔离决策](../../deployment/operations/lite-scale-and-isolation.md) |
+| 变量逐项说明与创建方法 | [环境变量说明](../../deployment/production/env-vars.md) |
+| 部署模板与迁移步骤 | [Compose 模板说明](../../deployment/production/compose.md)、[生产部署指南](../../deployment/production/README.md) |
+| 多副本前提与升级排空 | [多 Backend 部署](../../deployment/production/multi-backend.md)、[兼容矩阵](../../deployment/production/compatibility-matrix.md) |
 | AI 密钥轮换操作 | [AI 密钥轮换](../backend/ai-secret-rotation.md) |
-| 用户侧快速部署 | [快速部署](../../user/quick-deployment/README.md) |
+| 用户侧快速部署 | [快速部署](../../deployment/lite/README.md) |
 
 本文变更时须同步检查上述文档是否出现口径冲突；出现「文档说单容器、模板要两容器」这类不同构即为缺陷，不以未发布形态指导用户。

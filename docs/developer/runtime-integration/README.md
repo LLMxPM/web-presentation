@@ -11,7 +11,7 @@ Runtime 接入文档说明平台如何组织和调用 `runtime/` 服务，以及
 | [previewSchema 契约](./preview-schema.md) | 组件预览 schema 的能力边界和校验要求 |
 | [组件 Check 体系设计](./component-code-check-design.md) | 当前 contract/compile 校验与历史浏览器方案的边界 |
 | [页面可视化编辑契约](./page-visual-edit.md) | Backend 源码权威、编辑态 artifact、SFC 节点映射与受限回写协议 |
-| [富文本源码范围定位加固计划（已归档）](../../temp/archive/rich-text-source-range-hardening-plan.md) | 历史修复设计；现有实现的交互验证由现行计划 M08 承接 |
+| [富文本源码范围定位加固计划（已归档）](../../archive/architecture-2026-09/reports/rich-text-source-range-hardening-plan.md) | 历史修复设计；现有实现的交互验证由现行计划 M08 承接 |
 | [构建产物规格](./release-artifact-spec.md) | Runtime 构建产物与 Backend 托管关系 |
 | [配置模板边界](./config-templates.md) | Backend 配置模板和 Runtime fixture 配置的边界 |
 

@@ -107,7 +107,7 @@ sequenceDiagram
 - `/__preview` 等固定管理入口仍位于公开挂载路径下（例如 `/runtime/__preview`）；`runtime-request-path.ts` 共用解析固定入口和版本资源路径，不把固定入口误判为独立 SPA。入口仍须通过票据验签，版本门禁保持独立。
 - 浏览器依赖预优化使用 `runtime-dependency-optimization.ts` 的显式集合、`noDiscovery=true`，避免进程相关 browserHash 使同版副本返回 `Outdated Optimize Dep`；新增远程代码可导入的依赖须同步该集合并验证冷启动。
 - Vue 子请求仅从 importer 票据回填 ctx，并把 ctx 前置以保留 Vite 识别的 `lang.css` 尾段。接收 style/template/script 的副本先验签本次票据，再加载同一远程主模块恢复描述符；进程缓存不能替代授权或跨副本正确性。
-- 旧 Runtime 不能提供非空版本信息时 Backend 明确拒绝。当前候选的正常 iframe 同版双副本与真实旧镜像跨版拒绝已有[本地 Docker 记录](../../../temp/runs/2026-09-30-docker/summary.md)。预览同版池及跨版排空策略见[兼容矩阵](../../deployment/compatibility-matrix.md)，完整 N/N-1 公共能力组合仍待 M05。
+- 旧 Runtime 不能提供非空版本信息时 Backend 明确拒绝。当前候选的正常 iframe 同版双副本与真实旧镜像跨版拒绝已有[本地 Docker 记录](../../../archive/architecture-2026-09/runs/2026-09-30-docker/summary.md)。预览同版池及跨版排空策略见[兼容矩阵](../../../deployment/production/compatibility-matrix.md)，完整 N/N-1 公共能力组合仍待 M05。
 
 ## 5. 内建页面与远程模块边界
 

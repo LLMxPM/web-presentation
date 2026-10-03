@@ -1,7 +1,7 @@
 <!-- 文件功能：双库（SQLite / PostgreSQL）方言维护预算治理文档；定义固定税口径、复审触发器与每季粗记账模板。 -->
 # 双库方言维护预算（WS-G6）
 
-> **状态**：已定（2026-09-28 产品拍板，2026-09-29 写入治理）。本文自包含结论；历史论证与代码锚点见[已归档 09-28 评估](../../temp/archive/architecture-assessment-2026-09-28.md) §3 / §4.1。`docs/temp` 已纳入版本控制，本文对应的方言边界工作已随[已归档收尾计划](../../temp/archive/architecture-closeout-plan-2026-10-01.md)关闭；当前工作边界见[现行执行计划](../../temp/plans/deployment-form-and-config-governance-plan-2026-10-02.md)。
+> **状态**：已定（2026-09-28 产品拍板，2026-09-29 写入治理）。本文自包含结论；历史论证与代码锚点见[已归档 09-28 评估](../../archive/architecture-2026-09/reports/architecture-assessment-2026-09-28.md) §3 / §4.1。历史评估已归档至 `docs/archive/architecture-2026-09/`，本文对应的方言边界工作已随[已归档收尾计划](../../archive/architecture-2026-09/reports/architecture-closeout-plan-2026-10-01.md)关闭；当前工作边界见[现行执行计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md)。
 > **适用范围**：Backend 在 SQLite 与 PostgreSQL 上的迁移方言、认领/租约方言、事务与锁原语差异，以及为维持「Lite 一等公民」而保留的双库兼容成本。
 
 ---
@@ -42,5 +42,5 @@
 ## 4. 与其它治理项的关系
 
 - 日常双方言实现边界仍受 `backend/app/db/` 收口约束（见根目录 `AGENTS.md`）；本预算不授权绕过 `db/` 适配层。
-- Lite 目标规模（5–10 人、预览并发约 3）见 [Lite 规模与隔离决策](../deployment/lite-scale-and-isolation.md)；D2 容量基线未采集前，规模只是目标不是 SLA，与本预算独立。
+- Lite 目标规模（5–10 人、预览并发约 3）见 [Lite 规模与隔离决策](../../deployment/operations/lite-scale-and-isolation.md)；D2 容量基线未采集前，规模只是目标不是 SLA，与本预算独立。
 - 任务运行时的认领方言映射见 [统一任务运行时契约](./task-runtime-contract.md)；迁移方言份数下降会降低本预算的实际占用。

@@ -4,7 +4,7 @@
 
 本地开发推荐直接在仓库根目录维护一份统一的 `.env`，所有子模块（Backend、Editor、Runtime、Renderer）均默认向上查找根目录配置并自动对齐；同时保留子模块目录的 `.env` 局部覆盖能力。
 
-生产部署变量详见 [部署环境变量](../deployment/env-vars.md)。
+生产部署变量详见 [部署环境变量](../../deployment/production/env-vars.md)。
 
 ---
 

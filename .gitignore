@@ -70,8 +70,7 @@ backend/test_result.txt
 # Temporary files
 tmp/
 temp/
-!docs/temp/
 .tmp/
 *.tmp
 # 测试机可再生产物不入库；摘要记录 sha256
-docs/temp/runs/**/build.zip
+docs/archive/architecture-2026-09/runs/**/build.zip

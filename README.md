@@ -83,7 +83,7 @@ docker compose -f compose/compose.sqlite-lite.yml pull
 docker compose -f compose/compose.sqlite-lite.yml up -d
 ```
 
-默认启动后访问 `http://127.0.0.1:8080`。面向开源用户的快速部署方式见 [快速部署](./docs/user/quick-deployment/README.md)；内置 PostgreSQL/Redis、外部依赖、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/developer/deployment/README.md)。
+默认启动后访问 `http://127.0.0.1:8080`。面向开源用户的快速部署方式见 [快速部署](./docs/deployment/lite/README.md)；内置 PostgreSQL/Redis、外部依赖、production env 版、HTTPS、升级和回滚见 [生产部署指南](./docs/deployment/production/README.md)。
 
 ## 文档导航
 
@@ -94,17 +94,17 @@ docker compose -f compose/compose.sqlite-lite.yml up -d
 | [用户文档](./docs/user/README.md) | 平台介绍、快速上手、平台特性、AI 协作、资产管理和部署入口 |
 | [平台介绍](./docs/user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
 | [快速上手](./docs/user/getting-started.md) | 登录、工作空间、项目页面、AI、预览和构建流程 |
-| [快速部署](./docs/user/quick-deployment/README.md) | 使用 Docker、飞牛 fnOS 或群晖 Container Manager 快速部署 SQLite 单体版 |
+| [快速部署](./docs/deployment/lite/README.md) | 使用 Docker、飞牛 fnOS 或群晖 Container Manager 快速部署 SQLite 单体版 |
 | [平台特性](./docs/user/features/README.md) | 创作者视角理解 AI 创作、资产复用、预览构建和交付 |
 | [Demo 使用指南](./docs/user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
 | [AI 协作创作](./docs/user/ai/README.md) | AI 侧边栏、工具确认、上下文注入和协作建议 |
 | [开发文档](./docs/developer/README.md) | 架构、Backend、Editor、Runtime、Renderer、测试与部署资料 |
 | [平台架构总览](./docs/developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 运行时架构 |
-| [架构收尾计划与验收记录](./docs/temp/README.md) | 工程阶段与完整交付的停止条件、本轮范围、剩余验收和历史归档 |
+| [架构评估归档](./docs/archive/architecture-2026-09/README.md) | 历史架构评估与治理归档 |
 | [本地开发指南](./docs/developer/getting-started.md) | 本地依赖、启动流程、测试数据和运行态维护 |
 | [Runtime 开发文档](./docs/developer/runtime/README.md) | 页面、组件、Runtime Kit 与运行时内部接入细节 |
 | [测试文档](./docs/developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
-| [生产部署指南](./docs/developer/deployment/README.md) | compose 部署、环境变量、备份恢复、升级回滚和排障 |
+| [生产部署指南](./docs/deployment/production/README.md) | compose 部署、环境变量、备份恢复、升级回滚和排障 |
 | [Runtime 运行时说明](./runtime/README.md) | 平台原生演示文稿运行时（基于 Vue 3 + Vite）的能力与配置说明 |
 | [Renderer 运行说明](./renderer/README.md) | 远程 Chromium 服务、共享凭据、真实截图验证和镜像交付 |
 
@@ -139,4 +139,4 @@ web-presentation/
 外部 Agent 接入代码位于同级独立仓库 [web-presentation-agent-kit](https://github.com/LLMxPM/web-presentation-agent-kit)，主仓库仅保留平台 API、架构和集成文档。
 
 
-CLI 通过平台根地址的 `/openapi.json` 获取当前请求契约。部署后应执行 [Gateway 契约验证](docs/developer/deployment/README.md#cli-openapi-契约入口)；业务 API 正常不代表该入口正常。配套 Skill 将路由挂载及挂载后的截图复核作为完整多页演示的交付检查点。
+CLI 通过平台根地址的 `/openapi.json` 获取当前请求契约。部署后应执行 [Gateway 契约验证](docs/deployment/production/README.md#cli-openapi-契约入口)；业务 API 正常不代表该入口正常。配套 Skill 将路由挂载及挂载后的截图复核作为完整多页演示的交付检查点。

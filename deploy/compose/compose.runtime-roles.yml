@@ -9,7 +9,7 @@
 # - 生成并写入 deploy/secrets/build_worker_credential（强随机值），Backend 与 runtime-build
 #   通过 secret 挂载同一文件；缺省时 claim fail-closed 且 Worker 不启动，构建会一直 pending。
 # - 各角色与 Renderer 的 deploy.resources.limits 以及对应的 Runtime 执行预算为示例值，
-#   必须按实测负载调整；取值依据见 docs/developer/deployment/compose.md「分角色单机」。
+#   必须按实测负载调整；取值依据见 docs/deployment/production/compose.md「分角色单机」。
 # - DEFAULT_ADMIN_PASSWORD、AI_SECRET_ENCRYPTION_KEY：正式部署前必须替换。
 # - 暴露面约束：runtime-build / runtime-check 只挂 runtime-jobs-net，不发布宿主机端口；
 #   公开 Gateway 只挂在 platform-net，且只把主机名 runtime 解析到 runtime-preview，
@@ -20,11 +20,11 @@
 # - 需要按实测瓶颈增加 build/check 副本时：复制对应角色服务并改独立别名。
 #   build 副本只需启动即自行 claim，Backend 侧无需注册；check 副本要在 Backend
 #   配置 RUNTIME_CHECK_BASE_URLS 注册全部副本，并按「副本数 × 单副本执行预算」
-#   上调 RUNTIME_CHECK_MAX_INFLIGHT；详见 docs/developer/deployment/compose.md「计算副本扩容」。
+#   上调 RUNTIME_CHECK_MAX_INFLIGHT；详见 docs/deployment/production/compose.md「计算副本扩容」。
 # - 预览多副本（规划 T3-3）：Gateway 预览 upstream（runtime_preview_pool）已支持多实例，
 #   复制 runtime-preview 服务为 runtime-preview-2（独立别名，不共享 runtime），
 #   取消 nginx 配置中对应 server 注释并 reload；滚动发布顺序见
-#   docs/developer/deployment/compose.md「预览多副本与滚动发布」。
+#   docs/deployment/production/compose.md「预览多副本与滚动发布」。
 
 x-production-env: &production-env
   env_file:

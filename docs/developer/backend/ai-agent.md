@@ -13,7 +13,7 @@ AI Agent 由 Backend 统一承载，负责会话、run、消息、事件、工�
 
 普通 Run 的后台能力以单个 Backend 进程为边界。关闭侧栏、切换路由、刷新页面或断开 SSE 只会取消订阅，不会取消执行；重新进入会话后按 `event_index` 回放。Backend 正常退出会取消仍在运行的进程内任务并写入 `AI_RUN_PROCESS_STOPPED`，异常退出则由 active-run 空闲超时收敛，不自动重跑。页面变更和图片生成等 external job 的领域执行仍由各自持久化租约队列负责；模型续跑统一由 `ai-external-task-coordinator` 认领 `AiAgentExternalBatch`，不能与进程内 Run 管理器合并。
 
-多 Backend 副本部署时，普通 Run 同样遵守上述语义：**不承诺跨实例无中断续跑**，各副本只收敛本进程遗留 Run。停机后的用户恢复路径是「在原会话重试」或「新建 Run」（继承消息历史与焦点，不继承中断执行栈）；详见[多 Backend 副本与密钥一致性](../deployment/multi-backend.md)「普通 AI Run 停机语义」。
+多 Backend 副本部署时，普通 Run 同样遵守上述语义：**不承诺跨实例无中断续跑**，各副本只收敛本进程遗留 Run。停机后的用户恢复路径是「在原会话重试」或「新建 Run」（继承消息历史与焦点，不继承中断执行栈）；详见[多 Backend 副本与密钥一致性](../../deployment/production/multi-backend.md)「普通 AI Run 停机语义」。
 
 ### 事件追加的并发边界
 

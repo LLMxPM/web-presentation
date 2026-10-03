@@ -11,7 +11,7 @@
 | 先了解平台 | [平台介绍](./platform-overview.md) | [用户快速上手](./getting-started.md) |
 | 第一次实际使用 | [用户快速上手](./getting-started.md) | [常用工作流](./workflows/README.md) |
 | 直接体验公开环境 | [Demo 使用指南](./demo-guide.md) | [AI 协作创作](./ai/README.md) |
-| 部署到自己的环境 | [快速部署](./quick-deployment/README.md) | [生产部署指南](../developer/deployment/README.md) |
+| 部署到自己的环境 | [快速部署](../deployment/lite/README.md) | [生产部署指南](../deployment/production/README.md) |
 | 遇到问题 | [常见问题](./reference/faq.md) | [当前限制](./reference/limits.md) |
 
 ## 文档怎么分工
@@ -53,9 +53,9 @@
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [快速部署](./quick-deployment/README.md) | Docker、飞牛 fnOS、群晖 Container Manager 的 SQLite 单体快速部署 |
-| [单体运维指南](./quick-deployment/maintenance.md) | SQLite 单体版的无损升级、数据备份还原、机器迁移与反代网络配置 |
-| [生产部署指南](../developer/deployment/README.md) | HTTPS、外部依赖、备份、升级和生产环境配置 |
+| [快速部署](../deployment/lite/README.md) | Docker、飞牛 fnOS、群晖 Container Manager 的 SQLite 单体快速部署 |
+| [单体运维指南](../deployment/lite/maintenance.md) | SQLite 单体版的无损升级、数据备份还原、机器迁移与反代网络配置 |
+| [生产部署指南](../deployment/production/README.md) | HTTPS、外部依赖、备份、升级和生产环境配置 |
 
 ## 参考资料
 
@@ -65,4 +65,4 @@
 
 ## 部署入口
 
-如果你只是体验或小规模自托管，请阅读 [快速部署](./quick-deployment/README.md)。如果要正式上线，再转到 [生产部署指南](../developer/deployment/README.md)，其中包含环境变量、备份恢复和升级回滚文档入口。
+如果你只是体验或小规模自托管，请阅读 [快速部署](../deployment/lite/README.md)。如果要正式上线，再转到 [生产部署指南](../deployment/production/README.md)，其中包含环境变量、备份恢复和升级回滚文档入口。

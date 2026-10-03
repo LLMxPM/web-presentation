@@ -102,7 +102,7 @@ alembic_version=$(cat "$DEST_DIR/alembic_version.txt")
 dump_file=web_presentation.dump
 # 恢复时还必须同步：backend-data（local 资源/截图/构建产物）、
 # AI_SECRET_ENCRYPTION_KEY、RUNTIME_RSA_*、RENDER/BUILD 凭证、S3 凭证（若使用）。
-# 完整清单见 docs/developer/deployment/backup-restore.md
+# 完整清单见 docs/deployment/operations/backup-restore.md
 EOF
 
 log "完成：$DEST_DIR"

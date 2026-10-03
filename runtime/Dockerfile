@@ -1,7 +1,7 @@
 # 文件功能：构建独立 Runtime 长期镜像；Backend 镜像不再安装浏览器。
 # 构建上下文为仓库根目录（pnpm workspace 共享 pnpm-lock.yaml）。
 # 执行隔离（AR-01/W01）：主进程以 rtworker 运行并持有构建 Worker 凭证；
-# 编译/归档/诊断子进程降权到 rtchild，不得读取全局凭证。详见 docs/developer/deployment/execution-isolation.md。
+# 编译/归档/诊断子进程降权到 rtchild，不得读取全局凭证。详见 docs/deployment/production/execution-isolation.md。
 
 FROM node:22-bookworm-slim
 

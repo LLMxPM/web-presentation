@@ -11,9 +11,9 @@
 | [本地开发指南](./getting-started.md) | 本地依赖、四个应用服务启动和常用诊断命令 |
 | [平台架构总览](./architecture/overview.md) | 平台目标、控制面/数据面关系、模块职责和主流程 |
 | [模块边界](./architecture/module-boundaries.md) | Backend、Editor、Runtime、Renderer、Infra 的修改边界 |
-| [现行架构评估与计划](../temp/README.md) | 当前架构复核、改进工作包、下一轮测试机矩阵与归档 |
+| [现行架构评估与计划](../archive/architecture-2026-09/README.md) | 当前架构复核、改进工作包、下一轮测试机矩阵与归档 |
 | [测试文档入口](./testing/README.md) | 根仓、Backend、Editor、Runtime、契约和 E2E 测试入口 |
-| [部署文档入口](./deployment/README.md) | Compose 部署、环境变量、备份恢复、升级回滚和排障 |
+| [部署文档入口](../deployment/production/README.md) | Compose 部署、环境变量、备份恢复、升级回滚和排障 |
 | [External Agent API v1 契约](./reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend API、Scope、任务和交付契约 |
 | [CLI 主仓集成边界](./cli.md) | 主仓负责的 CLI 外部 API 契约和 agent-kit 交接边界 |
 | [MCP 主仓集成边界](./mcp.md) | 主仓负责的 MCP External API 依赖和 agent-kit 交接边界 |
@@ -30,7 +30,7 @@
 | [Runtime 开发](./runtime/README.md) | 页面、组件、Runtime Kit 与 Runtime 内部接入细节 |
 | [Runtime 接入](./runtime-integration/README.md) | 运行时架构、Runtime Kit manifest、previewSchema、构建产物和配置模板 |
 | [测试](./testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
-| [部署](./deployment/README.md) | Compose 模板、生产环境变量、CI/CD、备份、回滚和排障 |
+| [部署](../deployment/production/README.md) | Compose 模板、生产环境变量、CI/CD、备份、回滚和排障 |
 | [External Agent API](./reference/external-agent-api.md) | 外部 Agent 共用的 Backend 契约和变更流程 |
 | [CLI](./cli.md) | CLI 主仓集成边界；具体命令实现由 agent-kit 维护 |
 | [MCP](./mcp.md) | MCP 主仓集成边界；具体协议适配由 agent-kit 维护 |

@@ -2,7 +2,7 @@
 #
 # 官方生产主路径请使用 compose.runtime-roles.yml（分角色 runtime-preview / runtime-build / runtime-check，
 # 最小权限 runtime.env、独立 CPU/内存 limits）。本模板保留给小团队、兼容部署和尚未迁移到分角色拓扑的环境。
-# 两种模板不要混用同一套 deploy/.env 的角色目标变量语义；迁移步骤见 docs/developer/deployment/compose.md。
+# 两种模板不要混用同一套 deploy/.env 的角色目标变量语义；迁移步骤见 docs/deployment/production/compose.md。
 
 x-production-env: &production-env
   env_file:

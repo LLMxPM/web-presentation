@@ -78,7 +78,7 @@ AI run/HITL **不依赖** Redis run hash 或 Redis stream；截图认领、资�
 2. **重启语义**：容器/进程重启后，预览 artifact、构建运行态与短锁失效，用户需重新触发预览或构建；**主数据与渲染输入快照不丢**（SQLite + 对象/本地持久目录）。
 3. **故障域**：`memory://` 与 Backend 同进程；运行态膨胀会直接占 Backend 内存，依赖 TTL、清扫与 payload 预算控制，不承诺隔离。
 4. **可丢弃**：运行态清空不得改变任何领取、租约、终态或渲染输入结果（回归测试覆盖资源比例回填与 PAT 计数）。
-5. **离线冷启动**：交付镜像构建期预置 tiktoken `cl100k_base` 词表（`TIKTOKEN_CACHE_DIR=/app/.cache/tiktoken`），`alembic` / `uvicorn` 导入期不再外联下载 BPE；`--network none` 与气隙部署可完成冷启动。覆盖该变量时需自行保证缓存已存在，详见[部署环境变量](../deployment/env-vars.md)。
+5. **离线冷启动**：交付镜像构建期预置 tiktoken `cl100k_base` 词表（`TIKTOKEN_CACHE_DIR=/app/.cache/tiktoken`），`alembic` / `uvicorn` 导入期不再外联下载 BPE；`--network none` 与气隙部署可完成冷启动。覆盖该变量时需自行保证缓存已存在，详见[部署环境变量](../../deployment/production/env-vars.md)。
 
 ### 常规部署承诺
 
@@ -138,8 +138,8 @@ AI run/HITL **不依赖** Redis run hash 或 Redis stream；截图认领、资�
 
 ## 8. 相关文档
 
-- 部署与环境变量：[`../deployment/env-vars.md`](../deployment/env-vars.md)
-- Lite 拓扑：[`../deployment/compose.md`](../deployment/compose.md)
+- 部署与环境变量：[`../../deployment/production/env-vars.md`](../../deployment/production/env-vars.md)
+- Lite 拓扑：[`../../deployment/production/compose.md`](../../deployment/production/compose.md)
 - 渲染 artifact 生命周期：[`./remote-render-service-design.md`](./remote-render-service-design.md)
 - 任务租约与队列：[`./resource-queues.md`](./resource-queues.md)
 - 排障入口：[`./troubleshooting.md`](./troubleshooting.md)

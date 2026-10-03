@@ -8,8 +8,6 @@
 | :--- | :--- |
 | [用户文档入口](./user/README.md) | 用户文档概览 |
 | [平台介绍](./user/platform-overview.md) | 产品定位、核心概念、典型场景和平台组成 |
-| [快速部署](./user/quick-deployment/README.md) | 使用 Docker、飞牛 fnOS 或群晖 Container Manager 部署 SQLite 单体版 |
-| [单体运维指南](./user/quick-deployment/maintenance.md) | SQLite 单体版的无损升级、数据备份还原与反代网络配置 |
 | [快速上手](./user/getting-started.md) | 从登录到创建项目、编辑页面、预览和构建的基础流程 |
 | [用户与工作空间](./user/workflows/team-and-workspace.md) | 用户管理、密码修改、工作空间管理与权限边界 |
 | [Demo 使用说明](./user/demo-guide.md) | 公开 Demo 地址、体验账号、推荐流程和 AI 设置注意事项 |
@@ -22,6 +20,15 @@
 | [命令行与外部 Agent (CLI)](./user/workflows/cli-agent.md) | 使用 `wp` CLI 在本地终端或配合桌面 Agent（如 Cursor、Claude 等）创作 |
 | [预览、截图与构建](./user/workflows/preview-build-export.md) | Runtime 预览、截图、构建任务和产物访问 |
 | [当前限制](./user/reference/limits.md) | 已落地能力、建设中事项和使用边界 |
+| [设置与管理](./user/management/settings-and-admin.md) | 个人设置、平台管理与权限操作指南 |
+
+## 部署文档
+
+| 文档 | 内容 |
+| :--- | :--- |
+| [轻量部署指南](./deployment/lite/README.md) | 使用 Docker、飞牛 fnOS 或群晖 Container Manager 部署 SQLite 单体版 |
+| [单体运维指南](./deployment/lite/maintenance.md) | SQLite 单体版的无损升级、数据备份还原与反代网络配置 |
+| [生产部署指南](./deployment/production/README.md) | HTTPS、外部依赖、备份、升级和生产环境配置 |
 
 ## 开发文档
 
@@ -31,13 +38,13 @@
 | [本地开发指南](./developer/getting-started.md) | 本地依赖、启动方式、测试数据和运行态维护 |
 | [平台架构总览](./developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 运行时架构 |
 | [模块边界](./developer/architecture/module-boundaries.md) | Backend、Editor、Runtime、Renderer 和 Infra 修改边界 |
-| [现行架构评估与计划](./temp/README.md) | 当前静态评估、下一轮验证计划和历史归档 |
+| [架构评估归档](./archive/architecture-2026-09/README.md) | 历史架构评估与治理归档 |
 | [Backend 开发文档](./developer/backend/README.md) | API、AI Agent、工具规格、预览 artifact 和排障 |
 | [Editor 开发文档](./developer/editor/README.md) | 前端结构、AI 侧边栏和 Editor 测试 |
 | [Runtime 开发文档](./developer/runtime/README.md) | 页面、组件、Runtime Kit 和内部接入细节 |
 | [Runtime 接入文档](./developer/runtime-integration/README.md) | 运行时架构、Runtime Kit、previewSchema、构建产物和配置模板 |
 | [测试文档](./developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
-| [生产部署指南](./developer/deployment/README.md) | compose 部署、环境变量、CI/CD、备份恢复、升级回滚和排障 |
+| [生产部署指南](./deployment/production/README.md) | compose 部署、环境变量、CI/CD、备份恢复、升级回滚和排障 |
 | [External Agent API v1 契约](./developer/reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend 契约 |
 | [CLI 主仓集成边界](./developer/cli.md) | 主仓侧 CLI External API 契约和 agent-kit 交接边界 |
 | [参考资料](./developer/reference/conventions.md) | 开发约定、接口契约、环境变量、术语和模板包 |

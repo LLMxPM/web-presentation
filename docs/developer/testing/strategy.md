@@ -184,7 +184,7 @@ PR 执行 Backend unit/api、Editor gate、根仓 contracts、render-contracts�
 
 `main` push、每周一定时任务和手动 `full_tests=true` 执行全量门禁：增加 Backend integration、Runtime gate 与 E2E，并对常规平台、SQLite 轻量版、Runtime、Renderer 四类镜像执行构建及实际启动检查。`main` push 运行 `test:e2e`；定时和手动全量运行 `test:e2e:all`。跨仓 CLI 契约只在定时与手动任务中运行。
 
-GitHub Release 的 `published` 事件或手动发布任务触发后，先执行全量质量门禁和 `test:e2e:all`，通过后再构建、检查并推送四类镜像。具体触发条件、镜像标签及发布顺序以 [CI/CD 文档](../deployment/cicd.md) 和 `.github/workflows/` 为准。
+GitHub Release 的 `published` 事件或手动发布任务触发后，先执行全量质量门禁和 `test:e2e:all`，通过后再构建、检查并推送四类镜像。具体触发条件、镜像标签及发布顺序以 [CI/CD 文档](../../deployment/production/cicd.md) 和 `.github/workflows/` 为准。
 
 ## 7. 故障排查
 

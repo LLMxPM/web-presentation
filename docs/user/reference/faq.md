@@ -10,11 +10,11 @@
 
 ## 我只想体验，需要部署吗？
 
-不需要。先使用公开 Demo 或本地开发环境体验；需要团队自托管时再阅读 [快速部署](../quick-deployment/README.md)。
+不需要。先使用公开 Demo 或本地开发环境体验；需要团队自托管时再阅读 [快速部署](../../deployment/lite/README.md)。
 
 ## 自托管应该选哪种部署方式？
 
-个人或小团队优先使用 SQLite 轻量单容器部署，一个容器内运行 Backend、Runtime 和 Gateway，不需要额外准备 PostgreSQL 和 Redis。需要长期生产使用、集中备份、对象存储或现有数据库基础设施时，再阅读 [生产部署指南](../../developer/deployment/README.md)。轻量版重启后预览/构建的临时运行态会丢失，项目与页面数据不受影响。
+个人或小团队优先使用 SQLite 轻量单容器部署，一个容器内运行 Backend、Runtime 和 Gateway，不需要额外准备 PostgreSQL 和 Redis。需要长期生产使用、集中备份、对象存储或现有数据库基础设施时，再阅读 [生产部署指南](../../deployment/production/README.md)。轻量版重启后预览/构建的临时运行态会丢失，项目与页面数据不受影响。
 
 ## 默认管理员密码在哪里改？
 
@@ -30,7 +30,7 @@ SQLite 轻量单容器版的数据保存在 `lite-data` volume 中，包括 SQLi
 
 ## AI 设置保存后不生效怎么办？
 
-先确认账户 AI 设置中模型供应商、模型名、API Key 和 Base URL 是否完整，并确认模型类型与供应商类型一致。Chat 与图片生成供应商需要分别创建，已有 `openai`/`dashscope`/`openrouter` 配置不会自动供 `openai_image`/`dashscope_image`/`openrouter_image` 使用；百炼生图 Base URL 还必须是 HTTPS `/api/v1` 根地址，OpenRouter 图片默认使用 `https://openrouter.ai/api/v1`。再确认 Backend 的加密密钥没有变化。生产排障见 [部署排障](../../developer/deployment/troubleshooting.md)。
+先确认账户 AI 设置中模型供应商、模型名、API Key 和 Base URL 是否完整，并确认模型类型与供应商类型一致。Chat 与图片生成供应商需要分别创建，已有 `openai`/`dashscope`/`openrouter` 配置不会自动供 `openai_image`/`dashscope_image`/`openrouter_image` 使用；百炼生图 Base URL 还必须是 HTTPS `/api/v1` 根地址，OpenRouter 图片默认使用 `https://openrouter.ai/api/v1`。再确认 Backend 的加密密钥没有变化。生产排障见 [部署排障](../../deployment/operations/troubleshooting.md)。
 
 ## AI 任务会因为服务重启而丢失吗？
 
