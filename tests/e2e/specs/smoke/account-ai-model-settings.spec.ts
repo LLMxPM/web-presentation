@@ -17,7 +17,7 @@ test('聊天模型配置应支持创建、编辑、重开与清理', async ({ pa
   // 等待异步供应商配置落定；切换供应商会重置模型 ID，不能与模型选择并行操作。
   await expect(createDialog.getByRole('combobox', { name: 'OpenAI Mock 凭证', exact: true })).toBeVisible()
   await createDialog.getByPlaceholder('从 Models.dev 目录选择模型').click()
-  await page.getByRole('option', { name: /GPT-4\.1/ }).click()
+  await page.getByRole('option', { name: /^GPT-4\.1（gpt-4\.1）/ }).first().click()
   await expect(createDialog.getByRole('heading', { name: '模型能力' })).toBeVisible()
   const createButton = createDialog.getByRole('button', { name: '创建模型' })
   await expect(createButton).toBeEnabled()
