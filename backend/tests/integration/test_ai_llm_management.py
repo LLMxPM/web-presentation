@@ -158,3 +158,92 @@ async def test_removed_mixed_endpoints_return_not_found(authenticated_client: As
     for path in ("/api/ai/llm-providers", "/api/ai/llm-provider-configs", "/api/ai/llm-configs", "/api/ai/llm-slots"):
         response = await authenticated_client.get(path)
         assert response.status_code == 404
+
+
+async def test_delete_image_model_with_existing_jobs_and_binding(authenticated_client: AsyncClient) -> None:
+    """图片模型绑定到槽位且包含历史任务记录时，删除模型会清理绑定与任务。"""
+
+    from sqlalchemy import select
+    from app.db.session import get_session_factory
+    from app.models.ai_agent_runtime import AiAgentRun, AiAgentSession
+    from app.models.ai_image_generation import AiImageGenerationJob
+    from app.models.ai_image_model import AiImageModelConfig, AiImageSlotBinding
+    from app.models.user import User
+
+    image = await _image_model(authenticated_client)
+    model_id = image["id"]
+
+    # 绑定槽位
+    bound = await authenticated_client.put(
+        "/api/ai/image-model-bindings/image_generation",
+        json={"model_config_id": model_id},
+    )
+    assert bound.status_code == 200
+
+    # 插入一条关联此模型的历史任务记录
+    ws_res = await authenticated_client.post("/api/workspaces", json={"name": "图片任务测试工作空间", "status": "active"})
+    assert ws_res.status_code == 200
+    workspace_id = int(ws_res.json()["id"])
+
+    async with get_session_factory()() as session:
+        user = await session.scalar(select(User).where(User.username == "admin"))
+        assert user is not None
+
+        agent_session = AiAgentSession(
+            session_id="session-test-img-del",
+            agent_id="agent-coordinator",
+            user_id=user.id,
+            workspace_id=workspace_id,
+            session_name="测试会话",
+        )
+        session.add(agent_session)
+        await session.flush()
+
+        run = AiAgentRun(
+            run_id="run-test-img-del",
+            session_id=agent_session.session_id,
+            agent_id="agent-coordinator",
+            user_id=user.id,
+            workspace_id=workspace_id,
+            scope_type="workspace",
+            source="test",
+            status="completed",
+        )
+        session.add(run)
+        await session.flush()
+
+        job = AiImageGenerationJob(
+            job_id="job-test-img-del",
+            run_id=run.run_id,
+            session_id=agent_session.session_id,
+            tool_call_id="call-img-del",
+            deferred_tool_call_id="call-img-del",
+            user_id=user.id,
+            workspace_id=workspace_id,
+            model_config_id=model_id,
+            operation="generate_image",
+            status="completed",
+            request_json={"prompt": "test"},
+            model_snapshot_json={},
+        )
+        session.add(job)
+        await session.commit()
+
+    # 删除模型应当成功
+    del_res = await authenticated_client.delete(f"/api/ai/image-model-configs/{model_id}")
+    assert del_res.status_code == 200, del_res.text
+
+    # 验证模型、任务记录与槽位绑定均已清理
+    async with get_session_factory()() as session:
+        assert await session.get(AiImageModelConfig, model_id) is None
+        assert (
+            await session.scalar(
+                select(AiImageGenerationJob.id).where(AiImageGenerationJob.model_config_id == model_id)
+            )
+            is None
+        )
+        binding = await session.scalar(
+            select(AiImageSlotBinding).where(AiImageSlotBinding.model_config_id == model_id)
+        )
+        assert binding is None
+

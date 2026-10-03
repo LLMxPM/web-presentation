@@ -148,11 +148,10 @@ class AiImageConfigService:
         return self._model_item(row)
 
     async def delete_model(self, row_id: int) -> None:
-        """无任务引用时删除图片模型和绑定。"""
+        """删除图片模型，并同步清理关联的任务记录与槽位绑定。"""
 
         row = await self._model(row_id, editable=True)
-        if await self.session.scalar(select(AiImageGenerationJob.id).where(AiImageGenerationJob.model_config_id == row.id).limit(1)):
-            raise AppException(status_code=409, code="AI_IMAGE_MODEL_JOB_IN_USE", detail="当前图片模型已有任务记录，不能删除。")
+        await self.session.execute(delete(AiImageGenerationJob).where(AiImageGenerationJob.model_config_id == row.id))
         await self.session.execute(delete(AiImageSlotBinding).where(AiImageSlotBinding.model_config_id == row.id))
         await self.session.delete(row)
         await self.session.commit()
