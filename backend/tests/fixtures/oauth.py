@@ -33,7 +33,7 @@ SCOPES = ["page:read", "page:write"]
 TABLES = [
     table
     for name, table in Base.metadata.tables.items()
-    if name.startswith("oauth_")
+    if name.startswith(("oauth_", "api_access_token"))
     or name in {"users", "user_sessions", "workspaces", "workspace_members"}
 ]
 

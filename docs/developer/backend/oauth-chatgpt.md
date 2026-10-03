@@ -51,3 +51,9 @@ Gateway 配置显式把发现文档与四个协议端点转 Backend，`/oauth/co
 独立 `/oauth/consent` 使用现有 Cookie 登录守卫，登录后返回原始请求；默认只选择服务端返回的读取 Scope，写入 Scope 和具体空间必须显式选择。nonce 只在组合式逻辑的组件生命周期内保存；查询切换、卸载和成功决定后清空，迟到响应不能导航已经离开的页面。过期或无空间/权限选择时禁用批准，拒绝不要求空间选择。
 
 `/settings/account/grants` 使用生成 DTO，显示本人授权和当前可见工作空间名称。成员资格丢失时仅显示空间 ID 的失效提示，不泄漏非成员空间名称。撤销确认说明整链失效与已接受任务继续运行，成功后重取服务端状态。用户操作见 [外部授权工作流](../../user/workflows/external-authorization.md)。
+
+## External API 凭证分派
+
+`/api/v1` 业务认证按不混用的命名空间分派：`wp_pat_` 走原 PAT 验证，`wp_dlg_` 仅在 OAuth 启用时走完整委托链验证。`wp_oat_` MCP access、`wp_ort_` refresh、服务 Basic、未知来源和重复 Authorization 头均不能作为业务身份；任何分支失败都不尝试另一认证规则。
+
+委托每请求重新读取 Grant、用户/客户端/服务、源 access、audience、到期与具体空间成员状态，无正向放行缓存。受信服务本身没有业务权限。whoami 中旧 token 为 null，credential 明确包含委托公共身份；相同 user/workspace/Scope 的 PAT 和真实委托共享业务读取与 capabilities。页面/组件写入、Job 与幂等的完整委托对拍仍归 M4。

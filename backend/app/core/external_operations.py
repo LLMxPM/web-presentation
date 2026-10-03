@@ -36,7 +36,7 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
 
     # Auth & Workspace & Operations
     "auth.whoami": ExternalOperationSpec(
-        "auth.whoami", (), is_public=False, exempt_workspace_header=True, description="查询当前 PAT 身份及授权空间"
+        "auth.whoami", (), is_public=False, exempt_workspace_header=True, description="查询当前外部身份及授权空间"
     ),
     "workspace.list": ExternalOperationSpec(
         "workspace.list", ("workspace:read",), is_public=False, exempt_workspace_header=True, description="列出已授权的工作空间"

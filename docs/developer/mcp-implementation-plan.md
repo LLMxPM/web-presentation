@@ -144,7 +144,7 @@ P0 默认建议：授权码 60 秒一次性，MCP 访问令牌 15 分钟，委�
 
 - [x] 定义不可混用的认证来源 `pat/delegated`，公共业务属性为用户、空间授权、scopes、有效期及审计来源；PAT 专属字段放到兼容适配中。
 - [x] 保持 `require_external_operation`、动态 Mutation 权限和 `ensure_workspace_access` 的统一入口，不复制一套 OAuth 专用资源路由。
-- [ ] 明确 Bearer 类型分派规则；PAT 验证失败不能尝试用宽松 JWT 规则再次放行，反之亦然。
+- [x] 明确 Bearer 类型分派规则；`wp_pat_` / `wp_dlg_` 单次分派，不接受 MCP access/refresh 或服务凭证作为业务身份，失败无认证回退。
 - [x] whoami 保留 PAT 已有字段及含义；委托身份使用明确的 credential/grant 信息，不能返回一个看似存在的 PAT ID。新增字段/可空性由 DTO、PAT 回归和已验证主体适配测试确认；真实委托 Token 验收仍依赖 M2。
 - [ ] capabilities 的既有 operations 字符串列表保持兼容；主体改变不能隐式增加 read/write Scope，也不能把 all/any 要求错误合并。
 - [ ] 日志只记录公共凭证/Grant ID 和主体来源，不记录 Bearer、授权码、刷新令牌。
@@ -305,10 +305,10 @@ pnpm run test:repository
 | ID | 交付物 | 依赖 | 验收方 | 状态 |
 | --- | --- | --- | --- | --- |
 | M0 | 冻结契约、授权实现选型、首批客户端矩阵 | 无 | 两仓 | ChatGPT web 首批、CIMD/S256/RFC9207 已冻结；真实宿主待办 |
-| M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 基础解耦完成；真实委托认证/撤销与对等验收待 M2 |
+| M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 解耦、真实委托 Bearer 和读取/Scope 对等已实现；创作/Job 与真实宿主待验收 |
 | M2 | OAuth、Grant、账户授权 UI、撤销 | M0；联调依赖 M1 | A3 真实授权 | 协议/存储、公开路由、Cookie 确认、Editor 和本人 Grant 管理已实现；清理/服务登记运维、PG/真实宿主验收待办 |
 | M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 主仓首批实现完成；agent-kit binding 与实际 Backend Gateway 对拍待办 |
-| M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | 待实施 |
+| M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | HTTP 授权→交换→只读闭环已验证；创作/Job/幂等委托对拍待实施 |
 | M5 | 预览和截图预算/实机验证 | M1/M2 | A6 | 待实施 |
 | M6 | Gateway、配置、观测、升级回退 | M0，随 P1/P2推进 | A8/A9 | 默认关闭的显式配置和 OAuth Gateway 路由已实现；真实网关/发布验收待办 |
 | M7 | 跨仓完整验收和发布记录 | M1～M6 与 agent-kit 首期实现；与 A9 联合执行 | 两仓 | 待实施 |

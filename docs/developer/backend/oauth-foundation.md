@@ -1,6 +1,6 @@
 # 远程 MCP OAuth 授权基础
 
-实施状态：2026-10-04，协议核、授权存储、自省/撤销/受控交换及独立委托验证器已落地；生产 FastAPI 已装配默认关闭的 OAuth 路由、Cookie 确认和本人 Grant 管理，Editor 确认及管理页已实现。首批采用 [ChatGPT 网页端](./oauth-chatgpt.md)。委托 Bearer 分派、清理/服务登记运维和真实 Gateway/宿主验收仍需后续批次。现有 External API 继续只接受 PAT。
+实施状态：2026-10-04，协议核、授权存储、自省/撤销/受控交换及委托验证器已落地；生产 FastAPI 已装配默认关闭的 OAuth 路由、Cookie 确认和本人 Grant 管理，Editor 确认及管理页已实现。External API 在显式启用 OAuth 后接受真实短期委托 Bearer，PAT 保持兼容。首批采用 [ChatGPT 网页端](./oauth-chatgpt.md)。清理/服务登记运维和真实 Gateway/宿主验收仍需后续批次。
 
 ## 协议与事务分层
 
@@ -26,7 +26,7 @@
 
 首期拒绝 actor_token、audience 别名、多资源和其他扩展参数；PAT/refresh/delegated 都不能作为 subject。交换返回标准 `access_token/token_type/expires_in/issued_token_type/scope`，不返回 refresh。`wp_dlg_` 委托凭证绑定公共服务 ID 和源 access ID，期限最长 60 秒且不晚于源期限。普通服务凭据本身没有用户或工作空间权限。
 
-所属用户客户端撤销任一 access/refresh 时撤销整个 Grant 和刷新家族。未知或属于其他客户端的 Token 均返回空对象成功，避免暴露存在性；后者不修改原授权。账户用户撤销仍按 user_id 隔离。`delegated_identity.py` 每请求复核委托自身期限/API audience、Grant 的 issuer/resource/用户/成员、当前服务登记、源 access 的 Grant/期限/Scope/家族，全部通过后才构造 ExternalPrincipal。该验证器目前还未接入 External HTTP 鉴权依赖。
+所属用户客户端撤销任一 access/refresh 时撤销整个 Grant 和刷新家族。未知或属于其他客户端的 Token 均返回空对象成功，避免暴露存在性；后者不修改原授权。账户用户撤销仍按 user_id 隔离。`delegated_identity.py` 每请求复核委托自身期限/API audience、Grant 的 issuer/resource/用户/成员、当前服务登记、源 access 的 Grant/期限/Scope/家族，全部通过后才构造 ExternalPrincipal，并已接入 External HTTP 鉴权依赖。
 
 ## 持久化契约
 
@@ -35,9 +35,9 @@
 | 表 | 保存内容 |
 | --- | --- |
 | oauth_clients | 预注册客户端、精确回调列表、Scope 上限、resource、认证方式及密钥哈希 |
-| oauth_mcp_services | 预注册服务身份、密钥哈希、MCP resource 与 API audience；业务交换实现后启用 |
+| oauth_mcp_services | 显式登记且启用的服务身份、密钥哈希、MCP resource 与 API audience；自省/交换实时复核 |
 | oauth_grants | user/client、issuer/resource、固定具体空间集合、Scope、事务版本与撤销原因 |
-| oauth_consent_requests | 待确认请求、平台 user/session、回调/PKCE/state、CSRF 摘要与消费时间；后续确认流程接入 |
+| oauth_consent_requests | 待确认请求、平台 user/session、回调/PKCE/state、CSRF 摘要与一次性消费时间 |
 | oauth_authorization_codes | 摘要、Grant、精确回调、PKCE、Scope、期限与消费时间 |
 | oauth_refresh_families | Grant、家族 ID、绝对到期时间和撤销时间 |
 | oauth_tokens | 摘要及公共 ID、access/refresh/delegated 来源、Scope、audience、family/parent/source/service、期限和消费/撤销时间 |
@@ -57,4 +57,4 @@ uv run --locked --project backend pytest -c backend/pyproject.toml backend/tests
 
 SQLite 使用每例一次性数据库并启用外键，PG 使用专属测试数据库内的随机独立 schema。仅接受 `OAUTH_TEST_POSTGRES_DATABASE_URL=postgresql+asyncpg://.../wp_oauth_test_<名称>`；`OAUTH_TEST_POSTGRES_REQUIRED=1` 可强制缺配置失败。测试结束只删除自己创建的 schema，不访问开发库。
 
-FastAPI 测试入口只在测试模块装配。并发用两个独立服务对象、Session 和 ASGI app，覆盖错误 PKCE 后再次兑换、授权码竞争、刷新竞争/重放、Scope 缩减、期限、用户/客户端/成员状态、跨用户撤销及提交故障。它验证数据库共享事务边界，不能替代两个真实 Backend 进程、Gateway 或真实宿主 OAuth 联调。
+存储并发使用两个独立服务对象、Session 和测试 ASGI app；公开 HTTP 测试使用生产路由和真实 Cookie/委托验证，未覆盖整个生产 lifespan。覆盖错误 PKCE 后再次兑换、授权码竞争、刷新竞争/重放、Scope 缩减、期限、用户/客户端/成员状态、跨用户撤销及提交故障。它验证数据库事务和应用路由边界，不能替代两个真实 Backend 进程、Gateway 或真实宿主 OAuth 联调。

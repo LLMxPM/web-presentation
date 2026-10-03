@@ -8,13 +8,16 @@ from fastapi import Depends, Header, Path, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.external_operations import get_operation_spec
+from app.core.oauth_config import resolve_oauth_policy
 from app.db.session import get_db_session
 from app.models.api_mutation_job import ApiMutationJob
 from app.services.api_access_token_service import ApiAccessTokenService
 from app.services.external_pat_identity import principal_from_pat
 from app.services.external_principal import ExternalPrincipal as ExternalAuthContext
+from app.services.oauth.delegated_identity import authenticate_delegated
 
 
 async def get_external_auth_context(
@@ -22,13 +25,13 @@ async def get_external_auth_context(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> ExternalAuthContext:
-    """从 Authorization: Bearer 中提取并校验 PAT 令牌。"""
+    """按凭证命名空间单次分派 PAT/委托验证；任何失败都不能回退其它来源。"""
 
-    if not authorization:
+    if not authorization or len(request.headers.getlist("Authorization")) != 1:
         raise AppException(
             status_code=401,
             code="UNAUTHENTICATED",
-            detail="缺少 Authorization 认证头，请提供 Bearer <PAT_TOKEN>。",
+            detail="请提供唯一的 Authorization: Bearer 认证头。",
         )
 
     parts = authorization.strip().split()
@@ -36,14 +39,21 @@ async def get_external_auth_context(
         raise AppException(
             status_code=401,
             code="UNAUTHENTICATED",
-            detail="Authorization 头格式错误，必须为 Bearer <PAT_TOKEN>。",
+            detail="Authorization 头格式错误，必须为 Bearer <访问凭证>。",
         )
 
     raw_token = parts[1]
+    if raw_token.startswith("wp_dlg_"):
+        policy = resolve_oauth_policy(get_settings())
+        if policy is None:
+            raise AppException(401, "UNAUTHENTICATED", "委托访问凭证不可用。")
+        return await authenticate_delegated(session, raw_token, policy)
+    if not raw_token.startswith("wp_pat_"):
+        raise AppException(401, "UNAUTHENTICATED", "业务 API 不接受此类访问凭证。")
     client_ip = request.client.host if request.client else None
     token = await ApiAccessTokenService(session).authenticate_pat(raw_token, ip=client_ip)
 
-    # 本批仅接入 PAT；失败直接结束，不能再用其它来源规则尝试放行。
+    # PAT 仍走原哈希、用户状态、到期及撤销校验，不伪造 PAT 行或借用服务身份。
     return principal_from_pat(token)
 
 

@@ -25,7 +25,7 @@
 - MCP 规划参考：[web-presentation-agent-kit/docs/mcp-implementation-plan.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)
 - Skill 知识库：[web-presentation-agent-kit/skills/web-presentation/SKILL.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/skills/web-presentation/SKILL.md)
 
-远程多用户 MCP 所需的 OAuth、委托身份和新增接口目前仅列入[主仓实施计划](../mcp-implementation-plan.md)，尚未实现；本文继续描述现行 External API，不把计划中的接口视作可调用能力。
+远程 MCP 主仓已实现默认关闭的 OAuth 协议、Cookie 授权确认/管理及真实委托 Bearer 验证。首批客户端为 [ChatGPT 网页端](../backend/oauth-chatgpt.md)。agent-kit MCP、公开部署与真实宿主仍待[实施计划](../mcp-implementation-plan.md)验收，不把主仓 ASGI 测试当作客户端可用证明。
 
 ## 2. 唯一事实源
 
@@ -225,7 +225,7 @@ GET  /api/v1/pages/{page_id}/screenshot
 
 | 情况 | 外部客户端处理 |
 |---|---|
-| 401 | 未认证或 PAT 无效，不自动重试 |
+| 401 | 未认证或访问凭证无效，不自动重试 |
 | 403 | Scope 或工作空间授权不足 |
 | 404 | 对象不存在或不属于当前空间 |
 | 409 | 版本、草稿、状态或幂等冲突，重新读取后再决定 |

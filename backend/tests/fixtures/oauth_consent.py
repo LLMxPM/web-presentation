@@ -6,8 +6,9 @@ from urllib.parse import urlencode
 
 import httpx
 import pytest
-from app.api import oauth_http
+from app.api import dependencies_external, oauth_http
 from app.api.routes import oauth_account, oauth_public
+from app.api.routes.external import system, workspaces
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.security import hash_session_token
@@ -57,7 +58,7 @@ async def oauth_http_client(oauth_database, monkeypatch):
         }, policy)
 
     monkeypatch.setattr(consent_service, "fetch_chatgpt_client", metadata)
-    for module in (oauth_http, oauth_account, oauth_public):
+    for module in (oauth_http, oauth_account, oauth_public, dependencies_external):
         monkeypatch.setattr(module, "get_settings", lambda: settings)
     for module in (oauth_account, oauth_public):
         monkeypatch.setattr(module, "get_session_factory", lambda: factory)
@@ -76,6 +77,8 @@ async def oauth_http_client(oauth_database, monkeypatch):
     app = FastAPI()
     app.include_router(oauth_public.router)
     app.include_router(oauth_account.router, prefix="/api")
+    app.include_router(system.router, prefix="/api/v1")
+    app.include_router(workspaces.router, prefix="/api/v1/workspaces")
     app.dependency_overrides[get_db_session] = session_dependency
 
     @app.exception_handler(AppException)

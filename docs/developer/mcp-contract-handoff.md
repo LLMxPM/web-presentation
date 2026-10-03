@@ -1,6 +1,6 @@
 # 远程 MCP 首批实施交接
 
-核对日期：2026-10-03。本记录冻结主仓可独立实施的 M1 身份边界和 M3 契约发现方式。OAuth 协议入口仍是候选设计，M0 整体尚未退出；本文不表示远程 MCP 已可用。
+初始核对日期：2026-10-03；后续批次接续至 2026-10-04。本记录冻结主仓 M1 身份、M3 契约发现及 ChatGPT web 首批 OAuth 实现边界。当前协议入口见 [ChatGPT 首批授权](./backend/oauth-chatgpt.md)；M0/M7 真实宿主尚未退出，本文不表示远程 MCP 已可用。
 
 ## 1. 核对基线与范围
 
@@ -36,11 +36,11 @@
 | pat | token_id、public_id、name、expires_at | 保留现有 all_workspaces 行为与实时成员资格检查 |
 | delegated | public_id、grant_id、client_id、service_id、issuer、audience、expires_at | 固定具体空间集合；不可使用 all_workspaces |
 
-`delegated` 结构只供 M2 的验证器适配，不能凭 HTTP Header 或调用方声明构造身份。本批仍只接受 `wp_pat_` 凭证并沿用严格 PAT 校验；认证失败没有第二种规则兜底。M2 必须先验证 issuer、API audience、期限、用户/Grant/客户端/服务状态及授权范围，才允许构造委托主体。
+`delegated` 结构只能由完整验证器构造，不能凭 HTTP Header 或调用方声明构造身份。当前 HTTP 按 `wp_pat_` / `wp_dlg_` 单次分派；后者仅在显式启用 OAuth 时经过 issuer、API audience、期限、用户/Grant/客户端/服务/源 access 及实时成员范围验证。MCP access/refresh 和服务凭证不能直接访问业务 API，失败没有第二种规则兜底。
 
 whoami 的 `user`、`token`、`workspaces` 字段保持兼容。PAT 的 token 保留 id/name/token_public_id/scopes/expires_at/all_workspaces；委托身份 token 为 null，credential 明确使用 delegated 及授权/客户端/服务标识，不伪造 PAT ID。credential 只包含公共标识，不包含原始凭证。capabilities.operations 继续为字符串列表，Scope 的 all/any 语义保持现状。
 
-M1 完成基础解耦并不代表委托认证验收完成；PAT/委托 HTTP 对等、错误 audience 和撤销等场景依赖 M2。
+真实委托 HTTP 已验证 whoami、工作空间读取、Scope/capabilities 对等及撤销后拒绝；创作/Job/幂等和真实宿主仍需 M4/M7 验收。
 
 ## 3. M3 操作元数据
 
@@ -71,6 +71,14 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 已接受的持久 Job 不因 MCP 断连、Token 到期或撤销自动取消。查询、取消和 retry 仍需当前权限；重放维持 user/workspace/operation/key 边界。主仓本批不修改内部助手与领域队列，不启动或发布 MCP 服务。
 
 ## 5. 分步实施证据
+
+### 批次 10：真实委托 Bearer 接入 External API
+
+外部 HTTP 依赖按 `wp_pat_` / `wp_dlg_` 单次分派，委托必须完成实时来源链验证；未知类型、MCP access/refresh、重复认证头和 OAuth 关闭均拒绝。重用现有业务路由和 operation 依赖，没有第二套资源路由或 PAT 伪记录。
+
+新增 12 项真实委托 HTTP 用例：Cookie 确认→授权码兑换→服务交换→空间读取闭环，相同用户/空间/Scope 的真实 PAT 与委托 capabilities 完整对拍，Scope 不足/未来空间拒绝，授权/成员/服务/源令牌失效后立即拒绝。集中回归 OAuth 协议/配置/存储/迁移、确认/HTTP、主体/身份、PAT、全部相关 External API 契约：**212 项通过、81 项 PG 因缺专用库跳过**。Ruff、生成物对拍和仓库 16 项检查通过。
+
+下一批仍需服务登记/清理运维入口、委托创作/Job/幂等、公开 Gateway 与真实 ChatGPT 联调。Docker 引擎不可用导致真实 Nginx 命令失败，未创建演练网络/容器；未运行 Renderer E2E，未推送或部署。
 
 ### 批次 9：Editor 授权确认与外部授权管理
 
