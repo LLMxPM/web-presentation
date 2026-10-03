@@ -33,6 +33,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "redis>=6.0.0",
     "pydantic-ai-slim[openai,google,openrouter]==2.26.0",
+    "authlib==1.8.0",
 ]
 
 [tool.uv.sources]

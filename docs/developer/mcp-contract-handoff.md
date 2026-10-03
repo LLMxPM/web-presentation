@@ -54,13 +54,13 @@ M1 完成基础解耦并不代表委托认证验收完成；PAT/委托 HTTP 对�
 
 ## 4. OAuth 选型和未退出项
 
-优先验证 Authlib。官方提供授权服务器与 PKCE/刷新/撤销扩展，但文档中的授权服务器框架集成主要为 Flask/Django，不能把 FastAPI 客户端集成误认成可直接使用的授权服务器。发布记录已列出 1.8.0；本批仅完成候选调查，尚未锁定依赖或宣称最小验证通过。[官方授权服务器说明](https://docs.authlib.org/en/stable/oauth2/authorization-server/)、[发布记录](https://github.com/authlib/authlib/releases)、[许可源码](https://github.com/authlib/authlib/blob/v1.8.0/LICENSE)。
+Authlib 已锁定为 1.8.0，许可证为 BSD-3-Clause。官方提供框架无关授权服务器与 PKCE/刷新/撤销扩展，但授权服务器框架集成主要为 Flask/Django，不能把 FastAPI 客户端集成误认成现成授权服务器。主仓采用每请求独立的同步协议核：异步层预读不可变客户端/凭证快照，Authlib 校验并暂存发行意图，异步层完成 CAS 和事务提交后才交付响应。不会在同步钩子内阻塞异步 Session。[官方授权服务器说明](https://docs.authlib.org/en/stable/oauth2/authorization-server/)、[发布记录](https://github.com/authlib/authlib/releases)、[许可源码](https://github.com/authlib/authlib/blob/v1.8.0/LICENSE)。
 
 M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台用户/登录、SQLAlchemy 持久化、PKCE S256、resource 绑定、刷新轮换/重放、撤销、自省与受控 RFC 8693 交换。异步事务和 CAS 应由主仓数据库适配层处理；无内置支持的扩展不能算库已实现。验证失败应重新选型，不能手写整套协议弥补。
 
 | 未冻结/未验收项 | 影响的工作包 | 下一步证据 |
 | --- | --- | --- |
-| 授权库版本/许可证确认及最小适配验证 | M0/M2 | 固定版本可复现 PoC，数据库并发消费正反例 |
+| 最小适配验证的持久化与服务扩展部分 | M0/M2 | 协议核 20 项已通过；仍需数据库并发消费、自省/撤销及受控交换 |
 | 首批真实宿主名称、版本和注册机制 | M0/M2/M7 | 与 A0 联合验证；SDK 测试不替代宿主 |
 | 公网 origin/issuer/resource/API audience | M2/M6 | 明确配置及启动校验，不能从 Host 推导 |
 | OAuth 错误、claim/opaque DTO、刷新最长时限/清理期 | M2/A3 | 两仓共同消费同一版本契约 |
@@ -95,4 +95,10 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 
 此处 Gateway 证据使用受控静态上游，不代表已部署新 Backend 或通过 OAuth/MCP Gateway。未运行 Renderer/Runtime E2E、真实宿主授权、委托 audience/撤销/轮换和 SQLite/PostgreSQL 授权消费并发；这些分别依赖 M2/M5/M6/M7。agent-kit 首期 binding 尚未存在，M3 跨仓退出验收仍待 A1/A4。
 
-接续顺序：完成 Authlib 最小适配 PoC 和 A0 真实宿主矩阵 → 冻结剩余 OAuth/委托协议 → M2 存储/授权/撤销与账户 UI → 接入 M1 委托验证器 → M4/M5 与跨仓 Gateway/发布验收。
+### 批次 4：M0 Authlib 协议适配
+
+2026-10-04：根 uv workspace 锁定 Authlib 1.8.0。`services/oauth/` 拆分请求、快照、grant 和协议核；协议核没有公开 HTTP 路由，不更改现有 PAT 认证。
+
+`backend/tests/unit/test_oauth_protocol.py` **20 项通过**：公开/机密客户端、显式 S256、精确 redirect/resource、权限扩张拒绝、重复参数拒绝、期限、state 原样回传、刷新子集与轮换意图、原客户端重放识别。Authlib DEBUG 日志使用脱敏 Token repr，原始凭证不进入快照或响应对象 repr。错误 PKCE 不登记消费且随后可以正确兑换。此批验证协议核行为，尚未提供持久化并发证据或真实 FastAPI 授权入口。
+
+接续顺序：补齐 Authlib 异步持久化 PoC 和 A0 真实宿主矩阵 → 冻结剩余 OAuth/委托协议 → M2 授权/撤销与账户 UI → 接入 M1 委托验证器 → M4/M5 与跨仓 Gateway/发布验收。
