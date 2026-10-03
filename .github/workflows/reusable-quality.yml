@@ -1,7 +1,11 @@
-# 文件功能：平台质量门禁的可复用 workflow，被 platform-test 与 platform-release 共同调用。
+# 文件功能：平台质量门禁的可复用 workflow，由 platform-test 调用；platform-release 复用其在 main 上产出的门禁结论，不再重复调用。
 # 测试命令一律通过根目录 package.json 的 test:* 脚本执行，避免 CI 与本地双轨维护。
 
 name: reusable-quality
+
+# 质量门禁只需要读源码，不授予写权限。
+permissions:
+  contents: read
 
 on:
   workflow_call:
@@ -24,6 +28,7 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -42,6 +47,7 @@ jobs:
   # 缺少连接串时脚本内显式失败（P4_POSTGRES_REQUIRED），不以 skip 冒充通过。
   pg-claim-contention:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -74,6 +80,7 @@ jobs:
   # 不以单元测试代替；该 job 在 PR 与发布流水线都必须执行。
   runtime-state-parity:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       redis:
         image: redis:7-alpine
@@ -101,6 +108,7 @@ jobs:
 
   editor-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -116,6 +124,7 @@ jobs:
 
   contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -135,6 +144,7 @@ jobs:
 
   render-contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -148,6 +158,7 @@ jobs:
 
   renderer-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -161,6 +172,7 @@ jobs:
 
   python-workspace:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -174,6 +186,7 @@ jobs:
 
   runtime-gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     if: inputs.run_runtime
     steps:
       - uses: actions/checkout@v4
@@ -190,6 +203,7 @@ jobs:
 
   gateway-contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -200,30 +214,22 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs:
       - backend-tests
-      - pg-claim-contention
-      - runtime-state-parity
       - editor-tests
       - contracts
-      - render-contracts
-      - renderer-tests
-      - python-workspace
       - runtime-gate
-      - gateway-contract
-    # runtime-gate 被跳过时仍视为可进入 E2E；其余任一失败会阻断。
+    # E2E 只依赖浏览器链路的真实前置；pg-claim、runtime-state-parity、render-contracts、
+    # renderer-tests、python-workspace、gateway-contract 与其并行，任一失败仍会让 quality 汇总为红，
+    # 但无关抖动不会把一次 E2E 放大成「整套门禁 + E2E」的下一次重跑。
+    # runtime-gate 被跳过时仍视为可进入 E2E。
     if: |
       always() &&
       inputs.full &&
       needs.backend-tests.result == 'success' &&
-      needs.pg-claim-contention.result == 'success' &&
-      needs.runtime-state-parity.result == 'success' &&
       needs.editor-tests.result == 'success' &&
       needs.contracts.result == 'success' &&
-      needs.render-contracts.result == 'success' &&
-      needs.renderer-tests.result == 'success' &&
-      needs.python-workspace.result == 'success' &&
-      needs.gateway-contract.result == 'success' &&
       (needs.runtime-gate.result == 'success' || needs.runtime-gate.result == 'skipped')
     steps:
       - uses: actions/checkout@v4

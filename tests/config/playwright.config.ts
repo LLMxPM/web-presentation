@@ -32,6 +32,8 @@ export default defineConfig({
   fullyParallel: false,
   // 固定为与 GitHub Actions 一致的 2 workers；调试时可通过 PLAYWRIGHT_WORKERS 覆盖。
   workers: e2eWorkers,
+  // CI 下允许一次重试：单条用例的定位抖动不应放大成「整套门禁 + E2E」的下一次重跑；本地保持 0 以暴露真实不稳定。
+  retries: process.env.CI ? 1 : 0,
   expect: { timeout: 15_000 },
   reporter: [['list'], ['html', { outputFolder: e2eReportDir, open: 'never' }]],
   use: {
