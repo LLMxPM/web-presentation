@@ -25,6 +25,8 @@
 - MCP 规划参考：[web-presentation-agent-kit/docs/mcp-implementation-plan.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)
 - Skill 知识库：[web-presentation-agent-kit/skills/web-presentation/SKILL.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/skills/web-presentation/SKILL.md)
 
+远程多用户 MCP 所需的 OAuth、委托身份和新增接口目前仅列入[主仓实施计划](../mcp-implementation-plan.md)，尚未实现；本文继续描述现行 External API，不把计划中的接口视作可调用能力。
+
 ## 2. 唯一事实源
 
 External API 契约的优先级如下：

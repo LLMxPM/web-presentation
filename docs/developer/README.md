@@ -17,6 +17,7 @@
 | [External Agent API v1 契约](./reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend API、Scope、任务和交付契约 |
 | [CLI 主仓集成边界](./cli.md) | 主仓负责的 CLI 外部 API 契约和 agent-kit 交接边界 |
 | [MCP 主仓集成边界](./mcp.md) | 主仓负责的 MCP External API 依赖和 agent-kit 交接边界 |
+| [远程 MCP 主仓实施计划](./mcp-implementation-plan.md) | 远程多用户授权、API 适配、跨仓工作包、测试和发布验收；待实施 |
 | [大文件与媒体资产管理](./large-files.md) | Git LFS 规则、媒体文件提交检查和历史迁移约束 |
 
 ## 分组导航

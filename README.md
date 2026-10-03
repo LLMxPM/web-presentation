@@ -53,7 +53,7 @@
 | Runtime | 预览与构建引擎 | 基于 Vue/Vite 渲染页面和组件，承接预览、截图宿主协议、诊断和发布构建 |
 | Renderer | 远程渲染执行服务 | 独立单槽异步 Playwright 服务，执行截图、页面诊断与组件诊断 |
 | Infra | 部署与运行环境 | 提供 Docker 镜像、compose 模板、发布流程和运行时依赖约束 |
-| Agent Kit | 外部 Agent 接入 | 同级 `web-presentation-agent-kit` 仓库提供官方 `wp` CLI、共享 API Client 和配套 Skill（MCP 协议规划暂缓） |
+| Agent Kit | 外部 Agent 接入 | 同级 `web-presentation-agent-kit` 仓库提供官方 `wp` CLI、共享 API Client 和配套 Skill；远程多用户 MCP 已进入[实施规划](docs/developer/mcp-implementation-plan.md)，尚未交付 |
 
 详细架构、模块边界和目标业务流程见 [平台架构总览](./docs/developer/architecture/overview.md)。
 
