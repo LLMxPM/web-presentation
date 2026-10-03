@@ -14,6 +14,8 @@ production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy
 
 数据库与接口统一使用 UTC，历史无时区值直接补 UTC。业务时区只影响展示和业务日期生成，详见[时间存储与展示](../../developer/backend/time-handling.md)。
 
+远程 MCP OAuth 的 `OAUTH_ENABLED` 默认关闭。启用还需显式设置 `OAUTH_ISSUER`、`OAUTH_MCP_RESOURCE`、`OAUTH_API_AUDIENCE`、`OAUTH_EDITOR_ORIGIN` 和 `SESSION_SECURE=true`；完整边界见 [ChatGPT 首批授权](../../developer/backend/oauth-chatgpt.md)。配置存在不代表 Gateway 和真实客户端已经验收。
+
 ## 数据与缓存
 
 | 变量 | 说明 |

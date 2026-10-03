@@ -38,6 +38,7 @@
 ### 2. Backend 后台变量
 - 对应模块：`backend/`（统一模板：根目录 `.env.example`）。
 - 关键变量：`DATABASE_URL`、`REDIS_URL`、`DEFAULT_ADMIN_*`、`SESSION_*`、`RUNTIME_BASE_URL`、`AI_*` 与本地端口配置。
+- 远程 MCP OAuth：`OAUTH_ENABLED` 默认关闭；`OAUTH_ISSUER`、`OAUTH_MCP_RESOURCE`、`OAUTH_API_AUDIENCE`、`OAUTH_EDITOR_ORIGIN` 的启用约束见 [ChatGPT 首批授权](../backend/oauth-chatgpt.md)。
 
 ### 3. Editor 编辑器变量
 - 对应模块：`editor/`（统一模板：根目录 `.env.example`）。

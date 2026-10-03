@@ -117,6 +117,12 @@ class AppSettings(BaseSettings):
     session_cookie_name: str = "wp_user_session"
     session_ttl_hours: int = 24
     session_secure: bool = False
+    # 远程 MCP OAuth 默认关闭；首批使用 ChatGPT web 的稳定 CIMD + S256。
+    oauth_enabled: bool = False
+    oauth_issuer: str = ""
+    oauth_mcp_resource: str = ""
+    oauth_api_audience: str = ""
+    oauth_editor_origin: str = ""
     cors_origins: list[str] = Field(default_factory=lambda: ["http://127.0.0.1:5173", "http://localhost:5173"])
     runtime_base_url: str = "http://127.0.0.1:7373"
     # 分角色部署时按职责指定 Runtime 内部目标；留空回退 runtime_base_url。

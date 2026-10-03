@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 
 @dataclass(frozen=True, slots=True)
 class OAuthPolicy:
-    """显式部署边界；当前尚未接入配置和公开路由。"""
+    """显式部署边界；不能从 HTTP Host 或转发 Header 推导。"""
 
     issuer: str
     mcp_resource: str

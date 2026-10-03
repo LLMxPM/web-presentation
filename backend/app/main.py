@@ -232,6 +232,9 @@ def create_app() -> FastAPI:
 
     settings = get_settings()
     configure_app_logging(settings)
+    from app.core.oauth_config import resolve_oauth_policy
+
+    resolve_oauth_policy(settings)
     if settings.ai_test_mode == "mock":
         # mock 模式全局禁止真实模型网络请求；未被测试分派接管的
         # 模型调用会立即失败，FunctionModel 不受影响。

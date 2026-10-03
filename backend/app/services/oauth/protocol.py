@@ -23,6 +23,7 @@ from app.services.oauth.grants import (
     McpRefreshTokenGrant,
     S256Challenge,
 )
+from app.services.oauth.issuer_extension import ExplicitIssuerParameter
 from app.services.oauth.request import ProtocolRequest
 from app.services.oauth.resource_protocol import (
     EXCHANGE_GRANT_TYPE,
@@ -47,13 +48,23 @@ class RedactedToken(dict):
         return "OAuthToken(<redacted>)"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ProtocolResponse:
     """尚未交付的协议响应；只有持久化服务能决定成功响应是否可发送。"""
 
     status_code: int
     body: dict | str = field(repr=False)
     headers: tuple[tuple[str, str], ...] = field(repr=False)
+
+    @property
+    def location(self) -> str | None:
+        """向 Authlib 标准 issuer 扩展提供已验证的回调地址。"""
+        return next((value for key, value in self.headers if key.lower() == "location"), None)
+
+    @location.setter
+    def location(self, value: str) -> None:
+        """替换 Location，保留协议响应的其他头；凭证始终排除在 repr 外。"""
+        self.headers = tuple((key, value if key.lower() == "location" else old) for key, old in self.headers)
 
 
 class McpAuthorizationServer(AuthorizationServer):
@@ -68,6 +79,7 @@ class McpAuthorizationServer(AuthorizationServer):
         access_ttl_seconds: int = 900,
         resource_token: TokenSnapshot | None = None,
         delegated_ttl_seconds: int = 60,
+        issuer: str | None = None,
     ) -> None:
         """注册成熟协议实现，传入异步层准备的权限快照与可测试时钟。"""
         super().__init__(scopes_supported=sorted(client.scopes) if client else [])
@@ -88,6 +100,8 @@ class McpAuthorizationServer(AuthorizationServer):
         self.register_endpoint(McpIntrospectionEndpoint)
         self.register_endpoint(McpRevocationEndpoint)
         self.register_token_generator("default", self._generate_token)
+        if issuer:
+            self.register_extension(ExplicitIssuerParameter(issuer))
 
     def query_client(self, client_id: str) -> ClientSnapshot | None:
         """只允许读取本请求预验证的注册客户端。"""
