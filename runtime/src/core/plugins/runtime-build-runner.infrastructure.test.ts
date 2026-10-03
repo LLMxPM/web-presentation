@@ -327,7 +327,7 @@ describe('runtime build worker readiness', () => {
 describe('runtime build credential isolation (W01)', () => {
   const itPosix = process.platform === 'win32' ? it.skip : it
 
-  itPosix('已配置子进程降权时，凭证文件对组/其他用户可读必须 fail-closed', async () => {
+  itPosix('已配置子进程降权时，凭证文件对组/其他用户可读且收紧失败时必须 fail-closed', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'runtime-cred-loose-'))
     const credentialFile = join(dir, 'build_worker_credential')
     await writeFile(credentialFile, 'secret-value\n', { mode: 0o644 })
@@ -335,10 +335,13 @@ describe('runtime build credential isolation (W01)', () => {
     vi.stubEnv('RUNTIME_BUILD_WORKER_CREDENTIAL', '')
     vi.stubEnv('RUNTIME_BUILD_CHILD_UID', '10001')
     vi.stubEnv('RUNTIME_BUILD_CHILD_GID', '10001')
+    const failingChmod = () => {
+      throw Object.assign(new Error('EPERM: operation not permitted, chmod'), { code: 'EPERM' })
+    }
     try {
-      expect(() => readRuntimeBuildWorkerCredential()).toThrow(RuntimeBuildError)
+      expect(() => readRuntimeBuildWorkerCredential({ chmodFn: failingChmod })).toThrow(RuntimeBuildError)
       try {
-        readRuntimeBuildWorkerCredential()
+        readRuntimeBuildWorkerCredential({ chmodFn: failingChmod })
         expect.unreachable('应当抛出 RUNTIME_BUILD_CREDENTIAL_LOOSE_MODE')
       } catch (error) {
         expect(error).toMatchObject({ code: 'RUNTIME_BUILD_CREDENTIAL_LOOSE_MODE' })

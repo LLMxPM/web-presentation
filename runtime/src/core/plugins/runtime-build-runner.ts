@@ -486,9 +486,12 @@ async function readJsonBody<T>(req: NodeJS.ReadableStream): Promise<T> {
 
 /**
  * 读取 Runtime Build Worker 共享凭证：优先 secret 文件，其次环境变量。
+ * @param options 可选注入选项（测试用）
  * @returns 非空凭证；未配置时返回空字符串（Worker 不启动）
  */
-export function readRuntimeBuildWorkerCredential(): string {
+export function readRuntimeBuildWorkerCredential(options?: {
+  chmodFn?: (path: string, mode: number) => void
+}): string {
   const credentialFile = String(process.env.RUNTIME_BUILD_WORKER_CREDENTIAL_FILE || '').trim()
   if (credentialFile) {
     try {
@@ -509,7 +512,7 @@ export function readRuntimeBuildWorkerCredential(): string {
         if (isolationConfigured) {
           // Compose file secrets 常默认挂成 0444。属主是本进程时先收紧再启动，
           // 避免编排层默认权限把 W01 整条链路打成 fail-closed。
-          if (tightenCredentialFileMode(credentialFile)) {
+          if (tightenCredentialFileMode(credentialFile, options?.chmodFn)) {
             logRuntimeServer(
               'info',
               'runtime.build.worker.credential_loose_mode',
@@ -549,11 +552,15 @@ export function readRuntimeBuildWorkerCredential(): string {
  * 尝试把凭证文件收紧为 0400。仅当本进程是属主（或 root）时 chmod 会成功；
  * Compose secrets 默认 0444 且属主对齐本进程时用于自动恢复 W01。
  * @param credentialFile 凭证文件路径
+ * @param chmodFn 自定义 chmod 实现（默认使用 fs.chmodSync）
  * @returns 是否已成功收紧到组/其他用户不可读
  */
-function tightenCredentialFileMode(credentialFile: string): boolean {
+function tightenCredentialFileMode(
+  credentialFile: string,
+  chmodFn: (path: string, mode: number) => void = chmodSync,
+): boolean {
   try {
-    chmodSync(credentialFile, 0o400)
+    chmodFn(credentialFile, 0o400)
     return (statSync(credentialFile).mode & 0o077) === 0
   } catch {
     return false
