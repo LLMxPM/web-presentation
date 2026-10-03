@@ -5,6 +5,7 @@ import { http } from '@/api/http'
 import type {
   AiLlmConfigScope, AiModelType, ImageGenerationModelCatalogItem,
   LlmConfigItem, LlmModelCapabilityItem, LlmProviderCatalogItem, LlmProviderConfigItem, LlmSlotBindingItem,
+  RecordStatus,
 } from '@/types/api'
 import type {
   ChatModelCatalogItem, ChatModelConfigItem, ChatProviderCatalogItem, ChatProviderConfigItem,
@@ -12,15 +13,18 @@ import type {
 } from '@/api/model-config'
 
 export interface LlmProviderConfigPayload {
-  name: string; scope?: AiLlmConfigScope; provider_key: string; provider_type?: AiModelType; base_url?: string | null; api_key?: string | null
+  name: string; scope?: AiLlmConfigScope; provider_key: string; provider_type?: AiModelType; base_url?: string | null; api_key?: string | null; status?: RecordStatus
 }
-export interface LlmProviderConfigUpdatePayload { name?: string; base_url?: string | null; api_key?: string | null }
+export interface LlmProviderConfigUpdatePayload { name?: string; base_url?: string | null; api_key?: string | null; status?: RecordStatus }
 export interface LlmConfigPayload {
   name: string; scope?: AiLlmConfigScope; provider_config_id: number; model_id: string; model_type: AiModelType
   supports_image_input: boolean
   context_window_tokens: number; advanced_config_json: Record<string, unknown>
+  status?: RecordStatus
 }
-export interface LlmConfigUpdatePayload extends Partial<LlmConfigPayload> {}
+export interface LlmConfigUpdatePayload extends Partial<LlmConfigPayload> {
+  status?: RecordStatus
+}
 export interface ModelCatalogSyncState {
   catalog_version: string | null
   last_attempt_at: string | null
@@ -162,6 +166,7 @@ export async function updateLlmConfig(id: number, payload: LlmConfigUpdatePayloa
   const { advancedConfig, explicitCapability } = splitAdvancedConfig(payload.advanced_config_json ?? {})
   const body: Record<string, unknown> = { name: payload.name, provider_config_id: payload.provider_config_id,
     model_id: payload.model_id, advanced_config: advancedConfig }
+  if (payload.status !== undefined) body.status = payload.status
   if (path === 'chat') body.capability_override = explicitCapability
   if (typeof body.provider_config_id === 'number') body.provider_config_id = Math.abs(body.provider_config_id)
   const { data } = await http.patch<ChatModelConfigItem | ImageModelConfigItem>(`/ai/${path}-model-configs/${Math.abs(id)}`, body)

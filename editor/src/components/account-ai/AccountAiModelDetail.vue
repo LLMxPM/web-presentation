@@ -5,7 +5,7 @@
       <div class="min-w-0">
         <h2 class="truncate text-lg font-bold text-text-strong">{{ panelTitle }}</h2>
         <div v-if="mode === 'detail' && selectedModel" class="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
-          <span class="rounded-full px-2 py-0.5" :class="selectedModel.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'">{{ selectedModel.status === 'active' ? '启用' : '不可用' }}</span>
+          <span class="rounded-full px-2 py-0.5" :class="selectedModel.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'">{{ selectedModel.status === 'active' ? '启用' : '停用' }}</span>
           <span class="rounded-full bg-surface-muted px-2 py-0.5 text-text-secondary">{{ selectedModel.scope === 'global' ? '全局模型' : '个人模型' }}</span>
           <span class="rounded-full bg-surface-muted px-2 py-0.5 text-text-secondary">{{ selectedModel.model_type === 'image_generation' ? '图片生成' : 'Chat' }}</span>
         </div>
@@ -20,6 +20,15 @@
     <div v-if="mode === 'detail' && selectedModel" class="space-y-5">
       <dl class="grid gap-x-6 gap-y-4 text-sm md:grid-cols-2">
         <div><dt class="text-xs font-semibold text-text-disabled">模型名称</dt><dd class="mt-1 font-semibold text-text-strong">{{ selectedModel.name }}</dd></div>
+        <div>
+          <dt class="text-xs font-semibold text-text-disabled">模型状态</dt>
+          <dd class="mt-1 flex items-center gap-1.5 text-xs font-semibold">
+            <span class="inline-block h-2 w-2 rounded-full" :class="selectedModel.status === 'active' ? 'bg-success' : 'bg-text-disabled'" />
+            <span :class="selectedModel.status === 'active' ? 'text-success-strong' : 'text-text-disabled'">
+              {{ selectedModel.status === 'active' ? '启用' : '停用' }}
+            </span>
+          </dd>
+        </div>
         <div><dt class="text-xs font-semibold text-text-disabled">模型类型</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.model_type === 'image_generation' ? '图片生成模型' : '聊天 / 图片理解模型' }}</dd></div>
         <div><dt class="text-xs font-semibold text-text-disabled">供应商配置</dt><dd class="mt-1 font-semibold text-text-strong">{{ selectedModel.provider_config_name }}</dd></div>
         <div><dt class="text-xs font-semibold text-text-disabled">模型 ID</dt><dd class="mt-1 break-all font-mono text-text-emphasis">{{ selectedModel.model_id }}</dd></div>
@@ -45,7 +54,16 @@
         <UiFormField v-if="mode === 'create' && canCreateGlobal" v-slot="field" label="配置范围">
           <UiSelect :id="field.inputId" v-model="form.scope" :aria-describedby="field.describedBy" :options="scopeOptions" />
         </UiFormField>
-        <UiFormField v-slot="field" label="模型名称" required>
+        <UiFormField v-slot="field" label="模型状态">
+          <UiSelect
+            :id="field.inputId"
+            :model-value="form.status ?? 'active'"
+            :aria-describedby="field.describedBy"
+            :options="statusOptions"
+            @update:model-value="value => form.status = value as RecordStatus"
+          />
+        </UiFormField>
+        <UiFormField v-slot="field" label="模型名称" required class="md:col-span-2">
           <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.name" placeholder="例如：内容助手默认模型" required @update:model-value="value => form.name = String(value)" />
         </UiFormField>
         <div class="space-y-1.5 md:col-span-2">
@@ -54,15 +72,12 @@
         </div>
         <div v-if="form.model_type === 'chat'" class="space-y-1.5 md:col-span-2">
           <label class="ml-1 text-sm font-semibold text-text-emphasis">Models.dev 模型</label>
-          <UiCombobox :model-value="chatModelSelection" :options="chatModelSelectOptions" placeholder="选择目录模型或手工输入模型 ID" @update:model-value="handleChatModelSelection" />
+          <UiCombobox :model-value="chatModelSelection" :options="chatModelSelectOptions" :placeholder="chatModelPlaceholder" @update:model-value="handleChatModelSelection" />
         </div>
-        <UiFormField v-if="form.model_type === 'chat' && chatModelSelection === CUSTOM_CHAT_MODEL_ID" v-slot="field" label="自定义模型 ID" required>
-          <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.model_id" placeholder="例如：gpt-4.1-mini" required @update:model-value="handleModelIdUpdate" />
-        </UiFormField>
-        <UiFormField v-if="form.model_type === 'image_generation'" v-slot="field" label="模型 ID" required>
+        <UiFormField v-if="form.model_type === 'image_generation'" v-slot="field" label="模型 ID" required class="md:col-span-2">
           <UiSelect :id="field.inputId" :model-value="imageModelSelection" :aria-describedby="field.describedBy" :options="imageModelSelectOptions" placeholder="请选择生图模型" @update:model-value="handleImageModelSelection" />
         </UiFormField>
-        <UiFormField v-if="form.model_type === 'image_generation' && imageModelSelection === CUSTOM_MODEL_ID" v-slot="field" label="自定义模型 ID" required>
+        <UiFormField v-if="form.model_type === 'image_generation' && imageModelSelection === CUSTOM_MODEL_ID" v-slot="field" label="自定义模型 ID" required class="md:col-span-2">
           <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.model_id" placeholder="填写供应商支持的模型 ID" required @update:model-value="handleModelIdUpdate" />
         </UiFormField>
       </div>
@@ -71,7 +86,7 @@
       <section v-if="form.model_type === 'chat'" class="space-y-4 border-t border-border-muted pt-5">
         <div>
           <h3 class="text-sm font-bold text-text-strong">模型能力</h3>
-          <p class="mt-1 text-xs text-text-muted">能力默认来自 Models.dev；未收录模型使用保守默认。需要覆盖时在高级配置的 capability_override 中显式填写。</p>
+          <p class="mt-1 text-xs text-text-muted">能力来自 Models.dev 目录；需要覆盖时在高级配置的 capability_override 中显式填写。</p>
         </div>
         <div class="grid gap-3 rounded-ui-md border border-border bg-surface-muted p-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
           <div><span class="block text-text-disabled">上下文上限</span><strong class="mt-1 block text-text-emphasis">{{ (resolvedCapability?.model_context_window_tokens ?? 200000).toLocaleString() }}</strong></div>
@@ -111,7 +126,7 @@ import { computed, ref, watch } from 'vue'
 import { UiButton, UiCombobox, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import InspectorSection from '@/components/patterns/InspectorSection.vue'
 import type { SelectOption } from '@/components/ui/select'
-import type { AiLlmConfigScope, AiModelType, ImageGenerationModelCatalogItem, LlmConfigItem, LlmModelCapabilityItem, LlmProviderCatalogItem } from '@/types/api'
+import type { AiLlmConfigScope, AiModelType, ImageGenerationModelCatalogItem, LlmConfigItem, LlmModelCapabilityItem, LlmProviderCatalogItem, RecordStatus } from '@/types/api'
 import type { ChatModelCatalogItem } from '@/api/model-config'
 
 interface LlmFormState {
@@ -122,6 +137,7 @@ interface LlmFormState {
   model_type: AiModelType
   supports_image_input: boolean
   context_window_tokens: number
+  status?: RecordStatus
 }
 
 type ConfigPanelMode = 'create' | 'detail' | 'edit'
@@ -175,18 +191,26 @@ const effectiveRequestOutputTokens = computed(() => props.resolvedCapability?.re
 
 const imageModelOptions = computed(() => props.currentProvider?.image_generation_models ?? [])
 const CUSTOM_MODEL_ID = '__custom_model_id__'
-const CUSTOM_CHAT_MODEL_ID = '__custom_chat_model_id__'
 const imageModelSelection = ref<string | null>(null)
 const chatModelSelection = ref<string | null>(null)
-const chatModelSelectOptions = computed<SelectOption[]>(() => [
-  ...(props.chatModelCatalog ?? []).map(model => ({
+/** 聊天模型候选只来自 Models.dev 目录；改造前录入的目录外模型仍可回显，但不提供手工录入入口。 */
+const chatModelSelectOptions = computed<SelectOption[]>(() => {
+  const options = (props.chatModelCatalog ?? []).map(model => ({
     value: model.model_id,
     label: `${model.name}（${model.model_id}）`,
     description: [model.context_tokens ? `${model.context_tokens.toLocaleString()} context` : '', model.supports_tool_call ? 'Tool Call' : ''].filter(Boolean).join(' · '),
     keywords: [model.model_id, model.name, model.provider_key],
-  })),
-  { value: CUSTOM_CHAT_MODEL_ID, label: '手工输入未收录模型 ID' },
-])
+  }))
+  const current = props.form.model_id
+  if (props.form.model_type === 'chat' && current && !options.some(option => option.value === current)) {
+    options.unshift({ value: current, label: `${current}（目录外历史模型）`, description: 'Models.dev 未收录，仅保留当前值', keywords: [current] })
+  }
+  return options
+})
+const chatModelPlaceholder = computed(() => {
+  if (!props.form.provider_config_id) return '请先选择供应商配置'
+  return props.chatModelCatalog?.length ? '从 Models.dev 目录选择模型' : '该供应商暂无目录模型，可尝试刷新规格目录'
+})
 const imageModelSelectOptions = computed<SelectOption[]>(() => {
   const options = imageModelOptions.value.map(model => ({
     value: model.model_id,
@@ -212,7 +236,7 @@ const advancedParameterPlaceholder = computed(() => props.form.model_type === 'i
   : '{"temperature":0.2,"capability_override":{"supports_tool_call":true}}')
 const advancedParameterHint = computed(() => {
   if (props.form.model_type !== 'image_generation') {
-    return '请求参数直接发送给供应商；手工模型可在 capability_override 中显式开启 tool call、图片输入、推理或 structured output。推理策略在发起会话时选择，输入与输出预算由平台自动计算。'
+    return '请求参数直接发送给供应商；需要覆盖目录能力时，在 capability_override 中显式填写 tool call、图片输入、推理或 structured output。推理策略在发起会话时选择，输入与输出预算由平台自动计算。'
   }
   const properties = currentImageModel.value?.advanced_schema?.properties
   const keys = properties && typeof properties === 'object' ? Object.keys(properties) : []
@@ -242,14 +266,9 @@ function handleImageModelSelection(value: string | number | null | (string | num
   handleModelIdUpdate(value)
 }
 
-/** 选择 Models.dev 模型；目录外模型明确进入手工输入，不混入图片模型注册表。 */
+/** 选择 Models.dev 目录模型；聊天模型 ID 只能来自目录选项。 */
 function handleChatModelSelection(value: string | number | null | (string | number)[]) {
   if (Array.isArray(value) || value === null) return
-  chatModelSelection.value = String(value)
-  if (value === CUSTOM_CHAT_MODEL_ID) {
-    props.form.model_id = ''
-    return
-  }
   handleModelIdUpdate(value)
 }
 
@@ -274,19 +293,9 @@ watch(
 )
 
 watch(
-  () => [props.form.model_type, props.currentProvider?.provider_key, props.form.model_id, props.chatModelCatalog] as const,
-  ([modelType, , modelId]) => {
-    if (modelType !== 'chat') {
-      chatModelSelection.value = null
-      return
-    }
-    if (props.chatModelCatalog?.some(model => model.model_id === modelId)) {
-      chatModelSelection.value = modelId
-      return
-    }
-    chatModelSelection.value = modelId || chatModelSelection.value === CUSTOM_CHAT_MODEL_ID
-      ? CUSTOM_CHAT_MODEL_ID
-      : null
+  () => [props.form.model_type, props.form.model_id] as const,
+  ([modelType, modelId]) => {
+    chatModelSelection.value = modelType === 'chat' && modelId ? modelId : null
   },
   { immediate: true },
 )
@@ -304,6 +313,11 @@ const panelTitle = computed(() => {
   if (props.mode === 'detail') return props.selectedModel?.name ?? '模型详情'
   return readOnlyModel.value ? '查看模型' : '编辑模型'
 })
+
+const statusOptions: SelectOption[] = [
+  { value: 'active', label: '启用 (Active)' },
+  { value: 'archived', label: '停用 (Disabled)' },
+]
 
 /** 返回能力来源的用户可读名称。 */
 function capabilitySourceLabel(source: string, verified: boolean) {

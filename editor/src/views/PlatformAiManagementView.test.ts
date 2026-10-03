@@ -1,7 +1,7 @@
 /**
  * 文件功能：验证平台全局 AI 管理页面（PlatformAiManagementView）的渲染、策略配置保存与 Models.dev 同步。
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 
@@ -104,7 +104,7 @@ describe('PlatformAiManagementView', () => {
           UiSelect: {
             props: ['modelValue', 'options', 'disabled'],
             emits: ['update:modelValue'],
-            template: `<select :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', Number($event.target.value))"><option v-for="item in options" :key="item.value" :value="item.value">{{ item.label }}</option></select>`,
+            template: `<select :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', typeof modelValue === 'number' ? Number($event.target.value) : $event.target.value)"><option v-for="item in options" :key="item.value" :value="item.value">{{ item.label }}</option></select>`,
           },
         },
       },
@@ -191,8 +191,10 @@ describe('PlatformAiManagementView', () => {
         model_id: 'claude-3-5-sonnet',
         protocol_key: 'anthropic_chat',
         scope: 'global',
+        provider_config_id: 201,
         model_type: 'chat',
         status: 'active',
+        editable: true,
       },
       {
         id: 102,
@@ -417,5 +419,70 @@ describe('PlatformAiManagementView', () => {
         }),
       )
     })
+  })
+
+  it('编辑全局模型时支持状态设置且保存成功后直接关闭弹窗（无两层弹窗）', async () => {
+    llmMocks.updateLlmConfig.mockResolvedValue({
+      id: 101,
+      name: '公共 Claude 3.5 Sonnet (已停用)',
+      model_id: 'claude-3-5-sonnet',
+      protocol_key: 'anthropic_chat',
+      scope: 'global',
+      model_type: 'chat',
+      status: 'archived',
+      provider_config_id: 201,
+      supports_image_input: false,
+      context_window_tokens: 128000,
+      advanced_config_json: {},
+    })
+
+    renderView()
+    await fireEvent.click(screen.getByText('全局公共模型池'))
+    await waitFor(() => {
+      expect(screen.getByText('公共 Claude 3.5 Sonnet')).toBeTruthy()
+    })
+
+    // 点击模型行中的编辑按钮直接进入编辑弹窗
+    const modelRow = screen.getByText('公共 Claude 3.5 Sonnet').closest('tr')!
+    const editBtn = within(modelRow).getByRole('button', { name: '编辑' })
+    await fireEvent.click(editBtn)
+
+    expect(screen.getByRole('heading', { name: /编辑全局模型/ })).toBeTruthy()
+
+    // 状态下拉选择停用
+    const statusSelect = screen.getByRole('combobox', { name: '模型状态' })
+    await fireEvent.update(statusSelect, 'archived')
+
+    await fireEvent.click(screen.getByRole('button', { name: '保存模型' }))
+
+    await waitFor(() => {
+      expect(llmMocks.updateLlmConfig).toHaveBeenCalledWith(
+        101,
+        expect.objectContaining({
+          status: 'archived',
+        }),
+      )
+      // 保存后弹窗应直接关闭，不退回详情
+      expect(screen.queryByRole('heading', { name: /全局模型/ })).toBeNull()
+    })
+  })
+
+  it('编辑全局模型时点击取消直接关闭弹窗而不退回详情', async () => {
+    renderView()
+    await fireEvent.click(screen.getByText('全局公共模型池'))
+    await waitFor(() => {
+      expect(screen.getByText('公共 Claude 3.5 Sonnet')).toBeTruthy()
+    })
+
+    const modelRow = screen.getByText('公共 Claude 3.5 Sonnet').closest('tr')!
+    const editBtn = within(modelRow).getByRole('button', { name: '编辑' })
+    await fireEvent.click(editBtn)
+    expect(screen.getByRole('heading', { name: /编辑全局模型/ })).toBeTruthy()
+
+    const cancelBtn = screen.getByRole('button', { name: '取消' })
+    await fireEvent.click(cancelBtn)
+
+    // 取消后弹窗直接关闭
+    expect(screen.queryByRole('heading', { name: /全局模型/ })).toBeNull()
   })
 })

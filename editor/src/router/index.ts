@@ -123,6 +123,30 @@ const routes = [
             meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
           },
           {
+            path: 'account/models',
+            name: 'accountAiModels',
+            component: () => import('@/views/AccountAiModelsView.vue'),
+            meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
+          },
+          {
+            path: 'account/prompt',
+            name: 'accountAiPrompt',
+            component: () => import('@/views/AccountAiPromptView.vue'),
+            meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
+          },
+          {
+            path: 'account/code-standards',
+            name: 'accountAiCodeStandards',
+            component: () => import('@/views/AccountAiCodeStandardsView.vue'),
+            meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
+          },
+          {
+            path: 'account/tools',
+            name: 'accountAiTools',
+            component: () => import('@/views/AccountAiToolsView.vue'),
+            meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
+          },
+          {
             path: 'account/tokens',
             name: 'accountAccessTokens',
             component: () => import('@/views/AccountAccessTokensView.vue'),
@@ -187,7 +211,7 @@ router.beforeEach(async (to) => {
   // 登录态完成加载后再决定管理中心入口，保证直接打开和刷新时角色判断一致。
   if (to.name === 'settingsRoot') {
     return {
-      name: authStore.user?.role === 'platform_admin' ? 'users' : 'accountAiSettings',
+      name: authStore.user?.role === 'platform_admin' ? 'users' : 'accountAiModels',
       query: to.query,
     }
   }

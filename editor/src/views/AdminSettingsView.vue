@@ -1,9 +1,9 @@
 <!-- 文件功能：平台系统设置管理视图，支持存储、常规、安全与诊断配置的热更新及 S3 连通性测试。 -->
 <template>
-  <div class="mx-auto max-w-5xl space-y-6 pb-16">
+  <div class="admin-settings-view space-y-6 pb-16">
     <SettingsPageHeader
       title="系统设置"
-      description="管理存储驱动、业务时区、安全策略与日志级别。类 B 配置修改后即时热生效，无须重启服务。"
+      description="管理存储驱动、业务时区、安全策略与日志级别，修改后即时生效。"
     >
       <template #actions>
         <UiButton variant="secondary" size="sm" :disabled="loading || saving" @click="loadSettings">

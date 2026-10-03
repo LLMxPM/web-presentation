@@ -402,7 +402,7 @@ const providerConfigOptions = computed<SelectOption[]>(() => (
     .map(config => ({
       label: config.name,
       value: config.id,
-      description: `${config.scope === 'global' ? '全局供应商' : '个人供应商'} · ${config.provider_label}${config.status === 'active' ? '' : ' · 不可用'}`,
+      description: `${config.scope === 'global' ? '全局供应商' : '个人供应商'} · ${config.provider_label}${config.status === 'active' ? '' : ' · 停用'}`,
       keywords: [config.provider_key, config.provider_label, config.base_url ?? ''],
     }))
 ))

@@ -3,7 +3,7 @@
   <div class="platform-ai-management space-y-6 pb-16">
     <SettingsPageHeader
       title="平台 AI 管理"
-      description="统一维护全平台公共大模型、供应商凭据、Models.dev 规格目录同步及运行时技术参数。"
+      description="统一维护平台级公共模型、供应商接入凭证与运行时策略。"
       badge="平台管理员"
       badge-tone="accent"
     >
@@ -23,7 +23,7 @@
       <!-- 运行策略与技术参数 -->
       <template #runtime>
         <div class="space-y-6">
-          <div class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-6">
+          <div class="rounded-ui-xl border border-border bg-surface p-6 shadow-xs space-y-6">
             <div class="border-b border-border-muted pb-4">
               <h2 class="text-base font-semibold text-text">平台 AI 运行策略</h2>
               <p class="mt-1 text-xs text-text-muted">控制平台 AI 服务可用性与流式推理容错参数。</p>
@@ -31,7 +31,7 @@
 
             <div class="space-y-5 max-w-2xl">
               <!-- AI 服务总开关 -->
-              <div class="flex items-center justify-between rounded-lg border border-border-muted p-4 bg-surface-muted/30">
+              <div class="flex items-center justify-between rounded-ui-lg border border-border-muted p-4 bg-surface-muted/30">
                 <div>
                   <div class="text-sm font-semibold text-text">平台 AI 总开关</div>
                   <div class="text-xs text-text-muted">关闭后全平台禁用 AI 创作者助手与自动化任务生成</div>
@@ -81,7 +81,7 @@
               </UiFormField>
 
               <!-- LLM HTTP Trace -->
-              <div class="flex items-center justify-between rounded-lg border border-border-muted p-4 bg-surface-muted/30">
+              <div class="flex items-center justify-between rounded-ui-lg border border-border-muted p-4 bg-surface-muted/30">
                 <div>
                   <div class="text-sm font-semibold text-text">LLM HTTP 协议网络跟踪</div>
                   <div class="text-xs text-text-muted">开启后在服务端日志中记录发往模型供应商的完整 HTTP 请求与响应报文（自动脱敏密钥）</div>
@@ -100,7 +100,7 @@
       <!-- Models.dev 目录同步 -->
       <template #catalog>
         <div class="space-y-6">
-          <div class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-6">
+          <div class="rounded-ui-xl border border-border bg-surface p-6 shadow-xs space-y-6">
             <div class="border-b border-border-muted pb-4 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 class="text-base font-semibold text-text">Models.dev 模型目录管理</h2>
@@ -122,7 +122,7 @@
 
             <div class="space-y-4 max-w-2xl">
               <!-- 自动同步开关 -->
-              <div class="flex items-center justify-between rounded-lg border border-border-muted p-4 bg-surface-muted/30">
+              <div class="flex items-center justify-between rounded-ui-lg border border-border-muted p-4 bg-surface-muted/30">
                 <div>
                   <div class="text-sm font-semibold text-text">模型目录自动定时同步</div>
                   <div class="text-xs text-text-muted">系统后台定期拉取 Models.dev 最新模型能力、上下文窗口与推理选项</div>
@@ -135,7 +135,7 @@
               </div>
 
               <!-- 状态详情卡片 -->
-              <div class="rounded-lg border border-border p-4 bg-surface-muted/20 space-y-3">
+              <div class="rounded-ui-lg border border-border p-4 bg-surface-muted/20 space-y-3">
                 <div class="text-xs font-semibold text-text-secondary uppercase tracking-wider">目录缓存当前状态</div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div>
@@ -163,7 +163,7 @@
       <!-- 全局模型与供应商池 -->
       <template #global-pool>
         <div class="space-y-6">
-          <div class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-6">
+          <div class="rounded-ui-xl border border-border bg-surface p-6 shadow-xs space-y-6">
             <div class="border-b border-border-muted pb-4">
               <h2 class="text-base font-semibold text-text">全局公共默认槽位绑定</h2>
               <p class="mt-1 text-xs text-text-muted">
@@ -198,54 +198,92 @@
           </div>
 
           <!-- 全局公共模型管理 -->
-          <div class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-4">
-            <div class="flex items-center justify-between border-b border-border-muted pb-3">
+          <div class="rounded-ui-xl border border-border bg-surface p-6 shadow-xs space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-4 border-b border-border-muted pb-4">
               <div>
-                <h3 class="text-base font-semibold text-text">全局公共模型</h3>
-                <p class="mt-0.5 text-xs text-text-muted">共 {{ globalModels.length }} 个全局模型。供全平台用户使用或继承为默认模型。</p>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-base font-bold text-text-strong">全局公共模型</h3>
+                  <UiBadge tone="neutral" size="sm">{{ filteredGlobalModels.length }} / {{ globalModels.length }}</UiBadge>
+                </div>
+                <p class="mt-1 text-xs text-text-muted">供全平台用户使用或继承为默认模型。管理员可统一调整可用状态与高级参数。</p>
               </div>
-              <UiButton variant="primary" size="sm" @click="openModelCreateDialog('chat')">
-                <Plus class="h-3.5 w-3.5" />
-                <span>新建全局模型</span>
-              </UiButton>
+              <div class="flex items-center gap-2">
+                <UiButton variant="primary" size="sm" @click="openModelCreateDialog('chat')">
+                  <Plus class="h-3.5 w-3.5" />
+                  <span>新建全局模型</span>
+                </UiButton>
+                <UiButton variant="secondary" size="sm" @click="openModelCreateDialog('image_generation')">
+                  <Plus class="h-3.5 w-3.5" />
+                  <span>新建生图模型</span>
+                </UiButton>
+              </div>
+            </div>
+
+            <!-- 搜索与类型过滤 -->
+            <div class="grid gap-3 sm:grid-cols-[minmax(240px,1fr)_180px]">
+              <SimpleSearchBar v-model="modelKeyword" placeholder="搜索模型名称、ID 或供应商" />
+              <UiSelect v-model="modelTypeFilter" :options="modelTypeOptions" />
             </div>
 
             <div v-if="globalModels.length === 0" class="py-8 text-center text-sm text-text-muted">
               暂无全局公共模型。点击右上角新建。
             </div>
-            <AccountAiModelTable
-              v-else
-              :items="globalModels"
-              :default-model-id="globalSlotBinding?.llm_config_id"
-              @view="handleViewModel"
-              @edit="handleStartEditModel"
-              @delete="handleDeleteModel"
-            />
+            <div v-else-if="filteredGlobalModels.length === 0" class="py-8 text-center text-sm text-text-muted">
+              没有匹配的模型，请尝试调整搜索关键词或类型筛选。
+            </div>
+            <div v-else class="rounded-ui-lg border border-border overflow-hidden">
+              <AccountAiModelTable
+                :items="filteredGlobalModels"
+                :default-model-id="globalSlotBinding?.llm_config_id"
+                @view="handleViewModel"
+                @edit="handleStartEditModel"
+                @delete="handleDeleteModel"
+              />
+            </div>
           </div>
 
           <!-- 全局供应商凭据管理 -->
-          <div class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-4">
-            <div class="flex items-center justify-between border-b border-border-muted pb-3">
+          <div class="rounded-ui-xl border border-border bg-surface p-6 shadow-xs space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-4 border-b border-border-muted pb-4">
               <div>
-                <h3 class="text-base font-semibold text-text">全局供应商凭据</h3>
-                <p class="mt-0.5 text-xs text-text-muted">共 {{ globalProviders.length }} 个全局供应商凭证。配置平台级 API Key 与 Base URL。</p>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-base font-bold text-text-strong">全局供应商凭据</h3>
+                  <UiBadge tone="neutral" size="sm">{{ filteredGlobalProviders.length }} / {{ globalProviders.length }}</UiBadge>
+                </div>
+                <p class="mt-1 text-xs text-text-muted">配置平台级 API Key 与 Base URL，可控制供应商状态停用或重新启用。</p>
               </div>
-              <UiButton variant="secondary" size="sm" @click="openProviderCreateDialog('chat')">
-                <Plus class="h-3.5 w-3.5" />
-                <span>连接全局供应商</span>
-              </UiButton>
+              <div class="flex items-center gap-2">
+                <UiButton variant="secondary" size="sm" @click="openProviderCreateDialog('chat')">
+                  <Plus class="h-3.5 w-3.5" />
+                  <span>连接全局供应商</span>
+                </UiButton>
+                <UiButton variant="secondary" size="sm" @click="openProviderCreateDialog('image_generation')">
+                  <Plus class="h-3.5 w-3.5" />
+                  <span>连接生图供应商</span>
+                </UiButton>
+              </div>
+            </div>
+
+            <!-- 搜索与类型过滤 -->
+            <div class="grid gap-3 sm:grid-cols-[minmax(240px,1fr)_180px]">
+              <SimpleSearchBar v-model="providerKeyword" placeholder="搜索供应商配置名称、Key 或 Base URL" />
+              <UiSelect v-model="providerTypeFilter" :options="providerTypeOptions" />
             </div>
 
             <div v-if="globalProviders.length === 0" class="py-8 text-center text-sm text-text-muted">
               暂无全局供应商凭据。点击右上角连接。
             </div>
-            <AccountAiProviderTable
-              v-else
-              :items="globalProviders"
-              @view="handleViewProvider"
-              @edit="handleStartEditProvider"
-              @delete="handleDeleteProvider"
-            />
+            <div v-else-if="filteredGlobalProviders.length === 0" class="py-8 text-center text-sm text-text-muted">
+              没有匹配的供应商，请尝试调整搜索关键词或类型筛选。
+            </div>
+            <div v-else class="rounded-ui-lg border border-border overflow-hidden">
+              <AccountAiProviderTable
+                :items="filteredGlobalProviders"
+                @view="handleViewProvider"
+                @edit="handleStartEditProvider"
+                @delete="handleDeleteProvider"
+              />
+            </div>
           </div>
         </div>
       </template>
@@ -278,14 +316,14 @@
         :show-panel-header="false"
         :show-panel-footer="false"
         :embedded-in-dialog="true"
-        @cancel="providerMode === 'edit' && selectedProviderConfig ? handleViewProvider(selectedProviderConfig) : (providerDialogOpen = false)"
+        @cancel="providerDialogOpen = false"
         @edit="providerMode = 'edit'"
         @delete-provider="handleDeleteProvider"
         @submit="handleSubmitProvider"
       />
       <template #footer>
         <UiButton v-if="providerMode === 'detail'" variant="ghost" size="sm" @click="providerDialogOpen = false">关闭</UiButton>
-        <UiButton v-else variant="ghost" size="sm" :disabled="savingProviderConfig" @click="providerMode === 'edit' && selectedProviderConfig ? handleViewProvider(selectedProviderConfig) : (providerDialogOpen = false)">取消</UiButton>
+        <UiButton v-else variant="ghost" size="sm" :disabled="savingProviderConfig" @click="providerDialogOpen = false">取消</UiButton>
         <UiButton v-if="providerMode !== 'detail'" size="sm" :loading="savingProviderConfig" :disabled="!providerCanSubmit" @click="handleSubmitProvider">{{ providerMode === 'edit' ? '保存供应商' : '创建供应商' }}</UiButton>
       </template>
     </UiDialog>
@@ -324,7 +362,7 @@
         :embedded-in-dialog="true"
         @update:advanced-config-text="advancedConfigText = $event"
         @update:advanced-config-collapsed="advancedConfigCollapsed = $event"
-        @cancel="modelMode === 'edit' && selectedModel ? handleViewModel(selectedModel) : (modelDialogOpen = false)"
+        @cancel="modelDialogOpen = false"
         @edit="modelMode = 'edit'"
         @delete-model="handleDeleteModel"
         @format-advanced="handleFormatAdvancedConfig"
@@ -332,7 +370,7 @@
       />
       <template #footer>
         <UiButton v-if="modelMode === 'detail'" variant="ghost" size="sm" @click="modelDialogOpen = false">关闭</UiButton>
-        <UiButton v-else variant="ghost" size="sm" :disabled="savingConfig" @click="modelMode === 'edit' && selectedModel ? handleViewModel(selectedModel) : (modelDialogOpen = false)">取消</UiButton>
+        <UiButton v-else variant="ghost" size="sm" :disabled="savingConfig" @click="modelDialogOpen = false">取消</UiButton>
         <UiButton v-if="modelMode !== 'detail'" size="sm" :loading="savingConfig" :disabled="!modelCanSubmit" @click="handleSubmitModel">{{ modelMode === 'edit' ? '保存模型' : '创建模型' }}</UiButton>
       </template>
     </UiDialog>
@@ -368,6 +406,7 @@ import {
 import type { ChatModelCatalogItem } from '@/api/model-config'
 import { getErrorMessage } from '@/api/http'
 import SettingsPageHeader from '@/components/layout/SettingsPageHeader.vue'
+import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import {
   UiBadge,
   UiButton,
@@ -387,6 +426,7 @@ import type {
   LlmProviderCatalogItem,
   LlmProviderConfigItem,
   LlmSlotBindingItem,
+  RecordStatus,
   SystemSettingItem,
 } from '@/types/api'
 import AccountAiModelTable from '@/components/account-ai/AccountAiModelTable.vue'
@@ -413,6 +453,24 @@ const globalSlotBinding = ref<LlmSlotBindingItem | null>(null)
 const initialGlobalSlotModelId = ref<number | null>(null)
 const globalSlotModelId = ref<number | null>(null)
 
+// 供应商检索与过滤状态
+const providerKeyword = ref('')
+const providerTypeFilter = ref<string>('all')
+const providerTypeOptions: SelectOption[] = [
+  { label: '全部供应商类型', value: 'all' },
+  { label: '对话供应商 (Chat)', value: 'chat' },
+  { label: '生图供应商 (Image)', value: 'image_generation' },
+]
+
+// 模型检索与过滤状态
+const modelKeyword = ref('')
+const modelTypeFilter = ref<string>('all')
+const modelTypeOptions: SelectOption[] = [
+  { label: '全部模型类型', value: 'all' },
+  { label: '对话模型 (Chat)', value: 'chat' },
+  { label: '生图模型 (Image)', value: 'image_generation' },
+]
+
 // 供应商弹窗状态
 const providerDialogOpen = ref(false)
 const providerMode = ref<'create' | 'edit' | 'detail'>('create')
@@ -426,6 +484,7 @@ const providerForm = reactive({
   provider_key: null as string | null,
   base_url: '',
   api_key: '',
+  status: 'active' as RecordStatus,
 })
 
 // 模型弹窗状态
@@ -448,6 +507,7 @@ const modelForm = reactive({
   model_type: 'chat' as AiModelType,
   supports_image_input: false,
   context_window_tokens: 128_000,
+  status: 'active' as RecordStatus,
 })
 
 const systemSettingsForm = reactive<Record<string, any>>({
@@ -479,6 +539,38 @@ const globalModelOptions = computed<SelectOption[]>(() => [
     value: item.id,
   })),
 ])
+
+const filteredGlobalModels = computed(() => {
+  const kw = modelKeyword.value.trim().toLowerCase()
+  return globalModels.value.filter(item => {
+    if (modelTypeFilter.value !== 'all' && (item.model_type ?? 'chat') !== modelTypeFilter.value) {
+      return false
+    }
+    if (!kw) return true
+    return (
+      item.name.toLowerCase().includes(kw) ||
+      item.model_id.toLowerCase().includes(kw) ||
+      (item.provider_label && item.provider_label.toLowerCase().includes(kw))
+    )
+  })
+})
+
+const filteredGlobalProviders = computed(() => {
+  const kw = providerKeyword.value.trim().toLowerCase()
+  return globalProviders.value.filter(item => {
+    const type = getProviderConfigType(item)
+    if (providerTypeFilter.value !== 'all' && type !== providerTypeFilter.value) {
+      return false
+    }
+    if (!kw) return true
+    return (
+      item.name.toLowerCase().includes(kw) ||
+      item.provider_key.toLowerCase().includes(kw) ||
+      (item.provider_label && item.provider_label.toLowerCase().includes(kw)) ||
+      (item.base_url && item.base_url.toLowerCase().includes(kw))
+    )
+  })
+})
 
 const isDirty = computed(() => {
   return loaded.value && (
@@ -513,6 +605,20 @@ const providerOptions = computed<SelectOption[]>(() => (
   }))
 ))
 
+// 新建全局供应商时，供应商切换自动联动 Base URL 与凭证可用状态
+watch(
+  () => providerForm.provider_key,
+  (newKey, oldKey) => {
+    if (providerMode.value !== 'create' || !newKey || newKey === oldKey) return
+    const provider = llmProviders.value.find(item => item.provider_key === newKey) ?? null
+    if (!provider) return
+    providerForm.base_url = provider.supports_base_url ? (provider.default_base_url ?? '') : ''
+    if (!provider.supports_api_key) {
+      providerForm.api_key = ''
+    }
+  },
+)
+
 const providerCanSubmit = computed(() => Boolean(
   providerForm.name.trim()
   && providerForm.provider_key
@@ -521,13 +627,13 @@ const providerCanSubmit = computed(() => Boolean(
 
 const providerDialogTitle = computed(() => {
   if (providerMode.value === 'create') return '新建全局供应商'
-  if (providerMode.value === 'edit') return '编辑全局供应商'
+  if (providerMode.value === 'edit') return selectedProviderConfig.value?.name ? `编辑全局供应商：${selectedProviderConfig.value.name}` : '编辑全局供应商'
   return selectedProviderConfig.value?.name ?? '全局供应商详情'
 })
 
 const providerDialogDescription = computed(() => {
   if (providerMode.value === 'detail') return '查看全局供应商连接与凭证状态。'
-  return '配置全局供应商协议、服务地址和访问凭证，供全平台模型使用。'
+  return '配置全局供应商协议、服务地址、访问凭证与可用状态，供全平台模型使用。'
 })
 
 const selectedModel = computed<LlmConfigItem | null>(() => (
@@ -549,7 +655,7 @@ const providerConfigOptions = computed<SelectOption[]>(() => (
     .map(config => ({
       label: config.name,
       value: config.id,
-      description: `全局供应商 · ${config.provider_label}${config.status === 'active' ? '' : ' · 不可用'}`,
+      description: `全局供应商 · ${config.provider_label}${config.status === 'active' ? '' : ' · 停用'}`,
       keywords: [config.provider_key, config.provider_label, config.base_url ?? ''],
     }))
 ))
@@ -562,14 +668,14 @@ const modelCanSubmit = computed(() => Boolean(
 ))
 
 const modelDialogTitle = computed(() => {
-  if (modelMode.value === 'create') return '新建全局模型'
-  if (modelMode.value === 'edit') return '编辑全局模型'
+  if (modelMode.value === 'create') return modelForm.model_type === 'image_generation' ? '新建全局生图模型' : '新建全局模型'
+  if (modelMode.value === 'edit') return selectedModel.value?.name ? `编辑全局模型：${selectedModel.value.name}` : '编辑全局模型'
   return selectedModel.value?.name ?? '全局模型详情'
 })
 
 const modelDialogDescription = computed(() => {
   if (modelMode.value === 'detail') return '查看全局模型能力与配置。'
-  return '配置全局模型能力与高级参数，供全平台使用或作为默认槽位。'
+  return '配置全局模型能力、可用状态与高级参数，供全平台使用或作为默认槽位。'
 })
 
 function getCatalogProviderType(provider: LlmProviderCatalogItem | null | undefined): AiModelType {
@@ -651,6 +757,7 @@ function openProviderCreateDialog(modelType: AiModelType = 'chat') {
   selectedProviderConfigId.value = null
   providerForm.scope = 'global'
   providerForm.name = ''
+  providerForm.status = 'active'
   const matchingProviders = llmProviders.value.filter(item => getCatalogProviderType(item) === modelType)
   const provider = matchingProviders.find(p => p.provider_key === 'deepseek') ?? matchingProviders[0]
   providerForm.provider_key = provider?.provider_key ?? null
@@ -667,12 +774,19 @@ function handleViewProvider(config: LlmProviderConfigItem) {
   providerForm.provider_key = config.provider_key
   providerForm.base_url = config.base_url ?? ''
   providerForm.api_key = ''
+  providerForm.status = config.status ?? 'active'
   providerDialogOpen.value = true
 }
 
 function handleStartEditProvider(config?: LlmProviderConfigItem) {
   if (config) {
-    handleViewProvider(config)
+    selectedProviderConfigId.value = config.id
+    providerForm.scope = 'global'
+    providerForm.name = config.name
+    providerForm.provider_key = config.provider_key
+    providerForm.base_url = config.base_url ?? ''
+    providerForm.api_key = ''
+    providerForm.status = config.status ?? 'active'
   }
   providerMode.value = 'edit'
   providerDialogOpen.value = true
@@ -698,13 +812,14 @@ async function handleSubmitProvider() {
       const updatePayload: LlmProviderConfigUpdatePayload = {
         name: providerForm.name.trim(),
         base_url: baseUrl,
+        status: providerForm.status,
       }
       if (apiKey) {
         updatePayload.api_key = apiKey
       }
       const updated = await updateLlmProviderConfig(selectedProviderConfigId.value, updatePayload)
       globalProviders.value = globalProviders.value.map(p => p.id === updated.id ? updated : p)
-      handleViewProvider(updated)
+      providerDialogOpen.value = false
       Message.success('全局供应商已更新。')
     } else {
       const created = await createLlmProviderConfig({
@@ -716,7 +831,7 @@ async function handleSubmitProvider() {
         api_key: apiKey,
       })
       globalProviders.value = [created, ...globalProviders.value.filter(p => p.id !== created.id)]
-      handleViewProvider(created)
+      providerDialogOpen.value = false
       Message.success('全局供应商已创建。')
     }
     await queryClient.invalidateQueries({ queryKey: ['llm-provider-configs'] })
@@ -757,6 +872,7 @@ function openModelCreateDialog(modelType: AiModelType = 'chat') {
   modelForm.scope = 'global'
   modelForm.model_type = modelType
   modelForm.name = ''
+  modelForm.status = 'active'
   const providerConfig = globalProviders.value.find(p => getProviderConfigType(p) === modelType)
   modelForm.provider_config_id = providerConfig?.id ?? null
   const provider = findProviderForConfig(providerConfig)
@@ -781,6 +897,7 @@ function handleViewModel(config: LlmConfigItem) {
   modelForm.model_id = config.model_id
   modelForm.supports_image_input = config.supports_image_input
   modelForm.context_window_tokens = config.context_window_tokens
+  modelForm.status = config.status ?? 'active'
   advancedConfigText.value = JSON.stringify(config.advanced_config_json ?? {}, null, 2)
   advancedConfigError.value = ''
   advancedConfigCollapsed.value = true
@@ -789,7 +906,18 @@ function handleViewModel(config: LlmConfigItem) {
 
 function handleStartEditModel(config?: LlmConfigItem) {
   if (config) {
-    handleViewModel(config)
+    selectedConfigId.value = config.id
+    modelForm.scope = 'global'
+    modelForm.name = config.name
+    modelForm.provider_config_id = config.provider_config_id
+    modelForm.model_type = config.model_type ?? 'chat'
+    modelForm.model_id = config.model_id
+    modelForm.supports_image_input = config.supports_image_input
+    modelForm.context_window_tokens = config.context_window_tokens
+    modelForm.status = config.status ?? 'active'
+    advancedConfigText.value = JSON.stringify(config.advanced_config_json ?? {}, null, 2)
+    advancedConfigError.value = ''
+    advancedConfigCollapsed.value = true
   }
   modelMode.value = 'edit'
   modelDialogOpen.value = true
@@ -823,10 +951,11 @@ async function handleSubmitModel() {
         supports_image_input: modelForm.supports_image_input,
         context_window_tokens: contextWindowTokens,
         advanced_config_json: advancedConfig,
+        status: modelForm.status,
       }
       const updated = await updateLlmConfig(selectedConfigId.value, updatePayload)
       globalModels.value = globalModels.value.map(m => m.id === updated.id ? updated : m)
-      handleViewModel(updated)
+      modelDialogOpen.value = false
       Message.success('全局模型已更新。')
     } else {
       const created = await createLlmConfig({
@@ -840,7 +969,7 @@ async function handleSubmitModel() {
         advanced_config_json: advancedConfig,
       })
       globalModels.value = [created, ...globalModels.value.filter(m => m.id !== created.id)]
-      handleViewModel(created)
+      modelDialogOpen.value = false
       Message.success('全局模型已创建。')
     }
     await queryClient.invalidateQueries({ queryKey: ['llm-configs'] })

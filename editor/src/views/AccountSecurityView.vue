@@ -3,14 +3,13 @@
   <div class="account-security-view space-y-6 pb-12">
     <SettingsPageHeader
       title="账户安全"
-      description="管理您的个人账户基本信息、身份凭证与登录密码。"
+      description="管理您的个人账户基本信息与登录密码。"
     />
 
     <!-- 账户信息卡片 -->
     <section class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-4">
       <div class="border-b border-border-muted pb-3">
         <h2 class="text-base font-semibold text-text">基本信息</h2>
-        <p class="mt-0.5 text-xs text-text-muted">当前已登录用户的系统身份标识与权限级别。</p>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -43,7 +42,7 @@
     <section class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-5">
       <div class="border-b border-border-muted pb-3">
         <h2 class="text-base font-semibold text-text">修改登录密码</h2>
-        <p class="mt-0.5 text-xs text-text-muted">更新后将要求重新登录以使新密码生效。</p>
+        <p class="mt-0.5 text-xs text-text-muted">修改成功后将要求使用新密码重新登录。</p>
       </div>
 
       <form class="max-w-md space-y-4" @submit.prevent="handleUpdatePassword">

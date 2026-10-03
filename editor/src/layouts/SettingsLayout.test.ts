@@ -94,7 +94,10 @@ describe('SettingsLayout', () => {
     renderLayout()
 
     expect(screen.getByText('个人设置')).toBeTruthy()
-    expect(screen.getByText('AI 设置')).toBeTruthy()
+    expect(screen.getByText('模型连接')).toBeTruthy()
+    expect(screen.getByText('助手提示词')).toBeTruthy()
+    expect(screen.getByText('代码规范')).toBeTruthy()
+    expect(screen.getByText('工具配置')).toBeTruthy()
     expect(screen.getByText('访问令牌')).toBeTruthy()
     expect(screen.getByText('账户安全')).toBeTruthy()
 

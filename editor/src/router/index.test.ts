@@ -15,6 +15,10 @@ vi.mock('@/views/AssetsView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/ThemesView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/WorkspaceStylesView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/AccountAiSettingsView.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/views/AccountAiModelsView.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/views/AccountAiPromptView.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/views/AccountAiCodeStandardsView.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/views/AccountAiToolsView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/UsersView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/AdminSettingsView.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/views/NotFoundView.vue', () => ({ default: { template: '<div />' } }))
@@ -297,7 +301,31 @@ describe('router guard', () => {
     } as any
 
     await router.push('/settings')
-    expect(router.currentRoute.value.path).toBe('/settings/account/ai')
+    expect(router.currentRoute.value.path).toBe('/settings/account/models')
+  })
+
+  it('已登录时应允许直接访问个人设置各一级路由', async () => {
+    const store = useAuthStore()
+    vi.spyOn(store, 'ensureLoaded').mockResolvedValue()
+    store.user = {
+      id: 2,
+      username: 'user',
+      display_name: '普通用户',
+      role: 'workspace_user',
+      status: 'active',
+    } as any
+
+    await router.push('/settings/account/models')
+    expect(router.currentRoute.value.name).toBe('accountAiModels')
+
+    await router.push('/settings/account/prompt')
+    expect(router.currentRoute.value.name).toBe('accountAiPrompt')
+
+    await router.push('/settings/account/code-standards')
+    expect(router.currentRoute.value.name).toBe('accountAiCodeStandards')
+
+    await router.push('/settings/account/tools')
+    expect(router.currentRoute.value.name).toBe('accountAiTools')
   })
 
   it('管理员可正常访问平台级全局 AI 管理页', async () => {

@@ -190,7 +190,7 @@
         <section v-else-if="section === 'chat'" class="flex min-h-0 flex-1 flex-col">
           <header class="shrink-0 border-b border-border-muted bg-surface px-5 py-4">
             <div class="flex items-center justify-between gap-4">
-              <div><h2 class="text-lg font-bold text-text-strong">聊天模型</h2><p class="mt-1 text-xs text-text-muted">先连接供应商，再选择目录模型或填写兼容模型 ID。</p></div>
+              <div><h2 class="text-lg font-bold text-text-strong">聊天模型</h2><p class="mt-1 text-xs text-text-muted">先连接供应商，再从 Models.dev 目录选择模型。</p></div>
               <div class="flex gap-2"><UiButton variant="secondary" @click="emit('createProvider', 'chat')"><Plus class="h-4 w-4" />连接供应商</UiButton><UiButton @click="emit('createModel', 'chat')"><Plus class="h-4 w-4" />新建模型</UiButton></div>
             </div>
             <p class="mt-2 text-xs" :class="catalogSyncState?.last_error ? 'text-warning-strong' : 'text-text-muted'">{{ catalogStatusText }}</p>

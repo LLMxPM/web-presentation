@@ -5,7 +5,7 @@
       <div class="min-w-0">
         <h2 class="truncate text-lg font-bold text-text-strong">{{ panelTitle }}</h2>
         <div v-if="mode === 'detail' && selectedProviderConfig" class="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
-          <span class="rounded-full px-2 py-0.5" :class="selectedProviderConfig.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'">{{ selectedProviderConfig.status === 'active' ? '启用' : '不可用' }}</span>
+          <span class="rounded-full px-2 py-0.5" :class="selectedProviderConfig.status === 'active' ? 'bg-success-muted text-success-strong' : 'bg-surface-muted text-text-muted'">{{ selectedProviderConfig.status === 'active' ? '启用' : '停用' }}</span>
           <span class="rounded-full bg-surface-muted px-2 py-0.5 text-text-secondary">{{ selectedProviderConfig.scope === 'global' ? '全局供应商' : '个人供应商' }}</span>
           <span class="rounded-full px-2 py-0.5" :class="selectedProviderConfig.has_api_key ? 'bg-surface-muted text-text-secondary' : 'bg-warning-muted text-warning-strong'">{{ selectedProviderConfig.has_api_key ? '密钥已配置' : '缺少密钥' }}</span>
         </div>
@@ -19,6 +19,15 @@
 
     <dl v-if="mode === 'detail' && selectedProviderConfig" class="grid gap-x-6 gap-y-4 text-sm md:grid-cols-2">
       <div><dt class="text-xs font-semibold text-text-disabled">配置名称</dt><dd class="mt-1 font-semibold text-text-strong">{{ selectedProviderConfig.name }}</dd></div>
+      <div>
+        <dt class="text-xs font-semibold text-text-disabled">连接状态</dt>
+        <dd class="mt-1 flex items-center gap-1.5 text-xs font-semibold">
+          <span class="inline-block h-2 w-2 rounded-full" :class="selectedProviderConfig.status === 'active' ? 'bg-success' : 'bg-text-disabled'" />
+          <span :class="selectedProviderConfig.status === 'active' ? 'text-success-strong' : 'text-text-disabled'">
+            {{ selectedProviderConfig.status === 'active' ? '启用' : '停用' }}
+          </span>
+        </dd>
+      </div>
       <div><dt class="text-xs font-semibold text-text-disabled">供应商</dt><dd class="mt-1 font-semibold text-text-strong">{{ selectedProviderConfig.provider_label }}</dd></div>
       <div><dt class="text-xs font-semibold text-text-disabled">供应商 Key</dt><dd class="mt-1"><code class="text-xs text-text-emphasis">{{ selectedProviderConfig.provider_key }}</code></dd></div>
       <div><dt class="text-xs font-semibold text-text-disabled">类型</dt><dd class="mt-1 text-text-emphasis">{{ currentProvider?.provider_type === 'image_generation' ? '图片生成' : 'Chat' }}</dd></div>
@@ -37,7 +46,10 @@
           <UiFormField v-slot="field" label="配置名称" required>
             <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.name" placeholder="例如：OpenAI 工作账号" required @update:model-value="value => form.name = String(value)" />
           </UiFormField>
-          <UiFormField v-if="!selectedProviderConfigId && canCreateGlobal" label="配置范围">
+          <UiFormField v-slot="field" label="连接状态">
+            <UiSelect :id="field.inputId" :model-value="form.status ?? 'active'" :aria-describedby="field.describedBy" :options="statusOptions" @update:model-value="value => form.status = value as RecordStatus" />
+          </UiFormField>
+          <UiFormField v-if="!selectedProviderConfigId && canCreateGlobal" label="配置范围" class="md:col-span-2">
             <UiSelect v-model="form.scope" :options="scopeOptions" />
           </UiFormField>
         </div>
@@ -51,7 +63,7 @@
         <div class="grid gap-4 md:grid-cols-2">
           <div class="space-y-1.5 md:col-span-2">
             <label class="ml-1 text-sm font-semibold text-text-emphasis">供应商</label>
-            <UiCombobox :model-value="form.provider_key" :options="providerOptions" placeholder="请选择供应商" :disabled="Boolean(selectedProviderConfigId)" @update:model-value="value => form.provider_key = value as string | null" />
+            <UiCombobox :model-value="form.provider_key" :options="providerOptions" placeholder="请选择供应商" :disabled="Boolean(selectedProviderConfigId)" @update:model-value="handleProviderChange" />
           </div>
           <UiFormField v-slot="field" label="Base URL">
             <UiInput :input-id="field.inputId" :described-by="field.describedBy" :invalid="field.invalid" :model-value="form.base_url" :placeholder="currentProvider?.base_url_hint || '使用供应商默认地址'" :disabled="currentProvider ? !currentProvider.supports_base_url : false" @update:model-value="value => form.base_url = String(value)" />
@@ -73,11 +85,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import { UiButton, UiCombobox, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import type { SelectOption } from '@/components/ui/select'
-import type { AiLlmConfigScope, LlmProviderCatalogItem, LlmProviderConfigItem } from '@/types/api'
+import type { AiLlmConfigScope, LlmProviderCatalogItem, LlmProviderConfigItem, RecordStatus } from '@/types/api'
 
 interface LlmProviderFormState {
   scope: AiLlmConfigScope
@@ -85,6 +97,7 @@ interface LlmProviderFormState {
   provider_key: string | null
   base_url: string
   api_key: string
+  status?: RecordStatus
 }
 
 type ConfigPanelMode = 'create' | 'detail' | 'edit'
@@ -111,6 +124,30 @@ const emit = defineEmits<{
   submit: []
 }>()
 
+// 监听当前选中的供应商模型目录项，新建模式下自动同步切换供应商默认 Base URL 与凭证约束
+watch(
+  () => props.currentProvider,
+  (newProvider, previousProvider) => {
+    if (props.mode !== 'create') return
+    if (!newProvider) {
+      props.form.base_url = ''
+      return
+    }
+    if (previousProvider && previousProvider.provider_key === newProvider.provider_key) return
+
+    props.form.base_url = newProvider.supports_base_url ? (newProvider.default_base_url ?? '') : ''
+    if (!newProvider.supports_api_key) {
+      props.form.api_key = ''
+    }
+  },
+)
+
+/** 处理选择供应商时的联动更新。 */
+function handleProviderChange(value: string | number | null | (string | number)[]) {
+  if (Array.isArray(value)) return
+  props.form.provider_key = value ? String(value) : null
+}
+
 const readOnlyProvider = computed(() => Boolean(props.selectedProviderConfig && !props.selectedProviderConfig.editable))
 const reasoningTransportLabel = computed(() => props.currentProvider?.provider_adapter === 'openai_compatible_chat'
   ? '支持 Models.dev 明确声明的标准 effort；其他推理参数保持自动'
@@ -128,5 +165,9 @@ const panelTitle = computed(() => {
 const scopeOptions = [
   { value: 'personal', label: '个人供应商' },
   { value: 'global', label: '管理员全局供应商' },
+]
+const statusOptions: SelectOption[] = [
+  { value: 'active', label: '启用 (Active)' },
+  { value: 'archived', label: '停用 (Disabled)' },
 ]
 </script>

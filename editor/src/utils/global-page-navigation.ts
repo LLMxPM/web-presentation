@@ -49,6 +49,10 @@ export function parseWorkspaceIdFromPath(path: string | null): number | null {
 export function buildGlobalPageLocation(
   name:
     | 'accountAiSettings'
+    | 'accountAiModels'
+    | 'accountAiPrompt'
+    | 'accountAiCodeStandards'
+    | 'accountAiTools'
     | 'accountAccessTokens'
     | 'accountSecurity'
     | 'users'

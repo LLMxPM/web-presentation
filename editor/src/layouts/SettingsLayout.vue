@@ -60,14 +60,14 @@
 
     <!-- 右侧设置子页面主内容区 -->
     <main
-      class="settings-content min-h-0 min-w-0 flex-1 p-6 md:p-8"
-      :class="isWorkbenchRoute ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'"
+      class="settings-content min-h-0 min-w-0 flex-1 p-4 md:p-5"
+      :class="isFixedFullHeightRoute ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'"
     >
-      <div class="mx-auto w-full" :class="isWorkbenchRoute ? 'flex min-h-0 flex-1 flex-col' : 'max-w-5xl'">
+      <div class="mx-auto w-full max-w-7xl" :class="isFixedFullHeightRoute ? 'flex h-full min-h-0 flex-1 flex-col' : ''">
         <!-- 全局 Safe-Mode 警告横幅（仅在访问平台管理页面且存在降级警告时常驻） -->
         <div
           v-if="isPlatformRoute && safeModeWarnings.length > 0"
-          class="mb-6 shrink-0 rounded-ui-xl border border-warning-border bg-warning-muted/20 p-4 text-sm text-warning-strong"
+          class="mb-4 shrink-0 rounded-ui-xl border border-warning-border bg-warning-muted/20 p-3 text-sm text-warning-strong"
         >
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2.5">
@@ -98,7 +98,7 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { AlertTriangle, Bot, Key, Settings, ShieldCheck, UserCog } from '@lucide/vue'
+import { AlertTriangle, Bot, Code2, Cpu, Key, Settings, ShieldCheck, Sparkles, UserCog, Wrench } from '@lucide/vue'
 
 import { ADMIN_SETTINGS_QUERY_KEY, fetchAdminSettings } from '@/api/adminSettings'
 import { useAuthStore } from '@/stores/auth'
@@ -109,7 +109,12 @@ const authStore = useAuthStore()
 
 const isPlatformAdmin = computed(() => authStore.user?.role === 'platform_admin')
 const isPlatformRoute = computed(() => route.path.startsWith('/settings/platform') || route.path.startsWith('/admin'))
-const isWorkbenchRoute = computed(() => route.name === 'accountAiSettings')
+const isFixedFullHeightRoute = computed(() => (
+  route.name === 'accountAiSettings'
+  || route.name === 'accountAiPrompt'
+  || route.name === 'accountAiCodeStandards'
+))
+
 const adminSettingsQuery = useQuery({
   queryKey: ADMIN_SETTINGS_QUERY_KEY,
   queryFn: fetchAdminSettings,
@@ -120,9 +125,12 @@ const safeModeWarnings = computed(() => isPlatformAdmin.value ? adminSettingsQue
 const safeModeRepairPath = computed(() => String(safeModeWarnings.value[0]?.key ?? '').startsWith('ai_')
   ? '/settings/platform/ai' : '/settings/platform/settings')
 
-/** 个人设置导航项列表 */
+/** 个人设置导航项列表（平铺 AI 核心能力与基础账户设置） */
 const accountNavItems = [
-  { label: 'AI 设置', path: '/settings/account/ai', icon: Bot },
+  { label: '模型连接', path: '/settings/account/models', icon: Cpu },
+  { label: '助手提示词', path: '/settings/account/prompt', icon: Sparkles },
+  { label: '代码规范', path: '/settings/account/code-standards', icon: Code2 },
+  { label: '工具配置', path: '/settings/account/tools', icon: Wrench },
   { label: '访问令牌', path: '/settings/account/tokens', icon: Key },
   { label: '账户安全', path: '/settings/account/security', icon: ShieldCheck },
 ]
@@ -148,7 +156,22 @@ function isActive(path: string): boolean {
     return true
   }
   // 路由映射高亮判定
-  if (path === '/settings/account/ai' && (route.name === 'accountAiSettings' || route.path === '/account/ai-settings')) {
+  if (path === '/settings/account/models' && (
+    route.name === 'accountAiModels'
+    || route.path === '/settings/account/models'
+    || route.name === 'accountAiSettings'
+    || route.path === '/settings/account/ai'
+    || route.path === '/account/ai-settings'
+  )) {
+    return true
+  }
+  if (path === '/settings/account/prompt' && (route.name === 'accountAiPrompt' || route.path === '/settings/account/prompt')) {
+    return true
+  }
+  if (path === '/settings/account/code-standards' && (route.name === 'accountAiCodeStandards' || route.path === '/settings/account/code-standards')) {
+    return true
+  }
+  if (path === '/settings/account/tools' && (route.name === 'accountAiTools' || route.path === '/settings/account/tools')) {
     return true
   }
   if (path === '/settings/account/tokens' && (route.name === 'accountAccessTokens' || route.path === '/account/access-tokens')) {

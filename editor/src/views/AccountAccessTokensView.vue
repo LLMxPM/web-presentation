@@ -35,12 +35,12 @@
 
     <!-- Token Table -->
     <div class="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-      <div class="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div>
-          <h2 class="text-sm font-semibold text-text-strong">已创建的令牌</h2>
-          <p class="mt-0.5 text-xs text-text-secondary">可编辑授权配置，密钥本身保持不变。</p>
+      <div class="flex items-center justify-between gap-3 border-b border-border px-4 py-3 bg-canvas/30">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-semibold text-text-strong">令牌列表</span>
+          <span class="rounded-full border border-border-muted bg-surface px-2 py-0.5 text-xs text-text-muted">{{ tokens.length }}</span>
         </div>
-        <span class="shrink-0 text-xs text-text-muted">共 {{ tokens.length }} 个</span>
+        <span class="shrink-0 text-xs text-text-muted">可按需调整权限范围与有效期</span>
       </div>
       <div v-if="loading" class="p-8 text-center text-sm text-text-muted">
         正在加载访问令牌...

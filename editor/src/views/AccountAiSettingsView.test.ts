@@ -487,7 +487,7 @@ describe('AccountAiSettingsView', () => {
     expect(screen.queryByText('配置范围')).toBeNull()
     expect(screen.queryByText('全部模型类型')).toBeNull()
     expect(screen.queryByText('平台会自动预留 20% 输出空间')).toBeNull()
-    expect(screen.getByText(/能力默认来自 Models\.dev/)).toBeTruthy()
+    expect(screen.getByText(/能力来自 Models\.dev 目录/)).toBeTruthy()
     expect(screen.queryByText('推理模式')).toBeNull()
   })
 
