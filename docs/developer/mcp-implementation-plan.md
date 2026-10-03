@@ -306,7 +306,7 @@ pnpm run test:repository
 | --- | --- | --- | --- | --- |
 | M0 | 冻结契约、授权实现选型、首批客户端矩阵 | 无 | 两仓 | 进行中；M1/M3 边界已冻结，授权最小验证/真实宿主待办 |
 | M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 基础解耦完成；真实委托认证/撤销与对等验收待 M2 |
-| M2 | OAuth、Grant、账户授权 UI、撤销 | M0；联调依赖 M1 | A3 真实授权 | 待实施 |
+| M2 | OAuth、Grant、账户授权 UI、撤销 | M0；联调依赖 M1 | A3 真实授权 | Authlib 协议核与存储基础推进中；公开授权、账户 UI、服务交换及真实授权待办 |
 | M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 主仓首批实现完成；agent-kit binding 与实际 Backend Gateway 对拍待办 |
 | M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | 待实施 |
 | M5 | 预览和截图预算/实机验证 | M1/M2 | A6 | 待实施 |

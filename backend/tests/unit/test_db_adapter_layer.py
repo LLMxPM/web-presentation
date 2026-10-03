@@ -132,6 +132,8 @@ def test_write_retry_consumers_use_shared_helper() -> None:
         "app/ai/platform_runtime.py",
         "app/ai/process_reaper.py",
         "app/services/page_screenshot_job_service.py",
+        "app/services/oauth/token_service.py",
+        "app/services/oauth/grant_service.py",
     }
     consumers = {
         rel

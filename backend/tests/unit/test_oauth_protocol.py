@@ -258,3 +258,18 @@ def test_expired_code_has_no_issuance() -> None:
     )
     assert server.token_response(code_request()).body["error"] == "invalid_grant"
     assert server.pending_token is None
+
+
+def test_public_client_cannot_ignore_an_authorization_header() -> None:
+    """携带 Basic 的请求不得退回公开客户端 none 认证而忽略错误凭证。"""
+    server = McpAuthorizationServer(
+        client=registered_client(), credential=credential("original-code")
+    )
+    request = code_request()
+    response = server.token_response(
+        protocol_request(
+            request.payload.data, headers={"Authorization": "Basic broken"}
+        )
+    )
+    assert response.body["error"] == "invalid_client"
+    assert server.pending_token is None

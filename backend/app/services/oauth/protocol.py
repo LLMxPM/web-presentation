@@ -9,7 +9,12 @@ from datetime import datetime
 from hashlib import sha256
 
 from authlib.oauth2.rfc6749 import AuthorizationServer
-from authlib.oauth2.rfc6749.errors import OAuth2Error
+from authlib.oauth2.rfc6749.errors import (
+    InvalidClientError,
+    InvalidRequestError,
+    OAuth2Error,
+)
+from authlib.oauth2.rfc6749.util import extract_basic_authorization
 
 from app.core.time_utils import utc_now
 from app.services.oauth.grants import (
@@ -123,6 +128,17 @@ class McpAuthorizationServer(AuthorizationServer):
         """在派发前拒绝重复 grant_type/client_id 等参数，返回标准 OAuth 错误。"""
         try:
             request.payload.ensure_single_values()
+            if request.headers.get("Authorization"):
+                client_id, _ = extract_basic_authorization(request.headers)
+                if (
+                    self.client_snapshot is None
+                    or self.client_snapshot.auth_method != "client_secret_basic"
+                ):
+                    raise InvalidClientError(status_code=401)
+                if request.payload.client_id and request.payload.client_id != client_id:
+                    raise InvalidClientError(status_code=401)
+                if request.payload.data.get("client_secret"):
+                    raise InvalidRequestError("Multiple client authentication methods.")
         except OAuth2Error as error:
             return self.handle_error_response(request, error)
         return self.create_token_response(request)

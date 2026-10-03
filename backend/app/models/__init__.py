@@ -48,8 +48,20 @@ from app.models.workspace_style import WorkspaceStyle
 from app.models.workspace_style_suggested_component import WorkspaceStyleSuggestedComponent
 from app.models.workspace_theme import WorkspaceTheme
 from app.models.system_setting import SystemSetting
+from app.models.oauth_registration import OAuthClient, OAuthMcpService
+from app.models.oauth_grant import OAuthConsentRequest, OAuthGrant, OAuthRefreshFamily
+from app.models.oauth_credential import OAuthAuthorizationCode, OAuthToken
+from app.models.oauth_audit import OAuthAuditEvent
 
 __all__ = [
+    "OAuthClient",
+    "OAuthMcpService",
+    "OAuthGrant",
+    "OAuthRefreshFamily",
+    "OAuthConsentRequest",
+    "OAuthAuthorizationCode",
+    "OAuthToken",
+    "OAuthAuditEvent",
     "SystemSetting",
     "AiLlmConfig",
     "AiLlmProviderConfig",

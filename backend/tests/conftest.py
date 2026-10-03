@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.fixtures.app import *  # noqa: F401,F403
+from tests.fixtures.app import *
+from tests.fixtures.oauth import oauth_database  # noqa: F401
 
 
 @pytest.fixture

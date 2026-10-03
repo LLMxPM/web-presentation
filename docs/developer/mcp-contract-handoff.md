@@ -101,4 +101,12 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 
 `backend/tests/unit/test_oauth_protocol.py` **20 项通过**：公开/机密客户端、显式 S256、精确 redirect/resource、权限扩张拒绝、重复参数拒绝、期限、state 原样回传、刷新子集与轮换意图、原客户端重放识别。Authlib DEBUG 日志使用脱敏 Token repr，原始凭证不进入快照或响应对象 repr。错误 PKCE 不登记消费且随后可以正确兑换。此批验证协议核行为，尚未提供持久化并发证据或真实 FastAPI 授权入口。
 
-接续顺序：补齐 Authlib 异步持久化 PoC 和 A0 真实宿主矩阵 → 冻结剩余 OAuth/委托协议 → M2 授权/撤销与账户 UI → 接入 M1 委托验证器 → M4/M5 与跨仓 Gateway/发布验收。
+### 批次 5：M2 授权存储与原子消费基础
+
+2026-10-04：新增 8 张授权基础表及迁移 `20261004_0100`。异步 Token 服务在发行与撤销共用的 Grant UPDATE 锁内重读状态，再 CAS 消费来源并同事务写入 access/refresh 和审计。公开路由、用户确认与账户 UI 尚未装配，具体边界见[OAuth 授权基础](./backend/oauth-foundation.md)。
+
+验证：OAuth 协议/配置、SQLite 持久化、迁移往返/ORM 对拍、数据库适配门禁、PAT 身份和 External API 共 **86 项通过**；PG 12 项因尚无专用测试连接跳过。仓库文档门禁 **16 项通过**。并发用独立服务对象、Session 和 ASGI app，不代表两个真实 Backend 进程验收。Docker 引擎未就绪，真实 PostgreSQL 尚无通过证据。
+
+授权码竞争仅一次成功；无效 PKCE 不消费；刷新竞争仅一次成功且重放撤销整个 Grant/家族；刷新 Scope 和绝对期限保持收紧；跨用户撤销、用户/客户端停用、退出空间、Scope 缩减、错误 issuer/resource 和提交故障均拒绝发行。原始凭证只存摘要，审计仅公共 ID。凭证/审计清理期已定义上限，但清理任务待接入。
+
+接续顺序：补齐服务自省/撤销/受控交换 PoC 和 A0 真实宿主矩阵 → 冻结剩余 OAuth/委托协议 → M2 用户确认/账户 UI → 接入 M1 委托验证器 → M4/M5 与跨仓 Gateway/发布验收。
