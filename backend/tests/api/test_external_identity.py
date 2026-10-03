@@ -44,6 +44,7 @@ async def test_whoami_preserves_pat_fields_and_public_source(client: AsyncClient
     token, user, workspace_id = identity_targets
     response = await client.get("/api/v1/auth/whoami", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
     body = response.json()
     assert body["user"]["id"] == user.id
     assert set(body["token"]) == {"id", "name", "token_public_id", "scopes", "expires_at", "all_workspaces"}
@@ -62,6 +63,7 @@ async def test_verified_delegated_adapter_uses_same_routes_and_permissions(
     token, user, workspace_id = identity_targets
     headers = {"Authorization": f"Bearer {token}", "X-Workspace-ID": str(workspace_id)}
     pat_capabilities = await client.get(f"/api/v1/workspaces/{workspace_id}/capabilities", headers=headers)
+    assert pat_capabilities.headers["cache-control"] == "private, no-store"
     principal = ExternalPrincipal(
         user=user,
         credential=DelegatedCredential(public_id="delegated-1", grant_id="grant-1", client_id="client-1", service_id="mcp-1",

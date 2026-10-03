@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.db.session import get_db_session
 from app.schemas.common import ListQuery, PagedResponse
@@ -19,7 +20,7 @@ from app.schemas.runtime_kit import (
 from app.services.runtime_kit_component_capability_service import RuntimeKitComponentCapabilityService
 from app.services.workspace_font_service import WorkspaceFontService
 
-router = APIRouter()
+router = APIRouter(route_class=ExternalAPIRoute)
 
 
 @router.get("/runtime-kit", response_model=RuntimeKitCapabilityListResponse)

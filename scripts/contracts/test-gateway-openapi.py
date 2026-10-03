@@ -1,5 +1,6 @@
 """文件功能：使用隔离 Docker 网络和真实 Nginx 验证网关代理成功、失败及 SPA 行为。"""
 
+import argparse
 import importlib.util
 import json
 from pathlib import Path
@@ -16,12 +17,15 @@ def docker(*args: str) -> str:
     return subprocess.check_output(['docker', *args], text=True).strip()
 
 
-def main() -> None:
-    """创建受控上游和真实网关，用 HTTP 验收后清理本次容器与网络。"""
+def main(openapi_file: Path | None = None) -> None:
+    """创建受控上游和真实网关；可携带当前 Backend 完整契约做 HTTP 对拍。"""
     root = Path(__file__).resolve().parents[2]
     spec = importlib.util.spec_from_file_location('gateway_check', Path(__file__).with_name('check-gateway-openapi.py'))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    document = json.loads(openapi_file.read_text(encoding='utf-8')) if openapi_file else {
+        'openapi': '3.1.0', 'paths': {path: {method: {}} for path, method in [
+            ('/api/v1/themes', 'post'), ('/api/v1/styles', 'post'), ('/api/v1/projects/{project_id}/route-tree', 'put')]}}
     name = 'wp-contract-' + uuid4().hex[:10]
     network = name + '-net'
     containers = []
@@ -31,8 +35,6 @@ def main() -> None:
             directory = Path(temporary)
             # Linux 临时目录默认为 0700；容器内的 nginx worker 需要遍历该挂载目录。
             directory.chmod(0o755)
-            document = {'openapi': '3.1.0', 'paths': {path: {method: {}} for path, method in [
-                ('/api/v1/themes', 'post'), ('/api/v1/styles', 'post'), ('/api/v1/projects/{project_id}/route-tree', 'put')]}}
             (directory / 'openapi.json').write_text(json.dumps(document), encoding='utf-8')
             (directory / 'index.html').write_text('<html>editor-fixture</html>', encoding='utf-8')
             (directory / 'upstream.conf').write_text('server { listen 8000; root /fixture; location = /api/v1/system/health { default_type application/json; return 200 \'{"status":"ok"}\'; } location = /openapi.json { default_type application/json; try_files $uri =503; } }', encoding='utf-8')
@@ -53,6 +55,10 @@ def main() -> None:
                         raise
                     time.sleep(0.2)
             module.check(endpoint)
+            if openapi_file:
+                with urlopen(endpoint + '/openapi.json', timeout=10) as response:
+                    assert json.load(response) == document, '当前 Backend 完整契约经 Gateway 转发后发生变化'
+                print('当前 Backend 完整 OpenAPI（含操作元数据/响应 Schema）经真实 Nginx 对拍通过。')
             with urlopen(endpoint + '/api/v1/system/health') as response:
                 assert json.load(response)['status'] == 'ok'
             with urlopen(endpoint + '/editor/deep-link') as response:
@@ -72,4 +78,6 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--openapi-file', type=Path, help='当前 Backend 离线导出的完整 OpenAPI；经受控上游和真实 Nginx 对拍')
+    main(parser.parse_args().openapi_file)

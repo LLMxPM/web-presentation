@@ -1099,6 +1099,17 @@ export type ExternalComponentCreateMutationRequest = {
   "preview_schema"?: (Record<string, unknown>) | (null)
 }
 
+export type ExternalComponentDraftResponse = {
+  "component_id": number
+  "import_name": string
+  "component_type": WorkspaceComponentType
+  "content": string
+  "preview_schema": (string) | (null)
+  "current_version_no": number
+  "draft_base_version_no": number
+  "draft_hash": string
+}
+
 export type ExternalComponentMetadataMutationRequest = {
   "component_id": number
   "base_version_no"?: (number) | (null)
@@ -1219,6 +1230,13 @@ export type ExternalPageMetadataUpdateRequest = {
   "title"?: (string) | (null)
   "summary"?: (string) | (null)
   "speaker_notes"?: (string) | (null)
+}
+
+export type ExternalPageSourceResponse = {
+  "page_id": number
+  "page_code": string
+  "version_no": number
+  "source_code": string
 }
 
 export type ExternalPatCredentialInfo = {

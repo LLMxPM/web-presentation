@@ -9,10 +9,11 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
-from app.schemas.common import ListQuery, PagedResponse
+from app.schemas.common import ListQuery, MessageResponse, PagedResponse
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
@@ -30,7 +31,7 @@ from app.services.project_service import ProjectService
 from app.services.project_route_service import ProjectRouteService
 from app.services.suggested_component_service import SuggestedComponentService
 
-router = APIRouter()
+router = APIRouter(route_class=ExternalAPIRoute)
 
 
 def _normalize_external_project_configuration(configuration: dict[str, object]) -> dict[str, object]:
@@ -202,7 +203,7 @@ async def update_project(
     return result if isinstance(result, ProjectItem) else ProjectItem.model_validate(result)
 
 
-@router.post("/{project_id}/archive")
+@router.post("/{project_id}/archive", response_model=MessageResponse)
 async def archive_project(
     request: Request,
     project_id: int,

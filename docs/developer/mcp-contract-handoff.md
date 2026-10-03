@@ -48,7 +48,7 @@ M1 完成基础解耦并不代表委托认证验收完成；PAT/委托 HTTP 对�
 
 静态操作字段：`version`、`key`、`public`、`required_scopes`、`scope_mode`、`workspace_header_required`、`idempotency_key_required`。workspace_header_required 取实际路由/依赖的 Header 必填约束，不能把注册表中“非豁免”误当成所有详情路由都必须带 Header；实体和 Job 的空间仍由服务端复核。
 
-通用 `/jobs/mutations/{job_id}`、`/cancel`、`/retry` 使用动态结构：`version`、`resolution=mutation_job_type`、`action`、`candidates`、`workspace_header_required=false`、`idempotency_key_required`。candidates 按 page/component 分别给出对应 operation key、required_scopes 和 scope_mode；候选不能合并成同时需要或任一满足的静态权限。执行时只按数据库真实 job_type 决定。
+通用 `/jobs/mutations/{job_id}`、`/cancel`、`/retry` 使用动态结构：`version`、`resolution=mutation_job_type`、`action`、`candidates`、`workspace_header_required=false`、`idempotency_key_required`。candidates 是以 page/component 为键的对象，每项包含 key、required_scopes 和 scope_mode；候选不能合并成同时需要或任一满足的静态权限。执行时只按数据库真实 job_type 决定。
 
 元数据是公开契约，不是用户可用能力。客户端执行前仍使用空间 capabilities，服务端每请求继续鉴权。规范与 capabilities 保持用户相关，不能进入共享公共缓存。旧客户端可以忽略新增扩展；不新增内部 guides 镜像。
 
@@ -80,4 +80,19 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 
 新增不可变 ExternalPrincipal、来源明确的 PAT/委托快照和 PAT 适配器。业务上下文不再持有 PAT ORM；whoami 增加类型化 credential 并保留旧 token 字段，HTTP 仍只接受 PAT。
 
-验证：外部主体/身份专题、PAT API、External API/契约缺口、PAT 服务、幂等与 Mutation 服务共 **73 项通过**；Editor API 重新生成及生成物一致性通过；真实 Nginx OpenAPI、上游 503 与 SPA 边界回归通过。委托对等测试只注入已验证主体，真实 Token 验证、audience、撤销与轮换仍待 M2。数据库结构未变，无迁移要求。
+提交 `385474b`。验证：外部主体/身份专题、PAT API、External API/契约缺口、PAT 服务、幂等与 Mutation 服务共 **73 项通过**；Editor API 重新生成、生成物一致性与类型检查通过；真实 Nginx OpenAPI、上游 503 与 SPA 边界回归通过。委托对等测试只注入已验证主体，真实 Token 验证、audience、撤销与轮换仍待 M2。数据库结构未变，无迁移要求。
+
+### 批次 3：M3 首批契约发现
+
+87 个 External 路由由 ExternalAPIRoute 从真实依赖生成 `x-wp-operation`。缺失或歧义的操作声明在路由装配时失败；多读取视图共享 operation 并保留各自 Schema，动态 Job 声明独立候选。页面源码、组件草稿与基线类型化，组件依赖、资源 diff、单项归档复用已有响应；PNG 声明媒体类型和版本头。认证后的成功响应使用 private, no-store。
+
+验证结果：
+
+- Backend 主体/身份、全部操作/引用、完整源码和 diff 响应对拍、PAT、External API、幂等、Mutation 与相邻仓 CLI Skill 示例：83 项通过；另有路由装配拒绝缺失/歧义/伪造元数据 3 项通过，共 **86 项**。
+- `pnpm run test:contracts`：12 个文件、**44 项通过**，包含仓库文档/部署门禁。
+- `pnpm run codegen:editor-api`、`pnpm run test:contracts:generated`、`pnpm run test:editor:check`：通过；导出 252 个 paths、345 个 Schema。
+- `pnpm run test:contracts:gateway -- --openapi-file editor/src/types/openapi.json`：当前 Backend 完整文档经隔离受控上游与真实 Nginx HTTP 转发后完全一致；上游 503 透传和 Editor SPA 边界通过。容器/网络在结束后清理。
+
+此处 Gateway 证据使用受控静态上游，不代表已部署新 Backend 或通过 OAuth/MCP Gateway。未运行 Renderer/Runtime E2E、真实宿主授权、委托 audience/撤销/轮换和 SQLite/PostgreSQL 授权消费并发；这些分别依赖 M2/M5/M6/M7。agent-kit 首期 binding 尚未存在，M3 跨仓退出验收仍待 A1/A4。
+
+接续顺序：完成 Authlib 最小适配 PoC 和 A0 真实宿主矩阵 → 冻结剩余 OAuth/委托协议 → M2 存储/授权/撤销与账户 UI → 接入 M1 委托验证器 → M4/M5 与跨仓 Gateway/发布验收。

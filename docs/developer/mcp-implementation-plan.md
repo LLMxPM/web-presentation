@@ -181,12 +181,12 @@ P0 默认建议：授权码 60 秒一次性，MCP 访问令牌 15 分钟，委�
 
 优先级 P1；依赖 M0 的映射清单；不依赖内部助手改造。
 
-- [ ] 检查每个 MCP 所用 HTTP 路由的 path/query/body/响应 Schema 和媒体类型。已有 JSON dict 返回或 PNG 路由缺少准确 OpenAPI 时，只补这些实际缺口。
-- [ ] page.get 的详情/源码/版本、component.get 的详情/草稿/版本等按真实路由验证；operation 主路径不能代替所有视图。
-- [ ] 若采用 `x-wp-*` 元数据，字段从现有 operation 和真实鉴权依赖派生；候选字段为 operation key、required scopes、scope mode、workspace/idempotency 要求。动态 Job 路由标明动态解析，不能静态写成 page 权限。
-- [ ] 不建立第二份手工 route→scope 清单，不提供内部 `/guides` 镜像，不复制 `tool_specs.py`。
-- [ ] 公开 OpenAPI 可跨用户共享；规范和 capabilities 是用户相关数据，保持原有鉴权且不能被公共 HTTP 缓存混用。
-- [ ] 源码读取结果应提供可编辑的完整内容与基线信息；错误时明确失败，不能用截断源码冒充完整响应。
+- [x] 核对首期依赖的现有 87 个 HTTP 方法/路径组合，补齐源码、草稿、依赖、资源差异、单项归档与 PNG 的实际响应缺口；A1/A4 binding 对拍仍待 agent-kit 实施。
+- [x] page.get 的详情/源码/版本、component.get 的详情/草稿/版本等按真实路由验证；operation 主路径不能代替所有视图。
+- [x] 采用版本 1 的 `x-wp-operation`，从现有 operation 和真实鉴权依赖派生 Scope、模式及 Header/幂等要求；动态 Job 路由声明按真实 job_type 解析。
+- [x] 不建立第二份手工 route→scope 清单，不提供内部 `/guides` 镜像，不复制 `tool_specs.py`。
+- [x] 公开 OpenAPI 可跨用户共享；认证后的 External 成功响应使用 private, no-store，规范与 capabilities 保持原有鉴权。
+- [x] 源码读取提供完整内容与编辑基线；长源码与草稿版本/hash 对拍测试覆盖，不截断。
 
 验收：从当前 Backend 生成 OpenAPI，agent-kit 所有已启用 binding 的请求、成功响应和引用均可解析；从真实 Gateway 获取的文档同样通过。缺字段时修正 API 契约，不能让 MCP 写本地 DTO 兜底。
 
@@ -307,7 +307,7 @@ pnpm run test:repository
 | M0 | 冻结契约、授权实现选型、首批客户端矩阵 | 无 | 两仓 | 进行中；M1/M3 边界已冻结，授权最小验证/真实宿主待办 |
 | M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 基础解耦完成；真实委托认证/撤销与对等验收待 M2 |
 | M2 | OAuth、Grant、账户授权 UI、撤销 | M0；联调依赖 M1 | A3 真实授权 | 待实施 |
-| M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 待实施 |
+| M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 主仓首批实现完成；agent-kit binding 与实际 Backend Gateway 对拍待办 |
 | M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | 待实施 |
 | M5 | 预览和截图预算/实机验证 | M1/M2 | A6 | 待实施 |
 | M6 | Gateway、配置、观测、升级回退 | M0，随 P1/P2推进 | A8/A9 | 待实施 |

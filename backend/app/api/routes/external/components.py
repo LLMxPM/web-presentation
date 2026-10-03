@@ -7,10 +7,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.exceptions import AppException
+from app.core.text_normalizer import calculate_source_hash
 from app.db.session import get_db_session
-from app.schemas.common import PagedResponse
+from app.schemas.common import MessageResponse, PagedResponse
+from app.schemas.external_content import ExternalComponentDraftResponse
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
@@ -22,6 +25,7 @@ from app.schemas.external_api import (
     ExternalMutationJobResponse,
 )
 from app.schemas.component import (
+    WorkspaceComponentCurrentDependencies,
     SuggestedComponentItem,
     WorkspaceComponentItem,
     WorkspaceComponentListQuery,
@@ -36,7 +40,7 @@ from app.services.suggested_component_service import SuggestedComponentService
 from app.services.mutation_job_service import MutationJobService
 from app.api.routes.external.validate import validate_entity
 
-router = APIRouter()
+router = APIRouter(route_class=ExternalAPIRoute)
 
 
 @router.post("", response_model=ExternalMutationJobResponse, status_code=202)
@@ -126,12 +130,12 @@ async def get_component(
     return comp
 
 
-@router.get("/{component_id}/dependencies")
+@router.get("/{component_id}/dependencies", response_model=WorkspaceComponentCurrentDependencies)
 async def get_component_dependencies(
     component_id: int,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.dependencies"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> Any:
+) -> WorkspaceComponentCurrentDependencies:
     """读取组件当前版本源码依赖。"""
 
     component = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
@@ -237,7 +241,7 @@ async def update_component_metadata(
     return result if isinstance(result, WorkspaceComponentItem) else WorkspaceComponentItem.model_validate(result)
 
 
-@router.get("/{component_id}/draft")
+@router.get("/{component_id}/draft", response_model=ExternalComponentDraftResponse)
 async def get_component_draft(
     component_id: int,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.get"))],
@@ -253,6 +257,9 @@ async def get_component_draft(
         "component_type": comp.component_type,
         "content": comp.content,
         "preview_schema": comp.preview_schema,
+        "current_version_no": comp.current_version_no,
+        "draft_base_version_no": comp.draft_base_version_no,
+        "draft_hash": calculate_source_hash(comp.content),
     }
 
 
@@ -323,7 +330,7 @@ async def publish_component(
     return result if isinstance(result, WorkspaceComponentItem) else WorkspaceComponentItem.model_validate(result)
 
 
-@router.post("/{component_id}/archive")
+@router.post("/{component_id}/archive", response_model=MessageResponse)
 async def archive_component(
     request: Request,
     component_id: int,

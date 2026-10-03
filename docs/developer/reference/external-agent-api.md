@@ -106,7 +106,7 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 
 `capabilities` 返回当前 Token 在指定空间可用的 Scope 和 operation。CLI 可以用它决定命令提示，MCP 可以用它决定工具是否披露；两者都不能把客户端判断当作最终授权。
 
-`whoami` 明确返回用户公共信息、PAT 兼容 `token`、公共凭证来源 `credential` 与实时有效的授权空间列表。PAT 的 token 字段保留 `id/name/token_public_id/scopes/expires_at/all_workspaces`，credential.type 为 `pat`，另含 public_id 和 expires_at，不返回原始令牌。内部外部主体已与 PAT ORM 解耦；委托 DTO 预留独立的 Grant/客户端/服务来源，但当前 HTTP 认证仍只接受 PAT，OAuth 接入尚未开放。
+`whoami` 明确返回用户公共信息、PAT 兼容 `token`、公共凭证来源 `credential` 与实时有效的授权空间列表。PAT 的 token 字段保留 `id/name/token_public_id/scopes/expires_at/all_workspaces`，credential.type 为 `pat`，另含 public_id 和 expires_at，不返回原始令牌。External 业务主体已与 PAT ORM 解耦；委托 DTO 预留独立的 Grant/客户端/服务来源，但当前 HTTP 认证仍只接受 PAT，OAuth 接入尚未开放。
 
 ### 4.2 规范和 OpenAPI
 
@@ -117,6 +117,12 @@ GET /openapi.json
 ```
 
 页面和组件规范由 Backend 发布；CLI 使用公开 OpenAPI 获取当前服务端的路径、参数和请求 Schema。agent-kit 不复制 Backend DTO 或维护第二份静态 Schema。
+
+公开 OpenAPI 的 External 路由包含版本 1 的 `x-wp-operation` 扩展，由实际鉴权依赖派生。静态操作声明 `key/public/required_scopes/scope_mode/workspace_header_required/idempotency_key_required`，同一操作的附加视图保留各自参数和响应。通用 Mutation status/cancel/retry 声明 `resolution=mutation_job_type`、action 与按 page/component 区分的 candidates，不提供一个可代替动态鉴权的静态 Scope。完整字段约定见[首批契约交接](../mcp-contract-handoff.md#3-m3-操作元数据)。
+
+需要认证的 External 成功响应统一使用 `Cache-Control: private, no-store`，包括身份、规范、capabilities 和业务数据。公开 OpenAPI 可共享，但不能将用户相关能力和内容写入公共缓存。
+
+页面源码响应为完整 `source_code` 加 `page_id/page_code/version_no`。组件 draft 返回完整 content/preview_schema 与 `current_version_no/draft_base_version_no/draft_hash`；编辑使用 current_version_no 作为 base_version_no、draft_hash 作为 base_draft_hash。依赖与资源差异复用已有响应 DTO。截图 200 明确为 image/png binary，携带 X-Page-ID 与 X-Page-Version-No；仍可能等待队列刷新，新增 Schema 不表示已经满足宿主时限。
 
 ## 5. 资源和任务契约
 

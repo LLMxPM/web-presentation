@@ -7,10 +7,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
-from app.schemas.common import PagedResponse
+from app.schemas.common import MessageResponse, PagedResponse
+from app.schemas.external_content import ExternalPageSourceResponse
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
@@ -39,7 +41,7 @@ from app.services.mutation_job_service import MutationJobService
 from app.api.routes.external.validate import validate_entity
 
 
-router = APIRouter()
+router = APIRouter(route_class=ExternalAPIRoute)
 
 
 @router.post("/pages", response_model=ExternalMutationJobResponse, status_code=202)
@@ -189,7 +191,7 @@ async def update_page_metadata(
     return result if isinstance(result, PageItem) else PageItem.model_validate(result)
 
 
-@router.get("/pages/{page_id}/source")
+@router.get("/pages/{page_id}/source", response_model=ExternalPageSourceResponse)
 async def get_page_source(
     page_id: int,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.get"))],
@@ -275,7 +277,18 @@ async def edit_page(
     return result if isinstance(result, ExternalMutationJobResponse) else ExternalMutationJobResponse.model_validate(result)
 
 
-@router.get("/pages/{page_id}/screenshot")
+@router.get(
+    "/pages/{page_id}/screenshot",
+    response_class=Response,
+    responses={200: {
+        "description": "最新页面 PNG；可能等待持久队列刷新截图。",
+        "content": {"image/png": {"schema": {"type": "string", "format": "binary"}}},
+        "headers": {
+            "X-Page-ID": {"description": "页面 ID", "schema": {"type": "integer"}},
+            "X-Page-Version-No": {"description": "截图对应页面版本", "schema": {"type": "integer"}},
+        },
+    }},
+)
 async def get_page_screenshot(
     page_id: int,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.screenshot.latest"))],
@@ -334,7 +347,7 @@ async def get_page_version(
     return await PageService(session).get_version_content(page_id, version_no, user_id=auth.user.id)
 
 
-@router.post("/pages/{page_id}/archive")
+@router.post("/pages/{page_id}/archive", response_model=MessageResponse)
 async def archive_page(
     request: Request,
     page_id: int,

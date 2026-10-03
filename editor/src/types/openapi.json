@@ -24,6 +24,15 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "system.version",
+          "required_scopes": [],
+          "scope_mode": "all",
+          "public": true,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -46,6 +55,15 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "system.health",
+          "required_scopes": [],
+          "scope_mode": "all",
+          "public": true,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -128,6 +146,15 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "auth.whoami",
+          "required_scopes": [],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -210,6 +237,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "standards.page",
+          "required_scopes": [
+            "page:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -292,6 +330,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "standards.component",
+          "required_scopes": [
+            "component:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -470,6 +519,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "runtime_kit.list",
+          "required_scopes": [
+            "workspace:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -561,6 +621,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "runtime_kit.get",
+          "required_scopes": [
+            "workspace:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -677,6 +748,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "font.list",
+          "required_scopes": [
+            "asset:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       }
     },
@@ -763,6 +845,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "workspace.list",
+          "required_scopes": [
+            "workspace:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -854,6 +947,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "workspace.get",
+          "required_scopes": [
+            "workspace:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -945,6 +1049,15 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "system.capabilities",
+          "required_scopes": [],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -1074,6 +1187,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.list",
+          "required_scopes": [
+            "project:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       },
       "post": {
@@ -1159,6 +1283,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.create",
+          "required_scopes": [
+            "project:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -1250,6 +1385,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.get",
+          "required_scopes": [
+            "project:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       },
       "patch": {
@@ -1349,6 +1495,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.update",
+          "required_scopes": [
+            "project:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -1425,11 +1582,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Archive Project Api V1 Projects  Project Id  Archive Post"
+                  "$ref": "#/components/schemas/MessageResponse"
                 }
               }
             }
@@ -1444,6 +1597,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.archive",
+          "required_scopes": [
+            "project:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -1535,6 +1699,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.configuration.get",
+          "required_scopes": [
+            "project:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       },
       "put": {
@@ -1634,6 +1809,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.configuration.update",
+          "required_scopes": [
+            "project:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -1725,6 +1911,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.route.get",
+          "required_scopes": [
+            "project:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       },
       "put": {
@@ -1824,6 +2021,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.route.update",
+          "required_scopes": [
+            "project:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -1925,6 +2133,18 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.apply_style",
+          "required_scopes": [
+            "project:write",
+            "design-system:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -2026,6 +2246,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.build_assets.update",
+          "required_scopes": [
+            "project:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -2113,6 +2344,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.archive",
+          "required_scopes": [
+            "project:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -2205,6 +2447,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.create",
+          "required_scopes": [
+            "page:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -2348,6 +2601,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.list",
+          "required_scopes": [
+            "page:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -2439,6 +2703,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.get",
+          "required_scopes": [
+            "page:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       },
       "patch": {
@@ -2538,6 +2813,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.update",
+          "required_scopes": [
+            "page:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -2639,6 +2925,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.copy",
+          "required_scopes": [
+            "page:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -2715,9 +3012,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Page Source Api V1 Pages  Page Id  Source Get"
+                  "$ref": "#/components/schemas/ExternalPageSourceResponse"
                 }
               }
             }
@@ -2732,6 +3027,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.get",
+          "required_scopes": [
+            "page:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -2823,6 +3129,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.dependencies",
+          "required_scopes": [
+            "page:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -2924,6 +3241,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.validate",
+          "required_scopes": [
+            "page:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -3025,6 +3353,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.edit",
+          "required_scopes": [
+            "page:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -3097,10 +3436,27 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "最新页面 PNG；可能等待持久队列刷新截图。",
             "content": {
-              "application/json": {
-                "schema": {}
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "X-Page-ID": {
+                "description": "页面 ID",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Page-Version-No": {
+                "description": "截图对应页面版本",
+                "schema": {
+                  "type": "integer"
+                }
               }
             }
           },
@@ -3114,6 +3470,18 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.screenshot.latest",
+          "required_scopes": [
+            "page:read",
+            "preview:run"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -3209,6 +3577,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.get",
+          "required_scopes": [
+            "page:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -3309,6 +3688,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.get",
+          "required_scopes": [
+            "page:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -3385,11 +3775,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Archive Page Api V1 Pages  Page Id  Archive Post"
+                  "$ref": "#/components/schemas/MessageResponse"
                 }
               }
             }
@@ -3404,6 +3790,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.archive",
+          "required_scopes": [
+            "page:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -3491,6 +3888,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.archive",
+          "required_scopes": [
+            "page:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -3592,6 +4000,18 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "project.preview",
+          "required_scopes": [
+            "project:read",
+            "preview:run"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -3683,6 +4103,18 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "page.preview",
+          "required_scopes": [
+            "page:read",
+            "preview:run"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -3775,6 +4207,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.create",
+          "required_scopes": [
+            "component:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       },
       "get": {
@@ -3929,6 +4372,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.list",
+          "required_scopes": [
+            "component:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       }
     },
@@ -4020,6 +4474,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.get",
+          "required_scopes": [
+            "component:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       },
       "patch": {
@@ -4119,6 +4584,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.update",
+          "required_scopes": [
+            "component:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -4195,7 +4671,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Get Component Dependencies Api V1 Components  Component Id  Dependencies Get"
+                  "$ref": "#/components/schemas/WorkspaceComponentCurrentDependencies"
                 }
               }
             }
@@ -4210,6 +4686,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.dependencies",
+          "required_scopes": [
+            "component:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -4311,6 +4798,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.validate",
+          "required_scopes": [
+            "component:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -4412,6 +4910,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.edit",
+          "required_scopes": [
+            "component:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -4488,9 +4997,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Component Draft Api V1 Components  Component Id  Draft Get"
+                  "$ref": "#/components/schemas/ExternalComponentDraftResponse"
                 }
               }
             }
@@ -4505,6 +5012,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.get",
+          "required_scopes": [
+            "component:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -4600,6 +5118,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.get",
+          "required_scopes": [
+            "component:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -4700,6 +5229,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.get",
+          "required_scopes": [
+            "component:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -4801,6 +5341,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.publish",
+          "required_scopes": [
+            "component:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -4877,11 +5428,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Archive Component Api V1 Components  Component Id  Archive Post"
+                  "$ref": "#/components/schemas/MessageResponse"
                 }
               }
             }
@@ -4896,6 +5443,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.archive",
+          "required_scopes": [
+            "component:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -4983,6 +5541,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "component.archive",
+          "required_scopes": [
+            "component:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -5129,6 +5698,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.list",
+          "required_scopes": [
+            "asset:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       },
       "post": {
@@ -5214,6 +5794,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.upload",
+          "required_scopes": [
+            "asset:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -5311,6 +5902,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.tags",
+          "required_scopes": [
+            "asset:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       }
     },
@@ -5397,6 +5999,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.get",
+          "required_scopes": [
+            "asset:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       },
       "patch": {
@@ -5491,6 +6104,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.update",
+          "required_scopes": [
+            "asset:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -5577,6 +6201,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.content.get",
+          "required_scopes": [
+            "asset:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       },
       "put": {
@@ -5671,6 +6306,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.content.update",
+          "required_scopes": [
+            "asset:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -5758,6 +6404,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.content.create",
+          "required_scopes": [
+            "asset:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -5839,9 +6496,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Preview Asset Content Api V1 Assets  Asset Id  Content Preview Post"
+                  "$ref": "#/components/schemas/AssetContentPreviewResponse"
                 }
               }
             }
@@ -5856,6 +6511,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.content.preview",
+          "required_scopes": [
+            "asset:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       }
     },
@@ -5952,6 +6618,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.copy",
+          "required_scopes": [
+            "asset:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -6023,11 +6700,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Archive Asset Api V1 Assets  Asset Id  Archive Post"
+                  "$ref": "#/components/schemas/MessageResponse"
                 }
               }
             }
@@ -6042,6 +6715,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.archive",
+          "required_scopes": [
+            "asset:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -6129,6 +6813,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "asset.archive",
+          "required_scopes": [
+            "asset:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -6242,6 +6937,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "theme.list",
+          "required_scopes": [
+            "design-system:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       },
       "post": {
@@ -6327,6 +7033,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "theme.create",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -6413,6 +7130,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "theme.get",
+          "required_scopes": [
+            "design-system:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       },
       "patch": {
@@ -6507,6 +7235,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "theme.update",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -6603,6 +7342,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "theme.copy",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -6674,11 +7424,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Archive Theme Api V1 Themes  Theme Id  Archive Post"
+                  "$ref": "#/components/schemas/MessageResponse"
                 }
               }
             }
@@ -6693,6 +7439,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "theme.archive",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -6780,6 +7537,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "theme.archive",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -6893,6 +7661,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "style.list",
+          "required_scopes": [
+            "design-system:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       },
       "post": {
@@ -6978,6 +7757,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "style.create",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -7064,6 +7854,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "style.get",
+          "required_scopes": [
+            "design-system:read"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": false
         }
       },
       "patch": {
@@ -7158,6 +7959,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "style.update",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -7254,6 +8066,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "style.copy",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -7325,11 +8148,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Archive Style Api V1 Styles  Style Id  Archive Post"
+                  "$ref": "#/components/schemas/MessageResponse"
                 }
               }
             }
@@ -7344,6 +8163,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "style.archive",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -7431,6 +8261,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "style.archive",
+          "required_scopes": [
+            "design-system:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": true,
+          "idempotency_key_required": true
         }
       }
     },
@@ -7523,6 +8364,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "jobs.mutation.page.create",
+          "required_scopes": [
+            "page:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -7615,6 +8467,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "jobs.mutation.page.edit",
+          "required_scopes": [
+            "page:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -7707,6 +8570,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "jobs.mutation.component.create",
+          "required_scopes": [
+            "component:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -7799,6 +8673,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "jobs.mutation.component.edit",
+          "required_scopes": [
+            "component:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -7876,6 +8761,29 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "resolution": "mutation_job_type",
+          "action": "status",
+          "candidates": {
+            "page": {
+              "key": "jobs.mutation.page.status",
+              "required_scopes": [
+                "page:read"
+              ],
+              "scope_mode": "all"
+            },
+            "component": {
+              "key": "jobs.mutation.component.status",
+              "required_scopes": [
+                "component:read"
+              ],
+              "scope_mode": "all"
+            }
+          },
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -7953,6 +8861,29 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "resolution": "mutation_job_type",
+          "action": "cancel",
+          "candidates": {
+            "page": {
+              "key": "jobs.mutation.page.cancel",
+              "required_scopes": [
+                "page:write"
+              ],
+              "scope_mode": "all"
+            },
+            "component": {
+              "key": "jobs.mutation.component.cancel",
+              "required_scopes": [
+                "component:write"
+              ],
+              "scope_mode": "all"
+            }
+          },
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -8045,6 +8976,17 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "jobs.mutation.component.metadata",
+          "required_scopes": [
+            "component:write"
+          ],
+          "scope_mode": "all",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -8122,6 +9064,29 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "resolution": "mutation_job_type",
+          "action": "retry",
+          "candidates": {
+            "page": {
+              "key": "jobs.mutation.page.retry",
+              "required_scopes": [
+                "page:write"
+              ],
+              "scope_mode": "all"
+            },
+            "component": {
+              "key": "jobs.mutation.component.retry",
+              "required_scopes": [
+                "component:write"
+              ],
+              "scope_mode": "all"
+            }
+          },
+          "workspace_header_required": false,
+          "idempotency_key_required": true
         }
       }
     },
@@ -8214,6 +9179,18 @@
               }
             }
           }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "key": "validate.entity",
+          "required_scopes": [
+            "page:read",
+            "component:read"
+          ],
+          "scope_mode": "any",
+          "public": false,
+          "workspace_header_required": false,
+          "idempotency_key_required": false
         }
       }
     },
@@ -30294,6 +31271,66 @@
         "title": "ExternalComponentCreateMutationRequest",
         "description": "组件创建异步 Mutation 任务请求。"
       },
+      "ExternalComponentDraftResponse": {
+        "properties": {
+          "component_id": {
+            "type": "integer",
+            "title": "Component Id"
+          },
+          "import_name": {
+            "type": "string",
+            "title": "Import Name"
+          },
+          "component_type": {
+            "$ref": "#/components/schemas/WorkspaceComponentType"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "完整可编辑草稿源码"
+          },
+          "preview_schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Schema"
+          },
+          "current_version_no": {
+            "type": "integer",
+            "title": "Current Version No",
+            "description": "当前发布版本，作为编辑 base_version_no"
+          },
+          "draft_base_version_no": {
+            "type": "integer",
+            "title": "Draft Base Version No",
+            "description": "草稿基于的发布版本"
+          },
+          "draft_hash": {
+            "type": "string",
+            "title": "Draft Hash",
+            "description": "草稿 SHA-256，作为编辑 base_draft_hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "component_id",
+          "import_name",
+          "component_type",
+          "content",
+          "preview_schema",
+          "current_version_no",
+          "draft_base_version_no",
+          "draft_hash"
+        ],
+        "title": "ExternalComponentDraftResponse",
+        "description": "组件完整草稿与乐观并发基线，不使用发布源码冒充草稿。"
+      },
       "ExternalComponentMetadataMutationRequest": {
         "properties": {
           "component_id": {
@@ -31163,6 +32200,38 @@
         "type": "object",
         "title": "ExternalPageMetadataUpdateRequest",
         "description": "External API 页面轻量元数据更新请求，禁止绕过 Mutation 写入源码。"
+      },
+      "ExternalPageSourceResponse": {
+        "properties": {
+          "page_id": {
+            "type": "integer",
+            "title": "Page Id"
+          },
+          "page_code": {
+            "type": "string",
+            "title": "Page Code"
+          },
+          "version_no": {
+            "type": "integer",
+            "title": "Version No",
+            "description": "当前源码对应版本，可作为 base_version_no"
+          },
+          "source_code": {
+            "type": "string",
+            "title": "Source Code",
+            "description": "完整 Vue 源码"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page_id",
+          "page_code",
+          "version_no",
+          "source_code"
+        ],
+        "title": "ExternalPageSourceResponse",
+        "description": "页面完整源码与后续 edits 所需版本基线，不截断内容。"
       },
       "ExternalPatCredentialInfo": {
         "properties": {

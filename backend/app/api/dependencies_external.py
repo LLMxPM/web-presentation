@@ -92,6 +92,8 @@ def require_external_operation(operation_key: str):
 
         return auth
 
+    # OpenAPI 从真实鉴权依赖派生，不另建 route→scope 映射。
+    _dependency.external_operation_spec = spec
     return _dependency
 
 
@@ -144,4 +146,5 @@ def require_dynamic_mutation_operation(action: Literal["status", "cancel", "retr
 
         return auth, job
 
+    _dependency.external_mutation_action = action
     return _dependency

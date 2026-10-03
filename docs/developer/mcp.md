@@ -52,13 +52,13 @@ MCP Server 依赖以下平台能力，但不在主仓库登记 MCP 工具：
 
 ## 5. 远程多用户方案的平台待办
 
-以下均为规划，不能视作已有接口或已实现能力：
+授权协议、真实委托认证和跨仓验收仍在规划/实施。首批已完成外部主体基础解耦与契约发现，详情及证据见[实施交接记录](./mcp-contract-handoff.md)：PAT 兼容、whoami 类型化来源、87 个路由的操作元数据和内容响应 Schema 已落地；远程 OAuth/MCP 尚不可用。
 
 本期优先交付基于现有 External API 的 MCP。内部助手迁移标准 API、统一业务操作层与合并工具注册表不属于前置工作；主仓只补远程多用户接入和 MCP 创作闭环必需的能力。统一访问主体仅涉及外部认证，不扩展为内部 Agent 运行态重构。
 
 - **外部授权**：基于平台登录提供客户端授权、工作空间/Scope 授权、短期凭证和撤销。MCP 作为 OAuth 资源服务器，以面向 Backend 的委托凭证调用 API；不能用一枚服务端 PAT 代表所有用户。
-- **统一访问主体**：当前 `ExternalAuthContext` 绑定 PAT 记录。需把 PAT 与委托凭证归一到用户、授权范围和来源，同时保留实时成员资格和对象归属检查；回归 CLI PAT 兼容性。
-- **契约自省**：MCP 工具形式可借鉴内部助手，但 Schema 来自 External API。若增加 OpenAPI operation 扩展元数据，应由 `external_operations.py` 及真实路由派生，覆盖多视图与动态 Job 权限，不能复制 `tool_specs.py`。
+- **统一访问主体**：ExternalPrincipal 已把用户、不可变授权范围与凭证来源从 PAT ORM 解耦，保留实时成员资格和对象归属检查；委托来源结构已预留，真实 Token 接入待 M2。
+- **契约自省**：MCP 工具 Schema 来自 External API；版本 1 的 `x-wp-operation` 已从 `external_operations.py` 及真实鉴权依赖派生，覆盖多视图与动态 Job 权限。agent-kit binding 对拍尚未完成。
 - **任务边界**：外部页面/组件继续使用 Mutation Job，不接入内部 AgentRun、Deferred 或 ExternalBatch 模型续跑；MCP 断连不等于业务取消。
 - **批量确认**：跨客户端、跨副本确认需要的平台记录或票据，须定义主体、目标绑定、期限和一次性消费语义；模型布尔值不代替用户确认，不重用内部 AgentRun/HITL。
 - **远程媒体**：先适配文本、资产 ID、短期预览与 PNG；二进制上传通道或异步截图契约另行冻结，不能沿用 CLI 本地路径或内部会话附件 ID。

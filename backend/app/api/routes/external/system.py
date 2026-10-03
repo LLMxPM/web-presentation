@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.code_standards import get_default_code_standard
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
+from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.config import get_settings
 from app.db.session import get_db_session
@@ -24,7 +25,7 @@ from app.services.ai_agent_config_service import AiAgentConfigService
 from app.services.external_principal import PatCredential
 from app.services.redis_runtime_client import get_redis_runtime_client
 
-router = APIRouter()
+router = APIRouter(route_class=ExternalAPIRoute)
 
 
 async def _resolve_standard_markdown(

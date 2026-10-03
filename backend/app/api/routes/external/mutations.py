@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import (
     ExternalAuthContext,
     require_dynamic_mutation_operation,
@@ -28,7 +29,7 @@ from app.services.page_service import PageService
 from app.services.project_service import ProjectService
 from app.services.workspace_component_service import WorkspaceComponentService
 
-router = APIRouter()
+router = APIRouter(route_class=ExternalAPIRoute)
 
 
 @router.post("/pages", response_model=ExternalMutationJobResponse)

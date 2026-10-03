@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
@@ -16,7 +17,7 @@ from app.services.page_service import PageService
 from app.services.preview_service import PreviewService
 from app.services.project_service import ProjectService
 
-router = APIRouter()
+router = APIRouter(route_class=ExternalAPIRoute)
 
 
 async def _create_external_preview_artifact(

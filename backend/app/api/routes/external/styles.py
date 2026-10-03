@@ -11,9 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import uuid
 
+from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.db.session import get_db_session
-from app.schemas.common import ListQuery, PagedResponse
+from app.schemas.common import ListQuery, MessageResponse, PagedResponse
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
@@ -30,7 +31,7 @@ from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
 from app.services.workspace_style_service import WorkspaceStyleService
 
-router = APIRouter()
+router = APIRouter(route_class=ExternalAPIRoute)
 
 _FLAT_STYLE_PRESENTATION_FIELDS = (
     "page_width",
@@ -220,7 +221,7 @@ async def update_style(
     return result if isinstance(result, WorkspaceStyleItem) else WorkspaceStyleItem.model_validate(result)
 
 
-@router.post("/{style_id}/archive")
+@router.post("/{style_id}/archive", response_model=MessageResponse)
 async def archive_style(
     request: Request,
     style_id: int,

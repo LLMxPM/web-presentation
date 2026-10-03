@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.external_operations import OPERATION_REGISTRY
 from app.db.session import get_db_session
@@ -17,7 +18,7 @@ from app.schemas.external_api import ExternalCapabilitiesResponse
 from app.schemas.workspace import WorkspaceItem
 from app.services.workspace_service import WorkspaceService
 
-router = APIRouter()
+router = APIRouter(route_class=ExternalAPIRoute)
 
 
 @router.get("", response_model=list[WorkspaceItem])
