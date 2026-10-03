@@ -1476,6 +1476,7 @@ export type OAuthGrantItem = {
   "resource": string
   "scopes": (string)[]
   "workspace_ids": (number)[]
+  "workspaces": (OAuthWorkspaceChoice)[]
   "created_at": string
   "revoked_at": (string) | (null)
   "is_active": boolean

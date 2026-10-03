@@ -132,6 +132,7 @@ const accountNavItems = [
   { label: '代码规范', path: '/settings/account/code-standards', icon: Code2 },
   { label: '工具配置', path: '/settings/account/tools', icon: Wrench },
   { label: '访问令牌', path: '/settings/account/tokens', icon: Key },
+  { label: '外部授权', path: '/settings/account/grants', icon: ShieldCheck },
   { label: '账户安全', path: '/settings/account/security', icon: ShieldCheck },
 ]
 

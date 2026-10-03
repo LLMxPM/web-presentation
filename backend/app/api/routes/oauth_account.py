@@ -14,6 +14,7 @@ from app.core.oauth_config import resolve_oauth_policy
 from app.db.session import get_session_factory
 from app.models.oauth_grant import OAuthGrant
 from app.models.oauth_registration import OAuthClient
+from app.repositories.oauth_consent_repository import consent_workspaces
 from app.repositories.oauth_repository import load_live_grant
 from app.schemas.common import MessageResponse
 from app.schemas.oauth_account import (
@@ -23,6 +24,7 @@ from app.schemas.oauth_account import (
     OAuthConsentView,
     OAuthGrantItem,
     OAuthGrantList,
+    OAuthWorkspaceChoice,
 )
 from app.services.auth_service import AuthContext
 from app.services.oauth.consent_service import OAuthConsentService
@@ -64,6 +66,7 @@ async def list_oauth_grants(current: Current, response: Response) -> OAuthGrantL
     if policy is None:
         return OAuthGrantList(enabled=False, items=[])
     async with get_session_factory()() as session:
+        names = {item.id: item.name for item in await consent_workspaces(session, current.user.id)}
         rows = (await session.execute(select(OAuthGrant, OAuthClient.name).join(
             OAuthClient, OAuthClient.client_id == OAuthGrant.client_id
         ).where(
@@ -76,6 +79,7 @@ async def list_oauth_grants(current: Current, response: Response) -> OAuthGrantL
             items.append(OAuthGrantItem(
                 grant_id=grant.grant_id, client_name=name, resource=grant.resource,
                 scopes=grant.scopes, workspace_ids=grant.workspace_ids, created_at=grant.created_at,
+                workspaces=[OAuthWorkspaceChoice(id=value, name=names.get(value, f"工作空间 #{value}（当前不可访问）")) for value in grant.workspace_ids],
                 revoked_at=grant.revoked_at, is_active=active,
             ))
     return OAuthGrantList(enabled=True, items=items)

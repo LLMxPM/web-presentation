@@ -140,3 +140,5 @@ web-presentation/
 
 
 CLI 通过平台根地址的 `/openapi.json` 获取当前请求契约。部署后应执行 [Gateway 契约验证](docs/deployment/production/README.md#cli-openapi-契约入口)；业务 API 正常不代表该入口正常。配套 Skill 将路由挂载及挂载后的截图复核作为完整多页演示的交付检查点。
+
+远程 MCP 首批客户端确定为 ChatGPT 网页端，主仓已实现默认关闭的 OAuth 授权确认和账户“外部授权”管理。实际 MCP 服务与 ChatGPT 连接仍待部署联调；配置边界见 [ChatGPT 首批授权](docs/developer/backend/oauth-chatgpt.md)，使用界面见 [外部授权工作流](docs/user/workflows/external-authorization.md)。

@@ -31,6 +31,12 @@ const developmentRoutes = import.meta.env.DEV
 const routes = [
   ...developmentRoutes,
   {
+    path: '/oauth/consent',
+    name: 'oauthConsent',
+    component: () => import('@/views/OAuthConsentView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
@@ -156,6 +162,12 @@ const routes = [
             path: 'account/security',
             name: 'accountSecurity',
             component: () => import('@/views/AccountSecurityView.vue'),
+            meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
+          },
+          {
+            path: 'account/grants',
+            name: 'accountOAuthGrants',
+            component: () => import('@/views/AccountOAuthGrantsView.vue'),
             meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
           },
           {

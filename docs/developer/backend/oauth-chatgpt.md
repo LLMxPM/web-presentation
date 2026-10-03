@@ -45,3 +45,9 @@ Token、自省、撤销拒绝 URL 参数与表单混合、重复参数、非 url
 确认请求 TTL 最长 10 分钟，每用户最多 10 个未消费且未过期待确认。批准/拒绝首先 CAS 消费当前 user/session/nonce 绑定，批准在同一事务插入 Grant、60 秒 Code 摘要与审计，提交后才交付回调。拒绝保留 state 和 iss，不创建 Grant。登录失效、客户端停用、空间成员丢失、重复确认均不能签发。
 
 Gateway 配置显式把发现文档与四个协议端点转 Backend，`/oauth/consent` 保留 Editor SPA。受控真实 Nginx 回归已增加发现、授权 Location、OAuth 错误透传和确认页 SPA 断言；当前机器 Docker 引擎不可用，该回归尚未通过本批实机验收。公共 OAuth 不纳入业务 `x-wp-operation` 目录；账户 DTO 纳入生成的 Editor OpenAPI 类型。
+
+## Editor 确认与管理
+
+独立 `/oauth/consent` 使用现有 Cookie 登录守卫，登录后返回原始请求；默认只选择服务端返回的读取 Scope，写入 Scope 和具体空间必须显式选择。nonce 只在组合式逻辑的组件生命周期内保存；查询切换、卸载和成功决定后清空，迟到响应不能导航已经离开的页面。过期或无空间/权限选择时禁用批准，拒绝不要求空间选择。
+
+`/settings/account/grants` 使用生成 DTO，显示本人授权和当前可见工作空间名称。成员资格丢失时仅显示空间 ID 的失效提示，不泄漏非成员空间名称。撤销确认说明整链失效与已接受任务继续运行，成功后重取服务端状态。用户操作见 [外部授权工作流](../../user/workflows/external-authorization.md)。

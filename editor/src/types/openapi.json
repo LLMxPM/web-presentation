@@ -33886,6 +33886,13 @@
             "type": "array",
             "title": "Workspace Ids"
           },
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/OAuthWorkspaceChoice"
+            },
+            "type": "array",
+            "title": "Workspaces"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -33915,6 +33922,7 @@
           "resource",
           "scopes",
           "workspace_ids",
+          "workspaces",
           "created_at",
           "revoked_at",
           "is_active"

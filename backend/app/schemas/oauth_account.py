@@ -62,6 +62,7 @@ class OAuthGrantItem(BaseModel):
     resource: str
     scopes: list[str]
     workspace_ids: list[int]
+    workspaces: list[OAuthWorkspaceChoice]
     created_at: datetime
     revoked_at: datetime | None
     is_active: bool

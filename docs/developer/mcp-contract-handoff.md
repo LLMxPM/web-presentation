@@ -72,6 +72,12 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 
 ## 5. 分步实施证据
 
+### 批次 9：Editor 授权确认与外部授权管理
+
+新增独立 Cookie 登录保护的 `/oauth/consent` 和账户 `/settings/account/grants`。默认只读、写权限显式勾选、具体空间至少一项；过期禁用批准，拒绝不需要范围选择。nonce 不进入路由/本地存储，卸载后迟到响应不导航。账户显示当前可见空间名称与失效提示，整链撤销确认后刷新真实状态。
+
+Editor 完整门禁通过：类型检查、142 个测试文件/791 项测试、生产构建。生成 DTO 对拍通过（256 paths/353 schemas）；账户 HTTP 17 项通过、17 项 PG 跳过，仓库文档/边界 16 项通过。未执行真实 ChatGPT 浏览器登录联调与 Renderer E2E；授权 UI 不代表 agent-kit MCP 服务已交付。
+
 ### 批次 8：公开授权、Cookie 确认与授权管理 API
 
 生产装配 OAuth 发现/authorize/token/introspect/revoke 和 Cookie 账户确认/Grant 管理。受限 CIMD 注册不能恢复停用客户端；确认绑定 user/session/nonce，具体空间与权限仅可缩小，CAS 消费及 Grant/Code/审计同事务提交。Gateway 区分协议端点和 Editor 确认 SPA；受控真实 Nginx 回归增加对应断言。
