@@ -80,7 +80,6 @@
                               @update:model-value="emit('updateSlotDraft', row.slot, $event === null ? null : Number($event))"
                             />
                             <UiButton size="sm" :loading="bindingSlot === row.slot" @click="emit('saveSlot', row.slot, 'personal')">保存</UiButton>
-                            <UiButton v-if="canCreateGlobal && row.slot === contentSlot?.slot" variant="ghost" size="sm" :loading="bindingSlot === `global:${row.slot}`" @click="emit('saveSlot', row.slot, 'global')">设为全局默认</UiButton>
                           </div>
                         </td>
                       </tr>
@@ -192,13 +191,12 @@
           <header class="shrink-0 border-b border-border-muted bg-surface px-5 py-4">
             <div class="flex items-center justify-between gap-4">
               <div><h2 class="text-lg font-bold text-text-strong">聊天模型</h2><p class="mt-1 text-xs text-text-muted">先连接供应商，再选择目录模型或填写兼容模型 ID。</p></div>
-              <div class="flex gap-2"><UiButton v-if="canCreateGlobal" variant="ghost" :loading="refreshingCatalog" @click="emit('refreshCatalog')">刷新 Models.dev</UiButton><UiButton variant="secondary" @click="emit('createProvider', 'chat')"><Plus class="h-4 w-4" />连接供应商</UiButton><UiButton @click="emit('createModel', 'chat')"><Plus class="h-4 w-4" />新建模型</UiButton></div>
+              <div class="flex gap-2"><UiButton variant="secondary" @click="emit('createProvider', 'chat')"><Plus class="h-4 w-4" />连接供应商</UiButton><UiButton @click="emit('createModel', 'chat')"><Plus class="h-4 w-4" />新建模型</UiButton></div>
             </div>
             <p class="mt-2 text-xs" :class="catalogSyncState?.last_error ? 'text-warning-strong' : 'text-text-muted'">{{ catalogStatusText }}</p>
-            <div class="mt-4 grid gap-2 lg:grid-cols-[minmax(260px,1fr)_220px_160px]">
+            <div class="mt-4 grid gap-2 lg:grid-cols-[minmax(260px,1fr)_220px]">
               <SimpleSearchBar v-model="chatKeyword" placeholder="搜索聊天模型或供应商" />
               <UiSelect v-model="modelProviderFilter" :options="modelProviderOptions" />
-              <UiSelect v-model="modelScopeFilter" :options="scopeOptions" />
             </div>
           </header>
           <div class="grid min-h-0 flex-1 grid-rows-2 overflow-hidden">
@@ -215,9 +213,8 @@
               <div><h2 class="text-lg font-bold text-text-strong">图片生成</h2><p class="mt-1 text-xs text-text-muted">图片供应商、凭证、模型能力与聊天模型完全独立。</p></div>
               <div class="flex gap-2"><UiButton variant="secondary" @click="emit('createProvider', 'image_generation')"><Plus class="h-4 w-4" />连接供应商</UiButton><UiButton @click="emit('createModel', 'image_generation')"><Plus class="h-4 w-4" />新建模型</UiButton></div>
             </div>
-            <div class="mt-4 grid gap-2 lg:grid-cols-[minmax(260px,1fr)_160px]">
+            <div class="mt-4 grid gap-2">
               <SimpleSearchBar v-model="imageKeyword" placeholder="搜索图片模型或供应商" />
-              <UiSelect v-model="providerScopeFilter" :options="scopeOptions" />
             </div>
           </header>
           <div class="grid min-h-0 flex-1 grid-rows-2 overflow-hidden">
@@ -359,10 +356,8 @@ const assistantTabs: Array<{ label: string; value: AssistantSettingsTab }> = [
   { label: '系统提示词', value: 'prompt' },
   { label: '代码规范', value: 'code-standards' },
 ]
-const chatKeyword = ref(''); const imageKeyword = ref(''); const modelProviderFilter = ref('all'); const modelScopeFilter = ref('all')
-const providerScopeFilter = ref('all')
+const chatKeyword = ref(''); const imageKeyword = ref(''); const modelProviderFilter = ref('all')
 const toolKeyword = ref(''); const toolGroupFilter = ref('all'); const toolRiskFilter = ref('all'); const toolEnabledFilter = ref('all')
-const scopeOptions = [{ label: '全部范围', value: 'all' }, { label: '个人', value: 'personal' }, { label: '全局', value: 'global' }]
 const toolRiskOptions = [{ label: '全部风险', value: 'all' }, { label: '系统', value: 'system' }, { label: '只读', value: 'read' }, { label: '写入', value: 'write' }, { label: '危险', value: 'danger' }]
 const toolEnabledOptions = [{ label: '全部状态', value: 'all' }, { label: '已启用', value: 'enabled' }, { label: '已关闭', value: 'disabled' }]
 
@@ -371,29 +366,27 @@ const contentSlot = computed(() => props.slots.find(slot => slot.slot === props.
 const assistantReady = computed(() => Boolean(contentSlot.value?.binding_ready))
 const allTools = computed(() => props.agent?.tool_groups.flatMap(group => group.tools) ?? [])
 const toolGroupOptions = computed(() => [{ label: '全部工具组', value: 'all' }, ...(props.agent?.tool_groups.map(group => ({ label: group.label, value: group.key })) ?? [])])
-const chatModels = computed(() => props.models.filter(item => (item.model_type ?? 'chat') === 'chat'))
-const imageModels = computed(() => props.models.filter(item => item.model_type === 'image_generation'))
+const chatModels = computed(() => props.models.filter(item => item.scope === 'personal' && (item.model_type ?? 'chat') === 'chat'))
+const imageModels = computed(() => props.models.filter(item => item.scope === 'personal' && item.model_type === 'image_generation'))
 const domainModels = computed(() => props.section === 'image' ? imageModels.value : chatModels.value)
 const domainProviders = computed(() => props.providerConfigs.filter(item => (
-  props.section === 'image' ? item.provider_type === 'image_generation' : (item.provider_type ?? 'chat') === 'chat'
+  item.scope === 'personal' && (props.section === 'image' ? item.provider_type === 'image_generation' : (item.provider_type ?? 'chat') === 'chat')
 )))
 const modelProviderOptions = computed(() => [{ label: '全部供应商配置', value: 'all' }, ...domainProviders.value.map(item => ({ label: item.name, value: String(item.id) }))])
 
-/** 根据管理栏关键字、类型、供应商和范围筛选模型。 */
+/** 根据管理栏关键字、类型和供应商筛选模型。 */
 const filteredModels = computed(() => domainModels.value.filter((item) => {
   const keyword = (props.section === 'image' ? imageKeyword.value : chatKeyword.value).trim().toLowerCase()
   const searchable = `${item.name} ${item.model_id} ${item.provider_config_name} ${item.provider_label}`.toLowerCase()
   return (!keyword || searchable.includes(keyword))
     && (modelProviderFilter.value === 'all' || item.provider_config_id === Number(modelProviderFilter.value))
-    && (modelScopeFilter.value === 'all' || item.scope === modelScopeFilter.value)
 }))
 
-/** 根据管理栏关键字、类型和范围筛选供应商。 */
+/** 根据管理栏关键字筛选供应商。 */
 const filteredProviders = computed(() => domainProviders.value.filter((item) => {
   const keyword = (props.section === 'image' ? imageKeyword.value : chatKeyword.value).trim().toLowerCase()
   const searchable = `${item.name} ${item.provider_label} ${item.provider_key}`.toLowerCase()
   return (!keyword || searchable.includes(keyword))
-    && (providerScopeFilter.value === 'all' || item.scope === providerScopeFilter.value)
 }))
 
 /** 根据目录元数据和草稿启用状态筛选助手工具。 */
@@ -434,8 +427,8 @@ function slotOptions(slot: string): SelectOption[] {
   return props.models.filter(item => item.status === 'active').filter(item => slot === 'image_generation' ? item.model_type === 'image_generation' : slot === 'image_understanding' ? (item.model_type ?? 'chat') === 'chat' && item.supports_image_input : (item.model_type ?? 'chat') === 'chat').map(item => ({ label: item.name, value: item.id, description: `${item.provider_config_name} / ${item.model_id}` }))
 }
 
-const providerDetailProps = computed(() => ({ form: props.providerForm, selectedProviderConfigId: props.selectedProviderConfigId, selectedProviderConfig: props.selectedProviderConfig, mode: props.providerMode, currentProvider: props.currentProviderForProviderForm, providerOptions: props.providerOptions, savingProviderConfig: props.savingProviderConfig, deletingProviderConfigId: props.deletingProviderConfigId, canCreateGlobal: props.canCreateGlobal, showPanelHeader: false, showPanelFooter: false, embeddedInDialog: true }))
-const modelDetailProps = computed(() => ({ form: props.modelForm, selectedConfigId: props.selectedConfigId, selectedModel: props.selectedModel, mode: props.modelMode, currentProvider: props.currentProvider, resolvedCapability: props.resolvedCapability ?? null, chatModelCatalog: props.chatModelCatalog, providerConfigOptions: props.providerConfigOptions, advancedConfigText: props.advancedConfigText, advancedConfigError: props.advancedConfigError, advancedConfigCollapsed: props.advancedConfigCollapsed, savingConfig: props.savingConfig, deletingConfigId: props.deletingConfigId, canCreateGlobal: props.canCreateGlobal, showPanelHeader: false, showPanelFooter: false, embeddedInDialog: true }))
+const providerDetailProps = computed(() => ({ form: props.providerForm, selectedProviderConfigId: props.selectedProviderConfigId, selectedProviderConfig: props.selectedProviderConfig, mode: props.providerMode, currentProvider: props.currentProviderForProviderForm, providerOptions: props.providerOptions, savingProviderConfig: props.savingProviderConfig, deletingProviderConfigId: props.deletingProviderConfigId, canCreateGlobal: false, showPanelHeader: false, showPanelFooter: false, embeddedInDialog: true }))
+const modelDetailProps = computed(() => ({ form: props.modelForm, selectedConfigId: props.selectedConfigId, selectedModel: props.selectedModel, mode: props.modelMode, currentProvider: props.currentProvider, resolvedCapability: props.resolvedCapability ?? null, chatModelCatalog: props.chatModelCatalog, providerConfigOptions: props.providerConfigOptions, advancedConfigText: props.advancedConfigText, advancedConfigError: props.advancedConfigError, advancedConfigCollapsed: props.advancedConfigCollapsed, savingConfig: props.savingConfig, deletingConfigId: props.deletingConfigId, canCreateGlobal: false, showPanelHeader: false, showPanelFooter: false, embeddedInDialog: true }))
 
 const providerDialogTitle = computed(() => props.providerMode === 'create' ? '新建供应商' : props.providerMode === 'edit' ? '编辑供应商' : props.selectedProviderConfig?.name ?? '供应商详情')
 const providerDialogDescription = computed(() => props.providerMode === 'detail' ? '查看供应商连接、范围和凭证状态。' : '配置供应商协议、服务地址和访问凭证。')

@@ -30,9 +30,14 @@
           <td class="truncate px-4 py-3 text-text-secondary">{{ config.provider_config_name }}</td>
           <td class="px-4 py-3 text-text-secondary">{{ config.model_type === 'image_generation' ? '图片生成' : 'Chat' }}</td>
           <td class="px-4 py-3">
-            <span class="rounded-full bg-surface-muted px-2 py-1 text-xs font-semibold text-text-secondary">
-              {{ config.scope === 'global' ? '全局' : '个人' }}
-            </span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="rounded-full bg-surface-muted px-2 py-1 text-xs font-semibold text-text-secondary">
+                {{ config.scope === 'global' ? '全局' : '个人' }}
+              </span>
+              <span v-if="defaultModelId === config.id" class="text-xs font-semibold text-success">
+                当前默认
+              </span>
+            </div>
           </td>
           <td class="px-4 py-3 text-xs text-text-muted">{{ capabilityLabel(config) }}</td>
           <td class="px-4 py-3 text-right" @click.stop>
@@ -52,7 +57,10 @@
 import { UiButton } from '@/components/ui'
 import type { LlmConfigItem } from '@/types/api'
 
-defineProps<{ items: LlmConfigItem[] }>()
+defineProps<{
+  items: LlmConfigItem[]
+  defaultModelId?: number | null
+}>()
 
 const emit = defineEmits<{
   view: [config: LlmConfigItem]

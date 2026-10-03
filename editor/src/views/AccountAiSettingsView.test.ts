@@ -315,8 +315,14 @@ describe('AccountAiSettingsView', () => {
       last_error: null,
       syncing: false,
     })
-    listLlmProviderConfigsMock.mockResolvedValue([createProviderConfigItem()])
-    listLlmConfigsMock.mockResolvedValue([createLlmConfigItem()])
+    listLlmProviderConfigsMock.mockResolvedValue([
+      createProviderConfigItem(),
+      createProviderConfigItem({ id: 99, name: '全局公共供应商', scope: 'global' }),
+    ])
+    listLlmConfigsMock.mockResolvedValue([
+      createLlmConfigItem(),
+      createLlmConfigItem({ id: 999, name: '全局公共模型', scope: 'global', model_id: 'claude-3-5' }),
+    ])
     listLlmSlotsMock.mockResolvedValue([
       {
         slot: 'agent_coordinator',
@@ -464,6 +470,7 @@ describe('AccountAiSettingsView', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: '聊天模型' })).toBeTruthy())
     expect(screen.getByRole('columnheader', { name: '模型 ID' })).toBeTruthy()
     expect(screen.getByRole('row', { name: /总控模型.*gpt-4.1-mini/ })).toBeTruthy()
+    expect(screen.queryByText('全局公共模型')).toBeNull()
 
     await fireEvent.click(screen.getByRole('button', { name: '新建模型' }))
     expect(await screen.findByRole('heading', { name: '新建模型' })).toBeTruthy()
@@ -477,6 +484,7 @@ describe('AccountAiSettingsView', () => {
     expect(screen.getByLabelText(/^模型名称/)).toBeTruthy()
     expect(screen.getByText('Models.dev 模型')).toBeTruthy()
     expect(screen.getByText('配置域')).toBeTruthy()
+    expect(screen.queryByText('配置范围')).toBeNull()
     expect(screen.queryByText('全部模型类型')).toBeNull()
     expect(screen.queryByText('平台会自动预留 20% 输出空间')).toBeNull()
     expect(screen.getByText(/能力默认来自 Models\.dev/)).toBeTruthy()
@@ -490,10 +498,12 @@ describe('AccountAiSettingsView', () => {
     await fireEvent.click(getDesktopNavigationButton(/聊天模型/))
     await waitFor(() => expect(screen.getByRole('heading', { name: '聊天模型' })).toBeTruthy())
     expect(screen.getByRole('columnheader', { name: '连接状态' })).toBeTruthy()
+    expect(screen.queryByText('全局公共供应商')).toBeNull()
 
     await fireEvent.click(screen.getByRole('button', { name: '连接供应商' }))
     expect(await screen.findByRole('heading', { name: '新建供应商' })).toBeTruthy()
     expect(screen.getByText('配置供应商协议、服务地址和访问凭证。')).toBeTruthy()
+    expect(screen.queryByText('配置范围')).toBeNull()
     expect(screen.getByRole('button', { name: '关闭新建供应商' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '创建供应商' })).toBeTruthy()

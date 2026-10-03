@@ -197,77 +197,205 @@
             </div>
           </div>
 
-          <!-- 全局模型与供应商概要 -->
+          <!-- 全局公共模型管理 -->
           <div class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-4">
             <div class="flex items-center justify-between border-b border-border-muted pb-3">
               <div>
-                <h3 class="text-base font-semibold text-text">全局公共模型与凭据</h3>
-                <p class="mt-0.5 text-xs text-text-muted">共 {{ globalModels.length }} 个全局模型，{{ globalProviders.length }} 个全局供应商凭证。</p>
+                <h3 class="text-base font-semibold text-text">全局公共模型</h3>
+                <p class="mt-0.5 text-xs text-text-muted">共 {{ globalModels.length }} 个全局模型。供全平台用户使用或继承为默认模型。</p>
               </div>
-              <UiButton variant="secondary" size="sm" @click="navigateToAccountAi">
-                前往完整配置工作台
+              <UiButton variant="primary" size="sm" @click="openModelCreateDialog('chat')">
+                <Plus class="h-3.5 w-3.5" />
+                <span>新建全局模型</span>
               </UiButton>
             </div>
 
             <div v-if="globalModels.length === 0" class="py-8 text-center text-sm text-text-muted">
-              暂无全局公共模型。可在 AI 配置工作台添加 scope 为 global 的模型与供应商。
+              暂无全局公共模型。点击右上角新建。
             </div>
-            <div v-else class="divide-y divide-border-muted">
-              <div v-for="model in globalModels" :key="model.id" class="flex items-center justify-between py-3 text-sm">
-                <div>
-                  <div class="font-medium text-text">{{ model.name }}</div>
-                  <div class="text-xs font-mono text-text-muted">{{ model.model_id }} ({{ model.provider_key }})</div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <UiBadge tone="accent">Global</UiBadge>
-                  <span v-if="globalSlotBinding?.llm_config_id === model.id" class="text-xs font-semibold text-success">
-                    当前默认
-                  </span>
-                </div>
+            <AccountAiModelTable
+              v-else
+              :items="globalModels"
+              :default-model-id="globalSlotBinding?.llm_config_id"
+              @view="handleViewModel"
+              @edit="handleStartEditModel"
+              @delete="handleDeleteModel"
+            />
+          </div>
+
+          <!-- 全局供应商凭据管理 -->
+          <div class="rounded-xl border border-border bg-surface p-6 shadow-xs space-y-4">
+            <div class="flex items-center justify-between border-b border-border-muted pb-3">
+              <div>
+                <h3 class="text-base font-semibold text-text">全局供应商凭据</h3>
+                <p class="mt-0.5 text-xs text-text-muted">共 {{ globalProviders.length }} 个全局供应商凭证。配置平台级 API Key 与 Base URL。</p>
               </div>
+              <UiButton variant="secondary" size="sm" @click="openProviderCreateDialog('chat')">
+                <Plus class="h-3.5 w-3.5" />
+                <span>连接全局供应商</span>
+              </UiButton>
             </div>
+
+            <div v-if="globalProviders.length === 0" class="py-8 text-center text-sm text-text-muted">
+              暂无全局供应商凭据。点击右上角连接。
+            </div>
+            <AccountAiProviderTable
+              v-else
+              :items="globalProviders"
+              @view="handleViewProvider"
+              @edit="handleStartEditProvider"
+              @delete="handleDeleteProvider"
+            />
           </div>
         </div>
       </template>
     </UiTabs>
+
+    <!-- 全局供应商弹窗 -->
+    <UiDialog
+      :open="providerDialogOpen"
+      :title="providerDialogTitle"
+      :description="providerDialogDescription"
+      size="standard"
+      @update:open="providerDialogOpen = $event"
+    >
+      <template #header-extra>
+        <div v-if="providerMode === 'detail'" class="flex items-center gap-1.5">
+          <UiButton variant="ghost" size="sm" @click="providerMode = 'edit'">编辑</UiButton>
+          <UiButton variant="danger" size="sm" :loading="deletingProviderConfigId === selectedProviderConfig?.id" @click="selectedProviderConfig && handleDeleteProvider(selectedProviderConfig)">删除</UiButton>
+        </div>
+      </template>
+      <AccountAiProviderDetail
+        :form="providerForm"
+        :selected-provider-config-id="selectedProviderConfigId"
+        :selected-provider-config="selectedProviderConfig"
+        :mode="providerMode"
+        :current-provider="currentProviderForProviderForm"
+        :provider-options="providerOptions"
+        :saving-provider-config="savingProviderConfig"
+        :deleting-provider-config-id="deletingProviderConfigId"
+        :can-create-global="false"
+        :show-panel-header="false"
+        :show-panel-footer="false"
+        :embedded-in-dialog="true"
+        @cancel="providerMode === 'edit' && selectedProviderConfig ? handleViewProvider(selectedProviderConfig) : (providerDialogOpen = false)"
+        @edit="providerMode = 'edit'"
+        @delete-provider="handleDeleteProvider"
+        @submit="handleSubmitProvider"
+      />
+      <template #footer>
+        <UiButton v-if="providerMode === 'detail'" variant="ghost" size="sm" @click="providerDialogOpen = false">关闭</UiButton>
+        <UiButton v-else variant="ghost" size="sm" :disabled="savingProviderConfig" @click="providerMode === 'edit' && selectedProviderConfig ? handleViewProvider(selectedProviderConfig) : (providerDialogOpen = false)">取消</UiButton>
+        <UiButton v-if="providerMode !== 'detail'" size="sm" :loading="savingProviderConfig" :disabled="!providerCanSubmit" @click="handleSubmitProvider">{{ providerMode === 'edit' ? '保存供应商' : '创建供应商' }}</UiButton>
+      </template>
+    </UiDialog>
+
+    <!-- 全局模型弹窗 -->
+    <UiDialog
+      :open="modelDialogOpen"
+      :title="modelDialogTitle"
+      :description="modelDialogDescription"
+      size="wide"
+      @update:open="modelDialogOpen = $event"
+    >
+      <template #header-extra>
+        <div v-if="modelMode === 'detail'" class="flex items-center gap-1.5">
+          <UiButton variant="ghost" size="sm" @click="modelMode = 'edit'">编辑</UiButton>
+          <UiButton variant="danger" size="sm" :loading="deletingConfigId === selectedModel?.id" @click="selectedModel && handleDeleteModel(selectedModel)">删除</UiButton>
+        </div>
+      </template>
+      <AccountAiModelDetail
+        :form="modelForm"
+        :selected-config-id="selectedConfigId"
+        :selected-model="selectedModel"
+        :mode="modelMode"
+        :current-provider="currentProvider"
+        :resolved-capability="resolvedCapability ?? null"
+        :chat-model-catalog="chatModelCatalog ?? []"
+        :provider-config-options="providerConfigOptions"
+        :advanced-config-text="advancedConfigText"
+        :advanced-config-error="advancedConfigError"
+        :advanced-config-collapsed="advancedConfigCollapsed"
+        :saving-config="savingConfig"
+        :deleting-config-id="deletingConfigId"
+        :can-create-global="false"
+        :show-panel-header="false"
+        :show-panel-footer="false"
+        :embedded-in-dialog="true"
+        @update:advanced-config-text="advancedConfigText = $event"
+        @update:advanced-config-collapsed="advancedConfigCollapsed = $event"
+        @cancel="modelMode === 'edit' && selectedModel ? handleViewModel(selectedModel) : (modelDialogOpen = false)"
+        @edit="modelMode = 'edit'"
+        @delete-model="handleDeleteModel"
+        @format-advanced="handleFormatAdvancedConfig"
+        @submit="handleSubmitModel"
+      />
+      <template #footer>
+        <UiButton v-if="modelMode === 'detail'" variant="ghost" size="sm" @click="modelDialogOpen = false">关闭</UiButton>
+        <UiButton v-else variant="ghost" size="sm" :disabled="savingConfig" @click="modelMode === 'edit' && selectedModel ? handleViewModel(selectedModel) : (modelDialogOpen = false)">取消</UiButton>
+        <UiButton v-if="modelMode !== 'detail'" size="sm" :loading="savingConfig" :disabled="!modelCanSubmit" @click="handleSubmitModel">{{ modelMode === 'edit' ? '保存模型' : '创建模型' }}</UiButton>
+      </template>
+    </UiDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useQueryClient } from '@tanstack/vue-query'
-import { useRoute, useRouter } from 'vue-router'
-import { RotateCw, Save } from '@lucide/vue'
+import { Plus, RotateCw, Save } from '@lucide/vue'
 
 import { ADMIN_SETTINGS_QUERY_KEY, fetchAdminSettings, updateAdminSettings } from '@/api/adminSettings'
 import {
   getModelCatalogSyncState,
   listLlmConfigs,
   listLlmProviderConfigs,
+  listLlmProviders,
+  listChatCatalogModels,
   getChatSlotBinding,
   refreshModelCatalog,
   updateLlmSlotBinding,
+  createLlmProviderConfig,
+  updateLlmProviderConfig,
+  deleteLlmProviderConfig,
+  createLlmConfig,
+  updateLlmConfig,
+  deleteLlmConfig,
+  resolveLlmModelCapability,
+  type LlmConfigUpdatePayload,
+  type LlmProviderConfigUpdatePayload,
   type ModelCatalogSyncState,
 } from '@/api/llm'
+import type { ChatModelCatalogItem } from '@/api/model-config'
 import { getErrorMessage } from '@/api/http'
 import SettingsPageHeader from '@/components/layout/SettingsPageHeader.vue'
 import {
   UiBadge,
   UiButton,
   UiCheckbox,
+  UiDialog,
   UiFormField,
   UiInput,
   UiSelect,
   UiTabs,
 } from '@/components/ui'
 import type { SelectOption } from '@/components/ui/select'
-import type { LlmConfigItem, LlmProviderConfigItem, LlmSlotBindingItem, SystemSettingItem } from '@/types/api'
-import { Message } from '@/utils/message'
+import type {
+  AiLlmConfigScope,
+  AiModelType,
+  LlmConfigItem,
+  LlmModelCapabilityItem,
+  LlmProviderCatalogItem,
+  LlmProviderConfigItem,
+  LlmSlotBindingItem,
+  SystemSettingItem,
+} from '@/types/api'
+import AccountAiModelTable from '@/components/account-ai/AccountAiModelTable.vue'
+import AccountAiProviderTable from '@/components/account-ai/AccountAiProviderTable.vue'
+import AccountAiModelDetail from '@/components/account-ai/AccountAiModelDetail.vue'
+import AccountAiProviderDetail from '@/components/account-ai/AccountAiProviderDetail.vue'
+import { Message, createConfirm } from '@/utils/message'
 import { formatDateTimeInAppTimezone } from '@/utils/timezone'
-import { resolveGlobalReturnPath } from '@/utils/global-page-navigation'
 
-const router = useRouter()
-const route = useRoute()
 const queryClient = useQueryClient()
 const activeTab = ref('runtime')
 const loading = ref(false)
@@ -280,9 +408,47 @@ const settingsItems = ref<SystemSettingItem[]>([])
 const catalogSyncState = ref<ModelCatalogSyncState | null>(null)
 const globalModels = ref<LlmConfigItem[]>([])
 const globalProviders = ref<LlmProviderConfigItem[]>([])
+const llmProviders = ref<LlmProviderCatalogItem[]>([])
 const globalSlotBinding = ref<LlmSlotBindingItem | null>(null)
 const initialGlobalSlotModelId = ref<number | null>(null)
 const globalSlotModelId = ref<number | null>(null)
+
+// 供应商弹窗状态
+const providerDialogOpen = ref(false)
+const providerMode = ref<'create' | 'edit' | 'detail'>('create')
+const selectedProviderConfigId = ref<number | null>(null)
+const savingProviderConfig = ref(false)
+const deletingProviderConfigId = ref<number | null>(null)
+
+const providerForm = reactive({
+  scope: 'global' as AiLlmConfigScope,
+  name: '',
+  provider_key: null as string | null,
+  base_url: '',
+  api_key: '',
+})
+
+// 模型弹窗状态
+const modelDialogOpen = ref(false)
+const modelMode = ref<'create' | 'edit' | 'detail'>('create')
+const selectedConfigId = ref<number | null>(null)
+const savingConfig = ref(false)
+const deletingConfigId = ref<number | null>(null)
+const advancedConfigText = ref('{}')
+const advancedConfigError = ref('')
+const advancedConfigCollapsed = ref(true)
+const chatModelCatalog = ref<ChatModelCatalogItem[]>([])
+const resolvedCapability = ref<LlmModelCapabilityItem | null>(null)
+
+const modelForm = reactive({
+  scope: 'global' as AiLlmConfigScope,
+  name: '',
+  provider_config_id: null as number | null,
+  model_id: '',
+  model_type: 'chat' as AiModelType,
+  supports_image_input: false,
+  context_window_tokens: 128_000,
+})
 
 const systemSettingsForm = reactive<Record<string, any>>({
   ai_enabled: true,
@@ -326,6 +492,393 @@ const isDirty = computed(() => {
 
 const isSlotDirty = computed(() => loaded.value && globalSlotModelId.value !== initialGlobalSlotModelId.value)
 
+const selectedProviderConfig = computed<LlmProviderConfigItem | null>(() => (
+  globalProviders.value.find(p => p.id === selectedProviderConfigId.value) ?? null
+))
+
+const currentProviderForProviderForm = computed<LlmProviderCatalogItem | null>(() => (
+  llmProviders.value.find(p => p.provider_key === providerForm.provider_key) ?? null
+))
+
+const providerOptions = computed<SelectOption[]>(() => (
+  llmProviders.value.map(provider => ({
+    label: provider.label,
+    value: provider.provider_key,
+    description: getCatalogProviderType(provider) === 'image_generation'
+      ? `图片生成供应商${provider.default_image_generation_model_id ? ` · ${provider.default_image_generation_model_id}` : ''}`
+      : provider.provider_adapter === 'openai_compatible_chat'
+        ? '推理能力由具体模型决定 · 标准 effort 按 Models.dev 开放'
+        : '推理能力由具体模型决定 · 支持显式参数控制',
+    keywords: [provider.provider_key, provider.provider_adapter],
+  }))
+))
+
+const providerCanSubmit = computed(() => Boolean(
+  providerForm.name.trim()
+  && providerForm.provider_key
+  && (!currentProviderForProviderForm.value?.requires_base_url || providerForm.base_url.trim())
+))
+
+const providerDialogTitle = computed(() => {
+  if (providerMode.value === 'create') return '新建全局供应商'
+  if (providerMode.value === 'edit') return '编辑全局供应商'
+  return selectedProviderConfig.value?.name ?? '全局供应商详情'
+})
+
+const providerDialogDescription = computed(() => {
+  if (providerMode.value === 'detail') return '查看全局供应商连接与凭证状态。'
+  return '配置全局供应商协议、服务地址和访问凭证，供全平台模型使用。'
+})
+
+const selectedModel = computed<LlmConfigItem | null>(() => (
+  globalModels.value.find(m => m.id === selectedConfigId.value) ?? null
+))
+
+const selectedModelProviderConfig = computed<LlmProviderConfigItem | null>(() => (
+  globalProviders.value.find(item => item.id === modelForm.provider_config_id) ?? null
+))
+
+const currentProvider = computed<LlmProviderCatalogItem | null>(() => (
+  llmProviders.value.find(p => p.provider_key === selectedModelProviderConfig.value?.provider_key) ?? null
+))
+
+const providerConfigOptions = computed<SelectOption[]>(() => (
+  globalProviders.value
+    .filter(config => getProviderConfigType(config) === modelForm.model_type)
+    .filter(config => config.status === 'active' || config.id === modelForm.provider_config_id)
+    .map(config => ({
+      label: config.name,
+      value: config.id,
+      description: `全局供应商 · ${config.provider_label}${config.status === 'active' ? '' : ' · 不可用'}`,
+      keywords: [config.provider_key, config.provider_label, config.base_url ?? ''],
+    }))
+))
+
+const modelCanSubmit = computed(() => Boolean(
+  modelForm.name.trim()
+  && modelForm.provider_config_id
+  && modelForm.model_id.trim()
+  && (!currentProvider.value || (currentProvider.value.supported_model_types ?? ['chat']).includes(modelForm.model_type))
+))
+
+const modelDialogTitle = computed(() => {
+  if (modelMode.value === 'create') return '新建全局模型'
+  if (modelMode.value === 'edit') return '编辑全局模型'
+  return selectedModel.value?.name ?? '全局模型详情'
+})
+
+const modelDialogDescription = computed(() => {
+  if (modelMode.value === 'detail') return '查看全局模型能力与配置。'
+  return '配置全局模型能力与高级参数，供全平台使用或作为默认槽位。'
+})
+
+function getCatalogProviderType(provider: LlmProviderCatalogItem | null | undefined): AiModelType {
+  if (provider?.provider_type) return provider.provider_type
+  return (provider?.supported_model_types ?? ['chat']).includes('chat') ? 'chat' : 'image_generation'
+}
+
+function findProviderForConfig(config: LlmProviderConfigItem | null | undefined): LlmProviderCatalogItem | null {
+  if (!config) return null
+  return llmProviders.value.find(item => item.provider_key === config.provider_key) ?? null
+}
+
+function getProviderConfigType(config: LlmProviderConfigItem): AiModelType {
+  return config.provider_type ?? getCatalogProviderType(findProviderForConfig(config))
+}
+
+watch(
+  () => [selectedModelProviderConfig.value?.provider_key, modelDialogOpen.value] as const,
+  async ([providerKey, isOpen]) => {
+    if (!isOpen || !providerKey) {
+      chatModelCatalog.value = []
+      return
+    }
+    try {
+      chatModelCatalog.value = await listChatCatalogModels(providerKey)
+    } catch {
+      chatModelCatalog.value = []
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [modelForm.provider_config_id, modelForm.model_id, modelForm.model_type] as const,
+  async ([providerConfigId, modelId, modelType]) => {
+    if (modelType !== 'chat' || !providerConfigId || !modelId?.trim()) {
+      resolvedCapability.value = null
+      return
+    }
+    try {
+      const capability = await resolveLlmModelCapability(providerConfigId, modelId.trim())
+      resolvedCapability.value = capability
+      if (modelMode.value === 'create') {
+        modelForm.supports_image_input = capability.supports_image_input
+      }
+    } catch {
+      resolvedCapability.value = null
+    }
+  },
+  { immediate: true },
+)
+
+function parseAdvancedConfig(): Record<string, unknown> {
+  const trimmed = advancedConfigText.value.trim()
+  if (!trimmed) return {}
+  const parsed = JSON.parse(trimmed)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('高级配置必须为 JSON 对象。')
+  }
+  return parsed as Record<string, unknown>
+}
+
+function handleFormatAdvancedConfig() {
+  try {
+    advancedConfigText.value = JSON.stringify(parseAdvancedConfig(), null, 2)
+    advancedConfigError.value = ''
+  } catch (error) {
+    advancedConfigError.value = getErrorMessage(error, '高级配置 JSON 格式不合法')
+  }
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function openProviderCreateDialog(modelType: AiModelType = 'chat') {
+  providerMode.value = 'create'
+  selectedProviderConfigId.value = null
+  providerForm.scope = 'global'
+  providerForm.name = ''
+  const matchingProviders = llmProviders.value.filter(item => getCatalogProviderType(item) === modelType)
+  const provider = matchingProviders.find(p => p.provider_key === 'deepseek') ?? matchingProviders[0]
+  providerForm.provider_key = provider?.provider_key ?? null
+  providerForm.base_url = provider?.supports_base_url ? provider.default_base_url ?? '' : ''
+  providerForm.api_key = ''
+  providerDialogOpen.value = true
+}
+
+function handleViewProvider(config: LlmProviderConfigItem) {
+  providerMode.value = 'detail'
+  selectedProviderConfigId.value = config.id
+  providerForm.scope = 'global'
+  providerForm.name = config.name
+  providerForm.provider_key = config.provider_key
+  providerForm.base_url = config.base_url ?? ''
+  providerForm.api_key = ''
+  providerDialogOpen.value = true
+}
+
+function handleStartEditProvider(config?: LlmProviderConfigItem) {
+  if (config) {
+    handleViewProvider(config)
+  }
+  providerMode.value = 'edit'
+  providerDialogOpen.value = true
+}
+
+async function handleSubmitProvider() {
+  const providerKey = providerForm.provider_key
+  const provider = currentProviderForProviderForm.value
+  if (!providerForm.name.trim() || !providerKey) {
+    Message.error('请填写供应商配置名称并选择供应商。')
+    return
+  }
+  const baseUrl = providerForm.base_url.trim() || null
+  const apiKey = providerForm.api_key.trim() || null
+  if (provider?.requires_base_url && !baseUrl) {
+    Message.error('当前供应商必须填写 Base URL。')
+    return
+  }
+
+  savingProviderConfig.value = true
+  try {
+    if (selectedProviderConfigId.value) {
+      const updatePayload: LlmProviderConfigUpdatePayload = {
+        name: providerForm.name.trim(),
+        base_url: baseUrl,
+      }
+      if (apiKey) {
+        updatePayload.api_key = apiKey
+      }
+      const updated = await updateLlmProviderConfig(selectedProviderConfigId.value, updatePayload)
+      globalProviders.value = globalProviders.value.map(p => p.id === updated.id ? updated : p)
+      handleViewProvider(updated)
+      Message.success('全局供应商已更新。')
+    } else {
+      const created = await createLlmProviderConfig({
+        name: providerForm.name.trim(),
+        scope: 'global',
+        provider_key: providerKey,
+        provider_type: getCatalogProviderType(provider),
+        base_url: baseUrl,
+        api_key: apiKey,
+      })
+      globalProviders.value = [created, ...globalProviders.value.filter(p => p.id !== created.id)]
+      handleViewProvider(created)
+      Message.success('全局供应商已创建。')
+    }
+    await queryClient.invalidateQueries({ queryKey: ['llm-provider-configs'] })
+  } catch (error) {
+    Message.error(getErrorMessage(error, '保存全局供应商失败。'))
+  } finally {
+    savingProviderConfig.value = false
+  }
+}
+
+async function handleDeleteProvider(config: LlmProviderConfigItem) {
+  const confirmed = await createConfirm(
+    `确认删除全局供应商「${config.name}」吗？删除前必须先删除所有关联模型。`,
+    '删除全局供应商',
+  )
+  if (!confirmed) return
+
+  deletingProviderConfigId.value = config.id
+  try {
+    await deleteLlmProviderConfig(config.id)
+    globalProviders.value = globalProviders.value.filter(item => item.id !== config.id)
+    if (selectedProviderConfigId.value === config.id) {
+      selectedProviderConfigId.value = null
+      providerDialogOpen.value = false
+    }
+    Message.success('全局供应商已删除。')
+    await queryClient.invalidateQueries({ queryKey: ['llm-provider-configs'] })
+  } catch (error) {
+    Message.error(getErrorMessage(error, '删除全局供应商失败。'))
+  } finally {
+    deletingProviderConfigId.value = null
+  }
+}
+
+function openModelCreateDialog(modelType: AiModelType = 'chat') {
+  modelMode.value = 'create'
+  selectedConfigId.value = null
+  modelForm.scope = 'global'
+  modelForm.model_type = modelType
+  modelForm.name = ''
+  const providerConfig = globalProviders.value.find(p => getProviderConfigType(p) === modelType)
+  modelForm.provider_config_id = providerConfig?.id ?? null
+  const provider = findProviderForConfig(providerConfig)
+  modelForm.model_id = modelType === 'image_generation'
+    ? provider?.default_image_generation_model_id ?? ''
+    : provider?.default_model_id ?? ''
+  modelForm.supports_image_input = Boolean(provider?.default_supports_image_input)
+  modelForm.context_window_tokens = 128_000
+  advancedConfigText.value = '{}'
+  advancedConfigError.value = ''
+  advancedConfigCollapsed.value = true
+  modelDialogOpen.value = true
+}
+
+function handleViewModel(config: LlmConfigItem) {
+  modelMode.value = 'detail'
+  selectedConfigId.value = config.id
+  modelForm.scope = 'global'
+  modelForm.name = config.name
+  modelForm.provider_config_id = config.provider_config_id
+  modelForm.model_type = config.model_type ?? 'chat'
+  modelForm.model_id = config.model_id
+  modelForm.supports_image_input = config.supports_image_input
+  modelForm.context_window_tokens = config.context_window_tokens
+  advancedConfigText.value = JSON.stringify(config.advanced_config_json ?? {}, null, 2)
+  advancedConfigError.value = ''
+  advancedConfigCollapsed.value = true
+  modelDialogOpen.value = true
+}
+
+function handleStartEditModel(config?: LlmConfigItem) {
+  if (config) {
+    handleViewModel(config)
+  }
+  modelMode.value = 'edit'
+  modelDialogOpen.value = true
+}
+
+async function handleSubmitModel() {
+  const providerConfigId = modelForm.provider_config_id
+  if (!modelForm.name.trim() || !providerConfigId || !modelForm.model_id.trim()) {
+    Message.error('请先填写模型名称、供应商配置和模型 ID。')
+    return
+  }
+
+  let advancedConfig: Record<string, unknown>
+  try {
+    advancedConfig = parseAdvancedConfig()
+  } catch {
+    Message.error('高级 JSON 配置不合法。')
+    return
+  }
+
+  const contextWindowTokens = normalizePositiveInteger(modelForm.context_window_tokens, 128_000)
+
+  savingConfig.value = true
+  try {
+    if (selectedConfigId.value) {
+      const updatePayload: LlmConfigUpdatePayload = {
+        name: modelForm.name.trim(),
+        provider_config_id: providerConfigId,
+        model_id: modelForm.model_id.trim(),
+        model_type: modelForm.model_type,
+        supports_image_input: modelForm.supports_image_input,
+        context_window_tokens: contextWindowTokens,
+        advanced_config_json: advancedConfig,
+      }
+      const updated = await updateLlmConfig(selectedConfigId.value, updatePayload)
+      globalModels.value = globalModels.value.map(m => m.id === updated.id ? updated : m)
+      handleViewModel(updated)
+      Message.success('全局模型已更新。')
+    } else {
+      const created = await createLlmConfig({
+        name: modelForm.name.trim(),
+        scope: 'global',
+        provider_config_id: providerConfigId,
+        model_id: modelForm.model_id.trim(),
+        model_type: modelForm.model_type,
+        supports_image_input: modelForm.supports_image_input,
+        context_window_tokens: contextWindowTokens,
+        advanced_config_json: advancedConfig,
+      })
+      globalModels.value = [created, ...globalModels.value.filter(m => m.id !== created.id)]
+      handleViewModel(created)
+      Message.success('全局模型已创建。')
+    }
+    await queryClient.invalidateQueries({ queryKey: ['llm-configs'] })
+  } catch (error) {
+    Message.error(getErrorMessage(error, '保存全局模型失败。'))
+  } finally {
+    savingConfig.value = false
+  }
+}
+
+async function handleDeleteModel(config: LlmConfigItem) {
+  const confirmed = await createConfirm(
+    `确认删除全局模型「${config.name}」吗？删除后已关联会话无法继续发起运行，相关全局默认槽位会自动解除。`,
+    '删除全局模型',
+  )
+  if (!confirmed) return
+
+  deletingConfigId.value = config.id
+  try {
+    await deleteLlmConfig(config.id)
+    globalModels.value = globalModels.value.filter(item => item.id !== config.id)
+    if (selectedConfigId.value === config.id) {
+      selectedConfigId.value = null
+      modelDialogOpen.value = false
+    }
+    if (globalSlotModelId.value === config.id) {
+      globalSlotModelId.value = 0
+      initialGlobalSlotModelId.value = 0
+    }
+    Message.success('全局模型已删除。')
+    await queryClient.invalidateQueries({ queryKey: ['llm-configs'] })
+  } catch (error) {
+    Message.error(getErrorMessage(error, '删除全局模型失败。'))
+  } finally {
+    deletingConfigId.value = null
+  }
+}
+
 /** 未取得快照时保持只读，环境变量覆盖项由部署配置管理。 */
 function isKeyDisabled(key: string): boolean {
   const item = settingsItems.value.find(s => s.key === key)
@@ -350,16 +903,18 @@ function formatTimestamp(ts: string | null | undefined): string {
 async function loadData(): Promise<void> {
   loading.value = true
   try {
-    const [settingsRes, catalogRes, allModels, allProviders, coordinatorSlot] = await Promise.all([
+    const [settingsRes, catalogRes, allModels, allProviders, coordinatorSlot, catalogProviders] = await Promise.all([
       fetchAdminSettings(),
       getModelCatalogSyncState(),
       listLlmConfigs(),
       listLlmProviderConfigs(),
       getChatSlotBinding('agent_coordinator', 'global'),
+      listLlmProviders(),
     ])
 
     applySettingsSnapshot(settingsRes)
     catalogSyncState.value = catalogRes
+    llmProviders.value = catalogProviders
 
     // 过滤 global scope 的模型与凭据
     globalModels.value = allModels.filter(m => m.scope === 'global')
@@ -441,12 +996,6 @@ async function handleSyncCatalog(): Promise<void> {
   } finally {
     syncingCatalog.value = false
   }
-}
-
-/** 进入配置工作台时保留工作空间来源，以便完成配置后返回。 */
-function navigateToAccountAi(): void {
-  const returnTo = resolveGlobalReturnPath(route.query.returnTo)
-  void router.push({ name: 'accountAiSettings', query: returnTo ? { returnTo } : {} })
 }
 
 onMounted(() => {

@@ -34,7 +34,7 @@
     :provider-options="providerOptions"
     :saving-provider-config="savingProviderConfig"
     :deleting-provider-config-id="deletingProviderConfigId"
-    :can-create-global="canCreateGlobal"
+    :can-create-global="false"
     :model-dialog-open="modelDialogOpen"
     :model-mode="modelPanelMode"
     :model-form="modelForm"
@@ -125,7 +125,6 @@ import { getErrorMessage } from '@/api/http'
 import AccountAiSettingsWorkbench from '@/components/account-ai/AccountAiSettingsWorkbench.vue'
 import type { AiSettingsSection, AssistantSettingsTab } from '@/components/account-ai/account-ai-settings-types'
 import type { SelectOption } from '@/components/ui/select'
-import { useAuthStore } from '@/stores/auth'
 import type {
   AiLlmConfigScope,
   AiModelType,
@@ -171,7 +170,6 @@ interface ToolDraft {
 }
 
 const queryClient = useQueryClient()
-const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const activeSection = ref<ActiveSection>('agents')
@@ -257,8 +255,6 @@ const agentConfigsQuery = useQuery({
   queryKey: ['agent-configs'],
   queryFn: listAgentConfigs,
 })
-
-const canCreateGlobal = computed(() => authStore.user?.role === 'platform_admin')
 
 const selectedAgentConfig = computed<AgentConfigItem | null>(() => (
   agentConfigsQuery.data.value?.find(item => item.id === selectedAgentId.value)
@@ -1251,7 +1247,7 @@ async function handleSubmitProviderConfig() {
     } else {
       const createdProviderConfig = await createLlmProviderConfig({
         name: providerForm.name.trim(),
-        scope: providerForm.scope,
+        scope: 'personal',
         provider_key: providerKey,
         provider_type: getCatalogProviderType(provider),
         base_url: baseUrl,
@@ -1315,7 +1311,7 @@ async function handleSubmitModel() {
     } else {
       const createdConfig = await createLlmConfig({
         name: modelForm.name.trim(),
-        scope: modelForm.scope,
+        scope: 'personal',
         provider_config_id: providerConfigId,
         model_id: modelForm.model_id.trim(),
         model_type: modelForm.model_type,

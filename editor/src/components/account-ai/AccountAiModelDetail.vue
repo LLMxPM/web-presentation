@@ -23,11 +23,11 @@
         <div><dt class="text-xs font-semibold text-text-disabled">模型类型</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.model_type === 'image_generation' ? '图片生成模型' : '聊天 / 图片理解模型' }}</dd></div>
         <div><dt class="text-xs font-semibold text-text-disabled">供应商配置</dt><dd class="mt-1 font-semibold text-text-strong">{{ selectedModel.provider_config_name }}</dd></div>
         <div><dt class="text-xs font-semibold text-text-disabled">模型 ID</dt><dd class="mt-1 break-all font-mono text-text-emphasis">{{ selectedModel.model_id }}</dd></div>
-        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">平台可用输入窗口</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.context_window_tokens.toLocaleString() }} tokens</dd></div>
-        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">模型最低总上下文</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.required_model_context_tokens.toLocaleString() }} tokens</dd></div>
-        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">压缩触发 / 摘要目标</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.compression_trigger_tokens.toLocaleString() }} / {{ selectedModel.compression_target_tokens.toLocaleString() }} tokens</dd></div>
-        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">能力来源</dt><dd class="mt-1 text-text-emphasis">{{ capabilitySourceLabel(selectedModel.capability_source, selectedModel.capability_verified) }}</dd></div>
-        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">推理能力</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.model_capability_json.supports_reasoning ? '支持' : '未声明支持' }}</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">平台可用输入窗口</dt><dd class="mt-1 text-text-emphasis">{{ (selectedModel.context_window_tokens ?? 0).toLocaleString() }} tokens</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">模型最低总上下文</dt><dd class="mt-1 text-text-emphasis">{{ (selectedModel.required_model_context_tokens ?? 0).toLocaleString() }} tokens</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">压缩触发 / 摘要目标</dt><dd class="mt-1 text-text-emphasis">{{ (selectedModel.compression_trigger_tokens ?? 0).toLocaleString() }} / {{ (selectedModel.compression_target_tokens ?? 0).toLocaleString() }} tokens</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">能力来源</dt><dd class="mt-1 text-text-emphasis">{{ capabilitySourceLabel(selectedModel.capability_source ?? '', selectedModel.capability_verified ?? false) }}</dd></div>
+        <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">推理能力</dt><dd class="mt-1 text-text-emphasis">{{ selectedModel.model_capability_json?.supports_reasoning ? '支持' : '未声明支持' }}</dd></div>
         <div v-if="selectedModel.model_type !== 'image_generation'"><dt class="text-xs font-semibold text-text-disabled">使用策略</dt><dd class="mt-1 text-text-emphasis">发起会话时按模型能力选择</dd></div>
       </dl>
     </div>
@@ -133,7 +133,7 @@ const props = defineProps<{
   mode: ConfigPanelMode
   currentProvider: LlmProviderCatalogItem | null
   resolvedCapability: LlmModelCapabilityItem | null
-  chatModelCatalog: ChatModelCatalogItem[]
+  chatModelCatalog?: ChatModelCatalogItem[]
   providerConfigOptions: SelectOption[]
   advancedConfigText: string
   advancedConfigError: string
@@ -179,7 +179,7 @@ const CUSTOM_CHAT_MODEL_ID = '__custom_chat_model_id__'
 const imageModelSelection = ref<string | null>(null)
 const chatModelSelection = ref<string | null>(null)
 const chatModelSelectOptions = computed<SelectOption[]>(() => [
-  ...props.chatModelCatalog.map(model => ({
+  ...(props.chatModelCatalog ?? []).map(model => ({
     value: model.model_id,
     label: `${model.name}（${model.model_id}）`,
     description: [model.context_tokens ? `${model.context_tokens.toLocaleString()} context` : '', model.supports_tool_call ? 'Tool Call' : ''].filter(Boolean).join(' · '),
@@ -280,7 +280,7 @@ watch(
       chatModelSelection.value = null
       return
     }
-    if (props.chatModelCatalog.some(model => model.model_id === modelId)) {
+    if (props.chatModelCatalog?.some(model => model.model_id === modelId)) {
       chatModelSelection.value = modelId
       return
     }

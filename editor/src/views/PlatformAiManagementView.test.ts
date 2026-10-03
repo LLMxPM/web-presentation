@@ -19,6 +19,15 @@ const llmMocks = vi.hoisted(() => ({
   refreshModelCatalog: vi.fn(),
   listLlmConfigs: vi.fn(),
   listLlmProviderConfigs: vi.fn(),
+  listLlmProviders: vi.fn(),
+  listChatCatalogModels: vi.fn(),
+  createLlmProviderConfig: vi.fn(),
+  updateLlmProviderConfig: vi.fn(),
+  deleteLlmProviderConfig: vi.fn(),
+  createLlmConfig: vi.fn(),
+  updateLlmConfig: vi.fn(),
+  deleteLlmConfig: vi.fn(),
+  resolveLlmModelCapability: vi.fn(),
   getChatSlotBinding: vi.fn(),
   updateLlmSlotBinding: vi.fn(),
   push: vi.fn(),
@@ -35,6 +44,15 @@ vi.mock('@/api/llm', () => ({
   refreshModelCatalog: llmMocks.refreshModelCatalog,
   listLlmConfigs: llmMocks.listLlmConfigs,
   listLlmProviderConfigs: llmMocks.listLlmProviderConfigs,
+  listLlmProviders: llmMocks.listLlmProviders,
+  listChatCatalogModels: llmMocks.listChatCatalogModels,
+  createLlmProviderConfig: llmMocks.createLlmProviderConfig,
+  updateLlmProviderConfig: llmMocks.updateLlmProviderConfig,
+  deleteLlmProviderConfig: llmMocks.deleteLlmProviderConfig,
+  createLlmConfig: llmMocks.createLlmConfig,
+  updateLlmConfig: llmMocks.updateLlmConfig,
+  deleteLlmConfig: llmMocks.deleteLlmConfig,
+  resolveLlmModelCapability: llmMocks.resolveLlmModelCapability,
   getChatSlotBinding: llmMocks.getChatSlotBinding,
   updateLlmSlotBinding: llmMocks.updateLlmSlotBinding,
 }))
@@ -44,7 +62,10 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ query: { returnTo: '/workspaces/1/home' } }),
 }))
 
-vi.mock('@/utils/message', () => ({ Message: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('@/utils/message', () => ({
+  Message: { error: vi.fn(), success: vi.fn() },
+  createConfirm: vi.fn(() => Promise.resolve(true)),
+}))
 
 const customUiTabs = {
   name: 'UiTabs',
@@ -78,6 +99,7 @@ describe('PlatformAiManagementView', () => {
       global: {
         plugins: [[VueQueryPlugin, { queryClient }]],
         stubs: {
+          teleport: true,
           UiTabs: customUiTabs,
           UiSelect: {
             props: ['modelValue', 'options', 'disabled'],
@@ -186,7 +208,22 @@ describe('PlatformAiManagementView', () => {
         id: 201,
         name: '官方 Anthropic',
         provider_key: 'anthropic',
+        provider_label: 'Anthropic',
         scope: 'global',
+        status: 'active',
+        has_api_key: true,
+        editable: true,
+      },
+    ])
+
+    llmMocks.listLlmProviders.mockResolvedValue([
+      {
+        provider_key: 'anthropic',
+        name: 'Anthropic',
+        label: 'Anthropic',
+        provider_type: 'chat',
+        supported_model_types: ['chat'],
+        default_model_id: 'claude-3-5-sonnet',
       },
     ])
 
@@ -198,9 +235,9 @@ describe('PlatformAiManagementView', () => {
     const existing = await llmMocks.listLlmConfigs()
     llmMocks.listLlmConfigs.mockResolvedValue([
       ...existing,
-      { id: 103, name: '备用聊天模型', model_id: 'chat-backup', scope: 'global', model_type: 'chat', status: 'active' },
-      { id: -1, name: '公共图片模型', scope: 'global', model_type: 'image_generation', status: 'active' },
-      { id: 104, name: '归档聊天模型', scope: 'global', model_type: 'chat', status: 'archived' },
+      { id: 103, name: '备用聊天模型', model_id: 'chat-backup', scope: 'global', model_type: 'chat', status: 'active', editable: true },
+      { id: -1, name: '公共图片模型', scope: 'global', model_type: 'image_generation', status: 'active', editable: true },
+      { id: 104, name: '归档聊天模型', scope: 'global', model_type: 'chat', status: 'archived', editable: true },
     ])
     renderView()
     await waitFor(() => expect(queryClient.getQueryData(ADMIN_SETTINGS_QUERY_KEY)).toBeDefined())
@@ -212,7 +249,7 @@ describe('PlatformAiManagementView', () => {
     await fireEvent.update(select, '103')
     await fireEvent.click(screen.getByRole('button', { name: '保存槽位' }))
     await waitFor(() => expect(llmMocks.updateLlmSlotBinding).toHaveBeenCalledWith('agent_coordinator', 103, 'global'))
-    expect(screen.getByText('当前默认').closest('div')?.parentElement).toHaveTextContent('备用聊天模型')
+    expect(screen.getByText('当前默认').closest('tr')).toHaveTextContent('备用聊天模型')
   })
 
   it('保存策略时排除 ENV 锁定字段并更新管理中心共享快照', async () => {
@@ -243,11 +280,11 @@ describe('PlatformAiManagementView', () => {
     expect(adminSettingsMocks.updateAdminSettings).not.toHaveBeenCalled()
   })
 
-  it('进入完整配置工作台时保留返回工作空间的来源参数', async () => {
+  it('支持展示全局模型与全局供应商的独立操作入口', async () => {
     renderView()
     await fireEvent.click(screen.getByText('全局公共模型池'))
-    await fireEvent.click(screen.getByRole('button', { name: '前往完整配置工作台' }))
-    expect(llmMocks.push).toHaveBeenCalledWith({ name: 'accountAiSettings', query: { returnTo: '/workspaces/1/home' } })
+    expect(screen.getByText('新建全局模型')).toBeTruthy()
+    expect(screen.getByText('连接全局供应商')).toBeTruthy()
   })
 
   it('正常加载并渲染平台 AI 页面头部与运行策略表单', async () => {
@@ -300,10 +337,85 @@ describe('PlatformAiManagementView', () => {
     await fireEvent.click(screen.getByText('全局公共模型池'))
 
     await waitFor(() => {
-      expect(screen.getByText('全局公共模型与凭据')).toBeTruthy()
+      expect(screen.getByText('全局公共模型')).toBeTruthy()
+      expect(screen.getByText('全局供应商凭据')).toBeTruthy()
       expect(screen.getByText('公共 Claude 3.5 Sonnet')).toBeTruthy()
+      expect(screen.getByText('官方 Anthropic')).toBeTruthy()
       // 个人私有模型不应该出现在全局公共模型池中
       expect(screen.queryByText('个人私有模型')).toBeNull()
+    })
+  })
+
+  it('支持新建全局供应商并强制以 global 作用域提交', async () => {
+    llmMocks.createLlmProviderConfig.mockResolvedValue({
+      id: 301,
+      name: '全新全局 OpenAI',
+      provider_key: 'anthropic',
+      provider_label: 'Anthropic',
+      scope: 'global',
+      status: 'active',
+      has_api_key: true,
+      editable: true,
+    })
+
+    renderView()
+    await fireEvent.click(screen.getByText('全局公共模型池'))
+    await fireEvent.click(screen.getByText('连接全局供应商'))
+
+    expect(screen.getByRole('heading', { name: '新建全局供应商' })).toBeTruthy()
+    expect(screen.queryByText('配置范围')).toBeNull()
+
+    const nameInput = screen.getByLabelText(/^配置名称/)
+    await fireEvent.update(nameInput, '全新全局 OpenAI')
+    await fireEvent.click(screen.getByRole('button', { name: '创建供应商' }))
+
+    await waitFor(() => {
+      expect(llmMocks.createLlmProviderConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: '全新全局 OpenAI',
+          scope: 'global',
+        }),
+      )
+    })
+  })
+
+  it('支持新建全局模型并强制以 global 作用域提交', async () => {
+    llmMocks.createLlmConfig.mockResolvedValue({
+      id: 401,
+      name: '全新全局 Claude',
+      model_id: 'claude-3-5',
+      provider_config_id: 201,
+      scope: 'global',
+      model_type: 'chat',
+      status: 'active',
+      context_window_tokens: 128000,
+      required_model_context_tokens: 160000,
+      compression_trigger_tokens: 100000,
+      compression_target_tokens: 80000,
+      capability_source: 'built_in',
+      capability_verified: true,
+      model_capability_json: { supports_reasoning: true },
+      editable: true,
+    })
+
+    renderView()
+    await fireEvent.click(screen.getByText('全局公共模型池'))
+    await fireEvent.click(screen.getByText('新建全局模型'))
+
+    expect(screen.getByRole('heading', { name: '新建全局模型' })).toBeTruthy()
+    expect(screen.queryByText('配置范围')).toBeNull()
+
+    const nameInput = screen.getByLabelText(/^模型名称/)
+    await fireEvent.update(nameInput, '全新全局 Claude')
+    await fireEvent.click(screen.getByRole('button', { name: '创建模型' }))
+
+    await waitFor(() => {
+      expect(llmMocks.createLlmConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: '全新全局 Claude',
+          scope: 'global',
+        }),
+      )
     })
   })
 })
