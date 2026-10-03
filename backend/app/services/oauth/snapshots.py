@@ -20,6 +20,8 @@ class ClientSnapshot:
     resource: str
     auth_method: str = "none"
     secret_hash: str | None = field(default=None, repr=False)
+    kind: str = "client"
+    api_audience: str | None = None
 
     def get_client_id(self) -> str:
         """返回公共客户端标识。"""
@@ -47,15 +49,22 @@ class ClientSnapshot:
         )
 
     def check_endpoint_auth_method(self, method: str, endpoint: str) -> bool:
-        """认证方式严格匹配登记值；当前协议核只开放 Token 端点。"""
-        return endpoint == "token" and method == self.auth_method
+        """客户端只管理自身授权，服务只允许自省与受控交换。"""
+        endpoints = (
+            {"token", "introspection"}
+            if self.kind == "service"
+            else {"token", "revocation"}
+        )
+        return endpoint in endpoints and method == self.auth_method
 
     def check_response_type(self, response_type: str) -> bool:
         """首期仅支持授权码流程。"""
-        return response_type == "code"
+        return self.kind == "client" and response_type == "code"
 
     def check_grant_type(self, grant_type: str) -> bool:
-        """用户客户端仅支持授权码及刷新，服务交换另行装配。"""
+        """服务没有用户授权码或刷新能力，只允许明确的交换 grant。"""
+        if self.kind == "service":
+            return grant_type == "urn:ietf:params:oauth:grant-type:token-exchange"
         return grant_type in {"authorization_code", "refresh_token"}
 
 

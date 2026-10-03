@@ -273,3 +273,18 @@ def test_public_client_cannot_ignore_an_authorization_header() -> None:
     )
     assert response.body["error"] == "invalid_client"
     assert server.pending_token is None
+
+
+def test_duplicate_authorization_headers_are_rejected() -> None:
+    """两个 Authorization 头必须拒绝，不能静默选取其中一个认证方式。"""
+    from starlette.datastructures import Headers
+
+    headers = Headers(
+        raw=[(b"authorization", b"Basic first"), (b"authorization", b"Basic second")]
+    )
+    request = protocol_request(code_request().payload.data, headers=headers)
+    server = McpAuthorizationServer(
+        client=registered_client(), credential=credential("original-code")
+    )
+    assert server.token_response(request).body["error"] == "invalid_request"
+    assert server.pending_token is None

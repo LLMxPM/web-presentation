@@ -1,6 +1,6 @@
 # 远程 MCP OAuth 授权基础
 
-实施状态：2026-10-04，协议核与授权存储基础已落地。生产 FastAPI 尚未装配 OAuth 路由，登录确认页、账户 Grant 管理、服务自省/交换、Gateway 和真实宿主验收仍需后续批次。现有 External API 继续只接受 PAT。
+实施状态：2026-10-04，协议核、授权存储、自省/撤销/受控交换及独立委托验证器已落地。生产 FastAPI 尚未装配 OAuth 路由或委托 Bearer 分派，登录确认页、账户 Grant 管理、Gateway 和真实宿主验收仍需后续批次。现有 External API 继续只接受 PAT。
 
 ## 协议与事务分层
 
@@ -15,6 +15,18 @@
 认证方式必须精确匹配登记值：公开客户端 `none`，机密客户端 `client_secret_basic`。回调 URI 精确匹配，显式指定 resource 和 S256，禁止隐式默认回调、plain PKCE、Scope 扩大或在同一请求混用客户端认证方式。`issuer`、MCP resource 和 API audience 必须显式配置 HTTPS 地址；MCP 与 API audience 必须不同，不能从 Host 推导。
 
 不透明凭证使用 `wp_oat_`（MCP access）和 `wp_ort_`（refresh）前缀，包含 48 字节随机输入，只持久化 SHA256 摘要。原始凭证仅在提交后的协议响应中出现。Authlib DEBUG 发行日志使用脱敏 dict repr；审计模型没有可存放原始 HTTP payload 的任意 JSON 字段。
+
+## 服务自省、撤销与受控交换
+
+`services/oauth/resource_protocol.py` 复用 Authlib RFC 7009/7662 的客户端认证、错误和响应头。`resource_service.py` 在独立 Session 实时预读；交换与撤销在 Grant UPDATE 锁内重读并提交，自省每请求查询，不缓存可放行状态。只有预注册 MCP 服务可用 Basic 自省自身 resource 的 access；普通客户端不能自省，也不能通过服务身份取得用户刷新能力。
+
+有效自省 DTO 以 `schemas/oauth.py` 为准：`active=true`、`wp_version=1`、`token_type=Bearer`、原 `client_id`、`sub`（用户 ID 字符串）、`aud`（MCP resource）、`iss`、`exp/iat`（Unix 秒）、`jti`（公共凭证 ID）、`grant_id`、空格分隔 `scope`、具体 `workspace_ids`。未知、错误来源或失效凭证只返回 `{"active": false}`。客户端认证失败仍返回标准 OAuth 错误，不能误作 inactive 成功。响应带 no-store。
+
+受控交换采用 [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html) 标准字段：`grant_type=urn:ietf:params:oauth:grant-type:token-exchange`，`subject_token` 为有效 MCP access，`subject_token_type` 和可选 `requested_token_type` 为 `urn:ietf:params:oauth:token-type:access_token`，`resource` 必须等于登记的 API audience，`scope` 可省略或缩小。Authlib 本版本未提供此 grant，主仓使用其 BaseGrant/TokenEndpointMixin、客户端认证和错误派发实现明确的领域扩展，没有手写整套 OAuth 服务。
+
+首期拒绝 actor_token、audience 别名、多资源和其他扩展参数；PAT/refresh/delegated 都不能作为 subject。交换返回标准 `access_token/token_type/expires_in/issued_token_type/scope`，不返回 refresh。`wp_dlg_` 委托凭证绑定公共服务 ID 和源 access ID，期限最长 60 秒且不晚于源期限。普通服务凭据本身没有用户或工作空间权限。
+
+所属用户客户端撤销任一 access/refresh 时撤销整个 Grant 和刷新家族。未知或属于其他客户端的 Token 均返回空对象成功，避免暴露存在性；后者不修改原授权。账户用户撤销仍按 user_id 隔离。`delegated_identity.py` 每请求复核委托自身期限/API audience、Grant 的 issuer/resource/用户/成员、当前服务登记、源 access 的 Grant/期限/Scope/家族，全部通过后才构造 ExternalPrincipal。该验证器目前还未接入 External HTTP 鉴权依赖。
 
 ## 持久化契约
 
@@ -35,12 +47,12 @@
 
 并发刷新按严格重放处理：只允许一个响应成功，竞争失败会撤销整链，因而成功响应中的新 Token 也可能随即失效。客户端必须把同一刷新链的刷新请求串行化，不能盲目并发重试。下一代 access/refresh 的 Scope 沿用刷新时缩小后的集合，期限不晚于家族绝对期限。
 
-首期上限：code 60 秒、MCP access 900 秒、delegated 60 秒、待确认请求 600 秒、刷新家族 30 天。凭证清理保留期上限 7 天、审计保留期上限 30 天；清理任务尚未接入，不能宣称已自动清理。服务自省、委托源链检查和 API 接入完成之前，不宣称实时业务撤销已验收。
+首期上限：code 60 秒、MCP access 900 秒、delegated 60 秒、待确认请求 600 秒、刷新家族 30 天。终态凭证额外保留期上限 7 天、审计保留期上限 30 天；已消费 refresh 必须至少保留到家族绝对期限或整链撤销，不能按消费后 7 天提前删除而丢失重放证据。清理任务尚未接入，不能宣称已自动清理。API 接入与实际客户端完成之前，不宣称实时业务撤销已端到端验收。
 
 ## 验证入口与证据边界
 
 ```powershell
-uv run --locked --project backend pytest -c backend/pyproject.toml backend/tests/unit/test_oauth_protocol.py backend/tests/unit/test_oauth_policy.py backend/tests/integration/test_oauth_storage.py backend/tests/integration/test_oauth_migration.py
+uv run --locked --project backend pytest -c backend/pyproject.toml backend/tests/unit/test_oauth_protocol.py backend/tests/unit/test_oauth_policy.py backend/tests/integration/test_oauth_storage.py backend/tests/integration/test_oauth_resources.py backend/tests/integration/test_oauth_delegated_identity.py backend/tests/integration/test_oauth_migration.py
 ```
 
 SQLite 使用每例一次性数据库并启用外键，PG 使用专属测试数据库内的随机独立 schema。仅接受 `OAUTH_TEST_POSTGRES_DATABASE_URL=postgresql+asyncpg://.../wp_oauth_test_<名称>`；`OAUTH_TEST_POSTGRES_REQUIRED=1` 可强制缺配置失败。测试结束只删除自己创建的 schema，不访问开发库。

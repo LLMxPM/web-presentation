@@ -49,6 +49,8 @@ class ProtocolRequest(OAuth2Request):
     ) -> None:
         """使用 Authlib 的 TLS 检查及大小写无关 Header；不关闭安全传输校验。"""
         super().__init__(method, uri, headers=Headers(headers or {}))
+        # Authlib 会将空 Headers 替换为普通 dict，需恢复统一的多值 Header 读取接口。
+        self.headers = Headers(headers or {})
         self.payload = MultiValuePayload(pairs)
 
     @property

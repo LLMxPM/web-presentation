@@ -134,6 +134,7 @@ def test_write_retry_consumers_use_shared_helper() -> None:
         "app/services/page_screenshot_job_service.py",
         "app/services/oauth/token_service.py",
         "app/services/oauth/grant_service.py",
+        "app/services/oauth/resource_service.py",
     }
     consumers = {
         rel
