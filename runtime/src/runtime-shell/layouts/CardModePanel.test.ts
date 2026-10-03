@@ -71,8 +71,10 @@ describe('CardModePanel', () => {
     await nextTick()
 
     expect(host.querySelectorAll('.presenter-console__tile')).toHaveLength(2)
-    expect(host.querySelector<HTMLElement>('.presenter-console__grid')?.style.gridTemplateColumns)
-      .toBe('repeat(auto-fill, minmax(300px, 1fr))')
+    const gridEl = host.querySelector<HTMLElement>('.presenter-console__grid')
+    expect(gridEl?.style.gridTemplateColumns).toBe('repeat(auto-fill, minmax(300px, 1fr))')
+    expect(gridEl?.style.alignContent).toBe('start')
+    expect(gridEl?.style.gridAutoRows).toBe('max-content')
 
     const sizeInput = host.querySelector<HTMLInputElement>('input[type="range"]')
     expect(sizeInput).not.toBeNull()

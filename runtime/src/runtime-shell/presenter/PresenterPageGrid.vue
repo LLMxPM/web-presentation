@@ -12,7 +12,7 @@
       type="button"
       @click="handleNavigate(page.path)"
     >
-      <div class="presenter-console__tile-preview">
+      <div class="presenter-console__tile-preview" :style="previewStyle">
         <div class="presenter-console__preview-shell">
           <div class="presenter-console__preview-content" inert aria-hidden="true">
             <ViewPreview :file-path="page.componentPath" />
@@ -33,6 +33,7 @@ import { computed, ref, watch } from 'vue'
 
 import ViewPreview from '@/runtime-shell/preview/ViewPreview.vue'
 import type { PresenterPage } from '@/runtime-shell/presenter/usePresenterController'
+import { appPageConfig, DEFAULT_PAGE_CONFIG } from '@/core/utils/config'
 
 interface Props {
   pages: PresenterPage[]
@@ -81,7 +82,20 @@ watch(() => props.currentPath, () => {
 
 const gridStyles = computed(() => ({
   gridTemplateColumns: `repeat(auto-fill, minmax(${props.tileSize}px, 1fr))`,
+  alignContent: 'start',
+  gridAutoRows: 'max-content',
 }))
+
+/**
+ * 动态匹配当前项目页面画布比例，避免硬编码 16:9 导致非宽屏项目缩略图高度失真。
+ */
+const previewStyle = computed(() => {
+  const width = appPageConfig.value?.width || DEFAULT_PAGE_CONFIG.width
+  const height = appPageConfig.value?.height || DEFAULT_PAGE_CONFIG.height
+  return {
+    aspectRatio: `${width} / ${height}`,
+  }
+})
 
 /**
  * 处理页面卡片点击，交由使用方决定导航方式。
@@ -116,6 +130,8 @@ function handleNavigate(path: string): void {
   display: grid;
   gap: 1rem;
   align-items: start;
+  align-content: start;
+  grid-auto-rows: max-content;
   flex: 1;
   min-height: 0;
   height: 100%;
@@ -136,6 +152,7 @@ function handleNavigate(path: string): void {
   text-align: left;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
   cursor: pointer;
+  height: max-content;
 }
 
 .presenter-console__tile--active {
@@ -157,6 +174,12 @@ function handleNavigate(path: string): void {
   padding: 0.625rem 0.75rem;
   color: #334155;
   font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.presenter-console__tile-caption span {
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 .presenter-console__tile-caption strong {
@@ -164,5 +187,6 @@ function handleNavigate(path: string): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.25;
 }
 </style>
