@@ -52,7 +52,6 @@ jobs:
 
   quality:
     needs: test-scope
-    timeout-minutes: 60
     uses: ./.github/workflows/reusable-quality.yml
     with:
       full: ${{ needs.test-scope.outputs.full_tests == 'true' }}
