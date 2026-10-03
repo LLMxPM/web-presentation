@@ -7,6 +7,12 @@ from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.external_identity import (
+    ExternalCredentialInfo,
+    ExternalIdentityUser,
+    ExternalIdentityWorkspace,
+    ExternalPatTokenInfo,
+)
 from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration, StyleConfiguration
 from app.schemas.project_app_config import ProjectMenuMode
 
@@ -436,9 +442,10 @@ class ExternalWhoAmIResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    user: dict[str, Any] = Field(..., description="当前用户信息")
-    token: dict[str, Any] | None = Field(default=None, description="当前 Token 信息")
-    workspaces: list[dict[str, Any]] = Field(default_factory=list, description="授权访问的工作空间列表")
+    user: ExternalIdentityUser = Field(..., description="当前用户信息")
+    token: ExternalPatTokenInfo | None = Field(default=None, description="PAT 兼容信息；委托身份为 null")
+    credential: ExternalCredentialInfo = Field(..., description="经过验证的公共凭证来源，不包含原始令牌")
+    workspaces: list[ExternalIdentityWorkspace] = Field(default_factory=list, description="授权访问的工作空间列表")
 
 
 class ExternalStandardResponse(BaseModel):

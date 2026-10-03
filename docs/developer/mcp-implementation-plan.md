@@ -142,10 +142,10 @@ P0 默认建议：授权码 60 秒一次性，MCP 访问令牌 15 分钟，委�
 
 实施落点：`api/dependencies_external.py`、`schemas/external_api.py`、`api/routes/external/system.py`；按职责新增外部身份模型/服务，避免鉴权依赖文件持续膨胀。
 
-- [ ] 定义不可混用的认证来源 `pat/delegated`，公共业务属性为用户、空间授权、scopes、有效期及审计来源；PAT 专属字段放到兼容适配中。
-- [ ] 保持 `require_external_operation`、动态 Mutation 权限和 `ensure_workspace_access` 的统一入口，不复制一套 OAuth 专用资源路由。
+- [x] 定义不可混用的认证来源 `pat/delegated`，公共业务属性为用户、空间授权、scopes、有效期及审计来源；PAT 专属字段放到兼容适配中。
+- [x] 保持 `require_external_operation`、动态 Mutation 权限和 `ensure_workspace_access` 的统一入口，不复制一套 OAuth 专用资源路由。
 - [ ] 明确 Bearer 类型分派规则；PAT 验证失败不能尝试用宽松 JWT 规则再次放行，反之亦然。
-- [ ] whoami 保留 PAT 已有字段及含义；委托身份使用明确的 credential/grant 信息，不能返回一个看似存在的 PAT ID。新增字段/可空性以 DTO 和旧 CLI 测试同时确认。
+- [x] whoami 保留 PAT 已有字段及含义；委托身份使用明确的 credential/grant 信息，不能返回一个看似存在的 PAT ID。新增字段/可空性由 DTO、PAT 回归和已验证主体适配测试确认；真实委托 Token 验收仍依赖 M2。
 - [ ] capabilities 的既有 operations 字符串列表保持兼容；主体改变不能隐式增加 read/write Scope，也不能把 all/any 要求错误合并。
 - [ ] 日志只记录公共凭证/Grant ID 和主体来源，不记录 Bearer、授权码、刷新令牌。
 
@@ -305,7 +305,7 @@ pnpm run test:repository
 | ID | 交付物 | 依赖 | 验收方 | 状态 |
 | --- | --- | --- | --- | --- |
 | M0 | 冻结契约、授权实现选型、首批客户端矩阵 | 无 | 两仓 | 进行中；M1/M3 边界已冻结，授权最小验证/真实宿主待办 |
-| M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 待实施 |
+| M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 基础解耦完成；真实委托认证/撤销与对等验收待 M2 |
 | M2 | OAuth、Grant、账户授权 UI、撤销 | M0；联调依赖 M1 | A3 真实授权 | 待实施 |
 | M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 待实施 |
 | M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | 待实施 |

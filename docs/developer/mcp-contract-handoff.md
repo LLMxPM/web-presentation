@@ -69,3 +69,15 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 | 真实宿主截图预算与 PNG 链路 | M5/M7 | 宿主时限、实际耗时和真实产物 |
 
 已接受的持久 Job 不因 MCP 断连、Token 到期或撤销自动取消。查询、取消和 retry 仍需当前权限；重放维持 user/workspace/operation/key 边界。主仓本批不修改内部助手与领域队列，不启动或发布 MCP 服务。
+
+## 5. 分步实施证据
+
+### 批次 1：M0 独立边界核对
+
+提交 `83b09c0`：冻结 M1/M3 首批边界、登记两仓基线与具体缺口。`pnpm run test:repository`：4 个文件、16 项通过。M0 整体仍待授权 PoC 与真实宿主矩阵。
+
+### 批次 2：M1 基础身份解耦
+
+新增不可变 ExternalPrincipal、来源明确的 PAT/委托快照和 PAT 适配器。业务上下文不再持有 PAT ORM；whoami 增加类型化 credential 并保留旧 token 字段，HTTP 仍只接受 PAT。
+
+验证：外部主体/身份专题、PAT API、External API/契约缺口、PAT 服务、幂等与 Mutation 服务共 **73 项通过**；Editor API 重新生成及生成物一致性通过；真实 Nginx OpenAPI、上游 503 与 SPA 边界回归通过。委托对等测试只注入已验证主体，真实 Token 验证、audience、撤销与轮换仍待 M2。数据库结构未变，无迁移要求。

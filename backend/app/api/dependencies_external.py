@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Annotated, Literal
 
 from fastapi import Depends, Header, Path, Request
@@ -12,63 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppException
 from app.core.external_operations import get_operation_spec
 from app.db.session import get_db_session
-from app.models.api_access_token import ApiAccessToken
 from app.models.api_mutation_job import ApiMutationJob
-from app.models.enums import RecordStatus
-from app.models.user import User
-from app.models.workspace import WorkspaceMember
 from app.services.api_access_token_service import ApiAccessTokenService
-
-
-@dataclass(slots=True)
-class ExternalAuthContext:
-    """External API 鉴权上下文。"""
-
-    user: User
-    token: ApiAccessToken
-    token_id: int
-    token_public_id: str
-    all_workspaces: bool
-    workspace_ids: set[int]
-    scopes: set[str]
-
-    def has_scope(self, scope: str) -> bool:
-        return scope in self.scopes
-
-    def has_all_scopes(self, required_scopes: tuple[str, ...]) -> bool:
-        return all(s in self.scopes for s in required_scopes)
-
-    def has_required_scopes(self, required_scopes: tuple[str, ...], *, mode: str = "all") -> bool:
-        """按操作声明判断 Scope 是否满足全部或任一要求。"""
-
-        if mode == "any":
-            return any(s in self.scopes for s in required_scopes)
-        return self.has_all_scopes(required_scopes)
-
-    def can_access_workspace(self, workspace_id: int) -> bool:
-        """判断令牌授权范围是否覆盖目标工作空间。"""
-        return self.all_workspaces or workspace_id in self.workspace_ids
-
-    async def ensure_workspace_access(self, workspace_id: int, session: AsyncSession) -> None:
-        """强制校验当前 PAT 授权空间归属与用户的活跃成员资格。"""
-        if not self.can_access_workspace(workspace_id):
-            raise AppException(
-                status_code=403,
-                code="WORKSPACE_NOT_AUTHORIZED",
-                detail=f"当前令牌未被授权访问工作空间 ID {workspace_id}。",
-            )
-        member = await session.scalar(
-            select(WorkspaceMember)
-            .where(WorkspaceMember.workspace_id == workspace_id)
-            .where(WorkspaceMember.user_id == self.user.id)
-            .where(WorkspaceMember.status == RecordStatus.ACTIVE.value)
-        )
-        if member is None:
-            raise AppException(
-                status_code=403,
-                code="PERMISSION_DENIED",
-                detail=f"用户已不再是工作空间 ID {workspace_id} 的活跃成员。",
-            )
+from app.services.external_pat_identity import principal_from_pat
+from app.services.external_principal import ExternalPrincipal as ExternalAuthContext
 
 
 async def get_external_auth_context(
@@ -97,18 +43,8 @@ async def get_external_auth_context(
     client_ip = request.client.host if request.client else None
     token = await ApiAccessTokenService(session).authenticate_pat(raw_token, ip=client_ip)
 
-    ws_ids = {w.workspace_id for w in token.workspaces}
-    scope_set = {s.scope for s in token.scopes}
-
-    return ExternalAuthContext(
-        user=token.user,
-        token=token,
-        token_id=token.id,
-        token_public_id=token.token_public_id,
-        all_workspaces=token.all_workspaces,
-        workspace_ids=ws_ids,
-        scopes=scope_set,
-    )
+    # 本批仅接入 PAT；失败直接结束，不能再用其它来源规则尝试放行。
+    return principal_from_pat(token)
 
 
 def require_external_operation(operation_key: str):

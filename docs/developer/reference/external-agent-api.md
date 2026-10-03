@@ -106,6 +106,8 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 
 `capabilities` 返回当前 Token 在指定空间可用的 Scope 和 operation。CLI 可以用它决定命令提示，MCP 可以用它决定工具是否披露；两者都不能把客户端判断当作最终授权。
 
+`whoami` 明确返回用户公共信息、PAT 兼容 `token`、公共凭证来源 `credential` 与实时有效的授权空间列表。PAT 的 token 字段保留 `id/name/token_public_id/scopes/expires_at/all_workspaces`，credential.type 为 `pat`，另含 public_id 和 expires_at，不返回原始令牌。内部外部主体已与 PAT ORM 解耦；委托 DTO 预留独立的 Grant/客户端/服务来源，但当前 HTTP 认证仍只接受 PAT，OAuth 接入尚未开放。
+
 ### 4.2 规范和 OpenAPI
 
 ```text

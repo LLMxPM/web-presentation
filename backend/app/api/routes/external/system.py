@@ -21,6 +21,7 @@ from app.schemas.external_api import (
     ExternalWhoAmIResponse,
 )
 from app.services.ai_agent_config_service import AiAgentConfigService
+from app.services.external_principal import PatCredential
 from app.services.redis_runtime_client import get_redis_runtime_client
 
 router = APIRouter()
@@ -97,7 +98,7 @@ async def get_auth_whoami(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("auth.whoami"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ExternalWhoAmIResponse:
-    """查询当前 PAT 令牌身份与授权工作空间。"""
+    """查询当前外部主体与授权空间；PAT 字段兼容，委托来源明确区分。"""
 
     user_info = {
         "id": auth.user.id,
@@ -108,15 +109,29 @@ async def get_auth_whoami(
     }
 
     token_info = None
-    if auth.token is not None:
+    credential = auth.credential
+    credential_info = {
+        "type": credential.source,
+        "public_id": credential.public_id,
+        "expires_at": credential.expires_at,
+    }
+    if isinstance(credential, PatCredential):
         token_info = {
-            "id": auth.token_id,
-            "name": auth.token.name,
-            "token_public_id": auth.token_public_id,
+            "id": credential.token_id,
+            "name": credential.name,
+            "token_public_id": credential.public_id,
             "scopes": sorted(auth.scopes),
-            "expires_at": auth.token.expires_at,
+            "expires_at": credential.expires_at,
             "all_workspaces": auth.all_workspaces,
         }
+    else:
+        credential_info.update(
+            grant_id=credential.grant_id,
+            client_id=credential.client_id,
+            service_id=credential.service_id,
+            issuer=credential.issuer,
+            audience=credential.audience,
+        )
 
     # 查询用户加入的活跃工作空间
     stmt = (
@@ -131,8 +146,8 @@ async def get_auth_whoami(
     results = (await session.execute(stmt)).all()
     workspaces = []
     for ws, role in results:
-        # 若 PAT 限制了工作空间，过滤非绑定空间
-        if not auth.all_workspaces and ws.id not in auth.workspace_ids:
+        # 按统一主体过滤空间，委托身份不会覆盖未来加入的空间。
+        if not auth.can_access_workspace(ws.id):
             continue
         workspaces.append(
             {
@@ -146,6 +161,7 @@ async def get_auth_whoami(
     return ExternalWhoAmIResponse(
         user=user_info,
         token=token_info,
+        credential=credential_info,
         workspaces=workspaces,
     )
 

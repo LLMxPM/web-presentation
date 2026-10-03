@@ -1116,6 +1116,17 @@ export type ExternalComponentMetadataUpdateRequest = {
   "summary"?: (string) | (null)
 }
 
+export type ExternalDelegatedCredentialInfo = {
+  "type"?: "delegated"
+  "public_id": string
+  "grant_id": string
+  "client_id": string
+  "service_id": string
+  "issuer": string
+  "audience": string
+  "expires_at": string
+}
+
 export type ExternalEntityValidationRequest = {
   "entity_type": "page" | "component"
   "entity_id"?: (number) | (null)
@@ -1146,6 +1157,21 @@ export type ExternalErrorDetail = {
   "message": string
   "retryable"?: boolean
   "details"?: (Record<string, unknown>) | (null)
+}
+
+export type ExternalIdentityUser = {
+  "id": number
+  "username": string
+  "display_name": (string) | (null)
+  "role": string
+  "status": string
+}
+
+export type ExternalIdentityWorkspace = {
+  "id": number
+  "code": string
+  "name": string
+  "role": string
 }
 
 export type ExternalMutationJobResponse = {
@@ -1193,6 +1219,21 @@ export type ExternalPageMetadataUpdateRequest = {
   "title"?: (string) | (null)
   "summary"?: (string) | (null)
   "speaker_notes"?: (string) | (null)
+}
+
+export type ExternalPatCredentialInfo = {
+  "type"?: "pat"
+  "public_id": string
+  "expires_at": (string) | (null)
+}
+
+export type ExternalPatTokenInfo = {
+  "id": number
+  "name": string
+  "token_public_id": string
+  "scopes": (string)[]
+  "expires_at": (string) | (null)
+  "all_workspaces": boolean
 }
 
 export type ExternalPreviewArtifactCreateRequest = {
@@ -1268,9 +1309,10 @@ export type ExternalThemeCreateRequest = {
 }
 
 export type ExternalWhoAmIResponse = {
-  "user": Record<string, unknown>
-  "token"?: (Record<string, unknown>) | (null)
-  "workspaces"?: (Record<string, unknown>)[]
+  "user": ExternalIdentityUser
+  "token"?: (ExternalPatTokenInfo) | (null)
+  "credential": (ExternalPatCredentialInfo) | (ExternalDelegatedCredentialInfo)
+  "workspaces"?: (ExternalIdentityWorkspace)[]
 }
 
 export type HTTPValidationError = {

@@ -55,7 +55,7 @@
           "External System"
         ],
         "summary": "Get Auth Whoami",
-        "description": "查询当前 PAT 令牌身份与授权工作空间。",
+        "description": "查询当前外部主体与授权空间；PAT 字段兼容，委托来源明确区分。",
         "operationId": "get_auth_whoami_api_v1_auth_whoami_get",
         "parameters": [
           {
@@ -30439,6 +30439,58 @@
         "title": "ExternalComponentMetadataUpdateRequest",
         "description": "External API 组件轻量元数据更新请求，结构与源码字段继续走 Mutation。"
       },
+      "ExternalDelegatedCredentialInfo": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "delegated",
+            "title": "Type",
+            "default": "delegated"
+          },
+          "public_id": {
+            "type": "string",
+            "title": "Public Id"
+          },
+          "grant_id": {
+            "type": "string",
+            "title": "Grant Id"
+          },
+          "client_id": {
+            "type": "string",
+            "title": "Client Id"
+          },
+          "service_id": {
+            "type": "string",
+            "title": "Service Id"
+          },
+          "issuer": {
+            "type": "string",
+            "title": "Issuer"
+          },
+          "audience": {
+            "type": "string",
+            "title": "Audience"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "public_id",
+          "grant_id",
+          "client_id",
+          "service_id",
+          "issuer",
+          "audience",
+          "expires_at"
+        ],
+        "title": "ExternalDelegatedCredentialInfo",
+        "description": "委托公共来源，不占用或伪造 PAT 标识。"
+      },
       "ExternalEntityValidationRequest": {
         "properties": {
           "entity_type": {
@@ -30672,6 +30724,78 @@
         ],
         "title": "ExternalErrorDetail",
         "description": "External API 统一错误响应模型。"
+      },
+      "ExternalIdentityUser": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "role",
+          "status"
+        ],
+        "title": "ExternalIdentityUser",
+        "description": "当前用户的公共信息。"
+      },
+      "ExternalIdentityWorkspace": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "role"
+        ],
+        "title": "ExternalIdentityWorkspace",
+        "description": "授权范围内且用户仍是活跃成员的空间。"
       },
       "ExternalMutationJobResponse": {
         "properties": {
@@ -31039,6 +31163,91 @@
         "type": "object",
         "title": "ExternalPageMetadataUpdateRequest",
         "description": "External API 页面轻量元数据更新请求，禁止绕过 Mutation 写入源码。"
+      },
+      "ExternalPatCredentialInfo": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "pat",
+            "title": "Type",
+            "default": "pat"
+          },
+          "public_id": {
+            "type": "string",
+            "title": "Public Id"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "public_id",
+          "expires_at"
+        ],
+        "title": "ExternalPatCredentialInfo",
+        "description": "PAT 公共凭证来源，不返回原始 Bearer。"
+      },
+      "ExternalPatTokenInfo": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "token_public_id": {
+            "type": "string",
+            "title": "Token Public Id"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "all_workspaces": {
+            "type": "boolean",
+            "title": "All Workspaces"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "token_public_id",
+          "scopes",
+          "expires_at",
+          "all_workspaces"
+        ],
+        "title": "ExternalPatTokenInfo",
+        "description": "保留旧 CLI 使用的 PAT 字段及其含义。"
       },
       "ExternalPreviewArtifactCreateRequest": {
         "properties": {
@@ -31521,28 +31730,42 @@
       "ExternalWhoAmIResponse": {
         "properties": {
           "user": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "User",
+            "$ref": "#/components/schemas/ExternalIdentityUser",
             "description": "当前用户信息"
           },
           "token": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/ExternalPatTokenInfo"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Token",
-            "description": "当前 Token 信息"
+            "description": "PAT 兼容信息；委托身份为 null"
+          },
+          "credential": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExternalPatCredentialInfo"
+              },
+              {
+                "$ref": "#/components/schemas/ExternalDelegatedCredentialInfo"
+              }
+            ],
+            "title": "Credential",
+            "description": "经过验证的公共凭证来源，不包含原始令牌",
+            "discriminator": {
+              "propertyName": "type",
+              "mapping": {
+                "delegated": "#/components/schemas/ExternalDelegatedCredentialInfo",
+                "pat": "#/components/schemas/ExternalPatCredentialInfo"
+              }
+            }
           },
           "workspaces": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/ExternalIdentityWorkspace"
             },
             "type": "array",
             "title": "Workspaces",
@@ -31552,7 +31775,8 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "user"
+          "user",
+          "credential"
         ],
         "title": "ExternalWhoAmIResponse",
         "description": "当前鉴权身份与授权工作空间。"
