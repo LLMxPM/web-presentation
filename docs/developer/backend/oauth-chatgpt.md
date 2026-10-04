@@ -17,14 +17,14 @@
 | 环境变量 | 含义 |
 | --- | --- |
 | `OAUTH_ISSUER` | 公开授权服务 HTTPS origin，不带路径或尾斜杠 |
-| `OAUTH_MCP_RESOURCE` | agent-kit 的规范化公开 MCP URL，精确匹配 |
+| `OAUTH_MCP_RESOURCE` | MCP 仓库的规范化公开 MCP URL，精确匹配 |
 | `OAUTH_API_AUDIENCE` | 面向 External API 的独立 audience，不能等于 MCP resource |
 | `OAUTH_EDITOR_ORIGIN` | 承载授权确认页的公开 HTTPS origin |
 | `SESSION_SECURE` | 必须为 `true` |
 
 独立 Editor origin 必须列入 `CORS_ORIGINS`。配置在应用装配时校验；不可从请求 Host、Forwarded 或客户端参数选择发行身份。
 
-主仓负责授权服务和确认界面；MCP 受保护资源元数据、`WWW-Authenticate`、工具认证声明、MCP transport 与逐请求交换归属 agent-kit。主仓测试通过不能替代 ChatGPT 实际连接验收。
+主仓负责授权服务和确认界面；MCP 受保护资源元数据、`WWW-Authenticate`、工具认证声明、MCP transport 与逐请求交换归属 MCP 仓库。主仓测试通过不能替代 ChatGPT 实际连接验收。
 
 ## 已装配的 HTTP 契约
 

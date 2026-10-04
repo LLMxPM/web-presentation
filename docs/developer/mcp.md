@@ -5,20 +5,20 @@
 > [!NOTE]
 > 2026-10-03 已按用户要求进入远程多用户 MCP 规划。现有 Server 仍是历史骨架，尚未完成实现、验收或发布；当前可用的外部入口仍为 `wp` CLI。
 
-MCP Server 的工具实现、协议适配和发布流程由同级独立仓库 [web-presentation-agent-kit](https://github.com/LLMxPM/web-presentation-agent-kit) 负责。
+MCP Server 的工具实现、协议适配和发布流程由同级独立仓库 [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp) 负责。
 
 ## 1. 权责边界
 
 | 范围 | 负责方 | 说明 |
 | --- | --- | --- |
 | Backend `/api/v1` External API v1 | 主仓库 | 资源、页面、组件、主题、样式、Mutation Job 等平台接口契约 |
-| MCP 工具、参数映射和 transport | agent-kit | 将 MCP 调用映射为主仓库 API 请求，并维护 MCP 运行态行为 |
-| MCP Server 配置与发布 | agent-kit | 负责本地启动、远程部署和版本兼容说明 |
-| 跨仓库契约测试 | 双方 | 主仓库验证 API 契约，agent-kit 验证工具到 API 的映射 |
+| MCP 工具、参数映射和 transport | MCP 仓库 | 将 MCP 调用映射为主仓库 API 请求，并维护 MCP 运行态行为 |
+| MCP Server 配置与发布 | MCP 仓库 | 负责本地启动、远程部署和版本兼容说明 |
+| 跨仓库契约测试 | 双方 | 主仓库验证 API 契约，MCP 仓库验证工具到 API 的映射 |
 
 主仓库的 API 事实源是[External API v1 契约](./reference/external-agent-api.md)，不要在此文档复制 MCP 工具清单、参数 Schema 或返回示例。
 
-MCP 的远程认证、通用业务工具和分期安排见 agent-kit 的[实施规划](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)；工具级说明以 agent-kit 的 MCP 文档和源码为准。
+MCP 的远程认证、通用业务工具和分期安排见 MCP 仓库的[实施规划](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/mcp-implementation-plan.md)；工具级说明以 MCP 仓库的 MCP 文档和源码为准。
 
 主仓可执行清单见[远程 MCP 主仓实施计划](./mcp-implementation-plan.md)：按 M0～M7 拆分授权、External Principal、契约自省、任务与幂等、媒体、Gateway 和验收；包含拟新增接口、跨仓依赖、测试命令和完成定义。候选契约在实施并验收前不替代现行 External API。
 
@@ -40,7 +40,7 @@ MCP Server 依赖以下平台能力，但不在主仓库登记 MCP 工具：
 
 1. 先更新[External API v1 契约](./reference/external-agent-api.md)，明确路径、入参、出参、权限、错误和幂等语义。
 2. 补充主仓库的 API、契约或集成测试。
-3. 在 agent-kit 更新 MCP 工具的映射、Schema、说明和测试。
+3. 在 MCP 仓库更新 MCP 工具的映射、Schema、说明和测试。
 4. 联调认证、工作空间隔离、确认语义、错误透传和长任务状态。
 5. 发现接口与 MCP 实现不一致时，优先修复契约或实现，不在两份文档中长期保留不同口径。
 
@@ -48,7 +48,7 @@ MCP Server 依赖以下平台能力，但不在主仓库登记 MCP 工具：
 
 ## 4. 当前契约状态
 
-页面/组件安全元数据 PATCH，以及 Mutation 状态、取消、人工重试和幂等组合语义已经冻结并由 agent-kit 适配。构建产物下载 URL、鉴权方式、过期语义和持久化 Worker 契约仍未冻结，agent-kit 不注册 Build 工具。
+页面/组件安全元数据 PATCH，以及 Mutation 状态、取消、人工重试和幂等组合语义已经冻结并由 MCP 仓库适配。构建产物下载 URL、鉴权方式、过期语义和持久化 Worker 契约仍未冻结，MCP 仓库不注册 Build 工具。
 
 ## 5. 远程多用户方案的平台待办
 
@@ -58,11 +58,11 @@ MCP Server 依赖以下平台能力，但不在主仓库登记 MCP 工具：
 
 - **外部授权**：基于平台登录提供客户端授权、工作空间/Scope 授权、短期凭证和撤销。MCP 作为 OAuth 资源服务器，以面向 Backend 的委托凭证调用 API；不能用一枚服务端 PAT 代表所有用户。
 - **统一访问主体**：ExternalPrincipal 已把用户、不可变授权范围与凭证来源从 PAT ORM 解耦，保留实时成员资格和对象归属检查；委托来源结构已预留，真实 Token 接入待 M2。
-- **契约自省**：MCP 工具 Schema 来自 External API；版本 1 的 `x-wp-operation` 已从 `external_operations.py` 及真实鉴权依赖派生，覆盖多视图与动态 Job 权限。agent-kit binding 对拍尚未完成。
+- **契约自省**：MCP 工具 Schema 来自 External API；版本 1 的 `x-wp-operation` 已从 `external_operations.py` 及真实鉴权依赖派生，覆盖多视图与动态 Job 权限。MCP 仓库 binding 对拍尚未完成。
 - **任务边界**：外部页面/组件继续使用 Mutation Job，不接入内部 AgentRun、Deferred 或 ExternalBatch 模型续跑；MCP 断连不等于业务取消。
 - **批量确认**：跨客户端、跨副本确认需要的平台记录或票据，须定义主体、目标绑定、期限和一次性消费语义；模型布尔值不代替用户确认，不重用内部 AgentRun/HITL。
 - **远程媒体**：先适配文本、资产 ID、短期预览与 PNG；二进制上传通道或异步截图契约另行冻结，不能沿用 CLI 本地路径或内部会话附件 ID。
 
-新增接口先明确路径、入参、出参、Scope、错误与撤销语义，再实施 Backend 和 agent-kit。授权页遵循 `DESIGN.md`；HTTP DTO、External API 或 Gateway 改动执行已有 codegen、权限隔离和真实 Nginx 契约门禁。主仓不登记 MCP 工具，也不维护 MCP 传输和工具清单。
+新增接口先明确路径、入参、出参、Scope、错误与撤销语义，再实施 Backend 和 MCP 仓库。授权页遵循 `DESIGN.md`；HTTP DTO、External API 或 Gateway 改动执行已有 codegen、权限隔离和真实 Nginx 契约门禁。主仓不登记 MCP 工具，也不维护 MCP 传输和工具清单。
 
 首期 P0～P2 默认支持单项归档、文本资源、现有预览和截图；批量确认、二进制上传、Resources 和正式多副本支持列为 P3 扩展。截图实测若不能满足宿主预算，异步截图契约需先补齐才能验收该首期能力。

@@ -2,7 +2,7 @@
 
 开发文档面向平台维护者、功能开发者和部署人员。文档按架构、Backend、Editor、Runtime 开发、跨服务接入、测试、部署和参考资料分组。独立 Chromium 服务的运行说明由 Renderer 自身维护。
 
-外部 Agent 接入代码（CLI、MCP Server、共享 API Client 和 Skill）位于同级独立仓库 `web-presentation-agent-kit`；本目录维护平台侧 External API v1 契约和集成规划。
+外部 Agent 接入分别位于 `web-presentation-cli`（CLI、同步客户端、Skill）与 `web-presentation-mcp`（MCP、异步客户端、部署）。两仓独立维护客户端；本目录维护平台侧 External API v1 契约、授权和集成规划。
 
 ## 快速入口
 
@@ -15,8 +15,8 @@
 | [测试文档入口](./testing/README.md) | 根仓、Backend、Editor、Runtime、契约和 E2E 测试入口 |
 | [部署文档入口](../deployment/production/README.md) | Compose 部署、环境变量、备份恢复、升级回滚和排障 |
 | [External Agent API v1 契约](./reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend API、Scope、任务和交付契约 |
-| [CLI 主仓集成边界](./cli.md) | 主仓负责的 CLI 外部 API 契约和 agent-kit 交接边界 |
-| [MCP 主仓集成边界](./mcp.md) | 主仓负责的 MCP External API 依赖和 agent-kit 交接边界 |
+| [CLI 主仓集成边界](./cli.md) | 主仓负责的 CLI 外部 API 契约和 CLI 仓库交接边界 |
+| [MCP 主仓集成边界](./mcp.md) | 主仓负责的 MCP External API 依赖和 CLI 仓库交接边界 |
 | [远程 MCP 主仓实施计划](./mcp-implementation-plan.md) | 远程多用户授权、API 适配、跨仓工作包、测试和发布验收；待实施 |
 | [大文件与媒体资产管理](./large-files.md) | Git LFS 规则、媒体文件提交检查和历史迁移约束 |
 
@@ -33,8 +33,8 @@
 | [测试](./testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
 | [部署](../deployment/production/README.md) | Compose 模板、生产环境变量、CI/CD、备份、回滚和排障 |
 | [External Agent API](./reference/external-agent-api.md) | 外部 Agent 共用的 Backend 契约和变更流程 |
-| [CLI](./cli.md) | CLI 主仓集成边界；具体命令实现由 agent-kit 维护 |
-| [MCP](./mcp.md) | MCP 主仓集成边界；具体协议适配由 agent-kit 维护 |
+| [CLI](./cli.md) | CLI 主仓集成边界；具体命令实现由 CLI 仓库维护 |
+| [MCP](./mcp.md) | MCP 主仓集成边界；具体协议适配由 CLI 仓库维护 |
 | [参考资料](./reference/conventions.md) | 编码约定、接口契约索引、环境变量索引、术语和模板包 |
 
 ## 维护原则

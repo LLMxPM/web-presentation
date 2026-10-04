@@ -7,7 +7,7 @@
 | 仓库 | 核对基线 | 状态 |
 | --- | --- | --- |
 | web-presentation | `dcf91cbf7e02f0d14cfbf82f4e0911fdef238443` | External API 仅接受 PAT |
-| web-presentation-agent-kit | `5f9489a` | MCP 为历史骨架，尚无首期 binding 注册表 |
+| web-presentation-cli（拆仓前 agent-kit） | `5f9489a` | MCP 为历史骨架，尚无首期 binding 注册表 |
 
 从实际 FastAPI 路由、依赖和当前 OpenAPI 离线核对了 **87 个 HTTP 方法/路径组合**。包括主资源路由、附加读取视图、Mutation 别名路由和批量归档。请求路径、DTO、Scope 与幂等要求继续以主仓代码为准；A1/A4 必须依据完成后的 OpenAPI 对拍，不允许使用本文作为离线请求契约。
 
@@ -64,7 +64,7 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 | 首批真实宿主名称、版本和注册机制 | M0/M2/M7 | 与 A0 联合验证；SDK 测试不替代宿主 |
 | 公网 origin/issuer/resource/API audience | M2/M6 | 明确配置及启动校验，不能从 Host 推导 |
 | opaque 自省 DTO/期限的跨仓消费与清理执行 | M2/A3 | 主仓 DTO/期限已冻结；A3 消费、注册宿主和清理任务待验收 |
-| 全部 MCP binding 与请求/响应对拍 | M3/A1/A4 | agent-kit 建立首期 binding 后验收 |
+| 全部 MCP binding 与请求/响应对拍 | M3/A1/A4 | MCP 仓库建立首期 binding 后验收 |
 | PAT/委托业务对等、轮换后幂等、撤销 | M1/M4 | M2 完成后的 API 和并发测试 |
 | 真实宿主截图预算与 PNG 链路 | M5/M7 | 宿主时限、实际耗时和真实产物 |
 
@@ -84,7 +84,7 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 
 新增独立 Cookie 登录保护的 `/oauth/consent` 和账户 `/settings/account/grants`。默认只读、写权限显式勾选、具体空间至少一项；过期禁用批准，拒绝不需要范围选择。nonce 不进入路由/本地存储，卸载后迟到响应不导航。账户显示当前可见空间名称与失效提示，整链撤销确认后刷新真实状态。
 
-Editor 完整门禁通过：类型检查、142 个测试文件/791 项测试、生产构建。生成 DTO 对拍通过（256 paths/353 schemas）；账户 HTTP 17 项通过、17 项 PG 跳过，仓库文档/边界 16 项通过。未执行真实 ChatGPT 浏览器登录联调与 Renderer E2E；授权 UI 不代表 agent-kit MCP 服务已交付。
+Editor 完整门禁通过：类型检查、142 个测试文件/791 项测试、生产构建。生成 DTO 对拍通过（256 paths/353 schemas）；账户 HTTP 17 项通过、17 项 PG 跳过，仓库文档/边界 16 项通过。未执行真实 ChatGPT 浏览器登录联调与 Renderer E2E；授权 UI 不代表 MCP 仓库 MCP 服务已交付。
 
 ### 批次 8：公开授权、Cookie 确认与授权管理 API
 
@@ -117,7 +117,7 @@ Editor 完整门禁通过：类型检查、142 个测试文件/791 项测试、�
 - `pnpm run codegen:editor-api`、`pnpm run test:contracts:generated`、`pnpm run test:editor:check`：通过；导出 252 个 paths、345 个 Schema。
 - `pnpm run test:contracts:gateway -- --openapi-file editor/src/types/openapi.json`：当前 Backend 完整文档经隔离受控上游与真实 Nginx HTTP 转发后完全一致；上游 503 透传和 Editor SPA 边界通过。容器/网络在结束后清理。
 
-此处 Gateway 证据使用受控静态上游，不代表已部署新 Backend 或通过 OAuth/MCP Gateway。未运行 Renderer/Runtime E2E、真实宿主授权、委托 audience/撤销/轮换和 SQLite/PostgreSQL 授权消费并发；这些分别依赖 M2/M5/M6/M7。agent-kit 首期 binding 尚未存在，M3 跨仓退出验收仍待 A1/A4。
+此处 Gateway 证据使用受控静态上游，不代表已部署新 Backend 或通过 OAuth/MCP Gateway。未运行 Renderer/Runtime E2E、真实宿主授权、委托 audience/撤销/轮换和 SQLite/PostgreSQL 授权消费并发；这些分别依赖 M2/M5/M6/M7。MCP 仓库首期 binding 尚未存在，M3 跨仓退出验收仍待 A1/A4。
 
 ### 批次 4：M0 Authlib 协议适配
 

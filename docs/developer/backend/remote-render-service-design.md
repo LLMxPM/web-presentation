@@ -1,6 +1,6 @@
 # 远程渲染执行服务架构设计
 
-> 状态：核心运行路径已落地（见 §16）；真实多实例联调、数据转换副本演练、性能基线与 `web-presentation-agent-kit` 契约同步仍属发布窗口验收范围。本文件定义完整改造后的架构、接口、数据模型、部署方式和验收条件；全部内容作为同一交付范围。
+> 状态：核心运行路径已落地（见 §16）；真实多实例联调、数据转换副本演练、性能基线与 `web-presentation-cli` 契约同步仍属发布窗口验收范围。本文件定义完整改造后的架构、接口、数据模型、部署方式和验收条件；全部内容作为同一交付范围。
 >
 > 交付方式：在一个维护窗口内完成数据转换和整套系统切换。研发工作可以拆分，发布结果只有一套实现。
 
@@ -456,7 +456,7 @@ Renderer 临时产物总额度受实例磁盘上限约束，空间不足拒绝�
 - AI 工具遇到基础设施问题等待受控执行结果，不引导模型无依据地重写页面。
 - Editor 展示可理解的失败原因、重试状态和 trace ID，不暴露 Renderer 地址、密钥或内部堆栈。
 - API Schema、AI 错误分类、Editor 类型与调用方测试在同一交付中更新。
-- 渲染相关 External API 若改变错误结构，同步更新契约与 `web-presentation-agent-kit` 的消费者；发布采用匹配版本组合。
+- 渲染相关 External API 若改变错误结构，同步更新契约与 `web-presentation-cli` 的消费者；发布采用匹配版本组合。
 
 不保留旧 `PLAYWRIGHT_*`、`PAGE_SCREENSHOT_CAPTURE_FAILED` 或诊断不可用旧码的运行时映射层。权限、业务版本过期等独立领域错误继续属于各自领域，不与渲染错误混合。
 
@@ -657,4 +657,4 @@ pnpm run test:render-e2e
 - 配置与部署模板改为 `RENDER_*` 变量；旧 `PLAYWRIGHT_*` / `PAGE_SCREENSHOT_BROWSER_EXECUTABLE_PATH` 启动即报错。
 - 新增测试入口：`pnpm run test:renderer`、`pnpm run test:render-e2e`。
 
-尚未在本仓自动完成的部分（仍属发布窗口验收范围）：真实多实例联调、数据转换副本演练、性能基线采集与 `web-presentation-agent-kit` 契约同步发布。
+尚未在本仓自动完成的部分（仍属发布窗口验收范围）：真实多实例联调、数据转换副本演练、性能基线采集与 `web-presentation-cli` 契约同步发布。

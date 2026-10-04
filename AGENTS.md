@@ -27,7 +27,7 @@
 - 原生承载 `runtime/` 演示文稿运行时服务（Vue 3 + Vite）。
 - 沉淀开发、测试、部署与 CI/CD 协作规则。
 
-面向外部桌面 Agent 的 CLI、MCP Server、共享 API Client 和配套 Skill 统一维护在同级独立仓库 `web-presentation-agent-kit`；本仓只维护它们依赖的 Backend `/api/v1` External API v1 契约和集成文档。
+面向外部桌面 Agent 的 CLI、专用同步 API Client 和配套 Skill 维护在同级独立仓库 `web-presentation-cli`；MCP Server、专用异步客户端和服务部署维护在 `web-presentation-mcp`。两端独立发布，不共享客户端发行包；本仓维护共同依赖的 Backend `/api/v1` External API v1 契约、授权与集成文档。
 
 当前已落地登录、多用户隔离、工作空间/项目/页面管理、资源库、组件库、主题库、样式库、AI Agent 会话、工具确认、预览、截图、构建和容器发布；跨项目资产治理、Dashboard、项目/页面使用关系运营视图和 Runtime 反向回传仍在建设中。
 
@@ -119,7 +119,7 @@ Editor 是创作工作台，负责登录、工作空间、项目、页面、组�
 
 - 只维护协议版本、错误码、执行请求/回执/结果 Schema、接入票据与 JSON Schema；不要引入业务逻辑或 HTTP 客户端。
 - Python DTO 与 `schemas/*.json` 双份事实源必须同步修改，并补充对拍/往返测试。
-- 契约破坏性变更必须同步 Backend `services/rendering`、`renderer/` 调用点与 `web-presentation-agent-kit` 消费者。
+- 契约破坏性变更必须同步 Backend `services/rendering`、`renderer/` 调用点与 `web-presentation-cli`、`web-presentation-mcp` 消费者。
 
 ### renderer/
 

@@ -4,7 +4,7 @@
 
 首批冻结边界、现状缺口及跨仓阻塞见[实施交接记录](./mcp-contract-handoff.md)。M0 按独立边界分项冻结，已冻结的 M1 基础解耦与 M3 可以推进；M2 仍需授权选型最小验证与真实客户端矩阵。
 
-本计划负责 `web-presentation` 平台侧工作；MCP 工具、共享客户端和服务交付由 [agent-kit 实施计划](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)负责。平台现行接口仍以[External API v1 契约](./reference/external-agent-api.md)及实际代码为准。
+本计划负责 `web-presentation` 平台侧工作；MCP 工具、专用异步客户端和服务交付由 [MCP 仓库实施计划](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/mcp-implementation-plan.md)负责。平台现行接口仍以[External API v1 契约](./reference/external-agent-api.md)及实际代码为准。
 
 ## 1. 目标和交付范围
 
@@ -48,7 +48,7 @@
 
 ## 3. 跨仓职责和依赖
 
-| 接口面 | 主仓负责 | agent-kit 负责 |
+| 接口面 | 主仓负责 | MCP 仓库负责 |
 | --- | --- | --- |
 | 用户授权 | 登录、授权页面、客户端规则、Grant、签发/刷新/撤销 | 受保护资源元数据、挑战响应、逐请求验证和委托交换 |
 | External API | PAT/委托凭证校验、Scope、实时成员关系、对象归属 | 请求级凭证、空间 Header、错误与返回值适配 |
@@ -103,7 +103,7 @@ MCP 与 External API 是两个受众。令牌交换是本项目为保留用户�
 
 登录后的授权页展示客户端身份、目标服务、请求 Scope、所选空间和有效期策略。空间来自实时成员关系；首期默认授权具体空间集合，不默认为未来加入的所有空间。授权提交端点由 OAuth 实现和现有 Editor 登录方式决定，必须具备 CSRF/请求绑定，不能让模型参数代替用户选择。
 
-MCP 侧的资源元数据由 agent-kit 提供，Gateway 按最终资源 URI 路由。授权页面、元数据和 Token 不得从任意 `Host`/转发 Header 拼出 issuer；公网 origin、issuer、MCP resource、API audience 必须显式配置并在启动时校验。
+MCP 侧的资源元数据由 MCP 仓库提供，Gateway 按最终资源 URI 路由。授权页面、元数据和 Token 不得从任意 `Host`/转发 Header 拼出 issuer；公网 origin、issuer、MCP resource、API audience 必须显式配置并在启动时校验。
 
 ### 4.3 委托交换契约
 
@@ -124,9 +124,9 @@ P0 默认建议：授权码 60 秒一次性，MCP 访问令牌 15 分钟，委�
 
 ## 5. M0：冻结跨仓契约和发布范围
 
-优先级 P0；依赖无；交付给 agent-kit A0/A3。此工作包结束后才开发依赖尚未存在的接口。
+优先级 P0；依赖无；交付给 MCP 仓库 A0/A3。此工作包结束后才开发依赖尚未存在的接口。
 
-- [ ] 逐条核对 agent-kit binding 需要的真实方法、路径、视图、DTO、Scope、workspace Header、幂等要求与同步/Job 返回。记录现有可用、需补契约、首期排除三种状态。
+- [ ] 逐条核对 MCP 仓库 binding 需要的真实方法、路径、视图、DTO、Scope、workspace Header、幂等要求与同步/Job 返回。记录现有可用、需补契约、首期排除三种状态。
 - [ ] 选定成熟 OAuth 授权实现并完成最小验证：能接平台登录/用户、PKCE、resource audience、预注册客户端、刷新/撤销、服务端交换和多进程存储。依赖许可证、版本、维护状态和适配成本有记录；禁止手写整套授权协议。
 - [ ] 与 A0 确定首批真实客户端及版本；至少有一个真实宿主完成验证。SDK 测试客户端只算协议覆盖，不算产品兼容证据。
 - [ ] 冻结第 4 节候选契约：协议路径、issuer/resource/audience、客户端注册方式、错误、scope 不扩大、空间选择、期限和撤销边界。
@@ -181,14 +181,14 @@ P0 默认建议：授权码 60 秒一次性，MCP 访问令牌 15 分钟，委�
 
 优先级 P1；依赖 M0 的映射清单；不依赖内部助手改造。
 
-- [x] 核对首期依赖的现有 87 个 HTTP 方法/路径组合，补齐源码、草稿、依赖、资源差异、单项归档与 PNG 的实际响应缺口；A1/A4 binding 对拍仍待 agent-kit 实施。
+- [x] 核对首期依赖的现有 87 个 HTTP 方法/路径组合，补齐源码、草稿、依赖、资源差异、单项归档与 PNG 的实际响应缺口；A1/A4 binding 对拍仍待 MCP 仓库实施。
 - [x] page.get 的详情/源码/版本、component.get 的详情/草稿/版本等按真实路由验证；operation 主路径不能代替所有视图。
 - [x] 采用版本 1 的 `x-wp-operation`，从现有 operation 和真实鉴权依赖派生 Scope、模式及 Header/幂等要求；动态 Job 路由声明按真实 job_type 解析。
 - [x] 不建立第二份手工 route→scope 清单，不提供内部 `/guides` 镜像，不复制 `tool_specs.py`。
 - [x] 公开 OpenAPI 可跨用户共享；认证后的 External 成功响应使用 private, no-store，规范与 capabilities 保持原有鉴权。
 - [x] 源码读取提供完整内容与编辑基线；长源码与草稿版本/hash 对拍测试覆盖，不截断。
 
-验收：从当前 Backend 生成 OpenAPI，agent-kit 所有已启用 binding 的请求、成功响应和引用均可解析；从真实 Gateway 获取的文档同样通过。缺字段时修正 API 契约，不能让 MCP 写本地 DTO 兜底。
+验收：从当前 Backend 生成 OpenAPI，MCP 仓库所有已启用 binding 的请求、成功响应和引用均可解析；从真实 Gateway 获取的文档同样通过。缺字段时修正 API 契约，不能让 MCP 写本地 DTO 兜底。
 
 ## 9. M4：创作任务、幂等和版本语义
 
@@ -239,7 +239,7 @@ P0 默认建议：授权码 60 秒一次性，MCP 访问令牌 15 分钟，委�
 - [ ] OAuth 发现和挑战 Header、MCP JSON/流式响应、外部 API request ID/Retry-After 穿透真实 Gateway。
 - [ ] 授权/交换/业务调用串联 trace/request ID；记录 grant/client/workspace/operation/job 与结果，不记录 Token、源码全文、图片 Base64 或带签名预览 URL。
 - [ ] 数据库迁移先加后用；先部署兼容 PAT 的授权/API，再部署 MCP。主仓旧版缺少必需契约时 MCP 明确拒绝启动/就绪，不静默降级成共享 PAT。
-- [ ] 回退顺序为关闭 MCP 入口或撤销 MCP 服务授权，再回退 agent-kit；不删除已提交业务结果和 Job。主仓回退要考虑新表/字段数据与委托令牌存活期，避免破坏 CLI。
+- [ ] 回退顺序为关闭 MCP 入口或撤销 MCP 服务授权，再回退 MCP 仓库；不删除已提交业务结果和 Job。主仓回退要考虑新表/字段数据与委托令牌存活期，避免破坏 CLI。
 
 P2 单实例发布也需要连接/等待预算、健康检查、令牌轮换和停止接收新调用的说明。正式多副本扩展按主仓专属 Docker 演练环境验证，不使用开发数据。
 
@@ -252,7 +252,7 @@ P2 单实例发布也需要连接/等待预算、健康检查、令牌轮换和�
 | 单测 | 主体归一、Scope all/any、audience、撤销、授权码/刷新并发、幂等边界 |
 | API | PAT/委托正反例；两用户两空间；whoami/capabilities/规范隔离；Job 动态权限 |
 | 数据库 | 新迁移、原子消费、刷新轮换、既有幂等并发；适用 SQLite/PostgreSQL 配置 |
-| 契约 | 当前 OpenAPI 引用、响应类型、Headers、向后兼容；与 agent-kit binding 对拍 |
+| 契约 | 当前 OpenAPI 引用、响应类型、Headers、向后兼容；与 MCP 仓库 binding 对拍 |
 | Gateway | 真实 Nginx 返回 JSON、认证挑战、OAuth 发现、MCP 转发、PNG 与短期 URL |
 | E2E | 真实客户端授权→页面/组件创作→Job→编辑→预览/PNG→撤销 |
 
@@ -286,7 +286,7 @@ pnpm run test:repository
 | 字段 | 必填内容 |
 | --- | --- |
 | 工作包 | M/A 编号、完成项、明确延期项 |
-| 版本 | 主仓 commit/镜像、agent-kit commit/版本、MCP SDK/协议、客户端名称及版本 |
+| 版本 | 主仓 commit/镜像、MCP 仓库 commit/版本、MCP SDK/协议、客户端名称及版本 |
 | 契约 | 新增/变更路径、DTO、Scope、错误、幂等、最低兼容版本、生成 OpenAPI 摘要 |
 | 环境 | Gateway、Backend、Renderer、Runtime 拓扑和脱敏配置；数据隔离方式 |
 | 证据 | 测试命令、结果、真实用户隔离和创作流程；PNG/Job/请求关联 ID |
@@ -298,7 +298,7 @@ pnpm run test:repository
 - [ ] CLI PAT 兼容；内部助手工具注册、围栏和续跑未被 MCP 接入改造。
 - [ ] 各类令牌受众正确，撤销后新请求拒绝，业务 Job 生命周期明确。
 - [ ] 真实 Gateway 契约与 Backend→Renderer→Runtime PNG 链路通过。
-- [ ] 文档只声明已验收功能；更新主仓 MCP 集成页、External API、部署/发布清单与 README，agent-kit 同步版本和最低主仓要求。
+- [ ] 文档只声明已验收功能；更新主仓 MCP 集成页、External API、部署/发布清单与 README，MCP 仓库同步版本和最低主仓要求。
 
 ## 13. 工作包总表
 
@@ -307,11 +307,11 @@ pnpm run test:repository
 | M0 | 冻结契约、授权实现选型、首批客户端矩阵 | 无 | 两仓 | ChatGPT web 首批、CIMD/S256/RFC9207 已冻结；真实宿主待办 |
 | M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 解耦、真实委托 Bearer 和读取/Scope 对等已实现；创作/Job 与真实宿主待验收 |
 | M2 | OAuth、Grant、账户授权 UI、撤销 | M0；联调依赖 M1 | A3 真实授权 | 协议/存储、公开路由、Cookie 确认、Editor 和本人 Grant 管理已实现；清理/服务登记运维、PG/真实宿主验收待办 |
-| M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 主仓首批实现完成；agent-kit binding 与实际 Backend Gateway 对拍待办 |
+| M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 主仓首批实现完成；MCP 仓库 binding 与实际 Backend Gateway 对拍待办 |
 | M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | HTTP 授权→交换→只读闭环已验证；创作/Job/幂等委托对拍待实施 |
 | M5 | 预览和截图预算/实机验证 | M1/M2 | A6 | 待实施 |
 | M6 | Gateway、配置、观测、升级回退 | M0，随 P1/P2推进 | A8/A9 | 默认关闭的显式配置和 OAuth Gateway 路由已实现；真实网关/发布验收待办 |
-| M7 | 跨仓完整验收和发布记录 | M1～M6 与 agent-kit 首期实现；与 A9 联合执行 | 两仓 | 待实施 |
+| M7 | 跨仓完整验收和发布记录 | M1～M6 与 MCP 仓库首期实现；与 A9 联合执行 | 两仓 | 待实施 |
 | M5 扩展 | 批量确认、上传、必要的异步截图 | 各自冻结契约 | A7/P3 | 待实施；异步截图按量测可能升级为 P2 阻塞项 |
 
 原规划提交只创建工作清单；当前各批次实现与验证证据见实施交接记录。未验收项目不得提前写成已支持。

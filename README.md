@@ -53,7 +53,8 @@
 | Runtime | 预览与构建引擎 | 基于 Vue/Vite 渲染页面和组件，承接预览、截图宿主协议、诊断和发布构建 |
 | Renderer | 远程渲染执行服务 | 独立单槽异步 Playwright 服务，执行截图、页面诊断与组件诊断 |
 | Infra | 部署与运行环境 | 提供 Docker 镜像、compose 模板、发布流程和运行时依赖约束 |
-| Agent Kit | 外部 Agent 接入 | 同级 `web-presentation-agent-kit` 仓库提供官方 `wp` CLI、共享 API Client 和配套 Skill；远程多用户 MCP 已进入[实施规划](docs/developer/mcp-implementation-plan.md)，尚未交付 |
+| CLI | 桌面 Agent 接入 | 同级 [web-presentation-cli](https://github.com/LLMxPM/web-presentation-cli) 提供官方 `wp`、专用同步客户端和配套 Skill |
+| MCP | 远程 Agent 接入 | 独立 [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp) 维护协议服务、专用异步客户端与部署；远程多用户能力尚未交付，见[实施规划](docs/developer/mcp-implementation-plan.md) |
 
 详细架构、模块边界和目标业务流程见 [平台架构总览](./docs/developer/architecture/overview.md)。
 
@@ -136,7 +137,7 @@ web-presentation/
 
 `runtime/` 包含平台原生演示运行时服务，遵循其目录下声明的 GNU Affero General Public License v3.0 许可证，见 [runtime/LICENSE](./runtime/LICENSE)。
 
-外部 Agent 接入代码位于同级独立仓库 [web-presentation-agent-kit](https://github.com/LLMxPM/web-presentation-agent-kit)，主仓库仅保留平台 API、架构和集成文档。
+外部 Agent 接入分为 [web-presentation-cli](https://github.com/LLMxPM/web-presentation-cli)（CLI、同步客户端、Skill）与 [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp)（MCP、异步客户端、部署）。两端分别维护客户端，共同消费主仓 External API；主仓负责平台 API、授权、架构和集成文档。
 
 
 CLI 通过平台根地址的 `/openapi.json` 获取当前请求契约。部署后应执行 [Gateway 契约验证](docs/deployment/production/README.md#cli-openapi-契约入口)；业务 API 正常不代表该入口正常。配套 Skill 将路由挂载及挂载后的截图复核作为完整多页演示的交付检查点。

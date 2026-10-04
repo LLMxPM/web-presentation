@@ -46,7 +46,7 @@
 | [测试文档](./developer/testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
 | [生产部署指南](./deployment/production/README.md) | compose 部署、环境变量、CI/CD、备份恢复、升级回滚和排障 |
 | [External Agent API v1 契约](./developer/reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend 契约 |
-| [CLI 主仓集成边界](./developer/cli.md) | 主仓侧 CLI External API 契约和 agent-kit 交接边界 |
+| [CLI 主仓集成边界](./developer/cli.md) | 主仓侧 CLI External API 契约和 CLI 仓库交接边界 |
 | [远程 MCP 主仓实施计划](./developer/mcp-implementation-plan.md) | 平台授权、External API、Gateway 和跨仓验收的待实施工作包 |
 | [参考资料](./developer/reference/conventions.md) | 开发约定、接口契约、环境变量、术语和模板包 |
 
