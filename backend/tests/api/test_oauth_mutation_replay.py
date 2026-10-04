@@ -33,7 +33,7 @@ CASES = [
         {
             "page_id": 1,
             "base_version_no": 1,
-            "edits": [{"type": "replace", "old_text": "原始", "new_text": "新"}],
+            "edits": [{"type": "replace_exact", "old_text": "原始", "new_text": "新"}],
         },
         "page_edit",
         "page.edit",
@@ -43,7 +43,7 @@ CASES = [
         {
             "page_id": 1,
             "base_version_no": 1,
-            "edits": [{"type": "replace", "old_text": "原始", "new_text": "新"}],
+            "edits": [{"type": "replace_exact", "old_text": "原始", "new_text": "新"}],
         },
         "page_edit",
         "jobs.mutation.page.edit",
@@ -75,7 +75,7 @@ CASES = [
         {
             "component_id": 1,
             "base_version_no": 0,
-            "edits": [{"type": "replace", "old_text": "原始", "new_text": "新"}],
+            "edits": [{"type": "replace_exact", "old_text": "原始", "new_text": "新"}],
         },
         "component_edit",
         "component.edit",
@@ -85,7 +85,7 @@ CASES = [
         {
             "component_id": 1,
             "base_version_no": 0,
-            "edits": [{"type": "replace", "old_text": "原始", "new_text": "新"}],
+            "edits": [{"type": "replace_exact", "old_text": "原始", "new_text": "新"}],
         },
         "component_edit",
         "jobs.mutation.component.edit",

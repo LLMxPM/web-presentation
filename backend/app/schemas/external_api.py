@@ -13,8 +13,13 @@ from app.schemas.external_identity import (
     ExternalIdentityWorkspace,
     ExternalPatTokenInfo,
 )
-from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration, StyleConfiguration
+from app.schemas.presentation_style import (
+    ProjectCreateConfiguration,
+    ProjectDefaultConfiguration,
+    StyleConfiguration,
+)
 from app.schemas.project_app_config import ProjectMenuMode
+from app.schemas.source_edits import SourceEditInput
 
 T = TypeVar("T")
 
@@ -156,7 +161,7 @@ class ExternalEntityValidationRequest(BaseModel):
     entity_id: int | None = Field(default=None, ge=1)
     mode: Literal["current", "content", "edits"] = "current"
     source_code: str | None = None
-    edits: list[dict[str, Any]] | None = None
+    edits: list[SourceEditInput] | None = None
     preview_schema: dict[str, Any] | None = None
     detail: bool = False
 
@@ -298,7 +303,7 @@ class ExternalPageApplyEditsMutationRequest(BaseModel):
 
     page_id: int = Field(..., description="目标页面 ID")
     base_version_no: int = Field(..., ge=1, description="基准版本号 (乐观锁并发控制)")
-    edits: list[dict[str, Any]] = Field(..., min_length=1, description="结构化替换/修改指令列表")
+    edits: list[SourceEditInput] = Field(..., min_length=1, description="结构化编辑；定位文本须唯一命中当前源码")
 
 
 class ExternalComponentCreateMutationRequest(BaseModel):
@@ -323,7 +328,7 @@ class ExternalComponentApplyEditsMutationRequest(BaseModel):
     component_id: int = Field(..., description="目标工作空间组件 ID")
     base_version_no: int = Field(..., ge=0, description="基准版本号 (乐观锁并发控制)")
     base_draft_hash: str | None = Field(default=None, min_length=1, description="组件草稿 SHA-256 指纹")
-    edits: list[dict[str, Any]] = Field(..., min_length=1, description="结构化替换/修改指令列表")
+    edits: list[SourceEditInput] = Field(..., min_length=1, description="结构化编辑；定位文本须唯一命中当前草稿")
 
 
 class ExternalMutationJobResponse(BaseModel):

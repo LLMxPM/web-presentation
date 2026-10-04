@@ -31448,13 +31448,30 @@
           },
           "edits": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ReplaceExactEdit"
+                },
+                {
+                  "$ref": "#/components/schemas/InsertAfterEdit"
+                },
+                {
+                  "$ref": "#/components/schemas/RewriteFileEdit"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "insert_after": "#/components/schemas/InsertAfterEdit",
+                  "replace_exact": "#/components/schemas/ReplaceExactEdit",
+                  "rewrite_file": "#/components/schemas/RewriteFileEdit"
+                }
+              }
             },
             "type": "array",
             "minItems": 1,
             "title": "Edits",
-            "description": "结构化替换/修改指令列表"
+            "description": "结构化编辑；定位文本须唯一命中当前草稿"
           }
         },
         "additionalProperties": false,
@@ -31841,8 +31858,25 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
-                  "type": "object"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ReplaceExactEdit"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InsertAfterEdit"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RewriteFileEdit"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "insert_after": "#/components/schemas/InsertAfterEdit",
+                      "replace_exact": "#/components/schemas/ReplaceExactEdit",
+                      "rewrite_file": "#/components/schemas/RewriteFileEdit"
+                    }
+                  }
                 },
                 "type": "array"
               },
@@ -32284,13 +32318,30 @@
           },
           "edits": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ReplaceExactEdit"
+                },
+                {
+                  "$ref": "#/components/schemas/InsertAfterEdit"
+                },
+                {
+                  "$ref": "#/components/schemas/RewriteFileEdit"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "insert_after": "#/components/schemas/InsertAfterEdit",
+                  "replace_exact": "#/components/schemas/ReplaceExactEdit",
+                  "rewrite_file": "#/components/schemas/RewriteFileEdit"
+                }
+              }
             },
             "type": "array",
             "minItems": 1,
             "title": "Edits",
-            "description": "结构化替换/修改指令列表"
+            "description": "结构化编辑；定位文本须唯一命中当前源码"
           }
         },
         "additionalProperties": false,
@@ -33827,6 +33878,37 @@
         "type": "object",
         "title": "ImageProviderConfigUpdate",
         "description": "更新图片供应商连接。"
+      },
+      "InsertAfterEdit": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "insert_after",
+            "title": "Type",
+            "description": "在唯一命中的 anchor_text 后插入内容。"
+          },
+          "anchor_text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Anchor Text",
+            "description": "来自读取工具返回的真实源码片段，必须唯一命中。"
+          },
+          "new_text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "New Text",
+            "description": "要插入的源码片段。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "anchor_text",
+          "new_text"
+        ],
+        "title": "InsertAfterEdit",
+        "description": "在唯一命中的 anchor_text 后插入非空 new_text。"
       },
       "JsonValue": {},
       "LoginRequest": {
@@ -40168,6 +40250,60 @@
         "type": "object",
         "title": "RenameAgentSessionRequest",
         "description": "重命名或自动命名 Agent 会话的请求体。"
+      },
+      "ReplaceExactEdit": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "replace_exact",
+            "title": "Type",
+            "description": "精确替换唯一命中的 old_text。"
+          },
+          "old_text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Old Text",
+            "description": "来自读取工具返回的真实源码片段，必须唯一命中。"
+          },
+          "new_text": {
+            "type": "string",
+            "title": "New Text",
+            "description": "替换后的源码片段；允许为空字符串以删除内容。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "old_text",
+          "new_text"
+        ],
+        "title": "ReplaceExactEdit",
+        "description": "精确替换唯一命中的 old_text，new_text 为空表示删除。"
+      },
+      "RewriteFileEdit": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "rewrite_file",
+            "title": "Type",
+            "description": "用完整 content 重写整个源码文件。"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content",
+            "description": "完整的新源码内容。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "content"
+        ],
+        "title": "RewriteFileEdit",
+        "description": "以完整非空 content 重写源码文件。"
       },
       "RuntimeKitCapabilityItem": {
         "properties": {

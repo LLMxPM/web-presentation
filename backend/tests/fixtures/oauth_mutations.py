@@ -186,7 +186,7 @@ async def submit_edit(client, access: str, kind: str, *, key="submit") -> dict:
     payload = {
         entity + "_id": 1,
         "base_version_no": 1 if kind == "page" else 0,
-        "edits": [{"type": "replace", "old_text": "原始", "new_text": "新"}],
+        "edits": [{"type": "replace_exact", "old_text": "原始", "new_text": "新"}],
     }
     headers = await delegate_headers(client, access, key=key)
     response = await client.post(

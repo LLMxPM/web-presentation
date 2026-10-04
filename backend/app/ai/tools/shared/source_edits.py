@@ -4,14 +4,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from difflib import unified_diff
-from typing import Annotated, Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 
 from app.core.exceptions import AppException
-from app.core.text_normalizer import calculate_source_hash as _calculate_source_hash, normalize_text_to_lf
-
-SourceEditType = Literal["replace_exact", "insert_after", "rewrite_file"]
+from app.core.text_normalizer import calculate_source_hash as _calculate_source_hash
+from app.core.text_normalizer import normalize_text_to_lf
+from app.schemas.source_edits import (
+    InsertAfterEdit as InsertAfterEdit,
+)
+from app.schemas.source_edits import (
+    ReplaceExactEdit as ReplaceExactEdit,
+)
+from app.schemas.source_edits import (
+    RewriteFileEdit as RewriteFileEdit,
+)
+from app.schemas.source_edits import (
+    SourceEditInput as SourceEditInput,
+)
+from app.schemas.source_edits import (
+    SourceEditType as SourceEditType,
+)
 
 
 def calculate_source_hash(source_content: str | None) -> str:
@@ -20,39 +34,6 @@ def calculate_source_hash(source_content: str | None) -> str:
     return _calculate_source_hash(source_content)
 
 
-class _SourceEditBase(BaseModel):
-    """结构化源码编辑对象基类，禁止模型生成未声明字段。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class ReplaceExactEdit(_SourceEditBase):
-    """精确替换源码中唯一命中的 old_text。"""
-
-    type: Literal["replace_exact"] = Field(description="精确替换唯一命中的 old_text。")
-    old_text: str = Field(min_length=1, description="来自读取工具返回的真实源码片段，必须唯一命中。")
-    new_text: str = Field(description="替换后的源码片段；允许为空字符串以删除内容。")
-
-
-class InsertAfterEdit(_SourceEditBase):
-    """在源码中唯一命中的 anchor_text 后插入 new_text。"""
-
-    type: Literal["insert_after"] = Field(description="在唯一命中的 anchor_text 后插入内容。")
-    anchor_text: str = Field(min_length=1, description="来自读取工具返回的真实源码片段，必须唯一命中。")
-    new_text: str = Field(min_length=1, description="要插入的源码片段。")
-
-
-class RewriteFileEdit(_SourceEditBase):
-    """用完整 content 重写整个源码文件。"""
-
-    type: Literal["rewrite_file"] = Field(description="用完整 content 重写整个源码文件。")
-    content: str = Field(min_length=1, description="完整的新源码内容。")
-
-
-SourceEditInput = Annotated[
-    ReplaceExactEdit | InsertAfterEdit | RewriteFileEdit,
-    Field(discriminator="type"),
-]
 SourceEditPayload = dict[str, Any] | ReplaceExactEdit | InsertAfterEdit | RewriteFileEdit
 
 

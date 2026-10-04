@@ -1086,7 +1086,7 @@ export type ExternalComponentApplyEditsMutationRequest = {
   "component_id": number
   "base_version_no": number
   "base_draft_hash"?: (string) | (null)
-  "edits": (Record<string, unknown>)[]
+  "edits": ((ReplaceExactEdit) | (InsertAfterEdit) | (RewriteFileEdit))[]
 }
 
 export type ExternalComponentCreateMutationRequest = {
@@ -1143,7 +1143,7 @@ export type ExternalEntityValidationRequest = {
   "entity_id"?: (number) | (null)
   "mode"?: "current" | "content" | "edits"
   "source_code"?: (string) | (null)
-  "edits"?: ((Record<string, unknown>)[]) | (null)
+  "edits"?: (((ReplaceExactEdit) | (InsertAfterEdit) | (RewriteFileEdit))[]) | (null)
   "preview_schema"?: (Record<string, unknown>) | (null)
   "detail"?: boolean
 }
@@ -1207,7 +1207,7 @@ export type ExternalMutationJobResponse = {
 export type ExternalPageApplyEditsMutationRequest = {
   "page_id": number
   "base_version_no": number
-  "edits": (Record<string, unknown>)[]
+  "edits": ((ReplaceExactEdit) | (InsertAfterEdit) | (RewriteFileEdit))[]
 }
 
 export type ExternalPageCopyRequest = {
@@ -1440,6 +1440,12 @@ export type ImageProviderConfigUpdate = {
   "base_url"?: (string) | (null)
   "api_key"?: (string) | (null)
   "status"?: ("active" | "archived") | (null)
+}
+
+export type InsertAfterEdit = {
+  "type": "insert_after"
+  "anchor_text": string
+  "new_text": string
 }
 
 export type JsonValue = unknown
@@ -2442,6 +2448,17 @@ export type RecordStatus = "active" | "archived"
 export type RenameAgentSessionRequest = {
   "session_name"?: (string) | (null)
   "autogenerate"?: boolean
+}
+
+export type ReplaceExactEdit = {
+  "type": "replace_exact"
+  "old_text": string
+  "new_text": string
+}
+
+export type RewriteFileEdit = {
+  "type": "rewrite_file"
+  "content": string
 }
 
 export type RuntimeKitCapabilityItem = {

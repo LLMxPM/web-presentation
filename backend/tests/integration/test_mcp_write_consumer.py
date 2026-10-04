@@ -5,9 +5,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from authlib.oauth2.rfc7636 import create_s256_code_challenge
-from sqlalchemy import func, select, update
-
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.models.api_mutation_job import ApiMutationJob
@@ -15,8 +12,11 @@ from app.models.oauth_credential import OAuthAuthorizationCode
 from app.models.page import Page
 from app.models.workspace_component import WorkspaceComponent
 from app.services.oauth.protocol import credential_digest
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
+from sqlalchemy import func, select, update
+
 from tests.fixtures.oauth import POLICY, REDIRECT, VERIFIER, request_data
-from tests.fixtures.oauth_mutations import SOURCE
+from tests.fixtures.oauth_mutations import SOURCE, delegate_headers
 from tests.integration.test_mcp_consumer import call, data, make_runtime
 from tests.integration.test_mcp_consumer import consumer_backend as consumer_backend
 from tests.integration.test_oauth_mutation_commit import claim, prepared
@@ -62,7 +62,32 @@ def edit_arguments(kind):
     """构造测试已有实体的明确编辑基线；这是测试数据，不是 MCP 业务 DTO 镜像。"""
     return {"workspace_id": 1, "resource_type": kind, "action": "content", "target_id": 1,
         "idempotency_key": "edit-" + kind, "payload": {kind + "_id": 1, "base_version_no": 1 if kind == "page" else 0,
-        "edits": [{"type": "replace", "old_text": "原始", "new_text": "修改"}]}}
+        "edits": [{"type": "replace_exact", "old_text": "原始", "new_text": "修改"}]}}
+
+
+@pytest.mark.parametrize("kind", ["page", "component"])
+async def test_invalid_edits_rejected_by_mcp_and_producer_before_enqueue(consumer_backend, oauth_mutation_client, kind):
+    """真实 OpenAPI 的联合编辑 Schema 被两端执行，错误 type/字段不创建异步任务。"""
+    backend, app, access, _ = consumer_backend
+    _, factory, _, _ = oauth_mutation_client
+    runtime = make_runtime(app)
+    headers = await delegate_headers(backend, access["access_token"])
+    args = edit_arguments(kind)
+    async with runtime.sdk_app.router.lifespan_context(runtime.sdk_app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=runtime.app), base_url="https://mcp.example.test") as client:
+            guide = data(await call(client, "wp_get_operation_guide", {"workspace_id": 1, "binding_id": kind + ".update.content"}, access["access_token"]))
+            assert "replace_exact" in str(guide["request_body"]) and "rewrite_file" in str(guide["request_body"])
+            for edits in ([{"type": "replace", "old_text": "原始", "new_text": "修改"}],
+                          [{"type": "replace_exact", "new_text": "修改"}],
+                          [{"type": "rewrite_file", "content": "<template/>", "unexpected": True}]):
+                invalid = {**args, "payload": {**args["payload"], "edits": edits}}
+                result = (await call(client, "wp_update_entity", invalid, access["access_token"])).json()["result"]
+                assert result["isError"] and result["structuredContent"]["error"]["code"] == "INVALID_ARGUMENTS"
+                response = await backend.post(f"/api/v1/{'pages' if kind == 'page' else 'components'}/1/edits",
+                    json=invalid["payload"], headers={**headers, "Idempotency-Key": "invalid-edits"})
+                assert response.status_code == 422
+    async with factory() as session:
+        assert await session.scalar(select(func.count()).select_from(ApiMutationJob)) == 0
 
 
 async def test_mcp_lost_write_dedup_dynamic_permission_and_cancel(consumer_backend, oauth_mutation_client):
