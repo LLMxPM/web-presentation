@@ -4,23 +4,44 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 import app.models  # noqa: F401
+import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from app.db.base import Base
 from app.models.oauth_registration import OAuthClient
 from app.models.user import User
-from sqlalchemy import create_engine, inspect, select
+from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy.engine import make_url
 
 
-def test_oauth_migration_roundtrip_preserves_business_data(tmp_path: Path) -> None:
+@pytest.mark.parametrize("database_kind", ["sqlite", "postgresql"])
+def test_oauth_migration_roundtrip_preserves_business_data(tmp_path: Path, database_kind: str) -> None:
     """只创建/移除 OAuth 表；迁移后类型、索引和外键与模型一致，旧用户保留。"""
     backend_root = Path(__file__).resolve().parents[2]
     database = tmp_path / "oauth-migration.db"
+    database_url = f"sqlite+aiosqlite:///{database.as_posix()}"
+    sync_url = f"sqlite:///{database.as_posix()}"
+    admin = None
+    owned_database = 'wp_oauth_test_migration_' + uuid4().hex
+    if database_kind == "postgresql":
+        configured = os.getenv("OAUTH_TEST_POSTGRES_DATABASE_URL", "")
+        if not configured:
+            if os.getenv("OAUTH_TEST_POSTGRES_REQUIRED") == "1":
+                pytest.fail("OAuth 迁移 PG 门禁必须配置专属测试数据库")
+            pytest.skip("未配置专属 OAuth PostgreSQL 迁移库")
+        url = make_url(configured)
+        assert url.drivername == 'postgresql+asyncpg' and (url.database or '').startswith('wp_oauth_test_')
+        admin = create_engine(url.set(drivername='postgresql+psycopg'), isolation_level='AUTOCOMMIT')
+        with admin.connect() as connection:
+            connection.execute(text(f'CREATE DATABASE "{owned_database}"'))
+        database_url = url.set(database=owned_database).render_as_string(hide_password=False)
+        sync_url = url.set(database=owned_database, drivername='postgresql+psycopg')
     env = {
         **os.environ,
-        "DATABASE_URL": f"sqlite+aiosqlite:///{database.as_posix()}",
+        "DATABASE_URL": database_url,
         "REDIS_URL": "memory://oauth-migration",
     }
 
@@ -36,9 +57,9 @@ def test_oauth_migration_roundtrip_preserves_business_data(tmp_path: Path) -> No
         )
         assert result.returncode == 0, result.stderr
 
-    migrate("upgrade", "20261002_0100")
-    engine = create_engine(f"sqlite:///{database.as_posix()}")
+    engine = create_engine(sync_url)
     try:
+        migrate("upgrade", "20261002_0100")
         with engine.begin() as connection:
             connection.execute(
                 User.__table__.insert().values(
@@ -91,3 +112,9 @@ def test_oauth_migration_roundtrip_preserves_business_data(tmp_path: Path) -> No
         assert oauth_names <= set(inspect(engine).get_table_names())
     finally:
         engine.dispose()
+        if admin is not None:
+            # 只清理本例明确创建的 UUID 数据库，绝不删除配置中的测试库或用户数据。
+            assert owned_database.startswith('wp_oauth_test_migration_')
+            with admin.connect() as connection:
+                connection.execute(text(f'DROP DATABASE "{owned_database}"'))
+            admin.dispose()
