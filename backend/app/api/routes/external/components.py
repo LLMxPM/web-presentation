@@ -7,38 +7,43 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies_external import (
+    ExternalAuthContext,
+    require_external_operation,
+)
 from app.api.external_openapi import ExternalAPIRoute
-from app.api.dependencies_external import ExternalAuthContext, require_external_operation
+from app.api.routes.external.validate import validate_entity
 from app.core.exceptions import AppException
 from app.core.text_normalizer import calculate_source_hash
 from app.db.session import get_db_session
+from app.models.enums import RecordStatus
 from app.schemas.common import MessageResponse, PagedResponse
-from app.schemas.external_content import ExternalComponentDraftResponse
-from app.schemas.external_api import (
-    ExternalBatchArchiveRequest,
-    ExternalBatchArchiveResponse,
-    ExternalComponentMetadataUpdateRequest,
-    ExternalComponentCreateMutationRequest,
-    ExternalEntityValidationRequest,
-    ExternalEntityValidationResponse,
-    ExternalComponentApplyEditsMutationRequest,
-    ExternalMutationJobResponse,
-)
 from app.schemas.component import (
-    WorkspaceComponentCurrentDependencies,
     SuggestedComponentItem,
+    WorkspaceComponentCurrentDependencies,
     WorkspaceComponentItem,
     WorkspaceComponentListQuery,
     WorkspaceComponentPublishRequest,
     WorkspaceComponentVersionContent,
     WorkspaceComponentVersionListItem,
 )
+from app.schemas.external_api import (
+    ExternalBatchArchiveRequest,
+    ExternalBatchArchiveResponse,
+    ExternalComponentApplyEditsMutationRequest,
+    ExternalComponentCreateMutationRequest,
+    ExternalComponentMetadataUpdateRequest,
+    ExternalEntityValidationRequest,
+    ExternalEntityValidationResponse,
+    ExternalMutationJobResponse,
+)
+from app.schemas.external_content import ExternalComponentDraftResponse
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
-from app.services.workspace_component_service import WorkspaceComponentService
-from app.services.suggested_component_service import SuggestedComponentService
+from app.services.mutation_idempotency import snapshot_component_baseline
 from app.services.mutation_job_service import MutationJobService
-from app.api.routes.external.validate import validate_entity
+from app.services.suggested_component_service import SuggestedComponentService
+from app.services.workspace_component_service import WorkspaceComponentService
 
 router = APIRouter(route_class=ExternalAPIRoute)
 
@@ -173,8 +178,11 @@ async def edit_component(
     await auth.ensure_workspace_access(component.workspace_id, session)
     if payload.component_id != component_id:
         raise AppException(status_code=400, code="COMPONENT_ID_MISMATCH", detail="请求体 component_id 必须与路径参数一致。")
-    if payload.base_draft_hash is None:
-        payload = payload.model_copy(update={"base_draft_hash": component.draft_hash})
+    payload = await snapshot_component_baseline(
+        session, payload=payload, user_id=auth.user.id, workspace_id=component.workspace_id,
+        operation="component.edit", idempotency_key=idempotency_key,
+        current_version_no=component.current_version_no, current_draft_hash=component.draft_hash,
+    )
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
     )
@@ -319,7 +327,7 @@ async def publish_component(
         )
         return 200, published
 
-    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
         user_id=auth.user.id,
         workspace_id=comp.workspace_id,
         idempotency_key=idempotency_key,
@@ -340,8 +348,11 @@ async def archive_component(
 ) -> dict[str, str]:
     """归档组件（支持 Idempotency-Key 幂等保护）。"""
 
-    comp = await WorkspaceComponentService(session).get(component_id, user_id=auth.user.id)
+    user_id = auth.user.id
+    comp = await WorkspaceComponentService(session).get_archive_target(component_id, user_id=user_id)
     await auth.ensure_workspace_access(comp.workspace_id, session)
+    # 幂等占位冲突会回滚并过期 ORM；闭包仅捕获值，避免过期记录重新执行时隐式异步加载。
+    component_is_active = comp.status == RecordStatus.ACTIVE.value
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="POST",
@@ -350,10 +361,12 @@ async def archive_component(
     )
 
     async def _operation(record_id: int | None) -> tuple[int, dict[str, str]]:
-        await WorkspaceComponentService(session).archive(component_id=component_id, user_id=auth.user.id, commit=False)
+        if not component_is_active:
+            raise AppException(status_code=404, code="COMPONENT_NOT_FOUND", detail="组件不存在或已归档。")
+        await WorkspaceComponentService(session).archive(component_id=component_id, user_id=user_id, commit=False)
         return 200, {"message": "组件已成功归档"}
 
-    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
         user_id=auth.user.id,
         workspace_id=comp.workspace_id,
         idempotency_key=idempotency_key,

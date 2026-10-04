@@ -188,6 +188,8 @@ POST /api/v1/jobs/mutations/{job_id}/retry
 
 页面编辑必须携带当前版本基线；组件编辑必须携带草稿 hash 或主仓规定的等价乐观锁字段。外部客户端不得在 409 后静默覆盖重试。
 
+组件省略的基线在首次受理时冻结，同键重放沿用原 Job 的值；显式基线变化仍是异载荷冲突。实体写入口与 `/jobs/mutations` 别名的幂等 operation 不同，响应丢失后应保持原 method/path/payload/key 恢复。命名空间映射及历史指纹兼容见 [External Mutation 边界](../backend/external-mutations.md)。
+
 ### 5.3 预览地址
 
 ```text
@@ -218,6 +220,7 @@ GET  /api/v1/pages/{page_id}/screenshot
 - 外部 Agent 只使用归档，不提供永久硬删除。
 - 单对象归档和批量归档的确认、原子性、数量上限由主仓契约定义。
 - 归档后的对象退出默认查询和操作边界；首版不提供 Restore operation。
+- 页面/组件单项归档允许原有效 key 恢复原成功响应，重放仍检查当前用户、Scope 和空间权限；新 key 不恢复已归档对象。
 
 ## 6. 错误和状态
 
@@ -235,6 +238,8 @@ GET  /api/v1/pages/{page_id}/screenshot
 | Job 失败 | 保留 Job 状态、业务错误码和诊断摘要 |
 
 Mutation 对外状态固定为 `pending | running | succeeded | failed | canceled`。`attempt_count` 表示已执行的自动重试次数，`max_attempts` 包含首次执行；自动重试沿用同一 `job_id`，人工重试创建新任务并通过 `retry_of_job_id` 关联原任务。running 取消是协作式取消，Worker 可以完成诊断，但必须在业务写入前收敛为 canceled。
+
+running 取消的 202 响应仍为 running，通过 `cancel_requested_at` 表示请求已登记。failed 查询仍返回 HTTP 200；人工 retry 仅允许可重试失败并保留原编辑基线。已受理 Job 不因客户端断连、凭证到期或 Grant 撤销自动取消，后续管理请求仍需有效授权。
 
 ## 7. 已知契约问题
 

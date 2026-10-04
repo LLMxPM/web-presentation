@@ -88,16 +88,17 @@ class PageRepository:
             
         return items, total
 
-    async def get_by_id(self, page_id: int) -> Page | None:
-        """按主键查询未删除页面资源，带有关联名称。"""
+    async def get_by_id(self, page_id: int, *, include_deleted: bool = False) -> Page | None:
+        """按主键查询页面及关联名称；普通读取排除软删除，仅归档权限复核显式包含。"""
 
         statement = (
             select(Page, Project.name.label("project_name"), Workspace.name.label("workspace_name"))
             .where(Page.id == page_id)
-            .where(Page.deleted_at.is_(None))
             .outerjoin(Project, Page.project_id == Project.id)
             .outerjoin(Workspace, Page.workspace_id == Workspace.id)
         )
+        if not include_deleted:
+            statement = statement.where(Page.deleted_at.is_(None))
         result = await self.session.execute(statement)
         row = result.first()
         if not row:

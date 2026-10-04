@@ -4,17 +4,19 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.code_generator import create_with_generated_code
 from app.core.component_preview_schema import (
     validate_component_preview_schema_text,
     validate_content_component_size_controls,
 )
-from app.core.code_generator import create_with_generated_code
 from app.core.exceptions import AppException
 from app.core.text_normalizer import calculate_source_hash, normalize_text_to_lf
 from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.workspace_component import WorkspaceComponent
 from app.repositories.workspace_component_repository import WorkspaceComponentRepository
-from app.repositories.workspace_component_version_repository import WorkspaceComponentVersionRepository
+from app.repositories.workspace_component_version_repository import (
+    WorkspaceComponentVersionRepository,
+)
 from app.schemas.common import PagedResponse
 from app.schemas.component import (
     WorkspaceComponentCreateRequest,
@@ -29,8 +31,10 @@ from app.schemas.component import (
     WorkspaceComponentVersionListItem,
 )
 from app.services.component_dependency_service import ComponentDependencyService
+from app.services.workspace_component_version_service import (
+    WorkspaceComponentVersionService,
+)
 from app.services.workspace_service import WorkspaceService
-from app.services.workspace_component_version_service import WorkspaceComponentVersionService
 
 CODE_PREFIX_COMPONENT = "CMP"
 
@@ -328,6 +332,12 @@ class WorkspaceComponentService:
             component_version_id=component_version.id,
             dependencies=[WorkspaceComponentDependencyItem.model_validate(item) for item in dependencies],
         )
+
+    async def get_archive_target(self, component_id: int, *, user_id: int) -> WorkspaceComponent:
+        """定位含归档状态的目标并复核实时成员权限，供原幂等键恢复归档响应。"""
+        component = await self._get_component_or_raise(component_id)
+        await self.workspace_service.ensure_access(component.workspace_id, user_id=user_id)
+        return component
 
     async def archive(self, component_id: int, *, user_id: int, commit: bool = True) -> None:
         """归档当前用户可访问的工作空间组件，使其退出普通查询并进入归档恢复视图。"""

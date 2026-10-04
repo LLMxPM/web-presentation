@@ -25,22 +25,24 @@ from app.schemas.page import (
     PageCreateRequest,
     PageCurrentComponentIndex,
     PageCurrentModuleDependencies,
-    PageModuleDependencyItem,
     PageItem,
     PageListQuery,
+    PageModuleDependencyItem,
     PageSnapshotCreateRequest,
     PageUpdateRequest,
     PageVersionContent,
     PageVersionListItem,
     PageVersionRestoreRequest,
 )
-from app.services.component_dependency_service import ComponentDependencyService
 from app.services.capture_viewport_resolver import CaptureViewportResolver
-from app.services.page_version_service import PageVersionService
+from app.services.component_dependency_service import ComponentDependencyService
 from app.services.page_component_index_service import PageComponentIndexService
-from app.services.project_route_service import ProjectRouteService
-from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
+from app.services.page_screenshot_fingerprint_service import (
+    PageScreenshotFingerprintService,
+)
 from app.services.page_screenshot_url import build_page_screenshot_url
+from app.services.page_version_service import PageVersionService
+from app.services.project_route_service import ProjectRouteService
 from app.services.project_service import ProjectService
 from app.services.workspace_service import WorkspaceService
 
@@ -378,6 +380,17 @@ class PageService:
             await self.session.flush()
         await self.session.refresh(page_model)
         return await self._to_item(page_model)
+
+    async def get_archive_target(self, page_id: int, *, user_id: int) -> Page:
+        """读取含软删除状态的归档目标并复核实时权限，仅用于幂等重放前定位空间。
+
+        不恢复页面或允许重复写入；新幂等键的实际归档仍由 delete 的未删除查询约束。
+        """
+        page = await self.repository.get_by_id(page_id, include_deleted=True)
+        if page is None:
+            raise AppException(status_code=404, code="PAGE_NOT_FOUND", detail="页面不存在。")
+        await self._ensure_page_access(page, user_id=user_id)
+        return page
 
     async def delete(self, page_id: int, *, user_id: int, commit: bool = True) -> None:
         """对当前用户可访问页面资源执行软删除。"""

@@ -8,7 +8,7 @@ import httpx
 import pytest
 from app.api import dependencies_external, oauth_http
 from app.api.routes import oauth_account, oauth_public
-from app.api.routes.external import system, workspaces
+from app.api.routes.external import components, mutations, pages, system, workspaces
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.security import hash_session_token
@@ -79,6 +79,9 @@ async def oauth_http_client(oauth_database, monkeypatch):
     app.include_router(oauth_account.router, prefix="/api")
     app.include_router(system.router, prefix="/api/v1")
     app.include_router(workspaces.router, prefix="/api/v1/workspaces")
+    app.include_router(pages.router, prefix="/api/v1")
+    app.include_router(components.router, prefix="/api/v1/components")
+    app.include_router(mutations.router, prefix="/api/v1/jobs/mutations")
     app.dependency_overrides[get_db_session] = session_dependency
 
     @app.exception_handler(AppException)

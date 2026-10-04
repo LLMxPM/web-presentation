@@ -7,12 +7,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.external_openapi import ExternalAPIRoute
 from app.api.dependencies_external import (
     ExternalAuthContext,
     require_dynamic_mutation_operation,
     require_external_operation,
 )
+from app.api.external_openapi import ExternalAPIRoute
 from app.db.session import get_db_session
 from app.models.api_mutation_job import ApiMutationJob
 from app.schemas.external_api import (
@@ -24,6 +24,7 @@ from app.schemas.external_api import (
     ExternalPageCreateMutationRequest,
 )
 from app.services.idempotency_service import IdempotencyService
+from app.services.mutation_idempotency import snapshot_component_baseline
 from app.services.mutation_job_service import MutationJobService
 from app.services.page_service import PageService
 from app.services.project_service import ProjectService
@@ -179,8 +180,11 @@ async def create_component_edits_mutation(
         path=request.url.path,
         json_data=payload.model_dump(mode="json"),
     )
-    if payload.base_draft_hash is None:
-        payload = payload.model_copy(update={"base_draft_hash": comp.draft_hash})
+    payload = await snapshot_component_baseline(
+        session, payload=payload, user_id=auth.user.id, workspace_id=comp.workspace_id,
+        operation="jobs.mutation.component.edit", idempotency_key=idempotency_key,
+        current_version_no=comp.current_version_no, current_draft_hash=comp.draft_hash,
+    )
 
     async def _operation(record_id: int | None) -> tuple[int, ExternalMutationJobResponse]:
         job_service = MutationJobService(session)
@@ -262,10 +266,12 @@ async def create_component_metadata_mutation(
 
     component = await WorkspaceComponentService(session).get(payload.component_id, user_id=auth.user.id)
     await auth.ensure_workspace_access(component.workspace_id, session)
-    if payload.base_version_no is None:
-        payload = payload.model_copy(update={"base_version_no": component.current_version_no})
-    if payload.base_draft_hash is None:
-        payload = payload.model_copy(update={"base_draft_hash": component.draft_hash})
+    payload = await snapshot_component_baseline(
+        session, payload=payload, user_id=auth.user.id, workspace_id=component.workspace_id,
+        operation="jobs.mutation.component.metadata", idempotency_key=idempotency_key,
+        current_version_no=component.current_version_no, current_draft_hash=component.draft_hash,
+        fill_version=True,
+    )
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
     )

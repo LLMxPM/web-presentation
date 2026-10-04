@@ -8,6 +8,7 @@ Backend 是平台控制面，负责 API、权限、数据持久化、AI Agent、
 | :--- | :--- |
 | [API 分层与契约](./api-overview.md) | 路由、schema、service、repository 分层和接口变更规则 |
 | [远程 MCP OAuth 授权基础](./oauth-foundation.md) | Authlib 适配、不透明凭证、授权存储、原子消费与验证边界 |
+| [External Mutation 边界](./external-mutations.md) | 委托任务、幂等命名空间、基线兼容、取消和人工 retry |
 | [ChatGPT 网页端首批授权](./oauth-chatgpt.md) | 受限 CIMD、固定回调、issuer 识别和显式部署配置 |
 | [AI Agent 运行态](./ai-agent.md) | 会话、run、HITL、诊断 CLI 和模型 trace |
 | [AI 模型配置与目录](./ai-model-configuration.md) | 聊天模型、图片模型、Models.dev 目录和协议白名单 |

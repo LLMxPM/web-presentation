@@ -40,7 +40,7 @@
 
 whoami 的 `user`、`token`、`workspaces` 字段保持兼容。PAT 的 token 保留 id/name/token_public_id/scopes/expires_at/all_workspaces；委托身份 token 为 null，credential 明确使用 delegated 及授权/客户端/服务标识，不伪造 PAT ID。credential 只包含公共标识，不包含原始凭证。capabilities.operations 继续为字符串列表，Scope 的 all/any 语义保持现状。
 
-真实委托 HTTP 已验证 whoami、工作空间读取、Scope/capabilities 对等及撤销后拒绝；创作/Job/幂等和真实宿主仍需 M4/M7 验收。
+真实委托 HTTP 已验证 whoami、工作空间读取、Scope/capabilities 对等及撤销后拒绝；M4 本地创作/Job/幂等证据见批次 12，真实 PostgreSQL、Gateway 和宿主仍需 M7 验收。
 
 ## 3. M3 操作元数据
 
@@ -65,12 +65,24 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 | 公网 origin/issuer/resource/API audience | M2/M6 | 明确配置及启动校验，不能从 Host 推导 |
 | opaque 自省 DTO/期限的跨仓消费与清理执行 | M2/A3 | 主仓 DTO/期限及服务运维/有界清理已实现；A3 消费、注册宿主及 PG/部署清理待验收 |
 | 全部 MCP binding 与请求/响应对拍 | M3/A1/A4 | MCP 仓库建立首期 binding 后验收 |
-| PAT/委托业务对等、轮换后幂等、撤销 | M1/M4 | M2 完成后的 API 和并发测试 |
+| PAT/委托业务对等、轮换后幂等、撤销 | M1/M4 | SQLite HTTP 已覆盖；接续 PG/两个 Backend 与 A5 实机对拍 |
 | 真实宿主截图预算与 PNG 链路 | M5/M7 | 宿主时限、实际耗时和真实产物 |
 
 已接受的持久 Job 不因 MCP 断连、Token 到期或撤销自动取消。查询、取消和 retry 仍需当前权限；重放维持 user/workspace/operation/key 边界。主仓本批不修改内部助手与领域队列，不启动或发布 MCP 服务。
 
 ## 5. 分步实施证据
+
+### 批次 12：M4 委托创作、Job 权限与幂等修复
+
+复用既有页面/组件 Mutation 队列和身份依赖，未增加 MCP Worker 或内部 ExternalBatch。九个重任务入口及别名通过真实授权码 HTTP 兑换、服务交换和 External Bearer 提交；原键在重新交换、刷新和同用户 PAT 后仍只受理一个 Job。另覆盖同键异载荷、两个请求竞争、两用户两空间交错调用、动态 Job 读写权限及伪造 resource_type/空间 Header、人工 retry 新 ID 和原基线保留、failed 查询 HTTP 200。
+
+修复两类重放缺口：组件 edits/重元数据省略的版本/hash 沿用首次 Job，不随当前草稿漂移，保留各路由历史指纹顺序和幂等命名空间；页面软删除、组件归档后原有效 key 可恢复原成功响应，仍复核当前身份/空间权限，新 key 和普通详情读取继续返回 404。页面/组件轻元数据、组件发布、单项归档保持同步，发布重放只生成一个正式组件版本。没有 DTO 或数据库迁移变更。
+
+从真实 HTTP 入队和真实租约认领到独立 Session 的领域提交，验证页面版本、组件版本/草稿冲突不覆盖且不可 retry 升级基线；取消先提交则不写实体，完成先提交则取消冲突；凭证到期/Grant 撤销拒绝后续请求且已受理 Job 仍能按领域规则完成。受理响应丢失使用客户端传输故障注入，规划阶段使用受控产物；这些不代表真实网络断连、Renderer 诊断或同时竞争的实机验收。
+
+本批新增 M4 场景 **43 项 SQLite 通过**；连同 OAuth HTTP/真实委托、PAT、External API、主体、幂等、Mutation 与数据库适配门禁集中回归共 **159 项通过、70 项 PG 因缺专用库跳过**。随后补充归档过期键两例，并验证最终归档专题 **5 项通过、5 项 PG 跳过**，覆盖幂等回滚后的 ORM 过期边界。变更的生产/测试 Python Ruff 和 diff 检查通过；生成物对拍保持 **256 paths/353 schemas**；仓库文档/边界 **16 项通过**。operation→存储映射、隐式基线、取消和 retry 说明见 [External Mutation 边界](./backend/external-mutations.md)。
+
+已执行 `pnpm run test:contracts:gateway`，Docker Linux 引擎管道不存在，测试在创建专属网络前失败，未创建演练容器。真实 PostgreSQL、两个 Backend 进程、公开 Gateway、MCP A5/ChatGPT 宿主和 Renderer E2E 未执行；未改开发数据库、未启动开发服务或推送部署。接续 M5 媒体链路与 M7 实机门禁。批次 11 已提交为 `980dfcb`。
 
 ### 批次 11：MCP 服务运维与 OAuth 有界清理
 

@@ -1,6 +1,6 @@
 # 远程 MCP 主仓实施计划
 
-规划日期：2026-10-03。状态：实施中（M1/M3 首批落地，M2 授权与运维完成主仓实现）。OAuth 默认关闭，远程 MCP 正式联调尚未完成；未标记完成的接口、模型、配置和测试仍为计划。
+规划日期：2026-10-03。状态：实施中（M1/M3 首批落地，M2 授权与运维完成主仓实现，M4 委托任务与幂等进入本地验收）。OAuth 默认关闭，远程 MCP 正式联调尚未完成；未标记完成的接口、模型、配置和测试仍为计划。
 
 首批冻结边界、现状缺口及跨仓阻塞见[实施交接记录](./mcp-contract-handoff.md)。M0 按独立边界分项冻结，已冻结的 M1 基础解耦与 M3 可以推进；M2 仍需授权选型最小验证与真实客户端矩阵。
 
@@ -195,13 +195,15 @@ P0 默认建议：授权码 60 秒一次性，MCP 访问令牌 15 分钟，委�
 
 优先级 P2；依赖 M1/M2；以现有 Mutation 实现为基础，主要工作是委托身份覆盖与缺口修复。
 
-- [ ] 页面创建/edits、组件创建/edits/重元数据继续入持久队列；轻元数据、发布、单项归档保持现有同步语义。
-- [ ] 为目标权限分别验证提交、查询、取消、retry；动态 Job 权限取真实 job_type，不能由调用方指定 resource_type 决定。
-- [ ] 记录业务 operation key 与实际幂等存储 operation 命名空间的映射。现有别名路由、批量归档可能复用服务层命名，不能假设与注册表字符串完全相同，更不能无迁移地改名导致重放失效。
-- [ ] 保持 user/workspace/operation/key 唯一边界；Token 刷新、换 MCP 副本、响应丢失后的同请求同键返回原结果。同键异载荷返回冲突，不能再入队。
-- [ ] 基线冲突后不自动升版本重试；组件 `base_version_no/base_draft_hash` 以 External DTO 为准。
-- [ ] 请求断连仅结束请求，已受理 Job 可再次查询；running 取消仍需在业务提交前遵守现有租约和取消检查。
-- [ ] 人工 retry 产生新 Job 并关联原任务，保持原基线和可重试限制；仅查询到 failed 不等于查询请求失败。
+- [x] 页面创建/edits、组件创建/edits/重元数据继续入持久队列；页面/组件轻元数据、组件发布、单项归档保持现有同步语义。
+- [x] 为目标权限分别验证提交、查询、取消、retry；动态 Job 权限取真实 job_type，不能由调用方指定 resource_type 决定。
+- [x] 记录业务 operation key 与实际幂等存储 operation 命名空间的[映射](./backend/external-mutations.md#2-幂等存储命名空间)。别名和 batch 的现有存储边界不改名。
+- [x] 保持 user/workspace/operation/key 唯一边界；真实 Token 刷新/重新交换、同用户 PAT 和受理响应丢失后同请求同键返回原结果；同键异载荷不入队。MCP 副本实机切换仍属跨仓发布验收。
+- [x] 基线冲突后不自动升版本重试；组件 `base_version_no/base_draft_hash` 以 External DTO 为准，省略值沿用首次 Job，保持历史指纹兼容。
+- [ ] 请求断连仅结束请求，已受理 Job 可再次查询；已验证受理响应丢失恢复、凭证失效不取消 Job、取消/完成两种提交顺序；真实 Gateway 断连和并发提交竞争待 M7。
+- [x] 人工 retry 产生新 Job 并关联原任务，保持原基线和可重试限制；仅查询到 failed 不等于查询请求失败。
+
+上述勾选记录主仓真实 ASGI、独立 SQLite Session 和受控领域提交的验证范围；不代表 PostgreSQL、两个 Backend 进程、真实 Renderer 规划或 MCP A5/宿主已验收。实现与兼容边界见 [External Mutation](./backend/external-mutations.md)。
 
 验收证据应包含：重复请求只产生一个 Job/版本、提交成功但客户端收不到响应后的恢复、Token 刷新后重放、读写 Scope 分离、错误空间 Job 访问、组件草稿冲突、取消与完成竞争、重试新 ID。不要为 MCP 引入内部 ExternalBatch 自动续跑。
 
@@ -306,10 +308,10 @@ pnpm run test:repository
 | ID | 交付物 | 依赖 | 验收方 | 状态 |
 | --- | --- | --- | --- | --- |
 | M0 | 冻结契约、授权实现选型、首批客户端矩阵 | 无 | 两仓 | ChatGPT web 首批、CIMD/S256/RFC9207 已冻结；真实宿主待办 |
-| M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 解耦、真实委托 Bearer 和读取/Scope 对等已实现；创作/Job 与真实宿主待验收 |
+| M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 解耦、真实委托 Bearer、读取/Scope 对等及本地创作/Job 已验证；真实宿主待验收 |
 | M2 | OAuth、Grant、账户授权 UI、撤销 | M0；联调依赖 M1 | A3 真实授权 | 协议/存储、公开路由、Cookie 确认、Editor、本人 Grant、服务登记/轮换/停用及有界清理已实现；PG/真实宿主验收待办 |
 | M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 主仓首批实现完成；MCP 仓库 binding 与实际 Backend Gateway 对拍待办 |
-| M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | HTTP 授权→交换→只读闭环已验证；创作/Job/幂等委托对拍待实施 |
+| M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | 主仓 SQLite 委托创作/Job、轮换/响应丢失重放、基线与归档修复已覆盖；PG/真实断连/跨仓 A5 待验收 |
 | M5 | 预览和截图预算/实机验证 | M1/M2 | A6 | 待实施 |
 | M6 | Gateway、配置、观测、升级回退 | M0，随 P1/P2推进 | A8/A9 | 默认关闭的显式配置和 OAuth Gateway 路由已实现；真实网关/发布验收待办 |
 | M7 | 跨仓完整验收和发布记录 | M1～M6 与 MCP 仓库首期实现；与 A9 联合执行 | 两仓 | 待实施 |

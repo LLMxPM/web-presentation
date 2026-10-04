@@ -7,23 +7,27 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies_external import (
+    ExternalAuthContext,
+    require_external_operation,
+)
 from app.api.external_openapi import ExternalAPIRoute
-from app.api.dependencies_external import ExternalAuthContext, require_external_operation
+from app.api.routes.external.validate import validate_entity
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
 from app.schemas.common import MessageResponse, PagedResponse
-from app.schemas.external_content import ExternalPageSourceResponse
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
-    ExternalPageMetadataUpdateRequest,
-    ExternalPageCopyRequest,
-    ExternalPageCreateMutationRequest,
-    ExternalPageApplyEditsMutationRequest,
     ExternalEntityValidationRequest,
     ExternalEntityValidationResponse,
     ExternalMutationJobResponse,
+    ExternalPageApplyEditsMutationRequest,
+    ExternalPageCopyRequest,
+    ExternalPageCreateMutationRequest,
+    ExternalPageMetadataUpdateRequest,
 )
+from app.schemas.external_content import ExternalPageSourceResponse
 from app.schemas.page import (
     PageCopyToProjectRequest,
     PageCurrentModuleDependencies,
@@ -34,12 +38,10 @@ from app.schemas.page import (
 )
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
-from app.services.page_service import PageService
-from app.services.page_screenshot_job_service import PageScreenshotJobService
-from app.services.project_service import ProjectService
 from app.services.mutation_job_service import MutationJobService
-from app.api.routes.external.validate import validate_entity
-
+from app.services.page_screenshot_job_service import PageScreenshotJobService
+from app.services.page_service import PageService
+from app.services.project_service import ProjectService
 
 router = APIRouter(route_class=ExternalAPIRoute)
 
@@ -357,7 +359,8 @@ async def archive_page(
 ) -> dict[str, str]:
     """归档单项页面（支持 Idempotency-Key 幂等保护）。"""
 
-    page = await PageService(session).get(page_id, user_id=auth.user.id)
+    user_id = auth.user.id
+    page = await PageService(session).get_archive_target(page_id, user_id=user_id)
     await auth.ensure_workspace_access(page.workspace_id, session)
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
@@ -367,10 +370,10 @@ async def archive_page(
     )
 
     async def _operation(record_id: int | None) -> tuple[int, dict[str, str]]:
-        await PageService(session).delete(page_id=page_id, user_id=auth.user.id, commit=False)
+        await PageService(session).delete(page_id=page_id, user_id=user_id, commit=False)
         return 200, {"message": "页面已成功归档"}
 
-    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
         user_id=auth.user.id,
         workspace_id=page.workspace_id,
         idempotency_key=idempotency_key,
