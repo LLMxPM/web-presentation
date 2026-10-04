@@ -4,20 +4,25 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies_external import (
+    ExternalAuthContext,
+    require_external_operation,
+)
 from app.api.external_openapi import ExternalAPIRoute
-from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.db.session import get_db_session
-from app.schemas.common import ListQuery, PagedResponse
+from app.schemas.common import ListQuery, PagedResponse, PageNumber, PageSize
 from app.schemas.font import WorkspaceFontConfigResponse
 from app.schemas.runtime_kit import (
     RuntimeKitCapabilityItem,
     RuntimeKitCapabilityKind,
     RuntimeKitCapabilityListResponse,
 )
-from app.services.runtime_kit_component_capability_service import RuntimeKitComponentCapabilityService
+from app.services.runtime_kit_component_capability_service import (
+    RuntimeKitComponentCapabilityService,
+)
 from app.services.workspace_font_service import WorkspaceFontService
 
 router = APIRouter(route_class=ExternalAPIRoute)
@@ -62,8 +67,8 @@ async def list_fonts(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("font.list"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=100),
+    page: PageNumber = 1,
+    page_size: PageSize = 50,
     keyword: str | None = None,
 ) -> PagedResponse[WorkspaceFontConfigResponse]:
     """查询工作空间注册字体。"""

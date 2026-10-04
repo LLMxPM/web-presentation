@@ -6,6 +6,8 @@
 
 本计划负责 `web-presentation` 平台侧工作；MCP 工具、专用异步客户端和服务交付由 [MCP 仓库实施计划](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/mcp-implementation-plan.md)负责。平台现行接口仍以[External API v1 契约](./reference/external-agent-api.md)及实际代码为准。
 
+2026-10-04：新增独立 MCP wheel 消费者联测，真实 OAuth/业务、双用户隔离、刷新/撤销和 SDK 2026/2025 loopback TCP 通过。分页 DTO 与 External Query 统一公开上限，guide 从 OpenAPI 派生；具体命令/边界见[消费者联测记录](./mcp-consumer-baseline.md)。这不替代 ChatGPT 浏览器 consent、PG、TLS/Gateway、Renderer 或创作闭环验收。
+
 ## 1. 目标和交付范围
 
 首期交付一个能远程部署、允许多个用户和客户端连接的 MCP 接入。用户通过平台授权后，外部客户端可以读取规范和资源、创建及编辑页面/组件、查询任务、发布组件、预览、截图和单项归档。

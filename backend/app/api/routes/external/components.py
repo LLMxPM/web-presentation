@@ -17,7 +17,7 @@ from app.core.exceptions import AppException
 from app.core.text_normalizer import calculate_source_hash
 from app.db.session import get_db_session
 from app.models.enums import RecordStatus
-from app.schemas.common import MessageResponse, PagedResponse
+from app.schemas.common import MessageResponse, PagedResponse, PageNumber, PageSize
 from app.schemas.component import (
     SuggestedComponentItem,
     WorkspaceComponentCurrentDependencies,
@@ -88,8 +88,8 @@ async def list_components(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.list"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    page: int = 1,
-    page_size: int = 50,
+    page: PageNumber = 1,
+    page_size: PageSize = 50,
     keyword: str | None = None,
     status: str | None = None,
     scope: str = Query(default="all", pattern="^(all|suggested)$"),

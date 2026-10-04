@@ -9,11 +9,20 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies_external import (
+    ExternalAuthContext,
+    require_external_operation,
+)
 from app.api.external_openapi import ExternalAPIRoute
-from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
-from app.schemas.common import ListQuery, MessageResponse, PagedResponse
+from app.schemas.common import (
+    ListQuery,
+    MessageResponse,
+    PagedResponse,
+    PageNumber,
+    PageSize,
+)
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
@@ -24,11 +33,14 @@ from app.schemas.external_api import (
     ExternalProjectCreateRequest,
 )
 from app.schemas.project import ProjectCreateRequest, ProjectItem, ProjectUpdateRequest
-from app.schemas.project_route import ProjectRouteTreeResponse, ProjectRouteTreeWriteRequest
+from app.schemas.project_route import (
+    ProjectRouteTreeResponse,
+    ProjectRouteTreeWriteRequest,
+)
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
-from app.services.project_service import ProjectService
 from app.services.project_route_service import ProjectRouteService
+from app.services.project_service import ProjectService
 from app.services.suggested_component_service import SuggestedComponentService
 
 router = APIRouter(route_class=ExternalAPIRoute)
@@ -85,8 +97,8 @@ async def list_projects(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.list"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    page: int = 1,
-    page_size: int = 20,
+    page: PageNumber = 1,
+    page_size: PageSize = 20,
     keyword: str | None = None,
     status: str | None = None,
 ) -> PagedResponse[ProjectItem]:

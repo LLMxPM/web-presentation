@@ -15,7 +15,7 @@ from app.api.external_openapi import ExternalAPIRoute
 from app.api.routes.external.validate import validate_entity
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
-from app.schemas.common import MessageResponse, PagedResponse
+from app.schemas.common import MessageResponse, PagedResponse, PageNumber, PageSize
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
@@ -87,8 +87,8 @@ async def list_project_pages(
     project_id: int,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.list"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    page: int = 1,
-    page_size: int = 50,
+    page: PageNumber = 1,
+    page_size: PageSize = 50,
     keyword: str | None = None,
     status: str | None = None,
 ) -> PagedResponse[PageItem]:

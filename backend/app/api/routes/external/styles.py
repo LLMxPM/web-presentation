@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, Response
@@ -9,24 +10,31 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import uuid
-
+from app.api.dependencies_external import (
+    ExternalAuthContext,
+    require_external_operation,
+)
 from app.api.external_openapi import ExternalAPIRoute
-from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.db.session import get_db_session
-from app.schemas.common import ListQuery, MessageResponse, PagedResponse
+from app.schemas.common import (
+    ListQuery,
+    MessageResponse,
+    PagedResponse,
+    PageNumber,
+    PageSize,
+)
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
     ExternalStyleCreateRequest,
 )
+from app.schemas.presentation_style import StyleConfiguration
 from app.schemas.workspace_style import (
     WorkspaceStyleCopyRequest,
     WorkspaceStyleCreateRequest,
     WorkspaceStyleItem,
     WorkspaceStyleUpdateRequest,
 )
-from app.schemas.presentation_style import StyleConfiguration
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
 from app.services.workspace_style_service import WorkspaceStyleService
@@ -69,8 +77,8 @@ async def list_styles(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("style.list"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    page: int = 1,
-    page_size: int = 50,
+    page: PageNumber = 1,
+    page_size: PageSize = 50,
     keyword: str | None = None,
 ) -> PagedResponse[WorkspaceStyleItem]:
     """查询指定工作空间的样式列表。"""

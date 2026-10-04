@@ -7,10 +7,19 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies_external import (
+    ExternalAuthContext,
+    require_external_operation,
+)
 from app.api.external_openapi import ExternalAPIRoute
-from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.db.session import get_db_session
-from app.schemas.common import ListQuery, MessageResponse, PagedResponse
+from app.schemas.common import (
+    ListQuery,
+    MessageResponse,
+    PagedResponse,
+    PageNumber,
+    PageSize,
+)
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
@@ -34,8 +43,8 @@ async def list_themes(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("theme.list"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    page: int = 1,
-    page_size: int = 50,
+    page: PageNumber = 1,
+    page_size: PageSize = 50,
     keyword: str | None = None,
 ) -> PagedResponse[WorkspaceThemeItem]:
     """查询指定工作空间的主题列表。"""
