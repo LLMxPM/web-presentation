@@ -17,6 +17,7 @@ from app.api.oauth_http import (
 from app.core.config import get_settings
 from app.core.external_operations import ALL_VALID_SCOPES
 from app.db.session import get_session_factory
+from app.services.oauth.audit_logging import log_protocol_result
 from app.services.oauth.consent_service import OAuthConsentService
 from app.services.oauth.policy import OAuthPolicy
 from app.services.oauth.resource_protocol import EXCHANGE_GRANT_TYPE
@@ -68,9 +69,12 @@ async def handle_form(request: Request, policy: OAuthPolicy, endpoint: str) -> R
         else:
             target = "exchange" if endpoint == "token" else endpoint
             result = await OAuthResourceService(get_session_factory(), policy).response(target, parsed)
-        return protocol_http_response(result)
     except OAuth2Error as error:
+        log_protocol_result(endpoint, error.status_code, error.error)
         return protocol_error_response(error, policy)
+    error_code = result.body.get("error") if isinstance(result.body, dict) else None
+    log_protocol_result(endpoint, result.status_code, error_code)
+    return protocol_http_response(result)
 
 
 @router.post("/oauth/token")

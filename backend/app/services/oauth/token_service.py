@@ -14,6 +14,7 @@ from app.core.time_utils import utc_now
 from app.db.retry import run_with_write_retry
 from app.models.oauth_grant import OAuthGrant
 from app.repositories.oauth_repository import load_client, load_credential
+from app.services.oauth.audit_logging import commit_audit_events
 from app.services.oauth.persistence import (
     add_audit,
     lock_grant,
@@ -101,10 +102,10 @@ class OAuthTokenService:
             current_response = current.token_response(request)
             grant = await session.get(OAuthGrant, grant_id, populate_existing=True)
             if current.replayed_refresh_hash and grant is not None:
-                await revoke_locked_grant(
+                audit = await revoke_locked_grant(
                     session, grant, now=current.now, reason="refresh_replay"
                 )
-                await session.commit()
+                await commit_audit_events(session, [audit])
                 return current_response
             if (
                 current_response.status_code != 200
@@ -124,7 +125,7 @@ class OAuthTokenService:
             if not saved:
                 await session.rollback()
                 return fallback.handle_error_response(request, InvalidGrantError())
-            add_audit(
+            audit = add_audit(
                 session,
                 event="refresh_rotated"
                 if current.credential_snapshot.family_id
@@ -132,7 +133,7 @@ class OAuthTokenService:
                 grant=grant,
                 now=current.now,
             )
-            await session.commit()
+            await commit_audit_events(session, [audit])
             return current_response
 
         return await run_with_write_retry(

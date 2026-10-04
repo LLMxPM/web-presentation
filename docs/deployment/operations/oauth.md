@@ -58,6 +58,8 @@ uv run --locked --project backend python -m app.scripts.oauth_cleanup --apply --
 
 ## 回滚与证据边界
 
+审计提交后输出 `oauth.audit.committed`，可通过公共 Grant/服务/凭证 ID 和 request ID 关联到协议、External 操作与 Job。完整字段、保留和实机边界见 [请求关联日志](../../developer/backend/external-observability.md)。日志失败不回滚或重试已经提交的发行/运维事务；数据库审计继续沿用本页的独立保留期。
+
 先关闭 MCP 入口或停用其服务，再停止/替换本批 Backend，最后视需要降级至 `20261004_0100`。仅关闭 `OAUTH_ENABLED` 不会停止清理任务，不能据此在新 Backend 仍运行时删除新审计列。此降级只删除本批三个索引和服务审计字段，保留授权基础表、凭证和业务结果；已清理的过期记录及该审计字段不能凭降级恢复，需要备份。
 
 SQLite 真实外键、并发运维/交换、刷新重放、清理来源链和迁移往返均有测试。PostgreSQL 用例需要 `OAUTH_TEST_POSTGRES_DATABASE_URL` 指向独立 `wp_oauth_test_*` 数据库，缺配置时跳过。协议和隔离数据库证据不代替真实 PostgreSQL、两个生产 Backend 进程、Gateway 或 ChatGPT 联调。

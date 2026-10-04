@@ -38,20 +38,20 @@ def add_audit(
     now: datetime,
     token_id: str | None = None,
     service_id: str | None = None,
-) -> None:
+) -> OAuthAuditEvent:
     """仅记录内部固定事件名和公共身份，不接受任意 HTTP payload。"""
-    session.add(
-        OAuthAuditEvent(
-            event_id=uuid4().hex,
-            event=event,
-            user_id=grant.user_id,
-            client_id=grant.client_id,
-            grant_id=grant.grant_id,
-            token_id=token_id,
-            service_id=service_id,
-            created_at=now,
-        )
+    audit = OAuthAuditEvent(
+        event_id=uuid4().hex,
+        event=event,
+        user_id=grant.user_id,
+        client_id=grant.client_id,
+        grant_id=grant.grant_id,
+        token_id=token_id,
+        service_id=service_id,
+        created_at=now,
     )
+    session.add(audit)
+    return audit
 
 
 async def revoke_locked_grant(
@@ -60,8 +60,8 @@ async def revoke_locked_grant(
     *,
     now: datetime,
     reason: str,
-) -> None:
-    """在已持有 Grant 锁的事务内撤销整个授权及刷新家族，领域 Job 不受影响。"""
+) -> OAuthAuditEvent:
+    """在 Grant 锁内撤销授权/刷新家族并返回待提交审计；领域 Job 不受影响。"""
     grant.revoked_at = now
     grant.revocation_reason = reason
     await session.execute(
@@ -72,7 +72,7 @@ async def revoke_locked_grant(
         )
         .values(revoked_at=now)
     )
-    add_audit(session, event=reason, grant=grant, now=now)
+    return add_audit(session, event=reason, grant=grant, now=now)
 
 
 async def persist_issuance(

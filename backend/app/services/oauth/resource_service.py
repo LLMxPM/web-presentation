@@ -21,6 +21,7 @@ from app.repositories.oauth_resource_repository import (
     load_token_snapshot,
     lock_service,
 )
+from app.services.oauth.audit_logging import commit_audit_events
 from app.services.oauth.persistence import add_audit, lock_grant, revoke_locked_grant
 from app.services.oauth.policy import OAuthPolicy
 from app.services.oauth.protocol import (
@@ -130,7 +131,7 @@ class OAuthResourceService:
                 return response
             if endpoint == "revocation":
                 if current.pending_revocation:
-                    await revoke_locked_grant(
+                    audit = await revoke_locked_grant(
                         session, grant, now=current.now, reason="client_revoked"
                     )
                 else:
@@ -158,7 +159,7 @@ class OAuthResourceService:
                         + timedelta(seconds=current.pending_token["expires_in"]),
                     )
                 )
-                add_audit(
+                audit = add_audit(
                     session,
                     event="token_exchanged",
                     grant=grant,
@@ -166,7 +167,7 @@ class OAuthResourceService:
                     token_id=token_id,
                     service_id=current.client_snapshot.client_id,
                 )
-            await session.commit()
+            await commit_audit_events(session, [audit])
             return response
 
         return await run_with_write_retry(

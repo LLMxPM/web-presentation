@@ -1,15 +1,24 @@
-"""文件功能：从 External 真实鉴权依赖派生版本化 OpenAPI 操作元数据，覆盖多视图与动态 Job 权限。"""
+"""文件功能：从 External 真实鉴权依赖派生 OpenAPI 元数据，并收口缓存边界与公共请求结果日志。"""
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Coroutine, Iterator
 from typing import Any
 
 from fastapi import Request, Response
 from fastapi.dependencies.models import Dependant
+from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 
-from app.core.external_operations import OPERATION_REGISTRY, ExternalOperationSpec, get_operation_spec
+from app.api.external_request_logging import bind_mutation_response, log_external_result
+from app.core.exceptions import AppException
+from app.core.external_operations import (
+    OPERATION_REGISTRY,
+    ExternalOperationSpec,
+    get_operation_spec,
+)
+from app.schemas.external_api import ExternalMutationJobResponse
 
 
 def _walk_dependencies(dependant: Dependant) -> Iterator[Dependant]:
@@ -92,17 +101,41 @@ class ExternalAPIRoute(APIRoute):
         self.openapi_extra = {**extra, "x-wp-operation": metadata}
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
-        """用户相关外部结果禁止公共缓存；公开版本/健康和 OpenAPI 保持原策略。"""
+        """为原路由添加公共结果日志与用户数据缓存边界，保持原鉴权、响应和异常语义。"""
 
         original_handler = super().get_route_handler()
 
         async def _handler(request: Request) -> Response:
-            """先按原路由执行完整鉴权与响应序列化，再设置用户数据缓存边界。"""
-
-            response = await original_handler(request)
+            """执行原鉴权/序列化并记录公共标识；原业务异常继续抛出，日志不展开领域正文。"""
             metadata = (self.openapi_extra or {}).get("x-wp-operation", {})
+            started = time.perf_counter()
+            try:
+                response = await original_handler(request)
+            except Exception as error:
+                status = (
+                    422 if isinstance(error, RequestValidationError)
+                    else getattr(error, "status_code", 500)
+                )
+                log_external_result(
+                    request,
+                    route=self.path,
+                    operation=metadata.get("key"),
+                    status_code=status,
+                    duration_ms=round((time.perf_counter() - started) * 1000, 2),
+                    error_code=error.code if isinstance(error, AppException) else None,
+                )
+                raise
             if not metadata.get("public", False):
                 response.headers["Cache-Control"] = "private, no-store"
+            if self.response_model is ExternalMutationJobResponse:
+                bind_mutation_response(request, response)
+            log_external_result(
+                request,
+                route=self.path,
+                operation=metadata.get("key"),
+                status_code=response.status_code,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
             return response
 
         return _handler

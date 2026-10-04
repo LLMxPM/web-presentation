@@ -15,6 +15,7 @@ from app.models.oauth_audit import OAuthAuditEvent
 from app.models.oauth_credential import OAuthToken
 from app.models.oauth_registration import OAuthClient, OAuthMcpService
 from app.repositories.oauth_resource_repository import lock_service
+from app.services.oauth.audit_logging import commit_audit_events
 from app.services.oauth.policy import OAuthPolicy
 
 
@@ -51,16 +52,16 @@ def _secret_hash(secret: str) -> str:
     return hash_password(secret)
 
 
-def _audit(session: AsyncSession, service_id: str, event: str) -> None:
+def _audit(session: AsyncSession, service_id: str, event: str) -> OAuthAuditEvent:
     """只保存固定事件和公共服务 ID；不保存密钥、哈希或运维命令内容。"""
-    session.add(
-        OAuthAuditEvent(
-            event_id=uuid4().hex,
-            event=event,
-            service_id=service_id,
-            created_at=utc_now(),
-        )
+    audit = OAuthAuditEvent(
+        event_id=uuid4().hex,
+        event=event,
+        service_id=service_id,
+        created_at=utc_now(),
     )
+    session.add(audit)
+    return audit
 
 
 class OAuthServiceRegistry:
@@ -104,8 +105,8 @@ class OAuthServiceRegistry:
                 is_active=True,
             )
             session.add(row)
-            _audit(session, service_id, "service_created")
-            await session.commit()
+            audit = _audit(session, service_id, "service_created")
+            await commit_audit_events(session, [audit])
             return _summary(row)
 
         return await run_with_write_retry(
@@ -138,6 +139,7 @@ class OAuthServiceRegistry:
             ):
                 raise ValueError("服务不存在或与当前部署的源/目标地址不匹配。")
             row = await session.get(OAuthMcpService, service_id, populate_existing=True)
+            audits = []
             if hashed is None:
                 was_active = row.is_active
                 row.is_active = False
@@ -152,15 +154,15 @@ class OAuthServiceRegistry:
                     .execution_options(synchronize_session=False)
                 )
                 if was_active:
-                    _audit(session, service_id, "service_disabled")
+                    audits.append(_audit(session, service_id, "service_disabled"))
             else:
                 row.secret_hash = hashed
-                _audit(session, service_id, "service_secret_rotated")
+                audits.append(_audit(session, service_id, "service_secret_rotated"))
                 if enable:
                     if not row.is_active:
-                        _audit(session, service_id, "service_enabled")
+                        audits.append(_audit(session, service_id, "service_enabled"))
                     row.is_active = True
-            await session.commit()
+            await commit_audit_events(session, audits)
             return _summary(row)
 
         return await run_with_write_retry(

@@ -8,6 +8,10 @@ from fastapi import Depends, Header, Path, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.external_request_logging import (
+    bind_external_identity,
+    bind_external_operation,
+)
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.external_operations import get_operation_spec
@@ -47,14 +51,18 @@ async def get_external_auth_context(
         policy = resolve_oauth_policy(get_settings())
         if policy is None:
             raise AppException(401, "UNAUTHENTICATED", "委托访问凭证不可用。")
-        return await authenticate_delegated(session, raw_token, policy)
+        principal = await authenticate_delegated(session, raw_token, policy)
+        bind_external_identity(request, principal)
+        return principal
     if not raw_token.startswith("wp_pat_"):
         raise AppException(401, "UNAUTHENTICATED", "业务 API 不接受此类访问凭证。")
     client_ip = request.client.host if request.client else None
     token = await ApiAccessTokenService(session).authenticate_pat(raw_token, ip=client_ip)
 
     # PAT 仍走原哈希、用户状态、到期及撤销校验，不伪造 PAT 行或借用服务身份。
-    return principal_from_pat(token)
+    principal = principal_from_pat(token)
+    bind_external_identity(request, principal)
+    return principal
 
 
 def require_external_operation(operation_key: str):
@@ -65,11 +73,13 @@ def require_external_operation(operation_key: str):
         raise RuntimeError(f"未注册的外部 API 操作: {operation_key}")
 
     async def _dependency(
+        request: Request,
         auth: Annotated[ExternalAuthContext, Depends(get_external_auth_context)],
         session: Annotated[AsyncSession, Depends(get_db_session)],
         x_workspace_id: Annotated[int | None, Header(alias="X-Workspace-ID")] = None,
         idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     ) -> ExternalAuthContext:
+        bind_external_operation(request, operation_key)
         # 1. 校验 Scope
         if not auth.has_required_scopes(spec.scopes, mode=spec.scope_mode):
             missing = [s for s in spec.scopes if not auth.has_scope(s)]
@@ -99,6 +109,7 @@ def require_external_operation(operation_key: str):
         # 3. 若要求工作空间，校验 X-Workspace-ID 归属与数据库实时成员状态
         if not spec.is_public and not spec.exempt_workspace_header and x_workspace_id is not None:
             await auth.ensure_workspace_access(x_workspace_id, session)
+            bind_external_operation(request, operation_key, workspace_context_id=x_workspace_id)
 
         return auth
 
@@ -111,6 +122,7 @@ def require_dynamic_mutation_operation(action: Literal["status", "cancel", "retr
     """对通用 /jobs/mutations/{job_id} 动态按实体类型执行 page 或 component 权限鉴权。"""
 
     async def _dependency(
+        request: Request,
         job_id: Annotated[str, Path(description="任务公开 UUID")],
         auth: Annotated[ExternalAuthContext, Depends(get_external_auth_context)],
         session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -126,6 +138,13 @@ def require_dynamic_mutation_operation(action: Literal["status", "cancel", "retr
 
         # 根据 job_type 动态派发必须满足的 Scope
         is_page = "page" in job.job_type
+        resource = "page" if is_page else "component"
+        bind_external_operation(
+            request,
+            f"jobs.mutation.{resource}.{action}",
+            workspace_id=job.workspace_id,
+            job_id=job.job_id,
+        )
         if action == "status":
             required_scope = "page:read" if is_page else "component:read"
         else:

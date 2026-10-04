@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.time_utils import utc_now
 from app.db.retry import run_with_write_retry
 from app.models.oauth_grant import OAuthGrant
+from app.services.oauth.audit_logging import commit_audit_events
 from app.services.oauth.persistence import lock_grant, revoke_locked_grant
 from app.services.oauth.policy import OAuthPolicy
 
@@ -46,10 +47,10 @@ class OAuthGrantService:
                 await session.rollback()
                 return False
             if locked:
-                await revoke_locked_grant(
+                audit = await revoke_locked_grant(
                     session, grant, now=utc_now(), reason="user_revoked"
                 )
-                await session.commit()
+                await commit_audit_events(session, [audit])
             else:
                 await session.rollback()
             return True

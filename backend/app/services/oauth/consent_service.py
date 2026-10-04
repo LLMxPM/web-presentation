@@ -29,6 +29,7 @@ from app.schemas.oauth_account import (
     OAuthConsentView,
     OAuthScopeChoice,
 )
+from app.services.oauth.audit_logging import commit_audit_events
 from app.services.oauth.chatgpt_client import fetch_chatgpt_client
 from app.services.oauth.persistence import add_audit
 from app.services.oauth.policy import OAuthPolicy
@@ -178,13 +179,14 @@ class OAuthConsentService:
                     code_challenge=pending.code_challenge, code_challenge_method="S256",
                     created_at=now, expires_at=now + timedelta(seconds=self.policy.code_ttl_seconds),
                 ))
-                add_audit(session, event="consent_approved", grant=granted, now=now)
+                audit = add_audit(session, event="consent_approved", grant=granted, now=now)
             else:
-                session.add(OAuthAuditEvent(
+                audit = OAuthAuditEvent(
                     event_id=uuid4().hex, event="consent_denied", user_id=user_id,
                     client_id=pending.client_id, created_at=now,
-                ))
-            await session.commit()
+                )
+                session.add(audit)
+            await commit_audit_events(session, [audit])
             return response.location
 
         return await run_with_write_retry(persist, session_factory=self.session_factory, backoff_delays=(0.01, 0.03, 0.08))
