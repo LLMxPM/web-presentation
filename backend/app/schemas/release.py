@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, model_validator
-
 
 PreviewKind = Literal["project", "page", "component", "asset"]
 PreviewEntryType = Literal["route", "module", "component_host", "asset_host"]
@@ -22,7 +22,7 @@ class PreviewEntryDescriptor(BaseModel):
     module_path: str | None = None
 
     @model_validator(mode="after")
-    def validate_descriptor(self) -> "PreviewEntryDescriptor":
+    def validate_descriptor(self) -> PreviewEntryDescriptor:
         """校验不同入口类型所需的字段组合，避免歧义入口进入 Runtime。"""
 
         if self.entry_type == "route":
@@ -52,6 +52,7 @@ class PreviewArtifactResponse(BaseModel):
     """统一的预览 artifact 创建响应。"""
 
     preview_url: str
+    expires_at: datetime | None = None
     artifact_id: str
     preview_kind: PreviewKind
     entry_descriptor: PreviewEntryDescriptor

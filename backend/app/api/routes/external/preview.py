@@ -7,12 +7,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies_external import (
+    ExternalAuthContext,
+    require_external_operation,
+)
 from app.api.external_openapi import ExternalAPIRoute
-from app.api.dependencies_external import ExternalAuthContext, require_external_operation
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
 from app.schemas.external_api import ExternalPreviewArtifactCreateRequest
-from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
+from app.schemas.external_content import ExternalPreviewArtifactResponse
+from app.schemas.release import PreviewEntryDescriptor
 from app.services.page_service import PageService
 from app.services.preview_service import PreviewService
 from app.services.project_service import ProjectService
@@ -27,20 +31,21 @@ async def _create_external_preview_artifact(
     project_id: int,
     workspace_id: int,
     entry_descriptor: PreviewEntryDescriptor | None,
-) -> PreviewArtifactResponse:
+) -> ExternalPreviewArtifactResponse:
     """执行项目/页面预览共有的权限确认与 artifact 创建流程。"""
 
     await auth.ensure_workspace_access(workspace_id, session)
-    return await PreviewService(session).create_preview_artifact(
+    artifact = await PreviewService(session).create_preview_artifact(
         project_id=project_id,
         entry_descriptor=entry_descriptor,
         tenant_id=f"tenant_{auth.user.id}",
     )
+    return ExternalPreviewArtifactResponse.model_validate(artifact.model_dump())
 
 
 @router.post(
     "/projects/{project_id}/preview-artifact",
-    response_model=PreviewArtifactResponse,
+    response_model=ExternalPreviewArtifactResponse,
     response_model_exclude_none=True,
 )
 async def create_project_preview_artifact(
@@ -48,7 +53,7 @@ async def create_project_preview_artifact(
     payload: ExternalPreviewArtifactCreateRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.preview"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> PreviewArtifactResponse:
+) -> ExternalPreviewArtifactResponse:
     """创建整项目预览 artifact，并返回短期预览地址。"""
 
     project = await ProjectService(session).get(project_id, user_id=auth.user.id)
@@ -66,14 +71,14 @@ async def create_project_preview_artifact(
 
 @router.post(
     "/pages/{page_id}/preview-artifact",
-    response_model=PreviewArtifactResponse,
+    response_model=ExternalPreviewArtifactResponse,
     response_model_exclude_none=True,
 )
 async def create_page_preview_artifact(
     page_id: int,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.preview"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> PreviewArtifactResponse:
+) -> ExternalPreviewArtifactResponse:
     """创建单页面预览 artifact，并由 Backend 解析页面模块入口。"""
 
     page = await PageService(session).get(page_id, user_id=auth.user.id)

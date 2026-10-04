@@ -4223,7 +4223,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PreviewArtifactResponse"
+                  "$ref": "#/components/schemas/ExternalPreviewArtifactResponse"
                 }
               }
             }
@@ -4326,7 +4326,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PreviewArtifactResponse"
+                  "$ref": "#/components/schemas/ExternalPreviewArtifactResponse"
                 }
               }
             }
@@ -32578,6 +32578,175 @@
         "title": "ExternalPreviewArtifactCreateRequest",
         "description": "External API 项目预览 artifact 创建请求。"
       },
+      "ExternalPreviewArtifactResponse": {
+        "properties": {
+          "preview_url": {
+            "type": "string",
+            "title": "Preview Url"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At",
+            "description": "预览票据与 artifact 缓存共同限制的截止时间，UTC ISO 8601；清理/运行态失效可能提前结束可用性"
+          },
+          "artifact_id": {
+            "type": "string",
+            "title": "Artifact Id"
+          },
+          "preview_kind": {
+            "type": "string",
+            "enum": [
+              "project",
+              "page",
+              "component",
+              "asset"
+            ],
+            "title": "Preview Kind"
+          },
+          "entry_descriptor": {
+            "$ref": "#/components/schemas/PreviewEntryDescriptor"
+          },
+          "viewport_width": {
+            "type": "integer",
+            "title": "Viewport Width"
+          },
+          "viewport_height": {
+            "type": "integer",
+            "title": "Viewport Height"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          },
+          "component_preview_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "saved",
+                  "draft"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Preview Mode"
+          },
+          "component_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "workspace_component",
+                  "runtime_kit"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Source"
+          },
+          "component_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Code"
+          },
+          "component_version_no": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Version No"
+          },
+          "runtime_kit_component_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Kit Component Name"
+          },
+          "runtime_kit_manifest_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Kit Manifest Version"
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "asset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preview_url",
+          "expires_at",
+          "artifact_id",
+          "preview_kind",
+          "entry_descriptor",
+          "viewport_width",
+          "viewport_height"
+        ],
+        "title": "ExternalPreviewArtifactResponse",
+        "description": "复用统一 artifact 字段，外部项目/页面预览必须携带明确的 UTC 截止时间。"
+      },
       "ExternalProjectApplyStyleRequest": {
         "properties": {
           "style_id": {
@@ -37854,6 +38023,18 @@
           "preview_url": {
             "type": "string",
             "title": "Preview Url"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
           },
           "artifact_id": {
             "type": "string",

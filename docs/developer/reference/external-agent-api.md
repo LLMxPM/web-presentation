@@ -197,13 +197,15 @@ POST /api/v1/projects/{project_id}/preview-artifact
 POST /api/v1/pages/{page_id}/preview-artifact
 ```
 
-两条接口都创建短期 preview artifact，并返回统一的 `PreviewArtifactResponse`，其中
+两条接口都创建短期 preview artifact，并返回复用统一字段的 `ExternalPreviewArtifactResponse`，其中
 `preview_url` 是可直接交给浏览器打开的预览地址。项目接口可以传入可选请求体
 `{"route": "/overview"}` 指定入口路由；不传时使用项目默认入口。页面接口不要求
 CLI 拼接源码模块路径，Backend 会根据页面当前的 `code` 和 `file_type` 解析单页面入口。
 
 项目预览要求 `project:read + preview:run`，页面预览要求 `page:read + preview:run`。
 预览地址和其中的签名上下文均为短期有效，客户端不应持久化或当作永久发布地址。
+
+成功响应必含 UTC ISO 8601 `expires_at`，与 URL 中票据的 `exp` 相同，且不晚于 artifact 缓存期限或原有一小时票据上限。客户端直接读取该字段，无需解析签名 URL；缓存清理或运行态失效可能使链接提前失效，该字段不承诺到期前持续可用。创建后元数据缺失/已到期返回 `410 PREVIEW_ARTIFACT_EXPIRED`，元数据损坏返回 `503 PREVIEW_ARTIFACT_METADATA_INVALID`，不猜测默认期限。
 
 ### 5.4 截图
 

@@ -23,8 +23,8 @@ External 操作注册表：`backend/app/core/external_operations.py`（`OPERATIO
 | 页面创建 | `POST /api/pages` → `PageItem` | `POST /api/v1/pages` → **202** `ExternalMutationJobResponse` | **否** | Internal 同步；External 异步 Job + 幂等键 |
 | 页面更新 | `PATCH /api/pages/{id}`（含 content/status） | `PATCH /api/v1/pages/{id}`（仅元数据） | `PageItem` | 源码走 `POST /pages/{id}/edits`（乐观锁 `base_version_no`） |
 | 校验 | **无 HTTP 端点**（仅 AI 工具） | `POST /api/v1/validate/entity`、`POST /api/v1/pages/{id}/validate` | — | Internal 单侧缺失（登记缺口） |
-| 项目预览 | `POST /api/projects/{id}/preview-artifacts` | `POST /api/v1/projects/{id}/preview-artifact` | `PreviewArtifactResponse` | 入参：`entry_descriptor` vs 扁平 `route` |
-| 页面预览 | `POST /api/pages/{id}/versions/{n}/preview-artifact` | `POST /api/v1/pages/{id}/preview-artifact` | `PreviewArtifactResponse` | External 按当前版本，粒度不同 |
+| 项目预览 | `POST /api/projects/{id}/preview-artifacts` | `POST /api/v1/projects/{id}/preview-artifact` | `PreviewArtifactResponse` / `ExternalPreviewArtifactResponse` | 入参：`entry_descriptor` vs 扁平 `route`；External 扩展必填 `expires_at` |
+| 页面预览 | `POST /api/pages/{id}/versions/{n}/preview-artifact` | `POST /api/v1/pages/{id}/preview-artifact` | `PreviewArtifactResponse` / `ExternalPreviewArtifactResponse` | External 按当前版本，粒度不同；复用字段并扩展必填期限 |
 | 页面归档 | `DELETE /api/pages/{id}` → `MessageResponse` | `POST /api/v1/pages/{id}/archive` → `{"message"}` | **否** | HTTP 语义不同（DELETE vs POST）；均软删 `PageService.delete` |
 
 ## 3. 对拍口径

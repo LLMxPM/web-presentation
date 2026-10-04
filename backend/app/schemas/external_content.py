@@ -1,8 +1,17 @@
-"""文件功能：定义外部完整页面源码与组件草稿编辑基线的类型化响应。"""
+"""文件功能：定义外部页面源码、组件编辑基线与预览截止时间的类型化响应。"""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from app.models.enums import WorkspaceComponentType
+from app.schemas.release import PreviewArtifactResponse
+
+
+class ExternalPreviewArtifactResponse(PreviewArtifactResponse):
+    """复用统一 artifact 字段，外部项目/页面预览必须携带明确的 UTC 截止时间。"""
+
+    expires_at: AwareDatetime = Field(
+        description="预览票据与 artifact 缓存共同限制的截止时间，UTC ISO 8601；清理/运行态失效可能提前结束可用性"
+    )
 
 
 class ExternalContentModel(BaseModel):

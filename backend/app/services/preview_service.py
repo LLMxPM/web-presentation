@@ -5,23 +5,25 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import urlencode
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.exceptions import AppException
+from app.core.time_utils import utc_now
 from app.models.page import Page
+from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
 from app.services.project_artifact_builder import (
     ArtifactSnapshotProfile,
     AssetDeliveryMode,
     ProjectArtifactBuilder,
     ProjectPageModuleOverride,
 )
-from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
 from app.services.runtime_artifact_store import RuntimeArtifactStore
-from app.services.token_service import TokenService
-
+from app.services.token_service import PREVIEW_CONTEXT_TOKEN_TTL_SECONDS, TokenService
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +89,8 @@ class PreviewService:
         }
         self._append_manifest_extensions(manifest, manifest_extensions)
         artifact_store_started_at = time.perf_counter()
-        artifact_id = await RuntimeArtifactStore().put_artifact(
+        artifact_store = RuntimeArtifactStore()
+        artifact_id = await artifact_store.put_artifact(
             tenant_id=tenant_id,
             workspace_id=snapshot.project.workspace_id,
             project_id=project_id,
@@ -97,6 +100,15 @@ class PreviewService:
             modules_data=snapshot.modules_data,
         )
         artifact_store_duration_ms = round((time.perf_counter() - artifact_store_started_at) * 1000, 2)
+        artifact_expires_at = await artifact_store.get_expires_at(artifact_id)
+        if artifact_expires_at is None or artifact_expires_at <= utc_now():
+            raise AppException(410, "PREVIEW_ARTIFACT_EXPIRED", "预览 artifact 已失效，请重新创建。")
+        # 秒级截止与签名 exp 相同，且不晚于缓存期限或原有一小时票据上限。
+        expires_at = datetime.fromtimestamp(
+            min(int(artifact_expires_at.timestamp()), int(utc_now().timestamp()) + PREVIEW_CONTEXT_TOKEN_TTL_SECONDS), UTC
+        )
+        if expires_at <= utc_now():
+            raise AppException(410, "PREVIEW_ARTIFACT_EXPIRED", "预览 artifact 已失效，请重新创建。")
         trace_id = f"req-{uuid.uuid4().hex[:8]}"
         preview_token = TokenService.generate_preview_context_token(
             tenant_id=tenant_id,
@@ -108,6 +120,7 @@ class PreviewService:
             entry_descriptor=entry_descriptor_payload,
             asset_base_url=snapshot.asset_base_url,
             trace_id=trace_id,
+            expires_at=expires_at,
         )
         logger.info(
             "预览 artifact 创建完成。",
@@ -131,6 +144,7 @@ class PreviewService:
 
         return PreviewArtifactResponse(
             preview_url=preview_url,
+            expires_at=expires_at,
             artifact_id=artifact_id,
             preview_kind=snapshot.preview_kind,
             entry_descriptor=snapshot.entry_descriptor,

@@ -54,14 +54,14 @@ TOP_OPERATIONS: list[tuple[str, str | None, str, str, str | None]] = [
         "/api/projects/{id}/preview-artifacts",
         "/api/v1/projects/{project_id}/preview-artifact",
         "PreviewArtifactResponse",
-        "入参 shape 不同",
+        "入参 shape 不同；External 扩展必填 expires_at",
     ),
     (
         "page.preview",
         "/api/pages/{id}/versions/{n}/preview-artifact",
         "/api/v1/pages/{page_id}/preview-artifact",
         "PreviewArtifactResponse",
-        "粒度不同",
+        "粒度不同；External 扩展必填 expires_at",
     ),
     (
         "page.archive",
@@ -228,7 +228,18 @@ def test_aligned_operations_share_response_schema_names(openapi_document: dict) 
         internal_method, external_method = EXPECTED_METHODS[key]
         internal_schema = resolve_response_schema(internal, internal_method)
         external_schema = resolve_response_schema(external, external_method)
-        assert internal_schema is not None and internal_schema == external_schema, key
+        if key in {"project.preview", "page.preview"}:
+            assert internal_schema == "PreviewArtifactResponse", key
+            assert external_schema == "ExternalPreviewArtifactResponse", key
+            internal_fields = dict(components[internal_schema]["properties"])
+            external_fields = dict(components[external_schema]["properties"])
+            internal_fields.pop("expires_at")
+            deadline = external_fields.pop("expires_at")
+            assert internal_fields == external_fields, key
+            assert deadline["format"] == "date-time"
+            assert "expires_at" in components[external_schema]["required"]
+        else:
+            assert internal_schema is not None and internal_schema == external_schema, key
     assert components, "OpenAPI components.schemas 为空，无法对拍"
 
 

@@ -72,6 +72,16 @@ M2 开工前需完成适配验证：框架无关协议核接入 FastAPI、平台
 
 ## 5. 分步实施证据
 
+### 批次 13：M5 预览截止时间与委托媒体契约
+
+External 项目/页面 preview-artifact 成功响应增加必填 UTC ISO 8601 `expires_at`，继承统一 artifact 字段，不复制响应模型。真实 `PreviewService` 在写入后读取 artifact 元数据，票据和响应采用缓存截止/原有一小时票据上限的较早值；秒级 `exp` 与 `expires_at` 相同。元数据缺失/到期返回 410，损坏返回 503，不回退猜测 TTL。内部统一 DTO 增加可空字段，组件/资产等其余生产者继续兼容，不声明它们已具备期限。
+
+新增真实授权码→服务交换→预览构建的 ASGI 场景 **8 项通过、8 项 PG 因缺专用库跳过**，覆盖项目/页面、60 秒及 7200 秒缓存 TTL、票据/缓存/响应期限对拍、缺 preview:run、跨用户空间拒绝以及缺失/到期/损坏元数据。使用专属 SQLite、独立 memory 运行态及仅存进程的测试 RSA 钥；没有替换预览构建或身份验证。双入口矩阵明确登记 External 必填期限差异，并约束其余字段一致。
+
+相邻预览、密钥环、清理、可视编辑、运行态容量、组件预览、External API/OpenAPI、双入口与数据库适配门禁 **99 项通过**；扩充夹具后的 M4 重放/权限/归档专题 **27 项通过、27 项 PG 跳过**。API codegen 与生成物对拍通过（**256 paths/354 schemas**），Editor 类型检查、根仓契约 **44 项**、相关 Python Ruff 与 diff 检查通过。无数据库迁移要求。批次 12 已提交为 `04926b6`。
+
+已携当前生成文档执行真实 Nginx 命令，Docker Linux 引擎管道不存在，专属网络/容器未创建。默认 Backend/Runtime/Renderer/Editor 端口未发现监听，未重复启动服务或改开发数据；本批未执行公网预览、真实 Renderer/Runtime PNG、冷/热/繁忙/并发耗时或 ChatGPT 宿主预算测试。M5 实机退出项继续未勾选，接续专属测试拓扑与跨仓 A6/M7 验收。
+
 ### 批次 12：M4 委托创作、Job 权限与幂等修复
 
 复用既有页面/组件 Mutation 队列和身份依赖，未增加 MCP Worker 或内部 ExternalBatch。九个重任务入口及别名通过真实授权码 HTTP 兑换、服务交换和 External Bearer 提交；原键在重新交换、刷新和同用户 PAT 后仍只受理一个 Job。另覆盖同键异载荷、两个请求竞争、两用户两空间交错调用、动态 Job 读写权限及伪造 resource_type/空间 Header、人工 retry 新 ID 和原基线保留、failed 查询 HTTP 200。

@@ -20,7 +20,7 @@ from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from tests.fixtures.oauth import POLICY, REDIRECT, VERIFIER, request_data
 from tests.fixtures.oauth_resource import exchange_data, service_request
 
-SCOPES = ["page:read", "page:write", "component:read", "component:write"]
+SCOPES = ["page:read", "page:write", "component:read", "component:write", "project:read", "preview:run"]
 SOURCE = "<template><div>原始内容</div></template>"
 
 

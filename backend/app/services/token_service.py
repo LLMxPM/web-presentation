@@ -1,14 +1,18 @@
 """文件功能：管理 RS256 密钥环、JWKS 输出，以及预览与 AI 场景的短期 JWT 签发与校验。"""
 
 import time
+from datetime import datetime
 from typing import Any
 
-from cryptography.hazmat.primitives import serialization
 import jwt
+from cryptography.hazmat.primitives import serialization
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.core.time_utils import normalize_utc
 from app.services.signing_identity import SigningKeyring, load_signing_keyring
+
+PREVIEW_CONTEXT_TOKEN_TTL_SECONDS = 3600
 
 
 class TokenService:
@@ -131,9 +135,10 @@ class TokenService:
         runtime_kit_component_name: str | None = None,
         runtime_kit_manifest_version: str | None = None,
         asset_id: int | str | None = None,
-        expires_in_seconds: int = 3600,
+        expires_in_seconds: int = PREVIEW_CONTEXT_TOKEN_TTL_SECONDS,
+        expires_at: datetime | None = None,
     ) -> str:
-        """签发统一的无状态预览上下文 Token。"""
+        """签发统一预览 Token；显式 UTC 截止时间用于与已持久化 artifact 对齐，默认 TTL 兼容。"""
 
         keyring = cls._ensure_keys_loaded()
 
@@ -151,7 +156,7 @@ class TokenService:
             "asset_base_url": asset_base_url,
             "trace_id": trace_id,
             "iat": now,
-            "exp": now + expires_in_seconds,
+            "exp": int(normalize_utc(expires_at).timestamp()) if expires_at is not None else now + expires_in_seconds,
             "jti": f"preview-artifact-{artifact_id}-{now}",
         }
         if project_id is not None:

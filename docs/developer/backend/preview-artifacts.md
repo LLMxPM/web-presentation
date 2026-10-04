@@ -15,6 +15,10 @@ preview artifact 是 Runtime 预览页面或组件时读取的短期上下文。
 
 契约与 key 归属见 [运行态存储适配器](./runtime-state-adapter.md)。
 
+项目/页面 `PreviewService` 从已写入的 artifact 元数据读取 UTC 截止时间，签名票据采用缓存截止与现有一小时上限中的较早值，秒级 `exp` 与返回的 `expires_at` 一致。External 两个预览入口使用继承统一字段的 `ExternalPreviewArtifactResponse`，期限必填；内部统一 DTO 的可空字段保持其余组件/资产等生产者兼容，不能宣称这些生产者都已返回期限。
+
+字段表示最晚可用期限，清理、容量回收或 memory 进程重启可能提前失效。它不延长已创建票据，不代表公网链接或 Renderer 已验收。创建后发现元数据缺失/到期返回 `PREVIEW_ARTIFACT_EXPIRED`，损坏返回 `PREVIEW_ARTIFACT_METADATA_INVALID`，不按配置猜测缓存剩余时长。
+
 ## 截图任务
 
 截图由 Backend 持久化渲染请求并调度独立 Renderer；Renderer 在 Chromium 中加载 Runtime 预览页面，回传截图结果。需要关注 viewport、超时、并发和 visual-ready 等参数，避免截图队列阻塞。Backend 不直接启动浏览器。

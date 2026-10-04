@@ -1258,6 +1258,26 @@ export type ExternalPreviewArtifactCreateRequest = {
   "route"?: (string) | (null)
 }
 
+export type ExternalPreviewArtifactResponse = {
+  "preview_url": string
+  "expires_at": string
+  "artifact_id": string
+  "preview_kind": "project" | "page" | "component" | "asset"
+  "entry_descriptor": PreviewEntryDescriptor
+  "viewport_width": number
+  "viewport_height": number
+  "project_id"?: (number) | (null)
+  "workspace_id"?: (number) | (null)
+  "component_preview_mode"?: ("saved" | "draft") | (null)
+  "component_source"?: ("workspace_component" | "runtime_kit") | (null)
+  "component_code"?: (string) | (null)
+  "component_version_no"?: (number) | (null)
+  "runtime_kit_component_name"?: (string) | (null)
+  "runtime_kit_manifest_version"?: (string) | (null)
+  "asset_id"?: (number) | (null)
+  "asset_name"?: (string) | (null)
+}
+
 export type ExternalProjectApplyStyleRequest = {
   "style_id": number
 }
@@ -2082,6 +2102,7 @@ export type PreviewArtifactCreateRequest = {
 
 export type PreviewArtifactResponse = {
   "preview_url": string
+  "expires_at"?: (string) | (null)
   "artifact_id": string
   "preview_kind": "project" | "page" | "component" | "asset"
   "entry_descriptor": PreviewEntryDescriptor

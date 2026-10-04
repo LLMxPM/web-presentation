@@ -12,13 +12,13 @@ from uuid import uuid4
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.core.time_utils import normalize_utc
 from app.services.redis_runtime_client import (
     RedisRuntimeClient,
     RuntimeStateCapacityError,
     RuntimeStateUnavailableError,
     get_redis_runtime_client,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,18 @@ class RuntimeArtifactStore:
 
         await self._run_state_write(write, action="创建预览")
         return resolved_artifact_id
+
+    async def get_expires_at(self, artifact_id: str) -> datetime | None:
+        """读取已持久化 artifact 的 UTC 截止时间；缺失不猜测，损坏元数据明确失败。"""
+        raw = await self._run_state_read(
+            lambda: self.runtime.hget(self._meta_key(artifact_id), "expires_at"), action="读取预览期限"
+        )
+        if raw is None:
+            return None
+        try:
+            return normalize_utc(datetime.fromisoformat(str(raw)))
+        except ValueError as exc:
+            raise AppException(503, "PREVIEW_ARTIFACT_METADATA_INVALID", "预览期限元数据不可用。") from exc
 
     async def get_manifest(self, artifact_id: str) -> dict[str, Any] | None:
         """读取 Runtime artifact manifest，缺失时返回 None。"""
@@ -303,7 +315,7 @@ async def run_runtime_artifact_sweeper() -> None:
         await asyncio.sleep(interval)
         try:
             await store.sweep_expired()
-        except Exception:  # noqa: BLE001
+        except Exception:
             # 清扫失败不能让后台任务静默退出：记录事件后按同一有界间隔重试，
             # 惰性过期仍由各读命令兜底，数据有效期不因扫描延迟而延长。
             store.runtime.record_sweep_failure()
