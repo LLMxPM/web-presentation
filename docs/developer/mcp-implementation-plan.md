@@ -242,6 +242,8 @@ P0 默认建议：授权码 60 秒一次性，MCP 访问令牌 15 分钟，委�
 
 ## 11. M6：配置、Gateway、可观测性与回退
 
+2026-10-04 独立 MCP 已交付配置/健康/限额/审计与部署模板，真实 TLS Nginx 经 SDK 两协议、主仓 OAuth/Job 和 20 秒 wait 的联测通过，见[MCP Gateway 基线](./mcp-gateway-baseline.md)。生产 Gateway、完整 PNG/Editor consent、Linux 镜像和真实宿主发布退出项继续单列。
+
 优先级 P1～P2；P1 先提供联调入口，P2 完成发布配置。
 
 - [ ] 在现有部署模板中接入 `/mcp` 及准确的资源发现路由；授权端点和 `/openapi.json` 不落到 Editor SPA fallback。

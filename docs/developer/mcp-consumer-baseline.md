@@ -1,5 +1,7 @@
 # 独立 MCP wheel 消费者联测
 
+2026-10-04 已增加[真实 TLS Gateway 基线](mcp-gateway-baseline.md)。四个消费者文件合跑为 13 项 SQLite 通过、13 项 PG 暂未执行；SDK 最大 20 秒 Job wait 经真实 Nginx 验证。该新增记录不包含 Renderer 成功链。
+
 日期：2026-10-04。测试源码：`backend/tests/integration/test_mcp_consumer.py`、`test_mcp_write_consumer.py`、`test_mcp_media_consumer.py`，MCP 实现归同级 `web-presentation-mcp`，主仓生产代码与 lock 不依赖该包。
 
 ## 证据范围

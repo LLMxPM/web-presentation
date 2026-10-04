@@ -9,11 +9,11 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 import uvicorn
-from fastapi import FastAPI
-
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
 from app.api.routes.external import projects, v1_router
 from app.models.ai_agent_config import AiAgentCodeStandardUserConfig
+from fastapi import FastAPI
+
 from tests.fixtures.oauth import POLICY
 from tests.fixtures.oauth_mutations import SOURCE, other_user_access, refresh_access
 
@@ -111,12 +111,13 @@ async def test_mcp_real_oauth_read_chain_two_users_refresh_and_revoke(consumer_b
 
 
 @asynccontextmanager
-async def loopback_server(app, *, lifespan):
+async def loopback_server(app, *, lifespan, shutdown_seconds=3):
     """仅测试专属 loopback 随机端口；退出关闭服务与 socket，不启动或重启开发平台实例。"""
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     port = listener.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(app, log_level="critical", lifespan=lifespan, proxy_headers=False))
+    server = uvicorn.Server(uvicorn.Config(app, log_level="critical", lifespan=lifespan, proxy_headers=False,
+                                         timeout_graceful_shutdown=shutdown_seconds))
     task = asyncio.create_task(server.serve(sockets=[listener]))
     try:
         async with asyncio.timeout(5):
@@ -129,7 +130,7 @@ async def loopback_server(app, *, lifespan):
     finally:
         server.should_exit = True
         try:
-            await asyncio.wait_for(task, timeout=5)
+            await asyncio.wait_for(task, timeout=shutdown_seconds + 2)
         finally:
             listener.close()
 
