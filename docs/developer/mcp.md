@@ -3,7 +3,7 @@
 本文档说明主仓库 `web-presentation` 对 MCP 的平台侧约束与集成规划。
 
 > [!NOTE]
-> 2026-10-05 首期 MCP 已实现十五个工具/75 分支，并完成 TLS 网关下真实页面/组件创作和 PNG、SQLite/PG 消费者联测。当前本地证据见[域名前本地验收](./testing/mcp-local-acceptance.md)；公网部署、ChatGPT consent 和 Linux 镜像实机尚未完成，不能宣称生产交付。
+> 2026-10-05 首期 MCP 已实现十五个工具/75 分支，并完成 TLS 网关下真实页面/组件创作和 PNG、SQLite/PG 消费者联测。Linux 镜像/Compose、在途 SIGTERM、双 Backend/PG/Redis 创作和非终态 Job 恢复也已通过，见[域名前本地验收](./testing/mcp-local-acceptance.md)；公网部署与 ChatGPT consent 尚未完成，不能宣称生产交付。
 
 MCP Server 的工具实现、协议适配和发布流程由同级独立仓库 [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp) 负责。
 

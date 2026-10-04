@@ -12,6 +12,7 @@
 | [E2E smoke](./e2e-smoke.md) | Playwright smoke、测试数据和报告目录 |
 | [本地 Docker 架构演练](./docker-architecture-drill.md) | 隔离多副本、Run 故障回收、旧 ORM、浏览器版本、实际截图/构建与凭证负例 |
 | [MCP 域名前本地验收](./mcp-local-acceptance.md) | 独立 wheel、两协议 TLS 创作/PNG、PG/迁移门禁与真实域名交接 |
+| [MCP Docker 本地验收](./mcp-docker-acceptance.md) | 独立镜像、Compose/TLS、在途退出、双 Backend/PG/Redis 创作与非终态 Job 恢复 |
 | [E2E 治理设计记录](./e2e-redesign.md) | project 分层、环境准备与测试隔离的设计背景 |
 
 ## 选择原则

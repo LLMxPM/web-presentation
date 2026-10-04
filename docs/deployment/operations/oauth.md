@@ -64,7 +64,7 @@ uv run --locked --project backend python -m app.scripts.oauth_cleanup --apply --
 
 SQLite 真实外键、并发运维/交换、刷新重放、清理来源链和迁移往返均有测试。PostgreSQL 用例需要 `OAUTH_TEST_POSTGRES_DATABASE_URL` 指向独立 `wp_oauth_test_*` 数据库，缺配置时跳过。隔离数据库证据不代替完整生产 PG/Redis、两个 Backend 进程、公网 Gateway 或 ChatGPT 联调。
 
-2026-10-05 已用专属 PostgreSQL 17.11 执行 OAuth 139 项与 MCP 消费者 15 项，并完成 SQLite/PG 迁移往返；真实 TLS 创作/PNG 及跨进程服务事务的边界见[域名前本地验收](../../developer/testing/mcp-local-acceptance.md)。生产 Backend/Redis 拓扑和 ChatGPT consent 仍待部署验收。
+2026-10-05 已用专属 PostgreSQL 17.11 执行 OAuth 139 项与 MCP 消费者 15 项，并完成 SQLite/PG 迁移往返；另在 Linux Docker 的真实双 Backend、PG 16.15/Redis 7.4.11 拓扑通过授权竞争、创作/PNG、非终态恢复和公开撤销。命令与边界见[域名前本地验收](../../developer/testing/mcp-local-acceptance.md)及[Docker 证据](../../developer/testing/mcp-docker-acceptance.md)。公网部署和 ChatGPT consent 仍待验收。
 
 ```powershell
 uv run --locked --project backend pytest -c backend/pyproject.toml backend/tests/unit/test_oauth_operations_cli.py backend/tests/integration/test_oauth_operations_cli.py backend/tests/integration/test_oauth_service_registry.py backend/tests/integration/test_oauth_cleanup.py backend/tests/integration/test_oauth_migration.py

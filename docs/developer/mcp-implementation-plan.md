@@ -327,7 +327,7 @@ pnpm run test:repository
 | M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 当前 357 Schema、75 binding / 70 HTTP 路由及生产 Gateway 本机对拍通过 |
 | M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | SQLite/PG 幂等与 Job、双协议 TLS 页面/组件创作成功链通过；真实宿主待验收 |
 | M5 | 预览和截图预算/实机验证 | M1/M2 | A6 | 签名期限、真实 Runtime/Renderer PNG 与版本对拍通过；公网链接、宿主展示及容量待验收 |
-| M6 | Gateway、配置、观测、升级回退 | M0，随 P1/P2推进 | A8/A9 | 本地 TLS/生产网关路由、配置与关联日志通过；Linux 镜像与公网发布待验收 |
+| M6 | Gateway、配置、观测、升级回退 | M0，随 P1/P2推进 | A8/A9 | Linux 镜像/Compose、在途退出及双 Backend/PG/Redis 创作恢复通过；公网与升级回退待验收 |
 | M7 | 跨仓完整验收和发布记录 | M1～M6 与 MCP 仓库首期实现；与 A9 联合执行 | 两仓 | 本地记录与域名交接已更新；真实 ChatGPT、生产拓扑和远端 CI 待验收 |
 | M5 扩展 | 批量确认、上传、必要的异步截图 | 各自冻结契约 | A7/P3 | 待实施；异步截图按量测可能升级为 P2 阻塞项 |
 

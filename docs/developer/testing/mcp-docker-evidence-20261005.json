@@ -1,0 +1,84 @@
+{
+  "schema": "mcp-docker-local-evidence.v1",
+  "date": "2026-10-05",
+  "probe_commits": {
+    "mcp": "be347e5",
+    "main": "1a8c9fd"
+  },
+  "probe_followup": "当前工作树加严 EROFS/GID 与轮换令牌日志检查",
+  "image_source_commits": {
+    "mcp": "2609847",
+    "main": "ff87fd5be3f989f78d76e8349b528f6f4e71d922"
+  },
+  "image_gate": {
+    "tls_upstream": true,
+    "non_root_uid": 10001,
+    "actual_read_only_errno": "EROFS",
+    "completed_tools_count": 15,
+    "inflight_sigterm_seconds": 3.81,
+    "production_compose_tls": true,
+    "status": "passed",
+    "sigterm_exit_code": 0,
+    "non_root_gid": 10001,
+    "container_python": "3.13.16",
+    "sdk": "2.3.0"
+  },
+  "run": {
+    "schema": "mcp-docker-evidence.v1",
+    "status": "passed",
+    "candidate": "1a8c9fdce58e2cc6a3f9594d46ffde59c7007927",
+    "mcp_candidate": "be347e55442fb29ca528a553595ec19d213e19a1",
+    "images": {
+      "backend": "sha256:35709c4a449263face494697f9201dd89b370bed1ed86badc3b513f55c1f3be4",
+      "runtime": "sha256:899dcd5809c89707f54463d712747ef12220a807130ffa9c33e523e2bb6e39f2",
+      "renderer": "sha256:65fb279795d2f74eab16e07eb0269da0c4e0ebca3f0cd8e37d409c2d1ad1fea4",
+      "mcp": "sha256:79be92d3b50113b2412da25628be45cbf215e829b9a8a31c6a0f9e00165f0fae"
+    },
+    "topology": "TLS Gateway / MCP / two Backend / PostgreSQL / Redis / Runtime / Renderer",
+    "consent": "fixture-approved; not real ChatGPT consent",
+    "create_job": "job-f8fac25f41df43bf958c8db064eaef63",
+    "edit_job": "job-1889644dd0db4cb9ae2334af792fdb9a",
+    "page_id": 1,
+    "page_version": 2,
+    "two_users_isolated": true,
+    "idempotent_replay": true,
+    "restart_job_recovery": true,
+    "accepted_job_survived_mcp_restart": true,
+    "job_before_mcp_restart": "running",
+    "screenshots": [
+      {
+        "kind": "cold",
+        "seconds": 2.994,
+        "bytes": 27830,
+        "sha256": "bc5e47660b729256e23ea84ac6d9aedfa1ec225f710780bc5b3e1d6b5421af53"
+      },
+      {
+        "kind": "hot",
+        "seconds": 1.471,
+        "bytes": 27830,
+        "sha256": "bc5e47660b729256e23ea84ac6d9aedfa1ec225f710780bc5b3e1d6b5421af53"
+      }
+    ],
+    "code_single_consumer": true,
+    "refresh_replay_chain_revoked": true,
+    "other_grant_isolated": true,
+    "public_revoke_observed": true,
+    "dependencies": {
+      "postgres": "sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+      "redis": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "gateway": "sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236"
+    },
+    "docker_engine": "29.3.1",
+    "postgresql": "psql (PostgreSQL) 16.15",
+    "redis": "Redis server v=7.4.11 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=40ff01a501d8e4b6",
+    "probe": "source-working-tree"
+  },
+  "cleanup": {
+    "status": "passed",
+    "project": "wp-mcp-docker-39d776457b",
+    "remaining_containers": 0,
+    "remaining_volumes": 0
+  },
+  "png_visual_review": "已确认中文编辑结果，PNG 与首轮目视图片摘要一致",
+  "elapsed_seconds": 110.8
+}

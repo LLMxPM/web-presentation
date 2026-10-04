@@ -166,6 +166,8 @@ Runtime Kit 约束：
 
 本地多副本架构演练使用 `scripts/testing/docker-architecture.py`；必须创建专属数据库、Redis、卷和回环端口，不能复用开发数据。阶段操作按依赖串行执行，结束后仅清理本项目；命令与证据边界见[本地 Docker 架构演练](./docs/developer/testing/docker-architecture-drill.md)。
 
+独立 MCP 的容器创作联测使用 `scripts/testing/mcp-docker.py`，消费相邻 MCP 仓的原始 Compose 与交付镜像，遵循同样的专属资源和清理边界。凭证只留在忽略的 `.tmp/mcp-docker/`，命令及脱敏证据见 [MCP Docker 本地验收](./docs/developer/testing/mcp-docker-acceptance.md)。
+
 常用入口：
 
 ```powershell

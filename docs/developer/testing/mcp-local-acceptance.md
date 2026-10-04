@@ -24,8 +24,12 @@
 | 契约/生成物 | 相关 Backend 18 passed；codegen 与生成物一致性、Editor `vue-tsc` 通过 |
 | 本机生产 Gateway | 完整 OpenAPI、OAuth 发现/302/400、Basic/request ID、16 KiB 上限、上游 503 与 Editor SPA 边界通过 |
 | 独立安装入口 | frozen 依赖的 Python 3.11 wheel 真进程、缺配置拒绝、健康和 SDK TCP 通过；不含 Backend/CLI 包 |
+| Linux 镜像 / Compose | 非 root、实际只读、TLS 回源、生产 Compose/TLS、健康、两协议和在途 SIGTERM 排空通过 |
+| Docker 生产组件 | 双 Backend + PG 16.15 / Redis 7.4.11 + Runtime/Renderer；真实页面/PNG、非终态 Job 跨 MCP 重启、授权竞争/撤销及专属资源清理通过 |
 
 跨进程 PG 门禁另由 `test_oauth_multiprocess.py` 验证两个独立 Python 服务进程的授权码一次消费、refresh 重放整链撤销，以及服务停用/交换竞争。它执行生产 OAuth 服务、真实数据库锁与事务；不代表完整生产 Backend/Redis 拓扑或多副本负载验收。
+
+Docker 恢复后，另用真实交付镜像跑通两个完整 Backend 与 PG/Redis、Runtime、Renderer、MCP/TLS 网关；版本、命令、PNG、非终态恢复与证据边界见 [Docker 本地验收](mcp-docker-acceptance.md)。这补齐本地生产组件拓扑证据，仍不代表公网发布或容量验收。
 
 ## 真实创作链路
 
@@ -69,7 +73,7 @@ uv run --all-packages --frozen python scripts/contracts/test-gateway-native.py -
 
 1. 给平台授权服务/Editor、MCP resource 和预览入口配置公网可达 HTTPS。可以使用受控隧道域名；购买独立域名不是本地协议验证的前置条件。地址必须同步到 issuer、resource、API audience、Cookie/CORS、Host/Origin 和服务登记。
 2. 用 ChatGPT 网页端真实账号执行固定 CIMD 客户端授权、空间/Scope 确认、工具调用、PNG/预览展示和撤销。SDK、预批准 Grant、fixture 元数据和自签 loopback 证书不能替代 consent。
-3. 在可用 Linux Docker 环境执行独立镜像 build/非 root/只读/health/SIGTERM 门禁，以及完整生产 PG/Redis/多进程部署验证。当前本机 Docker socket 故障；自动批准审查拒绝停止 Docker/清理残留 socket，操作未执行。
+3. Linux 独立镜像、在途 SIGTERM、生产 Compose/TLS 和双 Backend/PG/Redis/Runtime/Renderer 本地门禁已通过；正式容量、多 MCP 副本、跨版本升级与远端发布继续按各自矩阵验收。此前 Docker socket 阻塞已解除。
 4. 取得用户对发布范围的授权后，再推送双方提交并执行远端 CI；当前固定主仓提交未推送，不能记录 CI 成功。
 
 批量确认、二进制上传、Resources/订阅和正式多副本属于 A7 独立扩展，首期仍不支持。部署、升级和回退见独立 MCP 仓 [部署说明](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/deployment.md)。

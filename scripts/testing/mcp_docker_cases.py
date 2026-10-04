@@ -148,4 +148,6 @@ async def revoked(drill, endpoint, tls, credentials, tokens):
         assert response.status_code == 200
         response = await client.post(endpoint + "/mcp", headers={"Host": "mcp.example.test", "Authorization": "Bearer " + tokens[1]["access_token"]}, json={})
         assert response.status_code == 401
-    return {"code_single_consumer": True, "refresh_replay_chain_revoked": True, "other_grant_isolated": True, "public_revoke_observed": True}
+    return ({"code_single_consumer": True, "refresh_replay_chain_revoked": True,
+             "other_grant_isolated": True, "public_revoke_observed": True},
+            [winner["access_token"], winner["refresh_token"]])

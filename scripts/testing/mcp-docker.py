@@ -31,7 +31,8 @@ async def run(drill):
         "topology": "TLS Gateway / MCP / two Backend / PostgreSQL / Redis / Runtime / Renderer",
         "consent": "fixture-approved; not real ChatGPT consent"}
     evidence.update(await creation(drill, endpoint, tls, credentials, tokens))
-    evidence.update(await revoked(drill, endpoint, tls, credentials, tokens))
+    revocation, rotated = await revoked(drill, endpoint, tls, credentials, tokens)
+    evidence.update(revocation)
     evidence["dependencies"] = {service: command("docker", "inspect", "--format", "{{.Image}}", drill.container(service))
         for service in ("postgres", "redis", "gateway")}
     evidence["docker_engine"] = command("docker", "version", "--format", "{{.Server.Version}}")
@@ -41,6 +42,7 @@ async def run(drill):
     # 检查容器 stdout/stderr 都没有本轮凭证，不展示完整生产日志。
     sensitive = [item[key] for item in credentials for key in ("code", "verifier", "password")]
     sensitive += [value for token in tokens for key, value in token.items() if key in {"access_token", "refresh_token"}]
+    sensitive += rotated
     sensitive.append((drill.directory / "service-secret").read_text(encoding="utf-8"))
     for service in ("backend_a", "backend_b", "mcp", "gateway", "platform_tls"):
         logs = command("docker", "logs", drill.container(service), include_stderr=True)
