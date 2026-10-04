@@ -166,7 +166,8 @@ async def test_sdk_client_real_tcp_backend_and_mcp(consumer_backend, negotiation
                         tools = await session.list_tools()
                         assert {tool.name for tool in tools.tools} == {"wp_get_context", "wp_get_operation_guide", "wp_get_code_standards",
                             "wp_list_entities", "wp_get_entity", "wp_create_entity", "wp_update_entity", "wp_archive_entity",
-                            "wp_validate_entity", "wp_execute_action", "wp_get_mutation_job", "wp_cancel_mutation_job", "wp_retry_mutation_job"}
+                            "wp_validate_entity", "wp_execute_action", "wp_get_mutation_job", "wp_cancel_mutation_job", "wp_retry_mutation_job",
+                            "wp_create_preview", "wp_get_page_screenshot"}
                         result = await session.call_tool("wp_get_context", {})
                         assert not result.is_error and result.structured_content["data"]["user"]["id"] == 1
                         source = await session.call_tool("wp_get_entity", {"workspace_id": 1, "resource_type": "page", "view": "source", "target_id": 1})
