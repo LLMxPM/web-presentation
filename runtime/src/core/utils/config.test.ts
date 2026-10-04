@@ -5,9 +5,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { setRuntimePreloadedConfig } from './path'
+import { generateRoutes } from './route-generator'
 
+/** 生成完整预加载配置，保持路由测试不依赖开发服务或本地 YAML。 */
 function buildPreloadedConfig(routes: Array<{
   route: string
   component?: string
@@ -55,6 +59,35 @@ afterEach(() => {
 })
 
 describe('runtime config default routes', () => {
+  it.each([
+    { path: '/', hidden: false },
+    { path: '/', hidden: true },
+    { path: '', hidden: false },
+  ])('已有根页面 $path hidden=$hidden 时直接导航，不能插入遮挡它的重定向', async ({ path, hidden }) => {
+    setRuntimePreloadedConfig(buildPreloadedConfig([
+      { route: '/first', component: '@/views/First.vue', meta: { title: '排序靠前页', order: 1 } },
+      { route: path, component: '@/views/Root.vue', meta: { title: '根页面', order: 10, hidden } },
+    ]))
+    const { getDefaultRouteConfigAsync, getRouteConfigsAsync, reloadAllConfigs } = await import('./config')
+    await reloadAllConfigs()
+    const defaults = await getDefaultRouteConfigAsync()
+    const configs = await getRouteConfigsAsync()
+    // 仅替换 Vue 视图加载器；路由生成和导航使用真实 Vue Router。
+    const view = defineComponent({ render: () => null })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', component: view, children: [
+        ...defaults,
+        ...generateRoutes(configs.map(config => ({ ...config, component: async () => view }))),
+      ] }],
+    })
+
+    expect(defaults.some(route => route.path === '')).toBe(false)
+    await router.push('/')
+    expect(router.currentRoute.value.meta.title).toBe('根页面')
+    expect(router.currentRoute.value.redirectedFrom).toBeUndefined()
+  })
+
   it('应使用预加载路由中的首个可见页面作为默认重定向', async () => {
     setRuntimePreloadedConfig(buildPreloadedConfig([
       {

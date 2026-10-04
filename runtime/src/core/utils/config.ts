@@ -403,6 +403,11 @@ function getDefaultRedirectPath(): string {
     return ''
   }
 
+  // 已有根路由（包括隐藏页或分组）时由它负责首页，避免空路径记录遮挡或自重定向。
+  if (configState.routeConfig.routes.some(route => ['', '/'].includes(String(route.route || '').trim()))) {
+    return ''
+  }
+
   const sortedRoutes = [...configState.routeConfig.routes]
     .filter(route => !route.meta.hidden)
     .sort((a, b) => a.meta.order - b.meta.order)
