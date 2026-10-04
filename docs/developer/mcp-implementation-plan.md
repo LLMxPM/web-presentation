@@ -2,6 +2,8 @@
 
 规划日期：2026-10-03。状态：实施中（M1/M3 首批落地，M2 授权与运维完成主仓实现，M4 委托任务与幂等完成本地回归，M5 预览期限和 M6 Backend 关联日志已接续）。OAuth 默认关闭，远程 MCP 正式联调尚未完成；未标记完成的接口、模型、配置和测试仍为计划。
 
+2026-10-05 当前证据：SQLite/PG 消费者各 15 项、OAuth 专题各 139 项、两库迁移往返和 TLS 网关下两协议真实创作/PNG 已通过。编辑结构共享 Schema、Runtime 根路由修复和生产 Nginx 本机路由门禁已落地；详细版本、命令和域名/镜像/真实宿主依赖见[域名前本地验收](./testing/mcp-local-acceptance.md)。后面的带日期更新保留各批次历史边界。
+
 首批冻结边界、现状缺口及跨仓阻塞见[实施交接记录](./mcp-contract-handoff.md)。M0 按独立边界分项冻结，已冻结的 M1 基础解耦与 M3 可以推进；M2 仍需授权选型最小验证与真实客户端矩阵。
 
 本计划负责 `web-presentation` 平台侧工作；MCP 工具、专用异步客户端和服务交付由 [MCP 仓库实施计划](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/mcp-implementation-plan.md)负责。平台现行接口仍以[External API v1 契约](./reference/external-agent-api.md)及实际代码为准。
@@ -321,12 +323,12 @@ pnpm run test:repository
 | --- | --- | --- | --- | --- |
 | M0 | 冻结契约、授权实现选型、首批客户端矩阵 | 无 | 两仓 | ChatGPT web 首批、CIMD/S256/RFC9207 已冻结；真实宿主待办 |
 | M1 | External Principal、PAT/委托兼容 | M0 | 主仓 API + A3/A4 | 解耦、真实委托 Bearer、读取/Scope 对等及本地创作/Job 已验证；真实宿主待验收 |
-| M2 | OAuth、Grant、账户授权 UI、撤销 | M0；联调依赖 M1 | A3 真实授权 | 协议/存储、公开路由、Cookie 确认、Editor、本人 Grant、服务登记/轮换/停用及有界清理已实现；PG/真实宿主验收待办 |
-| M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 主仓首批实现完成；MCP 仓库 binding 与实际 Backend Gateway 对拍待办 |
-| M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | 主仓 SQLite 委托创作/Job、轮换/响应丢失重放、基线与归档修复已覆盖；PG/真实断连/跨仓 A5 待验收 |
-| M5 | 预览和截图预算/实机验证 | M1/M2 | A6 | External 预览明确期限和本地权限回归已实现；公网链接、Renderer/Runtime PNG 与宿主预算待验收 |
-| M6 | Gateway、配置、观测、升级回退 | M0，随 P1/P2推进 | A8/A9 | 显式配置、OAuth Gateway 路由与 Backend 公共身份/操作/Job 关联日志已实现；MCP/真实网关穿透与发布验收待办 |
-| M7 | 跨仓完整验收和发布记录 | M1～M6 与 MCP 仓库首期实现；与 A9 联合执行 | 两仓 | 待实施 |
+| M2 | OAuth、Grant、账户授权 UI、撤销 | M0；联调依赖 M1 | A3 真实授权 | 协议/存储/运维、SQLite/PG 与迁移往返通过；真实宿主和生产拓扑待验收 |
+| M3 | OpenAPI/响应/自省缺口修复 | M0 | A1/A4 契约对拍 | 当前 357 Schema、75 binding / 70 HTTP 路由及生产 Gateway 本机对拍通过 |
+| M4 | 委托身份的创作、Job、幂等验证 | M1/M2 | A5 | SQLite/PG 幂等与 Job、双协议 TLS 页面/组件创作成功链通过；真实宿主待验收 |
+| M5 | 预览和截图预算/实机验证 | M1/M2 | A6 | 签名期限、真实 Runtime/Renderer PNG 与版本对拍通过；公网链接、宿主展示及容量待验收 |
+| M6 | Gateway、配置、观测、升级回退 | M0，随 P1/P2推进 | A8/A9 | 本地 TLS/生产网关路由、配置与关联日志通过；Linux 镜像与公网发布待验收 |
+| M7 | 跨仓完整验收和发布记录 | M1～M6 与 MCP 仓库首期实现；与 A9 联合执行 | 两仓 | 本地记录与域名交接已更新；真实 ChatGPT、生产拓扑和远端 CI 待验收 |
 | M5 扩展 | 批量确认、上传、必要的异步截图 | 各自冻结契约 | A7/P3 | 待实施；异步截图按量测可能升级为 P2 阻塞项 |
 
 原规划提交只创建工作清单；当前各批次实现与验证证据见实施交接记录。未验收项目不得提前写成已支持。

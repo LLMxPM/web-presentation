@@ -106,7 +106,7 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 
 `capabilities` 返回当前 Token 在指定空间可用的 Scope 和 operation。CLI 可以用它决定命令提示，MCP 可以用它决定工具是否披露；两者都不能把客户端判断当作最终授权。
 
-`whoami` 明确返回用户公共信息、PAT 兼容 `token`、公共凭证来源 `credential` 与实时有效的授权空间列表。PAT 的 token 字段保留 `id/name/token_public_id/scopes/expires_at/all_workspaces`，credential.type 为 `pat`，另含 public_id 和 expires_at，不返回原始令牌。External 业务主体已与 PAT ORM 解耦；委托 DTO 预留独立的 Grant/客户端/服务来源，但当前 HTTP 认证仍只接受 PAT，OAuth 接入尚未开放。
+`whoami` 明确返回用户公共信息、PAT 兼容 `token`、公共凭证来源 `credential` 与实时有效的授权空间列表。PAT 的 token 字段保留 `id/name/token_public_id/scopes/expires_at/all_workspaces`，credential.type 为 `pat`，另含 public_id 和 expires_at，不返回原始令牌。External HTTP 已按明确前缀单次分派 PAT 与短期 OAuth 委托，委托返回 Grant/客户端/服务公共来源；OAuth 默认关闭，生产接入仍需配置与验收。
 
 ### 4.2 规范和 OpenAPI
 
@@ -123,6 +123,8 @@ GET /openapi.json
 需要认证的 External 成功响应统一使用 `Cache-Control: private, no-store`，包括身份、规范、capabilities 和业务数据。公开 OpenAPI 可共享，但不能将用户相关能力和内容写入公共缓存。
 
 页面源码响应为完整 `source_code` 加 `page_id/page_code/version_no`。组件 draft 返回完整 content/preview_schema 与 `current_version_no/draft_base_version_no/draft_hash`；编辑使用 current_version_no 作为 base_version_no、draft_hash 作为 base_draft_hash。依赖与资源差异复用已有响应 DTO。截图 200 明确为 image/png binary，携带 X-Page-ID 与 X-Page-Version-No；仍可能等待队列刷新，新增 Schema 不表示已经满足宿主时限。
+
+页面/组件 `edits` 与 `validate/entity` 候选编辑共用公开的联合 Schema：`replace_exact` 使用唯一命中的 `old_text` 和 `new_text`；`insert_after` 使用唯一命中的 `anchor_text` 和非空 `new_text`；`rewrite_file` 使用完整非空 `content`。禁止额外字段或未支持的 type，错误形状在入队前返回 422，MCP 可从当前 OpenAPI 在业务请求前拒绝。规范化、唯一匹配及源码语义仍由生产编辑引擎校验。
 
 ## 5. 资源和任务契约
 

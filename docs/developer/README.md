@@ -16,8 +16,9 @@
 | [部署文档入口](../deployment/production/README.md) | Compose 部署、环境变量、备份恢复、升级回滚和排障 |
 | [External Agent API v1 契约](./reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend API、Scope、任务和交付契约 |
 | [CLI 主仓集成边界](./cli.md) | 主仓负责的 CLI 外部 API 契约和 CLI 仓库交接边界 |
-| [MCP 主仓集成边界](./mcp.md) | 主仓负责的 MCP External API 依赖和 CLI 仓库交接边界 |
-| [远程 MCP 主仓实施计划](./mcp-implementation-plan.md) | 远程多用户授权、API 适配、跨仓工作包、测试和发布验收；待实施 |
+| [MCP 主仓集成边界](./mcp.md) | 主仓负责的 MCP External API 依赖和独立 MCP 仓交接边界 |
+| [远程 MCP 主仓实施计划](./mcp-implementation-plan.md) | 远程多用户授权、API 适配、跨仓工作包及发布退出项 |
+| [MCP 域名前本地验收](./testing/mcp-local-acceptance.md) | TLS 创作/PNG、SQLite/PG、迁移与当前域名/宿主依赖 |
 | [大文件与媒体资产管理](./large-files.md) | Git LFS 规则、媒体文件提交检查和历史迁移约束 |
 
 ## 分组导航
@@ -34,7 +35,7 @@
 | [部署](../deployment/production/README.md) | Compose 模板、生产环境变量、CI/CD、备份、回滚和排障 |
 | [External Agent API](./reference/external-agent-api.md) | 外部 Agent 共用的 Backend 契约和变更流程 |
 | [CLI](./cli.md) | CLI 主仓集成边界；具体命令实现由 CLI 仓库维护 |
-| [MCP](./mcp.md) | MCP 主仓集成边界；具体协议适配由 CLI 仓库维护 |
+| [MCP](./mcp.md) | MCP 主仓集成边界；具体协议适配由独立 MCP 仓库维护 |
 | [参考资料](./reference/conventions.md) | 编码约定、接口契约索引、环境变量索引、术语和模板包 |
 
 ## 维护原则

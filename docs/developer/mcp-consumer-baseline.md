@@ -1,5 +1,7 @@
 # 独立 MCP wheel 消费者联测
 
+2026-10-05 当前结果：四组消费者 SQLite 15 项、PG 15 项通过；新增 TLS 网关下真实 Runtime/Renderer 的两协议页面/组件创作与 PNG，见[域名前本地验收](testing/mcp-local-acceptance.md)。下文保留 2026-10-04 的历史证据范围。
+
 2026-10-04 已增加[真实 TLS Gateway 基线](mcp-gateway-baseline.md)。四个消费者文件合跑为 13 项 SQLite 通过、13 项 PG 暂未执行；SDK 最大 20 秒 Job wait 经真实 Nginx 验证。该新增记录不包含 Renderer 成功链。
 
 日期：2026-10-04。测试源码：`backend/tests/integration/test_mcp_consumer.py`、`test_mcp_write_consumer.py`、`test_mcp_media_consumer.py`，MCP 实现归同级 `web-presentation-mcp`，主仓生产代码与 lock 不依赖该包。
@@ -35,4 +37,4 @@ uv run --frozen --with '../../web-presentation-mcp/.tmp/dist/web_presentation_mc
 
 媒体批次 SQLite **11 passed**，PostgreSQL **11 deselected**；相关 OpenAPI 测试 10 项、生成物一致性检查通过，本次未测 PG。早期 A4 为 3/3、A5 为 7/7。`--with` 是独立包消费者测试，不更改主仓依赖/lock。显式 REQUIRED 缺包必须失败；普通主仓回归没有安装 wheel 时该可选模块 skip，不能计为跨仓验证通过。SDK 本机客户端使用 `trust_env=False`，避免环境代理将测试 loopback 请求转发到其他服务。
 
-尚未证明：真实 ChatGPT/Codex/Inspector 授权、TLS/Gateway、PG、多进程/副本、Renderer、完整创作成功链和生产部署。后续联测继续扩展本入口，并与 MCP 仓[写入/Job 实施记录](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/write-baseline.md)同步边界。
+上述 2026-10-04 批次尚未证明真实宿主授权、TLS/Gateway、PG、多进程/副本、Renderer、完整创作成功链和生产部署；2026-10-05 的后续完成项与剩余依赖以页首新记录为准。历史失败场景继续与 MCP 仓[写入/Job 实施记录](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/write-baseline.md)同步边界。

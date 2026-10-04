@@ -59,7 +59,9 @@ Lite Dockerfile 采用双 venv 独立依赖隔离（D-Dep3），生产流水线�
 
 数据库需要先升级至 `20261004_0101`，服务登记、轮换/停用、清理和回退说明见 [MCP OAuth 维护](./operations/oauth.md)。SQLite 和隔离 ASGI 测试不是正式发布证据。
 
-**下一步**：配置专用 PostgreSQL 并完成两个 Backend 进程的消费/轮换及服务停用/交换竞争；经真实 Gateway 验证 OAuth、MCP 与 PNG；联合 MCP 仓库完成 ChatGPT 网页端授权、撤销和创作闭环，登记双方版本与产物。验收完成前保持远程 MCP 未交付口径。
+2026-10-05 已完成本地 SQLite/PG、迁移往返、两协议 TLS 创作和真实 PNG，以及主仓生产网关本机路由门禁，见[域名前本地验收](../developer/testing/mcp-local-acceptance.md)。本地隔离数据、服务事务进程和自签证书不代表完整生产部署。
+
+**下一步**：配置公网 HTTPS；联合 MCP 仓库完成 ChatGPT 网页端授权、撤销和创作闭环；在可用 Linux Docker 环境完成镜像及生产 PG/Redis/多进程验收，登记双方版本与产物。验收完成前保持远程 MCP 未交付口径。
 
 **原始记录**：[主仓 MCP 实施计划](../developer/mcp-implementation-plan.md) M2/M6/M7 与[交接记录](../developer/mcp-contract-handoff.md)。
 

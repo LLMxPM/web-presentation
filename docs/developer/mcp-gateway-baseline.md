@@ -1,5 +1,7 @@
 # MCP 真实 TLS 网关消费者基线
 
+2026-10-05 更新：本文件两个协议用例均已在 SQLite/PG 执行，共 4 passed；新增完整 TLS 创作/真实 PNG 和主仓生产 Gateway 本机路由门禁，见[域名前本地验收](testing/mcp-local-acceptance.md)。下文为 2026-10-04 初次验证记录。
+
 日期：2026-10-04。独立 MCP `29244e8b4c093b86c4655645ca0f9f59cbd54cc8` wheel 与主仓真实 OAuth/业务路由，经官方 Nginx 1.28.3 Windows 便携二进制、独立 loopback 端口与临时 TLS 证书联测。证书只由本次客户端信任，不安装到系统或修改 DNS；配置直接消费 MCP 仓 `deploy/nginx.conf.template`，主仓不复制实现。
 
 `backend/tests/integration/test_mcp_gateway_consumer.py` 两项 SQLite 用例通过，两个 PG 用例暂未执行。覆盖健康/公开元数据、401 challenge、真实 Host/Origin、SDK `discover` 2026-07-28 与 `initialize` 2025-11-25、十五个工具、真实页面 Job 入队、最大 20 秒短等待与取消。用户 Token、幂等 payload 不出现在 Gateway 日志。

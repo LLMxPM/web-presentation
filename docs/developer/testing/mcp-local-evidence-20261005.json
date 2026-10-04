@@ -1,0 +1,73 @@
+{
+  "schema": "mcp-local-evidence.v1",
+  "date": "2026-10-05",
+  "backend_contract_commit": "f45764a60580a4f478c2f6d81d576870bf389ee8",
+  "mcp_creation_wheel_commit": "29244e8b4c093b86c4655645ca0f9f59cbd54cc8",
+  "mcp_audit_followup_commit": "144cdeae66f49f969e467fd6c6fb2a6432ae07af",
+  "sdk": "2.3.0",
+  "size": [
+    1920,
+    1080
+  ],
+  "authorization": "fixture-approved-grant-not-chatgpt-consent",
+  "runs": [
+    {
+      "schema": "mcp-render-evidence.v1",
+      "backend": "source-working-tree",
+      "transport": "tls-nginx",
+      "protocol": "2026-07-28",
+      "page_id": 2,
+      "page_version": 3,
+      "create_job": "job-8636d11c9589411dada55ade3a45f7e5",
+      "edit_job": "job-bf31f50b978d4fd1bf459d49a2959ded",
+      "component_reference_job": "job-92495c4098ae4146a033aab64124c522",
+      "screenshots": [
+        {
+          "kind": "cold",
+          "seconds": 5.247,
+          "bytes": 32821,
+          "sha256": "9c0bdabbc04e91d491661915dadbc1f03211bd143bafadece766bbbf447171ef"
+        },
+        {
+          "kind": "hot",
+          "seconds": 1.694,
+          "bytes": 32821,
+          "sha256": "9c0bdabbc04e91d491661915dadbc1f03211bd143bafadece766bbbf447171ef"
+        }
+      ],
+      "component_id": 2,
+      "component_version": 1,
+      "component_create_job": "job-cff54bed980a4a408619dd0599a4bd9c",
+      "component_edit_job": "job-76f4b81d46e64602964c11cc5a6347ab"
+    },
+    {
+      "schema": "mcp-render-evidence.v1",
+      "backend": "source-working-tree",
+      "transport": "tls-nginx",
+      "protocol": "2025-11-25",
+      "page_id": 2,
+      "page_version": 3,
+      "create_job": "job-6a1b8a5313b547cdb0932bdfc8bf6913",
+      "edit_job": "job-13fa4976fed347c29e1a6cb9bf0a96a8",
+      "component_reference_job": "job-9a453010c31f486fbddb71c47f074a49",
+      "screenshots": [
+        {
+          "kind": "cold",
+          "seconds": 11.399,
+          "bytes": 32821,
+          "sha256": "9c0bdabbc04e91d491661915dadbc1f03211bd143bafadece766bbbf447171ef"
+        },
+        {
+          "kind": "hot",
+          "seconds": 1.709,
+          "bytes": 32821,
+          "sha256": "9c0bdabbc04e91d491661915dadbc1f03211bd143bafadece766bbbf447171ef"
+        }
+      ],
+      "component_id": 2,
+      "component_version": 1,
+      "component_create_job": "job-3cfdf6137374467aacc8677accb83f0b",
+      "component_edit_job": "job-1bc36afd4f6744739c4b0bc947d9f822"
+    }
+  ]
+}
