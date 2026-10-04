@@ -42,7 +42,7 @@ async def consumer_backend(oauth_mutation_client):
     return client, app, access, second
 
 
-def make_runtime(app, *, backend=POLICY.issuer, hosts=()):
+def make_runtime(app, *, backend=POLICY.issuer, hosts=(), api_transport=None):
     """MCP 只通过 HTTP Transport 消费主仓，没有内部业务导入或身份绕过。"""
     from wp_mcp.remote import RemoteRuntime
     from wp_mcp.remote_settings import RemoteSettings
@@ -50,7 +50,8 @@ def make_runtime(app, *, backend=POLICY.issuer, hosts=()):
                               "mcp-service", "service-secret", allowed_hosts=hosts)
     if app is None:
         return RemoteRuntime(settings)
-    return RemoteRuntime(settings, oauth_transport=httpx.ASGITransport(app=app), api_transport=httpx.ASGITransport(app=app))
+    return RemoteRuntime(settings, oauth_transport=httpx.ASGITransport(app=app),
+                         api_transport=api_transport or httpx.ASGITransport(app=app))
 
 
 async def call(client, name, arguments, token):
@@ -164,8 +165,17 @@ async def test_sdk_client_real_tcp_backend_and_mcp(consumer_backend, negotiation
                             pytest.fail(f"SDK 协议协商失败：{error.code} {error.message} {error.data}")
                         tools = await session.list_tools()
                         assert {tool.name for tool in tools.tools} == {"wp_get_context", "wp_get_operation_guide", "wp_get_code_standards",
-                                                                      "wp_list_entities", "wp_get_entity"}
+                            "wp_list_entities", "wp_get_entity", "wp_create_entity", "wp_update_entity", "wp_archive_entity",
+                            "wp_validate_entity", "wp_execute_action", "wp_get_mutation_job", "wp_cancel_mutation_job", "wp_retry_mutation_job"}
                         result = await session.call_tool("wp_get_context", {})
                         assert not result.is_error and result.structured_content["data"]["user"]["id"] == 1
                         source = await session.call_tool("wp_get_entity", {"workspace_id": 1, "resource_type": "page", "view": "source", "target_id": 1})
                         assert not source.is_error and source.structured_content["data"]["source_code"] == SOURCE
+                        created = await session.call_tool("wp_create_entity", {"workspace_id": 1, "resource_type": "page", "mode": "new",
+                            "idempotency_key": "tcp-create", "payload": {"project_id": 1, "name": "TCP 创建", "source_code": SOURCE}})
+                        assert not created.is_error and created.structured_content["data"]["status"] == "pending"
+                        locator = {"workspace_id": 1, "job_id": created.structured_content["data"]["job_id"]}
+                        status = await session.call_tool("wp_get_mutation_job", locator)
+                        assert not status.is_error and status.structured_content["data"]["job_id"] == locator["job_id"]
+                        canceled = await session.call_tool("wp_cancel_mutation_job", {**locator, "idempotency_key": "tcp-cancel"})
+                        assert not canceled.is_error and canceled.structured_content["meta"]["canceled"]

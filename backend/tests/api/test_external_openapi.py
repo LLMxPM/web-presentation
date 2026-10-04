@@ -90,6 +90,10 @@ async def test_mutation_job_metadata_keeps_permissions_dynamic(client: AsyncClie
     for resource, candidate in metadata["candidates"].items():
         assert candidate["key"] == f"jobs.mutation.{resource}.{action}"
         assert candidate["required_scopes"] == [f"{resource}:{'read' if action == 'status' else 'write'}"]
+    responses = document["paths"][f"/api/v1/jobs/mutations/{{job_id}}{suffix}"][method]["responses"]
+    expected = {"200", "202"} if action == "cancel" else {"202"} if action == "retry" else {"200"}
+    assert {code for code in responses if code.startswith("2")} == expected
+    assert all(responses[code]["content"]["application/json"]["schema"]["$ref"].endswith("/ExternalMutationJobResponse") for code in expected)
 
 
 async def test_png_and_any_scope_contracts_are_explicit(client: AsyncClient) -> None:

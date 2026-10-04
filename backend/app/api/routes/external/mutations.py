@@ -220,7 +220,11 @@ async def get_mutation_job_status(
     return await MutationJobService(session).get_job_response(job)
 
 
-@router.post("/{job_id}/cancel", response_model=ExternalMutationJobResponse)
+@router.post(
+    "/{job_id}/cancel",
+    response_model=ExternalMutationJobResponse,
+    responses={202: {"model": ExternalMutationJobResponse, "description": "取消请求已接受，等待 Worker 收敛。"}},
+)
 async def cancel_mutation_job(
     request: Request,
     response: Response,
@@ -298,7 +302,7 @@ async def create_component_metadata_mutation(
     return result if isinstance(result, ExternalMutationJobResponse) else ExternalMutationJobResponse.model_validate(result)
 
 
-@router.post("/{job_id}/retry", response_model=ExternalMutationJobResponse)
+@router.post("/{job_id}/retry", response_model=ExternalMutationJobResponse, status_code=202)
 async def retry_mutation_job(
     request: Request,
     response: Response,

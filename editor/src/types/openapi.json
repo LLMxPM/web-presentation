@@ -9107,6 +9107,16 @@
               }
             }
           },
+          "202": {
+            "description": "取消请求已接受，等待 Worker 收敛。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalMutationJobResponse"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -9300,7 +9310,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
