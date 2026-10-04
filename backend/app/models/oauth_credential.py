@@ -64,13 +64,13 @@ class OAuthToken(Base):
         index=True,
     )
     parent_token_id: Mapped[str | None] = mapped_column(
-        ForeignKey("oauth_tokens.token_id"), nullable=True
+        ForeignKey("oauth_tokens.token_id"), nullable=True, index=True
     )
     source_token_id: Mapped[str | None] = mapped_column(
-        ForeignKey("oauth_tokens.token_id"), nullable=True
+        ForeignKey("oauth_tokens.token_id"), nullable=True, index=True
     )
     service_id: Mapped[str | None] = mapped_column(
-        ForeignKey("oauth_mcp_services.service_id"), nullable=True
+        ForeignKey("oauth_mcp_services.service_id"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(

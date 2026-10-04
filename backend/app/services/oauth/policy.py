@@ -3,6 +3,9 @@
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+MAX_CREDENTIAL_RETENTION_SECONDS = 7 * 24 * 60 * 60
+MAX_AUDIT_RETENTION_SECONDS = 30 * 24 * 60 * 60
+
 
 @dataclass(frozen=True, slots=True)
 class OAuthPolicy:
@@ -16,8 +19,8 @@ class OAuthPolicy:
     delegated_ttl_seconds: int = 60
     consent_ttl_seconds: int = 600
     refresh_lifetime_seconds: int = 30 * 24 * 60 * 60
-    credential_retention_seconds: int = 7 * 24 * 60 * 60
-    audit_retention_seconds: int = 30 * 24 * 60 * 60
+    credential_retention_seconds: int = MAX_CREDENTIAL_RETENTION_SECONDS
+    audit_retention_seconds: int = MAX_AUDIT_RETENTION_SECONDS
 
     def __post_init__(self) -> None:
         """拒绝相同 audience、不受信地址和越过首期上限的期限。"""
@@ -42,8 +45,8 @@ class OAuthPolicy:
             (self.delegated_ttl_seconds, 60),
             (self.consent_ttl_seconds, 600),
             (self.refresh_lifetime_seconds, 30 * 24 * 60 * 60),
-            (self.credential_retention_seconds, 7 * 24 * 60 * 60),
-            (self.audit_retention_seconds, 30 * 24 * 60 * 60),
+            (self.credential_retention_seconds, MAX_CREDENTIAL_RETENTION_SECONDS),
+            (self.audit_retention_seconds, MAX_AUDIT_RETENTION_SECONDS),
         )
         if any(
             type(value) is not int or value <= 0 or value > upper

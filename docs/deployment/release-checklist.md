@@ -53,6 +53,18 @@ Lite Dockerfile 采用双 venv 独立依赖隔离（D-Dep3），生产流水线�
 
 ---
 
+## 5. 远程 MCP OAuth 首批发布
+
+**状态**：主仓默认关闭的授权、确认、委托 API 和服务运维/清理已实现，尚未完成生产联调。
+
+数据库需要先升级至 `20261004_0101`，服务登记、轮换/停用、清理和回退说明见 [MCP OAuth 维护](./operations/oauth.md)。SQLite 和隔离 ASGI 测试不是正式发布证据。
+
+**下一步**：配置专用 PostgreSQL 并完成两个 Backend 进程的消费/轮换及服务停用/交换竞争；经真实 Gateway 验证 OAuth、MCP 与 PNG；联合 MCP 仓库完成 ChatGPT 网页端授权、撤销和创作闭环，登记双方版本与产物。验收完成前保持远程 MCP 未交付口径。
+
+**原始记录**：[主仓 MCP 实施计划](../developer/mcp-implementation-plan.md) M2/M6/M7 与[交接记录](../developer/mcp-contract-handoff.md)。
+
+---
+
 ## 使用说明
 
 - 以上事项的完整历史记录保留在 [`docs/archive/architecture-2026-09/`](../archive/architecture-2026-09/README.md)。

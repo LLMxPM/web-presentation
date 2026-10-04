@@ -24,6 +24,8 @@
 
 独立 Editor origin 必须列入 `CORS_ORIGINS`。配置在应用装配时校验；不可从请求 Host、Forwarded 或客户端参数选择发行身份。
 
+MCP 服务 Basic Secret 通过受控文件登记、轮换和停用，见 [MCP OAuth 维护](../../deployment/operations/oauth.md)。服务停用与交换共用数据库围栏并撤销已有委托，重新启用不会恢复旧委托；已接受业务 Job 保持原生命周期。
+
 主仓负责授权服务和确认界面；MCP 受保护资源元数据、`WWW-Authenticate`、工具认证声明、MCP transport 与逐请求交换归属 MCP 仓库。主仓测试通过不能替代 ChatGPT 实际连接验收。
 
 ## 已装配的 HTTP 契约

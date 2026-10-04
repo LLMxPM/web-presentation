@@ -4,7 +4,11 @@ from collections.abc import Callable
 from datetime import timedelta
 from uuid import uuid4
 
-from authlib.oauth2.rfc6749.errors import InvalidGrantError, OAuth2Error
+from authlib.oauth2.rfc6749.errors import (
+    InvalidClientError,
+    InvalidGrantError,
+    OAuth2Error,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utc_now
@@ -12,7 +16,11 @@ from app.db.retry import run_with_write_retry
 from app.models.oauth_credential import OAuthToken
 from app.models.oauth_grant import OAuthGrant
 from app.repositories.oauth_repository import load_client
-from app.repositories.oauth_resource_repository import load_service, load_token_snapshot
+from app.repositories.oauth_resource_repository import (
+    load_service,
+    load_token_snapshot,
+    lock_service,
+)
 from app.services.oauth.persistence import add_audit, lock_grant, revoke_locked_grant
 from app.services.oauth.policy import OAuthPolicy
 from app.services.oauth.protocol import (
@@ -102,6 +110,13 @@ class OAuthResourceService:
 
         async def persist(session: AsyncSession) -> ProtocolResponse:
             """与消费/用户撤销共用数据库行锁，源权限变化不得越过提交边界。"""
+            if endpoint == "exchange" and not await lock_service(
+                session,
+                server.client_snapshot.client_id,
+                self.policy,
+            ):
+                await session.rollback()
+                return fallback.handle_error_response(request, InvalidClientError())
             if not await lock_grant(session, grant_id, self.policy):
                 await session.rollback()
                 if endpoint == "revocation":
@@ -149,6 +164,7 @@ class OAuthResourceService:
                     grant=grant,
                     now=current.now,
                     token_id=token_id,
+                    service_id=current.client_snapshot.client_id,
                 )
             await session.commit()
             return response

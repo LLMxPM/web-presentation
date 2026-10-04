@@ -77,6 +77,7 @@ from app.services.redis_runtime_client import (
 )
 from app.services.signing_identity import validate_shared_identity_deployment
 from app.services.runtime_artifact_store import RuntimeArtifactStore, run_runtime_artifact_sweeper
+from app.services.oauth.cleanup_service import run_oauth_cleanup_loop
 
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,7 @@ async def lifespan(app: FastAPI):
     page_screenshot_queue_task: asyncio.Task[None] | None = None
     asset_render_hint_backfill_queue_task: asyncio.Task[None] | None = None
     runtime_artifact_sweeper_task: asyncio.Task[None] | None = None
+    oauth_cleanup_task: asyncio.Task[None] | None = None
     ai_page_mutation_queue_task: asyncio.Task[None] | None = None
     ai_image_generation_queue_task: asyncio.Task[None] | None = None
     ai_external_task_coordinator_task: asyncio.Task[None] | None = None
@@ -182,6 +184,9 @@ async def lifespan(app: FastAPI):
             run_system_settings_version_sync_loop(session_factory),
             name="system-settings-sync",
         )
+        oauth_cleanup_task = asyncio.create_task(
+            run_oauth_cleanup_loop(session_factory), name="oauth-cleanup",
+        )
     except SQLAlchemyError as exc:
         if is_database_connectivity_error(exc):
             _raise_database_connectivity_error(exc, phase="Backend 启动时")
@@ -221,6 +226,8 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(model_catalog_sync_task)
         if system_settings_sync_task is not None:
             await _stop_background_task(system_settings_sync_task)
+        if oauth_cleanup_task is not None:
+            await _stop_background_task(oauth_cleanup_task)
         # 所有后台写入任务都已停止，最后才释放单进程写锁。
         if sqlite_single_process_guard is not None:
             sqlite_single_process_guard.release()

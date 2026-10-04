@@ -18,6 +18,7 @@ class OAuthAuditEvent(Base):
     event: Mapped[str] = mapped_column(String(64), nullable=False)
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     client_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    service_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     grant_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     token_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

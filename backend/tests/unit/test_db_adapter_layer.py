@@ -125,7 +125,7 @@ def test_write_retry_loop_has_single_definition() -> None:
 
 
 def test_write_retry_consumers_use_shared_helper() -> None:
-    """防漂移（CP1b）：三个写重试调用点必须走 run_with_write_retry，不得各自手写循环。"""
+    """防漂移（CP1b）：已登记写重试调用点必须走共享助手，不得各自手写循环。"""
 
     expected = {
         "app/ai/page_mutation_executor.py",
@@ -136,6 +136,8 @@ def test_write_retry_consumers_use_shared_helper() -> None:
         "app/services/oauth/grant_service.py",
         "app/services/oauth/resource_service.py",
         "app/services/oauth/consent_service.py",
+        "app/services/oauth/service_registry.py",
+        "app/services/oauth/cleanup_service.py",
     }
     consumers = {
         rel

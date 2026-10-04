@@ -48,7 +48,7 @@ def test_oauth_migration_roundtrip_preserves_business_data(tmp_path: Path) -> No
                     preview_size_presets=[],
                 )
             )
-        migrate("upgrade", "20261004_0100")
+        migrate("upgrade", "20261004_0101")
         oauth_names = {
             name for name in Base.metadata.tables if name.startswith("oauth_")
         }
@@ -75,11 +75,19 @@ def test_oauth_migration_roundtrip_preserves_business_data(tmp_path: Path) -> No
                 )
             )
             assert connection.scalar(select(OAuthClient.created_at)) is not None
+        migrate("downgrade", "20261004_0100")
+        assert "service_id" not in {
+            column["name"]
+            for column in inspect(engine).get_columns("oauth_audit_events")
+        }
+        with engine.connect() as connection:
+            assert connection.scalar(select(OAuthClient.client_id)) == "public-probe"
+        migrate("upgrade", "20261004_0101")
         migrate("downgrade", "20261002_0100")
         assert not oauth_names & set(inspect(engine).get_table_names())
         with engine.connect() as connection:
             assert connection.scalar(select(User.username)) == "preserved-user"
-        migrate("upgrade", "20261004_0100")
+        migrate("upgrade", "20261004_0101")
         assert oauth_names <= set(inspect(engine).get_table_names())
     finally:
         engine.dispose()

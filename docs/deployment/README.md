@@ -37,6 +37,7 @@
 | [备份与恢复](./operations/backup-restore.md) | 数据库、资源、构建产物和密钥备份 |
 | [升级与回滚](./operations/upgrade-rollback.md) | 镜像升级、数据库迁移和回滚 |
 | [部署排障](./operations/troubleshooting.md) | 健康检查、Runtime、AI 设置和迁移问题 |
+| [MCP OAuth 维护](./operations/oauth.md) | 服务登记、密钥轮换/停用、过期记录清理与迁移回退 |
 | [Lite 规模与隔离决策](./operations/lite-scale-and-isolation.md) | 推荐规模、故障域和隔离决策 |
 
 ## 发布与验证

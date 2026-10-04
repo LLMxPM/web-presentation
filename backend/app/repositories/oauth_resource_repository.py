@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.oauth_credential import OAuthToken
@@ -12,6 +12,32 @@ from app.repositories.oauth_repository import load_live_grant
 from app.services.oauth.policy import OAuthPolicy
 from app.services.oauth.snapshots import ClientSnapshot
 from app.services.oauth.token_snapshot import TokenSnapshot
+
+
+async def lock_service(
+    session: AsyncSession,
+    service_id: str,
+    policy: OAuthPolicy,
+    *,
+    require_active: bool = True,
+) -> bool:
+    """交换及运维先 UPDATE 同一服务行；停用/轮换不能越过发行事务的复核。"""
+    predicates = [
+        OAuthMcpService.service_id == service_id,
+        OAuthMcpService.resource == policy.mcp_resource,
+        OAuthMcpService.api_audience == policy.api_audience,
+    ]
+    if require_active:
+        predicates.append(OAuthMcpService.is_active.is_(True))
+    result = await session.execute(
+        update(OAuthMcpService)
+        .where(*predicates)
+        .values(
+            is_active=OAuthMcpService.is_active,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount == 1
 
 
 async def load_service(

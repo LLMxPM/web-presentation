@@ -37,6 +37,7 @@ def add_audit(
     grant: OAuthGrant,
     now: datetime,
     token_id: str | None = None,
+    service_id: str | None = None,
 ) -> None:
     """仅记录内部固定事件名和公共身份，不接受任意 HTTP payload。"""
     session.add(
@@ -47,6 +48,7 @@ def add_audit(
             client_id=grant.client_id,
             grant_id=grant.grant_id,
             token_id=token_id,
+            service_id=service_id,
             created_at=now,
         )
     )
