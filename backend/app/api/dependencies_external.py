@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Annotated, Literal
 
 from fastapi import Depends, Header, Path, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.external_headers import IdempotencyKeyHeader, require_idempotency_key
 from app.api.external_request_logging import (
     bind_external_identity,
     bind_external_operation,
@@ -77,7 +79,7 @@ def require_external_operation(operation_key: str):
         auth: Annotated[ExternalAuthContext, Depends(get_external_auth_context)],
         session: Annotated[AsyncSession, Depends(get_db_session)],
         x_workspace_id: Annotated[int | None, Header(alias="X-Workspace-ID")] = None,
-        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+        idempotency_key: IdempotencyKeyHeader = None,
     ) -> ExternalAuthContext:
         bind_external_operation(request, operation_key)
         # 1. 校验 Scope
@@ -92,24 +94,13 @@ def require_external_operation(operation_key: str):
 
         # 2. 校验必需的 Idempotency-Key
         if spec.requires_idempotency_key:
-            if not idempotency_key or not idempotency_key.strip():
-                raise AppException(
-                    status_code=400,
-                    code="IDEMPOTENCY_KEY_REQUIRED",
-                    detail=f"操作 '{operation_key}' 必须在请求头中携带非空的 Idempotency-Key。",
-                )
-            key_val = idempotency_key.strip()
-            if len(key_val) > 128 or not key_val.isascii():
-                raise AppException(
-                    status_code=400,
-                    code="INVALID_IDEMPOTENCY_KEY",
-                    detail="Idempotency-Key 格式无效，必须为不超过 128 字符的 ASCII 字符串。",
-                )
+            require_idempotency_key(idempotency_key, operation_key)
 
         # 3. 若要求工作空间，校验 X-Workspace-ID 归属与数据库实时成员状态
         if not spec.is_public and not spec.exempt_workspace_header and x_workspace_id is not None:
             await auth.ensure_workspace_access(x_workspace_id, session)
             bind_external_operation(request, operation_key, workspace_context_id=x_workspace_id)
+            auth = replace(auth, workspace_context_id=x_workspace_id)
 
         return auth
 
@@ -126,8 +117,13 @@ def require_dynamic_mutation_operation(action: Literal["status", "cancel", "retr
         job_id: Annotated[str, Path(description="任务公开 UUID")],
         auth: Annotated[ExternalAuthContext, Depends(get_external_auth_context)],
         session: Annotated[AsyncSession, Depends(get_db_session)],
-        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+        x_workspace_id: Annotated[int | None, Header(alias="X-Workspace-ID")] = None,
+        idempotency_key: IdempotencyKeyHeader = None,
     ) -> tuple[ExternalAuthContext, ApiMutationJob]:
+        # 先复核 Header 空间，再将对象/任务访问限制到本次请求上下文。
+        if x_workspace_id is not None:
+            await auth.ensure_workspace_access(x_workspace_id, session)
+            auth = replace(auth, workspace_context_id=x_workspace_id)
         stmt = select(ApiMutationJob).where(ApiMutationJob.job_id == job_id)
         job = await session.scalar(stmt)
         if job is None:
@@ -143,6 +139,7 @@ def require_dynamic_mutation_operation(action: Literal["status", "cancel", "retr
             request,
             f"jobs.mutation.{resource}.{action}",
             workspace_id=job.workspace_id,
+            workspace_context_id=x_workspace_id,
             job_id=job.job_id,
         )
         if action == "status":
@@ -159,19 +156,7 @@ def require_dynamic_mutation_operation(action: Literal["status", "cancel", "retr
             )
 
         if action in {"cancel", "retry"}:
-            if not idempotency_key or not idempotency_key.strip():
-                raise AppException(
-                    status_code=400,
-                    code="IDEMPOTENCY_KEY_REQUIRED",
-                    detail=f"Mutation {action} 操作必须携带非空的 Idempotency-Key。",
-                )
-            key_value = idempotency_key.strip()
-            if len(key_value) > 128 or not key_value.isascii():
-                raise AppException(
-                    status_code=400,
-                    code="INVALID_IDEMPOTENCY_KEY",
-                    detail="Idempotency-Key 格式无效，必须为不超过 128 字符的 ASCII 字符串。",
-                )
+            require_idempotency_key(idempotency_key, f"Mutation {action}")
 
         return auth, job
 

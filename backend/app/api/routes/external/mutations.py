@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies_external import (
@@ -12,6 +12,7 @@ from app.api.dependencies_external import (
     require_dynamic_mutation_operation,
     require_external_operation,
 )
+from app.api.external_headers import IdempotencyKeyHeader
 from app.api.external_openapi import ExternalAPIRoute
 from app.db.session import get_db_session
 from app.models.api_mutation_job import ApiMutationJob
@@ -40,7 +41,7 @@ async def create_page_mutation(
     payload: ExternalPageCreateMutationRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.page.create"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """入队页面创建异步 Mutation 任务（慢 AST 与 Chromium 诊断由后台 Worker 执行，支持 Idempotency-Key 幂等保护）。"""
 
@@ -83,7 +84,7 @@ async def create_page_edits_mutation(
     payload: ExternalPageApplyEditsMutationRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.page.edit"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """入队页面结构化编辑异步 Mutation 任务（支持 Idempotency-Key 幂等保护）。"""
 
@@ -126,7 +127,7 @@ async def create_component_mutation(
     payload: ExternalComponentCreateMutationRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.component.create"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """入队组件创建异步 Mutation 任务（支持 Idempotency-Key 幂等保护）。"""
 
@@ -168,7 +169,7 @@ async def create_component_edits_mutation(
     payload: ExternalComponentApplyEditsMutationRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.component.edit"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """入队组件结构化编辑异步 Mutation 任务（支持 Idempotency-Key 幂等保护）。"""
 
@@ -230,7 +231,7 @@ async def cancel_mutation_job(
     response: Response,
     context_and_job: Annotated[tuple[ExternalAuthContext, ApiMutationJob], Depends(require_dynamic_mutation_operation("cancel"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """请求取消异步 Mutation 任务（动态 Scope 鉴权）。"""
 
@@ -264,7 +265,7 @@ async def create_component_metadata_mutation(
     payload: ExternalComponentMetadataMutationRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("jobs.mutation.component.metadata"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """入队组件元数据重校验任务。"""
 
@@ -308,7 +309,7 @@ async def retry_mutation_job(
     response: Response,
     context_and_job: Annotated[tuple[ExternalAuthContext, ApiMutationJob], Depends(require_dynamic_mutation_operation("retry"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """为可重试失败任务创建新的 Mutation Job。"""
 

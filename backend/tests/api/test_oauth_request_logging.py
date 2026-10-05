@@ -5,10 +5,10 @@ import json
 import logging
 
 import pytest
-from app.models.api_mutation_job import ApiMutationJob
-from app.services.oauth import audit_logging
 from sqlalchemy import select
 
+from app.models.api_mutation_job import ApiMutationJob
+from app.services.oauth import audit_logging
 from tests.fixtures.oauth_logging import call, events
 from tests.fixtures.oauth_mutations import SOURCE, delegate_headers, other_user_access
 
@@ -16,7 +16,7 @@ from tests.fixtures.oauth_mutations import SOURCE, delegate_headers, other_user_
 async def test_mutation_replay_and_dynamic_job_have_safe_context(
     oauth_mutation_client, caplog
 ):
-    """队列受理/幂等重放/动态状态共享 Job；PAT 对等且未采信幂等键、查询参数或正文。"""
+    """受理/重放/动态状态共享 Job；非法 Header 空间拒绝且不成为日志上下文。"""
     caplog.set_level(logging.INFO)
     client, _, access, pat = oauth_mutation_client
     headers = await delegate_headers(
@@ -38,25 +38,37 @@ async def test_mutation_replay_and_dynamic_job_have_safe_context(
         created.status_code == replay.status_code == 202
         and replay.json()["job_id"] == job_id
     )
+    rejected = await call(
+        client,
+        "wrong-space-request",
+        "GET",
+        "/api/v1/jobs/mutations/" + job_id,
+        headers={"Authorization": "Bearer " + pat, "X-Workspace-ID": "999"},
+    )
+    assert rejected.status_code == 403 and rejected.json()["code"] == "WORKSPACE_NOT_AUTHORIZED"
     status = await call(
         client,
         "status-request",
         "GET",
         "/api/v1/jobs/mutations/" + job_id,
-        headers={"Authorization": "Bearer " + pat, "X-Workspace-ID": "999"},
+        headers={"Authorization": "Bearer " + pat, "X-Workspace-ID": "1"},
         params={"resource_type": "component", "ctx": "signed-url-secret"},
     )
     assert status.status_code == 200
     rows = events(caplog, "external.request.completed")
+    denied = rows.pop(2)
+    assert denied["request_id"] == "wrong-space-request" and denied["status_code"] == 403
+    assert not {"job_id", "workspace_id", "workspace_context_id"} & denied.keys()
     assert len(rows) == 3 and {row["job_id"] for row in rows} == {job_id}
     assert {row["workspace_id"] for row in rows} == {1}
+    assert {row["workspace_context_id"] for row in rows} == {1}
     assert [row["operation"] for row in rows] == [
         "jobs.mutation.page.create",
         "jobs.mutation.page.create",
         "jobs.mutation.page.status",
     ]
     assert rows[-1]["credential_source"] == "pat" and "grant_id" not in rows[-1]
-    serialized = json.dumps(rows)
+    serialized = json.dumps([*rows, denied])
     assert all(
         secret not in serialized
         for secret in (

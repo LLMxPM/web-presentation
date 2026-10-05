@@ -38,6 +38,10 @@ async def test_all_external_routes_have_resolvable_response_and_operation_contra
             assert metadata["version"] == 1
             headers = {parameter["name"].lower(): parameter for parameter in operation.get("parameters", []) if parameter["in"] == "header"}
             assert metadata["workspace_header_required"] == headers.get("x-workspace-id", {}).get("required", False)
+            if metadata["idempotency_key_required"]:
+                key_schema = headers["idempotency-key"]["schema"]
+                assert key_schema["minLength"] == 1 and key_schema["maxLength"] == 128
+                assert key_schema["pattern"] == "^[!-~]+$"
             if "key" in metadata:
                 spec = OPERATION_REGISTRY[metadata["key"]]
                 assert metadata["required_scopes"] == list(spec.scopes)

@@ -77,6 +77,8 @@ X-Workspace-ID: <workspace_id>
 
 无权对象统一按平台错误契约隐藏其存在性，外部接入不得通过错误差异探测其他工作空间。
 
+PAT 和委托凭证共用上述边界。提供 `X-Workspace-ID` 时，除身份/空间列表及公开 Runtime Kit 等豁免入口外，公共鉴权依赖把选定空间绑定到本次不可变主体。对象读取、创建、更新、归档及 Mutation Job 的 status/cancel/retry 都必须在副作用前复核目标属于该空间；即使凭证同时授权两个空间，也不能使用空间一的 Header 操作空间二的对象。授权范围内的目标空间不匹配返回 404 `WORKSPACE_CONTEXT_MISMATCH`；凭证未授权目标空间仍保留 403 `WORKSPACE_NOT_AUTHORIZED`。Header 允许省略的既有路由仍按凭证授权范围访问，不改变授权空间列表。
+
 ### 3.3 Scope
 
 外部接入直接复用以下 Scope，不新增 CLI 或 MCP 私有权限名：
@@ -220,6 +222,7 @@ GET  /api/v1/pages/{page_id}/screenshot
 ### 5.4 幂等和归档
 
 - 所有会改变业务数据或创建、取消、人工重试任务的请求必须遵守 operation 注册表中的 `Idempotency-Key` 要求。相同 key、operation 和请求指纹重放首次响应；不同请求复用 key 返回 409；首个请求仍在执行时返回 409、`Retry-After` 和可重试标记。
+- `Idempotency-Key` 为 1～128 字符的可打印 ASCII 标识（`!` 至 `~`），不允许空白，不裁剪或归一化。OpenAPI Header Schema 与运行校验共用 `api/external_headers.py`；缺失返回 400 `IDEMPOTENCY_KEY_REQUIRED`，非法值返回 400 `INVALID_IDEMPOTENCY_KEY`。
 - 校验等纯只读请求不应伪造写入幂等语义。
 - 外部 Agent 只使用归档，不提供永久硬删除。
 - 单对象归档和批量归档的确认、原子性、数量上限由主仓契约定义。
@@ -232,6 +235,7 @@ GET  /api/v1/pages/{page_id}/screenshot
 
 | 情况 | 外部客户端处理 |
 |---|---|
+| 400 | 幂等键缺失或非法等业务前置条件未满足 |
 | 401 | 未认证或访问凭证无效，不自动重试 |
 | 403 | Scope 或工作空间授权不足 |
 | 404 | 对象不存在或不属于当前空间 |

@@ -1,6 +1,6 @@
 """文件功能：验证外部主体的来源隔离、不可变授权快照和 PAT/委托共用的权限规则。"""
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -8,7 +8,11 @@ import pytest
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.models.user import User
-from app.services.external_principal import DelegatedCredential, ExternalPrincipal, PatCredential
+from app.services.external_principal import (
+    DelegatedCredential,
+    ExternalPrincipal,
+    PatCredential,
+)
 
 
 def _credential(source: str) -> PatCredential | DelegatedCredential:
@@ -70,3 +74,32 @@ async def test_workspace_requires_both_authorization_and_live_membership(source:
     assert inactive.value.code == "PERMISSION_DENIED"
     session.scalar.return_value = object()
     await principal.ensure_workspace_access(2, session)
+
+
+@pytest.mark.parametrize("source", ["pat", "delegated"])
+async def test_request_context_is_immutable_and_limits_authorized_objects(source):
+    """选定空间限制对象操作，不改写 Grant 授权集合；原主体可复用到独立请求。"""
+    original = ExternalPrincipal(User(id=1), _credential(source), frozenset({1, 2}), frozenset())
+    selected = replace(original, workspace_context_id=1)
+    assert selected.can_access_workspace(2) and original.workspace_context_id is None
+    session = AsyncMock()
+    with pytest.raises(AppException) as error:
+        await selected.ensure_workspace_access(2, session)
+    assert error.value.status_code == 404 and error.value.code == "WORKSPACE_CONTEXT_MISMATCH"
+    session.scalar.assert_not_awaited()
+    with pytest.raises(AppException) as unauthorized:
+        await selected.ensure_workspace_access(3, session)
+    assert unauthorized.value.status_code == 403 and unauthorized.value.code == "WORKSPACE_NOT_AUTHORIZED"
+    session.scalar.assert_not_awaited()
+    session.scalar.return_value = object()
+    await selected.ensure_workspace_access(1, session)
+    await original.ensure_workspace_access(2, session)
+    with pytest.raises(FrozenInstanceError):
+        selected.workspace_context_id = 2
+
+
+@pytest.mark.parametrize("value", [0, -1, True, "1"])
+def test_request_context_rejects_invalid_workspace(value):
+    """请求空间不能由布尔值或字符串等非正整数冒充。"""
+    with pytest.raises(ValueError, match="请求工作空间"):
+        ExternalPrincipal(User(id=1), _credential("pat"), frozenset({1}), frozenset(), workspace_context_id=value)

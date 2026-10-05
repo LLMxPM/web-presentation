@@ -49,6 +49,7 @@ class ExternalPrincipal:
     workspace_ids: frozenset[int]
     scopes: frozenset[str]
     all_workspaces: bool = False
+    workspace_context_id: int | None = None
 
     def __post_init__(self) -> None:
         """拒绝未知身份和委托全空间授权，并冻结传入的权限集合。"""
@@ -57,6 +58,8 @@ class ExternalPrincipal:
             raise ValueError("外部主体必须使用已验证的 PAT 或委托凭证来源。")
         if isinstance(self.credential, DelegatedCredential) and self.all_workspaces:
             raise ValueError("委托凭证必须授权具体工作空间，不能授权未来空间。")
+        if self.workspace_context_id is not None and (type(self.workspace_context_id) is not int or self.workspace_context_id <= 0):
+            raise ValueError("请求工作空间必须为正整数。")
         object.__setattr__(self, "workspace_ids", frozenset(self.workspace_ids))
         object.__setattr__(self, "scopes", frozenset(self.scopes))
 
@@ -85,7 +88,7 @@ class ExternalPrincipal:
         return self.all_workspaces or workspace_id in self.workspace_ids
 
     async def ensure_workspace_access(self, workspace_id: int, session: AsyncSession) -> None:
-        """同时校验凭证空间范围与用户当前的活跃成员资格。"""
+        """校验请求选定空间、凭证范围及实时成员资格；所有对象操作在副作用前调用。"""
 
         if not self.can_access_workspace(workspace_id):
             raise AppException(
@@ -93,6 +96,8 @@ class ExternalPrincipal:
                 code="WORKSPACE_NOT_AUTHORIZED",
                 detail=f"当前令牌未被授权访问工作空间 ID {workspace_id}。",
             )
+        if self.workspace_context_id is not None and workspace_id != self.workspace_context_id:
+            raise AppException(404, "WORKSPACE_CONTEXT_MISMATCH", "目标不属于本次请求选定的工作空间。")
         member = await session.scalar(
             select(WorkspaceMember).where(
                 WorkspaceMember.workspace_id == workspace_id,

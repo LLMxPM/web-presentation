@@ -499,7 +499,7 @@ async def test_pat_workspace_binding_is_checked_for_object_routes(client: AsyncC
         json={
             "page_id": page_b_id,
             "base_version_no": 1,
-            "edits": [{"type": "replace_exact", "old": "div", "new": "span"}],
+            "edits": [{"type": "replace_exact", "old_text": "div", "new_text": "span"}],
         },
         headers={**headers, "Idempotency-Key": "cross-workspace-page-edit"},
     )

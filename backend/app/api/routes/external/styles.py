@@ -14,6 +14,7 @@ from app.api.dependencies_external import (
     ExternalAuthContext,
     require_external_operation,
 )
+from app.api.external_headers import IdempotencyKeyHeader
 from app.api.external_openapi import ExternalAPIRoute
 from app.db.session import get_db_session
 from app.schemas.common import (
@@ -107,7 +108,7 @@ async def create_style(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("style.create"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> WorkspaceStyleItem:
     """创建新样式方案（支持 Idempotency-Key 幂等保护）。"""
 
@@ -158,7 +159,7 @@ async def copy_style(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("style.copy"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> WorkspaceStyleItem:
     """复制已有样式方案（支持 Idempotency-Key 幂等保护）。"""
 
@@ -198,7 +199,7 @@ async def update_style(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("style.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> WorkspaceStyleItem:
     """更新样式方案（支持 Idempotency-Key 幂等保护）。"""
 
@@ -236,7 +237,7 @@ async def archive_style(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("style.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> dict[str, str]:
     """归档样式方案（默认方案受保护禁止归档，支持 Idempotency-Key 幂等保护）。"""
 
@@ -273,7 +274,7 @@ async def batch_archive_styles(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("style.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalBatchArchiveResponse:
     """整批原子归档多个样式方案。"""
 

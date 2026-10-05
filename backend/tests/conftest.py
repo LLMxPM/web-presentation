@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from tests.fixtures.app import *
+from tests.fixtures.external_workspace import multi_workspace_client  # noqa: F401
 from tests.fixtures.oauth import oauth_database  # noqa: F401
 from tests.fixtures.oauth_consent import oauth_http_client  # noqa: F401
 from tests.fixtures.oauth_mutations import oauth_mutation_client  # noqa: F401

@@ -1,5 +1,11 @@
 # 独立 MCP wheel 消费者联测
 
+2026-10-05 实现 review 修复：新增 `backend/tests/integration/test_mcp_review_regressions.py`，覆盖同一用户同时授权两个空间时的对象/任务归属、委托交换后真实撤销 Grant 的读写挑战，以及 128/129 字符幂等键边界。Backend 公共主体绑定请求空间，未授权目标仍保留原 403，已授权但未选定的目标返回 404 `WORKSPACE_CONTEXT_MISMATCH`。旧日志测试改为拒绝伪造任务 Header，成功日志只关联已验证上下文；对象权限测试的 edits 字段同步当前 Schema。
+
+读取/写入/媒体与新增修复消费者四组在 SQLite **17 项通过**、独立 PostgreSQL **17 项通过**；PG 同批空间/任务权限另 **10 项通过**。MCP 完整回归为 **307 passed**，当前 75 binding/70 路由契约门禁、主仓 OpenAPI 生成物检查及携带完整契约的真实 Nginx 门禁通过。此批使用独立 MCP wheel，不修改主仓依赖或 lock；临时 PG 容器与专用测试库完成后清理，开发服务不重启。
+
+最终复跑将主体单测、双数据库空间/日志/新增消费者回归，以及原对象权限失败场景一起执行，使用 `.tmp/final-fix-dist` 中当前 MCP wheel，**40 passed、无跳过**。扩大回归首次出现的两个失败已解决：保留凭证未授权空间的 403；日志测试要求拒绝伪造任务 Header，并更新对象权限测试过期的 edits 字段。修复无需数据库迁移；请求空间绑定与 Header Schema 需要 Backend 和 MCP 同步升级。
+
 2026-10-05 当前结果：四组消费者 SQLite 15 项、PG 15 项通过；新增 TLS 网关下真实 Runtime/Renderer 的两协议页面/组件创作与 PNG，见[域名前本地验收](testing/mcp-local-acceptance.md)。下文保留 2026-10-04 的历史证据范围。
 
 2026-10-04 已增加[真实 TLS Gateway 基线](mcp-gateway-baseline.md)。四个消费者文件合跑为 13 项 SQLite 通过、13 项 PG 暂未执行；SDK 最大 20 秒 Job wait 经真实 Nginx 验证。该新增记录不包含 Renderer 成功链。

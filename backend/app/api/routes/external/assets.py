@@ -21,6 +21,7 @@ from app.api.dependencies_external import (
     ExternalAuthContext,
     require_external_operation,
 )
+from app.api.external_headers import IdempotencyKeyHeader
 from app.api.external_openapi import ExternalAPIRoute
 from app.api.routes.assets import _build_asset_response, _build_asset_responses
 from app.db.session import get_db_session
@@ -130,7 +131,7 @@ async def create_asset_content(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.content.create"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> AssetResponse:
     """创建 SVG、DrawIO、Mermaid、Chart 或 Formula 文本资源。"""
 
@@ -179,7 +180,7 @@ async def upload_asset(
     description: str | None = Form(None),
     tags: str | None = Form(None),
     overwrite: bool = Form(False),
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> AssetResponse:
     """上传资源文件（支持 Idempotency-Key 幂等保护）。"""
 
@@ -240,7 +241,7 @@ async def update_asset_content(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.content.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> AssetResponse:
     """更新可编辑文本资源内容（支持 Idempotency-Key 幂等保护）。"""
 
@@ -295,7 +296,7 @@ async def copy_asset(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.copy"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> AssetResponse:
     """复制资源记录并复用物理文件。"""
 
@@ -334,7 +335,7 @@ async def update_asset_metadata(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> AssetResponse:
     """更新资源元数据（支持 Idempotency-Key 幂等保护）。"""
 
@@ -377,7 +378,7 @@ async def archive_asset(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> dict[str, str]:
     """归档资源（支持 Idempotency-Key 幂等保护）。"""
 
@@ -409,7 +410,7 @@ async def batch_archive_assets(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalBatchArchiveResponse:
     """整批原子归档多个资源。"""
 

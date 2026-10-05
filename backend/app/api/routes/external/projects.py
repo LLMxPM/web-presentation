@@ -13,6 +13,7 @@ from app.api.dependencies_external import (
     ExternalAuthContext,
     require_external_operation,
 )
+from app.api.external_headers import IdempotencyKeyHeader
 from app.api.external_openapi import ExternalAPIRoute
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
@@ -129,7 +130,7 @@ async def create_project(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.create"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ProjectItem:
     """创建新项目（支持 Idempotency-Key 幂等保护）。"""
 
@@ -176,7 +177,7 @@ async def update_project(
     payload: ProjectUpdateRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ProjectItem:
     """更新项目基础属性（支持 Idempotency-Key 幂等保护）。"""
 
@@ -221,7 +222,7 @@ async def archive_project(
     project_id: int,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> dict[str, str]:
     """归档项目（支持 Idempotency-Key 幂等保护）。"""
 
@@ -292,7 +293,7 @@ async def update_project_configuration(
     payload: ExternalProjectConfigurationUpdateRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.configuration.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ProjectItem:
     """更新项目展示配置和构建额外资源配置。"""
 
@@ -340,7 +341,7 @@ async def replace_project_route_tree(
     payload: ProjectRouteTreeWriteRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.route.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ProjectRouteTreeResponse:
     """整体替换项目路由树。"""
 
@@ -374,7 +375,7 @@ async def apply_project_style(
     payload: ExternalProjectApplyStyleRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.apply_style"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ProjectItem:
     """将工作空间样式方案应用到项目。"""
 
@@ -407,7 +408,7 @@ async def update_project_build_assets(
     payload: ExternalProjectBuildAssetsRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.build_assets.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ProjectItem:
     """更新项目构建额外资源配置，不启动构建任务。"""
 
@@ -440,7 +441,7 @@ async def batch_archive_projects(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalBatchArchiveResponse:
     """整批原子归档多个项目。"""
 

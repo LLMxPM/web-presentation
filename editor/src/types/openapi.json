@@ -343,6 +343,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -434,6 +437,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -527,6 +533,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -716,6 +725,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -818,6 +830,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -945,6 +960,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1038,6 +1056,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1144,6 +1165,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1246,6 +1270,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1387,6 +1414,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1473,6 +1503,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1585,6 +1618,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1669,6 +1705,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1781,6 +1820,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1899,6 +1941,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -1983,6 +2028,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -2111,6 +2159,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -2195,6 +2246,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -2307,6 +2361,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -2420,6 +2477,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -2534,6 +2594,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -2621,6 +2684,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -2804,6 +2870,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -2906,6 +2975,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -2990,6 +3062,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -3102,6 +3177,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -3230,6 +3308,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -3332,6 +3413,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -3434,6 +3518,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -3530,6 +3617,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -3658,6 +3748,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -3776,6 +3869,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -3891,6 +3987,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -3977,6 +4076,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -4081,6 +4183,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -4193,6 +4298,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -4306,6 +4414,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -4384,6 +4495,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -4578,6 +4692,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -4680,6 +4797,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -4764,6 +4884,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -4892,6 +5015,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -4994,6 +5120,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -5090,6 +5219,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -5218,6 +5350,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -5320,6 +5455,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -5435,6 +5573,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -5521,6 +5662,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -5633,6 +5777,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -5737,6 +5884,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -5907,6 +6057,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -5993,6 +6146,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -6107,6 +6263,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -6208,6 +6367,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -6303,6 +6465,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -6410,6 +6575,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -6505,6 +6673,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -6603,6 +6774,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -6710,6 +6884,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -6817,6 +6994,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -6924,6 +7104,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7012,6 +7195,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7149,6 +7335,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7235,6 +7424,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7342,6 +7534,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7437,6 +7632,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7544,6 +7742,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7651,6 +7852,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7739,6 +7943,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7876,6 +8083,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -7962,6 +8172,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8069,6 +8282,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8164,6 +8380,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8271,6 +8490,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8378,6 +8600,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8466,6 +8691,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8553,6 +8781,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8656,6 +8887,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8759,6 +8993,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8862,6 +9099,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -8964,6 +9204,22 @@
             "description": "任务公开 UUID"
           },
           {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Workspace-Id"
+            }
+          },
+          {
             "name": "Idempotency-Key",
             "in": "header",
             "required": false,
@@ -8976,6 +9232,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -9076,7 +9335,26 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Workspace-Id"
             }
           },
           {
@@ -9175,6 +9453,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },
@@ -9289,7 +9570,26 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Workspace-Id"
             }
           },
           {
@@ -9394,6 +9694,9 @@
                   "type": "null"
                 }
               ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[!-~]+$",
               "title": "Idempotency-Key"
             }
           },

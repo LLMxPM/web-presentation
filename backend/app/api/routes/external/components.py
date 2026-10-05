@@ -11,6 +11,7 @@ from app.api.dependencies_external import (
     ExternalAuthContext,
     require_external_operation,
 )
+from app.api.external_headers import IdempotencyKeyHeader
 from app.api.external_openapi import ExternalAPIRoute
 from app.api.routes.external.validate import validate_entity
 from app.core.exceptions import AppException
@@ -54,7 +55,7 @@ async def create_component(
     payload: ExternalComponentCreateMutationRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.create"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """提交组件创建 Mutation Job。"""
 
@@ -170,7 +171,7 @@ async def edit_component(
     payload: ExternalComponentApplyEditsMutationRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.edit"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """提交组件结构化源码编辑任务。"""
 
@@ -214,7 +215,7 @@ async def update_component_metadata(
     payload: ExternalComponentMetadataUpdateRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> WorkspaceComponentItem:
     """仅更新组件名称或摘要，源码和结构字段继续通过 Mutation Job 写入。"""
 
@@ -305,7 +306,7 @@ async def publish_component(
     payload: WorkspaceComponentPublishRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.publish"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> WorkspaceComponentItem:
     """发布组件当前草稿为新正式版本（支持 Idempotency-Key 幂等保护）。"""
 
@@ -344,7 +345,7 @@ async def archive_component(
     component_id: int,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> dict[str, str]:
     """归档组件（支持 Idempotency-Key 幂等保护）。"""
 
@@ -384,7 +385,7 @@ async def batch_archive_components(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("component.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalBatchArchiveResponse:
     """整批原子归档多个组件。"""
 

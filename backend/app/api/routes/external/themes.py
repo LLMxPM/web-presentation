@@ -11,6 +11,7 @@ from app.api.dependencies_external import (
     ExternalAuthContext,
     require_external_operation,
 )
+from app.api.external_headers import IdempotencyKeyHeader
 from app.api.external_openapi import ExternalAPIRoute
 from app.db.session import get_db_session
 from app.schemas.common import (
@@ -73,7 +74,7 @@ async def create_theme(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("theme.create"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> WorkspaceThemeItem:
     """创建新主题（支持 Idempotency-Key 幂等保护）。"""
 
@@ -127,7 +128,7 @@ async def copy_theme(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("theme.copy"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> WorkspaceThemeItem:
     """复制已有主题（支持 Idempotency-Key 幂等保护）。"""
 
@@ -167,7 +168,7 @@ async def update_theme(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("theme.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> WorkspaceThemeItem:
     """更新主题（禁止修改 key，支持 Idempotency-Key 幂等保护）。"""
 
@@ -205,7 +206,7 @@ async def archive_theme(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("theme.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> dict[str, str]:
     """归档主题（若仍被活跃项目引用则拒绝归档，支持 Idempotency-Key 幂等保护）。"""
 
@@ -242,7 +243,7 @@ async def batch_archive_themes(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("theme.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalBatchArchiveResponse:
     """整批原子归档多个主题。"""
 

@@ -11,6 +11,7 @@ from app.api.dependencies_external import (
     ExternalAuthContext,
     require_external_operation,
 )
+from app.api.external_headers import IdempotencyKeyHeader
 from app.api.external_openapi import ExternalAPIRoute
 from app.api.routes.external.validate import validate_entity
 from app.core.exceptions import AppException
@@ -52,7 +53,7 @@ async def create_page(
     payload: ExternalPageCreateMutationRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.create"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """创建页面并返回持久化 Mutation Job。"""
 
@@ -122,7 +123,7 @@ async def copy_page(
     payload: ExternalPageCopyRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.copy"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> PageItem:
     """复制页面到目标项目。"""
 
@@ -156,7 +157,7 @@ async def update_page_metadata(
     payload: ExternalPageMetadataUpdateRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> PageItem:
     """仅更新页面轻量元数据，页面源码仍必须通过 Mutation Job 写入。"""
 
@@ -247,7 +248,7 @@ async def edit_page(
     payload: ExternalPageApplyEditsMutationRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.edit"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalMutationJobResponse:
     """提交页面结构化源码编辑任务。"""
 
@@ -355,7 +356,7 @@ async def archive_page(
     page_id: int,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> dict[str, str]:
     """归档单项页面（支持 Idempotency-Key 幂等保护）。"""
 
@@ -391,7 +392,7 @@ async def batch_archive_pages(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.archive"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ExternalBatchArchiveResponse:
     """整批原子归档多个页面。"""
 
