@@ -13,6 +13,8 @@
 
 主仓统一契约正文见：[External API v1 契约与外部 Agent 接入边界](./reference/external-agent-api.md)。
 
+2026-10-05 已建立 [CLI OAuth 主仓实施计划](./cli-oauth-implementation-plan.md)，由平台扩展官方 CLI 客户端、原生回调和面向 API 的直接 OAuth 凭证；客户端实现归 CLI 仓库 `oauth` 分支。当前 CLI 仍使用 PAT，计划不代表新认证已经可用。
+
 ## 2. 责任分工
 
 | 内容 | 负责仓库 | 权威入口 |

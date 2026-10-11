@@ -2,7 +2,7 @@
 
 ## 项目网站在哪里？
 
-项目网站是 [https://presentation.inputloom.com/](https://presentation.inputloom.com/)，适合先浏览产品介绍、截图和演示入口。
+项目网站是 [https://wp.llmxpm.com/](https://wp.llmxpm.com/)，适合先浏览产品介绍、截图和演示入口。
 
 ## 公开 Demo 在哪里？
 
