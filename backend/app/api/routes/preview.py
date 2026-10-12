@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
+from app.api.preview_error_response import PreviewDocumentRoute, preview_workbench_url
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.logging_config import get_current_request_id
@@ -25,7 +26,7 @@ from app.services.runtime_target_router import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
 
 router_admin = APIRouter()
-router_public = APIRouter()
+router_public = APIRouter(route_class=PreviewDocumentRoute)
 logger = logging.getLogger(__name__)
 
 
@@ -80,9 +81,14 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
     headers = dict(request.headers)
     headers.pop("host", None)
     # 期望版本来自服务端绑定的已验签票据，覆盖浏览器可能自填的请求头。
-    claims = TokenService.verify_preview_context_token(preview_token)
+    try:
+        claims = TokenService.verify_preview_context_token(preview_token)
+    except Exception as exc:  # noqa: BLE001
+        raise AppException(status_code=401, code="PREVIEW_CONTEXT_INVALID", detail="预览上下文令牌非法或已过期。") from exc
     headers["x-expected-runtime-version-fingerprint"] = str(claims["runtime_version_fingerprint"])
     headers["x-runtime-preview-context"] = preview_token
+    headers["x-runtime-preview-artifact-id"] = str(claims["artifact_id"])
+    headers["x-runtime-preview-workbench-url"] = preview_workbench_url(request, claims)
     headers["x-runtime-public-base-url"] = runtime_public_base_url
     headers[RUNTIME_SERVICE_TOKEN_HEADER] = runtime_service_token
     headers["X-Request-ID"] = get_current_request_id()
@@ -107,6 +113,8 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
         headers={
             "Content-Type": response.headers.get("Content-Type", "text/html"),
             "Cache-Control": response.headers.get("Cache-Control", "no-store"),
+            **({"Referrer-Policy": response.headers["Referrer-Policy"]}
+               if "Referrer-Policy" in response.headers else {}),
             **({"x-runtime-version-fingerprint": response.headers["x-runtime-version-fingerprint"]}
                if "x-runtime-version-fingerprint" in response.headers else {}),
         },

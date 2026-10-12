@@ -27,6 +27,7 @@
     </div>
 
     <RuntimePreviewFrame
+      auto-recover
       :frame-url="activePreviewFrameUrl"
       title="runtime-preview"
       :viewport="props.previewViewport"
@@ -38,7 +39,7 @@
       :empty-title="currentPreviewEmptyTitle"
       :empty-description="currentPreviewEmptyDescription"
       @ready="emit('preview-ready')"
-      @error="emit('preview-error', $event)"
+      @error="(message, code) => emit('preview-error', message, code)"
       @retry="emit('retry')"
     />
 
@@ -62,7 +63,7 @@
           layout="fill"
           container-class="h-full overflow-hidden rounded-xl border border-border bg-surface shadow-sm"
           @ready="emit('preview-ready')"
-          @error="emit('preview-error', $event)"
+          @error="(message, code) => emit('preview-error', message, code)"
           @retry="emit('retry')"
         />
       </div>
@@ -100,7 +101,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   refresh: []
   'preview-ready': []
-  'preview-error': [message: string]
+  'preview-error': [message: string, code?: string]
   retry: []
   toggleSpeakerNotes: []
 }>()

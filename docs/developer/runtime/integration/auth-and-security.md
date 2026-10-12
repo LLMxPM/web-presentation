@@ -12,13 +12,18 @@
 
 ## 2. Browser -> Backend
 
-- Browser 使用平台已有登录态访问 Backend 公开预览入口。
-- Backend 校验：
-  - 用户是否登录
-  - 用户是否属于目标租户
-  - 用户是否有目标项目或工作空间权限
-  - 用户是否有目标 preview artifact 的访问权限
+- 创建预览时，Editor 使用 HttpOnly 会话 Cookie 调用 `/api/projects/{project_id}/preview-artifacts`；External API 使用 Bearer PAT 调用 `/api/v1/projects/{project_id}/preview-artifact`。创建接口负责当前用户与工作空间、项目权限校验。
+- 公开展示入口 `/preview/artifacts/{artifact_id}?token=...` 校验签名票据和 artifact 绑定，不依赖浏览器登录 Cookie。持有有效链接即可访问该短期快照；展示票据不能用来申请新的预览。
 - Backend 校验通过后，反向代理到 Runtime `/__preview`，并透传预览上下文 token。
+
+### 浏览器错误与失效恢复
+
+- 公开入口遇到票据或代理业务错误时，明确优先接受 HTML 的请求得到友好错误文档；JSON、通配符及禁用 HTML 的请求保留原状态码和 JSON 错误。错误文档使用 `Cache-Control: no-store`，不包含票据原文。
+- Backend 代理给 Runtime 的 `x-runtime-preview-artifact-id` 与 `x-runtime-preview-workbench-url` 来自服务端校验结果，用于 Runtime 应用尚未启动时回传错误和展示导航。工作台来源只取服务端公开地址或 CORS 白名单，不接受任意回跳地址。
+- 错误文档发送 `page-preview:error` 和 `component-preview:error`，payload 包含 `version: 1`、`artifactId`、`message` 和可选 `code`。Editor 同时校验当前 iframe 窗口、origin、协议版本及 artifact；错误码透传不改变权限语义。
+- Editor 对 `PREVIEW_CONTEXT_INVALID`、`PREVIEW_CONTEXT_REQUIRED` 和 `ARTIFACT_NOT_FOUND` 最多自动重建一次。替换 URL 不重置失败链预算，成功 ready、显式重试或切换目标才开启新周期；标签页重新可见时使用票据 `exp` 判断是否需要重建。
+- 恢复由原入口调用原创建流程，保留页面入口、历史版本、组件源码和预览选项，并通过创建接口重新校验登录态与权限。artifact 本身也有独立 TTL，不能仅延长票据或重载旧 URL。
+- 独立窗口提供返回工作台的入口；过期票据只有再次验签后才可用于生成导航，签名非法时仅返回工作台首页。独立错误页不直接续签，也不自动把历史预览转换成最新内容。
 
 ## 3. Backend -> Runtime
 

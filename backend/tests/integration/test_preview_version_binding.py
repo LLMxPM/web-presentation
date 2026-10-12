@@ -44,18 +44,26 @@ async def test_browser_entry_binds_signed_version_and_preserves_skew_response(au
         bound = TokenService.verify_preview_context_token(request.headers["x-runtime-preview-context"])
         seen.append(bound)
         assert request.headers["x-expected-runtime-version-fingerprint"] == "1.0.0+release-a"
+        assert request.headers["x-runtime-preview-artifact-id"] == original["artifact_id"]
+        assert "untrusted.example" not in request.headers["x-runtime-preview-workbench-url"]
         return httpx.Response(409, content="PREVIEW_VERSION_SKEW", headers={
             "Content-Type": "text/html", "x-runtime-version-fingerprint": "1.0.0+release-b",
+            "Referrer-Policy": "no-referrer",
         })
 
     _mock_runtime(monkeypatch, runtime)
     response = await authenticated_client.get(
         f"/preview/artifacts/{original['artifact_id']}", params={"token": token},
-        headers={"x-expected-runtime-version-fingerprint": "untrusted-browser-value"},
+        headers={
+            "x-expected-runtime-version-fingerprint": "untrusted-browser-value",
+            "x-runtime-preview-artifact-id": "untrusted-artifact",
+            "x-runtime-preview-workbench-url": "https://untrusted.example/",
+        },
     )
     assert response.status_code == 409
     assert response.headers["x-runtime-version-fingerprint"] == "1.0.0+release-b"
     assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
     assert seen[0] == {**original, "runtime_version_fingerprint": "1.0.0+release-a"}
 
 

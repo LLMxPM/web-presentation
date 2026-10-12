@@ -69,6 +69,22 @@ describe('runtime saas preview helpers', () => {
     expect(chunks.join('')).toContain('HTTP 409')
   })
 
+  it('Runtime 文档入口失败应通知宿主且禁止缓存，模块错误保持不发送消息', () => {
+    const end = vi.fn()
+    const setHeader = vi.fn()
+    const res = { statusCode: 0, setHeader, end } as unknown as Parameters<typeof sendPreviewError>[0]
+    const error = Object.assign(new Error('artifact 已过期'), { statusCode: 404, code: 'ARTIFACT_NOT_FOUND' })
+    sendPreviewError(res, error, { artifactId: 'artifact-1', workbenchUrl: 'https://editor.example/' })
+    expect(res.statusCode).toBe(404)
+    expect(setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store')
+    expect(end.mock.calls[0]?.[0]).toContain('page-preview:error')
+    expect(end.mock.calls[0]?.[0]).toContain('"artifactId":"artifact-1"')
+    expect(end.mock.calls[0]?.[0]).toContain('返回工作台')
+    end.mockClear()
+    sendPreviewError(res, error)
+    expect(end.mock.calls[0]?.[0]).not.toContain('postMessage')
+  })
+
   it('预览 HTML 应注入 artifact Tailwind CSS 链接并放在应用入口前', () => {
     const context: RuntimePreviewContext = {
       artifactId: 'artifact-1',

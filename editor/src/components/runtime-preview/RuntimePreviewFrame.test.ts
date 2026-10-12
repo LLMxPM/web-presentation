@@ -5,7 +5,7 @@ import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
-import { PAGE_PREVIEW_READY_EVENT } from '@/types/runtime-preview'
+import { PAGE_PREVIEW_ERROR_EVENT, PAGE_PREVIEW_READY_EVENT } from '@/types/runtime-preview'
 
 describe('RuntimePreviewFrame', () => {
   it('慢加载与错误状态应覆盖旧 iframe 并允许重试', async () => {
@@ -39,6 +39,30 @@ describe('RuntimePreviewFrame', () => {
 
     dispatchPreviewMessage(validMessage, 'http://runtime.example', iframe.contentWindow)
     expect(emitted().ready).toHaveLength(1)
+  })
+
+  it('失效错误立即透传 code 并只自动重建一次，新 artifact 失败保留手动重试', async () => {
+    const { emitted, rerender } = render(RuntimePreviewFrame, {
+      props: { ...createProps('loading'), status: 'idle', autoRecover: true },
+    })
+    const iframe = document.querySelector('iframe') as HTMLIFrameElement
+    const error = {
+      type: PAGE_PREVIEW_ERROR_EVENT,
+      payload: { version: 1, artifactId: 'artifact-page-1', code: 'PREVIEW_CONTEXT_INVALID', message: '预览链接已失效' },
+    }
+    dispatchPreviewMessage(error, 'http://wrong.example', iframe.contentWindow)
+    dispatchPreviewMessage(error, 'http://runtime.example', window)
+    expect(emitted().error).toBeUndefined()
+    dispatchPreviewMessage(error, 'http://runtime.example', iframe.contentWindow)
+    await Promise.resolve()
+    expect(emitted().error).toEqual([['预览链接已失效', 'PREVIEW_CONTEXT_INVALID']])
+    expect(emitted().retry).toHaveLength(1)
+    await rerender({ ...createProps('loading'), status: 'idle', autoRecover: true, artifactId: 'artifact-new', frameUrl: 'http://runtime.example/preview/new' })
+    dispatchPreviewMessage({ ...error, payload: { ...error.payload, artifactId: 'artifact-new' } }, 'http://runtime.example', iframe.contentWindow)
+    await Promise.resolve()
+    expect(emitted().retry).toHaveLength(1)
+    await fireEvent.click(screen.getByRole('button', { name: '重新生成预览' }))
+    expect(emitted().retry).toHaveLength(2)
   })
 })
 

@@ -21,20 +21,25 @@
       class="absolute inset-0 flex items-center justify-center bg-surface/85 px-8 text-center backdrop-blur-[1px]"
     >
       <div class="max-w-md space-y-3">
-        <p class="text-base font-semibold" :class="props.status === 'error' ? 'text-danger' : 'text-text-emphasis'">
+        <p class="text-base font-semibold" :class="effectiveStatus === 'error' ? 'text-danger' : 'text-text-emphasis'">
           {{ statusTitle }}
         </p>
         <p class="text-sm text-text-muted">{{ statusDescription }}</p>
-        <UiButton v-if="props.status === 'error'" size="sm" @click="emit('retry')">重新生成预览</UiButton>
+        <UiButton v-if="effectiveStatus === 'error'" size="sm" @click="retryPreview">重新生成预览</UiButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { UiButton } from '@/components/ui'
+import { useRuntimePreviewRecovery } from '@/composables/useRuntimePreviewRecovery'
+import {
+  COMPONENT_PREVIEW_ERROR_EVENT, COMPONENT_PREVIEW_READY_EVENT,
+  type ComponentPreviewErrorMessage, type ComponentPreviewReadyMessage,
+} from '@/types/component-preview'
 import {
   PAGE_PREVIEW_ERROR_EVENT,
   PAGE_PREVIEW_READY_EVENT,
@@ -60,6 +65,8 @@ interface Props {
   artifactId?: string
   status?: RuntimePreviewStatus
   statusMessage?: string
+  autoRecover?: boolean
+  recoveryKey?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -74,21 +81,37 @@ const props = withDefaults(defineProps<Props>(), {
   artifactId: '',
   status: 'idle',
   statusMessage: '',
+  autoRecover: false,
+  recoveryKey: '',
 })
 
 const emit = defineEmits<{
   ready: []
-  error: [message: string]
+  error: [message: string, code?: string]
   retry: []
 }>()
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
+const localError = ref('')
+let lastErrorFingerprint = ''
+const effectiveStatus = computed(() => localError.value && props.status === 'idle' ? 'error' : props.status)
+const recovery = useRuntimePreviewRecovery({
+  frameUrl: () => props.frameUrl,
+  sourceKey: () => props.recoveryKey || props.title,
+  enabled: () => props.autoRecover,
+  isPending: () => props.status === 'generating',
+  recover: () => emit('retry'),
+})
+watch(() => props.frameUrl, () => {
+  localError.value = ''
+  lastErrorFingerprint = ''
+})
 
 const showStatusOverlay = computed(() => (
-  props.status === 'generating'
-  || props.status === 'loading'
-  || props.status === 'slow'
-  || props.status === 'error'
+  effectiveStatus.value === 'generating'
+  || effectiveStatus.value === 'loading'
+  || effectiveStatus.value === 'slow'
+  || effectiveStatus.value === 'error'
 ))
 
 const statusTitle = computed(() => {
@@ -100,6 +123,7 @@ const statusTitle = computed(() => {
 
 const statusDescription = computed(() => {
   if (props.statusMessage) return props.statusMessage
+  if (localError.value) return localError.value
   if (props.status === 'generating') return '正在准备当前页面的 Runtime artifact。'
   if (props.status === 'loading') return '正在启动 Runtime 并加载页面模块。'
   if (props.status === 'slow') return '冷缓存或网络不稳定时可能需要更长时间，请稍候。'
@@ -129,6 +153,13 @@ function hasValidViewport(viewport: Props['viewport']): viewport is NonNullable<
   return Boolean(viewport && viewport.width > 0 && viewport.height > 0)
 }
 
+/** 显式重试开始新的恢复周期；实际 artifact 创建由持有原始预览目标的宿主负责。 */
+function retryPreview(): void {
+  recovery.reset()
+  lastErrorFingerprint = ''
+  emit('retry')
+}
+
 /**
  * 接收当前 iframe 的页面预览终态消息，并校验窗口、来源、协议版本与 artifact。
  * @param event 浏览器窗口消息
@@ -148,16 +179,29 @@ function handleWindowMessage(event: MessageEvent<unknown>): void {
     return
   }
 
-  const message = event.data as Partial<PagePreviewReadyMessage | PagePreviewErrorMessage>
+  const message = event.data as Partial<
+    PagePreviewReadyMessage | PagePreviewErrorMessage | ComponentPreviewReadyMessage | ComponentPreviewErrorMessage
+  >
   if (message.payload?.version !== 1 || message.payload.artifactId !== props.artifactId) {
     return
   }
-  if (message.type === PAGE_PREVIEW_READY_EVENT) {
+  if (props.status === 'generating') return
+  if (message.type === PAGE_PREVIEW_READY_EVENT || message.type === COMPONENT_PREVIEW_READY_EVENT) {
+    localError.value = ''
+    lastErrorFingerprint = ''
+    recovery.reset()
     emit('ready')
     return
   }
-  if (message.type === PAGE_PREVIEW_ERROR_EVENT) {
-    emit('error', typeof message.payload.message === 'string' ? message.payload.message : '页面预览加载失败。')
+  if (message.type === PAGE_PREVIEW_ERROR_EVENT || message.type === COMPONENT_PREVIEW_ERROR_EVENT) {
+    const errorMessage = typeof message.payload.message === 'string' ? message.payload.message : '页面预览加载失败。'
+    const code = typeof message.payload.code === 'string' ? message.payload.code : undefined
+    const fingerprint = JSON.stringify([message.payload.artifactId, code, errorMessage])
+    if (fingerprint === lastErrorFingerprint) return
+    lastErrorFingerprint = fingerprint
+    localError.value = errorMessage
+    emit('error', errorMessage, code)
+    recovery.tryRecover(code)
   }
 }
 

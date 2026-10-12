@@ -21,6 +21,7 @@ export interface PagePreviewErrorMessage {
     version: 1
     artifactId: string
     message: string
+    code?: string
   }
 }
 

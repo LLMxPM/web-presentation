@@ -4,6 +4,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { getWorkspace } from '@/api/catalog'
+import { getErrorMessage } from '@/api/http'
+import { useRuntimePreviewRecovery } from '@/composables/useRuntimePreviewRecovery'
 import type { ComponentPreviewOptions, PreviewArtifactResponse } from '@/types/api'
 import type { RuntimePreviewStatus } from '@/types/runtime-preview'
 import {
@@ -60,6 +62,15 @@ export function useComponentPreviewSession() {
   let previewLifecycleSeq = 0
   let previewSlowTimer: number | null = null
   let previewTimeoutTimer: number | null = null
+  let previewLoader: (() => Promise<PreviewArtifactResponse>) | null = null
+  const recovery = useRuntimePreviewRecovery({
+    frameUrl: () => previewUrl.value,
+    sourceKey: () => null,
+    isPending: () => previewStatus.value === 'generating',
+    enabled: () => previewLoader !== null,
+    recover: async () => { if (previewLoader) await runPreview(previewLoader, previewAppliedConfig.value) },
+    onFailure: error => markPreviewError(getErrorMessage(error, '重新生成组件预览失败。')),
+  })
   const {
     viewportRef: previewViewportRef,
     viewportSize: previewViewportSize,
@@ -168,7 +179,11 @@ export function useComponentPreviewSession() {
    * 执行一次预览 artifact 创建，并刷新 iframe 地址。
    * @param loader 实际创建 artifact 的函数
    */
-  async function runPreview(loader: () => Promise<PreviewArtifactResponse>): Promise<PreviewArtifactResponse | null> {
+  async function runPreview(
+    loader: () => Promise<PreviewArtifactResponse>, appliedConfig = previewConfigDraft.value,
+  ): Promise<PreviewArtifactResponse | null> {
+    const requestedConfig = cloneComponentPreviewOptions(appliedConfig)
+    previewLoader = loader
     const requestSeq = previewRequestSeq + 1
     previewRequestSeq = requestSeq
     previewLoading.value = true
@@ -190,7 +205,7 @@ export function useComponentPreviewSession() {
     }
     previewUrl.value = previewResponse.preview_url
     previewArtifactId.value = previewResponse.artifact_id
-    previewAppliedConfig.value = cloneComponentPreviewOptions(previewConfigDraft.value)
+    previewAppliedConfig.value = requestedConfig
     refreshPreviewFrame()
     return previewResponse
   }
@@ -216,6 +231,8 @@ export function useComponentPreviewSession() {
    * 清空当前预览会话，避免不同组件之间串用状态。
    */
   function resetPreviewState(): void {
+    recovery.reset()
+    previewLoader = null
     previewRequestSeq += 1
     previewLoading.value = false
     previewStatus.value = 'idle'
@@ -335,12 +352,14 @@ export function useComponentPreviewSession() {
    * @param event postMessage 事件
    */
   function handleWindowMessage(event: MessageEvent<unknown>): void {
-    if (!previewTargetOrigin.value || event.origin !== previewTargetOrigin.value) {
+    if (!previewTargetOrigin.value || event.origin !== previewTargetOrigin.value
+      || !previewFrameRef.value || event.source !== previewFrameRef.value.contentWindow) {
       return
     }
     if (!event.data || typeof event.data !== 'object') {
       return
     }
+    if (previewStatus.value === 'generating') return
 
     const message = event.data as Partial<ComponentPreviewReadyMessage | ComponentPreviewErrorMessage>
     if (message.type === COMPONENT_PREVIEW_READY_EVENT) {
@@ -349,6 +368,7 @@ export function useComponentPreviewSession() {
       }
 
       previewErrorMessage.value = ''
+      recovery.reset()
       previewSchema.value = message.payload.schema ?? null
       previewComponentMeta.value = message.payload.componentMeta
       syncPreviewPlacementToIframe()
@@ -372,6 +392,7 @@ export function useComponentPreviewSession() {
     }
 
     markPreviewError(normalizePreviewErrorMessage(message.payload.message))
+    recovery.tryRecover(typeof message.payload.code === 'string' ? message.payload.code : undefined)
     previewSchema.value = null
     previewComponentMeta.value = null
   }

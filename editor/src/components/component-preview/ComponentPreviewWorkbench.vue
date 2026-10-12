@@ -377,11 +377,12 @@ async function refreshCurrentPreview(): Promise<void> {
   }
 
   try {
+    const previewOptions = normalizeComponentPreviewOptions(previewConfigDraft.value)
     await session.runPreview(async () => {
       if (source.kind === 'runtime-kit') {
         return createRuntimeKitComponentPreviewArtifact(source.item.name, {
           workspace_id: source.workspaceId as number,
-          preview_options: normalizeComponentPreviewOptions(previewConfigDraft.value),
+          preview_options: previewOptions,
         })
       }
 
@@ -395,7 +396,7 @@ async function refreshCurrentPreview(): Promise<void> {
         component_name: source.componentName || '未保存组件草稿',
         content: source.content,
         preview_schema: normalizedPreviewSchema,
-        preview_options: normalizeComponentPreviewOptions(previewConfigDraft.value),
+        preview_options: previewOptions,
         file_type: 'vue',
       })
     })

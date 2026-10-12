@@ -99,6 +99,7 @@
         <div class="flex h-full min-h-0 gap-0">
           <div class="min-h-0 flex-1 overflow-hidden">
             <PageDetailPreviewPanel
+              :key="pageId"
               :preview-enabled="isPreviewEnabled"
               :preview-display-file-name="previewDisplayFileName"
               :preview-url="previewUrl"
@@ -198,6 +199,7 @@
       />
 
       <PageVersionHistoryDialog
+        :key="pageId"
         v-model="isHistoryModalOpen"
         :loading="versionsQuery.isFetching.value"
         :versions="pageVersions"
@@ -207,6 +209,7 @@
         :current-content="pageDetails.page_content"
         :version-content-map="versionContentMap"
         :history-panel-preview-frame-url="historyPanelPreviewFrameUrl"
+        :history-panel-preview-artifact-id="historyPanelPreviewLink?.artifact_id ?? ''"
         :editor-language="editorLanguage"
         :previewing-runtime-version-no="previewingRuntimeVersionNo"
         :preview-version-pending="previewVersionMutation.isPending.value"
@@ -216,6 +219,7 @@
         :restore-pending="restoreMutation.isPending.value"
         :restoring-version-no="restoringVersionNo"
         @preview-version="toggleVersionPreview"
+        @retry-preview-version="refreshVersionPreview"
         @diff-version="toggleVersionDiff"
         @open-snapshot="openSnapshotDialog"
         @restore-version="handleRestoreVersion"
@@ -270,6 +274,7 @@ import PageSpeakerNotesPanel from '@/components/page-detail/PageSpeakerNotesPane
 import PageUsageDialog from '@/components/page-detail/PageUsageDialog.vue'
 import PageVersionHistoryDialog from '@/components/page-detail/PageVersionHistoryDialog.vue'
 import { useRuntimePreviewLifecycle } from '@/composables/useRuntimePreviewLifecycle'
+import { previewTokenExpiresAt } from '@/composables/useRuntimePreviewRecovery'
 import { UiButton, UiIconButton } from '@/components/ui'
 import CommandBar from '@/components/patterns/CommandBar.vue'
 import DataState from '@/components/patterns/DataState.vue'
@@ -356,6 +361,7 @@ const previewArtifactId = ref('')
 const previewFilePath = ref('')
 const previewViewport = ref({ ...DEFAULT_PREVIEW_VIEWPORT })
 const previewRefreshToken = ref(0)
+let previewRequestSequence = 0
 const {
   status: previewStatus,
   message: previewStatusMessage,
@@ -482,6 +488,8 @@ function retryRuntimePreview(): void {
 
 /** 切换页面或显式清空预览时同步重置生命周期状态。 */
 function resetRuntimePreviewState(): void {
+  previewRequestSequence += 1
+  isPreviewPending.value = false
   resetPreviewLifecycle()
   previewUrl.value = ''
   previewArtifactId.value = ''
@@ -1389,16 +1397,34 @@ async function ensureVersionContent(versionNo: number): Promise<PageVersionConte
  */
 async function ensureVersionPreviewLink(versionNo: number): Promise<PreviewArtifactResponse> {
   const cached = versionPreviewLinkMap.value[versionNo]
-  if (cached) {
+  if (cached && (previewTokenExpiresAt(cached.preview_url) ?? Infinity) > Date.now()) {
     return cached
   }
 
-  const previewLink = await createPageVersionPreviewArtifact(pageId.value, versionNo)
+  const targetPageId = pageId.value
+  const previewLink = await createPageVersionPreviewArtifact(targetPageId, versionNo)
+  if (targetPageId !== pageId.value) return previewLink
   versionPreviewLinkMap.value = {
     ...versionPreviewLinkMap.value,
     [versionNo]: previewLink,
   }
   return previewLink
+}
+
+/** 重建所选历史版本的预览，避免失效恢复误切换到当前页面版本。 */
+async function refreshVersionPreview(versionNo: number): Promise<void> {
+  if (previewingRuntimeVersionNo.value !== null) return
+  const targetPageId = pageId.value
+  previewingRuntimeVersionNo.value = versionNo
+  try {
+    const previewLink = await createPageVersionPreviewArtifact(targetPageId, versionNo)
+    if (targetPageId !== pageId.value) return
+    versionPreviewLinkMap.value = { ...versionPreviewLinkMap.value, [versionNo]: previewLink }
+  } catch (error) {
+    if (targetPageId === pageId.value) Message.error(getErrorMessage(error, '重新生成历史版本预览失败。'))
+  } finally {
+    if (targetPageId === pageId.value) previewingRuntimeVersionNo.value = null
+  }
 }
 
 /**
@@ -1539,11 +1565,15 @@ async function syncRuntimePreview(
   page: Pick<PageItem, 'id' | 'code' | 'file_type'>,
   options: { showSuccessMessage?: boolean } = {},
 ): Promise<boolean> {
+  const requestSequence = ++previewRequestSequence
+  const targetProjectId = projectId.value
+  const targetPageId = page.id
   isPreviewPending.value = true
   beginPreviewLoading('generating')
   try {
     const entryRoute = `src/views/${page.code}.${page.file_type}`
-    const previewLink = await createProjectPreviewArtifact(projectId.value, entryRoute)
+    const previewLink = await createProjectPreviewArtifact(targetProjectId, entryRoute)
+    if (requestSequence !== previewRequestSequence || targetPageId !== pageId.value || targetProjectId !== projectId.value) return false
 
     applyPreviewLink(previewLink)
     if (options.showSuccessMessage) {
@@ -1551,12 +1581,13 @@ async function syncRuntimePreview(
     }
     return true
   } catch (error) {
+    if (requestSequence !== previewRequestSequence || targetPageId !== pageId.value || targetProjectId !== projectId.value) return false
     const errorMessage = getErrorMessage(error, '生成草稿预览失败。')
     handlePagePreviewError(errorMessage)
     Message.error(errorMessage)
     return false
   } finally {
-    isPreviewPending.value = false
+    if (requestSequence === previewRequestSequence) isPreviewPending.value = false
   }
 }
 </script>

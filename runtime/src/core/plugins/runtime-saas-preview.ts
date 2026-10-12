@@ -64,6 +64,7 @@ import { runWithPreviewBudget, RuntimeViteTaskSchedulerError } from './runtime-p
 import { assertRuntimeVersion, withRuntimeVersionBase } from './runtime-version-identity'
 import { prepareRemoteSfcSubrequest } from './runtime-remote-sfc'
 import { stripRuntimeRequestBase as stripBasePath } from './runtime-request-path'
+import { buildPreviewErrorDocument } from './runtime-preview-error-page'
 
 interface RuntimeSaaSPreviewOptions {
   previewPath?: string
@@ -210,6 +211,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
         }
 
         const requestStartedAt = Date.now()
+        let previewArtifactId = String(req.headers['x-runtime-preview-artifact-id'] || '')
         try {
           // 版本指纹强制：请求方声明期望副本版本时不匹配直接拒绝，避免 HTML/模块混用。
           const localFingerprint = formatRuntimeVersionFingerprint()
@@ -226,6 +228,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
             audience: options.previewAudience || process.env.RUNTIME_PREVIEW_TOKEN_AUDIENCE || DEFAULT_PREVIEW_AUDIENCE,
             timeoutMs: jwksTimeoutMs,
           })
+          previewArtifactId = verified.publicContext.artifactId
           rememberPreviewToken(previewTokenCache, verified.publicContext.artifactId, previewToken)
           // 服务令牌可从请求头种子缓存，也可在缺失时用 previewToken 向 Backend 换票恢复；
           // 任一副本不依赖其它副本的进程内缓存即可完成鉴权与回源。
@@ -299,7 +302,10 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
             request_id: String(req.headers['x-request-id'] || ''),
             error: toLoggableError(error),
           })
-          sendPreviewError(res, error)
+          sendPreviewError(res, error, {
+            artifactId: previewArtifactId,
+            workbenchUrl: String(req.headers['x-runtime-preview-workbench-url'] || ''),
+          })
         }
       })
     },
@@ -1472,7 +1478,9 @@ function sendPreviewTailwindErrorCss(res: RuntimeNodeResponse, error: unknown): 
  * @param res Node 响应对象
  * @param error 错误对象
  */
-export function sendPreviewError(res: RuntimeNodeResponse, error: unknown): void {
+export function sendPreviewError(
+  res: RuntimeNodeResponse, error: unknown, context: { artifactId?: string; workbenchUrl?: string } = {},
+): void {
   // 指纹门禁等业务错误带 statusCode/code；不得被统一收成 500，
   // 否则 M05/组合 F 无法用 409 识别版本失配（PREVIEW_VERSION_SKEW）。
   const rawStatus = (error as { statusCode?: number } | null | undefined)?.statusCode
@@ -1490,48 +1498,9 @@ export function sendPreviewError(res: RuntimeNodeResponse, error: unknown): void
 
   res.statusCode = previewError.statusCode
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
-  res.end(`<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Runtime Preview Error</title>
-    <style>
-      html, body { margin: 0; width: 100%; height: 100%; background: #f8fafc; font-family: "Segoe UI", "PingFang SC", sans-serif; }
-      body { display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
-      .card { max-width: 760px; width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08); }
-      .title { margin: 0 0 12px; font-size: 28px; color: #0f172a; }
-      .desc { margin: 0 0 20px; color: #475569; line-height: 1.7; }
-      .meta { display: grid; gap: 10px; padding: 16px; background: #f8fafc; border-radius: 12px; color: #334155; }
-      .code { color: #b91c1c; font-weight: 700; }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1 class="title">预览启动失败</h1>
-      <p class="desc">请检查 PreviewContextToken、preview artifact 清单以及 Runtime 到 Backend 的内部接口连通性。</p>
-      <div class="meta">
-        <div><span class="code">HTTP ${previewError.statusCode}</span></div>
-        <div>错误码：${escapeHtml(previewError.code)}</div>
-        <div>错误信息：${escapeHtml(previewError.message)}</div>
-      </div>
-    </div>
-  </body>
-</html>`)
-}
-
-/**
- * 转义 HTML 文本，避免错误详情破坏页面结构。
- * @param value 原始文本
- * @returns 转义后的文本
- */
-function escapeHtml(value: string): string {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+  res.setHeader('Cache-Control', 'no-store')
+  res.setHeader('Referrer-Policy', 'no-referrer')
+  res.end(buildPreviewErrorDocument({ ...context, ...previewError, message: previewError.message }))
 }
 
 /**

@@ -88,12 +88,15 @@
             <div v-else-if="props.historyPanel?.mode === 'preview'"
               class="h-full overflow-hidden rounded-2xl border border-border bg-canvas shadow-sm">
               <RuntimePreviewFrame
+                auto-recover
                 :frame-url="props.historyPanelPreviewFrameUrl"
+                :artifact-id="props.historyPanelPreviewArtifactId"
                 :title="`runtime-preview-version-${activeVersionNo ?? 0}`"
                 layout="fill"
                 container-class="h-full overflow-hidden rounded-2xl border-0 bg-canvas shadow-none"
                 empty-title="版本预览准备中"
                 empty-description="正在生成所选版本的 Runtime 预览，请稍候。"
+                @retry="retryVersionPreview"
               />
             </div>
           </div>
@@ -130,6 +133,7 @@ interface Props {
   currentContent: string
   versionContentMap: Record<number, PageVersionContent>
   historyPanelPreviewFrameUrl: string
+  historyPanelPreviewArtifactId?: string
   editorLanguage: EditorLanguage
   previewingRuntimeVersionNo: number | null
   previewVersionPending: boolean
@@ -145,6 +149,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'preview-version': [versionNo: number]
+  'retry-preview-version': [versionNo: number]
   'diff-version': [versionNo: number]
   'open-snapshot': [versionNo: number]
   'restore-version': [versionNo: number]
@@ -157,5 +162,10 @@ const activeVersionContent = computed(() => (
 const shouldShowDiff = computed(() => (
   props.historyPanel?.mode === 'diff' && Boolean(activeVersionContent.value)
 ))
+
+/** 请求重建当前选中的历史版本，保留原版本号。 */
+function retryVersionPreview(): void {
+  if (activeVersionNo.value !== null) emit('retry-preview-version', activeVersionNo.value)
+}
 </script>
 

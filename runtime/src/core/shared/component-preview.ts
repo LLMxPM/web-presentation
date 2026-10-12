@@ -47,6 +47,7 @@ export interface ComponentPreviewErrorMessage {
     version: 1
     artifactId: string
     message: string
+    code?: string
   }
 }
 

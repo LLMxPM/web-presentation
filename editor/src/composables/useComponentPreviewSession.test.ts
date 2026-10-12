@@ -22,6 +22,7 @@ describe('useComponentPreviewSession', () => {
           void session.runPreview(() => Promise.resolve(createPreviewResponse()))
         })
         return () => h('div', [
+          h('iframe', { ref: session.previewFrameRef }),
           h('span', { 'data-testid': 'status' }, session.previewStatus.value),
           h('span', { 'data-testid': 'error' }, session.previewErrorMessage.value),
         ])
@@ -42,6 +43,7 @@ describe('useComponentPreviewSession', () => {
 
     window.dispatchEvent(new MessageEvent('message', {
       origin: 'http://localhost',
+      source: document.querySelector('iframe')?.contentWindow,
       data: {
         type: COMPONENT_PREVIEW_READY_EVENT,
         payload: {
@@ -69,6 +71,7 @@ describe('useComponentPreviewSession', () => {
         })
 
         return () => h('div', [
+          h('iframe', { ref: session.previewFrameRef }),
           h('span', { 'data-testid': 'loading' }, session.previewLoading.value ? 'loading' : 'idle'),
           h('span', { 'data-testid': 'error' }, session.previewErrorMessage.value),
         ])
@@ -81,6 +84,7 @@ describe('useComponentPreviewSession', () => {
 
     window.dispatchEvent(new MessageEvent('message', {
       origin: 'http://localhost',
+      source: document.querySelector('iframe')?.contentWindow,
       data: {
         type: COMPONENT_PREVIEW_ERROR_EVENT,
         payload: {
@@ -159,6 +163,39 @@ describe('useComponentPreviewSession', () => {
       expect(screen.getByTestId('frame-url')).toHaveTextContent('http://localhost/preview/latest')
       expect(screen.getByTestId('error').textContent).toBe('')
     })
+  })
+
+  it('失效恢复复用原 loader，忽略其它窗口，并在新 artifact 再失败时停止自动重试', async () => {
+    let session!: ReturnType<typeof useComponentPreviewSession>
+    let calls = 0
+    const loader = vi.fn(async () => createPreviewResponse(`artifact-${++calls}`))
+    render(defineComponent({
+      setup() {
+        session = useComponentPreviewSession()
+        onMounted(() => { void session.runPreview(loader) })
+        return () => h('iframe', { ref: session.previewFrameRef })
+      },
+    }))
+    await waitFor(() => expect(session.previewArtifactId.value).toBe('artifact-1'))
+    const frame = document.querySelector('iframe') as HTMLIFrameElement
+    const dispatchError = (artifactId: string, source: MessageEventSource | null = frame.contentWindow) => {
+      window.dispatchEvent(new MessageEvent('message', {
+        origin: 'http://localhost', source,
+        data: { type: COMPONENT_PREVIEW_ERROR_EVENT, payload: {
+          version: 1, artifactId, code: 'PREVIEW_CONTEXT_INVALID', message: '预览链接已失效',
+        } },
+      }))
+    }
+    dispatchError('artifact-1', window)
+    await nextTick()
+    expect(loader).toHaveBeenCalledTimes(1)
+    dispatchError('artifact-1')
+    await waitFor(() => expect(session.previewArtifactId.value).toBe('artifact-2'))
+    dispatchError('artifact-2')
+    await nextTick()
+    expect(loader).toHaveBeenCalledTimes(2)
+    expect(session.previewStatus.value).toBe('error')
+    expect(session.previewErrorMessage.value).toBe('预览链接已失效')
   })
 })
 

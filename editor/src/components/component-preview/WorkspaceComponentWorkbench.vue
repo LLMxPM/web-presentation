@@ -90,6 +90,7 @@
     </ComponentPreviewDialog>
 
     <ComponentVersionHistoryDialog
+      :key="currentComponent?.id ?? 'draft'"
       v-model="versionHistoryVisible"
       :loading="versionHistoryLoading"
       :versions="componentVersions"
@@ -99,10 +100,12 @@
       :draft-content="draft.form.content"
       :version-content-map="versionContentMap"
       :preview-frame-url="versionPreviewFrameUrl"
+      :preview-artifact-id="activeHistoryPreview?.artifact_id ?? ''"
       :previewing-version-no="previewingVersionNo"
       :loading-content-version-no="loadingContentVersionNo"
       :restoring-version-no="restoringVersionNo"
       @preview-version="toggleVersionPreview"
+      @retry-preview-version="refreshVersionPreview"
       @diff-version="toggleVersionDiff"
       @restore-version="restoreVersionToDraft"
     />
@@ -610,6 +613,23 @@ async function ensureVersionPreview(versionNo: number): Promise<PreviewArtifactR
     [versionNo]: preview,
   }
   return preview
+}
+
+/** 基于原发布版本重新创建 artifact，并丢弃切换组件后的迟到结果。 */
+async function refreshVersionPreview(versionNo: number): Promise<void> {
+  const componentId = currentComponent.value?.id
+  if (!componentId || previewingVersionNo.value !== null) return
+  previewingVersionNo.value = versionNo
+  try {
+    const preview = await createComponentVersionPreviewArtifact(componentId, versionNo)
+    if (componentId !== currentComponent.value?.id) return
+    versionPreviewMap.value = { ...versionPreviewMap.value, [versionNo]: preview }
+    versionPreviewRefreshToken.value = Date.now()
+  } catch (error) {
+    if (componentId === currentComponent.value?.id) Message.error(getErrorMessage(error, '重新生成组件发布版本预览失败。'))
+  } finally {
+    if (componentId === currentComponent.value?.id) previewingVersionNo.value = null
+  }
 }
 
 async function toggleVersionDiff(versionNo: number): Promise<void> {

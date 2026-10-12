@@ -13,10 +13,14 @@
       <div class="max-w-sm">
         <p class="text-sm font-bold text-danger">资源预览打开失败</p>
         <p class="mt-2 text-xs leading-6 text-text-muted">{{ errorMessage }}</p>
+        <UiButton class="mt-3" size="sm" @click="loadPreview()">重新生成预览</UiButton>
       </div>
     </div>
     <RuntimePreviewFrame
       v-else
+      auto-recover
+      :recovery-key="`${workspaceId}:${asset?.id ?? ''}`"
+      :artifact-id="previewArtifactId"
       :frame-url="previewFrameUrl"
       :title="previewTitle"
       layout="fill"
@@ -25,6 +29,7 @@
       empty-content-class="flex h-full items-center justify-center px-8 text-center"
       empty-title="请选择资源"
       empty-description="资源预览会在这里打开。"
+      @retry="loadPreview(true)"
     />
   </section>
 </template>
@@ -38,6 +43,7 @@ import AssetPreviewBackgroundControl from '@/components/ui/AssetPreviewBackgroun
 import type { AssetPreviewBackground } from '@/components/ui/asset-preview-background'
 import type { AssetResponse } from '@/types/api'
 import { getErrorMessage } from '@/api/http'
+import { UiButton } from '@/components/ui'
 
 type AssetPreviewTarget = Pick<AssetResponse, 'id' | 'name'> & Partial<Pick<AssetResponse, 'file_hash'>>
 
@@ -49,6 +55,8 @@ const props = defineProps<{
 const loading = ref(false)
 const errorMessage = ref('')
 const previewUrl = ref('')
+const previewArtifactId = ref('')
+let previewRequestSequence = 0
 const previewRefreshToken = ref(0)
 const previewBackground = ref<AssetPreviewBackground>('checker')
 
@@ -80,23 +88,29 @@ watch(
 /**
  * 根据当前资源创建一次 Runtime 预览 artifact，并刷新 iframe 地址。
  */
-async function loadPreview(): Promise<void> {
-  previewUrl.value = ''
+async function loadPreview(recovering = false): Promise<void> {
+  const sequence = ++previewRequestSequence
+  const workspaceId = props.workspaceId
+  const assetId = props.asset?.id
+  if (!recovering) previewUrl.value = ''
   errorMessage.value = ''
-  if (!props.workspaceId || !props.asset) {
+  if (!workspaceId || !assetId) {
+    previewArtifactId.value = ''
     loading.value = false
     return
   }
 
-  loading.value = true
+  loading.value = !recovering
   try {
-    const response = await createAssetPreviewArtifact(props.workspaceId, props.asset.id)
+    const response = await createAssetPreviewArtifact(workspaceId, assetId)
+    if (sequence !== previewRequestSequence) return
     previewUrl.value = response.preview_url
+    previewArtifactId.value = response.artifact_id
     previewRefreshToken.value = Date.now()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, '创建资源预览失败')
+    if (sequence === previewRequestSequence) errorMessage.value = getErrorMessage(error, '创建资源预览失败')
   } finally {
-    loading.value = false
+    if (sequence === previewRequestSequence) loading.value = false
   }
 }
 </script>

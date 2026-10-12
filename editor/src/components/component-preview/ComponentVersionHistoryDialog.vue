@@ -94,12 +94,15 @@
 
             <div v-else-if="panel.mode === 'preview'" class="h-full overflow-hidden rounded-2xl border border-border bg-canvas shadow-sm">
               <RuntimePreviewFrame
+                auto-recover
                 :frame-url="previewFrameUrl"
+                :artifact-id="previewArtifactId"
                 :title="`component-release-preview-${activeVersionNo ?? 0}`"
                 layout="fill"
                 container-class="h-full overflow-hidden rounded-2xl border-0 bg-canvas shadow-none"
                 empty-title="发布版本预览准备中"
                 empty-description="正在生成所选发布版本的预览，请稍候。"
+                @retry="retryVersionPreview"
               />
             </div>
           </div>
@@ -135,6 +138,7 @@ const props = defineProps<{
   draftContent: string
   versionContentMap: Record<number, WorkspaceComponentVersionContent>
   previewFrameUrl: string
+  previewArtifactId?: string
   previewingVersionNo: number | null
   loadingContentVersionNo: number | null
   restoringVersionNo: number | null
@@ -143,6 +147,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'preview-version': [versionNo: number]
+  'retry-preview-version': [versionNo: number]
   'diff-version': [versionNo: number]
   'restore-version': [versionNo: number]
 }>()
@@ -151,5 +156,10 @@ const activeVersionNo = computed(() => props.panel?.versionNo ?? null)
 const activeVersionContent = computed(() => (
   activeVersionNo.value ? props.versionContentMap[activeVersionNo.value] ?? null : null
 ))
+
+/** 请求重建所选发布版本，避免自动恢复展示最新草稿。 */
+function retryVersionPreview(): void {
+  if (activeVersionNo.value !== null) emit('retry-preview-version', activeVersionNo.value)
+}
 </script>
 
