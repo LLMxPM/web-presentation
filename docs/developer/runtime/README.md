@@ -29,5 +29,6 @@
 | [Backend 对接 API](./integration/backend-api.md) | Runtime 消费的 Backend 接口 |
 | [Preview Artifact 规范](./integration/release-artifact-spec.md) | 预览产物结构 |
 | [Vue 页面资源引用规范](./integration/asset-usage-guide.md) | 资源 URL 与特殊格式渲染 |
+| [PPTX 导出 DOM 契约](./integration/pptx-export-dom-contract.md) | 表格、媒体与连接线的显式导出属性、版本约定与识别优先级 |
 
 Runtime 服务自身的运行命令与目录概览见 [runtime/README.md](../../../runtime/README.md)。

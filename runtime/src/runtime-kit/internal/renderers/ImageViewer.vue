@@ -1,8 +1,15 @@
 <!--
   文件用途：图片资源基础渲染器，负责统一图片展示、渲染区域样式与解析失败兜底。
+  根节点声明 data-runtime-kit-media 导出契约，PPTX 导出据此识别，勿随样式类名一并删除。
 -->
 <template>
-  <figure class="image-viewer" :style="surfaceStyle" v-bind="$attrs">
+  <figure
+    class="image-viewer"
+    :style="surfaceStyle"
+    v-bind="$attrs"
+    data-runtime-kit-media="v1"
+    data-runtime-kit-media-kind="image"
+  >
     <img
       v-if="showImage"
       :src="src"

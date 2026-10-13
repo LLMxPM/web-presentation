@@ -1,8 +1,16 @@
 <!--
   文件用途：ECharts 配置渲染器，负责将 option 文本或对象渲染为真实图表。
+  根节点声明 data-runtime-kit-media 导出契约，PPTX 导出据此识别，勿随样式类名一并删除。
 -->
 <template>
-  <section ref="surfaceRef" class="echarts-viewer" :style="surfaceStyle" v-bind="$attrs">
+  <section
+    ref="surfaceRef"
+    class="echarts-viewer"
+    :style="surfaceStyle"
+    v-bind="$attrs"
+    data-runtime-kit-media="v1"
+    data-runtime-kit-media-kind="chart"
+  >
     <div
       ref="chartContainer"
       class="echarts-viewer__canvas"

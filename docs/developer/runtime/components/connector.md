@@ -77,10 +77,12 @@ const endBox = ref<HTMLElement | null>(null)
 - 组件会监听窗口尺寸、滚动、元素尺寸和部分 DOM 属性变化。
 - 不单独提供组件预览 artifact，应在页面预览或项目预览中验证。
 - Agent 默认不应推荐该能力，除非用户明确需要 DOM 连线、流程图节点连线或架构图节点连线。
+- 根 `<svg>` 上的 `data-runtime-kit-connector="v1"` 是 PPTX 导出识别紧边界的显式契约，不属于样式，详见 [PPTX 导出 DOM 契约](../integration/pptx-export-dom-contract.md)。
 
 ## 禁止用法
 
 - 不要用它绘制普通分割线或静态装饰线。
+- 不要删除或改名根 `<svg>` 上的 `data-runtime-kit-connector`，否则连接线在 PPTX 中会按整块画布容器定位并产生偏移。
 - 不要在新代码中使用旧路径 `@runtime-kit/components/primitives/Connector.vue`。
 - 不要引用 `@runtime-kit/internal/...` 实现连线。
 - 不要引用未带 `.vN` 的 `@runtime-kit/public/...` 路径。

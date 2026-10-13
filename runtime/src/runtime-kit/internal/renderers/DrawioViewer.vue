@@ -1,5 +1,6 @@
 <!--
   文件用途：Draw.io XML 图表渲染器，负责加载 diagrams.net viewer 并适配容器缩放。
+  根节点声明 data-runtime-kit-media 导出契约，PPTX 导出据此识别，勿随样式类名一并删除。
 -->
 
 <template>
@@ -16,6 +17,8 @@
     :style="containerStyle"
     :data-runtime-drawio-state="drawioState"
     :data-runtime-drawio-message="drawioStateMessage"
+    data-runtime-kit-media="v1"
+    data-runtime-kit-media-kind="drawio"
     @pointerdown.capture="suppressGraphViewerNativeEvent"
     @mousedown.capture="suppressGraphViewerNativeEvent"
     @touchstart.capture="suppressGraphViewerNativeEvent"

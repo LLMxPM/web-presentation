@@ -1,5 +1,6 @@
 <!--
   文件用途：Mermaid 文本图表渲染器，负责渲染、刷新和错误兜底展示。
+  根节点声明 data-runtime-kit-media 导出契约，PPTX 导出据此识别，勿随样式类名一并删除。
 -->
 
 <template>
@@ -10,6 +11,8 @@
     :data-runtime-mermaid-state="mermaidState"
     :data-runtime-mermaid-message="mermaidStateMessage"
     v-bind="$attrs"
+    data-runtime-kit-media="v1"
+    data-runtime-kit-media-kind="mermaid"
     @click="handleViewerClick"
   >
     <!-- 加载状态 -->

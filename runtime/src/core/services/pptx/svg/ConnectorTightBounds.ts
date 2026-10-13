@@ -1,10 +1,13 @@
 /**
- * 文件用途：计算 Connector 组件（svg.connector-svg）的紧边界导出视口与 PPTX 定位盒模型，避免整块画布容器带入 PPT 造成偏移。
+ * 文件用途：计算 Connector 组件根 SVG 的紧边界导出视口与 PPTX 定位盒模型，避免整块画布容器带入 PPT 造成偏移。
+ *
+ * 连接线识别以 data-runtime-kit-connector 显式导出契约为准，历史 connector-svg 类名保留为兜底。
  */
 
 import type { PPTXSvgSerializer } from '@/core/services/pptx/PPTXSvgSerializer'
 import type { ElementBox } from '@/core/services/pptx/PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
+import { isConnectorSvg } from '@/core/services/pptx/PPTXRuntimeKitExportDom'
 
 export interface ResolvedSvgExportPayload {
   data: string
@@ -31,7 +34,7 @@ export function buildConnectorSvgExportPayload(
   layout: PPTXDomConverterLayout,
   svgSerializer: PPTXSvgSerializer,
 ): ResolvedSvgExportPayload | null {
-  if (!svg.classList.contains('connector-svg')) {
+  if (!isConnectorSvg(svg)) {
     return null
   }
 

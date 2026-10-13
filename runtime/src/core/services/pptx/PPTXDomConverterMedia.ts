@@ -14,7 +14,10 @@ import type {
   PptxPageConvertOptions,
   VisitContext,
 } from '@/core/services/pptx/PPTXDomConverter.types'
-import { MEDIA_SELECTORS } from '@/core/services/pptx/PPTXDomConverter.types'
+import {
+  isMediaViewerElement,
+  resolveRuntimeKitMediaSourceType,
+} from '@/core/services/pptx/PPTXRuntimeKitExportDom'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import { PPTXImageDataResolver } from '@/core/services/pptx/PPTXImageDataResolver'
 import { PPTXDomConverterTransform } from '@/core/services/pptx/PPTXDomConverterTransform'
@@ -70,11 +73,12 @@ export class PPTXDomConverterMedia {
 
   /**
    * 判断元素是否属于媒体或复杂渲染组件。
+   * 说明：Runtime Kit viewer 以显式导出契约识别，历史样式类名保留为兜底。
    * @param element 候选元素
    */
   isMediaElement(element: Element): boolean {
     const tagName = element.tagName.toLowerCase()
-    return element.matches(MEDIA_SELECTORS) ||
+    return isMediaViewerElement(element) ||
       tagName === 'img' ||
       tagName === 'svg' ||
       tagName === 'canvas' ||
@@ -600,16 +604,11 @@ export class PPTXDomConverterMedia {
 
   /**
    * 解析媒体源类型。
+   * 说明：判定顺序收口在 PPTXRuntimeKitExportDom，显式契约优先、类名与标签名兜底。
+   * @param element 候选元素
+   * @returns 报告源类型；无法归类时为 unknown
    */
   private resolveMediaSourceType(element: Element): PptxReportSourceType {
-    if (element.matches('.mermaid-viewer')) return 'mermaid'
-    if (element.matches('.drawio-viewer')) return 'drawio'
-    if (element.matches('.latex-viewer')) return 'formula'
-    if (element.matches('.echarts-viewer')) return 'chart'
-    if (element.matches('.video-viewer') || element.tagName.toLowerCase() === 'video') return 'video'
-    if (element.tagName.toLowerCase() === 'canvas') return 'canvas'
-    if (element.tagName.toLowerCase() === 'svg') return 'svg'
-    if (element.matches('.image-viewer') || element.tagName.toLowerCase() === 'img') return 'image'
-    return 'unknown'
+    return resolveRuntimeKitMediaSourceType(element) ?? 'unknown'
   }
 }

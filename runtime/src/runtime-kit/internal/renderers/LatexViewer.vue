@@ -1,5 +1,6 @@
 <!--
   文件用途：LaTeX 公式渲染器，负责使用 MathJax 将公式源码排版为 SVG HTML。
+  根节点声明 data-runtime-kit-media 导出契约，PPTX 导出据此识别，勿随样式类名一并删除。
 -->
 <template>
   <section
@@ -8,6 +9,8 @@
     :class="fitClass"
     :style="surfaceStyle"
     v-bind="$attrs"
+    data-runtime-kit-media="v1"
+    data-runtime-kit-media-kind="formula"
   >
     <!-- eslint-disable vue/no-v-html -- MathJax 输出由 renderer 生成，组件只渲染受控 SVG HTML。 -->
     <div

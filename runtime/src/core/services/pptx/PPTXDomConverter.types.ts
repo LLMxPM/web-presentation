@@ -137,15 +137,6 @@ export interface PptxRotationStep {
   translateY: number
 }
 
-export const MEDIA_SELECTORS = [
-  '.mermaid-viewer',
-  '.drawio-viewer',
-  '.latex-viewer',
-  '.echarts-viewer',
-  '.video-viewer',
-  '.image-viewer',
-].join(',')
-
 export const INLINE_TEXT_TAGS = new Set([
   'a',
   'b',

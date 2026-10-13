@@ -1,10 +1,11 @@
 <!--
   文件用途：连接线基础组件，在两个页面元素之间绘制 SVG 连线。
+  根 SVG 带 data-runtime-kit-connector 显式导出标记，供 PPTX 导出按紧边界视口定位。
 -->
 
 <template>
   <svg
-ref="svgRef" class="connector-svg" :style="{
+ref="svgRef" class="connector-svg" data-runtime-kit-connector="v1" :style="{
     position: 'absolute',
     top: 0,
     left: 0,

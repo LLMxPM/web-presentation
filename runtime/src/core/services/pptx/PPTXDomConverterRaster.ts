@@ -2,7 +2,7 @@
  * 文件用途：封装 PPTX DOM 转换中需要降级截图的 3D CSS 视觉识别。
  */
 
-import { MEDIA_SELECTORS } from '@/core/services/pptx/PPTXDomConverter.types'
+import { isMediaViewerElement } from '@/core/services/pptx/PPTXRuntimeKitExportDom'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import type { MeasuredElementBox } from '@/core/services/pptx/PPTXDomConverter.types'
 
@@ -404,11 +404,12 @@ export class PPTXDomConverterRaster {
 
   /**
    * 判断当前元素是否属于转换器不会继续深入的媒体节点。
+   * 说明：viewer 识别与 PPTXDomConverterMedia 共用显式导出契约，类名保留为兜底。
    * @param element 候选元素
    */
   private isTerminalMediaElement(element: Element): boolean {
     const tagName = element.tagName.toLowerCase()
-    return element.matches(MEDIA_SELECTORS) || ['img', 'svg', 'canvas', 'video'].includes(tagName)
+    return isMediaViewerElement(element) || ['img', 'svg', 'canvas', 'video'].includes(tagName)
   }
 
   /**

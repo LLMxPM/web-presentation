@@ -1,8 +1,15 @@
 <!--
   文件用途：视频资源基础渲染器，负责统一视频展示、播放参数与渲染区域样式。
+  根节点声明 data-runtime-kit-media 导出契约，PPTX 导出据此识别，勿随样式类名一并删除。
 -->
 <template>
-  <section class="video-viewer" :style="surfaceStyle" v-bind="$attrs">
+  <section
+    class="video-viewer"
+    :style="surfaceStyle"
+    v-bind="$attrs"
+    data-runtime-kit-media="v1"
+    data-runtime-kit-media-kind="video"
+  >
     <video
       v-if="src"
       class="video-viewer__media"
