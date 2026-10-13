@@ -58,6 +58,17 @@ export interface PptxTablePrimitiveIR {
 }
 
 /**
+ * 原生图表图元。
+ */
+export interface PptxChartPrimitiveIR {
+  kind: 'chart'
+  id?: string
+  chartType: string
+  data: Array<{ name: string; labels: string[]; values: number[] }>
+  options?: Record<string, unknown>
+}
+
+/**
  * 幻灯片可序列化图元联合类型。
  */
 export type PptxSlidePrimitiveIR =
@@ -65,6 +76,7 @@ export type PptxSlidePrimitiveIR =
   | PptxShapePrimitiveIR
   | PptxImagePrimitiveIR
   | PptxTablePrimitiveIR
+  | PptxChartPrimitiveIR
 
 /**
  * 单页 PPTX 导出的完整中间表示。
@@ -84,6 +96,8 @@ export interface PptxSlideIR {
   primitives: PptxSlidePrimitiveIR[]
   /** 需要在 OOXML 阶段修补的原生线性渐变指令 */
   gradientFills: PptxGradientFillInstruction[]
+  /** 需要在 OOXML 阶段修补的组封装指令 */
+  groups?: import('@/core/services/pptx/writer/OoxmlGroupPatcher').PptxGroupInstruction[]
   /** 当前页面的导出诊断报告 */
   report: PptxExportReportPage
 }

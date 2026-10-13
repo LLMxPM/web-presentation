@@ -16,6 +16,7 @@ import type {
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import { PPTXDomConverterTransform } from './PPTXDomConverterTransform'
 import { PPTXDomRichTextParser, type PptxDomRichTextResult } from './PPTXDomRichTextParser'
+import { ListParagraphParser } from './extractors/ListParagraphParser'
 import { ShapeGeometryResolver } from './extractors/ShapeGeometryResolver'
 import { TextWidthGuard } from './extractors/TextWidthGuard'
 
@@ -43,6 +44,7 @@ export interface PptxDomTextExportHost {
  */
 export class PPTXDomConverterText {
   private readonly richTextParser = new PPTXDomRichTextParser()
+  private readonly listParser = new ListParagraphParser()
   private richTextCache = new WeakMap<HTMLElement, PptxDomRichTextResult | null>()
   private readonly transform: PPTXDomConverterTransform
   private readonly shapeGeometry: ShapeGeometryResolver
@@ -154,6 +156,88 @@ export class PPTXDomConverterText {
       borders.forEach(border => this.addBorderSideLine(host, box, border, context, label))
     }
     host.addReportItem('shape', 'editable-shape', true, label, '纯色块、卡片或简单边框转为 PPT shape', context)
+  }
+
+  /**
+   * 判断元素是否为适合整体导出为 PPT 原生列表文本框的根元素。
+   */
+  isNativeListElement(element: HTMLElement): boolean {
+    return this.listParser.isListRootElement(element) && this.listParser.isNativeListCompatible(element)
+  }
+
+  /**
+   * 添加 PPT 原生列表文本框（保留段落编号、bullet 与分级缩进）。
+   */
+  addListElement(host: PptxDomTextExportHost, element: HTMLElement, context: VisitContext): boolean {
+    const rawBox = this.layout.getPptxBox(element, Boolean(context.rotationSteps?.length))
+    if (!rawBox) {
+      return false
+    }
+
+    const style = this.getElementStyle(element)
+    const resolveRunOptions = (el: HTMLElement, st: CSSStyleDeclaration, txt: string) => {
+      return this.buildTextCharacterOptions(el, st, txt, context)
+    }
+
+    const listResult = this.listParser.parseList(element, resolveRunOptions)
+    if (!listResult || listResult.runs.length === 0) {
+      return false
+    }
+
+    const totalScale = (context.rotationSteps || []).reduce((prod, s) => prod * (s.scale ?? 1), 1)
+    const box = this.widthGuard.expandTextBoxToAncestorRemainingWidth(
+      rawBox,
+      element,
+      element,
+      style,
+      listResult.fullText,
+      false,
+      context,
+      node => Boolean(this.layout.normalizeText(node.textContent || '')) || this.shouldAddShape(node),
+    )
+
+    const textMargin = this.widthGuard.resolveTextShapeMargin(element, style)
+    const nativeShadow = this.resolveNativeShadow(element, style, context, totalScale)
+    const spacingOptions = this.resolveLineAndParagraphSpacing(element, style, totalScale)
+    const textOptions = {
+      align: this.layout.resolveTextHorizontalAlign(element, style, context),
+      valign: this.layout.resolveTextVerticalAlign(element, style, listResult.fullText, context),
+      ...spacingOptions,
+    }
+
+    const guardedBox = this.widthGuard.applyTextBoxWidthGuard(
+      host.options.slideWidthIn,
+      element,
+      box,
+      style,
+      listResult.fullText,
+      String(textOptions.align || 'left'),
+      false,
+    )
+
+    const objectMeta = host.buildPptObjectMeta(context, 'list', listResult.fullText)
+    const objectName = typeof objectMeta.objectName === 'string' ? objectMeta.objectName : undefined
+    const extra = objectName ? { primitiveIds: [objectName] } : undefined
+
+    host.options.slide.addText(listResult.runs, {
+      ...this.transform.applyToBox(guardedBox, context),
+      margin: textMargin,
+      ...textOptions,
+      ...(nativeShadow ? { shadow: nativeShadow } : {}),
+      isTextBox: true,
+      ...objectMeta,
+    })
+
+    host.addReportItem(
+      'text',
+      'editable-text',
+      true,
+      listResult.fullText.slice(0, 60),
+      `原生列表包含 ${listResult.itemCount} 项转为 PPT 列表文本框`,
+      context,
+      extra,
+    )
+    return true
   }
 
   /**

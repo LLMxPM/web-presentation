@@ -66,6 +66,9 @@ export function createSlideMock() {
     addTable: vi.fn((rows?: unknown[], options?: Record<string, unknown>) => {
       events.push({ kind: 'table', rows, options })
     }),
+    addChart: vi.fn((type: string, data: unknown[], options?: Record<string, unknown>) => {
+      events.push({ kind: 'chart', type, data, options })
+    }),
     background: undefined as Record<string, unknown> | undefined,
   }
 }

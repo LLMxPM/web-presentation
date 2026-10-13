@@ -10,6 +10,8 @@
     v-bind="$attrs"
     data-runtime-kit-media="v1"
     data-runtime-kit-media-kind="chart"
+    :data-runtime-kit-chart="chartContract ? 'v1' : undefined"
+    :data-runtime-kit-chart-data="chartContract ? JSON.stringify(chartContract) : undefined"
   >
     <div
       ref="chartContainer"
@@ -30,6 +32,7 @@ import * as echarts from 'echarts'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createRafResizeObserver } from '@/core/utils/resize-observer'
 import { useViewerSurfaceStyle, type ViewerSurfaceProps } from '@runtime-kit/internal/utils/viewer-style'
+import { extractNormalizedChartData } from '@/core/services/pptx/extractors/EchartsDataExtractor'
 
 type EchartsRenderer = 'canvas' | 'svg'
 type EchartsOptionRecord = Record<string, unknown>
@@ -69,6 +72,16 @@ let chart: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
 const stateVisible = computed(() => loading.value || Boolean(error.value) || empty.value)
+
+const chartContract = computed(() => {
+  try {
+    const opt = resolveOption()
+    if (!opt) return null
+    return extractNormalizedChartData(opt)
+  } catch {
+    return null
+  }
+})
 
 /**
  * 将 unknown 错误统一转为可展示文案。

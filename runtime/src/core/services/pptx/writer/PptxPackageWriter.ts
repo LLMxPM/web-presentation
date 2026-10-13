@@ -8,6 +8,7 @@ import type {
   PptxShapeTypes,
 } from '@/core/services/pptx/PPTXDomConverter.types'
 import { patchGradientFills } from '@/core/services/pptx/writer/OoxmlGradientPatcher'
+import { patchGroups, type PptxGroupInstruction } from '@/core/services/pptx/writer/OoxmlGroupPatcher'
 
 const PPTX_LAYOUT_NAME = 'RUNTIME_PPTX_LAYOUT'
 
@@ -99,26 +100,33 @@ export class PptxPackageWriter {
   async generatePresentationBytes(
     pptx: PptxGenJS,
     gradientFills: PptxGradientFillInstruction[] = [],
+    groupInstructions: PptxGroupInstruction[] = [],
   ): Promise<Uint8Array> {
-    const rawPptx = await pptx.write({ outputType: 'uint8array', compression: true }) as Uint8Array
-    if (gradientFills.length === 0) {
-      return rawPptx
+    const rawPptx = (await pptx.write({ outputType: 'uint8array', compression: true })) as Uint8Array
+    let patched = rawPptx
+    if (gradientFills.length > 0) {
+      patched = patchGradientFills(patched, gradientFills)
     }
-    return patchGradientFills(rawPptx, gradientFills)
+    if (groupInstructions.length > 0) {
+      patched = patchGroups(patched, groupInstructions)
+    }
+    return patched
   }
 
   /**
-   * 写出 PPTX 文件并触发下载；若存在线性渐变指令则先修补 OOXML。
+   * 写出 PPTX 文件并触发下载；若存在线性渐变或组合指令则先修补 OOXML。
    * @param pptx PptxGenJS 实例
    * @param filename 导出文件名
    * @param gradientFills 渐变填充指令列表
+   * @param groupInstructions 组合图元指令列表
    */
   async writePresentationFile(
     pptx: PptxGenJS,
     filename: string,
-    gradientFills: PptxGradientFillInstruction[],
+    gradientFills: PptxGradientFillInstruction[] = [],
+    groupInstructions: PptxGroupInstruction[] = [],
   ): Promise<void> {
-    const data = await this.generatePresentationBytes(pptx, gradientFills)
+    const data = await this.generatePresentationBytes(pptx, gradientFills, groupInstructions)
     this.savePptxBlob(filename, data)
   }
 

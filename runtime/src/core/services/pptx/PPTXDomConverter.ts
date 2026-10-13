@@ -26,6 +26,7 @@ import type {
   PptxPageConvertOptions,
   VisitContext,
 } from '@/core/services/pptx/PPTXDomConverter.types'
+import type { PptxGroupInstruction } from '@/core/services/pptx/writer/OoxmlGroupPatcher'
 import {
   appendPptxReportItem,
   createEmptyPptxReportPage,
@@ -73,6 +74,7 @@ export class PPTXDomConverter {
   private reportPage!: PptxExportReportPage
   private groupSequence = 0
   private gradientSequence = 0
+  private readonly pageGroups = new Map<string, PptxGroupInstruction>()
 
   /**
    * 从页面 DOM 提取纯数据中间表示（PptxSlideIR），不依赖 PptxGenJS 实例。
@@ -97,6 +99,7 @@ export class PPTXDomConverter {
     )
     this.groupSequence = 0
     this.gradientSequence = 0
+    this.pageGroups.clear()
 
     this.layout.beginPage(this.options)
     this.layout.setRootBox(this.layout.measureRootBox(options.pageElement))
@@ -130,6 +133,16 @@ export class PPTXDomConverter {
       await this.visitElement(child, rootContext)
     }
 
+    const groups: PptxGroupInstruction[] = []
+    for (const group of this.pageGroups.values()) {
+      if (group.memberObjectNames.length >= 2) {
+        groups.push(group)
+        if (this.options.groupCollector) {
+          this.options.groupCollector(group)
+        }
+      }
+    }
+
     return {
       pageIndex: options.pageIndex,
       pageTitle: options.pageTitle,
@@ -138,6 +151,7 @@ export class PPTXDomConverter {
       background: collector.getBackground(),
       primitives,
       gradientFills,
+      groups,
       report: this.reportPage,
     }
   }
@@ -149,7 +163,7 @@ export class PPTXDomConverter {
    */
   async convertPage(options: PptxPageConvertOptions): Promise<PptxExportReportPage> {
     const slideIR = await this.extractSlideIR(options)
-    projectSlideIRToSlide(slideIR, options.slide, options.gradientFillCollector)
+    projectSlideIRToSlide(slideIR, options.slide, options.gradientFillCollector, options.groupCollector)
     return slideIR.report
   }
 
@@ -207,6 +221,12 @@ export class PPTXDomConverter {
     if (this.media.isMediaElement(element)) {
       await this.media.addMediaElement(this.createMediaExportHost(), element, context)
       return
+    }
+
+    if (isHTMLElement(element) && this.text.isNativeListElement(element)) {
+      if (this.text.addListElement(this.createTextExportHost(), element, context)) {
+        return
+      }
     }
 
     let exportedBackgroundImage = false
@@ -424,6 +444,11 @@ export class PPTXDomConverter {
     }
 
     const objectName = this.normalizeObjectName(`${context.groupId}:${role}:${label}`)
+    const group = this.pageGroups.get(context.groupId)
+    if (group && !group.memberObjectNames.includes(objectName)) {
+      group.memberObjectNames.push(objectName)
+    }
+
     return {
       objectName,
       ...(includeAltText ? { altText: `${context.groupLabel || context.groupId} · ${label}`.slice(0, 240) } : {}),
@@ -455,12 +480,25 @@ export class PPTXDomConverter {
    */
   private createGroupContext(element: HTMLElement, parent: VisitContext): VisitContext {
     const groupId = this.createGroupId(element)
+    const box = this.layout.getPptxBox(element) || { x: 0, y: 0, w: 0, h: 0 }
+    const groupName = this.layout.buildElementLabel(element)
+    this.pageGroups.set(groupId, {
+      pageIndex: this.options.pageIndex,
+      groupId,
+      groupName,
+      x: box.x,
+      y: box.y,
+      w: box.w,
+      h: box.h,
+      memberObjectNames: [],
+    })
+
     return {
       ...parent,
       groupId,
       parentGroupId: parent.groupId,
       groupDepth: parent.groupDepth + 1,
-      groupLabel: this.layout.buildElementLabel(element),
+      groupLabel: groupName,
     }
   }
 

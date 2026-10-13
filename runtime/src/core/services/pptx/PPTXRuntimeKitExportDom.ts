@@ -165,3 +165,62 @@ export function isRuntimeKitConnectorSvg(element: Element): boolean {
 export function isConnectorSvg(element: Element): boolean {
   return isRuntimeKitConnectorSvg(element) || element.classList.contains(LEGACY_CONNECTOR_CLASS)
 }
+
+/** 图表数据导出契约标记属性，取值只承载契约版本（v1）。 */
+export const RUNTIME_KIT_CHART_ATTR = 'data-runtime-kit-chart'
+
+/** 图表归一化数据属性名，承载 JSON 序列化的图表数据。 */
+export const RUNTIME_KIT_CHART_DATA_ATTR = 'data-runtime-kit-chart-data'
+
+export type PptxChartType = 'bar' | 'line' | 'pie' | 'doughnut'
+
+/**
+ * 原生图表导出数据载荷结构。
+ */
+export interface PptxChartDataPayload {
+  version: 'v1'
+  chartType: PptxChartType
+  title?: string
+  categories: string[]
+  series: Array<{
+    name: string
+    values: number[]
+    color?: string
+  }>
+  options?: {
+    showLegend?: boolean
+    showTitle?: boolean
+    showValue?: boolean
+    holeSize?: number
+  }
+}
+
+/**
+ * 从元素中解析图表导出数据载荷；若未声明契约或解析失败返回 null。
+ * @param element 待检查元素
+ */
+export function parseRuntimeKitChartPayload(element: Element): PptxChartDataPayload | null {
+  if (element.getAttribute(RUNTIME_KIT_CHART_ATTR) !== RUNTIME_KIT_EXPORT_DOM_VERSION) {
+    return null
+  }
+  const rawData = element.getAttribute(RUNTIME_KIT_CHART_DATA_ATTR)
+  if (!rawData) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(rawData) as PptxChartDataPayload
+    if (
+      parsed &&
+      parsed.version === 'v1' &&
+      Array.isArray(parsed.categories) &&
+      Array.isArray(parsed.series) &&
+      parsed.series.length > 0
+    ) {
+      return parsed
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+

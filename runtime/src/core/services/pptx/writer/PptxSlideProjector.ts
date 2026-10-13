@@ -75,6 +75,18 @@ export function createIrSlideCollector(primitives: PptxSlidePrimitiveIR[]): {
         options,
       })
     },
+    addChart(chartType, data, options) {
+      const id = typeof options?.objectName === 'string' && options.objectName
+        ? String(options.objectName)
+        : `primitive-${primitives.length + 1}`
+      primitives.push({
+        kind: 'chart',
+        id,
+        chartType,
+        data: data as Array<{ name: string; labels: string[]; values: number[] }>,
+        options,
+      })
+    },
     get background() {
       return background
     },
@@ -105,11 +117,13 @@ export function createIrSlideCollector(primitives: PptxSlidePrimitiveIR[]): {
  * @param slideIR 单页 PPTX 中间表示
  * @param slide 目标 Slide 对象
  * @param gradientFillCollector 可选的外部渐变指令收集器
+ * @param groupCollector 可选的外部组合指令收集器
  */
 export function projectSlideIRToSlide(
   slideIR: PptxSlideIR,
   slide: PptxNotesCapableSlideLike,
   gradientFillCollector?: (instruction: PptxGradientFillInstruction) => void,
+  groupCollector?: (instruction: import('./OoxmlGroupPatcher').PptxGroupInstruction) => void,
 ): void {
   if (slideIR.speakerNotes && typeof slide.addNotes === 'function') {
     slide.addNotes(slideIR.speakerNotes)
@@ -136,12 +150,23 @@ export function projectSlideIRToSlide(
       case 'table':
         slide.addTable(primitive.rows, primitive.options)
         break
+      case 'chart':
+        if (typeof slide.addChart === 'function') {
+          slide.addChart(primitive.chartType, primitive.data, primitive.options)
+        }
+        break
     }
   }
 
   if (gradientFillCollector) {
     for (const instruction of slideIR.gradientFills) {
       gradientFillCollector(instruction)
+    }
+  }
+
+  if (groupCollector && slideIR.groups) {
+    for (const instruction of slideIR.groups) {
+      groupCollector(instruction)
     }
   }
 }

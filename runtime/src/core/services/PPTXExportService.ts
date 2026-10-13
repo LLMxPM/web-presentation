@@ -28,6 +28,7 @@ import {
   PptxPackageWriter,
   type PptxSlideLayout,
 } from '@/core/services/pptx/writer/PptxPackageWriter'
+import type { PptxGroupInstruction } from '@/core/services/pptx/writer/OoxmlGroupPatcher'
 import {
   ExportStatus,
   type ExportProgress,
@@ -125,6 +126,7 @@ export class PPTXExportService {
       const pptx = this.createPresentation()
       const report = createEmptyPptxReport()
       const gradientFills: PptxGradientFillInstruction[] = []
+      const groupInstructions: PptxGroupInstruction[] = []
       const pageTitle = resolveCurrentPageTitle(this.router)
       const pageInfo: PageInfo = {
         route: routePath || '',
@@ -143,6 +145,7 @@ export class PPTXExportService {
           pageInfo,
           1,
           gradientFills,
+          groupInstructions,
           resourceSession,
           rasterScale,
         )
@@ -174,13 +177,13 @@ export class PPTXExportService {
       const packStart = Date.now()
 
       if (typeof this.packageWriter.generatePresentationBytes === 'function') {
-        const bytes = await this.packageWriter.generatePresentationBytes(pptx, gradientFills)
+        const bytes = await this.packageWriter.generatePresentationBytes(pptx, gradientFills, groupInstructions)
         if (this.taskRunner.isTaskCancelled(task.id)) {
           throw new Error('用户取消导出')
         }
         this.packageWriter.savePptxBlob?.(filename, bytes)
       } else {
-        await this.packageWriter.writePresentationFile(pptx, filename, gradientFills)
+        await this.packageWriter.writePresentationFile(pptx, filename, gradientFills, groupInstructions)
       }
       const packDuration = Date.now() - packStart
       const totalDuration = Date.now() - startedAt
@@ -256,6 +259,7 @@ export class PPTXExportService {
       const pptx = this.createPresentation()
       const report = createEmptyPptxReport()
       const gradientFills: PptxGradientFillInstruction[] = []
+      const groupInstructions: PptxGroupInstruction[] = []
       let exportedPages = 0
       const prepDuration = Date.now() - startedAt
       const convStart = Date.now()
@@ -281,6 +285,7 @@ export class PPTXExportService {
               page,
               index + 1,
               gradientFills,
+              groupInstructions,
               resourceSession,
               rasterScale,
             )
@@ -323,13 +328,13 @@ export class PPTXExportService {
       const packStart = Date.now()
 
       if (typeof this.packageWriter.generatePresentationBytes === 'function') {
-        const bytes = await this.packageWriter.generatePresentationBytes(pptx, gradientFills)
+        const bytes = await this.packageWriter.generatePresentationBytes(pptx, gradientFills, groupInstructions)
         if (this.taskRunner.isTaskCancelled(task.id)) {
           throw new Error('用户取消导出')
         }
         this.packageWriter.savePptxBlob?.(filename, bytes)
       } else {
-        await this.packageWriter.writePresentationFile(pptx, filename, gradientFills)
+        await this.packageWriter.writePresentationFile(pptx, filename, gradientFills, groupInstructions)
       }
       const packDuration = Date.now() - packStart
       const totalDuration = Date.now() - startedAt
@@ -418,6 +423,7 @@ export class PPTXExportService {
     page: PageInfo,
     pageIndex: number,
     gradientFills: PptxGradientFillInstruction[],
+    groupInstructions?: PptxGroupInstruction[],
     resourceSession?: PptxResourceSession,
     rasterScale = DEFAULT_RASTER_SCALE,
   ): Promise<PptxExportReportPage> {
@@ -440,6 +446,7 @@ export class PPTXExportService {
       shapeTypes: this.packageWriter.getShapeTypes(pptx),
       captureElementAsPng: element => elementRasterizer.captureElementAsPng(element, { scale: rasterScale }),
       gradientFillCollector: instruction => gradientFills.push(instruction),
+      groupCollector: instruction => groupInstructions?.push(instruction),
       resourceSession,
     })
   }

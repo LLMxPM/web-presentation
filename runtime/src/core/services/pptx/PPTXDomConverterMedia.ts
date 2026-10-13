@@ -16,7 +16,9 @@ import type {
 } from '@/core/services/pptx/PPTXDomConverter.types'
 import {
   isMediaViewerElement,
+  parseRuntimeKitChartPayload,
   resolveRuntimeKitMediaSourceType,
+  type PptxChartDataPayload,
 } from '@/core/services/pptx/PPTXRuntimeKitExportDom'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import { PPTXImageDataResolver } from '@/core/services/pptx/PPTXImageDataResolver'
@@ -114,6 +116,13 @@ export class PPTXDomConverterMedia {
     }
 
     if (sourceType === 'chart') {
+      const chartPayload = parseRuntimeKitChartPayload(element)
+      if (chartPayload && typeof host.options.slide.addChart === 'function') {
+        if (this.addNativeChartBlock(host, element, chartPayload, label, context)) {
+          return
+        }
+      }
+
       const svg = this.findRenderableSvg(element)
       if (svg) {
         if (await this.addUnsupportedSvgScreenshot(host, element, svg, sourceType, context, PPT_UNSAFE_SVG_REASON)) {
@@ -614,4 +623,52 @@ export class PPTXDomConverterMedia {
   private resolveMediaSourceType(element: Element): PptxReportSourceType {
     return resolveRuntimeKitMediaSourceType(element) ?? 'unknown'
   }
+
+  /**
+   * 将具备图表数据契约的元素导出为 PPT 原生可编辑图表。
+   */
+  private addNativeChartBlock(
+    host: PptxDomMediaExportHost,
+    element: Element,
+    payload: PptxChartDataPayload,
+    label: string,
+    context: VisitContext,
+  ): boolean {
+    const box = this.layout.getPptxBox(element as HTMLElement, Boolean(context.rotationSteps?.length))
+    if (!box) {
+      return false
+    }
+
+    const chartData = payload.series.map(s => ({
+      name: s.name,
+      labels: payload.categories,
+      values: s.values,
+    }))
+
+    const objectMeta = host.buildPptObjectMeta(context, 'chart', label)
+    const objectName = typeof objectMeta.objectName === 'string' ? objectMeta.objectName : undefined
+    const extra = objectName ? { primitiveIds: [objectName] } : undefined
+
+    const chartOptions: Record<string, unknown> = {
+      ...this.transform.applyToBox(box, context),
+      showLegend: payload.options?.showLegend ?? true,
+      showTitle: payload.options?.showTitle ?? Boolean(payload.title),
+      title: payload.title,
+      ...(payload.options?.holeSize ? { holeSize: payload.options.holeSize } : {}),
+      ...objectMeta,
+    }
+
+    host.options.slide.addChart!(payload.chartType, chartData, chartOptions)
+    host.addReportItem(
+      'chart',
+      'editable-shape',
+      true,
+      label,
+      `图表转为 PPT 原生可编辑图表（${payload.chartType}）`,
+      context,
+      extra,
+    )
+    return true
+  }
 }
+
