@@ -55,7 +55,12 @@ export class PptxPackageWriter {
    * @param layout 幻灯片物理尺寸
    * @returns PptxGenJS 实例
    */
-  createPresentation(title = 'Runtime 导出', layout?: PptxSlideLayout): PptxGenJS {
+  createPresentation(
+    title = 'Runtime 导出',
+    layout?: PptxSlideLayout,
+    theme?: import('@/core/services/pptx/theme/PptxThemeResolver').PptxPresentationTheme,
+    masterProps?: Record<string, unknown>,
+  ): PptxGenJS {
     const pptx = new PptxGenJS()
     const resolvedLayout = layout ?? this.resolveSlideLayout()
 
@@ -70,8 +75,12 @@ export class PptxPackageWriter {
     pptx.subject = 'Runtime editable PPTX export'
     pptx.title = title
     pptx.theme = {
-      headFontFace: 'Microsoft YaHei',
-      bodyFontFace: 'Microsoft YaHei',
+      headFontFace: theme?.headFontFace || 'Microsoft YaHei',
+      bodyFontFace: theme?.bodyFontFace || 'Microsoft YaHei',
+    }
+
+    if (masterProps && typeof pptx.defineSlideMaster === 'function') {
+      pptx.defineSlideMaster(masterProps as unknown as Parameters<typeof pptx.defineSlideMaster>[0])
     }
 
     return pptx

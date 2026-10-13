@@ -30,6 +30,11 @@ import {
 } from '@/core/services/pptx/writer/PptxPackageWriter'
 import type { PptxGroupInstruction } from '@/core/services/pptx/writer/OoxmlGroupPatcher'
 import {
+  PptxThemeResolver,
+  type PptxPresentationTheme,
+} from '@/core/services/pptx/theme/PptxThemeResolver'
+import { PptxMasterSlideStrategy } from '@/core/services/pptx/theme/PptxMasterSlideStrategy'
+import {
   ExportStatus,
   type ExportProgress,
   type ExportTask,
@@ -58,6 +63,8 @@ export class PPTXExportService {
   private router: Router | null = null
   private readonly converter = new PPTXDomConverter()
   private readonly packageWriter = new PptxPackageWriter()
+  private readonly themeResolver = new PptxThemeResolver()
+  private readonly masterStrategy = new PptxMasterSlideStrategy()
   private readonly taskRunner = new ExportTaskRunner({
     taskIdPrefix: 'pptx-export',
     busyErrorMessage: '已有导出任务正在进行中',
@@ -123,7 +130,8 @@ export class PPTXExportService {
 
       const prepDuration = Date.now() - startedAt
       const convStart = Date.now()
-      const pptx = this.createPresentation()
+      const theme = this.themeResolver.resolveTheme(pageElement)
+      const pptx = this.createPresentation(theme)
       const report = createEmptyPptxReport()
       const gradientFills: PptxGradientFillInstruction[] = []
       const groupInstructions: PptxGroupInstruction[] = []
@@ -256,7 +264,8 @@ export class PPTXExportService {
       }
 
       task.totalPages = pages.length
-      const pptx = this.createPresentation()
+      const theme = this.themeResolver.resolveTheme(null)
+      const pptx = this.createPresentation(theme)
       const report = createEmptyPptxReport()
       const gradientFills: PptxGradientFillInstruction[] = []
       const groupInstructions: PptxGroupInstruction[] = []
@@ -404,9 +413,12 @@ export class PPTXExportService {
   /**
    * 创建 PPTX 文件对象（委托给 PptxPackageWriter）。
    */
-  private createPresentation(): PptxGenJS {
+  private createPresentation(
+    theme?: PptxPresentationTheme,
+    masterProps?: Record<string, unknown>,
+  ): PptxGenJS {
     const title = pickExportTitle(runtimeAppConfig.value.app.title) ?? 'Runtime 导出'
-    return this.packageWriter.createPresentation(title, this.resolveSlideLayout())
+    return this.packageWriter.createPresentation(title, this.resolveSlideLayout(), theme, masterProps)
   }
 
   /**
