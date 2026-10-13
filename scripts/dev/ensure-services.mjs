@@ -14,7 +14,7 @@ import { spawnPersistentBackground, sleep, runCommandSync } from '../testing/pro
 import { resolveServiceUrls } from '../testing/service-env.mjs'
 import { buildE2eBackendEnv, E2E_DATABASE_MARKER } from '../testing/e2e-database-env.mjs'
 import { buildE2eRenderEnv } from '../testing/e2e-render-env.mjs'
-import { assertE2eRuntimeReady, buildE2eRuntimeEnv } from '../testing/e2e-runtime-env.mjs'
+import { assertE2eRuntimeReady, buildE2eRuntimeEnv, runtimeProbeUrl, RUNTIME_HEALTH_PATH } from '../testing/e2e-runtime-env.mjs'
 
 const urls = resolveServiceUrls()
 const SERVICE_LOG_DIR = path.join(process.cwd(), 'test-results', 'e2e', 'services')
@@ -57,7 +57,7 @@ async function main() {
   })
   await ensureServiceReady({
     label: 'runtime',
-    url: `${urls.runtime}/__runtime_healthz`,
+    url: runtimeProbeUrl(urls.runtime, RUNTIME_HEALTH_PATH),
     shouldStart: shouldStartRuntime,
     start: () =>
       spawnPersistentBackground('pnpm', ['--dir', 'runtime', 'dev', '--host', '127.0.0.1', '--port', new URL(urls.runtime).port || '7373'], {
