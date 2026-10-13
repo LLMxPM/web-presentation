@@ -274,9 +274,17 @@ export class PPTXDomConverter {
       return
     }
 
+    const childOpacity = isHTMLElement(element)
+      ? (elementContext.inheritedOpacity ?? 1) * this.layout.parseOpacity(getComputedStyle(element).opacity)
+      : (elementContext.inheritedOpacity ?? 1)
+    const childElementContext: VisitContext = {
+      ...elementContext,
+      inheritedOpacity: childOpacity,
+    }
+
     for (const childNode of Array.from(element.childNodes)) {
       if (childNode instanceof Element) {
-        await this.visitElement(childNode, elementContext)
+        await this.visitElement(childNode, childElementContext)
         continue
       }
       if (isHTMLElement(element) && childNode instanceof Text) {
@@ -472,7 +480,7 @@ export class PPTXDomConverter {
    * @param parent 父级上下文
    */
   private createTextInheritanceContext(element: HTMLElement, parent: VisitContext): VisitContext {
-    const style = window.getComputedStyle(element)
+    const style = getComputedStyle(element)
     const ownHorizontalAlign = this.layout.resolveOwnInheritableTextHorizontalAlign(element, style)
     const ownVerticalAlign = this.layout.resolveOwnTextVerticalAlign(element, style)
 

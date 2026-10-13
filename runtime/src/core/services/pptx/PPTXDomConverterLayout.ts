@@ -87,9 +87,17 @@ export class PPTXDomConverterLayout {
   }
 
   /**
-   * 计算元素在 slide 中的位置（单位 inch）。
+   * 解析元素 box-shadow 为 PPT 原生外阴影或复杂阴影标记。
    */
-  getPptxBox(element: Element, allowOverflow = false): ElementBox | null {
+  parseBoxShadow(value: string, element: HTMLElement) {
+    return this.cssParser.parseBoxShadow(value, element, px => this.cssPxToPt(px))
+  }
+
+  /**
+   * 计算元素在 slide 中的位置（单位 inch）。
+   * 保留真实负坐标与几何，避免将部分溢出的图形机械归零。
+   */
+  getPptxBox(element: Element, _allowOverflow = false): ElementBox | null {
     const rect = this.measureElementPixels(element)
     if (rect.width <= 0 || rect.height <= 0) {
       return null
@@ -98,17 +106,18 @@ export class PPTXDomConverterLayout {
     const x = (rect.left - this.rootBox.left) * this.inchPerPxX()
     const y = (rect.top - this.rootBox.top) * this.inchPerPxY()
     return {
-      x: this.roundInch(allowOverflow ? x : Math.max(0, x)),
-      y: this.roundInch(allowOverflow ? y : Math.max(0, y)),
-      w: this.roundInch(Math.max(0.01, Math.min(rect.width, this.rootBox.width) * this.inchPerPxX())),
-      h: this.roundInch(Math.max(0.01, Math.min(rect.height, this.rootBox.height) * this.inchPerPxY())),
+      x: this.roundInch(x),
+      y: this.roundInch(y),
+      w: this.roundInch(Math.max(0.01, rect.width * this.inchPerPxX())),
+      h: this.roundInch(Math.max(0.01, rect.height * this.inchPerPxY())),
     }
   }
 
   /**
    * 计算直属文本节点在 slide 中的位置（单位 inch）。
+   * 保留真实负坐标与几何。
    */
-  getPptxTextNodeBox(textNode: Text, allowOverflow = false): ElementBox | null {
+  getPptxTextNodeBox(textNode: Text, _allowOverflow = false): ElementBox | null {
     const rect = this.measureTextNodePixels(textNode)
     if (!rect || rect.width <= 0 || rect.height <= 0) {
       return null
@@ -117,10 +126,10 @@ export class PPTXDomConverterLayout {
     const x = (rect.left - this.rootBox.left) * this.inchPerPxX()
     const y = (rect.top - this.rootBox.top) * this.inchPerPxY()
     return {
-      x: this.roundInch(allowOverflow ? x : Math.max(0, x)),
-      y: this.roundInch(allowOverflow ? y : Math.max(0, y)),
-      w: this.roundInch(Math.max(0.01, Math.min(rect.width, this.rootBox.width) * this.inchPerPxX())),
-      h: this.roundInch(Math.max(0.01, Math.min(rect.height, this.rootBox.height) * this.inchPerPxY())),
+      x: this.roundInch(x),
+      y: this.roundInch(y),
+      w: this.roundInch(Math.max(0.01, rect.width * this.inchPerPxX())),
+      h: this.roundInch(Math.max(0.01, rect.height * this.inchPerPxY())),
     }
   }
 

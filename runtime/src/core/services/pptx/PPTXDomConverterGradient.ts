@@ -67,8 +67,9 @@ export class PPTXDomConverterGradient {
    * 将可解析的 CSS linear-gradient 导出为单个 PPT 原生渐变形状。
    */
   addLinearGradientElement(host: PptxDomGradientExportHost, element: HTMLElement, context: VisitContext): boolean {
-    const style = window.getComputedStyle(element)
-    const gradient = this.parseLinearGradient(style.backgroundImage, element)
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element) ?? window.getComputedStyle(element)
+    const rawImage = this.resolveGradientImageValue(element)
+    const gradient = this.parseLinearGradient(rawImage, element)
     if (!gradient) {
       return false
     }
@@ -81,7 +82,7 @@ export class PPTXDomConverterGradient {
     }
 
     const shapeGeometry = this.shapeGeometry.resolveShapeGeometry(host.options.shapeTypes, element, style, box)
-    const elementOpacity = this.layout.parseOpacity(style.opacity)
+    const elementOpacity = (context.inheritedOpacity ?? 1) * this.layout.parseOpacity(style.opacity)
     const borders = this.layout.getBorderInfos(element, style).map(border => ({
       ...border,
       color: this.shapeGeometry.applyOpacity(border.color, elementOpacity) || border.color,
@@ -104,6 +105,7 @@ export class PPTXDomConverterGradient {
       pageIndex: host.options.pageIndex,
       objectName,
       direction: gradient.direction,
+      angle: gradient.angle,
       stops: gradient.stops,
     } satisfies PptxGradientFillInstruction)
 
@@ -127,6 +129,7 @@ export class PPTXDomConverterGradient {
     }
 
     let direction: LinearGradientDirection = 'bottom'
+    let angle: number | undefined
     let stopParts = parts
     const firstStop = this.parseLinearGradientStop(parts[0], element)
     if (!firstStop) {
@@ -134,7 +137,8 @@ export class PPTXDomConverterGradient {
       if (!parsedDirection) {
         return null
       }
-      direction = parsedDirection
+      direction = parsedDirection.direction
+      angle = parsedDirection.angle
       stopParts = parts.slice(1)
     }
 
@@ -147,6 +151,7 @@ export class PPTXDomConverterGradient {
 
     return {
       direction,
+      angle,
       stops: this.normalizeLinearGradientStops(stops),
     }
   }
@@ -181,29 +186,71 @@ export class PPTXDomConverterGradient {
   }
 
   /**
-   * 解析 linear-gradient 方向。
+   * 解析 linear-gradient 方向与角度。
+   * 支持 to [side/corner]、deg、rad、turn 格式。
    * @param value 方向片段
    */
-  private parseLinearGradientDirection(value: string): LinearGradientDirection | '' {
+  private parseLinearGradientDirection(value: string): { direction: LinearGradientDirection; angle?: number } | null {
     const normalized = value.trim().toLowerCase()
+
     if (normalized.startsWith('to ')) {
-      const direction = normalized.slice(3).trim()
-      if (['right', 'left', 'bottom', 'top'].includes(direction)) {
-        return direction as LinearGradientDirection
+      const target = normalized.slice(3).trim().replace(/\s+/g, ' ')
+      switch (target) {
+        case 'right':
+          return { direction: 'right', angle: 90 }
+        case 'left':
+          return { direction: 'left', angle: 270 }
+        case 'bottom':
+          return { direction: 'bottom', angle: 180 }
+        case 'top':
+          return { direction: 'top', angle: 0 }
+        case 'bottom right':
+        case 'right bottom':
+          return { direction: 'bottom', angle: 135 }
+        case 'bottom left':
+        case 'left bottom':
+          return { direction: 'bottom', angle: 225 }
+        case 'right top':
+        case 'top right':
+          return { direction: 'top', angle: 45 }
+        case 'left top':
+        case 'top left':
+          return { direction: 'top', angle: 315 }
+        default:
+          return null
       }
-      return ''
     }
 
-    if (!normalized.endsWith('deg')) {
-      return ''
+    let degrees: number | null = null
+    if (normalized.endsWith('deg')) {
+      degrees = Number.parseFloat(normalized.slice(0, -3))
+    } else if (normalized.endsWith('rad')) {
+      const rad = Number.parseFloat(normalized.slice(0, -3))
+      if (Number.isFinite(rad)) {
+        degrees = rad * (180 / Math.PI)
+      }
+    } else if (normalized.endsWith('turn')) {
+      const turn = Number.parseFloat(normalized.slice(0, -4))
+      if (Number.isFinite(turn)) {
+        degrees = turn * 360
+      }
     }
 
-    const angle = ((Number.parseFloat(normalized) % 360) + 360) % 360
-    if (Math.abs(angle - 90) <= 1) return 'right'
-    if (Math.abs(angle - 270) <= 1) return 'left'
-    if (Math.abs(angle - 180) <= 1) return 'bottom'
-    if (angle <= 1 || Math.abs(angle - 360) <= 1) return 'top'
-    return ''
+    if (degrees === null || !Number.isFinite(degrees)) {
+      return null
+    }
+
+    const normalizedAngle = ((degrees % 360) + 360) % 360
+    let direction: LinearGradientDirection = 'top'
+    if (normalizedAngle >= 45 && normalizedAngle < 135) {
+      direction = 'right'
+    } else if (normalizedAngle >= 135 && normalizedAngle < 225) {
+      direction = 'bottom'
+    } else if (normalizedAngle >= 225 && normalizedAngle < 315) {
+      direction = 'left'
+    }
+
+    return { direction, angle: normalizedAngle }
   }
 
   /**
@@ -311,5 +358,21 @@ export class PPTXDomConverterGradient {
         position,
       }
     })
+  }
+
+  /**
+   * 提取元素的线性渐变值，优先使用计算样式，回退内联属性。
+   */
+  private resolveGradientImageValue(element: HTMLElement): string {
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element) ?? window.getComputedStyle(element)
+    if (style.backgroundImage && style.backgroundImage !== 'none' && style.backgroundImage.includes('gradient')) {
+      return style.backgroundImage
+    }
+    const inlineStyle = element.getAttribute('style') || ''
+    const match = /(?:background-image|background):\s*([^;]*linear-gradient\([^;]+\))/i.exec(inlineStyle)
+    if (match) {
+      return match[1].trim()
+    }
+    return style.backgroundImage || ''
   }
 }

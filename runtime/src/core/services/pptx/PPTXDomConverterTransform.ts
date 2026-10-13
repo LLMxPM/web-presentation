@@ -1,5 +1,5 @@
 /**
- * 文件用途：识别并准备可原生映射的 CSS 2D 旋转，在导出期间冻结动画并恢复 DOM 样式。
+ * 文件用途：识别并准备可原生映射的 CSS 2D 旋转与正值等比缩放，在导出期间冻结动画并恢复 DOM 样式。
  */
 
 import type { ElementBox, PptxRotationStep, VisitContext } from './PPTXDomConverter.types'
@@ -10,6 +10,7 @@ const ROTATION_EPSILON_DEGREES = 0.01
 
 interface ParsedRigidTransform {
   angle: number
+  scale: number
   translateX: number
   translateY: number
 }
@@ -26,18 +27,21 @@ interface InlinePropertySnapshot {
 }
 
 /**
- * DOM 2D transform 到 PPT 原生旋转的适配器。
+ * DOM 2D transform 到 PPT 原生旋转与等比缩放的适配器。
  */
 export class PPTXDomConverterTransform {
   constructor(private readonly layout: PPTXDomConverterLayout) {}
 
   /**
    * 冻结当前元素动画并准备静态 transform。
-   * 支持纯位移和保持单位缩放的 2D 旋转；其余 transform 交给截图兜底。
+   * 支持纯位移、正值等比缩放和保持单位缩放的 2D 旋转；其余 transform 交给截图兜底。
    */
   prepare(element: HTMLElement, context: VisitContext): PreparedDomTransform {
     const snapshots = new Map<string, InlinePropertySnapshot>()
-    const initialStyle = window.getComputedStyle(element)
+    const getStyle = (el: HTMLElement): CSSStyleDeclaration =>
+      el.ownerDocument.defaultView?.getComputedStyle(el) ?? window.getComputedStyle(el)
+
+    const initialStyle = getStyle(element)
     const hasAnimation = String(initialStyle.animationName || '').trim() !== '' && initialStyle.animationName !== 'none'
     const elementAnimations = typeof element.getAnimations === 'function' ? element.getAnimations() : null
     const shouldDisableAnimation = hasAnimation && (
@@ -54,7 +58,7 @@ export class PPTXDomConverterTransform {
       this.overrideInlineProperty(element, snapshots, 'transition', 'none')
     }
 
-    const staticStyle = window.getComputedStyle(element)
+    const staticStyle = getStyle(element)
     const transformValue = String(staticStyle.transform || '').trim()
     const restore = (): void => this.restoreInlineProperties(element, snapshots)
     if (!transformValue || transformValue === 'none' || this.isPureTranslate(transformValue)) {
@@ -71,6 +75,7 @@ export class PPTXDomConverterTransform {
     const origin = this.parseTransformOrigin(staticStyle.transformOrigin, box.width, box.height)
     const step: PptxRotationStep = {
       angle: parsed.angle,
+      scale: parsed.scale,
       originX: this.layout.roundInch((box.left - this.layout.rootLeft() + origin.x) * this.layout.inchPerPxX()),
       originY: this.layout.roundInch((box.top - this.layout.rootTop() + origin.y) * this.layout.inchPerPxY()),
       translateX: this.layout.roundInch(parsed.translateX * this.layout.inchPerPxX()),
@@ -88,7 +93,7 @@ export class PPTXDomConverterTransform {
   }
 
   /**
-   * 将未旋转 PPT 盒模型映射到所有祖先旋转后的中心位置，并返回 PPT rotate 参数。
+   * 将未旋转与缩放 PPT 盒模型映射到所有祖先变换后的中心位置与尺寸，并返回 PPT rotate 参数。
    */
   applyToBox(box: ElementBox, context: VisitContext): ElementBox & { rotate?: number } {
     const steps = context.rotationSteps || []
@@ -96,22 +101,27 @@ export class PPTXDomConverterTransform {
       return box
     }
 
+    const totalScale = steps.reduce((prod, step) => prod * (step.scale ?? 1), 1)
+    const scaledW = this.layout.roundInch(box.w * totalScale)
+    const scaledH = this.layout.roundInch(box.h * totalScale)
+
     let centerX = box.x + box.w / 2
     let centerY = box.y + box.h / 2
     for (const step of [...steps].reverse()) {
-      const radians = step.angle * Math.PI / 180
-      const dx = centerX - step.originX
-      const dy = centerY - step.originY
+      const scale = step.scale ?? 1
+      const radians = (step.angle * Math.PI) / 180
+      const dx = (centerX - step.originX) * scale
+      const dy = (centerY - step.originY) * scale
       centerX = step.originX + (Math.cos(radians) * dx) - (Math.sin(radians) * dy) + step.translateX
       centerY = step.originY + (Math.sin(radians) * dx) + (Math.cos(radians) * dy) + step.translateY
     }
 
     const angle = steps.reduce((sum, step) => sum + step.angle, 0)
     return {
-      x: this.layout.roundInch(centerX - box.w / 2),
-      y: this.layout.roundInch(centerY - box.h / 2),
-      w: box.w,
-      h: box.h,
+      x: this.layout.roundInch(centerX - scaledW / 2),
+      y: this.layout.roundInch(centerY - scaledH / 2),
+      w: scaledW,
+      h: scaledH,
       ...(Math.abs(angle) >= ROTATION_EPSILON_DEGREES ? { rotate: this.normalizeAngle(angle) } : {}),
     }
   }
@@ -146,7 +156,7 @@ export class PPTXDomConverterTransform {
   }
 
   /**
-   * 解析单位缩放、无倾斜的二维矩阵或单一 rotate 声明。
+   * 解析正值等比缩放、无倾斜的二维矩阵或 rotate/scale 声明组合。
    */
   private parseRigidTransform(value: string): ParsedRigidTransform | null {
     const matrix = /^matrix\(([^)]+)\)$/i.exec(value)
@@ -161,36 +171,85 @@ export class PPTXDomConverterTransform {
       const dot = (a * c) + (b * d)
       const determinant = (a * d) - (b * c)
       if (
-        !this.nearlyEqual(scaleX, 1) ||
-        !this.nearlyEqual(scaleY, 1) ||
+        scaleX <= 0.001 ||
+        scaleY <= 0.001 ||
+        !this.nearlyEqual(scaleX, scaleY) ||
         Math.abs(dot) > MATRIX_EPSILON ||
         determinant <= 0 ||
-        !this.nearlyEqual(a, d) ||
-        !this.nearlyEqual(b, -c)
+        !this.nearlyEqual(a / scaleX, d / scaleY) ||
+        !this.nearlyEqual(b / scaleX, -c / scaleY)
       ) {
         return null
       }
       return {
-        angle: Math.atan2(b, a) * 180 / Math.PI,
+        angle: (Math.atan2(b, a) * 180) / Math.PI,
+        scale: scaleX,
         translateX,
         translateY,
       }
     }
 
-    const rotate = /^rotate(?:z)?\(\s*(-?[\d.]+)(deg|rad|turn)?\s*\)$/i.exec(value)
-    if (!rotate) {
+    const functions = Array.from(value.matchAll(/([a-zA-Z0-9-]+)\(([^)]*)\)/g))
+    if (functions.length === 0) {
       return null
     }
-    const numeric = Number.parseFloat(rotate[1])
-    const unit = (rotate[2] || 'deg').toLowerCase()
-    const angle = unit === 'rad' ? numeric * 180 / Math.PI : unit === 'turn' ? numeric * 360 : numeric
-    return Number.isFinite(angle) ? { angle, translateX: 0, translateY: 0 } : null
+
+    let totalAngle = 0
+    let totalScale = 1
+    let tx = 0
+    let ty = 0
+
+    for (const match of functions) {
+      const name = match[1].toLowerCase()
+      const args = match[2].trim()
+
+      if (['translate', 'translate3d', 'translatex', 'translatey'].includes(name)) {
+        continue
+      }
+
+      if (name === 'rotate' || name === 'rotatez') {
+        const rotate = /^(-?[\d.]+)(deg|rad|turn)?$/i.exec(args)
+        if (!rotate) {
+          return null
+        }
+        const numeric = Number.parseFloat(rotate[1])
+        const unit = (rotate[2] || 'deg').toLowerCase()
+        const angle = unit === 'rad' ? (numeric * 180) / Math.PI : unit === 'turn' ? numeric * 360 : numeric
+        if (!Number.isFinite(angle)) {
+          return null
+        }
+        totalAngle += angle
+        continue
+      }
+
+      if (name === 'scale') {
+        const parts = args.split(/[,\s]+/).map(item => Number.parseFloat(item)).filter(Number.isFinite)
+        if (parts.length === 1 && parts[0] > 0.001) {
+          totalScale *= parts[0]
+          continue
+        }
+        if (parts.length >= 2 && parts[0] > 0.001 && this.nearlyEqual(parts[0], parts[1])) {
+          totalScale *= parts[0]
+          continue
+        }
+        return null
+      }
+
+      return null
+    }
+
+    return {
+      angle: totalAngle,
+      scale: totalScale,
+      translateX: tx,
+      translateY: ty,
+    }
   }
 
   /**
    * 解析 transform-origin，计算样式通常会给出 px，仍兼容百分比和关键字。
    */
-  private parseTransformOrigin(value: string, width: number, height: number): { x: number, y: number } {
+  private parseTransformOrigin(value: string, width: number, height: number): { x: number; y: number } {
     const parts = String(value || '').trim().split(/\s+/)
     return {
       x: this.parseOriginPart(parts[0] || '50%', width),
@@ -202,7 +261,7 @@ export class PPTXDomConverterTransform {
   private parseOriginPart(value: string, size: number): number {
     const normalized = value.toLowerCase()
     if (normalized.endsWith('%')) {
-      return size * Number.parseFloat(normalized) / 100
+      return (size * Number.parseFloat(normalized)) / 100
     }
     if (normalized === 'center') {
       return size / 2
@@ -238,8 +297,7 @@ export class PPTXDomConverterTransform {
     snapshots.forEach((snapshot, property) => {
       if (snapshot.value) {
         element.style.setProperty(property, snapshot.value, snapshot.priority)
-      }
-      else {
+      } else {
         element.style.removeProperty(property)
       }
     })

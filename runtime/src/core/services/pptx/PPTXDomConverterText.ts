@@ -1,5 +1,5 @@
 /**
- * 文件用途：封装 PPTX DOM 转换里的文本、文本形状和简单图形导出逻辑。
+ * 文件用途：封装 PPTX DOM 转换里的文本、文本形状和简单图形导出逻辑（支持祖先透明度、单层外阴影、行距与等比缩放换算）。
  */
 
 import type {
@@ -66,14 +66,15 @@ export class PPTXDomConverterText {
    * @param element 候选元素
    */
   shouldAddShape(element: HTMLElement): boolean {
-    const style = window.getComputedStyle(element)
+    const style = this.getElementStyle(element)
     const box = this.layout.measureElementPixels(element)
     if (box.width <= 0 || box.height <= 0) {
       return false
     }
 
     return Boolean(this.layout.parseCssColor(this.layout.resolveBackgroundColorValue(element, style), element)) ||
-      this.layout.getBorderInfos(element, style).length > 0
+      this.layout.getBorderInfos(element, style).length > 0 ||
+      this.hasNativeShadow(element, style)
   }
 
   /**
@@ -85,17 +86,21 @@ export class PPTXDomConverterText {
       return
     }
 
-    const style = window.getComputedStyle(element)
-    const elementOpacity = this.layout.parseOpacity(style.opacity)
+    const style = this.getElementStyle(element)
+    const effectiveOpacity = (context.inheritedOpacity ?? 1) * this.layout.parseOpacity(style.opacity)
+    const totalScale = (context.rotationSteps || []).reduce((prod, s) => prod * (s.scale ?? 1), 1)
+
     const fillColor = this.shapeGeometry.applyOpacity(
       this.layout.parseCssColor(this.layout.resolveBackgroundColorValue(element, style), element),
-      elementOpacity,
+      effectiveOpacity,
     )
     const borders = this.layout.getBorderInfos(element, style).map(border => ({
       ...border,
-      color: this.shapeGeometry.applyOpacity(border.color, elementOpacity) || border.color,
+      widthPt: border.widthPt * totalScale,
+      color: this.shapeGeometry.applyOpacity(border.color, effectiveOpacity) || border.color,
     }))
     const uniformBorder = this.shapeGeometry.getUniformBorderInfo(borders)
+    const nativeShadow = this.resolveNativeShadow(element, style, context, totalScale)
     const label = this.layout.buildElementLabel(element)
     const isHorizontalLine = box.h <= 0.04 && box.w > box.h
     const isVerticalLine = box.w <= 0.04 && box.h > box.w
@@ -113,6 +118,7 @@ export class PPTXDomConverterText {
           ...this.transform.applyToBox({ x: lineX, y: lineY, w: lineWidth, h: lineHeight }, context),
           fill: this.shapeGeometry.buildFillOptions(fillColor),
           line: this.shapeGeometry.buildTransparentLineOptions(),
+          ...(nativeShadow ? { shadow: nativeShadow } : {}),
           ...host.buildPptObjectMeta(context, 'shape', label),
         })
         host.addReportItem('shape', 'editable-shape', true, label, '背景色分隔线转为 PPT rect', context)
@@ -124,7 +130,7 @@ export class PPTXDomConverterText {
         line: this.shapeGeometry.buildLineOptions(
           uniformBorder,
           fillColor,
-          Math.max(0.75, this.layout.measuredPxToPt(isHorizontalLine ? box.h / this.layout.inchPerPxY() : box.w / this.layout.inchPerPxX())),
+          Math.max(0.75, this.layout.measuredPxToPt(isHorizontalLine ? box.h / this.layout.inchPerPxY() : box.w / this.layout.inchPerPxX()) * totalScale),
         ),
         ...host.buildPptObjectMeta(context, 'line', label),
       })
@@ -139,6 +145,7 @@ export class PPTXDomConverterText {
         ...this.transform.applyToBox(box, context),
         fill: this.shapeGeometry.buildFillOptions(fillColor),
         line: uniformBorder ? this.shapeGeometry.buildLineOptions(uniformBorder) : this.shapeGeometry.buildTransparentLineOptions(),
+        ...(nativeShadow ? { shadow: nativeShadow } : {}),
         ...shapeGeometry.options,
         ...host.buildPptObjectMeta(context, 'shape', label),
       },
@@ -162,7 +169,7 @@ export class PPTXDomConverterText {
       return true
     }
 
-    const style = window.getComputedStyle(element)
+    const style = this.getElementStyle(element)
     if (this.layout.resolveLayoutDisplay(element, style)) {
       return false
     }
@@ -177,14 +184,15 @@ export class PPTXDomConverterText {
    * 添加 PPT 可编辑文本框。
    */
   addTextElement(host: PptxDomTextExportHost, element: HTMLElement, context: VisitContext): void {
-    const richText = this.resolveRichText(element)
+    const richText = this.resolveRichText(element, context)
     const text = richText?.text || this.layout.normalizeText(element.textContent || '')
     const rawBox = this.layout.getPptxBox(element, Boolean(context.rotationSteps?.length))
     if (!text || !rawBox) {
       return
     }
 
-    const style = window.getComputedStyle(element)
+    const style = this.getElementStyle(element)
+    const totalScale = (context.rotationSteps || []).reduce((prod, s) => prod * (s.scale ?? 1), 1)
     const box = this.widthGuard.expandTextBoxToAncestorRemainingWidth(
       rawBox,
       element,
@@ -199,6 +207,7 @@ export class PPTXDomConverterText {
     const shouldPreservePaddedBox = this.layout.shouldPreservePaddedInlineTextBox(element, style)
     const textMargin = this.widthGuard.resolveTextShapeMargin(element, style)
     const textOptions = this.buildTextRunOptions(element, style, text, context, shouldPreservePaddedBox)
+    const nativeShadow = this.resolveNativeShadow(element, style, context, totalScale)
     const guardedBox = shouldPreservePaddedBox
       ? box
       : this.widthGuard.applyTextBoxWidthGuard(
@@ -215,6 +224,7 @@ export class PPTXDomConverterText {
       ...this.transform.applyToBox(guardedBox, context),
       margin: textMargin,
       ...textOptions,
+      ...(nativeShadow ? { shadow: nativeShadow } : {}),
       isTextBox: true,
       ...host.buildPptObjectMeta(context, 'text', text),
     })
@@ -225,14 +235,15 @@ export class PPTXDomConverterText {
    * 添加带文本的 PPT 形状，让背景、边框、圆角和内边距由 PPT 自动绘制。
    */
   addTextShapeElement(host: PptxDomTextExportHost, element: HTMLElement, context: VisitContext): boolean {
-    const richText = this.resolveRichText(element)
+    const richText = this.resolveRichText(element, context)
     const text = richText?.text || this.layout.normalizeText(element.textContent || '')
     const box = this.layout.getPptxBox(element, Boolean(context.rotationSteps?.length))
     if (!text || !box) {
       return false
     }
 
-    const style = window.getComputedStyle(element)
+    const style = this.getElementStyle(element)
+    const totalScale = (context.rotationSteps || []).reduce((prod, s) => prod * (s.scale ?? 1), 1)
     const shapeVisual = this.shapeGeometry.buildTextShapeVisualOptions(host.options.shapeTypes, element, style, box)
     if (!shapeVisual) {
       return false
@@ -241,6 +252,7 @@ export class PPTXDomConverterText {
     const sourceType = this.resolveTextSourceType(element, style, text)
     const label = this.layout.buildElementLabel(element)
     const textOptions = this.buildTextRunOptions(element, style, text, context, true)
+    const nativeShadow = this.resolveNativeShadow(element, style, context, totalScale)
     const shouldPreservePaddedBox = this.layout.shouldPreservePaddedInlineTextBox(element, style)
     const guardedBox = this.widthGuard.resolveTextShapeExportBox(
       host.options.slideWidthIn,
@@ -262,6 +274,7 @@ export class PPTXDomConverterText {
       ...shapeVisual.options,
       margin: this.widthGuard.resolveTextShapeMargin(element, style),
       ...textOptions,
+      ...(nativeShadow ? { shadow: nativeShadow } : {}),
       ...objectMeta,
     })
     host.addReportItem(sourceType, 'editable-text', true, text.slice(0, 60), '带背景文本转为 PPT text shape', context, extra)
@@ -284,7 +297,7 @@ export class PPTXDomConverterText {
       return false
     }
 
-    const style = window.getComputedStyle(parentElement)
+    const style = this.getElementStyle(parentElement)
     const sourceType = this.resolveTextSourceType(parentElement, style, text)
     const textOptions = {
       ...this.buildTextRunOptions(parentElement, style, text, context, false),
@@ -319,7 +332,7 @@ export class PPTXDomConverterText {
       return null
     }
 
-    const style = window.getComputedStyle(parentElement)
+    const style = this.getElementStyle(parentElement)
     const text = this.layout.normalizeText(textNode.textContent || '')
     return this.widthGuard.expandTextBoxToAncestorRemainingWidth(
       textBox,
@@ -333,7 +346,7 @@ export class PPTXDomConverterText {
     )
   }
 
-  private resolveRichText(element: HTMLElement): PptxDomRichTextResult | null {
+  private resolveRichText(element: HTMLElement, context?: VisitContext): PptxDomRichTextResult | null {
     if (element.children.length === 0) {
       return null
     }
@@ -343,7 +356,7 @@ export class PPTXDomConverterText {
 
     const result = this.richTextParser.parse(
       element,
-      (owner, style, text) => this.buildTextCharacterOptions(owner, style, text),
+      (owner, style, text) => this.buildTextCharacterOptions(owner, style, text, context),
     )
     this.richTextCache.set(element, result)
     return result
@@ -404,14 +417,18 @@ export class PPTXDomConverterText {
     context: VisitContext,
     isTextShape = false,
   ): Record<string, unknown> {
+    const totalScale = (context.rotationSteps || []).reduce((prod, s) => prod * (s.scale ?? 1), 1)
+    const spacingOptions = this.resolveLineAndParagraphSpacing(element, style, totalScale)
+
     return {
-      ...this.buildTextCharacterOptions(element, style, text),
+      ...this.buildTextCharacterOptions(element, style, text, context),
       fit: 'none',
       breakLine: false,
       align: isTextShape
         ? this.layout.resolveTextShapeHorizontalAlign(element, style, context)
         : this.layout.resolveTextHorizontalAlign(element, style, context),
       valign: this.layout.resolveTextVerticalAlign(element, style, text, context),
+      ...spacingOptions,
     }
   }
 
@@ -419,11 +436,16 @@ export class PPTXDomConverterText {
     element: HTMLElement,
     style: CSSStyleDeclaration,
     text: string,
+    context?: VisitContext,
   ): Record<string, unknown> {
-    const fontSize = Math.max(1, this.layout.cssPxToPt(this.layout.parseCssPixel(style.fontSize) || 16))
+    const totalScale = (context?.rotationSteps || []).reduce((prod, s) => prod * (s.scale ?? 1), 1)
+    const baseFontSize = Math.max(1, this.layout.cssPxToPt(this.layout.parseCssPixel(style.fontSize) || 16))
+    const fontSize = Math.round(baseFontSize * totalScale * 10) / 10
+
+    const effectiveOpacity = (context?.inheritedOpacity ?? 1) * this.layout.parseOpacity(style.opacity)
     const color = this.shapeGeometry.applyOpacity(
       this.layout.parseCssColor(style.color, element),
-      this.layout.parseOpacity(style.opacity),
+      effectiveOpacity,
     )
     const letterSpacing = this.layout.parseCssPixel(style.letterSpacing)
     const hyperlink = this.resolveTextHyperlink(element)
@@ -431,6 +453,7 @@ export class PPTXDomConverterText {
     const isSuperscript = !isSubscript && Boolean(element.closest('sup'))
     const hasUnderline = style.textDecorationLine.includes('underline') || Boolean(element.closest('u'))
     const hasStrike = style.textDecorationLine.includes('line-through') || Boolean(element.closest('s, del'))
+
     return {
       fontFace: this.layout.normalizeFontFace(style.fontFamily, text),
       fontSize,
@@ -442,9 +465,97 @@ export class PPTXDomConverterText {
       strike: hasStrike,
       subscript: isSubscript,
       superscript: isSuperscript,
-      ...(letterSpacing !== 0 ? { charSpacing: this.layout.cssPxToPt(letterSpacing) } : {}),
+      ...(letterSpacing !== 0 ? { charSpacing: this.layout.cssPxToPt(letterSpacing) * totalScale } : {}),
       ...(hyperlink ? { hyperlink } : {}),
     }
+  }
+
+  /**
+   * 解析行高与段落间距（固定行高 lineSpacing 与倍数行高 lineSpacingMultiple）。
+   */
+  private resolveLineAndParagraphSpacing(
+    element: HTMLElement,
+    style: CSSStyleDeclaration,
+    scale = 1,
+  ): Record<string, unknown> {
+    const options: Record<string, unknown> = {}
+    const rawLineHeight = String(element.style.lineHeight || style.lineHeight || '').trim()
+
+    if (rawLineHeight && rawLineHeight !== 'normal') {
+      if (/^[\d.]+%$/.test(rawLineHeight)) {
+        const multiple = Number.parseFloat(rawLineHeight) / 100
+        if (Number.isFinite(multiple) && multiple > 0) {
+          options.lineSpacingMultiple = Math.round(multiple * 100) / 100
+        }
+      } else if (/^[\d.]+$/.test(rawLineHeight)) {
+        const multiple = Number.parseFloat(rawLineHeight)
+        if (Number.isFinite(multiple) && multiple > 0) {
+          options.lineSpacingMultiple = Math.round(multiple * 100) / 100
+        }
+      } else {
+        const px = this.layout.parseCssPixel(rawLineHeight)
+        if (px > 0) {
+          const pt = this.layout.cssPxToPt(px) * scale
+          options.lineSpacing = Math.round(pt * 10) / 10
+        }
+      }
+    }
+
+    const tagName = element.tagName.toLowerCase()
+    if (/^(p|h[1-6]|li|blockquote)$/.test(tagName)) {
+      const marginTopPx = this.layout.parseCssPixel(style.marginTop)
+      const marginBottomPx = this.layout.parseCssPixel(style.marginBottom)
+      if (marginTopPx > 0) {
+        options.paraSpaceBefore = Math.round(this.layout.cssPxToPt(marginTopPx) * scale * 10) / 10
+      }
+      if (marginBottomPx > 0) {
+        options.paraSpaceAfter = Math.round(this.layout.cssPxToPt(marginBottomPx) * scale * 10) / 10
+      }
+    }
+
+    return options
+  }
+
+  /**
+   * 解析单层无 spread 外阴影为 PPT 原生 shadow 参数。
+   */
+  private resolveNativeShadow(
+    element: HTMLElement,
+    style: CSSStyleDeclaration,
+    context: VisitContext,
+    scale = 1,
+  ): Record<string, unknown> | null {
+    const rawShadow = style.boxShadow
+    if (!rawShadow || rawShadow === 'none') {
+      return null
+    }
+
+    const result = this.layout.parseBoxShadow(rawShadow, element)
+    if (result.kind !== 'native') {
+      return null
+    }
+
+    const { shadow } = result
+    const effectiveOpacity = Math.max(0, Math.min(1, shadow.opacity * (context.inheritedOpacity ?? 1)))
+    return {
+      type: shadow.type,
+      color: shadow.color,
+      opacity: Math.round(effectiveOpacity * 100) / 100,
+      blur: Math.round(shadow.blurPt * scale * 10) / 10,
+      offset: Math.round(shadow.offsetPt * scale * 10) / 10,
+      angle: shadow.angleDegrees,
+    }
+  }
+
+  /**
+   * 判断元素是否声明了可原生映射的单层外阴影。
+   */
+  private hasNativeShadow(element: HTMLElement, style: CSSStyleDeclaration): boolean {
+    const rawShadow = style.boxShadow
+    if (!rawShadow || rawShadow === 'none') {
+      return false
+    }
+    return this.layout.parseBoxShadow(rawShadow, element).kind === 'native'
   }
 
   private resolveTextHyperlink(element: HTMLElement): { url: string } | null {
@@ -470,5 +581,9 @@ export class PPTXDomConverterText {
       return 'title'
     }
     return 'body'
+  }
+
+  private getElementStyle(element: HTMLElement): CSSStyleDeclaration {
+    return element.ownerDocument.defaultView?.getComputedStyle(element) ?? window.getComputedStyle(element)
   }
 }

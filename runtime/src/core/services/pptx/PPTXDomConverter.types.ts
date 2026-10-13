@@ -105,6 +105,8 @@ export interface LinearGradientStop {
 
 export interface LinearGradientInfo {
   direction: LinearGradientDirection
+  /** 精确角度值（单位：度，0-360），存在时优先于枚举 direction 计算 OOXML 渐变角度 */
+  angle?: number
   stops: LinearGradientStop[]
 }
 
@@ -122,15 +124,19 @@ export interface VisitContext {
   groupLabel?: string
   inheritedTextAlign?: string
   inheritedVerticalAlign?: string
-  /** 从外到内排列的纯 2D 旋转步骤，导出对象时按相反顺序应用。 */
+  /** 祖先累计不透明度 (0.0 - 1.0)，子元素计算有效透明度时需乘以该值 */
+  inheritedOpacity?: number
+  /** 从外到内排列的纯 2D 旋转与等比缩放步骤，导出对象时按相反顺序应用。 */
   rotationSteps?: PptxRotationStep[]
 }
 
 /**
- * 描述一个可映射到 PPT 原生 rotate 的 CSS 2D 刚性变换。
+ * 描述一个可映射到 PPT 原生 rotate 与尺寸缩放的 CSS 2D 刚性与等比变换。
  */
 export interface PptxRotationStep {
   angle: number
+  /** 等比缩放比例，默认为 1 */
+  scale?: number
   originX: number
   originY: number
   translateX: number

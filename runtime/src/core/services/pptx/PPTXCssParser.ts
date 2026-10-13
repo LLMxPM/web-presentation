@@ -2,11 +2,12 @@
  * 文件用途：提供 PPTX 导出所需的 CSS 颜色、边框简写和基础样式数值解析聚合门面。
  */
 
+import { BoxShadowParser, type ParsedBoxShadowResult } from './style/BoxShadowParser'
 import { CssBoxStyleParser, type PptxBorderSide } from './style/CssBoxStyleParser'
 import { CssColorParser, type ParsedColor } from './style/CssColorParser'
 import { parseCssPixelValue } from './style/css-tokenizer'
 
-export type { ParsedColor, PptxBorderSide }
+export type { ParsedBoxShadowResult, ParsedColor, PptxBorderSide }
 
 /**
  * CSS 颜色与边框解析器，委托给独立的 CssColorParser 与 CssBoxStyleParser。
@@ -14,6 +15,14 @@ export type { ParsedColor, PptxBorderSide }
 export class PPTXCssParser {
   private readonly colorParser = new CssColorParser()
   private readonly boxStyleParser = new CssBoxStyleParser(this.colorParser)
+  private readonly boxShadowParser = new BoxShadowParser()
+
+  /**
+   * 解析 CSS box-shadow 属性为 PPT 原生外阴影或复杂阴影标记。
+   */
+  parseBoxShadow(value: string, element: HTMLElement, pxToPt: (px: number) => number): ParsedBoxShadowResult {
+    return this.boxShadowParser.parse(value, element, this.colorParser, pxToPt)
+  }
 
   /**
    * 读取背景色，优先保留声明中的高级颜色函数。

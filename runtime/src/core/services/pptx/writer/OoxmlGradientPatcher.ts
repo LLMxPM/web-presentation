@@ -75,7 +75,10 @@ export function buildGradientFillXml(instruction: PptxGradientFillInstruction): 
       return `<a:gs pos="${position}"><a:srgbClr val="${stop.color.hex}"><a:alpha val="${alpha}"/></a:srgbClr></a:gs>`
     })
     .join('')
-  const angle = gradientDirectionToPptAngle(instruction.direction) * 60000
+  const pptDegrees = typeof instruction.angle === 'number'
+    ? ((instruction.angle - 90) % 360 + 360) % 360
+    : gradientDirectionToPptAngle(instruction.direction)
+  const angle = Math.round(pptDegrees * 60000)
   return `<a:gradFill rotWithShape="1"><a:gsLst>${stopsXml}</a:gsLst><a:lin ang="${angle}" scaled="0"/></a:gradFill>`
 }
 
