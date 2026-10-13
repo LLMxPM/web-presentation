@@ -412,7 +412,7 @@ describe('runtime saas preview 服务令牌可恢复', () => {
    * 换票、manifest、模块源码各自返回稳定响应。
    */
   function mockBackendFetch(options: { exchangeStatus?: number; exchangeBody?: unknown } = {}) {
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    fetchMock.mockImplementation(async (url: string) => {
       const target = String(url)
       if (target.includes('/internal/runtime/preview-service-token')) {
         if (options.exchangeStatus && options.exchangeStatus >= 400) {

@@ -524,8 +524,7 @@ describe('runtime-build-queue-worker', () => {
     await vi.advanceTimersByTimeAsync(3_000)
     stop()
 
-    expect(observedAbort).toBeInstanceOf(Error)
-    expect((observedAbort as Error).name).toBe('RuntimeTaskAbortedError')
+    expect(observedAbort).toBeInstanceOf(RuntimeTaskAbortedError)
     const completeCalls = fetchMock.mock.calls.filter(call => String(call[0]).includes('/complete')) as FetchCall[]
     expect(completeCalls.length).toBe(1)
     const body = completeBodyOf(completeCalls[0]) as { success: boolean; error_message: string }
