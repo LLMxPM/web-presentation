@@ -64,8 +64,8 @@ const mockPdfRuntime = vi.hoisted(() => ({
 }))
 
 const mockDisposeCapture = vi.hoisted(() => vi.fn())
-vi.mock('./RuntimeCaptureContext', () => ({
-  createRuntimeCaptureContext: () => ({
+vi.mock('@/core/services/export/OffscreenPageStage', () => ({
+  createOffscreenPageStage: () => ({
     capture: (path: string, options: unknown) => {
       mockCaptureRoute(path)
       return mockCaptureCurrentPage(options)

@@ -2,7 +2,7 @@
  * 文件用途：定义可编辑 PPTX 导出相关的独立类型，避免污染 PDF 导出类型定义。
  */
 
-import type { ExportMode } from '@/core/types/pdf-export'
+import type { ExportMode } from '@/core/types/export-common'
 
 export type PptxExportMethod = 'pptx-editable'
 

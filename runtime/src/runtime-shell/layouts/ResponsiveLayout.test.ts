@@ -219,12 +219,12 @@ vi.mock('@runtime-kit/internal/components/viewport/ScaledCanvasViewport.vue', as
   }
 })
 
-vi.mock('@/runtime-shell/pdf/PDFExportDialog.vue', async () => {
+vi.mock('@/runtime-shell/export/ExportDialog.vue', async () => {
   const { defineComponent, h } = await import('vue')
 
   return {
     default: defineComponent({
-      name: 'PDFExportDialogStub',
+      name: 'ExportDialogStub',
       props: {
         visible: {
           type: Boolean,
@@ -232,7 +232,7 @@ vi.mock('@/runtime-shell/pdf/PDFExportDialog.vue', async () => {
         },
       },
       setup() {
-        return () => h('div', { 'data-testid': 'pdf-export-dialog-stub' })
+        return () => h('div', { 'data-testid': 'export-dialog-stub' })
       },
     }),
   }

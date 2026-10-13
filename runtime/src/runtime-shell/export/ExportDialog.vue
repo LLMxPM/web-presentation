@@ -6,12 +6,12 @@
   <div
 v-if="isVisible"
     class="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
-    role="dialog" aria-modal="true" aria-labelledby="pdf-export-title" @click.self="closeDialog">
+    role="dialog" aria-modal="true" aria-labelledby="export-dialog-title" @click.self="closeDialog">
     <div
       class="flex max-h-[min(760px,calc(100vh-48px))] w-full max-w-[700px] flex-col overflow-hidden rounded-[10px] bg-white shadow-2xl ring-1 ring-slate-900/10">
       <header class="flex items-center justify-between border-b border-slate-200 px-7 py-5">
         <div class="min-w-0">
-          <h3 id="pdf-export-title" class="text-xl font-semibold tracking-tight text-slate-950">
+          <h3 id="export-dialog-title" class="text-xl font-semibold tracking-tight text-slate-950">
             导出
           </h3>
           <p class="mt-1 text-sm text-slate-500">
@@ -251,9 +251,9 @@ import {
 import { pdfExportService } from '@/core/services/PDFExportService'
 import { browserPrintService } from '@/core/services/BrowserPrintService'
 import { pptxExportService } from '@/core/services/PPTXExportService'
+import type { ExportProgress } from '@/core/types/export-common'
 import type {
   ExportMethod,
-  ExportProgress,
   ExportResult,
 } from '@/core/types/pdf-export'
 import type {

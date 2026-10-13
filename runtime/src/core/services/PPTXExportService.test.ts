@@ -1,18 +1,42 @@
 // @vitest-environment jsdom
 
 /**
- * 文件用途：验证可编辑 PPTX 导出服务对演讲者备注等 slide 级信息的写入逻辑。
+ * 文件用途：验证可编辑 PPTX 导出服务对演讲者备注、离屏 1:1 舞台采集（方案 A 与全页导出）及局部快速光栅化的协同逻辑。
  */
 
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
-import type { PageInfo } from '@/core/types/pdf-export'
+import type { Router } from 'vue-router'
+import type { PageInfo } from '@/core/types/export-common'
 import type { PptxExportReportPage } from '@/core/types/pptx-export'
 import { PPTXExportService } from './PPTXExportService'
 import type { PptxGradientFillInstruction } from './pptx/PPTXDomConverter'
 
+const mockPreparePage = vi.hoisted(() => vi.fn())
+const mockDisposeStage = vi.hoisted(() => vi.fn())
+const mockCleanupPage = vi.hoisted(() => vi.fn())
+const mockCollectAllExportPages = vi.hoisted(() => vi.fn())
+
+vi.mock('@/core/services/export/OffscreenPageStage', () => ({
+  createOffscreenPageStage: () => ({
+    preparePage: (route: string) => mockPreparePage(route),
+    capture: vi.fn(),
+    dispose: mockDisposeStage,
+  }),
+}))
+
+vi.mock('@/core/utils/export-pages', () => ({
+  collectAllExportPages: (router: unknown) => mockCollectAllExportPages(router),
+}))
+
 interface PptxExportServicePrivate {
   converter: {
     convertPage: Mock
+  }
+  packageWriter: {
+    createPresentation: () => PptxMock
+    getShapeTypes: (pptx: PptxMock) => PptxMock['ShapeType']
+    resolveSlideLayout: () => { widthIn: number; heightIn: number }
+    writePresentationFile: Mock
   }
   addPageToPresentation: (
     pptx: PptxMock,
@@ -33,6 +57,7 @@ interface PptxExportServicePrivate {
 afterEach(() => {
   Reflect.deleteProperty(document, 'getAnimations')
   document.body.innerHTML = ''
+  vi.clearAllMocks()
 })
 
 interface PptxMock {
@@ -55,7 +80,7 @@ describe('PPTXExportService', () => {
     }))
   })
 
-  it('添加页面时应将演讲者备注写入 PPTX slide', async () => {
+  it('添加页面时应把裁剪后的演讲者备注交给转换器写入 slide', async () => {
     const service = createServiceWithConverter()
     const slide = createSlideMock()
     const pptx = createPptxMock(slide)
@@ -70,16 +95,16 @@ describe('PPTXExportService', () => {
       },
     }, 1, [])
 
-    expect(slide.addNotes).toHaveBeenCalledWith('开场先说明项目背景')
     expect(service.converter.convertPage).toHaveBeenCalledWith(expect.objectContaining({
       slide,
       pageElement,
       pageTitle: '开场',
       pageRoute: '/intro',
+      speakerNotes: '开场先说明项目背景',
     }))
   })
 
-  it('空白演讲者备注不应写入 PPTX slide', async () => {
+  it('空白演讲者备注应归一化为 null，不写入 PPTX slide', async () => {
     const service = createServiceWithConverter()
     const slide = createSlideMock()
     const pptx = createPptxMock(slide)
@@ -94,6 +119,9 @@ describe('PPTXExportService', () => {
     }, 1, [])
 
     expect(slide.addNotes).not.toHaveBeenCalled()
+    expect(service.converter.convertPage).toHaveBeenCalledWith(expect.objectContaining({
+      speakerNotes: null,
+    }))
   })
 
   it('页面就绪检查应等待有限次入场动画结束', async () => {
@@ -118,6 +146,81 @@ describe('PPTXExportService', () => {
 
     expect(animationFinished).toBe(true)
   })
+
+  it('单页导出在平台项目路由（meta.runtimeProject）下应通过离屏 1:1 舞台采集（方案 A）', async () => {
+    const offscreenElement = document.createElement('div')
+    mockPreparePage.mockResolvedValue({
+      element: offscreenElement,
+      cleanup: mockCleanupPage,
+    })
+
+    const service = createServiceWithConverterAndWriter()
+    const routerPush = vi.fn()
+    ;(service as unknown as PPTXExportService).setRouter({
+      currentRoute: {
+        value: {
+          fullPath: '/slide-1?theme=dark',
+          path: '/slide-1',
+          meta: {
+            runtimeProject: true,
+            title: '第一页',
+          },
+        },
+      },
+      push: routerPush,
+    } as unknown as Router)
+
+    const result = await (service as unknown as PPTXExportService).exportCurrentPage({ mode: 'current' })
+
+    expect(result.success).toBe(true)
+    expect(mockPreparePage).toHaveBeenCalledWith('/slide-1?theme=dark')
+    expect(service.converter.convertPage).toHaveBeenCalledWith(expect.objectContaining({
+      pageElement: offscreenElement,
+      pageRoute: '/slide-1',
+    }))
+    expect(routerPush).not.toHaveBeenCalled()
+    expect(mockCleanupPage).toHaveBeenCalledTimes(1)
+    expect(mockDisposeStage).toHaveBeenCalledTimes(1)
+  })
+
+  it('导出所有页面时应通过离屏舞台逐页准备 DOM，不调用主窗口 router.push', async () => {
+    const page1Element = document.createElement('div')
+    const page2Element = document.createElement('div')
+    mockCollectAllExportPages.mockResolvedValue([
+      { route: '/page-1', title: '页面一', order: 1 },
+      { route: '/page-2', title: '页面二', order: 2 },
+    ])
+    mockPreparePage
+      .mockResolvedValueOnce({ element: page1Element, cleanup: mockCleanupPage })
+      .mockResolvedValueOnce({ element: page2Element, cleanup: mockCleanupPage })
+
+    const service = createServiceWithConverterAndWriter()
+    const routerPush = vi.fn()
+    ;(service as unknown as PPTXExportService).setRouter({
+      currentRoute: {
+        value: {
+          fullPath: '/origin',
+          path: '/origin',
+          meta: { runtimeProject: true },
+        },
+      },
+      push: routerPush,
+    } as unknown as Router)
+
+    const progressUpdates: number[] = []
+    const result = await (service as unknown as PPTXExportService).exportAllPages(
+      { mode: 'all' },
+      progress => progressUpdates.push(progress.current),
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.pageCount).toBe(2)
+    expect(mockPreparePage.mock.calls.map(call => call[0])).toEqual(['/page-1', '/page-2'])
+    expect(progressUpdates).toEqual([1, 2])
+    expect(routerPush).not.toHaveBeenCalled()
+    expect(mockCleanupPage).toHaveBeenCalledTimes(2)
+    expect(mockDisposeStage).toHaveBeenCalledTimes(1)
+  })
 })
 
 /**
@@ -133,6 +236,22 @@ function createServiceWithConverter(): PptxExportServicePrivate {
       pageRoute,
       items: [],
     })),
+  }
+  return service
+}
+
+/**
+ * 创建同时带有转换器与写入器 mock 的 PPTX 导出服务。
+ */
+function createServiceWithConverterAndWriter(): PptxExportServicePrivate {
+  const service = createServiceWithConverter()
+  const slide = createSlideMock()
+  const pptx = createPptxMock(slide)
+  service.packageWriter = {
+    createPresentation: () => pptx,
+    getShapeTypes: item => item.ShapeType,
+    resolveSlideLayout: () => ({ widthIn: 13.333, heightIn: 7.5 }),
+    writePresentationFile: vi.fn(async () => undefined),
   }
   return service
 }

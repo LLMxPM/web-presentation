@@ -4,16 +4,19 @@
 
 import { nextTick } from 'vue'
 import type { Router } from 'vue-router'
-import { appPageConfig } from '@/core/utils/config'
-import { collectAllExportPages } from '@/core/utils/export-pages'
+import { ExportTaskRunner } from '@/core/services/export/ExportTaskRunner'
+import {
+  ExportStatus,
+  type ExportProgress,
+  type ExportTask,
+  type PageInfo,
+} from '@/core/types/export-common'
 import type {
   ExportOptions,
-  ExportProgress,
   ExportResult,
-  ExportTask,
-  PageInfo,
 } from '@/core/types/pdf-export'
-import { ExportStatus } from '@/core/types/pdf-export'
+import { appPageConfig } from '@/core/utils/config'
+import { collectAllExportPages } from '@/core/utils/export-pages'
 
 const PRINT_IFRAME_ID = 'runtime-browser-print-frame'
 const PRINT_READY_DELAY = 100
@@ -25,10 +28,11 @@ const PRINT_READY_DELAY = 100
 export class BrowserPrintService {
   private static instance: BrowserPrintService
   private router: Router | null = null
-  private currentTask: ExportTask | null = null
-  private isPrinting = false
-  private progressCallback: ((progress: ExportProgress) => void) | null = null
   private activeIframe: HTMLIFrameElement | null = null
+  private readonly taskRunner = new ExportTaskRunner({
+    taskIdPrefix: 'browser-print',
+    busyErrorMessage: '已有打印任务正在进行中',
+  })
 
   /**
    * 获取单例实例。
@@ -54,16 +58,9 @@ export class BrowserPrintService {
    * @returns 打印调用结果
    */
   async printCurrentPage(options?: ExportOptions): Promise<ExportResult> {
-    if (this.isPrinting) {
-      throw new Error('已有打印任务正在进行中')
-    }
-
-    const task = this.createTask('current')
-    this.currentTask = task
-    this.isPrinting = true
+    const task = this.taskRunner.beginTask('current', '')
 
     try {
-      this.updateTaskStatus(ExportStatus.IN_PROGRESS)
       const startedAt = Date.now()
       await this.waitForPageReady()
 
@@ -78,7 +75,7 @@ export class BrowserPrintService {
       await this.flushPrintDocument(iframe)
       this.invokePrint(iframe)
 
-      this.updateTaskStatus(ExportStatus.COMPLETED)
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
 
       return {
         success: true,
@@ -90,13 +87,11 @@ export class BrowserPrintService {
         message: '已打开浏览器打印对话框，请选择“保存为 PDF”。',
       }
     } catch (error) {
-      this.updateTaskStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '打印失败')
+      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '打印失败')
       this.cleanupPrintIframe()
       throw error
     } finally {
-      this.isPrinting = false
-      this.currentTask = null
-      this.progressCallback = null
+      this.taskRunner.finish()
     }
   }
 
@@ -110,7 +105,7 @@ export class BrowserPrintService {
     options?: ExportOptions,
     onProgress?: (progress: ExportProgress) => void,
   ): Promise<ExportResult> {
-    if (this.isPrinting) {
+    if (this.taskRunner.isRunning()) {
       throw new Error('已有打印任务正在进行中')
     }
 
@@ -118,14 +113,10 @@ export class BrowserPrintService {
       throw new Error('未设置路由实例，无法打印所有页面')
     }
 
-    const task = this.createTask('all')
     const originalRoute = this.router.currentRoute.value.fullPath
-    this.currentTask = task
-    this.isPrinting = true
-    this.progressCallback = onProgress ?? null
+    const task = this.taskRunner.beginTask('all', '', onProgress)
 
     try {
-      this.updateTaskStatus(ExportStatus.IN_PROGRESS)
       const startedAt = Date.now()
       const pages = await this.getAllPages()
 
@@ -140,7 +131,7 @@ export class BrowserPrintService {
 
       for (let index = 0; index < pages.length; index += 1) {
         const page = pages[index]
-        this.updateProgress(index, pages.length, page)
+        this.taskRunner.reportProgress(index, pages.length, page.title, page.route)
         await this.navigateToPage(page.route)
         await this.waitForPageReady(page.route)
 
@@ -161,7 +152,7 @@ export class BrowserPrintService {
 
       await this.flushPrintDocument(iframe)
       this.invokePrint(iframe)
-      this.updateTaskStatus(ExportStatus.COMPLETED)
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
 
       return {
         success: true,
@@ -173,14 +164,12 @@ export class BrowserPrintService {
         message: '已打开浏览器打印对话框，请选择“保存为 PDF”。',
       }
     } catch (error) {
-      this.updateTaskStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '打印失败')
+      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '打印失败')
       this.cleanupPrintIframe()
       throw error
     } finally {
       await this.restoreRoute(originalRoute)
-      this.isPrinting = false
-      this.currentTask = null
-      this.progressCallback = null
+      this.taskRunner.finish()
     }
   }
 
@@ -188,85 +177,23 @@ export class BrowserPrintService {
    * 取消当前打印任务并清理临时 iframe。
    */
   cancelPrint(): void {
-    if (!this.isPrinting) {
-      return
+    if (this.taskRunner.cancel()) {
+      this.cleanupPrintIframe()
     }
-
-    this.updateTaskStatus(ExportStatus.CANCELLED)
-    this.cleanupPrintIframe()
-    this.isPrinting = false
-    this.currentTask = null
-    this.progressCallback = null
   }
 
   /**
    * 获取当前打印任务。
    */
   getCurrentTask(): ExportTask | null {
-    return this.currentTask
+    return this.taskRunner.getCurrentTask()
   }
 
   /**
    * 检查是否正在打印。
    */
   isCurrentlyPrinting(): boolean {
-    return this.isPrinting
-  }
-
-  /**
-   * 创建打印任务。
-   * @param mode 打印范围
-   */
-  private createTask(mode: 'current' | 'all'): ExportTask {
-    const now = new Date()
-    return {
-      id: `browser-print-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-      mode,
-      status: ExportStatus.PENDING,
-      progress: 0,
-      filename: '',
-      totalPages: mode === 'current' ? 1 : 0,
-      completedPages: 0,
-      createdAt: now,
-      updatedAt: now,
-    }
-  }
-
-  /**
-   * 更新任务状态。
-   * @param status 新状态
-   * @param error 错误信息
-   */
-  private updateTaskStatus(status: ExportStatus, error?: string): void {
-    if (!this.currentTask) {
-      return
-    }
-
-    this.currentTask.status = status
-    this.currentTask.updatedAt = new Date()
-    if (error) {
-      this.currentTask.error = error
-    }
-  }
-
-  /**
-   * 更新打印进度。
-   * @param index 当前页面索引
-   * @param total 总页面数量
-   * @param page 当前页面信息
-   */
-  private updateProgress(index: number, total: number, page: PageInfo): void {
-    if (this.currentTask) {
-      this.currentTask.progress = Math.round((index / total) * 100)
-    }
-
-    this.progressCallback?.({
-      current: index + 1,
-      total,
-      percentage: Math.round((index / total) * 100),
-      currentPageTitle: page.title,
-      currentPageRoute: page.route,
-    })
+    return this.taskRunner.isRunning()
   }
 
   /**

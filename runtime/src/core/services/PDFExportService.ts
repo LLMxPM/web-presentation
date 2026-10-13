@@ -6,30 +6,36 @@
 import jsPDF from 'jspdf'
 import type { Router } from 'vue-router'
 import { pageCaptureService } from './PageCaptureService'
-import { createRuntimeCaptureContext } from './RuntimeCaptureContext'
-import { ExportStatus } from '@/core/types/pdf-export'
-import { appConfig as runtimeAppConfig, appPageConfig } from '@/core/utils/config'
-import { collectAllExportPages } from '@/core/utils/export-pages'
-import { getRuntimePreviewContext, getRuntimePreviewToken } from '@/core/utils/path'
-import { RUNTIME_SNAPDOM_RESOURCE_PROXY_PATH } from '@/core/shared/runtime-preview'
-import { generateFilename } from '../utils/file'
+import {
+  createOffscreenPageStage,
+  type OffscreenPageStage,
+} from '@/core/services/export/OffscreenPageStage'
+import { resolveSnapdomProxyUrl as resolveSharedSnapdomProxyUrl } from '@/core/services/export/ElementRasterizer'
+import { ExportTaskRunner } from '@/core/services/export/ExportTaskRunner'
+import {
+  ExportStatus,
+  type CaptureOptions,
+  type ExportProgress,
+  type ExportTask,
+  type PageInfo,
+} from '@/core/types/export-common'
 import type {
+  ExportConfig,
   ExportOptions,
-  ExportProgress,
-  ExportTask,
   ExportResult,
   PageCapture,
-  ExportConfig,
-  PageInfo,
-  CaptureOptions
 } from '@/core/types/pdf-export'
+import { appPageConfig } from '@/core/utils/config'
+import { collectAllExportPages } from '@/core/utils/export-pages'
 
 export class PDFExportService {
   private static instance: PDFExportService
-  private currentTask: ExportTask | null = null
-  private isExporting = false
   private router: Router | null = null
-  private progressCallback: ((progress: ExportProgress) => void) | null = null
+  private readonly taskRunner = new ExportTaskRunner({
+    taskIdPrefix: 'task',
+    busyErrorMessage: '已有导出任务正在进行中',
+    fileExtension: '.pdf',
+  })
 
   // 默认配置
   private defaultConfig: ExportConfig = {
@@ -83,25 +89,19 @@ export class PDFExportService {
    * @returns Promise<ExportResult>
    */
   async exportCurrentPage(options?: ExportOptions): Promise<ExportResult> {
-    if (this.isExporting) {
-      throw new Error('已有导出任务正在进行中')
-    }
-
-    const task = this.createTask('current', options)
-    this.currentTask = task
-    this.isExporting = true
-    const captureContext = this.router?.currentRoute.value.meta?.runtimeProject ? createRuntimeCaptureContext() : undefined
+    const filename = this.taskRunner.resolveFilename('current', this.router, options?.filename)
+    const task = this.taskRunner.beginTask('current', filename)
+    let offscreenStage: OffscreenPageStage | undefined
 
     try {
-      // 更新任务状态
-      this.updateTaskStatus(ExportStatus.IN_PROGRESS)
-
       // 捕获当前页面
       const currentRoute = this.router?.currentRoute.value
       const routePath = currentRoute?.path
       const routeLocation = currentRoute?.fullPath || routePath
-      const canvas = captureContext && routeLocation
-        ? await captureContext.capture(routeLocation, this.buildCaptureOptions(routePath))
+      const stage = currentRoute?.meta?.runtimeProject ? createOffscreenPageStage() : undefined
+      offscreenStage = stage
+      const canvas = stage && routeLocation
+        ? await stage.capture(routeLocation, this.buildCaptureOptions(routePath))
         : await pageCaptureService.captureCurrentPage(this.buildCaptureOptions(routePath))
 
       // 生成PDF
@@ -109,11 +109,10 @@ export class PDFExportService {
       this.addCanvasToPDF(pdf, canvas, 0)
 
       // 下载文件
-      const filename = task.filename
       pdf.save(filename)
 
       // 更新任务状态
-      this.updateTaskStatus(ExportStatus.COMPLETED)
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
 
       const result: ExportResult = {
         success: true,
@@ -126,12 +125,11 @@ export class PDFExportService {
 
       return result
     } catch (error) {
-      this.updateTaskStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败')
+      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败')
       throw error
     } finally {
-      captureContext?.dispose()
-      this.isExporting = false
-      this.currentTask = null
+      offscreenStage?.dispose()
+      this.taskRunner.finish()
     }
   }
 
@@ -145,7 +143,7 @@ export class PDFExportService {
     options?: ExportOptions,
     onProgress?: (progress: ExportProgress) => void
   ): Promise<ExportResult> {
-    if (this.isExporting) {
+    if (this.taskRunner.isRunning()) {
       throw new Error('已有导出任务正在进行中')
     }
 
@@ -153,15 +151,13 @@ export class PDFExportService {
       throw new Error('未设置路由实例，无法导出所有页面')
     }
 
-    const task = this.createTask('all', options)
-    const captureContext = createRuntimeCaptureContext()
-    this.currentTask = task
-    this.isExporting = true
-    this.progressCallback = onProgress
+    const filename = this.taskRunner.resolveFilename('all', this.router, options?.filename)
+    const task = this.taskRunner.beginTask('all', filename, onProgress)
+    let offscreenStage: OffscreenPageStage | undefined
 
     try {
-      // 更新任务状态
-      this.updateTaskStatus(ExportStatus.IN_PROGRESS)
+      const stage = createOffscreenPageStage()
+      offscreenStage = stage
 
       // 获取所有页面路由
       const pages = await this.getAllPages()
@@ -182,10 +178,10 @@ export class PDFExportService {
 
         try {
           // 更新进度
-          this.updateProgress(i, pages.length, page.title)
+          this.taskRunner.reportProgress(i, pages.length, page.title)
 
           // 在独立窗口中捕获，不导航用户当前的演示窗口。
-          const canvas = await captureContext.capture(page.route, this.buildCaptureOptions(page.route))
+          const canvas = await stage.capture(page.route, this.buildCaptureOptions(page.route))
 
           // 添加到PDF（第一页不需要新建页面）
           if (captures.length > 0) {
@@ -223,11 +219,10 @@ export class PDFExportService {
       }
 
       // 下载文件
-      const filename = task.filename
       pdf.save(filename)
 
       // 更新任务状态
-      this.updateTaskStatus(ExportStatus.COMPLETED)
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
 
       const result: ExportResult = {
         success: true,
@@ -240,13 +235,11 @@ export class PDFExportService {
 
       return result
     } catch (error) {
-      this.updateTaskStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败')
+      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败')
       throw error
     } finally {
-      captureContext.dispose()
-      this.isExporting = false
-      this.currentTask = null
-      this.progressCallback = null
+      offscreenStage?.dispose()
+      this.taskRunner.finish()
     }
   }
 
@@ -254,122 +247,21 @@ export class PDFExportService {
    * 取消导出
    */
   cancelExport(): void {
-    if (this.currentTask && this.isExporting) {
-      this.updateTaskStatus(ExportStatus.CANCELLED)
-      this.isExporting = false
-      this.currentTask = null
-      this.progressCallback = null
-    }
+    this.taskRunner.cancel()
   }
 
   /**
    * 获取当前导出任务
    */
   getCurrentTask(): ExportTask | null {
-    return this.currentTask
+    return this.taskRunner.getCurrentTask()
   }
 
   /**
    * 检查是否正在导出
    */
   isCurrentlyExporting(): boolean {
-    return this.isExporting
-  }
-
-  /**
-   * 创建导出任务
-   * @param mode 导出模式
-   * @param options 导出选项
-   * @returns ExportTask
-   */
-  private createTask(mode: 'current' | 'all', options?: ExportOptions): ExportTask {
-    const now = new Date()
-    return {
-      id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-      mode,
-      status: ExportStatus.PENDING,
-      progress: 0,
-      filename: this.generateExportFilename(mode, options),
-      totalPages: mode === 'current' ? 1 : 0,
-      completedPages: 0,
-      createdAt: now,
-      updatedAt: now
-    }
-  }
-
-  /**
-   * 生成导出文件名。
-   * @param mode 导出范围
-   * @param options 导出选项
-   */
-  private generateExportFilename(mode: 'current' | 'all', options?: ExportOptions): string {
-    return generateFilename(options?.filename, `${this.getDefaultFilenameBase(mode)}-{timestamp}`)
-  }
-
-  /**
-   * 根据导出范围获取默认文件名主体。
-   * @param mode 导出范围
-   */
-  private getDefaultFilenameBase(mode: 'current' | 'all'): string {
-    if (mode === 'all') {
-      return this.pickTitle(runtimeAppConfig.value.app.title) ?? '项目'
-    }
-
-    const routeTitle = this.pickTitle(this.router?.currentRoute.value.meta?.title)
-    const documentTitle = typeof document === 'undefined' ? undefined : this.pickTitle(document.title)
-
-    return routeTitle ?? documentTitle ?? this.pickTitle(runtimeAppConfig.value.app.title) ?? '页面'
-  }
-
-  /**
-   * 规范化标题文本，空字符串不作为有效标题。
-   * @param title 候选标题
-   */
-  private pickTitle(title: unknown): string | undefined {
-    if (typeof title !== 'string') {
-      return undefined
-    }
-
-    const normalizedTitle = title.trim()
-    return normalizedTitle.length > 0 ? normalizedTitle : undefined
-  }
-
-  /**
-   * 更新任务状态
-   * @param status 新状态
-   * @param error 错误信息
-   */
-  private updateTaskStatus(status: ExportStatus, error?: string): void {
-    if (this.currentTask) {
-      this.currentTask.status = status
-      this.currentTask.updatedAt = new Date()
-      if (error) {
-        this.currentTask.error = error
-      }
-    }
-  }
-
-  /**
-   * 更新导出进度
-   * @param current 当前页面索引
-   * @param total 总页面数
-   * @param currentPageTitle 当前页面标题
-   */
-  private updateProgress(current: number, total: number, currentPageTitle: string): void {
-    if (this.currentTask) {
-      const percentage = Math.round((current / total) * 100)
-      this.currentTask.progress = percentage
-
-      if (this.progressCallback) {
-        this.progressCallback({
-          current: current + 1,
-          total,
-          percentage,
-          currentPageTitle,
-          currentPageRoute: ''
-        })
-      }
-    }
+    return this.taskRunner.isRunning()
   }
 
   /**
@@ -492,56 +384,8 @@ export class PDFExportService {
    * 优先使用显式环境变量；SaaS 预览下自动回退到 Runtime 同源代理，避免远端图片缺少 CORS 时截图空白。
    */
   private resolveSnapdomProxyUrl(): string | undefined {
-    const explicitProxyUrl = String(
-      import.meta.env.VITE_SNAPDOM_PROXY_URL
-      || this.defaultConfig.capture.proxyUrl
-      || '',
-    ).trim()
-    if (explicitProxyUrl) {
-      return explicitProxyUrl
-    }
-
-    if (typeof window === 'undefined') {
-      return undefined
-    }
-
-    const previewContext = getRuntimePreviewContext()
-    const previewToken = getRuntimePreviewToken()
-    if (!previewContext?.artifactId || !previewToken) {
-      return undefined
-    }
-
-    const runtimePublicBaseUrl = this.resolveRuntimePublicBaseUrl()
-    const proxyBaseUrl = runtimePublicBaseUrl || window.location.origin
-    const proxyUrl = new URL(
-      RUNTIME_SNAPDOM_RESOURCE_PROXY_PATH.replace(/^\/+/, ''),
-      `${proxyBaseUrl.replace(/\/+$/, '')}/`,
-    )
-    proxyUrl.searchParams.set('artifactId', previewContext.artifactId)
-    proxyUrl.searchParams.set('token', previewToken)
-    proxyUrl.searchParams.set('url', '')
-
-    return proxyUrl.href
+    return resolveSharedSnapdomProxyUrl(this.defaultConfig.capture.proxyUrl)
   }
-
-  /**
-   * 读取预览 HTML 注入的 Runtime 公开基址。
-   * @returns 规范化后的 Runtime 公开基址，缺失或非法时返回空串
-   */
-  private resolveRuntimePublicBaseUrl(): string {
-    const runtimePublicBaseUrl = String(window.__RUNTIME_PUBLIC_BASE_URL__ || '').trim()
-    if (!runtimePublicBaseUrl) {
-      return ''
-    }
-
-    try {
-      return new URL(runtimePublicBaseUrl, window.location.href).href.replace(/\/+$/, '')
-    } catch {
-      return ''
-    }
-  }
-
-
 }
 
 // 导出单例实例

@@ -21,13 +21,36 @@ import type { PptxDomTableExportHost } from '@/core/services/pptx/PPTXDomConvert
 import { PPTXDomConverterText } from '@/core/services/pptx/PPTXDomConverterText'
 import type { PptxDomTextExportHost } from '@/core/services/pptx/PPTXDomConverterText'
 import { PPTXDomConverterTransform } from '@/core/services/pptx/PPTXDomConverterTransform'
-import type { PptxPageConvertOptions, VisitContext } from '@/core/services/pptx/PPTXDomConverter.types'
+import type {
+  PptxGradientFillInstruction,
+  PptxPageConvertOptions,
+  VisitContext,
+} from '@/core/services/pptx/PPTXDomConverter.types'
+import {
+  appendPptxReportItem,
+  createEmptyPptxReportPage,
+} from '@/core/services/pptx/ir/PptxReportBuilder'
+import {
+  DEFAULT_PPTX_SHAPE_TYPES,
+  type PptxSlideExtractOptions,
+  type PptxSlideIR,
+  type PptxSlidePrimitiveIR,
+} from '@/core/services/pptx/ir/PptxSlideIR.types'
+import {
+  createIrSlideCollector,
+  projectSlideIRToSlide,
+} from '@/core/services/pptx/writer/PptxSlideProjector'
 
 export type {
   PptxGradientFillInstruction,
   PptxShapeTypes,
 } from '@/core/services/pptx/PPTXDomConverter.types'
 export type { PptxPageConvertOptions } from '@/core/services/pptx/PPTXDomConverter.types'
+export type {
+  PptxSlideExtractOptions,
+  PptxSlideIR,
+  PptxSlidePrimitiveIR,
+} from '@/core/services/pptx/ir/PptxSlideIR.types'
 
 /**
  * DOM 到 PPTX 的启发式转换器。
@@ -48,22 +71,30 @@ export class PPTXDomConverter {
   private gradientSequence = 0
 
   /**
-   * 转换单个页面。
-   * @param options 页面转换上下文
-   * @returns 当前页导出报告
+   * 从页面 DOM 提取纯数据中间表示（PptxSlideIR），不依赖 PptxGenJS 实例。
+   * @param options 页面提取输入参数
+   * @returns 单页 PptxSlideIR
    */
-  async convertPage(options: PptxPageConvertOptions): Promise<PptxExportReportPage> {
-    this.options = options
-    this.reportPage = {
-      pageIndex: options.pageIndex,
-      pageTitle: options.pageTitle,
-      pageRoute: options.pageRoute,
-      items: [],
+  async extractSlideIR(options: PptxSlideExtractOptions): Promise<PptxSlideIR> {
+    const primitives: PptxSlidePrimitiveIR[] = []
+    const gradientFills: PptxGradientFillInstruction[] = []
+    const collector = createIrSlideCollector(primitives)
+
+    this.options = {
+      ...options,
+      slide: collector.slide,
+      shapeTypes: options.shapeTypes ?? DEFAULT_PPTX_SHAPE_TYPES,
+      gradientFillCollector: instruction => gradientFills.push(instruction),
     }
+    this.reportPage = createEmptyPptxReportPage(
+      options.pageIndex,
+      options.pageTitle,
+      options.pageRoute,
+    )
     this.groupSequence = 0
     this.gradientSequence = 0
 
-    this.layout.beginPage(options)
+    this.layout.beginPage(this.options)
     this.layout.setRootBox(this.layout.measureRootBox(options.pageElement))
 
     this.applySlideBackground(options.pageElement)
@@ -75,7 +106,27 @@ export class PPTXDomConverter {
       await this.visitElement(child, rootContext)
     }
 
-    return this.reportPage
+    return {
+      pageIndex: options.pageIndex,
+      pageTitle: options.pageTitle,
+      pageRoute: options.pageRoute,
+      speakerNotes: options.speakerNotes ?? null,
+      background: collector.getBackground(),
+      primitives,
+      gradientFills,
+      report: this.reportPage,
+    }
+  }
+
+  /**
+   * 转换单个页面并将生成的 PptxSlideIR 投射到目标 slide。
+   * @param options 页面转换上下文
+   * @returns 当前页导出报告
+   */
+  async convertPage(options: PptxPageConvertOptions): Promise<PptxExportReportPage> {
+    const slideIR = await this.extractSlideIR(options)
+    projectSlideIRToSlide(slideIR, options.slide, options.gradientFillCollector)
+    return slideIR.report
   }
 
   /**
@@ -478,22 +529,15 @@ export class PPTXDomConverter {
     reason?: string,
     context?: VisitContext,
   ): PptxExportReportItem {
-    const item: PptxExportReportItem = {
-      pageIndex: this.options.pageIndex,
-      pageTitle: this.options.pageTitle,
-      pageRoute: this.options.pageRoute,
+    return appendPptxReportItem(
+      this.reportPage,
       sourceType,
       result,
       editable,
       label,
       reason,
-      groupId: context?.groupId,
-      parentGroupId: context?.parentGroupId,
-      groupDepth: context?.groupId ? context.groupDepth : undefined,
-      groupLabel: context?.groupLabel,
-    }
-    this.reportPage.items.push(item)
-    return item
+      context,
+    )
   }
 
   /**

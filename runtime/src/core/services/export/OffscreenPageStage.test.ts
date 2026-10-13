@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { resolveRuntimeCaptureRoute } from './RuntimeCaptureContext'
+import { resolveRuntimeCaptureRoute } from './OffscreenPageStage'
 
 describe('resolveRuntimeCaptureRoute', () => {
   it('应保留页面查询参数并覆盖 Runtime 捕获标记', () => {

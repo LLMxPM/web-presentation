@@ -1,17 +1,38 @@
-/** 文件功能：在独立同源 iframe 中捕获项目页面，不改变交互窗口路由或频道。 */
-import { appPageConfig } from '../utils/config'
-import type { CaptureOptions } from '../types/pdf-export'
-import { copyCanvasContents } from '../utils/export-dom'
-import { pageCaptureService } from './PageCaptureService'
+/**
+ * 文件用途：在独立同源 1:1 离屏 iframe 中加载并投影项目页面，供 PPTX DOM 采集与 PDF 整页截图共用，不改变主窗口路由。
+ */
 
-interface RuntimeCaptureRoute {
+import { pageCaptureService } from '@/core/services/PageCaptureService'
+import type { CaptureOptions } from '@/core/types/export-common'
+import { appPageConfig } from '@/core/utils/config'
+import { copyCanvasContents } from '@/core/utils/export-dom'
+
+/**
+ * 规范化后的离屏捕获路由信息。
+ */
+export interface RuntimeCaptureRoute {
   path: string
   hash: string
 }
 
-interface ParentCaptureProjection {
+/**
+ * 已投影到宿主文档的 1:1 离屏页面句柄；调用方使用完毕后必须执行 cleanup()。
+ */
+export interface OffscreenPreparedPage {
   element: HTMLElement
   cleanup: () => void
+}
+
+/**
+ * 离屏页面舞台实例接口，同时支持 DOM 提取（preparePage）与整页光栅化（capture）。
+ */
+export interface OffscreenPageStage {
+  /** 加载目标路由并在宿主文档构建 1:1 投影节点，供 PPTX DOM 转换器测量与提取 */
+  preparePage: (route: string) => Promise<OffscreenPreparedPage>
+  /** 加载目标路由并捕获为整页 HTMLCanvasElement，供 PDF 导出使用 */
+  capture: (route: string, options?: CaptureOptions) => Promise<HTMLCanvasElement>
+  /** 销毁离屏 iframe 并终止内部脚本与媒体资源 */
+  dispose: () => void
 }
 
 /**
@@ -20,7 +41,10 @@ interface ParentCaptureProjection {
  * @param baseHref 当前 Runtime 地址，用于解析相对路径
  * @returns 规范化页面路径和带捕获标记的 hash
  */
-export function resolveRuntimeCaptureRoute(route: string, baseHref = window.location.href): RuntimeCaptureRoute {
+export function resolveRuntimeCaptureRoute(
+  route: string,
+  baseHref = window.location.href,
+): RuntimeCaptureRoute {
   const routeUrl = new URL(route, baseHref)
   const path = routeUrl.pathname || '/'
   const searchParams = new URLSearchParams(routeUrl.search)
@@ -33,18 +57,32 @@ export function resolveRuntimeCaptureRoute(route: string, baseHref = window.loca
   }
 }
 
-/** 创建单任务截图窗口；调用方必须在 finally 中释放。 */
-export function createRuntimeCaptureContext() {
+/**
+ * 创建单任务离屏 1:1 页面渲染舞台；调用方必须在 finally 中调用 dispose() 释放。
+ * @returns OffscreenPageStage 实例
+ */
+export function createOffscreenPageStage(): OffscreenPageStage {
   const frame = document.createElement('iframe')
   frame.title = 'Runtime 导出捕获'
   frame.setAttribute('aria-hidden', 'true')
   frame.inert = true
-  Object.assign(frame.style, { position: 'fixed', left: '-100000px', top: '0', border: '0', width: `${appPageConfig.value.width}px`, height: `${appPageConfig.value.height}px` })
+  Object.assign(frame.style, {
+    position: 'fixed',
+    left: '-100000px',
+    top: '0',
+    border: '0',
+    width: `${appPageConfig.value.width}px`,
+    height: `${appPageConfig.value.height}px`,
+  })
   document.body.appendChild(frame)
   let disposed = false
 
-  /** 重载独立运行时并等待目标页面与启动就绪标记，失败不捕获错误页面。 */
-  async function capture(route: string, options?: CaptureOptions): Promise<HTMLCanvasElement> {
+  /**
+   * 重载独立运行时并等待目标页面、字体就绪，再投影到宿主文档。
+   * @param route 目标页面路由
+   * @returns 宿主文档中的 1:1 投影元素及清理函数
+   */
+  async function preparePage(route: string): Promise<OffscreenPreparedPage> {
     const captureRoute = resolveRuntimeCaptureRoute(route)
     const url = new URL(window.location.href)
     url.hash = captureRoute.hash
@@ -54,33 +92,58 @@ export function createRuntimeCaptureContext() {
       const targetWindow = frame.contentWindow
       const doc = frame.contentDocument
       const target = doc?.querySelector<HTMLElement>('.runtime-page-print-source')
-      if (targetWindow?.__EDITOR_RUNTIME_PREVIEW_READY__ && target?.dataset.runtimeRoutePath === captureRoute.path && !doc?.querySelector('[role="alert"]')) {
+      if (
+        targetWindow?.__EDITOR_RUNTIME_PREVIEW_READY__ &&
+        target?.dataset.runtimeRoutePath === captureRoute.path &&
+        !doc?.querySelector('[role="alert"]')
+      ) {
         await doc?.fonts?.ready
-        const projection = projectIframeTarget(target, doc)
-        try {
-          return await pageCaptureService.captureElement(projection.element, options)
-        } finally {
-          projection.cleanup()
-        }
+        return projectIframeTarget(target, doc)
       }
       await new Promise(resolve => setTimeout(resolve, 50))
     }
     throw new Error(disposed ? '截图任务已释放' : `等待导出页面超时：${route}`)
   }
 
-  /** 释放 iframe，同时终止页面脚本与媒体资源。 */
-  function dispose(): void { disposed = true; frame.remove() }
-  return { capture, dispose }
+  /**
+   * 准备离屏页面并捕获为整页 Canvas。
+   * @param route 目标页面路由
+   * @param options 捕获选项
+   */
+  async function capture(route: string, options?: CaptureOptions): Promise<HTMLCanvasElement> {
+    const projection = await preparePage(route)
+    try {
+      return await pageCaptureService.captureElement(projection.element, options)
+    } finally {
+      projection.cleanup()
+    }
+  }
+
+  /**
+   * 释放 iframe，同时终止页面脚本与媒体资源。
+   */
+  function dispose(): void {
+    disposed = true
+    frame.remove()
+  }
+
+  return {
+    preparePage,
+    capture,
+    dispose,
+  }
 }
 
 /**
- * 将 iframe 页面投影到宿主文档，再交给宿主的 snapdom 实例捕获。
- * snapdom 会从宿主全局 document 读取样式和 SVG defs，直接传入 iframe 元素会丢失伪元素、SVG 引用和部分画布内容。
+ * 将 iframe 页面投影到宿主文档，确保宿主的样式表、CSS 变量、SVG defs 与 canvas 位图完整可用。
  * @param sourceElement iframe 中的页面源节点
  * @param sourceDocument iframe 文档
  * @returns 宿主文档中的捕获节点和清理函数
  */
-function projectIframeTarget(sourceElement: HTMLElement, sourceDocument: Document): ParentCaptureProjection {
+function projectIframeTarget(
+  sourceElement: HTMLElement,
+  sourceDocument: Document,
+): OffscreenPreparedPage {
   const host = document.createElement('div')
   const styleNodes = copyIframeStyles(sourceDocument)
   host.setAttribute('aria-hidden', 'true')
@@ -124,7 +187,7 @@ function projectIframeTarget(sourceElement: HTMLElement, sourceDocument: Documen
 }
 
 /**
- * 复制 iframe 的运行时样式到宿主文档，确保伪元素和页面组件样式可被 snapdom 解析。
+ * 复制 iframe 的运行时样式到宿主文档，确保伪元素和页面组件样式可被宿主读取。
  * @param sourceDocument iframe 文档
  * @returns 临时样式节点
  */
@@ -192,7 +255,11 @@ function copyIframeStyles(sourceDocument: Document): HTMLStyleElement[] {
  * @param sourceDocument iframe 文档
  * @param projectedElement 宿主投影根节点
  */
-function copyIframeCssVariables(sourceElement: HTMLElement, sourceDocument: Document, projectedElement: HTMLElement): void {
+function copyIframeCssVariables(
+  sourceElement: HTMLElement,
+  sourceDocument: Document,
+  projectedElement: HTMLElement,
+): void {
   const sourceWindow = sourceDocument.defaultView
   if (!sourceWindow) {
     return
@@ -238,7 +305,11 @@ function copyIframeCssVariables(sourceElement: HTMLElement, sourceDocument: Docu
  * @param sourceDocument iframe 文档
  * @param host 宿主投影容器
  */
-function appendExternalSvgDefinitions(sourceElement: HTMLElement, sourceDocument: Document, host: HTMLElement): void {
+function appendExternalSvgDefinitions(
+  sourceElement: HTMLElement,
+  sourceDocument: Document,
+  host: HTMLElement,
+): void {
   sourceDocument.querySelectorAll('svg').forEach(sourceSvg => {
     if (sourceElement.contains(sourceSvg) || !sourceSvg.querySelector('defs')) {
       return

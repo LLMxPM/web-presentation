@@ -35,6 +35,8 @@ export interface PptxPageConvertOptions {
   pageTitle: string
   /** 页面路由 */
   pageRoute: string
+  /** 演讲者备注，由投影器统一写入 slide */
+  speakerNotes?: string | null
   /** 设计画布宽度，单位 px */
   pageWidthPx: number
   /** 设计画布高度，单位 px */

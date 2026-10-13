@@ -3,7 +3,7 @@
  */
 
 import type { Router, RouteRecordNormalized } from 'vue-router'
-import type { PageInfo } from '@/core/types/pdf-export'
+import type { PageInfo } from '@/core/types/export-common'
 
 interface RouteCatalogInfoLike {
   name?: string

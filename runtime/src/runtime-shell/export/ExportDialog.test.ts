@@ -6,7 +6,7 @@
 
 import { createApp, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import PDFExportDialog from './PDFExportDialog.vue'
+import ExportDialog from './ExportDialog.vue'
 
 const serviceSpies = vi.hoisted(() => ({
   exportCurrentPage: vi.fn(),
@@ -64,7 +64,7 @@ vi.mock('@/core/services/PPTXExportService', () => ({
 function mountDialog() {
   const host = document.createElement('div')
   document.body.appendChild(host)
-  const app = createApp(PDFExportDialog, {
+  const app = createApp(ExportDialog, {
     visible: true,
   })
   app.mount(host)
@@ -80,7 +80,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('PDFExportDialog', () => {
+describe('ExportDialog', () => {
   it('按 PPTX、浏览器打印、截图 PDF 顺序展示生成方式', async () => {
     const { app, host } = mountDialog()
     await nextTick()

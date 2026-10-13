@@ -18,6 +18,13 @@ import type {
 } from '@/core/services/pptx/PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import { PPTXDomConverterTransform } from '@/core/services/pptx/PPTXDomConverterTransform'
+import { ShapeGeometryResolver } from './extractors/ShapeGeometryResolver'
+import {
+  clampColorByte,
+  findClosingParenthesis,
+  hexToRgbChannels,
+  splitCssTopLevel,
+} from './style/css-tokenizer'
 
 export interface PptxDomGradientExportHost {
   options: PptxPageConvertOptions
@@ -49,16 +56,15 @@ export interface PptxDomGradientExportHost {
  */
 export class PPTXDomConverterGradient {
   private readonly transform: PPTXDomConverterTransform
+  private readonly shapeGeometry: ShapeGeometryResolver
 
   constructor(private readonly layout: PPTXDomConverterLayout) {
     this.transform = new PPTXDomConverterTransform(layout)
+    this.shapeGeometry = new ShapeGeometryResolver(layout)
   }
 
   /**
    * 将可解析的 CSS linear-gradient 导出为单个 PPT 原生渐变形状。
-   * @param host 导出宿主能力
-   * @param element 渐变元素
-   * @param context 当前组合上下文
    */
   addLinearGradientElement(host: PptxDomGradientExportHost, element: HTMLElement, context: VisitContext): boolean {
     const style = window.getComputedStyle(element)
@@ -77,8 +83,8 @@ export class PPTXDomConverterGradient {
     const objectName = host.createGradientObjectName(element)
     host.options.slide.addShape(host.options.shapeTypes.rect, {
       ...this.transform.applyToBox(box, context),
-      fill: this.buildFillOptions(this.sampleLinearGradientColor(gradient.stops, 0.5)),
-      line: this.buildTransparentLineOptions(),
+      fill: this.shapeGeometry.buildFillOptions(this.sampleLinearGradientColor(gradient.stops, 0.5)),
+      line: this.shapeGeometry.buildTransparentLineOptions(),
       ...host.buildPptObjectMeta(context, 'gradient', label),
       objectName,
     })
@@ -94,39 +100,7 @@ export class PPTXDomConverterGradient {
   }
 
   /**
-   * 构造 PPT fill 参数。
-   * @param color 填充颜色
-   */
-  private buildFillOptions(color: ParsedColor | null): Record<string, unknown> {
-    if (!color) {
-      return {
-        type: 'none',
-        transparency: 100,
-      }
-    }
-
-    return {
-      type: 'solid',
-      color: color.hex,
-      transparency: this.layout.alphaToTransparency(color.alpha),
-    }
-  }
-
-  /**
-   * 构造透明线条参数。
-   */
-  private buildTransparentLineOptions(): Record<string, unknown> {
-    return {
-      color: 'FFFFFF',
-      transparency: 100,
-      width: 0,
-    }
-  }
-
-  /**
    * 解析线性渐变，仅支持单个 linear-gradient。
-   * @param value background-image 值
-   * @param element CSS 变量解析上下文
    */
   private parseLinearGradient(value: string, element: HTMLElement): LinearGradientInfo | null {
     const normalized = String(value || '').trim()
@@ -135,7 +109,7 @@ export class PPTXDomConverterGradient {
       return null
     }
 
-    const parts = this.splitCssTopLevel(match[1], ',').map(part => part.trim()).filter(Boolean)
+    const parts = splitCssTopLevel(match[1], ',').map(part => part.trim()).filter(Boolean)
     if (parts.length < 2) {
       return null
     }
@@ -162,6 +136,35 @@ export class PPTXDomConverterGradient {
     return {
       direction,
       stops: this.normalizeLinearGradientStops(stops),
+    }
+  }
+
+  /**
+   * 采样渐变颜色（用于生成占位纯色）。
+   */
+  private sampleLinearGradientColor(stops: LinearGradientStop[], position: number): ParsedColor {
+    const current = Math.max(0, Math.min(1, position))
+    let left = stops[0]
+    let right = stops[stops.length - 1]
+    for (let index = 0; index < stops.length - 1; index += 1) {
+      if (current >= stops[index].position && current <= stops[index + 1].position) {
+        left = stops[index]
+        right = stops[index + 1]
+        break
+      }
+    }
+
+    const span = Math.max(0.0001, right.position - left.position)
+    const ratio = (current - left.position) / span
+    const leftRgb = hexToRgbChannels(left.color.hex)
+    const rightRgb = hexToRgbChannels(right.color.hex)
+    return {
+      hex: [
+        clampColorByte(leftRgb.red + (rightRgb.red - leftRgb.red) * ratio),
+        clampColorByte(leftRgb.green + (rightRgb.green - leftRgb.green) * ratio),
+        clampColorByte(leftRgb.blue + (rightRgb.blue - leftRgb.blue) * ratio),
+      ].map(channel => channel.toString(16).padStart(2, '0')).join('').toUpperCase(),
+      alpha: left.color.alpha + (right.color.alpha - left.color.alpha) * ratio,
     }
   }
 
@@ -231,7 +234,7 @@ export class PPTXDomConverterGradient {
     const functionMatch = /^[a-z-]+\(/i.exec(trimmed)
     if (functionMatch) {
       const openIndex = leadingOffset + functionMatch[0].length - 1
-      const closeIndex = this.findClosingParenthesis(value, openIndex)
+      const closeIndex = findClosingParenthesis(value, openIndex)
       return closeIndex >= 0 ? closeIndex + 1 : -1
     }
 
@@ -296,134 +299,5 @@ export class PPTXDomConverterGradient {
         position,
       }
     })
-  }
-
-  /**
-   * 采样渐变颜色。
-   * @param stops 渐变停靠点
-   * @param position 0-1 位置
-   */
-  private sampleLinearGradientColor(stops: LinearGradientStop[], position: number): ParsedColor {
-    const current = Math.max(0, Math.min(1, position))
-    let left = stops[0]
-    let right = stops[stops.length - 1]
-    for (let index = 0; index < stops.length - 1; index += 1) {
-      if (current >= stops[index].position && current <= stops[index + 1].position) {
-        left = stops[index]
-        right = stops[index + 1]
-        break
-      }
-    }
-
-    const span = Math.max(0.0001, right.position - left.position)
-    const ratio = (current - left.position) / span
-    const leftRgb = this.hexToRgb(left.color.hex)
-    const rightRgb = this.hexToRgb(right.color.hex)
-    return {
-      hex: [
-        this.interpolateColorChannel(leftRgb.red, rightRgb.red, ratio),
-        this.interpolateColorChannel(leftRgb.green, rightRgb.green, ratio),
-        this.interpolateColorChannel(leftRgb.blue, rightRgb.blue, ratio),
-      ].map(channel => channel.toString(16).padStart(2, '0')).join('').toUpperCase(),
-      alpha: left.color.alpha + (right.color.alpha - left.color.alpha) * ratio,
-    }
-  }
-
-  /**
-   * 十六进制颜色转 RGB。
-   * @param hex HEX 颜色
-   */
-  private hexToRgb(hex: string): { red: number; green: number; blue: number } {
-    const normalized = hex.padEnd(6, '0')
-    return {
-      red: Number.parseInt(normalized.slice(0, 2), 16),
-      green: Number.parseInt(normalized.slice(2, 4), 16),
-      blue: Number.parseInt(normalized.slice(4, 6), 16),
-    }
-  }
-
-  /**
-   * 插值 RGB 单通道。
-   * @param left 左侧颜色通道
-   * @param right 右侧颜色通道
-   * @param ratio 插值比例
-   */
-  private interpolateColorChannel(left: number, right: number, ratio: number): number {
-    return Math.max(0, Math.min(255, Math.round(left + (right - left) * ratio)))
-  }
-
-  /**
-   * 按顶层分隔符拆分 CSS 函数参数。
-   * @param value CSS 参数
-   * @param delimiter 分隔符
-   */
-  private splitCssTopLevel(value: string, delimiter: string): string[] {
-    const parts: string[] = []
-    let depth = 0
-    let quote = ''
-    let start = 0
-
-    for (let index = 0; index < value.length; index += 1) {
-      const char = value[index]
-      if (quote) {
-        if (char === quote && value[index - 1] !== '\\') {
-          quote = ''
-        }
-        continue
-      }
-      if (char === '"' || char === '\'') {
-        quote = char
-        continue
-      }
-      if (char === '(') {
-        depth += 1
-        continue
-      }
-      if (char === ')') {
-        depth = Math.max(0, depth - 1)
-        continue
-      }
-      if (depth === 0 && char === delimiter) {
-        parts.push(value.slice(start, index))
-        start = index + 1
-      }
-    }
-
-    parts.push(value.slice(start))
-    return parts
-  }
-
-  /**
-   * 查找闭合括号位置。
-   * @param value 原始字符串
-   * @param openIndex 左括号位置
-   */
-  private findClosingParenthesis(value: string, openIndex: number): number {
-    let depth = 0
-    let quote = ''
-    for (let index = openIndex; index < value.length; index += 1) {
-      const char = value[index]
-      if (quote) {
-        if (char === quote && value[index - 1] !== '\\') {
-          quote = ''
-        }
-        continue
-      }
-      if (char === '"' || char === '\'') {
-        quote = char
-        continue
-      }
-      if (char === '(') {
-        depth += 1
-        continue
-      }
-      if (char === ')') {
-        depth -= 1
-        if (depth === 0) {
-          return index
-        }
-      }
-    }
-    return -1
   }
 }

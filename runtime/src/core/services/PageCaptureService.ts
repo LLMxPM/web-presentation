@@ -4,7 +4,7 @@
  */
 
 import { snapdom } from '@zumer/snapdom'
-import type { CaptureOptions } from '@/core/types/pdf-export'
+import type { CaptureOptions } from '@/core/types/export-common'
 import { waitForPageLoad, waitForImages, getPageDimensions } from '../utils/dom'
 import { optimizeCanvas } from '../utils/file'
 import { appPageConfig } from '@/core/utils/config'
@@ -73,11 +73,13 @@ export class PageCaptureService {
       const cleanupResourceProxy = this.applyCaptureResourceProxy(element, mergedOptions.proxyUrl)
 
       try {
-        // 等待页面加载完成
-        await waitForPageLoad(5000)
+        if (!mergedOptions.skipPageWait) {
+          // 等待页面加载完成
+          await waitForPageLoad(5000)
 
-        // 页面加载完成后额外等待 500ms，确保异步渲染或过渡动画结束
-        await new Promise<void>(resolve => setTimeout(resolve, 500))
+          // 页面加载完成后额外等待 500ms，确保异步渲染或过渡动画结束
+          await new Promise<void>(resolve => setTimeout(resolve, 500))
+        }
 
         // 始终等待图片加载完成，确保资源就绪
         await waitForImages(element)

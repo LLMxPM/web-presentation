@@ -73,7 +73,7 @@ v-if="canTogglePreviewMenuMode" class="nav-button nav-button--mode"
         <button
 v-if="shouldShowPdfExportButton" class="nav-button nav-button--export" :class="{
           'nav-button--fullscreen': isFullscreen
-        }" title="导出" @click.stop="showPDFExportDialog">
+        }" title="导出" @click.stop="showExportDialog">
           <FileDown :size="16" />
         </button>
 
@@ -174,10 +174,8 @@ v-if="isBottomPreviewMode" class="bottom-preview-wrapper" :class="{
         :page-config="pageViewport" :app-config="layoutAppConfig" @collapsed-change="handleBottomStripCollapsedChange" />
     </div>
 
-    <!-- PDF导出对话框 -->
-    <PDFExportDialog
-v-model:visible="isPDFExportDialogVisible" @export-start="handlePDFExportStart"
-      @export-complete="handlePDFExportComplete" @export-error="handlePDFExportError" />
+    <!-- 导出对话框 -->
+    <ExportDialog v-model:visible="isExportDialogVisible" @export-error="handleExportError" />
 
     <transition name="card-mode-fade">
       <CardModePanel
@@ -212,7 +210,7 @@ import SidePreviewStrip from '@/runtime-shell/layouts/SidePreviewStrip.vue'
 import BottomPreviewStrip from '@/runtime-shell/layouts/BottomPreviewStrip.vue'
 import CardModePanel from '@/runtime-shell/layouts/CardModePanel.vue'
 import ScaledCanvasViewport from '@runtime-kit/internal/components/viewport/ScaledCanvasViewport.vue'
-import PDFExportDialog from '@/runtime-shell/pdf/PDFExportDialog.vue'
+import ExportDialog from '@/runtime-shell/export/ExportDialog.vue'
 import RuntimePageStage from '@/runtime-shell/transitions/RuntimePageStage.vue'
 import ErrorBoundary from '@/runtime-shell/feedback/ErrorBoundary.vue'
 import { useMenu } from '@/core/composables/useMenu'
@@ -239,15 +237,13 @@ const isFullscreen = ref(Boolean(document.fullscreenElement))
 // 缩放容器已抽取到独立组件处理窗口尺寸
 const isSidebarHovered = ref(false)
 const isFullscreenButtonHovered = ref(false)
-const isPDFExportDialogVisible = ref(false)
+const isExportDialogVisible = ref(false)
 const isCardModeVisible = computed({
   get: () => session.mode.value === 'cards',
   set: value => { void switchRuntimeMode(router, value ? 'cards' : 'normal') },
 })
 const pageBoundaryMessage = ref('')
 let pageBoundaryMessageTimer: number | undefined
-// 正在导出PDF的状态
-const isExportingPdf = ref(false)
 
 /**
  * 固定比例缩放配置
@@ -745,10 +741,10 @@ const handleFullscreenChange = (): void => {
 }
 
 /**
- * 显示PDF导出对话框
+ * 显示导出对话框
  */
-const showPDFExportDialog = (): void => {
-  isPDFExportDialogVisible.value = true
+const showExportDialog = (): void => {
+  isExportDialogVisible.value = true
 }
 
 /**
@@ -807,27 +803,11 @@ const openPresenterMode = (): void => {
 }
 
 /**
- * 处理PDF导出开始事件
- */
-const handlePDFExportStart = (): void => {
-  isExportingPdf.value = true
-}
-
-/**
- * 处理PDF导出完成事件
- * @param result 导出结果
- */
-const handlePDFExportComplete = (): void => {
-  isExportingPdf.value = false
-}
-
-/**
- * 处理PDF导出错误事件
+ * 处理导出错误事件
  * @param error 错误信息
  */
-const handlePDFExportError = (error: Error): void => {
-  console.error('PDF导出失败:', error)
-  isExportingPdf.value = false
+const handleExportError = (error: Error): void => {
+  console.error('导出失败:', error)
 }
 
 /**
