@@ -30,5 +30,6 @@
 | [Preview Artifact 规范](./integration/release-artifact-spec.md) | 预览产物结构 |
 | [Vue 页面资源引用规范](./integration/asset-usage-guide.md) | 资源 URL 与特殊格式渲染 |
 | [PPTX 导出 DOM 契约](./integration/pptx-export-dom-contract.md) | 表格、媒体与连接线的显式导出属性、版本约定与识别优先级 |
+| [PPTX 导出升级规划](./pptx-export-upgrade-plan.md) | 已核实缺陷、分阶段工作包、页面采集与视觉映射边界、性能和产物验收 |
 
 Runtime 服务自身的运行命令与目录概览见 [runtime/README.md](../../../runtime/README.md)。
