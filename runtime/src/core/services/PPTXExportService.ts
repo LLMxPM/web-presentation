@@ -42,9 +42,11 @@ import type {
 import { appConfig as runtimeAppConfig, appPageConfig } from '@/core/utils/config'
 import { findRuntimePageSource } from '@/core/utils/export-dom'
 import { collectAllExportPages } from '@/core/utils/export-pages'
+import { PptxResourceSession } from '@/core/services/pptx/session/PptxResourceSession'
 import { waitForFiniteDocumentAnimations } from '@/core/utils/visual-assets'
 
 const DEFAULT_CAPTURE_TIMEOUT = 15000
+const DEFAULT_RASTER_SCALE = 2
 const PPTX_FILE_EXTENSION = '.pptx'
 
 /**
@@ -92,6 +94,9 @@ export class PPTXExportService {
     let offscreenStage: OffscreenPageStage | undefined
     let cleanupPreparedPage: (() => void) | undefined
 
+    const resourceSession = new PptxResourceSession(task.id)
+    const rasterScale = options?.rasterScale ?? DEFAULT_RASTER_SCALE
+
     try {
       const startedAt = Date.now()
       let pageElement: HTMLElement | null = null
@@ -115,24 +120,58 @@ export class PPTXExportService {
         throw new Error('未找到可导出的页面内容')
       }
 
+      const prepDuration = Date.now() - startedAt
+      const convStart = Date.now()
       const pptx = this.createPresentation()
       const report = createEmptyPptxReport()
       const gradientFills: PptxGradientFillInstruction[] = []
       const pageTitle = resolveCurrentPageTitle(this.router)
-      const pageReport = await this.addPageToPresentation(pptx, pageElement, {
+      const pageInfo: PageInfo = {
         route: routePath || '',
         title: pageTitle,
         order: 1,
         meta: {
           speakerNotes: this.getCurrentPageSpeakerNotes(),
         },
-      }, 1, gradientFills)
+      }
+
+      let pageReport: PptxExportReportPage
+      try {
+        pageReport = await this.addPageToPresentation(
+          pptx,
+          pageElement,
+          pageInfo,
+          1,
+          gradientFills,
+          resourceSession,
+          rasterScale,
+        )
+      } catch (pageError) {
+        if (this.taskRunner.isTaskCancelled(task.id)) {
+          throw pageError
+        }
+        if (options?.pageErrorStrategy === 'rasterize-ready-page') {
+          pageReport = await this.rasterizeFallbackPage(
+            pptx,
+            pageElement,
+            pageInfo,
+            1,
+            pageError,
+            resourceSession,
+            rasterScale,
+          )
+        } else {
+          throw pageError
+        }
+      }
 
       if (this.taskRunner.isTaskCancelled(task.id)) {
         throw new Error('用户取消导出')
       }
 
       mergePptxReportPage(report, pageReport)
+      const convDuration = Date.now() - convStart
+      const packStart = Date.now()
 
       if (typeof this.packageWriter.generatePresentationBytes === 'function') {
         const bytes = await this.packageWriter.generatePresentationBytes(pptx, gradientFills)
@@ -143,6 +182,17 @@ export class PPTXExportService {
       } else {
         await this.packageWriter.writePresentationFile(pptx, filename, gradientFills)
       }
+      const packDuration = Date.now() - packStart
+      const totalDuration = Date.now() - startedAt
+
+      report.timings = {
+        preparationTimeMs: prepDuration,
+        conversionTimeMs: convDuration,
+        packagingTimeMs: packDuration,
+        totalDurationMs: totalDuration,
+      }
+      report.metrics = resourceSession.getMetrics()
+
       this.taskRunner.updateStatus(ExportStatus.COMPLETED, undefined, task.id)
 
       return {
@@ -151,7 +201,7 @@ export class PPTXExportService {
         method: 'pptx-editable',
         filename,
         pageCount: 1,
-        duration: Date.now() - startedAt,
+        duration: totalDuration,
         message: '已导出可编辑 PPTX',
         report,
       }
@@ -162,6 +212,7 @@ export class PPTXExportService {
       this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败', task.id)
       throw error
     } finally {
+      resourceSession.dispose()
       cleanupPreparedPage?.()
       offscreenStage?.dispose()
       this.taskRunner.finish(task.id)
@@ -189,6 +240,9 @@ export class PPTXExportService {
     const task = this.taskRunner.beginTask('all', filename, onProgress)
     let offscreenStage: OffscreenPageStage | undefined
 
+    const resourceSession = new PptxResourceSession(task.id)
+    const rasterScale = options?.rasterScale ?? DEFAULT_RASTER_SCALE
+
     try {
       const stage = createOffscreenPageStage()
       offscreenStage = stage
@@ -203,6 +257,8 @@ export class PPTXExportService {
       const report = createEmptyPptxReport()
       const gradientFills: PptxGradientFillInstruction[] = []
       let exportedPages = 0
+      const prepDuration = Date.now() - startedAt
+      const convStart = Date.now()
 
       for (let index = 0; index < pages.length; index += 1) {
         if (this.taskRunner.isTaskCancelled(task.id)) {
@@ -217,13 +273,36 @@ export class PPTXExportService {
           if (this.taskRunner.isTaskCancelled(task.id)) {
             throw new Error('用户取消导出')
           }
-          const pageReport = await this.addPageToPresentation(
-            pptx,
-            prepared.element,
-            page,
-            index + 1,
-            gradientFills,
-          )
+          let pageReport: PptxExportReportPage
+          try {
+            pageReport = await this.addPageToPresentation(
+              pptx,
+              prepared.element,
+              page,
+              index + 1,
+              gradientFills,
+              resourceSession,
+              rasterScale,
+            )
+          } catch (pageError) {
+            if (this.taskRunner.isTaskCancelled(task.id)) {
+              throw pageError
+            }
+            if (options?.pageErrorStrategy === 'rasterize-ready-page') {
+              pageReport = await this.rasterizeFallbackPage(
+                pptx,
+                prepared.element,
+                page,
+                index + 1,
+                pageError,
+                resourceSession,
+                rasterScale,
+              )
+            } else {
+              throw pageError
+            }
+          }
+
           mergePptxReportPage(report, pageReport)
           exportedPages += 1
           task.completedPages = exportedPages
@@ -240,6 +319,9 @@ export class PPTXExportService {
         throw new Error('没有成功导出任何页面')
       }
 
+      const convDuration = Date.now() - convStart
+      const packStart = Date.now()
+
       if (typeof this.packageWriter.generatePresentationBytes === 'function') {
         const bytes = await this.packageWriter.generatePresentationBytes(pptx, gradientFills)
         if (this.taskRunner.isTaskCancelled(task.id)) {
@@ -249,6 +331,17 @@ export class PPTXExportService {
       } else {
         await this.packageWriter.writePresentationFile(pptx, filename, gradientFills)
       }
+      const packDuration = Date.now() - packStart
+      const totalDuration = Date.now() - startedAt
+
+      report.timings = {
+        preparationTimeMs: prepDuration,
+        conversionTimeMs: convDuration,
+        packagingTimeMs: packDuration,
+        totalDurationMs: totalDuration,
+      }
+      report.metrics = resourceSession.getMetrics()
+
       this.taskRunner.updateStatus(ExportStatus.COMPLETED, undefined, task.id)
 
       return {
@@ -257,7 +350,7 @@ export class PPTXExportService {
         method: 'pptx-editable',
         filename,
         pageCount: exportedPages,
-        duration: Date.now() - startedAt,
+        duration: totalDuration,
         message: '已导出可编辑 PPTX',
         report,
       }
@@ -268,6 +361,7 @@ export class PPTXExportService {
       this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败', task.id)
       throw error
     } finally {
+      resourceSession.dispose()
       offscreenStage?.dispose()
       this.taskRunner.finish(task.id)
     }
@@ -324,6 +418,8 @@ export class PPTXExportService {
     page: PageInfo,
     pageIndex: number,
     gradientFills: PptxGradientFillInstruction[],
+    resourceSession?: PptxResourceSession,
+    rasterScale = DEFAULT_RASTER_SCALE,
   ): Promise<PptxExportReportPage> {
     const slide = pptx.addSlide()
     const layout = this.resolveSlideLayout()
@@ -342,9 +438,68 @@ export class PPTXExportService {
       slideWidthIn: layout.widthIn,
       slideHeightIn: layout.heightIn,
       shapeTypes: this.packageWriter.getShapeTypes(pptx),
-      captureElementAsPng: element => elementRasterizer.captureElementAsPng(element),
+      captureElementAsPng: element => elementRasterizer.captureElementAsPng(element, { scale: rasterScale }),
       gradientFillCollector: instruction => gradientFills.push(instruction),
+      resourceSession,
     })
+  }
+
+  /**
+   * 当已就绪页面在原生 DOM 提取阶段发生可恢复错误时，使用全页截图生成备用幻灯片。
+   * 确保页数、顺序和备注保持完整，同时在导出报告中清晰标注整页截图降级。
+   */
+  private async rasterizeFallbackPage(
+    pptx: PptxGenJS,
+    pageElement: HTMLElement,
+    page: PageInfo,
+    pageIndex: number,
+    error: unknown,
+    resourceSession?: PptxResourceSession,
+    rasterScale = DEFAULT_RASTER_SCALE,
+  ): Promise<PptxExportReportPage> {
+    const layout = this.resolveSlideLayout()
+    const slide = pptx.addSlide()
+    const notes = this.pickSpeakerNotes(page.meta?.speakerNotes)
+    if (notes) {
+      slide.addNotes(notes)
+    }
+
+    const pngDataUrl = await elementRasterizer.captureElementAsPng(pageElement, {
+      scale: rasterScale,
+      backgroundColor: '#ffffff',
+    })
+    resourceSession?.recordScreenshot()
+    resourceSession?.recordRasterizedPage(pageIndex)
+
+    slide.addImage({
+      data: pngDataUrl,
+      x: 0,
+      y: 0,
+      w: layout.widthIn,
+      h: layout.heightIn,
+    })
+
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return {
+      pageIndex,
+      pageTitle: page.title || `页面 ${pageIndex}`,
+      pageRoute: page.route,
+      items: [
+        {
+          pageIndex,
+          pageTitle: page.title || `页面 ${pageIndex}`,
+          pageRoute: page.route,
+          sourceType: 'unknown',
+          result: 'screenshot',
+          editable: false,
+          label: page.title || `页面 ${pageIndex}`,
+          reason: `页面原生转换失败，已通过整页截图容错交付：${errorMessage}`,
+          severity: 'warning',
+          code: 'PAGE_CONVERSION_FALLBACK',
+          fallbackScope: 'page',
+        },
+      ],
+    }
   }
 
   /**

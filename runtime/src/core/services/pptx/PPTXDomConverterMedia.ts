@@ -333,7 +333,9 @@ export class PPTXDomConverterMedia {
       return true
     }
 
-    const imageData = await this.imageDataResolver.resolve(path)
+    const imageData = host.options.resourceSession
+      ? await host.options.resourceSession.resolveImage(path)
+      : await this.imageDataResolver.resolve(path)
     if (imageData) {
       await this.addImageDataBlock(host, imageData, element, sourceType, label, reason, context, imageData)
       return true
@@ -414,6 +416,7 @@ export class PPTXDomConverterMedia {
 
     try {
       const data = await host.options.captureElementAsPng(element)
+      host.options.resourceSession?.recordScreenshot()
       host.options.slide.addImage({
         data,
         ...this.transform.applyToBox(box, context),

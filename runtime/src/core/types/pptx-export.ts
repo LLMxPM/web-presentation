@@ -37,8 +37,50 @@ export interface PptxExportOptions {
   mode: ExportMode
   /** 自定义文件名 */
   filename?: string
-  /** 局部截图质量，当前用于 PNG 兜底 */
+  /**
+   * @deprecated 早期 PNG 质量参数，PNG 格式下无损压缩无效，建议使用 rasterScale
+   */
   quality?: number
+  /**
+   * 局部与整页截图清晰度倍率（默认 2）
+   */
+  rasterScale?: number
+  /**
+   * 页面错误处理策略：
+   * - 'fail-fast': 任意页面发生错误立即中止并抛出错误（默认）
+   * - 'rasterize-ready-page': 页面就绪后若原生 DOM 提取失败，采用整页高清截图容错交付
+   */
+  pageErrorStrategy?: 'fail-fast' | 'rasterize-ready-page'
+}
+
+/**
+ * PPTX 导出各阶段耗时统计（毫秒）。
+ */
+export interface PptxExportTimingMetrics {
+  /** 准备与环境初始化耗时 (ms) */
+  preparationTimeMs?: number
+  /** DOM 遍历与原生转换耗时 (ms) */
+  conversionTimeMs?: number
+  /** 打包与 OOXML 处理耗时 (ms) */
+  packagingTimeMs?: number
+  /** 总耗时 (ms) */
+  totalDurationMs?: number
+}
+
+/**
+ * PPTX 导出任务级资源与截图性能指标。
+ */
+export interface PptxExportResourceMetrics {
+  /** 缓存命中的资源读取次数 */
+  cacheHits: number
+  /** 真实发起的网络/DataURL 读取次数 */
+  fetchCount: number
+  /** 资源总字节数（字节） */
+  totalResourceBytes: number
+  /** 局部或整页截图次数 */
+  screenshotCount: number
+  /** 采用整页截图容错降级的页面序号列表（从 1 开始） */
+  rasterizedPageIndices?: number[]
 }
 
 export interface PptxExportReportSummary {
@@ -119,6 +161,10 @@ export interface PptxExportReport {
   summary: PptxExportReportSummary
   /** 按页对象明细 */
   pages: PptxExportReportPage[]
+  /** 阶段耗时统计 */
+  timings?: PptxExportTimingMetrics
+  /** 任务级资源与性能指标 */
+  metrics?: PptxExportResourceMetrics
 }
 
 export interface PptxExportResult {

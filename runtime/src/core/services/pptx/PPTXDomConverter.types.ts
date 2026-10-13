@@ -51,6 +51,8 @@ export interface PptxPageConvertOptions {
   captureElementAsPng: (element: HTMLElement) => Promise<string>
   /** 收集需要写入 PPTX XML 的原生渐变填充指令 */
   gradientFillCollector?: (instruction: PptxGradientFillInstruction) => void
+  /** 任务级资源解析与缓存会话，复用已读取资源并追踪指标 */
+  resourceSession?: import('./session/PptxResourceSession').PptxResourceSession
 }
 
 export interface ElementBox {
