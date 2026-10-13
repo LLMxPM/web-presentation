@@ -18,8 +18,8 @@
 | [CLI 主仓集成边界](./cli.md) | 主仓负责的 CLI 外部 API 契约和 CLI 仓库交接边界 |
 | [CLI OAuth 主仓实施计划](./cli-oauth-implementation-plan.md) | CLI 原生授权、API 直接凭证、Editor 回调和跨仓验收；当前为计划 |
 | [MCP 主仓集成边界](./mcp.md) | 主仓负责的 MCP External API 依赖和独立 MCP 仓交接边界 |
-| [远程 MCP 主仓实施计划](./mcp-implementation-plan.md) | 远程多用户授权、API 适配、跨仓工作包及发布退出项 |
-| [MCP 域名前本地验收](./testing/mcp-local-acceptance.md) | TLS 创作/PNG、SQLite/PG、迁移与当前域名/宿主依赖 |
+| [远程 MCP 主仓实施计划](https://github.com/LLMxPM/web-presentation/blob/mcp/docs/developer/mcp-implementation-plan.md) | 远程多用户授权、API 适配、跨仓工作包及发布退出项；内容仅在 `mcp` 分支维护，未合入本分支 |
+| [MCP 域名前本地验收](https://github.com/LLMxPM/web-presentation/blob/mcp/docs/developer/testing/mcp-local-acceptance.md) | TLS 创作/PNG、SQLite/PG、迁移与当前域名/宿主依赖；同样只在 `mcp` 分支维护 |
 | [大文件与媒体资产管理](./large-files.md) | Git LFS 规则、媒体文件提交检查和历史迁移约束 |
 
 ## 分组导航
