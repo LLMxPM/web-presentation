@@ -8,6 +8,11 @@ import type { Router } from 'vue-router'
 import { elementRasterizer } from '@/core/services/export/ElementRasterizer'
 import { ExportTaskRunner } from '@/core/services/export/ExportTaskRunner'
 import {
+  pickExportTitle,
+  resolveCurrentPageTitle,
+  resolveExportFilename,
+} from '@/core/services/export/export-filename'
+import {
   createOffscreenPageStage,
   type OffscreenPageStage,
 } from '@/core/services/export/OffscreenPageStage'
@@ -40,6 +45,7 @@ import { collectAllExportPages } from '@/core/utils/export-pages'
 import { waitForFiniteDocumentAnimations } from '@/core/utils/visual-assets'
 
 const DEFAULT_CAPTURE_TIMEOUT = 15000
+const PPTX_FILE_EXTENSION = '.pptx'
 
 /**
  * 可编辑 PPTX 导出服务。
@@ -52,7 +58,6 @@ export class PPTXExportService {
   private readonly taskRunner = new ExportTaskRunner({
     taskIdPrefix: 'pptx-export',
     busyErrorMessage: '已有导出任务正在进行中',
-    fileExtension: '.pptx',
   })
 
   /**
@@ -79,7 +84,7 @@ export class PPTXExportService {
    * @param options 导出选项
    */
   async exportCurrentPage(options?: PptxExportOptions): Promise<PptxExportResult> {
-    const filename = this.taskRunner.resolveFilename('current', this.router, options?.filename)
+    const filename = resolveExportFilename('current', this.router, PPTX_FILE_EXTENSION, options?.filename)
     const task = this.taskRunner.beginTask('current', filename)
     const currentRoute = this.router?.currentRoute.value
     const routePath = currentRoute?.path
@@ -109,7 +114,7 @@ export class PPTXExportService {
       const pptx = this.createPresentation()
       const report = createEmptyPptxReport()
       const gradientFills: PptxGradientFillInstruction[] = []
-      const pageTitle = this.taskRunner.getCurrentPageTitle(this.router)
+      const pageTitle = resolveCurrentPageTitle(this.router)
       const pageReport = await this.addPageToPresentation(pptx, pageElement, {
         route: routePath || '',
         title: pageTitle,
@@ -160,7 +165,7 @@ export class PPTXExportService {
       throw new Error('未设置路由实例，无法导出所有页面')
     }
 
-    const filename = this.taskRunner.resolveFilename('all', this.router, options?.filename)
+    const filename = resolveExportFilename('all', this.router, PPTX_FILE_EXTENSION, options?.filename)
     const task = this.taskRunner.beginTask('all', filename, onProgress)
     let offscreenStage: OffscreenPageStage | undefined
 
@@ -255,7 +260,7 @@ export class PPTXExportService {
    * 创建 PPTX 文件对象（委托给 PptxPackageWriter）。
    */
   private createPresentation(): PptxGenJS {
-    const title = this.taskRunner.pickTitle(runtimeAppConfig.value.app.title) ?? 'Runtime 导出'
+    const title = pickExportTitle(runtimeAppConfig.value.app.title) ?? 'Runtime 导出'
     return this.packageWriter.createPresentation(title, this.resolveSlideLayout())
   }
 

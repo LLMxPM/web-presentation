@@ -1,16 +1,15 @@
 /**
- * 文件用途：提供通用的导出任务状态机、进度上报、取消控制与默认文件名生成能力，供 PPTX、PDF、浏览器打印服务复用。
+ * 文件用途：提供通用的导出任务状态机、进度上报与取消控制，供 PPTX、PDF、浏览器打印服务复用。
+ *
+ * 文件名与页面标题推导不属于任务生命周期，见同目录 export-filename.ts。
  */
 
-import type { Router } from 'vue-router'
 import {
   ExportStatus,
   type ExportMode,
   type ExportProgress,
   type ExportTask,
 } from '@/core/types/export-common'
-import { appConfig as runtimeAppConfig } from '@/core/utils/config'
-import { generateFilename } from '@/core/utils/file'
 
 /**
  * 导出任务生命周期管理器的构造配置。
@@ -20,8 +19,6 @@ export interface ExportTaskRunnerConfig {
   taskIdPrefix: string
   /** 重复触发时的错误提示文案 */
   busyErrorMessage: string
-  /** 默认文件扩展名（如 '.pdf' 或 '.pptx'，为空则不生成默认文件名） */
-  fileExtension?: string
 }
 
 /**
@@ -146,54 +143,5 @@ export class ExportTaskRunner {
     this.active = false
     this.currentTask = null
     this.progressCallback = null
-  }
-
-  /**
-   * 生成带时间戳和扩展名的导出文件名。
-   * @param mode 导出范围
-   * @param router 当前路由器
-   * @param customFilename 用户自定义文件名
-   * @returns 最终文件名
-   */
-  resolveFilename(mode: ExportMode, router: Router | null, customFilename?: string): string {
-    if (!this.config.fileExtension) {
-      return customFilename ?? ''
-    }
-    const baseName = this.getDefaultFilenameBase(mode, router)
-    return generateFilename(customFilename, `${baseName}-{timestamp}`, true, this.config.fileExtension)
-  }
-
-  /**
-   * 获取默认文件名主体（全部页面用项目标题，单页用当前页标题）。
-   * @param mode 导出范围
-   * @param router 当前路由器
-   */
-  getDefaultFilenameBase(mode: ExportMode, router: Router | null): string {
-    if (mode === 'all') {
-      return this.pickTitle(runtimeAppConfig.value.app.title) ?? '项目'
-    }
-    return this.getCurrentPageTitle(router)
-  }
-
-  /**
-   * 获取当前页面标题（按路由 meta.title -> document.title -> 项目标题 -> '页面' 顺序回退）。
-   * @param router 当前路由器
-   */
-  getCurrentPageTitle(router: Router | null): string {
-    const routeTitle = this.pickTitle(router?.currentRoute.value.meta?.title)
-    const documentTitle = typeof document === 'undefined' ? undefined : this.pickTitle(document.title)
-    return routeTitle ?? documentTitle ?? this.pickTitle(runtimeAppConfig.value.app.title) ?? '页面'
-  }
-
-  /**
-   * 规范化非空标题字符串。
-   * @param title 候选标题
-   */
-  pickTitle(title: unknown): string | undefined {
-    if (typeof title !== 'string') {
-      return undefined
-    }
-    const normalized = title.trim()
-    return normalized.length > 0 ? normalized : undefined
   }
 }

@@ -2,7 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { buildE2eBackendEnv } from '../../../scripts/testing/e2e-database-env.mjs'
-import { assertE2eRuntimeReady, buildE2eRuntimeEnv } from '../../../scripts/testing/e2e-runtime-env.mjs'
+import {
+  assertE2eRuntimeReady,
+  buildE2eRuntimeEnv,
+  runtimeProbeUrl,
+  RUNTIME_HEALTH_PATH,
+  RUNTIME_READINESS_PATH,
+} from '../../../scripts/testing/e2e-runtime-env.mjs'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -59,13 +65,26 @@ function stubReadiness(payload: unknown, status = 200) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status })))
 }
 
+describe('Runtime 探针地址', () => {
+  it.each([
+    ['http://127.0.0.1:17373', 'http://127.0.0.1:17373/__runtime_healthz'],
+    ['http://127.0.0.1:17373/', 'http://127.0.0.1:17373/__runtime_healthz'],
+    ['http://127.0.0.1:17373/runtime/', 'http://127.0.0.1:17373/__runtime_healthz'],
+    ['http://127.0.0.1:17373/runtime', 'http://127.0.0.1:17373/__runtime_healthz'],
+  ])('存活与就绪探针都必须落在服务根，丢弃 base path 且不产生双斜杠（%s）', (runtimeUrl, expected) => {
+    expect(runtimeProbeUrl(runtimeUrl, RUNTIME_HEALTH_PATH)).toBe(expected)
+    expect(runtimeProbeUrl(runtimeUrl, RUNTIME_READINESS_PATH))
+      .toBe(expected.replace('__runtime_healthz', '__runtime_readyz'))
+  })
+})
+
 describe('E2E Runtime 就绪校验', () => {
   it('完整执行面与构建 Worker 就绪后通过，探针使用服务根路径', async () => {
     stubReadiness({ status: 'ok', checks: { buildWorker: { ready: true } } })
     vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await expect(assertE2eRuntimeReady('http://127.0.0.1:17373/runtime/')).resolves.toBeUndefined()
-    expect(fetch).toHaveBeenCalledWith(new URL('http://127.0.0.1:17373/__runtime_readyz'), {
+    expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:17373/__runtime_readyz', {
       signal: expect.any(AbortSignal),
     })
   })

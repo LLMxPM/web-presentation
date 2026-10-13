@@ -12,6 +12,7 @@ import {
 } from '@/core/services/export/OffscreenPageStage'
 import { resolveSnapdomProxyUrl as resolveSharedSnapdomProxyUrl } from '@/core/services/export/ElementRasterizer'
 import { ExportTaskRunner } from '@/core/services/export/ExportTaskRunner'
+import { resolveExportFilename } from '@/core/services/export/export-filename'
 import {
   ExportStatus,
   type CaptureOptions,
@@ -28,13 +29,14 @@ import type {
 import { appPageConfig } from '@/core/utils/config'
 import { collectAllExportPages } from '@/core/utils/export-pages'
 
+const PDF_FILE_EXTENSION = '.pdf'
+
 export class PDFExportService {
   private static instance: PDFExportService
   private router: Router | null = null
   private readonly taskRunner = new ExportTaskRunner({
     taskIdPrefix: 'task',
     busyErrorMessage: '已有导出任务正在进行中',
-    fileExtension: '.pdf',
   })
 
   // 默认配置
@@ -89,7 +91,7 @@ export class PDFExportService {
    * @returns Promise<ExportResult>
    */
   async exportCurrentPage(options?: ExportOptions): Promise<ExportResult> {
-    const filename = this.taskRunner.resolveFilename('current', this.router, options?.filename)
+    const filename = resolveExportFilename('current', this.router, PDF_FILE_EXTENSION, options?.filename)
     const task = this.taskRunner.beginTask('current', filename)
     let offscreenStage: OffscreenPageStage | undefined
 
@@ -151,7 +153,7 @@ export class PDFExportService {
       throw new Error('未设置路由实例，无法导出所有页面')
     }
 
-    const filename = this.taskRunner.resolveFilename('all', this.router, options?.filename)
+    const filename = resolveExportFilename('all', this.router, PDF_FILE_EXTENSION, options?.filename)
     const task = this.taskRunner.beginTask('all', filename, onProgress)
     let offscreenStage: OffscreenPageStage | undefined
 
@@ -174,6 +176,11 @@ export class PDFExportService {
 
       // 逐页捕获和添加到PDF
       for (let i = 0; i < pages.length; i++) {
+        // 取消检查必须放在逐页 try 之外：内层 catch 会吞掉单页错误并继续，取消需要真正中断整个导出。
+        if (!this.taskRunner.isRunning()) {
+          throw new Error('用户取消导出')
+        }
+
         const page = pages[i]
 
         try {
