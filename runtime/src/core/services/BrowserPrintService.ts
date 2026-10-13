@@ -130,6 +130,10 @@ export class BrowserPrintService {
       let printedPages = 0
 
       for (let index = 0; index < pages.length; index += 1) {
+        if (!this.taskRunner.isRunning()) {
+          throw new Error('用户取消打印')
+        }
+
         const page = pages[index]
         this.taskRunner.reportProgress(index, pages.length, page.title, page.route)
         await this.navigateToPage(page.route)

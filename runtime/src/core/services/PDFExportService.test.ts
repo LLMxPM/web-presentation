@@ -187,6 +187,26 @@ describe('PDFExportService', () => {
     expect(mockDisposeCapture).toHaveBeenCalled()
   })
 
+  it('取消后应立即停止逐页捕获，不再处理剩余页面', async () => {
+    const router = createRouterStub('/origin')
+    const service = new PDFExportService()
+    service.setRouter(router as unknown as Router)
+    renderRoute('/origin')
+
+    // 在首页捕获过程中取消：逐页循环必须在下一页之前中止，而不是继续跑完全部页面。
+    mockCaptureCurrentPage.mockImplementationOnce(() => {
+      service.cancelExport()
+      return Promise.resolve(createCanvas())
+    })
+
+    await expect(service.exportAllPages({ mode: 'all', method: 'canvas-pdf' }))
+      .rejects.toThrow('用户取消导出')
+
+    expect(mockCaptureCurrentPage).toHaveBeenCalledTimes(1)
+    expect(mockDisposeCapture).toHaveBeenCalled()
+    expect(service.isCurrentlyExporting()).toBe(false)
+  })
+
   it('全部页面缺少页码目录时应回退到可见路由目录', async () => {
     mockRoutes.value = [
       { path: '/page-2', name: '第二页', order: 2, level: 0, hidden: false },
