@@ -29,6 +29,8 @@ export class ExportTaskRunner {
   private active = false
   private progressCallback: ((progress: ExportProgress) => void) | null = null
   private readonly config: ExportTaskRunnerConfig
+  private readonly cancelledTaskIds = new Set<string>()
+  private abortController: AbortController | null = null
 
   constructor(config: ExportTaskRunnerConfig) {
     this.config = config
@@ -39,6 +41,34 @@ export class ExportTaskRunner {
    */
   isRunning(): boolean {
     return this.active
+  }
+
+  /**
+   * 判断指定任务是否已被取消。
+   * @param taskId 目标任务 ID
+   */
+  isTaskCancelled(taskId: string): boolean {
+    return this.cancelledTaskIds.has(taskId) ||
+      (this.currentTask?.id === taskId && this.currentTask.status === ExportStatus.CANCELLED)
+  }
+
+  /**
+   * 判断指定任务是否仍处于活跃执行中（非过期、未取消且当前匹配）。
+   * @param taskId 目标任务 ID
+   */
+  isTaskActive(taskId: string): boolean {
+    return this.active && this.currentTask?.id === taskId && !this.isTaskCancelled(taskId)
+  }
+
+  /**
+   * 获取指定任务的 AbortSignal，用于取消在途网络请求与等待。
+   * @param taskId 可选任务 ID
+   */
+  getSignal(taskId?: string): AbortSignal | null {
+    if (taskId && this.currentTask?.id !== taskId) {
+      return null
+    }
+    return this.abortController?.signal ?? null
   }
 
   /**
@@ -80,6 +110,7 @@ export class ExportTaskRunner {
     this.currentTask = task
     this.active = true
     this.progressCallback = onProgress ?? null
+    this.abortController = typeof AbortController !== 'undefined' ? new AbortController() : null
     return task
   }
 
@@ -87,9 +118,18 @@ export class ExportTaskRunner {
    * 更新任务状态。
    * @param status 新状态
    * @param error 可选错误信息
+   * @param taskId 可选任务 ID，传入时校验归属
    */
-  updateStatus(status: ExportStatus, error?: string): void {
+  updateStatus(status: ExportStatus, error?: string, taskId?: string): void {
     if (!this.currentTask) {
+      return
+    }
+
+    if (taskId && this.currentTask.id !== taskId) {
+      return
+    }
+
+    if (taskId && this.isTaskCancelled(taskId) && status !== ExportStatus.CANCELLED) {
       return
     }
 
@@ -106,8 +146,17 @@ export class ExportTaskRunner {
    * @param total 总页面数
    * @param title 当前页面标题
    * @param route 当前页面路由，未参与上报时留空
+   * @param taskId 可选任务 ID，传入时校验归属
    */
-  reportProgress(index: number, total: number, title: string, route = ''): void {
+  reportProgress(index: number, total: number, title: string, route = '', taskId?: string): void {
+    if (taskId && this.currentTask?.id !== taskId) {
+      return
+    }
+
+    if (taskId && this.isTaskCancelled(taskId)) {
+      return
+    }
+
     const percentage = Math.round((index / total) * 100)
     if (this.currentTask) {
       this.currentTask.progress = percentage
@@ -124,24 +173,50 @@ export class ExportTaskRunner {
 
   /**
    * 取消当前任务并重置活动标记。
+   * @param taskId 可选指定取消的任务 ID
    * @returns 是否实际取消了正在运行的任务
    */
-  cancel(): boolean {
-    if (!this.active) {
+  cancel(taskId?: string): boolean {
+    if (taskId) {
+      this.cancelledTaskIds.add(taskId)
+    }
+
+    if (!this.active && !this.currentTask) {
       return false
     }
 
-    this.updateStatus(ExportStatus.CANCELLED)
-    this.finish()
+    if (taskId && this.currentTask && this.currentTask.id !== taskId) {
+      return false
+    }
+
+    const currentId = this.currentTask?.id
+    if (currentId) {
+      this.cancelledTaskIds.add(currentId)
+    }
+
+    try {
+      this.abortController?.abort()
+    } catch {
+      // 忽略已终止报错
+    }
+
+    this.updateStatus(ExportStatus.CANCELLED, undefined, currentId)
+    this.finish(currentId)
     return true
   }
 
   /**
    * 清理当前任务的运行态引用（通常在 finally 中调用）。
+   * @param taskId 可选任务 ID，传入时校验归属，旧任务无法清理新任务
    */
-  finish(): void {
+  finish(taskId?: string): void {
+    if (taskId && this.currentTask && this.currentTask.id !== taskId) {
+      return
+    }
+
     this.active = false
     this.currentTask = null
     this.progressCallback = null
+    this.abortController = null
   }
 }

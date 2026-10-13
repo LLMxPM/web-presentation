@@ -23,6 +23,7 @@ export interface PptxSlideBackgroundIR {
  */
 export interface PptxTextPrimitiveIR {
   kind: 'text'
+  id?: string
   text: PptxTextContentLike
   options?: Record<string, unknown>
 }
@@ -32,6 +33,7 @@ export interface PptxTextPrimitiveIR {
  */
 export interface PptxShapePrimitiveIR {
   kind: 'shape'
+  id?: string
   shapeType: string
   options?: Record<string, unknown>
 }
@@ -41,6 +43,7 @@ export interface PptxShapePrimitiveIR {
  */
 export interface PptxImagePrimitiveIR {
   kind: 'image'
+  id?: string
   options: Record<string, unknown>
 }
 
@@ -49,6 +52,7 @@ export interface PptxImagePrimitiveIR {
  */
 export interface PptxTablePrimitiveIR {
   kind: 'table'
+  id?: string
   rows: PptxTableRowLike[]
   options?: Record<string, unknown>
 }

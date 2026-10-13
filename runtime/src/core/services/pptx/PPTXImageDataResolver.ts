@@ -76,8 +76,13 @@ export class PPTXImageDataResolver {
    * @param url 可 fetch 的图片地址
    */
   private async fetchAsDataUrl(url: string): Promise<string> {
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const response = await fetch(url)
+      const timeoutPromise = new Promise<Response>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Image fetch timeout')), 10000)
+      })
+      const response = await Promise.race([fetch(url), timeoutPromise])
+      if (timer) clearTimeout(timer)
       if (!response.ok) {
         return ''
       }
@@ -92,6 +97,8 @@ export class PPTXImageDataResolver {
       return `data:${contentType};base64,${this.arrayBufferToBase64(buffer)}`
     } catch {
       return ''
+    } finally {
+      if (timer) clearTimeout(timer)
     }
   }
 

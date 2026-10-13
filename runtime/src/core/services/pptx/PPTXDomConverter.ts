@@ -96,12 +96,32 @@ export class PPTXDomConverter {
 
     this.layout.beginPage(this.options)
     this.layout.setRootBox(this.layout.measureRootBox(options.pageElement))
+    this.text.beginPage()
 
     this.applySlideBackground(options.pageElement)
 
     const rootContext: VisitContext = {
       groupDepth: 0,
     }
+
+    if (options.pageElement instanceof HTMLElement) {
+      const pageStyle = window.getComputedStyle(options.pageElement)
+      if (pageStyle.backgroundImage && pageStyle.backgroundImage !== 'none') {
+        const exportedRootGradient = this.gradient.addLinearGradientElement(
+          this.createGradientExportHost(),
+          options.pageElement,
+          rootContext,
+        )
+        if (!exportedRootGradient) {
+          await this.media.addBackgroundImageElement(
+            this.createMediaExportHost(),
+            options.pageElement,
+            rootContext,
+          )
+        }
+      }
+    }
+
     for (const child of Array.from(options.pageElement.children)) {
       await this.visitElement(child, rootContext)
     }
@@ -222,9 +242,11 @@ export class PPTXDomConverter {
     const textContext = element instanceof HTMLElement
       ? this.createTextInheritanceContext(element, context)
       : context
-    const shouldAddShape = element instanceof HTMLElement && this.text.shouldAddShape(element)
+    const canAddShape = !exportedLinearGradient && !exportedBackgroundImage
+    const shouldAddShape = canAddShape && element instanceof HTMLElement && this.text.shouldAddShape(element)
     const shouldAddWholeText = element instanceof HTMLElement && this.text.shouldAddText(element)
-    const shouldAddTextShape = element instanceof HTMLElement &&
+    const shouldAddTextShape = canAddShape &&
+      element instanceof HTMLElement &&
       shouldAddWholeText &&
       (shouldAddShape || this.layout.shouldPreservePaddedInlineTextBox(element, window.getComputedStyle(element)))
     const elementContext = element instanceof HTMLElement && this.shouldCreateCompositionGroup(element, shouldAddShape, shouldAddWholeText)
@@ -528,6 +550,7 @@ export class PPTXDomConverter {
     label: string,
     reason?: string,
     context?: VisitContext,
+    extra?: Partial<PptxExportReportItem>,
   ): PptxExportReportItem {
     return appendPptxReportItem(
       this.reportPage,
@@ -537,6 +560,7 @@ export class PPTXDomConverter {
       label,
       reason,
       context,
+      extra,
     )
   }
 

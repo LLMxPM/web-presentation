@@ -33,28 +33,44 @@ export function createIrSlideCollector(primitives: PptxSlidePrimitiveIR[]): {
 
   const slide: PptxSlideLike = {
     addText(text, options) {
+      const id = typeof options?.objectName === 'string' && options.objectName
+        ? String(options.objectName)
+        : `primitive-${primitives.length + 1}`
       primitives.push({
         kind: 'text',
+        id,
         text,
         options,
       })
     },
     addShape(shapeType, options) {
+      const id = typeof options?.objectName === 'string' && options.objectName
+        ? String(options.objectName)
+        : `primitive-${primitives.length + 1}`
       primitives.push({
         kind: 'shape',
+        id,
         shapeType,
         options,
       })
     },
     addImage(options) {
+      const id = typeof options?.objectName === 'string' && options.objectName
+        ? String(options.objectName)
+        : `primitive-${primitives.length + 1}`
       primitives.push({
         kind: 'image',
+        id,
         options,
       })
     },
     addTable(rows, options) {
+      const id = typeof options?.objectName === 'string' && options.objectName
+        ? String(options.objectName)
+        : `primitive-${primitives.length + 1}`
       primitives.push({
         kind: 'table',
+        id,
         rows,
         options,
       })

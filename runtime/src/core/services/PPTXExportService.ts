@@ -103,8 +103,12 @@ export class PPTXExportService {
         pageElement = prepared.element
         cleanupPreparedPage = prepared.cleanup
       } else {
-        await this.waitForPageReady(routePath)
+        await this.waitForPageReady(routePath, task.id)
         pageElement = findRuntimePageSource(routePath)
+      }
+
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw new Error('用户取消导出')
       }
 
       if (!pageElement) {
@@ -123,10 +127,23 @@ export class PPTXExportService {
           speakerNotes: this.getCurrentPageSpeakerNotes(),
         },
       }, 1, gradientFills)
+
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw new Error('用户取消导出')
+      }
+
       mergePptxReportPage(report, pageReport)
 
-      await this.packageWriter.writePresentationFile(pptx, filename, gradientFills)
-      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
+      if (typeof this.packageWriter.generatePresentationBytes === 'function') {
+        const bytes = await this.packageWriter.generatePresentationBytes(pptx, gradientFills)
+        if (this.taskRunner.isTaskCancelled(task.id)) {
+          throw new Error('用户取消导出')
+        }
+        this.packageWriter.savePptxBlob?.(filename, bytes)
+      } else {
+        await this.packageWriter.writePresentationFile(pptx, filename, gradientFills)
+      }
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED, undefined, task.id)
 
       return {
         success: true,
@@ -139,12 +156,15 @@ export class PPTXExportService {
         report,
       }
     } catch (error) {
-      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败')
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw error
+      }
+      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败', task.id)
       throw error
     } finally {
       cleanupPreparedPage?.()
       offscreenStage?.dispose()
-      this.taskRunner.finish()
+      this.taskRunner.finish(task.id)
     }
   }
 
@@ -185,15 +205,18 @@ export class PPTXExportService {
       let exportedPages = 0
 
       for (let index = 0; index < pages.length; index += 1) {
-        if (!this.taskRunner.isRunning()) {
+        if (this.taskRunner.isTaskCancelled(task.id)) {
           throw new Error('用户取消导出')
         }
 
         const page = pages[index]
-        this.taskRunner.reportProgress(index, pages.length, page.title, page.route)
+        this.taskRunner.reportProgress(index, pages.length, page.title, page.route, task.id)
 
         const prepared = await stage.preparePage(page.route)
         try {
+          if (this.taskRunner.isTaskCancelled(task.id)) {
+            throw new Error('用户取消导出')
+          }
           const pageReport = await this.addPageToPresentation(
             pptx,
             prepared.element,
@@ -209,12 +232,24 @@ export class PPTXExportService {
         }
       }
 
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw new Error('用户取消导出')
+      }
+
       if (exportedPages === 0) {
         throw new Error('没有成功导出任何页面')
       }
 
-      await this.packageWriter.writePresentationFile(pptx, filename, gradientFills)
-      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
+      if (typeof this.packageWriter.generatePresentationBytes === 'function') {
+        const bytes = await this.packageWriter.generatePresentationBytes(pptx, gradientFills)
+        if (this.taskRunner.isTaskCancelled(task.id)) {
+          throw new Error('用户取消导出')
+        }
+        this.packageWriter.savePptxBlob?.(filename, bytes)
+      } else {
+        await this.packageWriter.writePresentationFile(pptx, filename, gradientFills)
+      }
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED, undefined, task.id)
 
       return {
         success: true,
@@ -227,19 +262,22 @@ export class PPTXExportService {
         report,
       }
     } catch (error) {
-      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败')
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw error
+      }
+      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败', task.id)
       throw error
     } finally {
       offscreenStage?.dispose()
-      this.taskRunner.finish()
+      this.taskRunner.finish(task.id)
     }
   }
 
   /**
    * 取消当前 PPTX 导出任务。
    */
-  cancelExport(): void {
-    this.taskRunner.cancel()
+  cancelExport(taskId?: string): void {
+    this.taskRunner.cancel(taskId)
   }
 
   /**
@@ -254,6 +292,14 @@ export class PPTXExportService {
    */
   isCurrentlyExporting(): boolean {
     return this.taskRunner.isRunning()
+  }
+
+  /**
+   * 判断指定任务是否已被取消。
+   * @param taskId 任务 ID
+   */
+  isTaskCancelled(taskId?: string): boolean {
+    return this.taskRunner.isTaskCancelled(taskId)
   }
 
   /**
@@ -342,10 +388,14 @@ export class PPTXExportService {
    * 等待目标页面渲染、图片和字体就绪（用于非项目模式或单测当前 DOM 回退）。
    * @param expectedRoutePath 期望路由路径
    */
-  private async waitForPageReady(expectedRoutePath?: string): Promise<void> {
+  private async waitForPageReady(expectedRoutePath?: string, taskId?: string): Promise<void> {
     const startedAt = Date.now()
 
     for (;;) {
+      if (taskId && this.taskRunner.isTaskCancelled(taskId)) {
+        return
+      }
+
       await nextTick()
       await this.waitForAnimationFrame()
 
@@ -362,12 +412,23 @@ export class PPTXExportService {
       await new Promise(resolve => window.setTimeout(resolve, 50))
     }
 
+    if (taskId && this.taskRunner.isTaskCancelled(taskId)) {
+      return
+    }
+
     const pageElement = findRuntimePageSource(expectedRoutePath) ?? document.body
-    await this.waitForImages(pageElement)
+    await this.waitForImages(pageElement, taskId)
+
+    if (taskId && this.taskRunner.isTaskCancelled(taskId)) {
+      return
+    }
 
     if (document.fonts?.ready) {
       try {
-        await document.fonts.ready
+        await Promise.race([
+          document.fonts.ready,
+          new Promise(resolve => window.setTimeout(resolve, 5000)),
+        ])
       } catch (error) {
         console.warn('等待字体加载失败:', error)
       }
@@ -394,11 +455,15 @@ export class PPTXExportService {
   /**
    * 等待图片加载完成。
    * @param root 查询根节点
+   * @param taskId 可选任务 ID
    */
-  private async waitForImages(root: HTMLElement): Promise<void> {
+  private async waitForImages(root: HTMLElement, taskId?: string): Promise<void> {
     const images = Array.from(root.querySelectorAll('img'))
 
     await Promise.all(images.map(img => {
+      if (taskId && this.taskRunner.isTaskCancelled(taskId)) {
+        return Promise.resolve()
+      }
       if (img.complete && img.naturalWidth > 0) {
         return Promise.resolve()
       }

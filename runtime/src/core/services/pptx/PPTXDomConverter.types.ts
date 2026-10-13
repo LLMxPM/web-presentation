@@ -90,7 +90,7 @@ export interface ImageSizingOptions {
 }
 
 export interface PptxTableCellLike {
-  text?: string
+  text?: PptxTextContentLike
   options?: Record<string, unknown>
 }
 

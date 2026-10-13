@@ -91,6 +91,23 @@ export class PptxPackageWriter {
   }
 
   /**
+   * 生成 PPTX 二进制字节（含 OOXML 线性渐变修补），不触发浏览器下载。
+   * @param pptx PptxGenJS 实例
+   * @param gradientFills 渐变填充指令列表
+   * @returns PPTX 字节数组
+   */
+  async generatePresentationBytes(
+    pptx: PptxGenJS,
+    gradientFills: PptxGradientFillInstruction[] = [],
+  ): Promise<Uint8Array> {
+    const rawPptx = await pptx.write({ outputType: 'uint8array', compression: true }) as Uint8Array
+    if (gradientFills.length === 0) {
+      return rawPptx
+    }
+    return patchGradientFills(rawPptx, gradientFills)
+  }
+
+  /**
    * 写出 PPTX 文件并触发下载；若存在线性渐变指令则先修补 OOXML。
    * @param pptx PptxGenJS 实例
    * @param filename 导出文件名
@@ -101,14 +118,8 @@ export class PptxPackageWriter {
     filename: string,
     gradientFills: PptxGradientFillInstruction[],
   ): Promise<void> {
-    if (gradientFills.length === 0) {
-      await pptx.writeFile({ fileName: filename, compression: true })
-      return
-    }
-
-    const rawPptx = await pptx.write({ outputType: 'uint8array', compression: true }) as Uint8Array
-    const patchedPptx = patchGradientFills(rawPptx, gradientFills)
-    this.savePptxBlob(filename, patchedPptx)
+    const data = await this.generatePresentationBytes(pptx, gradientFills)
+    this.savePptxBlob(filename, data)
   }
 
   /**

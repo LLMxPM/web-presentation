@@ -34,6 +34,7 @@ export interface PptxDomTextExportHost {
     label: string,
     reason?: string,
     context?: VisitContext,
+    extra?: Partial<PptxExportReportItem>,
   ) => PptxExportReportItem
 }
 
@@ -42,7 +43,7 @@ export interface PptxDomTextExportHost {
  */
 export class PPTXDomConverterText {
   private readonly richTextParser = new PPTXDomRichTextParser()
-  private readonly richTextCache = new WeakMap<HTMLElement, PptxDomRichTextResult | null>()
+  private richTextCache = new WeakMap<HTMLElement, PptxDomRichTextResult | null>()
   private readonly transform: PPTXDomConverterTransform
   private readonly shapeGeometry: ShapeGeometryResolver
   private readonly widthGuard: TextWidthGuard
@@ -51,6 +52,13 @@ export class PPTXDomConverterText {
     this.transform = new PPTXDomConverterTransform(layout)
     this.shapeGeometry = new ShapeGeometryResolver(layout)
     this.widthGuard = new TextWidthGuard(layout, this.shapeGeometry)
+  }
+
+  /**
+   * 初始化页面级富文本缓存。
+   */
+  beginPage(): void {
+    this.richTextCache = new WeakMap<HTMLElement, PptxDomRichTextResult | null>()
   }
 
   /**
@@ -245,15 +253,19 @@ export class PPTXDomConverterText {
       shouldPreservePaddedBox,
     )
 
+    const objectMeta = host.buildPptObjectMeta(context, 'text-shape', text)
+    const objectName = typeof objectMeta.objectName === 'string' ? objectMeta.objectName : undefined
+    const extra = objectName ? { primitiveIds: [objectName] } : undefined
+
     host.options.slide.addText(richText?.runs || text, {
       ...this.transform.applyToBox(guardedBox, context),
       ...shapeVisual.options,
       margin: this.widthGuard.resolveTextShapeMargin(element, style),
       ...textOptions,
-      ...host.buildPptObjectMeta(context, 'text-shape', text),
+      ...objectMeta,
     })
-    host.addReportItem(sourceType, 'editable-text', true, text.slice(0, 60), '带背景文本转为 PPT text shape', context)
-    host.addReportItem('shape', 'editable-shape', true, label, '背景、边框和圆角由 PPT 文本形状绘制', context)
+    host.addReportItem(sourceType, 'editable-text', true, text.slice(0, 60), '带背景文本转为 PPT text shape', context, extra)
+    host.addReportItem('shape', 'editable-shape', true, label, '背景、边框和圆角由 PPT 文本形状绘制', context, extra)
     return true
   }
 

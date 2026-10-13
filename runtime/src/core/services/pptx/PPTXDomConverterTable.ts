@@ -17,6 +17,7 @@ import type {
 } from '@/core/services/pptx/PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import { PPTXDomHtmlTableParser } from '@/core/services/pptx/PPTXDomHtmlTableParser'
+import { PPTXDomRichTextParser } from '@/core/services/pptx/PPTXDomRichTextParser'
 import { PPTXDomTableBorders } from '@/core/services/pptx/PPTXDomTableBorders'
 import { PPTXDomTableGeometry } from '@/core/services/pptx/PPTXDomTableGeometry'
 import type {
@@ -51,6 +52,7 @@ export class PPTXDomConverterTable {
   private readonly htmlParser: PPTXDomHtmlTableParser
   private readonly geometry: PPTXDomTableGeometry
   private readonly borders = new PPTXDomTableBorders()
+  private readonly richTextParser = new PPTXDomRichTextParser()
 
   constructor(private readonly layout: PPTXDomConverterLayout) {
     this.htmlParser = new PPTXDomHtmlTableParser(layout)
@@ -200,12 +202,55 @@ export class PPTXDomConverterTable {
    */
   private buildTableCell(entry: PptxDomTableCellEntry, context: VisitContext): PptxTableCellLike {
     const { element } = entry
-    const text = this.layout.normalizeText(element.textContent || '')
     const style = window.getComputedStyle(element)
+    const richResult = this.richTextParser.parse(element, (el, elStyle, runText) => {
+      const color = this.applyOpacity(this.layout.parseCssColor(elStyle.color, el), this.layout.parseOpacity(elStyle.opacity))
+      return {
+        fontFace: this.layout.normalizeFontFace(elStyle.fontFamily, runText),
+        fontSize: Math.max(1, this.layout.cssPxToPt(this.layout.parseCssPixel(elStyle.fontSize) || 16)),
+        color: color?.hex || '000000',
+        transparency: this.layout.alphaToTransparency(color?.alpha ?? 1),
+        bold: this.layout.isBoldFont(elStyle.fontWeight),
+        italic: elStyle.fontStyle === 'italic',
+        underline: elStyle.textDecorationLine.includes('underline'),
+      }
+    })
+
+    const visibleFallback = this.extractVisibleText(element)
+    const plainText = richResult?.text ?? this.layout.normalizeText(visibleFallback)
+
+    const hasMultipleRunsOrBreak = Boolean(
+      richResult && (
+        richResult.runs.length > 1 ||
+        richResult.runs.some(run => run.options?.softBreakBefore || run.options?.breakLine)
+      ),
+    )
+
+    let cellText: import('@/core/services/pptx/PPTXDomConverter.types').PptxTextContentLike = plainText
+    if (richResult && hasMultipleRunsOrBreak) {
+      cellText = richResult.runs.map(run => ({
+        text: run.text,
+        options: {
+          ...run.options,
+          ...(run.options?.softBreakBefore ? { breakLine: true } : {}),
+        },
+      }))
+    } else if (visibleFallback.includes('\n')) {
+      const lines = visibleFallback.split('\n').map(line => line.trim()).filter(Boolean)
+      if (lines.length > 1) {
+        cellText = lines.map((line, idx) => ({
+          text: line,
+          options: {
+            ...(idx > 0 ? { breakLine: true } : {}),
+          },
+        }))
+      }
+    }
+
     return {
-      text,
+      text: cellText,
       options: {
-        ...this.buildTextOptions(element, style, text, context),
+        ...this.buildTextOptions(element, style, plainText, context),
         ...this.buildCellVisualOptions(element, style),
         margin: this.buildCellMargin(element, style),
         fit: 'shrink',
@@ -213,6 +258,40 @@ export class PPTXDomConverterTable {
         ...(entry.colspan > 1 ? { colspan: entry.colspan } : {}),
       },
     }
+  }
+
+  /**
+   * 递归提取可见文本，忽略隐藏元素并保留换行。
+   */
+  private extractVisibleText(node: Node): string {
+    if (node instanceof Text) {
+      const parent = node.parentElement
+      if (parent) {
+        const style = window.getComputedStyle(parent)
+        if (style.display === 'none' || style.visibility === 'hidden') {
+          return ''
+        }
+      }
+      return node.textContent || ''
+    }
+    if (node instanceof HTMLElement) {
+      if (node.hasAttribute('hidden') || node.hidden) {
+        return ''
+      }
+      const style = window.getComputedStyle(node)
+      if (style.display === 'none' || style.visibility === 'hidden') {
+        return ''
+      }
+      if (node.tagName.toLowerCase() === 'br') {
+        return '\n'
+      }
+      let text = ''
+      for (const child of Array.from(node.childNodes)) {
+        text += this.extractVisibleText(child)
+      }
+      return text
+    }
+    return ''
   }
 
   /**

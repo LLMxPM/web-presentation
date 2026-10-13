@@ -69,6 +69,7 @@ export function appendPptxReportItem(
   label: string,
   reason?: string,
   context?: VisitContext,
+  extra?: Partial<PptxExportReportItem>,
 ): PptxExportReportItem {
   const item: PptxExportReportItem = {
     pageIndex: reportPage.pageIndex,
@@ -83,6 +84,8 @@ export function appendPptxReportItem(
     parentGroupId: context?.parentGroupId,
     groupDepth: context?.groupId ? context.groupDepth : undefined,
     groupLabel: context?.groupLabel,
+    severity: result === 'skipped' ? 'warning' : 'info',
+    ...extra,
   }
   reportPage.items.push(item)
   return item

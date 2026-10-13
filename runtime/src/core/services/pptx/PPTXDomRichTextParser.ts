@@ -88,6 +88,9 @@ export class PPTXDomRichTextParser {
         }
         const owner = current instanceof HTMLElement ? current : root
         const style = window.getComputedStyle(owner)
+        if (style.display === 'none' || style.visibility === 'hidden') {
+          continue
+        }
         segments.push({
           kind: 'text',
           text: node.textContent,
@@ -98,6 +101,13 @@ export class PPTXDomRichTextParser {
 
       if (!(node instanceof HTMLElement)) {
         return false
+      }
+      if (node.hasAttribute('hidden') || node.hidden) {
+        continue
+      }
+      const nodeStyle = window.getComputedStyle(node)
+      if (nodeStyle.display === 'none' || nodeStyle.visibility === 'hidden') {
+        continue
       }
       if (node.tagName.toLowerCase() === 'br') {
         segments.push({ kind: 'break' })
@@ -122,6 +132,9 @@ export class PPTXDomRichTextParser {
     }
 
     const style = window.getComputedStyle(element)
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false
+    }
     const display = style.display || 'inline'
     if (!['inline', 'contents'].includes(display)) {
       return false
@@ -199,7 +212,14 @@ export class PPTXDomRichTextParser {
 
     const appendBreak = () => {
       pendingSpace = null
-      if (hasContent) pendingBreak = true
+      if (pendingBreak) {
+        runs.push({ text: '', options: { softBreakBefore: true } })
+      } else if (!hasContent) {
+        runs.push({ text: '', options: {} })
+        pendingBreak = true
+      } else {
+        pendingBreak = true
+      }
     }
 
     segments.forEach(segment => {

@@ -80,11 +80,23 @@ export class PPTXDomConverterGradient {
       return true
     }
 
+    const shapeGeometry = this.shapeGeometry.resolveShapeGeometry(host.options.shapeTypes, element, style, box)
+    const elementOpacity = this.layout.parseOpacity(style.opacity)
+    const borders = this.layout.getBorderInfos(element, style).map(border => ({
+      ...border,
+      color: this.shapeGeometry.applyOpacity(border.color, elementOpacity) || border.color,
+    }))
+    const uniformBorder = this.shapeGeometry.getUniformBorderInfo(borders)
+    const lineOptions = uniformBorder
+      ? this.shapeGeometry.buildLineOptions(uniformBorder)
+      : this.shapeGeometry.buildTransparentLineOptions()
+
     const objectName = host.createGradientObjectName(element)
-    host.options.slide.addShape(host.options.shapeTypes.rect, {
+    host.options.slide.addShape(shapeGeometry.shape, {
       ...this.transform.applyToBox(box, context),
       fill: this.shapeGeometry.buildFillOptions(this.sampleLinearGradientColor(gradient.stops, 0.5)),
-      line: this.shapeGeometry.buildTransparentLineOptions(),
+      line: lineOptions,
+      ...shapeGeometry.options,
       ...host.buildPptObjectMeta(context, 'gradient', label),
       objectName,
     })

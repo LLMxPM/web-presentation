@@ -77,8 +77,13 @@ export class PPTXSvgSerializer {
       return ''
     }
 
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const response = await fetch(normalized)
+      const timeoutPromise = new Promise<Response>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('SVG fetch timeout')), 10000)
+      })
+      const response = await Promise.race([fetch(normalized), timeoutPromise])
+      if (timer) clearTimeout(timer)
       if (!response.ok) {
         return ''
       }
@@ -87,6 +92,8 @@ export class PPTXSvgSerializer {
       return this.isSvgXmlSource(source, contentType) ? source : ''
     } catch {
       return ''
+    } finally {
+      if (timer) clearTimeout(timer)
     }
   }
 

@@ -58,6 +58,10 @@ export interface PptxExportReportSummary {
   skipped: number
 }
 
+export type PptxReportSeverity = 'info' | 'warning' | 'error'
+
+export type PptxReportFallbackScope = 'none' | 'element' | 'subtree' | 'page'
+
 export interface PptxExportReportItem {
   /** 页码索引，从 1 开始 */
   pageIndex: number
@@ -83,6 +87,20 @@ export interface PptxExportReportItem {
   groupDepth?: number
   /** HTML 容器摘要 */
   groupLabel?: string
+  /** 源 DOM 节点或选择器标识 */
+  sourceId?: string
+  /** 关联的 PPTX 真实图元 ID 列表 */
+  primitiveIds?: string[]
+  /** 诊断严重级别 */
+  severity?: PptxReportSeverity
+  /** 稳定原因码 */
+  code?: string
+  /** 处理阶段 */
+  stage?: string
+  /** 元素在幻灯片中的边界盒（inch） */
+  bounds?: { x: number; y: number; w: number; h: number }
+  /** 降级影响范围 */
+  fallbackScope?: PptxReportFallbackScope
 }
 
 export interface PptxExportReportPage {
