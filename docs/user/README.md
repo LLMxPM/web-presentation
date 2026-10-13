@@ -2,7 +2,7 @@
 
 用户文档面向平台使用者、内容创作者和团队管理员。建议先按“我现在要做什么”选择入口，不必按目录顺序通读。
 
-项目网站：[https://presentation.inputloom.com/](https://presentation.inputloom.com/)
+项目网站：[https://wp.llmxpm.com/](https://wp.llmxpm.com/)
 
 ## 从这里开始
 

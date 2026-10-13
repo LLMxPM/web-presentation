@@ -4,8 +4,6 @@
 
 本文负责平台侧授权契约、Backend、Editor 和跨仓验收。[CLI 仓库计划](https://github.com/LLMxPM/web-presentation-cli/blob/oauth/docs/oauth-implementation-plan.md)负责命令、Profile、同步客户端和 Skill。两份计划目前保存在本地工作树，跨仓 GitHub 链接在相应分支推送后可用。已实现的公共业务接口继续以 [External API v1 契约](./reference/external-agent-api.md)为准；下列候选认证契约须完成 P0 后才可作为实现依据。
 
-下文引用的 MCP 授权基础与验收资料固定到已推送提交 `341e127`，与本地评估基线分开追溯；这些资料不表示当前分支已交付 MCP OAuth。
-
 ## 1. 目标与首期范围
 
 让官方 CLI 通过系统浏览器登录平台，由用户批准具体工作空间和 Scope，取得面向 External API 的短期 access token 与轮换 refresh token。CLI 直接调用现有 `/api/v1`，无需部署 MCP 或持有 MCP 服务密钥。
@@ -87,15 +85,15 @@ pnpm run test:repository
 
 实施时补充 CLI OAuth 专题测试，覆盖原生回调、API audience 和直接身份；以上现有入口不是新能力的完整验收。PostgreSQL 使用独立 `wp_oauth_test_*` 数据库，缺配置跳过必须报告。双 Backend、Redis、Runtime、Renderer 和 Gateway 使用专属资源；按已有 [Docker 架构演练](./testing/docker-architecture-drill.md)约束组织，CLI 联测入口在 P4 落地，不把 MCP 测试直接算作 CLI 通过。
 
-当前可复用的 MCP 本地 SQLite/PG、TLS 创作、PNG 与双 Backend 证据见 [域名前本地验收](https://github.com/LLMxPM/web-presentation/blob/341e127a1315329e1dd43492a91bd47eb71d2fb2/docs/developer/testing/mcp-local-acceptance.md)。它们不替代 CLI 原生回调、跨进程刷新或公网浏览器登录验收。
+当前可复用的 MCP 本地 SQLite/PG、TLS 创作、PNG 与双 Backend 证据见 [域名前本地验收](./testing/mcp-local-acceptance.md)。它们不替代 CLI 原生回调、跨进程刷新或公网浏览器登录验收。
 
 2026-10-05 本轮评估运行现有 OAuth 定向回归：65 passed、29 个 PG 分支因缺专用数据库跳过。该结果仅说明当前基础回归通过，不说明候选 CLI OAuth 契约已实现。本轮计划文档的链接/围栏与 diff 检查单独记录在交付说明。
 
 ## 7. 文档与交接
 
-P0 的服务端契约在主仓维护；CLI 计划只引用冻结版本。实现落地时同步 [CLI 集成边界](./cli.md)、External API 契约、[OAuth 基础](https://github.com/LLMxPM/web-presentation/blob/341e127a1315329e1dd43492a91bd47eb71d2fb2/docs/developer/backend/oauth-foundation.md)、配置和运维文档。HTTP DTO 改动必须生成 Editor 类型并检查一致性；凭证分派约束变化时同步根 `AGENTS.md`。
+P0 的服务端契约在主仓维护；CLI 计划只引用冻结版本。实现落地时同步 [CLI 集成边界](./cli.md)、External API 契约、[OAuth 基础](./backend/oauth-foundation.md)、配置和运维文档。HTTP DTO 改动必须生成 Editor 类型并检查一致性；凭证分派约束变化时同步根 `AGENTS.md`。
 
-P5 同步顶层 README、[外部授权工作流](https://github.com/LLMxPM/web-presentation/blob/341e127a1315329e1dd43492a91bd47eb71d2fb2/docs/user/workflows/external-authorization.md)和发布检查表；现有 MCP 计划作为独立范围继续维护。证据记录双方完整 commit、CLI wheel/Skill 版本、OpenAPI 摘要、环境、测试命令、跳过项和未完成事项，不能仅用“登录成功”作为业务闭环。
+P5 同步顶层 README、[外部授权工作流](../user/workflows/external-authorization.md)和发布检查表；现有 MCP 计划作为独立范围继续维护。证据记录双方完整 commit、CLI wheel/Skill 版本、OpenAPI 摘要、环境、测试命令、跳过项和未完成事项，不能仅用“登录成功”作为业务闭环。
 
 ## 8. 当前进度
 
