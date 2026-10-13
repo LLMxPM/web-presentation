@@ -45,6 +45,10 @@ pnpm run test:e2e:run
 
 E2E 入口默认由脚本自启服务：未显式设置 `TESTING_START_*` 时，`prepare` 会先校验 Backend、Editor、Runtime、Renderer 的 8000/5173/7373/7400 端口与本地 PostgreSQL/Redis 依赖，端口被占用时立即报错并给出提示；校验通过后自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock` 并启动服务。
 
+准备脚本向 Backend 与 Runtime 注入一致的 E2E 构建 Worker 凭据，默认使用测试专用值；可通过 `E2E_BUILD_WORKER_CREDENTIAL` 和 `E2E_BUILD_WORKER_ID` 覆盖。两端会清空 `RUNTIME_BUILD_WORKER_CREDENTIAL_FILE`，避免继承开发或生产 secret 文件，Runtime 固定使用 `all` 角色提供完整测试执行面。
+
+Runtime 存活检查通过后，还必须通过 `/__runtime_readyz`，并明确返回 `checks.buildWorker.ready=true`。Worker 缺失、未启动或其他执行面未就绪时，`prepare` 直接失败并输出原因，避免真实构建用例等待 `pending` 超时。复用 Runtime 时也执行同样的检查。
+
 复用已在运行的服务时，显式设置任一 `TESTING_START_*` 或 `TESTING_REUSE_BACKEND` 会跳过端口校验：
 
 ```powershell

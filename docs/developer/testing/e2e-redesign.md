@@ -155,7 +155,7 @@ FunctionModel 不需要感知 Runtime 诊断上下文。短场景应配置足够
 - Backend 在 `AI_TEST_MODE=mock` 下通过 `/api/testing/e2e-readiness` 提供不含连接串和密钥的测试就绪信息，至少返回 `test_mode=mock`、`database_profile=e2e`、`redis_profile=e2e`、`seed_version`、`smoke_data_ready` 和 mock scenario 版本；非 mock 模式下该入口返回 404。
 - `ensure-services.mjs` 先等待 `/api/auth/me` 返回 401/200，再校验测试就绪信息。任一指纹不匹配立即失败，不能继续使用该 Backend。
 - 新启动的 Backend 必须由 `buildE2eBackendEnv()` 注入环境。复用现有 Backend 仅在测试指纹完全匹配时允许，不能因端口可达自动复用开发服务。
-- Editor 与 Runtime 继续做 HTTP 就绪检查；预热至少覆盖登录、工作空间首页和首个页面详情入口，不要求遍历所有业务页面。
+- Editor 做 HTTP 就绪检查；Runtime 在存活检查后必须通过 `/__runtime_readyz` 且 `checks.buildWorker.ready=true`。Backend 与 Runtime 共享 E2E 专用构建凭据，Worker 缺失时在 prepare 阶段失败；预热至少覆盖登录、工作空间首页和首个页面详情入口，不要求遍历所有业务页面。
 - `test:e2e:run` 定位为不修改数据的开发调试命令，假设此前已经完成 prepare；globalSetup 仍必须检查 `seed_version` 与 `smoke_data_ready`。前置数据缺失时应快速失败，并提示执行 `pnpm run test:e2e:prepare`，不能进入业务页面后才失败。
 
 ### 3.5 断言与稳定性约定

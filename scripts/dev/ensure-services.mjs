@@ -1,5 +1,5 @@
 /**
- * 文件功能：检测或启动 backend/editor/runtime 服务，并校验 Backend 的 E2E 测试指纹。
+ * 文件功能：检测或启动平台服务，并校验 Backend 的 E2E 测试指纹和 Runtime 构建就绪状态。
  *
  * 依据 docs/developer/testing/e2e-redesign.md §3.4/§3.7：
  * - 先等待 /api/auth/me 返回 401/200，再校验 /api/testing/e2e-readiness 指纹；
@@ -14,6 +14,7 @@ import { spawnPersistentBackground, sleep, runCommandSync } from '../testing/pro
 import { resolveServiceUrls } from '../testing/service-env.mjs'
 import { buildE2eBackendEnv, E2E_DATABASE_MARKER } from '../testing/e2e-database-env.mjs'
 import { buildE2eRenderEnv } from '../testing/e2e-render-env.mjs'
+import { assertE2eRuntimeReady, buildE2eRuntimeEnv } from '../testing/e2e-runtime-env.mjs'
 
 const urls = resolveServiceUrls()
 const SERVICE_LOG_DIR = path.join(process.cwd(), 'test-results', 'e2e', 'services')
@@ -65,6 +66,7 @@ async function main() {
         ...serviceLogStdio('runtime'),
       }),
   })
+  await assertE2eRuntimeReady(urls.runtime)
   console.log('[testing] backend/editor/runtime/renderer are ready')
 }
 
@@ -166,22 +168,6 @@ async function assertBackendTestFingerprint(origin) {
     throw new Error(`${origin}的测试指纹不匹配：${problems.join('；')}。${prepareHint}`)
   }
   console.log(`[testing] backend fingerprint ok (${origin}，seed_version=${readiness.seed_version}，scenario_version=${readiness.scenario_version})`)
-}
-
-/**
- * 构造 Runtime 的 E2E 环境，确保预览令牌验签和内部回源始终指向同一套测试 Backend。
- * @param {{ backend: string, runtime: string }} urls 测试服务的公开地址
- * @returns {NodeJS.ProcessEnv} 供 Runtime 子进程使用的环境变量
- */
-function buildE2eRuntimeEnv(urls) {
-  const backendUrl = urls.backend.replace(/\/$/, '')
-  return {
-    ...process.env,
-    RUNTIME_PREVIEW_JWKS_URL: `${backendUrl}/.well-known/jwks.json`,
-    RUNTIME_BACKEND_API_BASE_URL: backendUrl,
-    RUNTIME_PUBLIC_BASE_URL: urls.runtime.replace(/\/$/, ''),
-    RUNTIME_SERVER_BASE_PATH: new URL(urls.runtime).pathname,
-  }
 }
 
 /** Editor/Runtime 等非指纹敏感服务的 HTTP 就绪检查与自动启动。 */
