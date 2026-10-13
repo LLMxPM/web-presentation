@@ -40,6 +40,10 @@ import {
   createIrSlideCollector,
   projectSlideIRToSlide,
 } from '@/core/services/pptx/writer/PptxSlideProjector'
+import {
+  getComputedStyle,
+  isHTMLElement,
+} from './dom/PPTXDomEnvironment'
 
 export type {
   PptxGradientFillInstruction,
@@ -104,8 +108,8 @@ export class PPTXDomConverter {
       groupDepth: 0,
     }
 
-    if (options.pageElement instanceof HTMLElement) {
-      const pageStyle = window.getComputedStyle(options.pageElement)
+    if (isHTMLElement(options.pageElement)) {
+      const pageStyle = getComputedStyle(options.pageElement)
       if (pageStyle.backgroundImage && pageStyle.backgroundImage !== 'none') {
         const exportedRootGradient = this.gradient.addLinearGradientElement(
           this.createGradientExportHost(),
@@ -165,7 +169,7 @@ export class PPTXDomConverter {
       return
     }
 
-    if (element instanceof HTMLElement) {
+    if (isHTMLElement(element)) {
       const preparedTransform = this.transform.prepare(element, context)
       try {
         if (preparedTransform.kind === 'unsupported') {
@@ -206,7 +210,7 @@ export class PPTXDomConverter {
     }
 
     let exportedBackgroundImage = false
-    if (element instanceof HTMLElement) {
+    if (isHTMLElement(element)) {
       exportedBackgroundImage = await this.media.addBackgroundImageElement(this.createMediaExportHost(), element, context)
       if (exportedBackgroundImage && !this.shouldContinueAfterVisualExport(element)) {
         return
@@ -214,7 +218,7 @@ export class PPTXDomConverter {
     }
 
     let exportedLinearGradient = false
-    if (element instanceof HTMLElement) {
+    if (isHTMLElement(element)) {
       exportedLinearGradient = this.gradient.addLinearGradientElement(this.createGradientExportHost(), element, context)
       if (exportedLinearGradient && !this.shouldContinueAfterVisualExport(element)) {
         return
@@ -222,7 +226,7 @@ export class PPTXDomConverter {
     }
 
     if (
-      element instanceof HTMLElement &&
+      isHTMLElement(element) &&
       !exportedBackgroundImage &&
       !exportedLinearGradient &&
       this.layout.shouldScreenshotComplexElement(element)
@@ -239,33 +243,33 @@ export class PPTXDomConverter {
       )
     }
 
-    const textContext = element instanceof HTMLElement
+    const textContext = isHTMLElement(element)
       ? this.createTextInheritanceContext(element, context)
       : context
     const canAddShape = !exportedLinearGradient && !exportedBackgroundImage
-    const shouldAddShape = canAddShape && element instanceof HTMLElement && this.text.shouldAddShape(element)
-    const shouldAddWholeText = element instanceof HTMLElement && this.text.shouldAddText(element)
+    const shouldAddShape = canAddShape && isHTMLElement(element) && this.text.shouldAddShape(element)
+    const shouldAddWholeText = isHTMLElement(element) && this.text.shouldAddText(element)
     const shouldAddTextShape = canAddShape &&
-      element instanceof HTMLElement &&
+      isHTMLElement(element) &&
       shouldAddWholeText &&
-      (shouldAddShape || this.layout.shouldPreservePaddedInlineTextBox(element, window.getComputedStyle(element)))
-    const elementContext = element instanceof HTMLElement && this.shouldCreateCompositionGroup(element, shouldAddShape, shouldAddWholeText)
+      (shouldAddShape || this.layout.shouldPreservePaddedInlineTextBox(element, getComputedStyle(element)))
+    const elementContext = isHTMLElement(element) && this.shouldCreateCompositionGroup(element, shouldAddShape, shouldAddWholeText)
       ? this.createGroupContext(element, textContext)
       : textContext
 
     if (
-      element instanceof HTMLElement &&
+      isHTMLElement(element) &&
       shouldAddTextShape &&
       this.text.addTextShapeElement(this.createTextExportHost(), element, elementContext)
     ) {
       return
     }
 
-    if (element instanceof HTMLElement && shouldAddShape) {
+    if (isHTMLElement(element) && shouldAddShape) {
       this.text.addShapeElement(this.createTextExportHost(), element, elementContext)
     }
 
-    if (element instanceof HTMLElement && shouldAddWholeText) {
+    if (isHTMLElement(element) && shouldAddWholeText) {
       this.text.addTextElement(this.createTextExportHost(), element, elementContext)
       return
     }
@@ -275,7 +279,7 @@ export class PPTXDomConverter {
         await this.visitElement(childNode, elementContext)
         continue
       }
-      if (element instanceof HTMLElement && childNode instanceof Text) {
+      if (isHTMLElement(element) && childNode instanceof Text) {
         this.text.addDirectTextNode(this.createTextExportHost(), element, childNode, elementContext)
       }
     }
@@ -317,7 +321,7 @@ export class PPTXDomConverter {
    * @param pageElement 页面根元素
    */
   private applySlideBackground(pageElement: HTMLElement): void {
-    const style = window.getComputedStyle(pageElement)
+    const style = getComputedStyle(pageElement)
     const backgroundColor = this.layout.parseCssColor(
       this.layout.resolveBackgroundColorValue(pageElement, style),
       pageElement,

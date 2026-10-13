@@ -58,7 +58,36 @@ export function resolveRuntimeCaptureRoute(
 }
 
 /**
+ * 冻结文档中的所有有限动画到最终状态，避免截图或几何测量采到动画起始帧或重新开始。
+ * @param doc 目标文档
+ */
+export async function freezeDocumentAnimationsToFinalState(doc?: Document | null): Promise<void> {
+  if (!doc || typeof doc.getAnimations !== 'function') {
+    return
+  }
+  try {
+    const animations = doc.getAnimations()
+    for (const anim of animations) {
+      const timing = anim.effect?.getTiming()
+      const iterations = timing?.iterations ?? 1
+      if (Number.isFinite(iterations) && iterations > 0) {
+        if (typeof anim.finish === 'function') {
+          try {
+            anim.finish()
+          } catch {
+            // 忽略只读或已完成动画异常
+          }
+        }
+      }
+    }
+  } catch {
+    // 忽略不受支持环境异常
+  }
+}
+
+/**
  * 创建单任务离屏 1:1 页面渲染舞台；调用方必须在 finally 中调用 dispose() 释放。
+ * 退出条件保障：原生在真实 iframe 内部提取和截图，移除 PPTX 宿主投影，无遗留舞台或投影节点。
  * @returns OffscreenPageStage 实例
  */
 export function createOffscreenPageStage(): OffscreenPageStage {
@@ -76,29 +105,83 @@ export function createOffscreenPageStage(): OffscreenPageStage {
   })
   document.body.appendChild(frame)
   let disposed = false
+  let lastCapturedElement: HTMLElement | null = null
 
   /**
-   * 重载独立运行时并等待目标页面、字体就绪，再投影到宿主文档。
+   * 确保 iframe 文档与 body 结构初始化完成。
+   */
+  function ensureFrameDocument(): void {
+    const doc = frame.contentDocument
+    if (doc && !doc.body) {
+      try {
+        doc.write('<!DOCTYPE html><html><head></head><body></body></html>')
+        doc.close()
+      } catch {
+        // 忽略跨域写异常
+      }
+    }
+  }
+
+  /**
+   * 重载独立运行时并等待目标页面、字体与动画最终态就绪，直接返回真实 iframe 节点。
    * @param route 目标页面路由
-   * @returns 宿主文档中的 1:1 投影元素及清理函数
+   * @returns 真实 iframe 中的 1:1 页面元素及清理句柄
    */
   async function preparePage(route: string): Promise<OffscreenPreparedPage> {
+    const ticket = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     const captureRoute = resolveRuntimeCaptureRoute(route)
     const url = new URL(window.location.href)
-    url.hash = captureRoute.hash
-    frame.src = url.href
+    const [pathPart, queryPart] = captureRoute.hash.split('?')
+    const searchParams = new URLSearchParams(queryPart || '')
+    searchParams.set('runtimeCaptureTicket', ticket)
+    url.hash = `${pathPart}?${searchParams.toString()}`
+
+    // 重置已挂载窗口的就绪标记，防止多页切换时上一页就绪标记引起残余 DOM 误判
+    if (frame.contentWindow && '__EDITOR_RUNTIME_PREVIEW_READY__' in frame.contentWindow) {
+      try {
+        frame.contentWindow.__EDITOR_RUNTIME_PREVIEW_READY__ = false
+      } catch {
+        // 忽略跨域写标记异常
+      }
+    }
+
+    // 优先通过 contentWindow.location.hash 触发单页内部路由更新，避免重复整页重载
+    if (frame.contentWindow?.location && frame.src) {
+      try {
+        frame.contentWindow.location.hash = url.hash
+      } catch {
+        frame.src = url.href
+      }
+    } else {
+      frame.src = url.href
+    }
+
+    ensureFrameDocument()
+
     const started = Date.now()
     while (!disposed && Date.now() - started < 30000) {
+      ensureFrameDocument()
       const targetWindow = frame.contentWindow
       const doc = frame.contentDocument
       const target = doc?.querySelector<HTMLElement>('.runtime-page-print-source')
+      const isRouteMatched = target?.dataset.runtimeRoutePath === captureRoute.path
+      const isNewElement = !lastCapturedElement || target !== lastCapturedElement || !lastCapturedElement.isConnected
+
       if (
         targetWindow?.__EDITOR_RUNTIME_PREVIEW_READY__ &&
-        target?.dataset.runtimeRoutePath === captureRoute.path &&
+        isRouteMatched &&
+        isNewElement &&
         !doc?.querySelector('[role="alert"]')
       ) {
         await doc?.fonts?.ready
-        return projectIframeTarget(target, doc)
+        await freezeDocumentAnimationsToFinalState(doc)
+        lastCapturedElement = target
+        return {
+          element: target,
+          cleanup: () => {
+            // 原生在 iframe 内运行，不污染宿主文档，无须移除宿主投影
+          },
+        }
       }
       await new Promise(resolve => setTimeout(resolve, 50))
     }
@@ -124,6 +207,7 @@ export function createOffscreenPageStage(): OffscreenPageStage {
    */
   function dispose(): void {
     disposed = true
+    lastCapturedElement = null
     frame.remove()
   }
 

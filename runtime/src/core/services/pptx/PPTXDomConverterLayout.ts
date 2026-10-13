@@ -15,6 +15,12 @@ import type {
 import { ComplexCssDetector } from './layout/ComplexCssDetector'
 import { JsdomFlexFallback } from './layout/JsdomFlexFallback'
 import { TypographyAndAlignmentResolver } from './style/TypographyAndAlignmentResolver'
+import {
+  createRange,
+  getComputedStyle,
+  isHTMLElement,
+  isSVGElement,
+} from './dom/PPTXDomEnvironment'
 
 /**
  * PPTX DOM 转换布局测量与样式坐标门面。
@@ -143,12 +149,12 @@ export class PPTXDomConverterLayout {
    * 测量直属文本节点的像素位置和尺寸，优先使用 Range 获取真实文本包围盒。
    */
   measureTextNodePixels(textNode: Text): MeasuredElementBox | null {
-    if (!this.normalizeText(textNode.textContent || '') || typeof document.createRange !== 'function') {
+    if (!this.normalizeText(textNode.textContent || '')) {
       return null
     }
 
     try {
-      const range = document.createRange()
+      const range = createRange(textNode)
       range.selectNodeContents(textNode)
 
       const clientRects = typeof range.getClientRects === 'function'
@@ -179,9 +185,9 @@ export class PPTXDomConverterLayout {
    */
   measureElementRawPixels(element: Element): MeasuredElementBox {
     const rect = element.getBoundingClientRect()
-    const style = window.getComputedStyle(element)
-    const width = rect.width || this.parseCssPixel(style.width) || (element as HTMLElement).offsetWidth || 0
-    const height = rect.height || this.parseCssPixel(style.height) || (element as HTMLElement).offsetHeight || 0
+    const style = getComputedStyle(element)
+    const width = rect.width || this.parseCssPixel(style.width) || (isHTMLElement(element) ? element.offsetWidth : 0) || 0
+    const height = rect.height || this.parseCssPixel(style.height) || (isHTMLElement(element) ? element.offsetHeight : 0) || 0
     const left = rect.left || this.parseCssPixel(style.left)
     const top = rect.top || this.parseCssPixel(style.top)
 
@@ -192,7 +198,7 @@ export class PPTXDomConverterLayout {
    * 判断元素原始测量结果是否可见。
    */
   isRawVisibleElement(element: Element): boolean {
-    const style = window.getComputedStyle(element)
+    const style = getComputedStyle(element)
     const box = this.measureElementRawPixels(element)
     return style.display !== 'none' &&
       style.visibility !== 'hidden' &&
@@ -416,7 +422,7 @@ export class PPTXDomConverterLayout {
   buildElementLabel(element: Element): string {
     const tagName = element.tagName.toLowerCase()
     const id = element.id ? `#${element.id}` : ''
-    const className = element instanceof HTMLElement || element instanceof SVGElement
+    const className = isHTMLElement(element) || isSVGElement(element)
       ? String(element.getAttribute('class') || '')
         .trim()
         .split(/\s+/)
@@ -433,7 +439,7 @@ export class PPTXDomConverterLayout {
    * 判断元素是否可见且有有效尺寸。
    */
   isVisibleElement(element: Element): boolean {
-    const style = window.getComputedStyle(element)
+    const style = getComputedStyle(element)
     const box = this.measureElementPixels(element)
     return style.display !== 'none' &&
       style.visibility !== 'hidden' &&
