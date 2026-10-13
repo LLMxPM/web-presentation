@@ -35,12 +35,12 @@ describe('S4 原生编辑语义（Native Editing Semantics）', () => {
       expect(runs[0].text).toBe('第一项')
       expect(runs[0].options?.bullet).toBe(true)
       expect(runs[0].options?.indentLevel).toBe(0)
-      expect(runs[0].options?.breakLine).toBeUndefined()
+      expect(runs[0].options?.breakLine).toBe(true)
 
       // 第二个 li（含富文本 strong）
       expect(runs[1].text).toBe('第二项')
       expect(runs[1].options?.bullet).toBe(true)
-      expect(runs[1].options?.breakLine).toBe(true)
+      expect(runs[1].options?.breakLine).toBeUndefined()
 
       expect(runs[2].text).toBe('重点')
       expect(runs[2].options?.bold).toBe(true)
@@ -197,7 +197,7 @@ describe('S4 原生编辑语义（Native Editing Semantics）', () => {
       expect(payload?.chartType).toBe('doughnut')
       expect(payload?.categories).toEqual(['产品 A', '产品 B'])
       expect(payload?.series[0].values).toEqual([40, 60])
-      expect(payload?.options?.holeSize).toBe(45)
+      expect(payload?.options?.holeSize).toBe(64)
     })
 
     it('复杂图表（双 Y 轴或 dataset transform）应返回 null 触发安全降级', () => {

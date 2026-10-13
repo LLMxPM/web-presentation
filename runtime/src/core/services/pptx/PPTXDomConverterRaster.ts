@@ -2,6 +2,8 @@
  * 文件用途：封装 PPTX DOM 转换中需要降级截图的 3D CSS 视觉识别。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLElement, isTextNode } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import { isMediaViewerElement } from '@/core/services/pptx/PPTXRuntimeKitExportDom'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import type { MeasuredElementBox } from '@/core/services/pptx/PPTXDomConverter.types'
@@ -27,7 +29,7 @@ export class PPTXDomConverterRaster {
       return null
     }
 
-    if (element instanceof HTMLElement) {
+    if (isHTMLElement(element)) {
       const groupTarget = this.resolve3dGroupTarget(element, pageElement)
       if (groupTarget) {
         return groupTarget
@@ -50,7 +52,7 @@ export class PPTXDomConverterRaster {
    * @param element 候选元素
    */
   hasOwn3dVisual(element: Element): boolean {
-    const style = window.getComputedStyle(element)
+    const style = getOwnerComputedStyle(element)
     if (this.has3dTransform(style.transform)) {
       return true
     }
@@ -108,7 +110,7 @@ export class PPTXDomConverterRaster {
    * @param element 候选元素
    */
   private hasOwn3dTrigger(element: Element): boolean {
-    const style = window.getComputedStyle(element)
+    const style = getOwnerComputedStyle(element)
     return this.has3dTransform(style.transform) ||
       this.hasPreserve3d(style) ||
       this.hasCssPerspective(style)
@@ -212,7 +214,7 @@ export class PPTXDomConverterRaster {
    * @param pageElement 页面根元素
    */
   private resolveOwn3dTarget(element: Element, pageElement: HTMLElement): HTMLElement | null {
-    if (element instanceof HTMLElement) {
+    if (isHTMLElement(element)) {
       if (this.isMediaLeafElement(element)) {
         const target = this.resolveMediaLeafWrapper(element, pageElement)
         return target ? this.expand3dIslandTargetForVisualOverflow(target, pageElement) : null
@@ -265,7 +267,7 @@ export class PPTXDomConverterRaster {
    * @param pageElement 页面根元素
    */
   private resolveMediaDescendantTarget(element: Element, pageElement: HTMLElement): HTMLElement | null {
-    if (element instanceof HTMLElement) {
+    if (isHTMLElement(element)) {
       return element === pageElement ? null : this.expand3dIslandTargetForVisualOverflow(element, pageElement)
     }
 
@@ -363,7 +365,7 @@ export class PPTXDomConverterRaster {
    * @param element 候选元素
    */
   private hasClippingOverflow(element: HTMLElement): boolean {
-    const style = window.getComputedStyle(element)
+    const style = getOwnerComputedStyle(element)
     return [style.overflow, style.overflowX, style.overflowY].some(value => {
       return ['hidden', 'clip', 'auto', 'scroll'].includes(String(value || '').trim())
     })
@@ -471,7 +473,7 @@ export class PPTXDomConverterRaster {
    */
   private hasMeaningfulDirectText(element: Element): boolean {
     return Array.from(element.childNodes).some(node => {
-      return node instanceof Text && Boolean(this.layout.normalizeText(node.textContent || ''))
+      return isTextNode(node) && Boolean(this.layout.normalizeText(node.textContent || ''))
     })
   }
 

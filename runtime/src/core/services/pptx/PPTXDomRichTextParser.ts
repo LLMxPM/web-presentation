@@ -2,6 +2,8 @@
  * 文件用途：将安全的 HTML inline 文本子树解析为 PptxGenJS rich text runs，并统一处理跨节点空白。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLElement, isTextNode } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type { PptxTextRunLike } from './PPTXDomConverter.types'
 
 interface RawTextSegment {
@@ -54,13 +56,13 @@ export class PPTXDomRichTextParser {
    * @param element 文本框根元素
    * @param resolveOptions 字符级 PPT 样式解析器
    */
-  parse(element: HTMLElement, resolveOptions: PptxRunOptionsResolver): PptxDomRichTextResult | null {
+  parse(element: HTMLElement, resolveOptions: PptxRunOptionsResolver, excludedElements?: ReadonlySet<Element>): PptxDomRichTextResult | null {
     const segments: RawSegment[] = []
-    if (!this.collectSegments(element, element, segments, resolveOptions)) {
+    if (!this.collectSegments(element, element, segments, resolveOptions, excludedElements)) {
       return null
     }
 
-    const whiteSpace = window.getComputedStyle(element).whiteSpace || 'normal'
+    const whiteSpace = getOwnerComputedStyle(element).whiteSpace || 'normal'
     const runs = this.normalizeSegments(segments, whiteSpace)
     if (runs.length === 0 || runs.length > MAX_RICH_TEXT_RUNS) {
       return null
@@ -80,14 +82,15 @@ export class PPTXDomRichTextParser {
     current: Node,
     segments: RawSegment[],
     resolveOptions: PptxRunOptionsResolver,
+    excludedElements?: ReadonlySet<Element>,
   ): boolean {
     for (const node of Array.from(current.childNodes)) {
-      if (node instanceof Text) {
+      if (isTextNode(node)) {
         if (!node.textContent) {
           continue
         }
-        const owner = current instanceof HTMLElement ? current : root
-        const style = window.getComputedStyle(owner)
+        const owner = isHTMLElement(current) ? current : root
+        const style = getOwnerComputedStyle(owner)
         if (style.display === 'none' || style.visibility === 'hidden') {
           continue
         }
@@ -99,14 +102,15 @@ export class PPTXDomRichTextParser {
         continue
       }
 
-      if (!(node instanceof HTMLElement)) {
+      if (isHTMLElement(node) && excludedElements?.has(node)) continue
+      if (!(isHTMLElement(node))) {
         return false
       }
       if (node.hasAttribute('hidden') || node.hidden) {
         continue
       }
-      const nodeStyle = window.getComputedStyle(node)
-      if (nodeStyle.display === 'none' || nodeStyle.visibility === 'hidden') {
+      const nodeStyle = getOwnerComputedStyle(node)
+      if (nodeStyle.display === 'none' || nodeStyle.visibility === 'hidden' || nodeStyle.opacity === '0') {
         continue
       }
       if (node.tagName.toLowerCase() === 'br') {
@@ -116,7 +120,7 @@ export class PPTXDomRichTextParser {
       if (!this.isSafeInlineElement(node)) {
         return false
       }
-      if (!this.collectSegments(root, node, segments, resolveOptions)) {
+      if (!this.collectSegments(root, node, segments, resolveOptions, excludedElements)) {
         return false
       }
     }
@@ -131,7 +135,7 @@ export class PPTXDomRichTextParser {
       return false
     }
 
-    const style = window.getComputedStyle(element)
+    const style = getOwnerComputedStyle(element)
     if (style.display === 'none' || style.visibility === 'hidden') {
       return false
     }

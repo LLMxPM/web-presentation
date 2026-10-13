@@ -2,6 +2,8 @@
  * 文件用途：封装 PPTX DOM 转换里的文本、文本形状和简单图形导出逻辑（支持祖先透明度、单层外阴影、行距与等比缩放换算）。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLAnchorElement, isTextNode } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type {
   PptxExportReportItem,
   PptxReportItemResult,
@@ -229,7 +231,7 @@ export class PPTXDomConverterText {
     })
 
     host.addReportItem(
-      'text',
+      'body',
       'editable-text',
       true,
       listResult.fullText.slice(0, 60),
@@ -431,24 +433,32 @@ export class PPTXDomConverterText {
   }
 
   private resolveRichText(element: HTMLElement, context?: VisitContext): PptxDomRichTextResult | null {
-    if (element.children.length === 0) {
+    const whiteSpace = this.getElementStyle(element).whiteSpace
+    if (element.children.length === 0 && !['pre', 'pre-wrap', 'pre-line', 'break-spaces'].includes(whiteSpace)) {
       return null
     }
-    if (this.richTextCache.has(element)) {
+    if (!context && this.richTextCache.has(element)) {
       return this.richTextCache.get(element) || null
     }
 
     const result = this.richTextParser.parse(
       element,
-      (owner, style, text) => this.buildTextCharacterOptions(owner, style, text, context),
+      (owner, style, text) => {
+        let opacity = context?.inheritedOpacity ?? 1
+        // inline 的 opacity 不继承；补齐文本框内部祖先透明度，避免上下文缓存丢掉缩放或透明度。
+        for (let parent = owner.parentElement; parent && element.contains(parent); parent = parent.parentElement) {
+          opacity *= this.layout.parseOpacity(this.getElementStyle(parent).opacity)
+        }
+        return this.buildTextCharacterOptions(owner, style, text, { ...context, groupDepth: context?.groupDepth ?? 0, inheritedOpacity: opacity })
+      },
     )
-    this.richTextCache.set(element, result)
+    if (!context) this.richTextCache.set(element, result)
     return result
   }
 
   private hasDirectTextContent(element: HTMLElement): boolean {
     return Array.from(element.childNodes).some(node => {
-      return node instanceof Text && Boolean(this.layout.normalizeText(node.textContent || ''))
+      return isTextNode(node) && Boolean(this.layout.normalizeText(node.textContent || ''))
     })
   }
 
@@ -644,7 +654,7 @@ export class PPTXDomConverterText {
 
   private resolveTextHyperlink(element: HTMLElement): { url: string } | null {
     const anchor = element.closest('a')
-    if (!(anchor instanceof HTMLAnchorElement)) {
+    if (!(isHTMLAnchorElement(anchor))) {
       return null
     }
     const rawHref = anchor.getAttribute('href')?.trim() || ''
@@ -668,6 +678,6 @@ export class PPTXDomConverterText {
   }
 
   private getElementStyle(element: HTMLElement): CSSStyleDeclaration {
-    return element.ownerDocument.defaultView?.getComputedStyle(element) ?? window.getComputedStyle(element)
+    return element.ownerDocument.defaultView?.getComputedStyle(element) ?? getOwnerComputedStyle(element)
   }
 }

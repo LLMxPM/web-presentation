@@ -3,6 +3,8 @@
  */
 
 import type PptxGenJS from 'pptxgenjs'
+import { appendEditablePptxPage, appendRasterizedPptxPage, PptxPageExtractionError } from './pptx/PptxPageAssembler'
+import { runWithExportDeadline } from './export/ExportCancellation'
 import { nextTick } from 'vue'
 import type { Router } from 'vue-router'
 import { elementRasterizer } from '@/core/services/export/ElementRasterizer'
@@ -33,7 +35,6 @@ import {
   PptxThemeResolver,
   type PptxPresentationTheme,
 } from '@/core/services/pptx/theme/PptxThemeResolver'
-import { PptxMasterSlideStrategy } from '@/core/services/pptx/theme/PptxMasterSlideStrategy'
 import {
   ExportStatus,
   type ExportProgress,
@@ -48,7 +49,7 @@ import type {
 import { appConfig as runtimeAppConfig, appPageConfig } from '@/core/utils/config'
 import { findRuntimePageSource } from '@/core/utils/export-dom'
 import { collectAllExportPages } from '@/core/utils/export-pages'
-import { PptxResourceSession } from '@/core/services/pptx/session/PptxResourceSession'
+import { PptxResourceSession, type PptxCanvasSnapshot } from '@/core/services/pptx/session/PptxResourceSession'
 import { waitForFiniteDocumentAnimations } from '@/core/utils/visual-assets'
 
 const DEFAULT_CAPTURE_TIMEOUT = 15000
@@ -64,10 +65,10 @@ export class PPTXExportService {
   private readonly converter = new PPTXDomConverter()
   private readonly packageWriter = new PptxPackageWriter()
   private readonly themeResolver = new PptxThemeResolver()
-  private readonly masterStrategy = new PptxMasterSlideStrategy()
   private readonly taskRunner = new ExportTaskRunner({
     taskIdPrefix: 'pptx-export',
     busyErrorMessage: '已有导出任务正在进行中',
+    retainLockOnCancel: true,
   })
 
   /**
@@ -99,10 +100,14 @@ export class PPTXExportService {
     const currentRoute = this.router?.currentRoute.value
     const routePath = currentRoute?.path
     const routeLocation = currentRoute?.fullPath || routePath
+    const pageInfo: PageInfo = {
+      route: routePath || '', title: resolveCurrentPageTitle(this.router), order: 1,
+      meta: { speakerNotes: this.pickSpeakerNotes(currentRoute?.meta?.speakerNotes) },
+    }
     let offscreenStage: OffscreenPageStage | undefined
     let cleanupPreparedPage: (() => void) | undefined
 
-    const resourceSession = new PptxResourceSession(task.id)
+    const resourceSession = new PptxResourceSession(task.id, this.taskRunner.getSignal(task.id) ?? undefined, this.snapshotCanvas())
     const rasterScale = options?.rasterScale ?? DEFAULT_RASTER_SCALE
 
     try {
@@ -112,11 +117,11 @@ export class PPTXExportService {
       if (currentRoute?.meta?.runtimeProject && routeLocation) {
         const stage = createOffscreenPageStage()
         offscreenStage = stage
-        const prepared = await stage.preparePage(routeLocation)
+        const prepared = await stage.preparePage(routeLocation, { signal: this.taskRunner.getSignal(task.id) ?? undefined })
         pageElement = prepared.element
         cleanupPreparedPage = prepared.cleanup
       } else {
-        await this.waitForPageReady(routePath, task.id)
+        await runWithExportDeadline(() => this.waitForPageReady(routePath, task.id), resourceSession.signal, 30000)
         pageElement = findRuntimePageSource(routePath)
       }
 
@@ -131,19 +136,10 @@ export class PPTXExportService {
       const prepDuration = Date.now() - startedAt
       const convStart = Date.now()
       const theme = this.themeResolver.resolveTheme(pageElement)
-      const pptx = this.createPresentation(theme)
+      const pptx = this.createPresentation(theme, undefined, resourceSession.canvas)
       const report = createEmptyPptxReport()
       const gradientFills: PptxGradientFillInstruction[] = []
       const groupInstructions: PptxGroupInstruction[] = []
-      const pageTitle = resolveCurrentPageTitle(this.router)
-      const pageInfo: PageInfo = {
-        route: routePath || '',
-        title: pageTitle,
-        order: 1,
-        meta: {
-          speakerNotes: this.getCurrentPageSpeakerNotes(),
-        },
-      }
 
       let pageReport: PptxExportReportPage
       try {
@@ -161,7 +157,7 @@ export class PPTXExportService {
         if (this.taskRunner.isTaskCancelled(task.id)) {
           throw pageError
         }
-        if (options?.pageErrorStrategy === 'rasterize-ready-page') {
+        if (options?.pageErrorStrategy === 'rasterize-ready-page' && pageError instanceof PptxPageExtractionError) {
           pageReport = await this.rasterizeFallbackPage(
             pptx,
             pageElement,
@@ -213,7 +209,7 @@ export class PPTXExportService {
         filename,
         pageCount: 1,
         duration: totalDuration,
-        message: '已导出可编辑 PPTX',
+        message: report.metrics?.rasterizedPageIndices?.length ? '已导出 PPTX，部分页面已降级为整页图片' : '已导出可编辑 PPTX',
         report,
       }
     } catch (error) {
@@ -251,7 +247,7 @@ export class PPTXExportService {
     const task = this.taskRunner.beginTask('all', filename, onProgress)
     let offscreenStage: OffscreenPageStage | undefined
 
-    const resourceSession = new PptxResourceSession(task.id)
+    const resourceSession = new PptxResourceSession(task.id, this.taskRunner.getSignal(task.id) ?? undefined, this.snapshotCanvas())
     const rasterScale = options?.rasterScale ?? DEFAULT_RASTER_SCALE
 
     try {
@@ -265,7 +261,7 @@ export class PPTXExportService {
 
       task.totalPages = pages.length
       const theme = this.themeResolver.resolveTheme(null)
-      const pptx = this.createPresentation(theme)
+      const pptx = this.createPresentation(theme, undefined, resourceSession.canvas)
       const report = createEmptyPptxReport()
       const gradientFills: PptxGradientFillInstruction[] = []
       const groupInstructions: PptxGroupInstruction[] = []
@@ -281,7 +277,7 @@ export class PPTXExportService {
         const page = pages[index]
         this.taskRunner.reportProgress(index, pages.length, page.title, page.route, task.id)
 
-        const prepared = await stage.preparePage(page.route)
+        const prepared = await stage.preparePage(page.route, { signal: this.taskRunner.getSignal(task.id) ?? undefined })
         try {
           if (this.taskRunner.isTaskCancelled(task.id)) {
             throw new Error('用户取消导出')
@@ -302,7 +298,7 @@ export class PPTXExportService {
             if (this.taskRunner.isTaskCancelled(task.id)) {
               throw pageError
             }
-            if (options?.pageErrorStrategy === 'rasterize-ready-page') {
+            if (options?.pageErrorStrategy === 'rasterize-ready-page' && pageError instanceof PptxPageExtractionError) {
               pageReport = await this.rasterizeFallbackPage(
                 pptx,
                 prepared.element,
@@ -365,7 +361,7 @@ export class PPTXExportService {
         filename,
         pageCount: exportedPages,
         duration: totalDuration,
-        message: '已导出可编辑 PPTX',
+        message: report.metrics?.rasterizedPageIndices?.length ? '已导出 PPTX，部分页面已降级为整页图片' : '已导出可编辑 PPTX',
         report,
       }
     } catch (error) {
@@ -416,9 +412,10 @@ export class PPTXExportService {
   private createPresentation(
     theme?: PptxPresentationTheme,
     masterProps?: Record<string, unknown>,
+    canvas?: PptxCanvasSnapshot,
   ): PptxGenJS {
-    const title = pickExportTitle(runtimeAppConfig.value.app.title) ?? 'Runtime 导出'
-    return this.packageWriter.createPresentation(title, this.resolveSlideLayout(), theme, masterProps)
+    const snapshot = canvas ?? this.snapshotCanvas()
+    return this.packageWriter.createPresentation(snapshot.title, snapshot, theme, masterProps)
   }
 
   /**
@@ -439,34 +436,12 @@ export class PPTXExportService {
     resourceSession?: PptxResourceSession,
     rasterScale = DEFAULT_RASTER_SCALE,
   ): Promise<PptxExportReportPage> {
-    const slide = pptx.addSlide()
-    const layout = this.resolveSlideLayout()
-    const pageWidthPx = appPageConfig.value.width || 1920
-    const pageHeightPx = appPageConfig.value.height || 1080
-
-    return this.converter.convertPage({
-      slide,
-      pageElement,
-      pageIndex,
-      pageTitle: page.title || `页面 ${pageIndex}`,
-      pageRoute: page.route,
-      speakerNotes: this.pickSpeakerNotes(page.meta?.speakerNotes),
-      pageWidthPx,
-      pageHeightPx,
-      slideWidthIn: layout.widthIn,
-      slideHeightIn: layout.heightIn,
-      shapeTypes: this.packageWriter.getShapeTypes(pptx),
-      captureElementAsPng: element => elementRasterizer.captureElementAsPng(element, { scale: rasterScale }),
-      gradientFillCollector: instruction => gradientFills.push(instruction),
-      groupCollector: instruction => groupInstructions?.push(instruction),
-      resourceSession,
-    })
+    return appendEditablePptxPage(pptx, this.converter, this.createPageExtractOptions(
+      pptx, pageElement, page, pageIndex, resourceSession, rasterScale,
+    ), gradientFills, groupInstructions)
   }
 
-  /**
-   * 当已就绪页面在原生 DOM 提取阶段发生可恢复错误时，使用全页截图生成备用幻灯片。
-   * 确保页数、顺序和备注保持完整，同时在导出报告中清晰标注整页截图降级。
-   */
+  /** 仅在页面提取失败后调用，完整图片取得后再创建备用幻灯片。 */
   private async rasterizeFallbackPage(
     pptx: PptxGenJS,
     pageElement: HTMLElement,
@@ -476,48 +451,36 @@ export class PPTXExportService {
     resourceSession?: PptxResourceSession,
     rasterScale = DEFAULT_RASTER_SCALE,
   ): Promise<PptxExportReportPage> {
-    const layout = this.resolveSlideLayout()
-    const slide = pptx.addSlide()
-    const notes = this.pickSpeakerNotes(page.meta?.speakerNotes)
-    if (notes) {
-      slide.addNotes(notes)
-    }
+    return appendRasterizedPptxPage(pptx, this.createPageExtractOptions(
+      pptx, pageElement, page, pageIndex, resourceSession, rasterScale,
+    ), page, error)
+  }
 
-    const pngDataUrl = await elementRasterizer.captureElementAsPng(pageElement, {
-      scale: rasterScale,
-      backgroundColor: '#ffffff',
-    })
-    resourceSession?.recordScreenshot()
-    resourceSession?.recordRasterizedPage(pageIndex)
-
-    slide.addImage({
-      data: pngDataUrl,
-      x: 0,
-      y: 0,
-      w: layout.widthIn,
-      h: layout.heightIn,
-    })
-
-    const errorMessage = error instanceof Error ? error.message : String(error)
+  /** 构造单页提取上下文，截图和资源读取沿用本任务的取消信号。 */
+  private createPageExtractOptions(
+    pptx: PptxGenJS,
+    pageElement: HTMLElement,
+    page: PageInfo,
+    pageIndex: number,
+    resourceSession?: PptxResourceSession,
+    rasterScale = DEFAULT_RASTER_SCALE,
+  ) {
+    const canvas = resourceSession?.canvas ?? this.snapshotCanvas()
+    const signal = resourceSession?.signal
     return {
-      pageIndex,
+      pageElement, pageIndex,
       pageTitle: page.title || `页面 ${pageIndex}`,
       pageRoute: page.route,
-      items: [
-        {
-          pageIndex,
-          pageTitle: page.title || `页面 ${pageIndex}`,
-          pageRoute: page.route,
-          sourceType: 'unknown',
-          result: 'screenshot',
-          editable: false,
-          label: page.title || `页面 ${pageIndex}`,
-          reason: `页面原生转换失败，已通过整页截图容错交付：${errorMessage}`,
-          severity: 'warning',
-          code: 'PAGE_CONVERSION_FALLBACK',
-          fallbackScope: 'page',
-        },
-      ],
+      speakerNotes: this.pickSpeakerNotes(page.meta?.speakerNotes),
+      pageWidthPx: canvas.widthPx,
+      pageHeightPx: canvas.heightPx,
+      slideWidthIn: canvas.widthIn,
+      slideHeightIn: canvas.heightIn,
+      shapeTypes: this.packageWriter.getShapeTypes(pptx),
+      captureElementAsPng: (element: HTMLElement) => runWithExportDeadline(
+        () => elementRasterizer.captureElementAsPng(element, { scale: rasterScale }), signal,
+      ),
+      resourceSession, signal,
     }
   }
 
@@ -529,6 +492,16 @@ export class PPTXExportService {
       Number(appPageConfig.value.width) || 1920,
       Number(appPageConfig.value.height) || 1080,
     )
+  }
+
+  /** 固定本任务的画布尺寸和演示文稿标题。 */
+  private snapshotCanvas(): PptxCanvasSnapshot {
+    return {
+      ...this.resolveSlideLayout(),
+      widthPx: Number(appPageConfig.value.width) || 1920,
+      heightPx: Number(appPageConfig.value.height) || 1080,
+      title: pickExportTitle(runtimeAppConfig.value.app.title) ?? 'Runtime 导出',
+    }
   }
 
   /**

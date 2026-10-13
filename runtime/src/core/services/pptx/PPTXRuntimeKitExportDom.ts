@@ -204,23 +204,41 @@ export function parseRuntimeKitChartPayload(element: Element): PptxChartDataPayl
     return null
   }
   const rawData = element.getAttribute(RUNTIME_KIT_CHART_DATA_ATTR)
-  if (!rawData) {
+  if (!rawData || rawData.length > 1024 * 1024) {
     return null
   }
   try {
-    const parsed = JSON.parse(rawData) as PptxChartDataPayload
-    if (
-      parsed &&
-      parsed.version === 'v1' &&
-      Array.isArray(parsed.categories) &&
-      Array.isArray(parsed.series) &&
-      parsed.series.length > 0
-    ) {
-      return parsed
-    }
+    return validateRuntimeKitChartPayload(JSON.parse(rawData))
   } catch {
     return null
   }
   return null
+}
+
+/** 校验图表类型、网格尺寸、有限数值和选项，拒绝坏载荷并继续走原 SVG/PNG 路径。 */
+export function validateRuntimeKitChartPayload(value: unknown): PptxChartDataPayload | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const payload = value as PptxChartDataPayload
+  if (payload.version !== 'v1' || !['bar', 'line', 'pie', 'doughnut'].includes(payload.chartType)) return null
+  if (!Array.isArray(payload.categories) || payload.categories.length < 1 || payload.categories.length > 1024 ||
+    !payload.categories.every(category => typeof category === 'string' && category.length <= 2048)) return null
+  if (!Array.isArray(payload.series) || payload.series.length < 1 || payload.series.length > 32 ||
+    payload.series.length * payload.categories.length > 16384) return null
+  if (['pie', 'doughnut'].includes(payload.chartType) && payload.series.length !== 1) return null
+  if (!payload.series.every(series => series && typeof series.name === 'string' && series.name.length <= 2048 &&
+    Array.isArray(series.values) && series.values.length === payload.categories.length &&
+    series.values.every(number => typeof number === 'number' && Number.isFinite(number) &&
+      (!['pie', 'doughnut'].includes(payload.chartType) || number >= 0)) &&
+    (series.color === undefined || /^#?[\da-f]{6}$/i.test(series.color)))) return null
+  if (payload.title !== undefined && (typeof payload.title !== 'string' || payload.title.length > 2048)) return null
+  const options = payload.options
+  if (options !== undefined) {
+    if (!options || typeof options !== 'object' || Array.isArray(options)) return null
+    for (const key of ['showLegend', 'showTitle', 'showValue'] as const) {
+      if (options[key] !== undefined && typeof options[key] !== 'boolean') return null
+    }
+    if (options.holeSize !== undefined && (!Number.isFinite(options.holeSize) || options.holeSize < 0 || options.holeSize > 100)) return null
+  }
+  return payload
 }
 

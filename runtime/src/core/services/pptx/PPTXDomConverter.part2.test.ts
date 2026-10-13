@@ -118,7 +118,7 @@ describe('PPTXDomConverter', () => {
     const report = await convert(slide)
     const addImageCall = slide.addImage.mock.calls[0]?.[0] as Record<string, string>
 
-    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/chart\.svg$/))
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/chart\.svg$/), expect.objectContaining({ signal: expect.anything() }))
     expect(addImageCall.data).toMatch(/^data:image\/svg\+xml;base64,/)
     expect(decodeSvgDataUrl(addImageCall.data)).toBe(svgSource)
     expect(report.items[0]).toEqual(expect.objectContaining({

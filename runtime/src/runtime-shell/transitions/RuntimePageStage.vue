@@ -2,7 +2,7 @@
 <template>
   <router-view v-slot="{ Component, route }">
     <PageTransitionHost
-      :node="wrapPage(Component, route.path)" :page-key="route.path"
+      :node="wrapPage(Component, route.path, route.query.runtimeCaptureTicket)" :page-key="route.path"
       :page-number="Number(route.meta.pageNumber) || undefined"
       :config="resolvePageTransition(route.meta.transition)" :disabled="disabled || session.suppressTransition.value"
       @error="handleError" />
@@ -22,10 +22,11 @@ const router = useRouter()
 const session = getRuntimeSession(router)
 
 /** 为页面创建独立内容根节点，保持导出选择器和设计字号兼容。 */
-function wrapPage(component: VNode | undefined, path: string): VNode | undefined {
+function wrapPage(component: VNode | undefined, path: string, captureTicket: unknown): VNode | undefined {
   return component ? h('div', {
     class: 'runtime-page-print-source',
     'data-runtime-route-path': path,
+    'data-runtime-capture-ticket': typeof captureTicket === 'string' ? captureTicket : undefined,
     style: { ...buildPageContentScaleStyles(), width: '100%', height: '100%' },
   }, [component]) : undefined
 }

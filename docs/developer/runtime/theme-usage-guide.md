@@ -127,6 +127,8 @@ Backend 会扫描静态字体资源名并在预览/构建 artifact 中下发对�
 
 导出可编辑 PPTX 时不会嵌入 Runtime 字体文件。为避免目标电脑缺少平台内部字体别名，导出器会把 `Web Presentation Sans` 映射为 `Microsoft YaHei`，把 `Web Presentation Mono` 映射为 `Consolas`；工作空间字体和页面明确指定的其它字体族名保持不变。截图降级内容已经栅格化，不受该映射影响。
 
+PPTX 主题字体优先读取 `--theme-font-heading` / `--theme-font-body`，兼容历史 `--tw-font-*` 变量。主题色写入 PPTX 色板，页面图元的显式 RGB 保持原值，修改 PPT 主题不会自动替换所有已有图元颜色。仅当至少两页背景为同一不透明纯色、包内只有一个母版且布局没有独立背景时，公共背景会提升到母版；其它背景继续保留在各页，不自动添加页码。主题切换、缺失字体和母版编辑仍需目标应用验收。
+
 ## 主题 Logo
 
 ```vue

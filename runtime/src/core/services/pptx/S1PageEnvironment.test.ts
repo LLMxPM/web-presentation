@@ -81,7 +81,7 @@ describe('S1 页面环境迁移与离屏舞台隔离', () => {
 
   it('多页连续采集：路由切换状态机确保三页切换无上一页残余 DOM', async () => {
     const stage = createOffscreenPageStage()
-    const iframe = document.querySelector('iframe') as HTMLFrameElement
+    const iframe = document.querySelector('iframe') as HTMLIFrameElement
     expect(iframe).not.toBeNull()
 
     const win = iframe.contentWindow as unknown as { __EDITOR_RUNTIME_PREVIEW_READY__: boolean }
@@ -91,10 +91,12 @@ describe('S1 页面环境迁移与离屏舞台隔离', () => {
     const p1 = stage.preparePage('/page-1')
     setTimeout(() => {
       const curDoc = iframe.contentDocument!
+      curDoc.open(); curDoc.write('<!doctype html><html><head></head><body></body></html>'); curDoc.close()
       const curWin = iframe.contentWindow as unknown as { __EDITOR_RUNTIME_PREVIEW_READY__: boolean }
       const page1 = curDoc.createElement('div')
       page1.className = 'runtime-page-print-source'
       page1.dataset.runtimeRoutePath = '/page-1'
+      page1.dataset.runtimeCaptureTicket = new URLSearchParams(iframe.contentWindow!.location.hash.split('?')[1]).get('runtimeCaptureTicket') || ''
       page1.style.width = '1920px'
       page1.style.height = '1080px'
       curDoc.body.appendChild(page1)
@@ -107,11 +109,13 @@ describe('S1 页面环境迁移与离屏舞台隔离', () => {
     const p2 = stage.preparePage('/page-2')
     setTimeout(() => {
       const curDoc = iframe.contentDocument!
+      curDoc.open(); curDoc.write('<!doctype html><html><head></head><body></body></html>'); curDoc.close()
       const curWin = iframe.contentWindow as unknown as { __EDITOR_RUNTIME_PREVIEW_READY__: boolean }
       curDoc.body.innerHTML = ''
       const page2 = curDoc.createElement('div')
       page2.className = 'runtime-page-print-source'
       page2.dataset.runtimeRoutePath = '/page-2'
+      page2.dataset.runtimeCaptureTicket = new URLSearchParams(iframe.contentWindow!.location.hash.split('?')[1]).get('runtimeCaptureTicket') || ''
       page2.style.width = '1920px'
       page2.style.height = '1080px'
       curDoc.body.appendChild(page2)
@@ -125,11 +129,13 @@ describe('S1 页面环境迁移与离屏舞台隔离', () => {
     const p3 = stage.preparePage('/page-3')
     setTimeout(() => {
       const curDoc = iframe.contentDocument!
+      curDoc.open(); curDoc.write('<!doctype html><html><head></head><body></body></html>'); curDoc.close()
       const curWin = iframe.contentWindow as unknown as { __EDITOR_RUNTIME_PREVIEW_READY__: boolean }
       curDoc.body.innerHTML = ''
       const page3 = curDoc.createElement('div')
       page3.className = 'runtime-page-print-source'
       page3.dataset.runtimeRoutePath = '/page-3'
+      page3.dataset.runtimeCaptureTicket = new URLSearchParams(iframe.contentWindow!.location.hash.split('?')[1]).get('runtimeCaptureTicket') || ''
       page3.style.width = '1920px'
       page3.style.height = '1080px'
       curDoc.body.appendChild(page3)

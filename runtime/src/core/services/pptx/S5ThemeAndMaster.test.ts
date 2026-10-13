@@ -2,7 +2,8 @@
  * 文件用途：PPTX 导出 S5 阶段专项测试（主题色彩与字体槽位映射、母版公共背景与页码策略）。
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { strFromU8, unzipSync } from 'fflate'
 import { PptxThemeResolver } from './theme/PptxThemeResolver'
 import { PptxMasterSlideStrategy } from './theme/PptxMasterSlideStrategy'
 import { PptxPackageWriter } from './writer/PptxPackageWriter'
@@ -106,16 +107,60 @@ describe('S5 主题和母版（Theme and Master Slides）', () => {
       expect(pptx.theme?.bodyFontFace).toBe('Source Han Sans SC')
     })
 
-    it('传入 masterProps 时应调用 defineSlideMaster', () => {
-      const defineMasterSpy = vi.fn()
+    it('传入 masterProps 后实际页面继承指定母版背景', async () => {
       const masterProps = {
         title: 'CUSTOM_MASTER',
         background: { color: 'FAFAFA' },
       }
 
-      // 验证通过 PptxPackageWriter 的调用链路
       const pptx = writer.createPresentation('测试母版', undefined, undefined, masterProps)
-      expect(pptx).toBeDefined()
+      pptx.addSlide({ masterName: 'CUSTOM_MASTER' })
+      const files = unzipSync(await writer.generatePresentationBytes(pptx))
+      expect(strFromU8(files['ppt/slideLayouts/slideLayout2.xml'])).toContain('<a:srgbClr val="FAFAFA"')
+      expect(strFromU8(files['ppt/slides/_rels/slide1.xml.rels'])).toContain('slideLayout2.xml')
+    })
+
+    it('真实产物写入主题色，并将一致的不透明背景提升到实际母版', async () => {
+      const pptx = writer.createPresentation('产物复核', undefined, {
+        headFontFace: 'Microsoft YaHei', bodyFontFace: 'Microsoft YaHei', colors: { accent1: '123456', primary: '234567' },
+      })
+      pptx.addSlide().background = { color: 'ABCDEF' }
+      pptx.addSlide().background = { color: 'ABCDEF' }
+      const files = unzipSync(await writer.generatePresentationBytes(pptx))
+      const theme = strFromU8(files['ppt/theme/theme1.xml'])
+      expect(theme).toContain('<a:accent1><a:srgbClr val="123456"/></a:accent1>')
+      expect(theme).toContain('<a:dk1><a:srgbClr val="234567"/></a:dk1>')
+      expect(strFromU8(files['ppt/slideMasters/slideMaster1.xml'])).toContain('<a:srgbClr val="ABCDEF"')
+      expect(strFromU8(files['ppt/slideLayouts/slideLayout1.xml'])).not.toContain('<p:bg>')
+      expect(strFromU8(files['ppt/slides/slide1.xml'])).not.toContain('<p:bg>')
+      expect(strFromU8(files['ppt/slides/slide2.xml'])).not.toContain('<p:bg>')
+    })
+
+    it('不同或半透明背景保留在原页，避免母版改变混合结果', async () => {
+      for (const backgrounds of [
+        [{ color: '123456' }, { color: 'ABCDEF' }],
+        [{ color: '123456', transparency: 50 }, { color: '123456', transparency: 50 }],
+      ]) {
+        const pptx = writer.createPresentation('背景复核')
+        backgrounds.forEach(background => { pptx.addSlide().background = background })
+        const files = unzipSync(await writer.generatePresentationBytes(pptx))
+        expect(strFromU8(files['ppt/slides/slide1.xml'])).toContain('<p:bg>')
+        expect(strFromU8(files['ppt/slides/slide2.xml'])).toContain('<p:bg>')
+      }
+    })
+
+    it('自定义布局已有背景时不提升相同页背景，避免布局底色覆盖母版', async () => {
+      const pptx = writer.createPresentation('布局背景复核', undefined, undefined, {
+        title: 'CUSTOM_MASTER', background: { color: 'FAFAFA' },
+      })
+      for (let index = 0; index < 2; index++) {
+        pptx.addSlide({ masterName: 'CUSTOM_MASTER' }).background = { color: '123456' }
+      }
+      const files = unzipSync(await writer.generatePresentationBytes(pptx))
+      expect(strFromU8(files['ppt/slideLayouts/slideLayout2.xml'])).toContain('<a:srgbClr val="FAFAFA"')
+      for (const index of [1, 2]) {
+        expect(strFromU8(files[`ppt/slides/slide${index}.xml`])).toContain('<a:srgbClr val="123456"')
+      }
     })
   })
 })

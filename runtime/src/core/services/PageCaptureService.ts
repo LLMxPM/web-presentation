@@ -3,6 +3,8 @@
  * 负责捕获页面内容并转换为Canvas
  */
 
+import { getComputedStyle as getOwnerComputedStyle, getOwnerDocument, isHTMLImageElement } from './pptx/dom/PPTXDomEnvironment'
+
 import { snapdom } from '@zumer/snapdom'
 import type { CaptureOptions } from '@/core/types/export-common'
 import { waitForPageLoad, waitForImages, getPageDimensions } from '../utils/dom'
@@ -118,7 +120,7 @@ export class PageCaptureService {
         const output = await result.toPng()
 
         // 规范化为 HTMLImageElement
-        let img: HTMLImageElement = (output instanceof HTMLImageElement)
+        let img: HTMLImageElement = (isHTMLImageElement(output))
           ? output
           : (() => {
             const i = new Image()
@@ -163,7 +165,7 @@ export class PageCaptureService {
               useProxy: mergedOptions.proxyUrl
             })
             const proxiedOutput = await proxied.toPng()
-            img = (proxiedOutput instanceof HTMLImageElement) ? proxiedOutput : (() => {
+            img = (isHTMLImageElement(proxiedOutput)) ? proxiedOutput : (() => {
               const i = new Image()
               i.src = String(proxiedOutput)
               return i
@@ -323,13 +325,13 @@ export class PageCaptureService {
     const originalStyle = this.captureElementStyleSnapshot(element)
 
     // 强制显示元素
-    if (window.getComputedStyle(element).display === 'none') {
+    if (getOwnerComputedStyle(element).display === 'none') {
       element.style.display = 'block'
     }
-    if (window.getComputedStyle(element).visibility === 'hidden') {
+    if (getOwnerComputedStyle(element).visibility === 'hidden') {
       element.style.visibility = 'visible'
     }
-    if (window.getComputedStyle(element).opacity === '0') {
+    if (getOwnerComputedStyle(element).opacity === '0') {
       element.style.opacity = '1'
     }
 
@@ -352,8 +354,9 @@ export class PageCaptureService {
     })
 
     // 3. 等待字体加载
-    if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(() => {
+    const ownerDocument = getOwnerDocument(element)
+    if (ownerDocument.fonts && ownerDocument.fonts.ready) {
+      ownerDocument.fonts.ready.then(() => {
         // console.log('所有字体已加载完成')
       })
     }
@@ -417,7 +420,7 @@ export class PageCaptureService {
    */
   private measureElementForCapture(element: HTMLElement): { width: number; height: number } {
     const rect = element.getBoundingClientRect()
-    const style = window.getComputedStyle(element)
+    const style = getOwnerComputedStyle(element)
     const width = rect.width || element.offsetWidth || Number.parseFloat(style.width) || 0
     const height = rect.height || element.offsetHeight || Number.parseFloat(style.height) || 0
 
@@ -556,7 +559,7 @@ export class PageCaptureService {
     ]
 
     elements.forEach(item => {
-      const computedStyle = window.getComputedStyle(item)
+      const computedStyle = getOwnerComputedStyle(item)
       const originalInlineValues = new Map<string, string>()
       let changed = false
 
@@ -874,7 +877,7 @@ export class PageCaptureService {
 
     // 检查元素是否可见且有尺寸
     const rect = element.getBoundingClientRect()
-    const computedStyle = window.getComputedStyle(element)
+    const computedStyle = getOwnerComputedStyle(element)
 
     const isVisible = (
       rect.width > 0 &&
@@ -898,7 +901,7 @@ export class PageCaptureService {
     void element
     try {
       // 获取所有CSS自定义属性
-      const computedStyle = window.getComputedStyle(document.documentElement)
+      const computedStyle = getOwnerComputedStyle(document.documentElement)
       const cssVariables: Record<string, string> = {}
 
       // 提取CSS变量

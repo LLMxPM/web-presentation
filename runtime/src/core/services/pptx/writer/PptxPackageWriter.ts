@@ -3,12 +3,16 @@
  */
 
 import PptxGenJS from 'pptxgenjs'
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import type {
   PptxGradientFillInstruction,
   PptxShapeTypes,
 } from '@/core/services/pptx/PPTXDomConverter.types'
-import { patchGradientFills } from '@/core/services/pptx/writer/OoxmlGradientPatcher'
-import { patchGroups, type PptxGroupInstruction } from '@/core/services/pptx/writer/OoxmlGroupPatcher'
+import { patchGradientFillInSlideXml } from '@/core/services/pptx/writer/OoxmlGradientPatcher'
+import { patchGroupInSlideXml, type PptxGroupInstruction } from '@/core/services/pptx/writer/OoxmlGroupPatcher'
+import { nextSlideShapeId } from './OoxmlShapeNodes'
+import { patchThemeColors, promoteSharedSlideBackground } from './OoxmlPresentationTheme'
+import type { PptxPresentationTheme } from '../theme/PptxThemeResolver'
 
 const PPTX_LAYOUT_NAME = 'RUNTIME_PPTX_LAYOUT'
 
@@ -24,6 +28,7 @@ export interface PptxSlideLayout {
  * PPTX 文档写入器，隔离 PptxGenJS、fflate 与浏览器 Blob 下载细节。
  */
 export class PptxPackageWriter {
+  private readonly themes = new WeakMap<PptxGenJS, PptxPresentationTheme>()
   /**
    * 按设计画布宽高比计算 PPTX 幻灯片物理尺寸（长边固定 13.333 英寸）。
    * @param pageWidthPx 设计画布宽度（px）
@@ -78,6 +83,7 @@ export class PptxPackageWriter {
       headFontFace: theme?.headFontFace || 'Microsoft YaHei',
       bodyFontFace: theme?.bodyFontFace || 'Microsoft YaHei',
     }
+    if (theme) this.themes.set(pptx, { ...theme, colors: { ...theme.colors } })
 
     if (masterProps && typeof pptx.defineSlideMaster === 'function') {
       pptx.defineSlideMaster(masterProps as unknown as Parameters<typeof pptx.defineSlideMaster>[0])
@@ -111,15 +117,28 @@ export class PptxPackageWriter {
     gradientFills: PptxGradientFillInstruction[] = [],
     groupInstructions: PptxGroupInstruction[] = [],
   ): Promise<Uint8Array> {
-    const rawPptx = (await pptx.write({ outputType: 'uint8array', compression: true })) as Uint8Array
-    let patched = rawPptx
-    if (gradientFills.length > 0) {
-      patched = patchGradientFills(patched, gradientFills)
+    // 后处理共用一次解包和一次压缩，避免按渐变、组合、主题分别重复处理整个文件。
+    const rawPptx = await pptx.write({ outputType: 'uint8array', compression: false }) as Uint8Array
+    const files = unzipSync(rawPptx)
+    for (const instruction of gradientFills) {
+      const path = `ppt/slides/slide${instruction.pageIndex}.xml`
+      if (!files[path]) throw new Error(`PPTX 渐变目标页不存在：${instruction.pageIndex}`)
+      files[path] = strToU8(patchGradientFillInSlideXml(strFromU8(files[path]), instruction))
     }
-    if (groupInstructions.length > 0) {
-      patched = patchGroups(patched, groupInstructions)
+    for (const instruction of groupInstructions) {
+      const path = `ppt/slides/slide${instruction.pageIndex}.xml`
+      if (!files[path]) throw new Error(`PPTX 组合目标页不存在：${instruction.pageIndex}`)
+      const xml = strFromU8(files[path])
+      files[path] = strToU8(patchGroupInSlideXml(xml, instruction, nextSlideShapeId(xml)))
     }
-    return patched
+    const theme = this.themes.get(pptx)
+    if (theme) {
+      for (const path of Object.keys(files).filter(name => /^ppt\/theme\/theme\d+\.xml$/.test(name))) {
+        files[path] = strToU8(patchThemeColors(strFromU8(files[path]), theme))
+      }
+    }
+    promoteSharedSlideBackground(files)
+    return zipSync(files, { level: 6 })
   }
 
   /**

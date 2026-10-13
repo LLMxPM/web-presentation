@@ -19,6 +19,8 @@ export interface ExportTaskRunnerConfig {
   taskIdPrefix: string
   /** 重复触发时的错误提示文案 */
   busyErrorMessage: string
+  /** 取消后保持占用直到 finally 清理，适用于持有共享转换状态的 PPTX 导出。 */
+  retainLockOnCancel?: boolean
 }
 
 /**
@@ -177,15 +179,11 @@ export class ExportTaskRunner {
    * @returns 是否实际取消了正在运行的任务
    */
   cancel(taskId?: string): boolean {
-    if (taskId) {
-      this.cancelledTaskIds.add(taskId)
-    }
-
     if (!this.active && !this.currentTask) {
       return false
     }
 
-    if (taskId && this.currentTask && this.currentTask.id !== taskId) {
+    if (taskId && this.currentTask?.id !== taskId) {
       return false
     }
 
@@ -201,7 +199,11 @@ export class ExportTaskRunner {
     }
 
     this.updateStatus(ExportStatus.CANCELLED, undefined, currentId)
-    this.finish(currentId)
+    if (!this.config.retainLockOnCancel) this.finish(currentId)
+    // 仅保留有界的取消记录，避免单例随使用次数增长。
+    while (this.cancelledTaskIds.size > 32) {
+      this.cancelledTaskIds.delete(this.cancelledTaskIds.values().next().value!)
+    }
     return true
   }
 
@@ -210,7 +212,7 @@ export class ExportTaskRunner {
    * @param taskId 可选任务 ID，传入时校验归属，旧任务无法清理新任务
    */
   finish(taskId?: string): void {
-    if (taskId && this.currentTask && this.currentTask.id !== taskId) {
+    if (taskId && this.currentTask?.id !== taskId) {
       return
     }
 

@@ -8,11 +8,21 @@ import type {
   PptxExportTimingMetrics,
 } from '@/core/types/pptx-export'
 import { PPTXImageDataResolver } from '@/core/services/pptx/PPTXImageDataResolver'
+import { throwIfExportAborted } from '@/core/services/export/ExportCancellation'
 
 export interface CachedResourceEntry {
   dataUrl: string
   byteLength: number
   contentType: string
+}
+
+/** 任务开始时固定画布和文件标题，后续路由或配置变化不能改变产物尺寸。 */
+export interface PptxCanvasSnapshot {
+  widthPx: number
+  heightPx: number
+  widthIn: number
+  heightIn: number
+  title: string
 }
 
 /**
@@ -41,7 +51,7 @@ export class PptxResourceSession {
   private screenshots = 0
   private rasterizedPages: number[] = []
 
-  constructor(readonly taskId: string) {}
+  constructor(readonly taskId: string, readonly signal?: AbortSignal, readonly canvas?: PptxCanvasSnapshot) {}
 
   /**
    * 读取或通过任务级缓存复用图片资源。
@@ -50,6 +60,7 @@ export class PptxResourceSession {
    * @returns 包含 dataUrl 与字节长度的资源条目
    */
   async resolveImage(path: string): Promise<string> {
+    throwIfExportAborted(this.signal)
     const normalized = String(path || '').trim()
     if (!normalized) {
       return ''
@@ -71,7 +82,7 @@ export class PptxResourceSession {
     this.fetches += 1
     const fetchPromise = (async (): Promise<CachedResourceEntry | null> => {
       try {
-        const dataUrl = await this.resolver.resolve(normalized)
+        const dataUrl = await this.resolver.resolve(normalized, this.signal)
         if (!dataUrl) {
           return null
         }
@@ -83,6 +94,7 @@ export class PptxResourceSession {
           contentType: this.extractDataUrlContentType(dataUrl),
         }
       } catch {
+        throwIfExportAborted(this.signal)
         return null
       }
     })()

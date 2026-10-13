@@ -2,6 +2,8 @@
  * 文件用途：把原生 HTML table 解析为稳定的二维表格模型，并识别需要截图降级的复杂内容。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLTableElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import type {
   PptxDomTableCellEntry,
@@ -39,7 +41,7 @@ export class PPTXDomHtmlTableParser {
    * @param element 候选 DOM 元素
    */
   isHtmlTable(element: Element): element is HTMLTableElement {
-    return element instanceof HTMLTableElement
+    return isHTMLTableElement(element)
   }
 
   /**
@@ -124,7 +126,7 @@ export class PPTXDomHtmlTableParser {
       cells,
       rowCount: rows.length,
       columnCount,
-      borderCollapse: window.getComputedStyle(table).borderCollapse === 'collapse',
+      borderCollapse: getOwnerComputedStyle(table).borderCollapse === 'collapse',
     }
   }
 

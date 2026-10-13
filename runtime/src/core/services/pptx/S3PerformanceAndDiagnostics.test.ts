@@ -2,6 +2,8 @@
  * 文件用途：PPTX 导出升级 S3 阶段（性能和诊断）专项测试，覆盖任务级资源缓存复用、整页截图容错 (rasterize-ready-page)、默认 fail-fast、取消优先保护、阶段耗时与脱敏诊断报告。
  */
 
+import { createEmptySlideIR } from './PPTXDomConverter.test-support'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PptxResourceSession } from './session/PptxResourceSession'
 import { PPTXExportService } from '@/core/services/PPTXExportService'
@@ -128,11 +130,13 @@ describe('S3 性能和诊断专项测试', () => {
         .mockResolvedValueOnce({ element: page2Element, cleanup: mockCleanupPage })
 
       // 模拟第 1 页转换成功，第 2 页转换崩溃
-      vi.spyOn((service as any).converter, 'convertPage').mockImplementation(async (options: any) => {
+      vi.spyOn((service as any).converter, 'extractSlideIR').mockImplementation(async (options: any) => {
         if (options.pageIndex === 2) {
           throw new Error('模拟组件语法或复杂子树崩溃')
         }
         return {
+          ...createEmptySlideIR(options),
+          report: {
           pageIndex: options.pageIndex,
           pageTitle: options.pageTitle,
           pageRoute: options.pageRoute,
@@ -147,7 +151,7 @@ describe('S3 性能和诊断专项测试', () => {
               label: '正常标题',
             },
           ],
-        }
+        } }
       })
 
       // 模拟截图器
@@ -194,7 +198,7 @@ describe('S3 性能和诊断专项测试', () => {
       ])
       mockPreparePage.mockResolvedValue({ element: document.createElement('div'), cleanup: mockCleanupPage })
 
-      vi.spyOn((service as any).converter, 'convertPage').mockRejectedValue(new Error('转换器不可恢复错误'))
+      vi.spyOn((service as any).converter, 'extractSlideIR').mockRejectedValue(new Error('转换器不可恢复错误'))
 
       const options: PptxExportOptions = {
         mode: 'all',

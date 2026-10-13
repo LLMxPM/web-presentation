@@ -63,7 +63,7 @@ export interface PptxTablePrimitiveIR {
 export interface PptxChartPrimitiveIR {
   kind: 'chart'
   id?: string
-  chartType: string
+  chartType: import('../PPTXRuntimeKitExportDom').PptxChartType
   data: Array<{ name: string; labels: string[]; values: number[] }>
   options?: Record<string, unknown>
 }
@@ -128,6 +128,9 @@ export interface PptxSlideExtractOptions {
   shapeTypes?: PptxShapeTypes
   /** 局部截图函数，返回 PNG data URL */
   captureElementAsPng: (element: HTMLElement) => Promise<string>
+  /** 任务级资源缓存与取消上下文。 */
+  resourceSession?: import('../session/PptxResourceSession').PptxResourceSession
+  signal?: AbortSignal
 }
 
 /**

@@ -2,7 +2,10 @@
  * 文件用途：解析 Runtime 页面主题变量（标题字体、正文字体与强调色），映射到 PPTX 演示文稿主题槽位。
  */
 
+import { getComputedStyle as getOwnerComputedStyle } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import { CssColorParser } from '@/core/services/pptx/style/CssColorParser'
+import { TypographyAndAlignmentResolver } from '@/core/services/pptx/style/TypographyAndAlignmentResolver'
 
 /**
  * 演示文稿主题配置。
@@ -48,10 +51,10 @@ export class PptxThemeResolver {
       }
     }
 
-    const style = window.getComputedStyle(target)
+    const style = getOwnerComputedStyle(target)
 
-    const rawHeadingFont = style.getPropertyValue('--tw-font-heading').trim()
-    const rawBodyFont = style.getPropertyValue('--tw-font-body').trim()
+    const rawHeadingFont = style.getPropertyValue('--theme-font-heading').trim() || style.getPropertyValue('--tw-font-heading').trim()
+    const rawBodyFont = style.getPropertyValue('--theme-font-body').trim() || style.getPropertyValue('--tw-font-body').trim()
 
     const headFontFace = this.cleanFontFace(rawHeadingFont) || DEFAULT_FONT_FACE
     const bodyFontFace = this.cleanFontFace(rawBodyFont) || DEFAULT_FONT_FACE
@@ -89,7 +92,6 @@ export class PptxThemeResolver {
     if (!fontFamily) {
       return ''
     }
-    const firstFont = fontFamily.split(',')[0].trim()
-    return firstFont.replace(/^['"]|['"]$/g, '').trim()
+    return new TypographyAndAlignmentResolver().normalizeFontFace(fontFamily)
   }
 }

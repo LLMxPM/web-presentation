@@ -4,6 +4,8 @@
  * 连接线识别以 data-runtime-kit-connector 显式导出契约为准，历史 connector-svg 类名保留为兜底。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLElement, isSVGElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type { PPTXSvgSerializer } from '@/core/services/pptx/PPTXSvgSerializer'
 import type { ElementBox } from '@/core/services/pptx/PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
@@ -47,7 +49,7 @@ export function buildConnectorSvgExportPayload(
   if (!viewBox) {
     return null
   }
-  const viewportElement = svg.parentElement instanceof HTMLElement ? svg.parentElement : svg
+  const viewportElement = isHTMLElement(svg.parentElement) ? svg.parentElement : svg
   const boxOverride = resolveSvgViewBoxPptxBox(svg, viewBox, viewportElement, layout)
   if (!boxOverride) {
     return null
@@ -75,7 +77,7 @@ export function buildConnectorSvgExportPayload(
 function findConnectorRenderablePath(svg: SVGSVGElement): SVGPathElement | null {
   const candidates = Array.from(svg.querySelectorAll('path'))
   return candidates.find((path) => {
-    if (!(path instanceof SVGElement) || path.closest('defs')) {
+    if (!(isSVGElement(path)) || path.closest('defs')) {
       return false
     }
 
@@ -84,7 +86,7 @@ function findConnectorRenderablePath(svg: SVGSVGElement): SVGPathElement | null 
       return false
     }
 
-    const stroke = path.getAttribute('stroke') || window.getComputedStyle(path).stroke || ''
+    const stroke = path.getAttribute('stroke') || getOwnerComputedStyle(path).stroke || ''
     return stroke !== '' && stroke !== 'none'
   }) ?? null
 }
@@ -169,7 +171,7 @@ function resolveRenderedConnectorViewBox(svg: SVGSVGElement, path: SVGPathElemen
 function resolveConnectorSvgPadding(path: SVGPathElement): number {
   const strokeWidth = Number.parseFloat(
     path.getAttribute('stroke-width')
-    || window.getComputedStyle(path).strokeWidth
+    || getOwnerComputedStyle(path).strokeWidth
     || '0',
   )
   const normalizedStrokeWidth = Number.isFinite(strokeWidth) && strokeWidth > 0 ? strokeWidth : 1
@@ -280,8 +282,8 @@ function resolveElementLayoutSize(
   element: Element,
   layout: PPTXDomConverterLayout,
 ): { width: number; height: number } | null {
-  if (element instanceof HTMLElement) {
-    const style = window.getComputedStyle(element)
+  if (isHTMLElement(element)) {
+    const style = getOwnerComputedStyle(element)
     const width = firstPositiveNumber(
       layout.parseCssPixel(style.width),
       element.offsetWidth,
@@ -297,7 +299,7 @@ function resolveElementLayoutSize(
     }
   }
 
-  const style = window.getComputedStyle(element)
+  const style = getOwnerComputedStyle(element)
   const width = firstPositiveNumber(
     layout.parseCssPixel(style.width),
     Number.parseFloat(element.getAttribute('width') || ''),

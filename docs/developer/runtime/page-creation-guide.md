@@ -156,7 +156,9 @@ import AssetChart from '@runtime-kit/public/components/assets/AssetChart.v1.vue'
 
 `rounded-full` 会按最终宽高区分正圆和胶囊：宽高近似相等时导出为保持正方形外接框的 PowerPoint ellipse，宽大于高时导出为满圆角 roundRect。圆形不会为了补偿 PowerPoint 字宽而单独横向扩宽，避免含数字或短标签的圆形徽章变成椭圆；横向胶囊仍会保留有限的宽度冗余以降低末字换行风险。对于非 `rounded-full` 的普通圆角形状，如果通过 `size-*`、同时声明 `w-*` / `h-*`、内联 width/height，或 `aspect-square` 配合单边尺寸明确给出近似正方形，也会锁定宽高比例并保留原始圆角，不会被文本宽度保护拉成长方形。
 
-纯 2D `rotate()` / `rotateZ()` 会优先映射为 PowerPoint 原生旋转：导出前会先等待有限次入场动画自然结束，保留 `animation-fill-mode: forwards` 的最终状态；无限循环动画不会阻塞导出，测量时会回到稳定的静态样式。随后按旋转前盒模型测量背景、文本与 SVG，围绕 `transform-origin` 统一换算位置并写入 `rotate`。旋转装饰元素允许保留负坐标，由幻灯片边界自然裁切。包含缩放、倾斜、3D 或表格等无法稳定原生映射的 transform 子树会整体降级为局部截图，避免拆分后丢失视觉关系。
+纯 2D `rotate()` / `rotateZ()` 与正值等比缩放优先映射为 PowerPoint 原生图元：导出前会先等待有限次入场动画结束，保留 `animation-fill-mode: forwards` 的最终状态；无限循环动画不会阻塞导出，测量时会回到稳定的静态样式。随后按变换前盒模型测量背景、文本与 SVG，围绕 `transform-origin` 统一换算位置和尺寸。旋转装饰元素允许保留负坐标，由幻灯片边界自然裁切。非等比缩放、镜像、倾斜、3D 或含表格的变换子树会降级为局部截图。
+
+简单 `ul` / `ol` 按原生列表段落导出并保留段内 rich text；受支持的 ECharts 图表可以通过[图表数据契约](./integration/pptx-export-dom-contract.md)写入原生图表。无法逐图元表达的滤镜、遮罩、实际越界裁切或重叠组透明度会保留为整子树截图，截图中的文字不再可编辑。这些增强仍需 PowerPoint/WPS 排版与保存重开验收，复杂 CSS 或图表样式应检查降级报告。
 
 ## 7. 表格
 

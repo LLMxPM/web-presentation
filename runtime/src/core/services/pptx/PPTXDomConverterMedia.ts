@@ -2,6 +2,8 @@
  * 文件用途：封装 PPTX DOM 转换里的媒体、背景图、截图与 SVG/canvas 导出逻辑。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLCanvasElement, isHTMLElement, isHTMLImageElement, isHTMLVideoElement, isSVGSVGElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type {
   PptxExportReportItem,
   PptxReportItemResult,
@@ -22,6 +24,7 @@ import {
 } from '@/core/services/pptx/PPTXRuntimeKitExportDom'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import { PPTXImageDataResolver } from '@/core/services/pptx/PPTXImageDataResolver'
+import { throwIfExportAborted } from '@/core/services/export/ExportCancellation'
 import { PPTXDomConverterTransform } from '@/core/services/pptx/PPTXDomConverterTransform'
 import { buildIntrinsicProxyBox, resolveIntrinsicImageSize } from './assets/image-intrinsic-size'
 import { buildConnectorSvgExportPayload, type ResolvedSvgExportPayload } from './svg/ConnectorTightBounds'
@@ -44,6 +47,7 @@ export interface PptxDomMediaExportHost {
     label: string,
     reason?: string,
     context?: VisitContext,
+    extra?: Partial<PptxExportReportItem>,
   ) => PptxExportReportItem
   addSkippedItem: (
     sourceType: PptxReportSourceType,
@@ -132,8 +136,8 @@ export class PPTXDomConverterMedia {
         return
       }
 
-      const canvas = element.querySelector?.('canvas') ?? (element instanceof HTMLCanvasElement ? element : null)
-      if (canvas instanceof HTMLCanvasElement && await this.addCanvasBlock(host, canvas, element, sourceType, label, context)) {
+      const canvas = element.querySelector?.('canvas') ?? (isHTMLCanvasElement(element) ? element : null)
+      if (isHTMLCanvasElement(canvas) && await this.addCanvasBlock(host, canvas, element, sourceType, label, context)) {
         return
       }
 
@@ -141,7 +145,7 @@ export class PPTXDomConverterMedia {
       return
     }
 
-    if (sourceType === 'canvas' && element instanceof HTMLCanvasElement) {
+    if (sourceType === 'canvas' && isHTMLCanvasElement(element)) {
       if (!await this.addCanvasBlock(host, element, element, sourceType, label, context)) {
         host.addSkippedItem(sourceType, label, 'canvas 像素为空或无法读取', context)
       }
@@ -153,8 +157,8 @@ export class PPTXDomConverterMedia {
       return
     }
 
-    const image = element instanceof HTMLImageElement ? element : element.querySelector?.('img')
-    if (image instanceof HTMLImageElement && await this.addImagePathBlock(host, image.currentSrc || image.src, element, sourceType, label, context)) {
+    const image = isHTMLImageElement(element) ? element : element.querySelector?.('img')
+    if (isHTMLImageElement(image) && await this.addImagePathBlock(host, image.currentSrc || image.src, element, sourceType, label, context)) {
       return
     }
 
@@ -172,7 +176,7 @@ export class PPTXDomConverterMedia {
     element: HTMLElement,
     context: VisitContext,
   ): Promise<boolean> {
-    const style = window.getComputedStyle(element)
+    const style = getOwnerComputedStyle(element)
     const backgroundUrl = this.extractSingleBackgroundImageUrl(style.backgroundImage)
     if (!backgroundUrl) {
       return false
@@ -196,8 +200,8 @@ export class PPTXDomConverterMedia {
     label: string,
     context: VisitContext,
   ): Promise<void> {
-    const video = element instanceof HTMLVideoElement ? element : element.querySelector?.('video')
-    if (!(video instanceof HTMLVideoElement)) {
+    const video = isHTMLVideoElement(element) ? element : element.querySelector?.('video')
+    if (!(isHTMLVideoElement(video))) {
       await this.addScreenshotBlock(host, element, 'video', '未找到 video 元素，降级为局部截图', context)
       return
     }
@@ -321,7 +325,7 @@ export class PPTXDomConverterMedia {
       return false
     }
 
-    const svgSource = await this.svgSerializer.resolveSvgSource(path)
+    const svgSource = await this.svgSerializer.resolveSvgSource(path, host.options.signal)
     if (svgSource) {
       if (this.svgSerializer.shouldRasterizeSourceForPpt(svgSource)) {
         const screenshotTarget = this.resolveScreenshotTarget(element)
@@ -344,7 +348,7 @@ export class PPTXDomConverterMedia {
 
     const imageData = host.options.resourceSession
       ? await host.options.resourceSession.resolveImage(path)
-      : await this.imageDataResolver.resolve(path)
+      : await this.imageDataResolver.resolve(path, host.options.signal)
     if (imageData) {
       await this.addImageDataBlock(host, imageData, element, sourceType, label, reason, context, imageData)
       return true
@@ -411,7 +415,7 @@ export class PPTXDomConverterMedia {
     reason: string,
     context: VisitContext,
   ): Promise<void> {
-    if (!(element instanceof HTMLElement)) {
+    if (!(isHTMLElement(element))) {
       host.addSkippedItem(sourceType, this.layout.buildElementLabel(element), '非 HTML 元素无法局部截图', context)
       return
     }
@@ -433,6 +437,7 @@ export class PPTXDomConverterMedia {
       })
       host.addReportItem(sourceType, 'screenshot', false, label, reason, context)
     } catch (error) {
+      throwIfExportAborted(host.options.signal)
       host.addSkippedItem(
         sourceType,
         label,
@@ -495,16 +500,16 @@ export class PPTXDomConverterMedia {
    * 读取当前元素对应的 cover/contain 模式。
    */
   private resolveImageSizingMode(element: Element): ImageSizingOptions['type'] | null {
-    const image = element instanceof HTMLImageElement ? element : element.querySelector?.('img')
-    if (image instanceof HTMLElement) {
-      const style = window.getComputedStyle(image)
+    const image = isHTMLImageElement(element) ? element : element.querySelector?.('img')
+    if (isHTMLElement(image)) {
+      const style = getOwnerComputedStyle(image)
       if (style.objectFit === 'contain' || style.objectFit === 'cover') {
         return style.objectFit
       }
     }
 
-    if (element instanceof HTMLElement) {
-      const style = window.getComputedStyle(element)
+    if (isHTMLElement(element)) {
+      const style = getOwnerComputedStyle(element)
       if (style.backgroundSize === 'contain' || style.backgroundSize === 'cover') {
         return style.backgroundSize
       }
@@ -534,7 +539,7 @@ export class PPTXDomConverterMedia {
    * 查找元素内可序列化的 SVG。
    */
   private findRenderableSvg(element: Element): SVGSVGElement | null {
-    if (element instanceof SVGSVGElement) {
+    if (isSVGSVGElement(element)) {
       return element
     }
     return element.querySelector?.('svg') as SVGSVGElement | null
@@ -544,11 +549,11 @@ export class PPTXDomConverterMedia {
    * 查找元素内全部可序列化 SVG。
    */
   private findRenderableSvgs(element: Element): SVGSVGElement[] {
-    if (element instanceof SVGSVGElement) {
+    if (isSVGSVGElement(element)) {
       return [element]
     }
     return Array.from(element.querySelectorAll?.('svg') ?? [])
-      .filter((svg): svg is SVGSVGElement => svg instanceof SVGSVGElement)
+      .filter((svg): svg is SVGSVGElement => isSVGSVGElement(svg))
   }
 
   /**
@@ -579,10 +584,10 @@ export class PPTXDomConverterMedia {
    * 为局部截图选择稳定的 HTML 宿主。
    */
   private resolveScreenshotTarget(element: Element): HTMLElement | null {
-    if (element instanceof HTMLElement) {
+    if (isHTMLElement(element)) {
       return element
     }
-    return element.parentElement instanceof HTMLElement ? element.parentElement : null
+    return isHTMLElement(element.parentElement) ? element.parentElement : null
   }
 
   /**
@@ -654,6 +659,8 @@ export class PPTXDomConverterMedia {
       showLegend: payload.options?.showLegend ?? true,
       showTitle: payload.options?.showTitle ?? Boolean(payload.title),
       title: payload.title,
+      ...(payload.chartType === 'bar' ? { barDir: 'col' } : {}),
+      ...(payload.series.every(series => series.color) ? { chartColors: payload.series.map(series => series.color!.replace(/^#/, '')) } : {}),
       ...(payload.options?.holeSize ? { holeSize: payload.options.holeSize } : {}),
       ...objectMeta,
     }

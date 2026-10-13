@@ -2,6 +2,8 @@
  * 文件用途：解析图片原始像素尺寸（支持 HTMLImageElement、Data URL 二进制魔数头与 SVG 视口），并计算 PptxGenJS cover/contain 代理盒尺寸。
  */
 
+import { isHTMLImageElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type { ElementBox } from '@/core/services/pptx/PPTXDomConverter.types'
 
 export interface IntrinsicImageSize {
@@ -19,8 +21,8 @@ export async function resolveIntrinsicImageSize(
   element: Element,
   source?: string,
 ): Promise<IntrinsicImageSize | null> {
-  const image = element instanceof HTMLImageElement ? element : element.querySelector?.('img')
-  if (image instanceof HTMLImageElement && image.naturalWidth > 0 && image.naturalHeight > 0) {
+  const image = isHTMLImageElement(element) ? element : element.querySelector?.('img')
+  if (isHTMLImageElement(image) && image.naturalWidth > 0 && image.naturalHeight > 0) {
     return {
       width: image.naturalWidth,
       height: image.naturalHeight,

@@ -3,6 +3,7 @@
  */
 
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
+import { escapeXmlAttribute, nextSlideShapeId, readSlideShapeNodes } from './OoxmlShapeNodes'
 
 /**
  * 幻灯片图元组合修补指令。
@@ -63,9 +64,8 @@ export function patchGroups(
     }
 
     let slideXml = strFromU8(slideFile)
-    let nextId = 5000 + pageIndex * 100
     for (const instruction of pageGroups) {
-      slideXml = patchGroupInSlideXml(slideXml, instruction, nextId++)
+      slideXml = patchGroupInSlideXml(slideXml, instruction, nextSlideShapeId(slideXml))
     }
     files[slidePath] = strToU8(slideXml)
   }
@@ -85,80 +85,21 @@ export function patchGroupInSlideXml(
   instruction: PptxGroupInstruction,
   groupShapeId: number,
 ): string {
-  if (!instruction.memberObjectNames || instruction.memberObjectNames.length === 0) {
-    return slideXml
-  }
+  const names = new Set(instruction.memberObjectNames.map(escapeXmlAttribute))
+  if (names.size < 2 || names.size !== instruction.memberObjectNames.length) return slideXml
+  const nodes = readSlideShapeNodes(slideXml)
+  const selected = nodes.map((node, index) => ({ ...node, index })).filter(node => node.name && names.has(node.name))
+  // 名称必须唯一、全部命中且连续，不能因组合改变不属于本组的图元层级。
+  if (selected.length !== names.size || new Set(selected.map(node => node.name)).size !== names.size) return slideXml
+  if (selected.at(-1)!.index - selected[0].index + 1 !== selected.length) return slideXml
+  if (![instruction.x, instruction.y, instruction.w, instruction.h].every(Number.isFinite) || instruction.w <= 0 || instruction.h <= 0) return slideXml
 
-  // 1. 查找每个 memberObjectName 对应的 XML 节点
-  const matchedNodes: Array<{ name: string; fullXml: string; startIndex: number }> = []
-
-  for (const memberName of instruction.memberObjectNames) {
-    const escapedName = escapeRegExp(escapeXmlAttribute(memberName))
-    // 匹配 <p:sp> 或 <p:pic> 包含该 name 属性的节点
-    const shapeRegex = new RegExp(
-      `<(p:(?:sp|pic))>[\\s\\S]*?<p:cNvPr[^>]*\\bname="${escapedName}"[^>]*>[\\s\\S]*?<\\/\\1>`,
-      'g',
-    )
-    const match = shapeRegex.exec(slideXml)
-    if (match) {
-      matchedNodes.push({
-        name: memberName,
-        fullXml: match[0],
-        startIndex: match.index,
-      })
-    }
-  }
-
-  // 若匹配到的成员少于 2 个，则不进行包装，保持原样
-  if (matchedNodes.length < 2) {
-    return slideXml
-  }
-
-  // 2. 按在 slideXml 中的出现顺序排序，确保在原位置保持 z-order
-  matchedNodes.sort((a, b) => a.startIndex - b.startIndex)
-
-  // 3. 构造 <p:grpSp> XML
   const offX = Math.round(instruction.x * EMU_PER_INCH)
   const offY = Math.round(instruction.y * EMU_PER_INCH)
   const extCX = Math.max(1, Math.round(instruction.w * EMU_PER_INCH))
   const extCY = Math.max(1, Math.round(instruction.h * EMU_PER_INCH))
-
-  const groupName = escapeXmlAttribute(instruction.groupName || instruction.groupId)
-  const innerShapesXml = matchedNodes.map(m => m.fullXml).join('')
-
-  const grpSpXml = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${groupShapeId}" name="${groupName}"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="${offX}" y="${offY}"/><a:ext cx="${extCX}" cy="${extCY}"/><a:chOff x="${offX}" y="${offY}"/><a:chExt cx="${extCX}" cy="${extCY}"/></a:xfrm></p:grpSpPr>${innerShapesXml}</p:grpSp>`
-
-  // 4. 从 slideXml 中移除已匹配的节点，并将 grpSpXml 插入到第一个成员的原位置
-  const firstNode = matchedNodes[0]
-  let resultXml = slideXml
-
-  // 先把第一个节点替换为 grpSpXml，其余节点替换为空
-  for (let i = 0; i < matchedNodes.length; i++) {
-    const node = matchedNodes[i]
-    if (i === 0) {
-      resultXml = resultXml.replace(node.fullXml, grpSpXml)
-    } else {
-      resultXml = resultXml.replace(node.fullXml, '')
-    }
-  }
-
-  return resultXml
-}
-
-/**
- * 转义正则表达式特殊字符。
- */
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/**
- * 转义 XML 属性值中的特殊字符。
- */
-function escapeXmlAttribute(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  const id = new RegExp(`<p:cNvPr\\b[^>]*\\bid="${groupShapeId}"`).test(slideXml) ? nextSlideShapeId(slideXml) : groupShapeId
+  const name = escapeXmlAttribute(instruction.groupName || instruction.groupId)
+  const group = `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${id}" name="${name}"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="${offX}" y="${offY}"/><a:ext cx="${extCX}" cy="${extCY}"/><a:chOff x="${offX}" y="${offY}"/><a:chExt cx="${extCX}" cy="${extCY}"/></a:xfrm></p:grpSpPr>${selected.map(node => node.xml).join('')}</p:grpSp>`
+  return slideXml.slice(0, selected[0].start) + group + slideXml.slice(selected.at(-1)!.end)
 }

@@ -6,6 +6,7 @@ import {
   buildRuntimeResourceProxyUrl,
   normalizeRuntimeHttpResourceUrl,
 } from '@/core/utils/resource-proxy'
+import { runWithExportDeadline, throwIfExportAborted } from '@/core/services/export/ExportCancellation'
 
 /**
  * PPTX 图片 data URL 解析器。
@@ -15,7 +16,8 @@ export class PPTXImageDataResolver {
    * 将可读取的图片 URL 预先转为 data URL，避免 pptxgenjs 写文件阶段被跨域 URL 中断。
    * @param path 图片 URL
    */
-  async resolve(path: string): Promise<string> {
+  async resolve(path: string, signal?: AbortSignal): Promise<string> {
+    throwIfExportAborted(signal)
     const normalizedPath = String(path || '').trim()
     if (!normalizedPath) {
       return ''
@@ -31,7 +33,7 @@ export class PPTXImageDataResolver {
 
     const candidates = this.buildFetchCandidates(normalizedPath)
     for (const candidate of candidates) {
-      const data = await this.fetchAsDataUrl(candidate)
+      const data = await this.fetchAsDataUrl(candidate, signal)
       if (data) {
         return data
       }
@@ -75,14 +77,10 @@ export class PPTXImageDataResolver {
    * 读取图片并转换为 PPTX 可嵌入的 data URL。
    * @param url 可 fetch 的图片地址
    */
-  private async fetchAsDataUrl(url: string): Promise<string> {
-    let timer: ReturnType<typeof setTimeout> | undefined
+  private async fetchAsDataUrl(url: string, signal?: AbortSignal): Promise<string> {
     try {
-      const timeoutPromise = new Promise<Response>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Image fetch timeout')), 10000)
-      })
-      const response = await Promise.race([fetch(url), timeoutPromise])
-      if (timer) clearTimeout(timer)
+      return await runWithExportDeadline(async requestSignal => {
+      const response = await fetch(url, { signal: requestSignal })
       if (!response.ok) {
         return ''
       }
@@ -95,10 +93,10 @@ export class PPTXImageDataResolver {
       }
 
       return `data:${contentType};base64,${this.arrayBufferToBase64(buffer)}`
+      }, signal, 10000)
     } catch {
+      throwIfExportAborted(signal)
       return ''
-    } finally {
-      if (timer) clearTimeout(timer)
     }
   }
 

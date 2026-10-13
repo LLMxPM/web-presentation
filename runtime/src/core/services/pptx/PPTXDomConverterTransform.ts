@@ -2,6 +2,8 @@
  * 文件用途：识别并准备可原生映射的 CSS 2D 旋转与正值等比缩放，在导出期间冻结动画并恢复 DOM 样式。
  */
 
+import { getComputedStyle as getOwnerComputedStyle } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type { ElementBox, PptxRotationStep, VisitContext } from './PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from './PPTXDomConverterLayout'
 
@@ -32,16 +34,10 @@ interface InlinePropertySnapshot {
 export class PPTXDomConverterTransform {
   constructor(private readonly layout: PPTXDomConverterLayout) {}
 
-  /**
-   * 冻结当前元素动画并准备静态 transform。
-   * 支持纯位移、正值等比缩放和保持单位缩放的 2D 旋转；其余 transform 交给截图兜底。
-   */
-  prepare(element: HTMLElement, context: VisitContext): PreparedDomTransform {
+  /** 在可见性判断前禁用无限动画和过渡，返回恢复函数，避免动画透明帧被当成隐藏内容。 */
+  freezeAnimation(element: HTMLElement): () => void {
     const snapshots = new Map<string, InlinePropertySnapshot>()
-    const getStyle = (el: HTMLElement): CSSStyleDeclaration =>
-      el.ownerDocument.defaultView?.getComputedStyle(el) ?? window.getComputedStyle(el)
-
-    const initialStyle = getStyle(element)
+    const initialStyle = getOwnerComputedStyle(element)
     const hasAnimation = String(initialStyle.animationName || '').trim() !== '' && initialStyle.animationName !== 'none'
     const elementAnimations = typeof element.getAnimations === 'function' ? element.getAnimations() : null
     const shouldDisableAnimation = hasAnimation && (
@@ -57,10 +53,22 @@ export class PPTXDomConverterTransform {
     if (hasTransition) {
       this.overrideInlineProperty(element, snapshots, 'transition', 'none')
     }
+    return () => this.restoreInlineProperties(element, snapshots)
+  }
 
-    const staticStyle = getStyle(element)
+  /**
+   * 冻结当前元素动画并准备静态 transform。
+   * 支持纯位移、正值等比缩放和 2D 旋转；其余 transform 交给截图兜底。
+   */
+  prepare(element: HTMLElement, context: VisitContext): PreparedDomTransform {
+    const restoreAnimation = this.freezeAnimation(element)
+    const snapshots = new Map<string, InlinePropertySnapshot>()
+    const staticStyle = getOwnerComputedStyle(element)
     const transformValue = String(staticStyle.transform || '').trim()
-    const restore = (): void => this.restoreInlineProperties(element, snapshots)
+    const restore = (): void => {
+      this.restoreInlineProperties(element, snapshots)
+      restoreAnimation()
+    }
     if (!transformValue || transformValue === 'none' || this.isPureTranslate(transformValue)) {
       return { kind: 'none', context, restore }
     }

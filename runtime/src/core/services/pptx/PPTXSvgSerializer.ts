@@ -2,7 +2,10 @@
  * 文件用途：处理 PPTX 导出中的 SVG 源读取、样式内联和 data URL 序列化。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isSVGElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import { PPTXCssParser } from '@/core/services/pptx/PPTXCssParser'
+import { runWithExportDeadline, throwIfExportAborted } from '@/core/services/export/ExportCancellation'
 
 const SVG_COLOR_STYLE_PROPERTIES = ['fill', 'stroke', 'color'] as const
 
@@ -62,7 +65,8 @@ export class PPTXSvgSerializer {
    * 尝试读取 SVG 源 XML。
    * @param path 图片 URL 或 data URL
    */
-  async resolveSvgSource(path: string): Promise<string> {
+  async resolveSvgSource(path: string, signal?: AbortSignal): Promise<string> {
+    throwIfExportAborted(signal)
     const normalized = String(path || '').trim()
     if (!normalized) {
       return ''
@@ -77,23 +81,19 @@ export class PPTXSvgSerializer {
       return ''
     }
 
-    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const timeoutPromise = new Promise<Response>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('SVG fetch timeout')), 10000)
-      })
-      const response = await Promise.race([fetch(normalized), timeoutPromise])
-      if (timer) clearTimeout(timer)
+      return await runWithExportDeadline(async requestSignal => {
+      const response = await fetch(normalized, { signal: requestSignal })
       if (!response.ok) {
         return ''
       }
       const source = await response.text()
       const contentType = response.headers.get('content-type') || ''
       return this.isSvgXmlSource(source, contentType) ? source : ''
+      }, signal, 10000)
     } catch {
+      throwIfExportAborted(signal)
       return ''
-    } finally {
-      if (timer) clearTimeout(timer)
     }
   }
 
@@ -199,8 +199,8 @@ export class PPTXSvgSerializer {
    * @param clone 克隆节点
    */
   private inlineSvgComputedStyles(source: Element, clone: Element): void {
-    if (source instanceof SVGElement && clone instanceof SVGElement) {
-      const style = window.getComputedStyle(source)
+    if (isSVGElement(source) && isSVGElement(clone)) {
+      const style = getOwnerComputedStyle(source)
       const currentColor = this.cssParser.parseCssColor(style.color, source, { hex: '000000', alpha: 1 })
 
       SVG_COLOR_STYLE_PROPERTIES.forEach(property => {

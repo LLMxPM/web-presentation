@@ -94,12 +94,42 @@ Runtime 的可编辑 PPTX 导出会把页面 DOM 转换成 PowerPoint 原生图�
 **消费者**：
 
 - `PPTXDomConverterMedia.isMediaElement()` 判断是否走媒体导出分支。
-- `PPTXDomConverterMedia.resolveMediaSourceType()` 决定导出策略：`formula` 逐段导出 MathJax SVG，`mermaid` / `drawio` / `chart` 优先找可序列化 SVG（`chart` 再退 canvas），`video` 取封面或当前帧，`image` 走图片路径或 data URL，全部失败时降级为局部截图。
+- `PPTXDomConverterMedia.resolveMediaSourceType()` 决定导出策略：`formula` 逐段导出 MathJax SVG，`chart` 优先验证下述图表数据载荷；未支持的图表与 `mermaid` / `drawio` 优先找可序列化 SVG（`chart` 再退 canvas），`video` 取封面或当前帧，`image` 走图片路径或 data URL，全部失败时降级为局部截图。
 - `PPTXDomConverterRaster.isTerminalMediaElement()` 判断 3D CSS 降级截图时哪些子树不该继续深入，必须与上面的媒体识别保持一致，否则会出现「媒体节点被当成普通容器整块栅格化」。
 
 **词汇表不含 `canvas` / `svg` / `connector`**：`canvas` 和 `svg` 由标签名判定，不来自 Runtime Kit 组件；连接线走独立契约，且 `PptxReportSourceType` 中没有 `connector` 成员，硬塞进媒体词汇会让报告类型失真。
 
 **改动影响**：去掉属性不会立刻坏——类名兜底会接住。真正的风险是**同时**改类名和属性，或者只改属性取值而词汇表没跟上：此时节点仍被识别为媒体，但 `resolveMediaSourceType` 落到标签名判定，公式会被当成普通 SVG、图表会被当成截图。新增 viewer 时必须同时补属性和 `ViewerExportDom.test.ts` 用例。
+
+## 图表数据契约
+
+**生产者**：`EchartsViewer.vue` 调用 `extractNormalizedChartData()`，仅当配置满足支持范围时在根节点输出以下属性；现有媒体 v1 标记保持不变。
+
+| 属性 | 取值 | 作用 |
+| --- | --- | --- |
+| `data-runtime-kit-chart` | `v1` | 声明原生图表数据版本 |
+| `data-runtime-kit-chart-data` | JSON 字符串 | 提供纯数据载荷，不读取 ECharts 私有实例 |
+
+v1 示例：
+
+```json
+{
+  "version": "v1",
+  "chartType": "bar",
+  "categories": ["甲", "乙"],
+  "series": [{ "name": "数量", "values": [10, 20], "color": "2563EB" }],
+  "options": { "showLegend": true, "showTitle": false }
+}
+```
+
+**消费者**：`parseRuntimeKitChartPayload()` 和 `validateRuntimeKitChartPayload()` 校验后，`PPTXDomConverterMedia` 写入 chart IR，投射器调用 PptxGenJS `addChart`。
+
+- 支持 `bar`、`line`、`pie`、`doughnut`。柱状图为垂直类目轴；饼图和环形图仅一个系列，数值非负。
+- 类目为字符串，1 至 1024 项；系列为 1 至 32 项，各系列数值必须与类目等长且为有限 number，总数值不超过 16384。JSON 属性长度最多 1 Mi 个字符。
+- 类目、系列名及可选标题长度最多 2048 字符；系列颜色为六位十六进制，可带 `#`。`showLegend`、`showTitle`、`showValue` 为可选 boolean，`holeSize` 为 0 至 100 的百分比。
+- 函数回调、循环对象、dataset、多轴、组合图、堆叠、平滑或面积线、渐变系列、极坐标等复杂配置返回 null。无效数据、未知版本或未知类型同样返回 null，继续原有 SVG、canvas 或截图路径，不提交坏 chart。
+
+载荷保留系列数据与基础选项，不承诺迁移任意 ECharts 样式。PowerPoint/WPS 编辑、保存并重开尚需目标应用验收；原生路径的支持范围不能由数据 Schema 合法性单独证明。
 
 ## 连接线契约
 
@@ -111,7 +141,7 @@ Runtime 的可编辑 PPTX 导出会把页面 DOM 转换成 PowerPoint 原生图�
 
 ## 识别优先级
 
-`PPTXDomConverter.visitPreparedElement()` 的分派顺序是**表格优先于媒体**，命中即返回。媒体识别内部顺序：
+`PPTXDomConverter.visitPreparedElement()` 首先判断子树合成与裁切是否需要截图，随后**表格优先于媒体**，命中即返回。媒体识别内部顺序：
 
 1. `data-runtime-kit-media="v1"` 且类型在词汇表内 → 用契约声明的类型。
 2. 否则按历史顺序匹配类名与标签名兜底。兜底顺序是**交错**的，必须原样保留：`mermaid` → `drawio` → `formula` → `chart` → `video`（类名或 `<video>`）→ `<canvas>` → `<svg>` → `image`（类名或 `<img>`）。
@@ -144,6 +174,8 @@ Runtime 的可编辑 PPTX 导出会把页面 DOM 转换成 PowerPoint 原生图�
 | `ConnectorTightBounds.test.ts` | 守卫负例，以及仅带属性（无类名）时的紧边界导出结果 |
 | `PPTXDomConverterTable.integration.test.ts` | HTML 表格与 DataTable 两条路径的真实 OOXML 输出 |
 | `DataTable.test.ts` | DataTable 渲染结构与表格契约标记 |
+| `S4NativeEditingSemantics.test.ts` | 简单图表数据提取、原生 chart IR、列表与组合 |
+| `ExportReviewRegression.test.ts` | 跨窗口节点、坏图表载荷安全降级、列表实际段落、连续图元组合与原子页容错 |
 
 生产者与消费者的属性名对拍由 `ViewerExportDom.test.ts` 与 `Connector.v1.test.ts` 承担：它们从 `PPTXRuntimeKitExportDom` 导入常量再断言组件输出，任一侧单独改动都会失败。
 

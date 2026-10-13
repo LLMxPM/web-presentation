@@ -2,6 +2,8 @@
  * 文件用途：封装 PPTX DOM 转换里的 CSS linear-gradient 解析与 PPT 原生渐变形状导出。
  */
 
+import { getComputedStyle as getOwnerComputedStyle } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type {
   PptxExportReportItem,
   PptxReportItemResult,
@@ -67,7 +69,7 @@ export class PPTXDomConverterGradient {
    * 将可解析的 CSS linear-gradient 导出为单个 PPT 原生渐变形状。
    */
   addLinearGradientElement(host: PptxDomGradientExportHost, element: HTMLElement, context: VisitContext): boolean {
-    const style = element.ownerDocument.defaultView?.getComputedStyle(element) ?? window.getComputedStyle(element)
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element) ?? getOwnerComputedStyle(element)
     const rawImage = this.resolveGradientImageValue(element)
     const gradient = this.parseLinearGradient(rawImage, element)
     if (!gradient) {
@@ -364,7 +366,7 @@ export class PPTXDomConverterGradient {
    * 提取元素的线性渐变值，优先使用计算样式，回退内联属性。
    */
   private resolveGradientImageValue(element: HTMLElement): string {
-    const style = element.ownerDocument.defaultView?.getComputedStyle(element) ?? window.getComputedStyle(element)
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element) ?? getOwnerComputedStyle(element)
     if (style.backgroundImage && style.backgroundImage !== 'none' && style.backgroundImage.includes('gradient')) {
       return style.backgroundImage
     }

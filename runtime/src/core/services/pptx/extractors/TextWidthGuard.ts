@@ -2,6 +2,8 @@
  * 文件用途：负责 PPTX 文本框宽度防折行保护（WidthGuard）、向祖先容器剩余宽度扩展以及文本框内边距（margin）换算。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type { ElementBox, VisitContext } from '@/core/services/pptx/PPTXDomConverter.types'
 import { INLINE_TEXT_TAGS } from '@/core/services/pptx/PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
@@ -38,7 +40,7 @@ export class TextWidthGuard {
     let currentNode: Node | null = anchorNode
 
     while (currentNode?.parentElement) {
-      if (currentNode instanceof HTMLElement && this.hasExplicitWidthConstraint(currentNode)) {
+      if (isHTMLElement(currentNode) && this.hasExplicitWidthConstraint(currentNode)) {
         break
       }
 
@@ -47,7 +49,7 @@ export class TextWidthGuard {
         break
       }
 
-      const parentStyle = window.getComputedStyle(parent)
+      const parentStyle = getOwnerComputedStyle(parent)
       if (!this.isEligibleRemainingWidthContainer(parent, parentStyle)) {
         currentNode = parent
         continue
@@ -211,7 +213,7 @@ export class TextWidthGuard {
     if (node.nodeType === Node.TEXT_NODE) {
       return Boolean(this.layout.normalizeText(node.textContent || ''))
     }
-    if (node instanceof HTMLElement) {
+    if (isHTMLElement(node)) {
       return this.layout.isVisibleElement(node) && isMeaningfulElement(node)
     }
     return false
@@ -228,7 +230,7 @@ export class TextWidthGuard {
       return false
     }
 
-    const parentStyle = window.getComputedStyle(parent)
+    const parentStyle = getOwnerComputedStyle(parent)
     if (this.layout.resolveLayoutDisplay(parent, parentStyle) !== 'flex' ||
       this.layout.resolveFlexDirection(parent, parentStyle).startsWith('column')) {
       return false

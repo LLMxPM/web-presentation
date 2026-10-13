@@ -4,6 +4,8 @@
  * 文件用途：验证可编辑 PPTX 导出服务对演讲者备注、离屏 1:1 舞台采集（方案 A 与全页导出）及局部快速光栅化的协同逻辑。
  */
 
+import { createEmptySlideIR } from './pptx/PPTXDomConverter.test-support'
+
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { Router } from 'vue-router'
 import type { PageInfo } from '@/core/types/export-common'
@@ -30,7 +32,7 @@ vi.mock('@/core/utils/export-pages', () => ({
 
 interface PptxExportServicePrivate {
   converter: {
-    convertPage: Mock
+    extractSlideIR: Mock
   }
   packageWriter: {
     createPresentation: () => PptxMock
@@ -95,8 +97,7 @@ describe('PPTXExportService', () => {
       },
     }, 1, [])
 
-    expect(service.converter.convertPage).toHaveBeenCalledWith(expect.objectContaining({
-      slide,
+    expect(service.converter.extractSlideIR).toHaveBeenCalledWith(expect.objectContaining({
       pageElement,
       pageTitle: '开场',
       pageRoute: '/intro',
@@ -119,7 +120,7 @@ describe('PPTXExportService', () => {
     }, 1, [])
 
     expect(slide.addNotes).not.toHaveBeenCalled()
-    expect(service.converter.convertPage).toHaveBeenCalledWith(expect.objectContaining({
+    expect(service.converter.extractSlideIR).toHaveBeenCalledWith(expect.objectContaining({
       speakerNotes: null,
     }))
   })
@@ -174,7 +175,7 @@ describe('PPTXExportService', () => {
 
     expect(result.success).toBe(true)
     expect(mockPreparePage).toHaveBeenCalledWith('/slide-1?theme=dark')
-    expect(service.converter.convertPage).toHaveBeenCalledWith(expect.objectContaining({
+    expect(service.converter.extractSlideIR).toHaveBeenCalledWith(expect.objectContaining({
       pageElement: offscreenElement,
       pageRoute: '/slide-1',
     }))
@@ -230,12 +231,7 @@ describe('PPTXExportService', () => {
 function createServiceWithConverter(): PptxExportServicePrivate {
   const service = new PPTXExportService() as unknown as PptxExportServicePrivate
   service.converter = {
-    convertPage: vi.fn(async ({ pageIndex, pageTitle, pageRoute }) => ({
-      pageIndex,
-      pageTitle,
-      pageRoute,
-      items: [],
-    })),
+    extractSlideIR: vi.fn(async options => createEmptySlideIR(options)),
   }
   return service
 }

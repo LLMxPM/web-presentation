@@ -4,6 +4,8 @@
  * 文件用途：验证 S0 阶段生命周期与取消隔离（退出条件 1 & 2：取消期间零下载、取消后重试状态不串扰）。
  */
 
+import { createEmptySlideIR } from './PPTXDomConverter.test-support'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Router } from 'vue-router'
 import { ExportStatus } from '@/core/types/export-common'
@@ -30,18 +32,13 @@ describe('S0 生命周期与取消隔离', () => {
         resolveSlideLayout: () => { widthIn: number; heightIn: number }
       }
       converter: {
-        convertPage: ReturnType<typeof vi.fn>
+        extractSlideIR: ReturnType<typeof vi.fn>
       }
     }
 
     privateService.packageWriter.generatePresentationBytes = generateBytesSpy
     privateService.packageWriter.savePptxBlob = saveBlobSpy
-    privateService.converter.convertPage = vi.fn(async () => ({
-      pageIndex: 1,
-      pageTitle: '测试页',
-      pageRoute: '/test',
-      items: [],
-    }))
+    privateService.converter.extractSlideIR = vi.fn(async options => createEmptySlideIR(options))
   })
 
   afterEach(() => {
@@ -63,14 +60,14 @@ describe('S0 生命周期与取消隔离', () => {
     } as unknown as Router)
 
     let runningTask: ReturnType<typeof service.getCurrentTask> = null
-    // 在 convertPage 期间触发取消
+    // 在 extractSlideIR 期间触发取消
     const privateService = service as unknown as {
-      converter: { convertPage: ReturnType<typeof vi.fn> }
+      converter: { extractSlideIR: ReturnType<typeof vi.fn> }
     }
-    privateService.converter.convertPage.mockImplementation(async () => {
+    privateService.converter.extractSlideIR.mockImplementation(async options => {
       runningTask = service.getCurrentTask()
       service.cancelExport()
-      return { pageIndex: 1, pageTitle: '测试', pageRoute: '/test', items: [] }
+      return createEmptySlideIR(options)
     })
 
     await expect(service.exportCurrentPage({ mode: 'current' })).rejects.toThrow('用户取消导出')
@@ -84,66 +81,29 @@ describe('S0 生命周期与取消隔离', () => {
     expect(service.isTaskCancelled(runningTask?.id)).toBe(true)
   })
 
-  it('任务 1 取消后立即发起任务 2，任务 1 的 finally 不得清理任务 2 的运行态，且状态不串扰', async () => {
-    document.body.innerHTML = '<div class="runtime-page-print-source" data-runtime-route-path="/test" style="width: 1920px; height: 1080px;"><h1>测试内容</h1></div>'
-
-    service.setRouter({
-      currentRoute: {
-        value: {
-          path: '/test',
-          fullPath: '/test',
-          meta: {},
-        },
-      },
-    } as unknown as Router)
-
-    let resolveTask1Conversion!: () => void
-    const task1Promise = new Promise<void>(resolve => {
-      resolveTask1Conversion = resolve
+  it('取消后保持互斥直到旧任务释放，释放后才允许重试', async () => {
+    document.body.innerHTML = '<div class="runtime-page-print-source" data-runtime-route-path="/test" style="width:1920px;height:1080px"></div>'
+    service.setRouter({ currentRoute: { value: { path: '/test', fullPath: '/test', meta: {} } } } as unknown as Router)
+    let release!: () => void
+    let entered!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const converter = (service as unknown as { converter: { extractSlideIR: ReturnType<typeof vi.fn> } }).converter
+    converter.extractSlideIR.mockImplementationOnce(async options => {
+      entered()
+      await gate
+      return createEmptySlideIR(options)
     })
-
-    const privateService = service as unknown as {
-      converter: { convertPage: ReturnType<typeof vi.fn> }
-    }
-
-    let callCount = 0
-    privateService.converter.convertPage.mockImplementation(async () => {
-      callCount += 1
-      if (callCount === 1) {
-        // 任务 1 挂起
-        await task1Promise
-      }
-      return { pageIndex: 1, pageTitle: `页面 ${callCount}`, pageRoute: '/test', items: [] }
-    })
-
-    // 发起任务 1
-    const run1Promise = service.exportCurrentPage({ mode: 'current' })
-
-    // 取消任务 1
-    const task1 = service.getCurrentTask()
-    expect(task1).not.toBeNull()
-    service.cancelExport(task1?.id)
-
-    // 退出条件 2：取消后可立即发起任务 2
-    const run2Promise = service.exportCurrentPage({ mode: 'current' })
-    const task2 = service.getCurrentTask()
-    expect(task2).not.toBeNull()
-    expect(task2?.id).not.toBe(task1?.id)
+    const first = service.exportCurrentPage({ mode: 'current' })
+    await started
+    service.cancelExport()
     expect(service.isCurrentlyExporting()).toBe(true)
-
-    // 让任务 1 迟到恢复并进入 finally
-    resolveTask1Conversion()
-    await expect(run1Promise).rejects.toThrow('用户取消导出')
-
-    // 关键断言：任务 1 的迟到 finally 不得清理正在运行的任务 2
-    expect(service.isCurrentlyExporting()).toBe(true)
-    expect(service.getCurrentTask()?.id).toBe(task2?.id)
-
-    // 任务 2 正常完成
-    const result2 = await run2Promise
-    expect(result2.success).toBe(true)
-    expect(result2.taskId).toBe(task2?.id)
-    expect(saveBlobSpy).toHaveBeenCalledTimes(1) // 仅任务 2 触发了一次下载，任务 1 零下载
+    await expect(service.exportCurrentPage({ mode: 'current' })).rejects.toThrow('已有导出任务')
+    release()
+    await expect(first).rejects.toThrow('用户取消导出')
+    expect(service.isCurrentlyExporting()).toBe(false)
+    expect((await service.exportCurrentPage({ mode: 'current' })).success).toBe(true)
+    expect(saveBlobSpy).toHaveBeenCalledTimes(1)
   })
 
   it('打包字节生成期间取消，不得调用 savePptxBlob 提交文件', async () => {

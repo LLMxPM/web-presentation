@@ -4,6 +4,7 @@
 
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import type { PptxGradientFillInstruction } from '@/core/services/pptx/PPTXDomConverter.types'
+import { readSlideShapeNodes } from './OoxmlShapeNodes'
 
 /**
  * 将 PPTX zip 内指定形状的填充替换为 OOXML 原生线性渐变。
@@ -31,7 +32,7 @@ export function patchGradientFills(
     const slidePath = `ppt/slides/slide${pageIndex}.xml`
     const slideFile = files[slidePath]
     if (!slideFile) {
-      continue
+      throw new Error(`PPTX 渐变目标页不存在：${pageIndex}`)
     }
 
     let slideXml = strFromU8(slideFile)
@@ -54,12 +55,14 @@ export function patchGradientFillInSlideXml(
   slideXml: string,
   instruction: PptxGradientFillInstruction,
 ): string {
-  const objectName = escapeRegExp(escapeXmlAttribute(instruction.objectName))
-  const shapeRegex = new RegExp(
-    `(<p:sp>[\\s\\S]*?<p:cNvPr[^>]*\\bname="${objectName}"[^>]*>[\\s\\S]*?<p:spPr[^>]*>[\\s\\S]*?)(<a:solidFill>[\\s\\S]*?<\\/a:solidFill>|<a:noFill\\s*\\/>)`,
-  )
-
-  return slideXml.replace(shapeRegex, `$1${buildGradientFillXml(instruction)}`)
+  const objectName = escapeXmlAttribute(instruction.objectName)
+  const matches = readSlideShapeNodes(slideXml).filter(node => node.name === objectName && node.xml.startsWith('<p:sp>'))
+  if (matches.length !== 1) throw new Error(`PPTX 渐变图元未唯一命中：${instruction.objectName}`)
+  const node = matches[0]
+  const original = node.xml
+  const patched = original.replace(/(<p:spPr[^>]*>[\s\S]*?)(<a:solidFill>[\s\S]*?<\/a:solidFill>|<a:noFill\s*\/>)/, (_, before) => before + buildGradientFillXml(instruction))
+  if (patched === original) throw new Error(`PPTX 渐变图元缺少填充：${instruction.objectName}`)
+  return slideXml.slice(0, node.start) + patched + slideXml.slice(node.end)
 }
 
 /**
@@ -99,14 +102,6 @@ export function gradientDirectionToPptAngle(direction: PptxGradientFillInstructi
     default:
       return 0
   }
-}
-
-/**
- * 转义正则表达式特殊字符。
- * @param value 原始文本
- */
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**

@@ -2,6 +2,8 @@
  * 文件用途：在无真实排版引擎的环境（如 JSDOM 单元测试）下，按父级 Flexbox 规则推断子项坐标回退值。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type { ElementPadding, MeasuredElementBox } from '@/core/services/pptx/PPTXDomConverter.types'
 
 export interface FlexFallbackMeasureHost {
@@ -32,7 +34,7 @@ export class JsdomFlexFallback {
     element: Element,
     rawBox: MeasuredElementBox,
   ): MeasuredElementBox {
-    if (!(element instanceof HTMLElement) || !element.parentElement) {
+    if (!(isHTMLElement(element)) || !element.parentElement) {
       return rawBox
     }
     if (this.isOutOfFlowPositionedElement(element)) {
@@ -40,13 +42,13 @@ export class JsdomFlexFallback {
     }
 
     const parent = element.parentElement
-    const parentStyle = window.getComputedStyle(parent)
+    const parentStyle = getOwnerComputedStyle(parent)
     if (host.resolveLayoutDisplay(parent, parentStyle) !== 'flex') {
       return rawBox
     }
 
     const items = Array.from(parent.children).filter((child): child is HTMLElement => {
-      return child instanceof HTMLElement &&
+      return isHTMLElement(child) &&
         !this.isOutOfFlowPositionedElement(child) &&
         host.isRawVisibleElement(child)
     })
@@ -193,7 +195,7 @@ export class JsdomFlexFallback {
    * 判断元素是否脱离普通文档流，避免 flex 兜底错误重算绝对定位坐标。
    */
   private isOutOfFlowPositionedElement(element: HTMLElement): boolean {
-    const position = window.getComputedStyle(element).position
+    const position = getOwnerComputedStyle(element).position
     return position === 'absolute' || position === 'fixed'
   }
 }

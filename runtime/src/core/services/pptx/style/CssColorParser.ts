@@ -2,6 +2,8 @@
  * 文件用途：解析 CSS 颜色（支持命名色、HEX、RGB/HSL、OKLCH/OKLab、color()、color-mix()、相对 RGB、CSS 变量与浏览器回退探测）。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, getOwnerDocument, isHTMLElement, isSVGElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import {
   clamp01,
   clampColorByte,
@@ -82,7 +84,7 @@ export class CssColorParser {
       if (currentColor) {
         return currentColor
       }
-      const computedColor = context ? window.getComputedStyle(context).color : ''
+      const computedColor = context ? getOwnerComputedStyle(context).color : ''
       if (computedColor && computedColor.toLowerCase() !== 'currentcolor') {
         return this.parseCssColor(computedColor, context, { hex: '000000', alpha: 1 })
       }
@@ -224,6 +226,7 @@ export class CssColorParser {
    * @returns 变量值字符串
    */
   private resolveCssVariable(variableName: string, context?: Element): string {
+    const document = getOwnerDocument(context)
     const candidates: Element[] = []
     let current: Element | null = context || null
     while (current) {
@@ -238,10 +241,10 @@ export class CssColorParser {
     }
 
     for (const candidate of candidates) {
-      const inlineValue = candidate instanceof HTMLElement || candidate instanceof SVGElement
+      const inlineValue = isHTMLElement(candidate) || isSVGElement(candidate)
         ? candidate.style.getPropertyValue(variableName).trim()
         : ''
-      const computedValue = window.getComputedStyle(candidate).getPropertyValue(variableName).trim()
+      const computedValue = getOwnerComputedStyle(candidate).getPropertyValue(variableName).trim()
       if (inlineValue) {
         return inlineValue
       }
@@ -671,7 +674,7 @@ export class CssColorParser {
     probe.style.position = 'absolute'
     probe.style.visibility = 'hidden'
     document.body.appendChild(probe)
-    const color = window.getComputedStyle(probe).color
+    const color = getOwnerComputedStyle(probe).color
     probe.remove()
     return color || ''
   }

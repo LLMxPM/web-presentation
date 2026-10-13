@@ -2,6 +2,8 @@
  * 文件用途：将运行时页面 DOM 启发式转换为 PPTX 文本、形状、图片与截图块。
  */
 
+import { isElement, isTextNode } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type {
   PptxExportReportItem,
   PptxExportReportPage,
@@ -27,6 +29,8 @@ import type {
   VisitContext,
 } from '@/core/services/pptx/PPTXDomConverter.types'
 import type { PptxGroupInstruction } from '@/core/services/pptx/writer/OoxmlGroupPatcher'
+import { throwIfExportAborted } from '@/core/services/export/ExportCancellation'
+import { collectPaintOrderedChildren, requiresCompositeScreenshot } from './layout/DomCompositionPolicy'
 import {
   appendPptxReportItem,
   createEmptyPptxReportPage,
@@ -74,6 +78,7 @@ export class PPTXDomConverter {
   private reportPage!: PptxExportReportPage
   private groupSequence = 0
   private gradientSequence = 0
+  private objectSequence = 0
   private readonly pageGroups = new Map<string, PptxGroupInstruction>()
 
   /**
@@ -99,6 +104,7 @@ export class PPTXDomConverter {
     )
     this.groupSequence = 0
     this.gradientSequence = 0
+    this.objectSequence = 0
     this.pageGroups.clear()
 
     this.layout.beginPage(this.options)
@@ -129,12 +135,14 @@ export class PPTXDomConverter {
       }
     }
 
-    for (const child of Array.from(options.pageElement.children)) {
-      await this.visitElement(child, rootContext)
+    for (const child of collectPaintOrderedChildren(options.pageElement)) {
+      if (isElement(child)) await this.visitElement(child, rootContext)
     }
 
     const groups: PptxGroupInstruction[] = []
+    const writtenNames = new Set(primitives.map(primitive => primitive.options?.objectName))
     for (const group of this.pageGroups.values()) {
+      group.memberObjectNames = group.memberObjectNames.filter(name => writtenNames.has(name))
       if (group.memberObjectNames.length >= 2) {
         groups.push(group)
         if (this.options.groupCollector) {
@@ -173,6 +181,18 @@ export class PPTXDomConverter {
    * @param context 当前 HTML 容器组合上下文
    */
   private async visitElement(element: Element, context: VisitContext): Promise<void> {
+    throwIfExportAborted(this.options.signal)
+    const restoreAnimation = isHTMLElement(element) ? this.transform.freezeAnimation(element) : () => {}
+    try {
+      await this.visitStaticElement(element, context)
+    }
+    finally {
+      restoreAnimation()
+    }
+  }
+
+  /** 在稳定的动画状态下判断可见性，并保留 3D 截图与 2D 原生转换的分派顺序。 */
+  private async visitStaticElement(element: Element, context: VisitContext): Promise<void> {
     if (!this.layout.isVisibleElement(element)) {
       return
     }
@@ -207,7 +227,10 @@ export class PPTXDomConverter {
    * @param context 当前组合及旋转上下文
    */
   private async visitPreparedElement(element: Element, context: VisitContext): Promise<void> {
-
+    if (isHTMLElement(element) && requiresCompositeScreenshot(element, this.options.pageElement)) {
+      await this.addScreenshotBlock(element, 'complex-css', '子树视觉合成或裁切无法拆分，已降级为局部截图', context)
+      return
+    }
     if (this.table.isTableElement(element)) {
       const unsupportedReason = this.table.resolveUnsupportedReason(element)
       if (unsupportedReason) {
@@ -302,12 +325,12 @@ export class PPTXDomConverter {
       inheritedOpacity: childOpacity,
     }
 
-    for (const childNode of Array.from(element.childNodes)) {
-      if (childNode instanceof Element) {
+    for (const childNode of collectPaintOrderedChildren(element)) {
+      if (isElement(childNode)) {
         await this.visitElement(childNode, childElementContext)
         continue
       }
-      if (isHTMLElement(element) && childNode instanceof Text) {
+      if (isHTMLElement(element) && isTextNode(childNode)) {
         this.text.addDirectTextNode(this.createTextExportHost(), element, childNode, elementContext)
       }
     }
@@ -324,7 +347,7 @@ export class PPTXDomConverter {
     }
 
     return Array.from(element.childNodes).some(childNode => {
-      return childNode instanceof Text && Boolean(this.layout.normalizeText(childNode.textContent || ''))
+      return isTextNode(childNode) && Boolean(this.layout.normalizeText(childNode.textContent || ''))
     })
   }
 
@@ -334,10 +357,10 @@ export class PPTXDomConverter {
    */
   private hasVisibleTextContent(element: HTMLElement): boolean {
     return Array.from(element.childNodes).some(childNode => {
-      if (childNode instanceof Text) {
+      if (isTextNode(childNode)) {
         return Boolean(this.layout.normalizeText(childNode.textContent || ''))
       }
-      if (childNode instanceof HTMLElement && this.layout.isVisibleElement(childNode)) {
+      if (isHTMLElement(childNode) && this.layout.isVisibleElement(childNode)) {
         return this.hasVisibleTextContent(childNode)
       }
       return false
@@ -443,7 +466,8 @@ export class PPTXDomConverter {
       return includeAltText ? { altText: label.slice(0, 240) } : {}
     }
 
-    const objectName = this.normalizeObjectName(`${context.groupId}:${role}:${label}`)
+    this.objectSequence += 1
+    const objectName = this.normalizeObjectName(`p${this.options.pageIndex}-o${this.objectSequence}-${context.groupId}:${role}:${label}`)
     const group = this.pageGroups.get(context.groupId)
     if (group && !group.memberObjectNames.includes(objectName)) {
       group.memberObjectNames.push(objectName)

@@ -13,10 +13,10 @@ import type {
 
 describe('S2 视觉和排版映射专项测试', () => {
   let converter: PPTXDomConverter
-  let addTextMock: ReturnType<typeof vi.fn>
-  let addShapeMock: ReturnType<typeof vi.fn>
-  let addImageMock: ReturnType<typeof vi.fn>
-  let addTableMock: ReturnType<typeof vi.fn>
+  let addTextMock: ReturnType<typeof vi.fn<PptxSlideLike['addText']>>
+  let addShapeMock: ReturnType<typeof vi.fn<PptxSlideLike['addShape']>>
+  let addImageMock: ReturnType<typeof vi.fn<PptxSlideLike['addImage']>>
+  let addTableMock: ReturnType<typeof vi.fn<PptxSlideLike['addTable']>>
   let slideMock: PptxSlideLike
 
   beforeEach(() => {
@@ -164,7 +164,7 @@ describe('S2 视觉和排版映射专项测试', () => {
 
     const shapeCall = addShapeMock.mock.calls.find(call => call[1]?.shadow)
     expect(shapeCall).toBeDefined()
-    const shadow = shapeCall[1].shadow
+    const shadow = shapeCall[1].shadow as { type: string; angle: number; offset: number; blur: number; opacity: number }
     expect(shadow.type).toBe('outer')
     expect(shadow.angle).toBe(90) // 正下方
     expect(shadow.offset).toBe(6) // 8px * 0.75 = 6pt
@@ -202,21 +202,21 @@ describe('S2 视觉和排版映射专项测试', () => {
 
     const report = await converter.convertPage(createOptions(page))
 
-    // 验证大容器不再被 0.82 面积豁免跳过，而是记录 complex-css 降级报告并保护文本
+    // filter 同时作用于文字和背景，必须整体截图，不能把未模糊文本叠回去。
     const complexReportItem = report.items.find(item =>
-      item.sourceType === 'complex-css' && item.reason?.includes('复杂 CSS 容器包含可编辑内容'),
+      item.sourceType === 'complex-css' && item.result === 'screenshot',
     )
     expect(complexReportItem).toBeDefined()
 
-    // 验证内部标题仍成功导出为可编辑文本
+    // 避免重复绘制未经滤镜处理的原生标题。
     const titleCall = addTextMock.mock.calls.find(call => {
       const text = typeof call[0] === 'string' ? call[0] : call[0]?.[0]?.text
       return text?.includes('保护大容器内的可编辑标题')
     })
-    expect(titleCall).toBeDefined()
+    expect(titleCall).toBeUndefined()
 
     // 验证多层阴影触发了复杂 CSS 截图降级
-    const screenshotCall = addImageMock.mock.calls.find(call => call[0]?.data?.includes('s2_mock'))
+    const screenshotCall = addImageMock.mock.calls.find(call => String(call[0]?.data || '').includes('s2_mock'))
     expect(screenshotCall).toBeDefined()
 
     document.body.removeChild(page)
@@ -300,7 +300,7 @@ describe('S2 视觉和排版映射专项测试', () => {
     expect(textCall[1].transparency).toBe(60) // 100 - (0.4 * 100) = 60%
 
     // 验证负坐标没有被强制归零到 0
-    const shapeCall = addShapeMock.mock.calls.find(call => call[1]?.x !== undefined && call[1]?.x < 0)
+    const shapeCall = addShapeMock.mock.calls.find(call => typeof call[1]?.x === 'number' && call[1].x < 0)
     expect(shapeCall).toBeDefined()
     expect(shapeCall[1].x).toBeLessThan(0)
 

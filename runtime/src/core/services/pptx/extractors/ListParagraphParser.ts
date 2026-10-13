@@ -2,6 +2,8 @@
  * 文件用途：解析 HTML 列表结构（ul、ol、li），提取原生 PPTX 段落列表（支持 bullet 符号、有序列表编号、分级缩进与列表内富文本）。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLElement, isTextNode } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type { PptxTextRunLike } from '@/core/services/pptx/PPTXDomConverter.types'
 import { PPTXDomRichTextParser, type PptxRunOptionsResolver } from '@/core/services/pptx/PPTXDomRichTextParser'
 
@@ -30,7 +32,7 @@ export class ListParagraphParser {
       return false
     }
 
-    const listStyle = window.getComputedStyle(element)
+    const listStyle = getOwnerComputedStyle(element)
     const display = (listStyle.display || '').toLowerCase()
     if (
       display.includes('flex') ||
@@ -99,7 +101,7 @@ export class ListParagraphParser {
 
       const children = Array.from(listEl.children)
       for (const child of children) {
-        if (!(child instanceof HTMLElement)) {
+        if (!(isHTMLElement(child))) {
           continue
         }
 
@@ -109,7 +111,7 @@ export class ListParagraphParser {
           const numberStart = Number.isFinite(valueAttr) ? valueAttr : currentNumber
 
           // 解析 li 的独立样式与段落设置
-          const liStyle = window.getComputedStyle(child)
+          const liStyle = getOwnerComputedStyle(child)
           const listStyleType = (liStyle.listStyleType || '').toLowerCase()
           const isNoneBullet = listStyleType === 'none'
 
@@ -138,12 +140,10 @@ export class ListParagraphParser {
               bullet: bulletOption,
             }
 
-            // 除了整棵列表的第一个 run 外，每个列表段落首个 run 标记 breakLine: true
-            if (!isFirstItemOverall) {
-              paragraphOptions.breakLine = true
-            }
-
             firstRun.options = paragraphOptions
+            // PptxGenJS 的 breakLine 在当前 run 之后换段，必须放在该列表项最后一个 run。
+            const lastRun = itemRuns[itemRuns.length - 1]
+            lastRun.options = { ...lastRun.options, breakLine: true }
             runs.push(...itemRuns)
             fullText += `${isFirstItemOverall ? '' : '\n'}${itemRuns.map(r => r.text).join('')}`
           }
@@ -152,7 +152,7 @@ export class ListParagraphParser {
 
           // 检查该 li 内部是否包含嵌套的 ul 或 ol
           for (const grandChild of Array.from(child.children)) {
-            if (grandChild instanceof HTMLElement && (grandChild.tagName.toLowerCase() === 'ul' || grandChild.tagName.toLowerCase() === 'ol')) {
+            if (isHTMLElement(grandChild) && (grandChild.tagName.toLowerCase() === 'ul' || grandChild.tagName.toLowerCase() === 'ol')) {
               traverseList(grandChild, depth + 1, 1)
             }
           }
@@ -179,7 +179,7 @@ export class ListParagraphParser {
    * 检查单个 li 的内容是否与原生富文本段落兼容（允许纯文本、inline 标签、嵌套列表）。
    */
   private isListItemContentCompatible(li: HTMLElement): boolean {
-    const liStyle = window.getComputedStyle(li)
+    const liStyle = getOwnerComputedStyle(li)
     const display = (liStyle.display || '').toLowerCase()
     if (
       display.includes('flex') ||
@@ -191,10 +191,10 @@ export class ListParagraphParser {
     }
 
     for (const child of Array.from(li.childNodes)) {
-      if (child instanceof Text) {
+      if (isTextNode(child)) {
         continue
       }
-      if (child instanceof HTMLElement) {
+      if (isHTMLElement(child)) {
         const tag = child.tagName.toLowerCase()
         if (tag === 'ul' || tag === 'ol') {
           continue
@@ -204,7 +204,7 @@ export class ListParagraphParser {
           return false
         }
         // 若子元素具有 inline-block/block 盒模型或显式宽高，说明是自定义 marker，触发降级展开
-        const childStyle = window.getComputedStyle(child)
+        const childStyle = getOwnerComputedStyle(child)
         const childDisplay = (childStyle.display || '').toLowerCase()
         if (
           ['inline-block', 'block', 'flex', 'grid'].includes(childDisplay) ||
@@ -227,28 +227,12 @@ export class ListParagraphParser {
     li: HTMLElement,
     resolveOptions: PptxRunOptionsResolver,
   ): PptxTextRunLike[] {
-    // 构造临时克隆节点，移除嵌套列表后再提取 rich text
-    const clone = li.cloneNode(true) as HTMLElement
-    for (const nestedList of Array.from(clone.querySelectorAll('ul, ol'))) {
-      nestedList.remove()
-    }
-
-    const richResult = this.richTextParser.parse(clone, resolveOptions)
+    // 在已挂载的原节点读取样式；排除嵌套列表，避免克隆节点丢失 CSS 继承与选择器。
+    const richResult = this.richTextParser.parse(li, resolveOptions, new Set(li.querySelectorAll('ul, ol')))
     if (richResult && richResult.runs.length > 0) {
       return richResult.runs
     }
 
-    const rawText = (clone.textContent || '').trim()
-    if (!rawText) {
-      return []
-    }
-
-    const style = window.getComputedStyle(li)
-    return [
-      {
-        text: rawText,
-        options: resolveOptions(li, style, rawText),
-      },
-    ]
+    return []
   }
 }

@@ -114,6 +114,8 @@ describe('S0 背景、渐变与图元关联', () => {
       pageRoute: '/gradient-children',
       pageWidthPx: 1920,
       pageHeightPx: 1080,
+      slideWidthIn: 13.333,
+      slideHeightIn: 7.5,
       shapeTypes: {
         rect: 'rect',
         roundRect: 'roundRect',

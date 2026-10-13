@@ -4,6 +4,7 @@
  */
 
 import type { PptxChartDataPayload, PptxChartType } from '@/core/services/pptx/PPTXRuntimeKitExportDom'
+import { validateRuntimeKitChartPayload } from '@/core/services/pptx/PPTXRuntimeKitExportDom'
 
 type OptionRecord = Record<string, unknown>
 
@@ -18,6 +19,7 @@ export function extractNormalizedChartData(option: unknown): PptxChartDataPayloa
   }
 
   const opt = option as OptionRecord
+  if (hasFunctionOrCycle(opt)) return null
 
   // 1. 复杂特征排查：不支持 dataset transform、图形组件、极坐标系、日历坐标系
   if (opt.dataset || opt.graphic || opt.polar || opt.calendar || opt.radar || opt.geo) {
@@ -43,6 +45,15 @@ export function extractNormalizedChartData(option: unknown): PptxChartDataPayloa
   if (seriesList.length === 0) {
     return null
   }
+  if (seriesList.some(series => !series || typeof series !== 'object' || series.stack || series.areaStyle ||
+    series.smooth || series.roseType || series.coordinateSystem || series.xAxisIndex || series.yAxisIndex ||
+    (series.itemStyle && typeof (series.itemStyle as OptionRecord).color === 'object'))) return null
+  const axis = (value: unknown) => Array.isArray(value) ? value[0] : value
+  const xAxis = axis(opt.xAxis) as OptionRecord | undefined
+  const yAxis = axis(opt.yAxis) as OptionRecord | undefined
+  // 目前原生适配只支持普通垂直类目图；水平、时间、对数和自定义轴范围保留原图。
+  if ((xAxis?.type && xAxis.type !== 'category') || (yAxis?.type && yAxis.type !== 'value') ||
+    xAxis?.min !== undefined || xAxis?.max !== undefined || yAxis?.min !== undefined || yAxis?.max !== undefined) return null
 
   // 确保所有 series 类型单一且受支持
   const firstType = String(seriesList[0].type || 'bar').toLowerCase()
@@ -85,7 +96,8 @@ export function extractNormalizedChartData(option: unknown): PptxChartDataPayloa
       }
       const itemRecord = item as OptionRecord
       const name = String(itemRecord.name || `项 ${i + 1}`)
-      const val = Number(itemRecord.value)
+      if (typeof itemRecord.value !== 'number') return null
+      const val = itemRecord.value
       if (!Number.isFinite(val)) {
         return null
       }
@@ -101,11 +113,14 @@ export function extractNormalizedChartData(option: unknown): PptxChartDataPayloa
       const innerNum = Number.parseFloat(innerRadius)
       if (Number.isFinite(innerNum) && innerNum > 0) {
         chartType = 'doughnut'
-        holeSize = Math.min(90, Math.max(10, Math.round(innerNum)))
+        const outerRadius = String(pieSeries.radius[1]).trim()
+        const outerNum = Number.parseFloat(outerRadius)
+        if (!Number.isFinite(outerNum) || outerNum <= innerNum || innerRadius.endsWith('%') !== outerRadius.endsWith('%')) return null
+        holeSize = Math.round(innerNum / outerNum * 100)
       }
     }
 
-    return {
+    return validateRuntimeKitChartPayload({
       version: 'v1',
       chartType,
       title: titleText,
@@ -121,7 +136,7 @@ export function extractNormalizedChartData(option: unknown): PptxChartDataPayloa
         showTitle: Boolean(titleText),
         holeSize,
       },
-    }
+    })
   }
 
   // 4. 处理 柱状图 (bar) 与 折线图 (line)
@@ -159,9 +174,11 @@ export function extractNormalizedChartData(option: unknown): PptxChartDataPayloa
     for (const val of sData) {
       let numVal: number
       if (val && typeof val === 'object' && 'value' in (val as OptionRecord)) {
-        numVal = Number((val as OptionRecord).value)
+        if (typeof (val as OptionRecord).value !== 'number') return null
+        numVal = (val as OptionRecord).value as number
       } else {
-        numVal = Number(val)
+        if (typeof val !== 'number') return null
+        numVal = val
       }
       if (!Number.isFinite(numVal)) {
         return null
@@ -196,7 +213,7 @@ export function extractNormalizedChartData(option: unknown): PptxChartDataPayloa
     }
   }
 
-  return {
+  return validateRuntimeKitChartPayload({
     version: 'v1',
     chartType,
     title: titleText,
@@ -206,5 +223,14 @@ export function extractNormalizedChartData(option: unknown): PptxChartDataPayloa
       showLegend: opt.legend !== false,
       showTitle: Boolean(titleText),
     },
-  }
+  })
+}
+
+/** 函数回调和循环结构无法进入纯数据图表契约，保持原图导出。 */
+function hasFunctionOrCycle(value: unknown, ancestors = new Set<object>()): boolean {
+  if (typeof value === 'function') return true
+  if (!value || typeof value !== 'object') return false
+  if (ancestors.has(value) || ancestors.size >= 32) return true
+  const next = new Set(ancestors).add(value)
+  return Object.values(value).some(child => hasFunctionOrCycle(child, next))
 }

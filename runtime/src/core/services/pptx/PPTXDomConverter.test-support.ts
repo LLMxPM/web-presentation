@@ -5,8 +5,16 @@
 import { vi } from 'vitest'
 import { PPTXDomConverter, type PptxGradientFillInstruction } from './PPTXDomConverter'
 import type { PptxTextContentLike } from './PPTXDomConverter.types'
+import type { PptxSlideExtractOptions, PptxSlideIR } from './ir/PptxSlideIR.types'
 
 type CaptureElementAsPng = (element: HTMLElement) => Promise<string>
+
+/** 创建空图元的单页 IR，编排测试仍执行真实投射边界。 */
+export function createEmptySlideIR(options: Pick<PptxSlideExtractOptions, 'pageIndex' | 'pageTitle' | 'pageRoute' | 'speakerNotes'>): PptxSlideIR {
+  return { ...options, primitives: [], gradientFills: [], groups: [], report: {
+    pageIndex: options.pageIndex, pageTitle: options.pageTitle, pageRoute: options.pageRoute, items: [],
+  } }
+}
 
 const shapeTypes = {
   rect: 'rect',

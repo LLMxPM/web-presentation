@@ -2,6 +2,8 @@
  * 文件用途：检测元素是否包含超出 PPT 原生可编辑映射范围的复杂 CSS 特效（滤镜、遮罩、混合模式、复杂变换、圆角裁切、复杂阴影等）。
  */
 
+import { getComputedStyle as getOwnerComputedStyle } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type { MeasuredElementBox } from '@/core/services/pptx/PPTXDomConverter.types'
 import { BoxShadowParser } from '@/core/services/pptx/style/BoxShadowParser'
 import { CssColorParser } from '@/core/services/pptx/style/CssColorParser'
@@ -26,7 +28,7 @@ export class ComplexCssDetector {
     elementBox: MeasuredElementBox,
     rootBox: MeasuredElementBox,
   ): boolean {
-    const style = element.ownerDocument.defaultView?.getComputedStyle(element) ?? window.getComputedStyle(element)
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element) ?? getOwnerComputedStyle(element)
 
     return this.isComplexImageValue(style.backgroundImage) ||
       this.isEnabledCssEffect(style.filter) ||

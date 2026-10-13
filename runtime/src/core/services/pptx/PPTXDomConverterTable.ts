@@ -2,6 +2,8 @@
  * 文件用途：封装 Runtime Kit DataTable 与原生 HTML table 到 PPTX 原生表格的导出逻辑。
  */
 
+import { getComputedStyle as getOwnerComputedStyle, isHTMLElement, isTextNode } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+
 import type {
   PptxExportReportItem,
   PptxReportItemResult,
@@ -147,7 +149,7 @@ export class PPTXDomConverterTable {
    * 判断元素是否为 Runtime Kit DataTable 根节点。
    */
   private isRuntimeKitTable(element: Element): boolean {
-    return element instanceof HTMLElement && element.getAttribute('data-runtime-kit-table') === 'v1'
+    return isHTMLElement(element) && element.getAttribute('data-runtime-kit-table') === 'v1'
   }
 
   /**
@@ -156,7 +158,7 @@ export class PPTXDomConverterTable {
    */
   private collectRuntimeKitCells(tableElement: HTMLElement): PptxDomTableCellEntry[] {
     return Array.from(tableElement.querySelectorAll('[data-runtime-kit-table-cell="v1"]'))
-      .filter((cell): cell is HTMLElement => cell instanceof HTMLElement)
+      .filter((cell): cell is HTMLElement => isHTMLElement(cell))
       .map(cell => ({
         element: cell,
         rowIndex: Number(cell.dataset.rowIndex),
@@ -202,7 +204,7 @@ export class PPTXDomConverterTable {
    */
   private buildTableCell(entry: PptxDomTableCellEntry, context: VisitContext): PptxTableCellLike {
     const { element } = entry
-    const style = window.getComputedStyle(element)
+    const style = getOwnerComputedStyle(element)
     const richResult = this.richTextParser.parse(element, (el, elStyle, runText) => {
       const color = this.applyOpacity(this.layout.parseCssColor(elStyle.color, el), this.layout.parseOpacity(elStyle.opacity))
       return {
@@ -264,21 +266,21 @@ export class PPTXDomConverterTable {
    * 递归提取可见文本，忽略隐藏元素并保留换行。
    */
   private extractVisibleText(node: Node): string {
-    if (node instanceof Text) {
+    if (isTextNode(node)) {
       const parent = node.parentElement
       if (parent) {
-        const style = window.getComputedStyle(parent)
+        const style = getOwnerComputedStyle(parent)
         if (style.display === 'none' || style.visibility === 'hidden') {
           return ''
         }
       }
       return node.textContent || ''
     }
-    if (node instanceof HTMLElement) {
+    if (isHTMLElement(node)) {
       if (node.hasAttribute('hidden') || node.hidden) {
         return ''
       }
-      const style = window.getComputedStyle(node)
+      const style = getOwnerComputedStyle(node)
       if (style.display === 'none' || style.visibility === 'hidden') {
         return ''
       }
@@ -353,7 +355,7 @@ export class PPTXDomConverterTable {
   private resolveCellBackgroundColor(element: HTMLElement, cellOpacity: number): ParsedColor | null {
     let current: HTMLElement | null = element
     while (current) {
-      const style = window.getComputedStyle(current)
+      const style = getOwnerComputedStyle(current)
       const color = this.layout.parseCssColor(this.layout.resolveBackgroundColorValue(current, style), current)
       if (color && color.alpha > 0) {
         const effectiveOpacity = current === element
