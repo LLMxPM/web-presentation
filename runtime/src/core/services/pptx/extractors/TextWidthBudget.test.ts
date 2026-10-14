@@ -238,9 +238,9 @@ describe('PPTX 标点与文本扩宽预算', () => {
     expect(text).toBeDefined()
 
     const extraPx = pixels(text.options?.w) - 350
-    // 原先只有 10.8px 的微弱保护，现在复合保护量应在 30px ~ 55px 之间，足以覆盖 DrawingML spc 累积与微软雅黑字形展开
+    // 补偿覆盖数字、空格、数学符号及 DrawingML 字距累积，并遵守字体 2.5em 和字距 2.5 倍的预算上限。
     expect(extraPx).toBeGreaterThanOrEqual(30)
-    expect(extraPx).toBeLessThanOrEqual(55)
+    expect(extraPx).toBeLessThanOrEqual((24 + 8.4) * 2.5 + 0.02)
 
     // 右侧有空间时，文本框在适度保护下不会被异常拉满到全屏宽
     expect(pixels(text.options?.w)).toBeLessThan(420)

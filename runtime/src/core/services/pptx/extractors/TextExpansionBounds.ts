@@ -2,6 +2,7 @@
 import { getComputedStyle, isSVGElement, isTextNode } from '../dom/PPTXDomEnvironment'
 import type { ElementBox } from '../PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '../PPTXDomConverterLayout'
+import { hasExplicitTextWidthConstraint } from './TextWidthConstraints'
 
 export interface TextExpansionBounds { left: number; right: number }
 const EPSILON = 0.0001
@@ -44,9 +45,8 @@ export class TextExpansionBoundsResolver {
   /** 内容驱动的透明 inline/横向 Flex 子项可使用外层空白；网格单元、显式尺寸和可见卡片则限制边界。 */
   private isBoundedContainer(element: HTMLElement): boolean {
     const style = getComputedStyle(element)
-    const explicitWidth = ['width', 'min-width', 'max-width', 'flex-basis'].some(name => element.style.getPropertyValue(name)) ||
-      Array.from(element.classList).some(name => /^(?:min-|max-)?w-(?!auto$)|^basis-/.test(name.split(':').pop() || ''))
-    if (explicitWidth || this.hasBoxVisual(element, style)) return true
+    const clipsHorizontalContent = ['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowX || style.overflow)
+    if (hasExplicitTextWidthConstraint(element) || this.hasBoxVisual(element, style) || clipsHorizontalContent) return true
     if (style.display === 'contents') return false
     if (style.display.includes('inline')) return false
     const parent = element.parentElement

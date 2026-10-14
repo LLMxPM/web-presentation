@@ -2,13 +2,14 @@
  * 文件用途：负责 PPTX 文本框宽度防折行保护（WidthGuard）、向祖先容器剩余宽度扩展以及文本框内边距（margin）换算。
  */
 
-import { getComputedStyle as getOwnerComputedStyle, isHTMLElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+import { getComputedStyle as getOwnerComputedStyle, isHTMLElement, isTextNode } from '@/core/services/pptx/dom/PPTXDomEnvironment'
 
 import type { ElementBox, VisitContext } from '@/core/services/pptx/PPTXDomConverter.types'
 import { INLINE_TEXT_TAGS } from '@/core/services/pptx/PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import type { ShapeGeometryResolver, TextShapeGeometryKind } from './ShapeGeometryResolver'
-import { calculatePunctuationWidthGuard } from './TextPunctuationGuard'
+import { calculateTextTypographyWidthGuard } from './TextTypographyWidthGuard'
+import { hasExplicitTextWidthConstraint } from './TextWidthConstraints'
 import { isOutsideTextExpansionBounds, TextExpansionBoundsResolver } from './TextExpansionBounds'
 import { measureSingleLineText } from './TextLineLayout'
 import { resolveCapsuleNativeInsetGuard, resolveCapsuleWidthGuardLimit } from './CapsuleWidthBudget'
@@ -130,7 +131,14 @@ export class TextWidthGuard {
     if (!this.isLikelySingleLineTextBox(element, box, style, text, anchorNode)) {
       return box
     }
-    const guardWidth = this.calculateTextWidthGuard(element, box, style, text, isTextShape, guardProfile)
+    let guardWidth = this.calculateTextWidthGuard(element, box, style, text, isTextShape, guardProfile)
+    if (!isTextShape) {
+      const measuredBox = isTextNode(anchorNode)
+        ? this.layout.getPptxTextNodeBox(anchorNode)
+        : this.layout.getPptxBox(element)
+      // 祖先扩展已经提供的空间计入总预算，避免重复补偿后再向圆点或其他左侧对象借位。
+      if (measuredBox) guardWidth = Math.max(0, guardWidth - Math.max(0, box.w - measuredBox.w))
+    }
     if (guardWidth <= 0) {
       return box
     }
@@ -226,19 +234,9 @@ export class TextWidthGuard {
     return this.resolveContentComplexityWidthGuardIn(element, style, text, fontSizeIn, isFragment) > 0
   }
 
+  /** 复用边界识别的尺寸语义，最小宽度不作为扩宽上界。 */
   private hasExplicitWidthConstraint(element: HTMLElement): boolean {
-    if (
-      element.style.getPropertyValue('width') ||
-      element.style.getPropertyValue('min-width') ||
-      element.style.getPropertyValue('max-width') ||
-      element.style.getPropertyValue('flex-basis')
-    ) {
-      return true
-    }
-
-    return Array.from(element.classList).some(className => {
-      return /^(?:min-|max-)?w-/.test(className) || /^basis-/.test(className)
-    })
+    return hasExplicitTextWidthConstraint(element)
   }
 
   private isEligibleRemainingWidthContainer(element: HTMLElement, style: CSSStyleDeclaration): boolean {
@@ -382,7 +380,7 @@ export class TextWidthGuard {
       ? Math.min(capsuleNativeInset, box.w * 0.11)
       : 0
     const paddingGuard = isStrongShapeGuard ? this.resolveHorizontalPaddingGuardIn(element, style) : 0
-    const punctuationGuard = calculatePunctuationWidthGuard(text, fontSizeIn, box.w, isTextShape)
+    const fontSubstitutionGuard = calculateTextTypographyWidthGuard(text, fontSizeIn, box.w, isTextShape)
     const letterSpacingPx = this.layout.parseCssPixel(style.letterSpacing)
     const letterSpacingIn = letterSpacingPx > 0
       ? this.layout.roundInch(this.layout.cssPxToMeasuredPx(letterSpacingPx) * this.layout.inchPerPxX())
@@ -394,8 +392,8 @@ export class TextWidthGuard {
           box.w * (isTextShape ? 0.12 : 0.16),
         )
       : 0
-    // 字距膨胀与标点/数学符号字形展开为正交独立的排版误差，组合参与保护
-    const typographicGuard = punctuationGuard + letterSpacingGuard
+    // 字体替换与显式字距造成独立排版误差；符号、数字和空格已在字体预算内统一累加和封顶。
+    const typographicGuard = fontSubstitutionGuard + letterSpacingGuard
     const minGuard = isCapsule
       ? Math.min(0.04, box.w * 0.05)
       : (isPaddedShape ? 0.04 : (isTextShape ? 0.02 : 0.04))
@@ -526,7 +524,8 @@ export class TextWidthGuard {
     const asciiLikeTokens: string[] = text.match(/[A-Za-z0-9._-]+/g) ?? []
     const asciiCharCount = asciiLikeTokens.reduce((total, token) => total + token.length, 0)
     const longestAsciiTokenLength = asciiLikeTokens.reduce((maxLength, token) => Math.max(maxLength, token.length), 0)
-    const hasMixedScripts = this.layout.containsCjkText(text) && /[A-Za-z]/.test(text)
+    // 数字同样使用不同的系统字体字形；中文加数字必须进入混排保护和祖先剩余宽度判断。
+    const hasMixedScripts = this.layout.containsCjkText(text) && /[A-Za-z0-9]/.test(text)
     return {
       asciiTokenCount: asciiLikeTokens.length,
       asciiCharCount,
