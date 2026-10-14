@@ -54,19 +54,19 @@ Existing AI slide generation skills and tools demonstrate that AI excels at stru
 | CLI | Command Line & Agent Skill | Dedicated repository [web-presentation-cli](https://github.com/LLMxPM/web-presentation-cli) provides the official `wp` CLI, dedicated API client, and agent skills |
 | MCP | Remote MCP Server | Dedicated repository [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp) provides standard MCP protocol services (Work in progress) |
 
-For detailed architecture, component boundaries, and local development workflows, refer to the [Developer Documentation](https://presentation.inputloom.com/docs/developer/).
+For detailed architecture, component boundaries, and local development workflows, refer to the [Developer Documentation](https://wp.llmxpm.com/docs/developer/).
 
 ## Showcase
 
 ![Showcases](./docs/assets/案例.png)
 
-Interactive Showcase: [View Live Showcase](https://presentation.inputloom.com/showcases.html)
+Interactive Showcase: [View Live Showcase](https://wp.llmxpm.com/showcases.html)
 
 All showcase presentations were generated using models like DeepSeek V4 Pro and Mimo v2.5 Pro at a total generation cost under ¥1 (~$0.15 USD) each.
 
 ## Online Demo
 
-Access URLs, trial credentials, and AI configuration instructions for the public demo are maintained in the [Demo Guide](https://presentation.inputloom.com/docs/user/demo-guide.html).
+Access URLs, trial credentials, and AI configuration instructions for the public demo are maintained in the [Demo Guide](https://wp.llmxpm.com/docs/user/demo-guide.html).
 
 ## Quick Deployment
 
@@ -87,15 +87,15 @@ docker logs web-presentation
 
 After the container starts, open `http://127.0.0.1:8080` and log in with username `admin` and the generated password from the container logs. The database, uploaded media, screenshots, build artifacts, and encryption keys are stored in the `web-presentation-lite-data` volume. Always retain and back up this volume during upgrades.
 
-For LAN or custom domain setups, use the provided [Compose template](./deploy/compose/compose.sqlite-lite.yml) and configure `BACKEND_PUBLIC_BASE_URL`, `RUNTIME_PUBLIC_BASE_URL`, and `CORS_ORIGINS` to match your domain. For step-by-step guides on Docker Compose, fnOS, and Synology NAS, see [Quick Deployment Guide](https://presentation.inputloom.com/docs/user/quick-deployment/). For production architectures involving HTTPS, PostgreSQL/Redis, multi-instance setups, and operations, see the [Production Deployment Guide](https://presentation.inputloom.com/docs/developer/deployment/).
+For LAN or custom domain setups, use the provided [Compose template](./deploy/compose/compose.sqlite-lite.yml) and configure `BACKEND_PUBLIC_BASE_URL`, `RUNTIME_PUBLIC_BASE_URL`, and `CORS_ORIGINS` to match your domain. For step-by-step guides on Docker Compose, fnOS, and Synology NAS, see [Quick Deployment Guide](https://wp.llmxpm.com/docs/user/quick-deployment/). For production architectures involving HTTPS, PostgreSQL/Redis, multi-instance setups, and operations, see the [Production Deployment Guide](https://wp.llmxpm.com/docs/developer/deployment/).
 
 ## Documentation
 
 | Document | Overview |
 | :--- | :--- |
-| [User Guide](https://presentation.inputloom.com/docs/user/) | Getting started, AI co-creation, workspace asset management, and export |
-| [Deployment Guide](https://presentation.inputloom.com/docs/developer/deployment/) | Architecture options, environment setup, backup/recovery, upgrades, and troubleshooting |
-| [Developer Guide](https://presentation.inputloom.com/docs/developer/) | Local development, system architecture, API specifications, and testing |
+| [User Guide](https://wp.llmxpm.com/docs/user/) | Getting started, AI co-creation, workspace asset management, and export |
+| [Deployment Guide](https://wp.llmxpm.com/docs/developer/deployment/) | Architecture options, environment setup, backup/recovery, upgrades, and troubleshooting |
+| [Developer Guide](https://wp.llmxpm.com/docs/developer/) | Local development, system architecture, API specifications, and testing |
 
 ## Repository Structure
 

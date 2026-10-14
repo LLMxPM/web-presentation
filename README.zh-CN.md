@@ -54,19 +54,19 @@
 | CLI | 命令行与 Agent Skill | 独立仓库 [web-presentation-cli](https://github.com/LLMxPM/web-presentation-cli) 提供官方 `wp` CLI、专用 API Client 和配套 Skill |
 | MCP | 远程 MCP 服务 | 独立仓库 [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp) 提供标准 MCP 协议支持（待完成状态） |
 
-详细架构、模块边界和本地开发流程见官网[开发文档](https://presentation.inputloom.com/docs/developer/)。
+详细架构、模块边界和本地开发流程见官网[开发文档](https://wp.llmxpm.com/docs/developer/)。
 
 ## 案例展示
 
 ![案例展示](./docs/assets/案例.png)
 
-预览链接：[案例展示](https://presentation.inputloom.com/showcases.html)
+预览链接：[案例展示](https://wp.llmxpm.com/showcases.html)
 
 案例基本是用Deepseek-v4-pro / mimo-v2.5-pro 跑出来的，成本均不高于1元。
 
 ## 在线 Demo
 
-公开 Demo 的访问地址、体验账号和 AI 设置说明统一维护在官网的 [Demo 使用指南](https://presentation.inputloom.com/docs/user/demo-guide.html)。
+公开 Demo 的访问地址、体验账号和 AI 设置说明统一维护在官网的 [Demo 使用指南](https://wp.llmxpm.com/docs/user/demo-guide.html)。
 
 ## 快速部署
 
@@ -87,15 +87,15 @@ docker logs web-presentation
 
 服务启动后访问 `http://127.0.0.1:8080`，使用账号 `admin` 和首次启动日志中的随机密码登录。数据库、上传资源、截图、构建产物及持久化密钥保存在 `web-presentation-lite-data` 数据卷中，升级或迁移时请保留并备份该卷。
 
-局域网或域名访问可使用仓库中的 [Compose 模板](./deploy/compose/compose.sqlite-lite.yml)，将 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL` 和 `CORS_ORIGINS` 改为实际访问地址。Docker Compose、飞牛 fnOS、群晖的详细步骤见官网[快速部署](https://presentation.inputloom.com/docs/user/quick-deployment/)；HTTPS、PostgreSQL/Redis、多实例和运维配置见官网[生产部署指南](https://presentation.inputloom.com/docs/developer/deployment/)。
+局域网或域名访问可使用仓库中的 [Compose 模板](./deploy/compose/compose.sqlite-lite.yml)，将 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL` 和 `CORS_ORIGINS` 改为实际访问地址。Docker Compose、飞牛 fnOS、群晖的详细步骤见官网[快速部署](https://wp.llmxpm.com/docs/user/quick-deployment/)；HTTPS、PostgreSQL/Redis、多实例和运维配置见官网[生产部署指南](https://wp.llmxpm.com/docs/developer/deployment/)。
 
 ## 文档导航
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [用户文档](https://presentation.inputloom.com/docs/user/) | 快速上手、AI 协作、资产管理与交付 |
-| [部署指南](https://presentation.inputloom.com/docs/developer/deployment/) | 部署选型、环境配置、备份、升级与排障 |
-| [开发文档](https://presentation.inputloom.com/docs/developer/) | 本地开发、架构、接口与测试 |
+| [用户文档](https://wp.llmxpm.com/docs/user/) | 快速上手、AI 协作、资产管理与交付 |
+| [部署指南](https://wp.llmxpm.com/docs/developer/deployment/) | 部署选型、环境配置、备份、升级与排障 |
+| [开发文档](https://wp.llmxpm.com/docs/developer/) | 本地开发、架构、接口与测试 |
 
 ## 仓库结构
 
