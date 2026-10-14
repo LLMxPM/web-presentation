@@ -380,6 +380,19 @@ export class TextWidthGuard {
       : 0
     const paddingGuard = isStrongShapeGuard ? this.resolveHorizontalPaddingGuardIn(element, style) : 0
     const punctuationGuard = calculatePunctuationWidthGuard(text, fontSizeIn, box.w, isTextShape)
+    const letterSpacingPx = this.layout.parseCssPixel(style.letterSpacing)
+    const letterSpacingIn = letterSpacingPx > 0
+      ? this.layout.roundInch(this.layout.cssPxToMeasuredPx(letterSpacingPx) * this.layout.inchPerPxX())
+      : 0
+    // PPT DrawingML spc 针对每个字符（含空格）机械追加字距，累积排版膨胀需要有界字距保护
+    const letterSpacingGuard = letterSpacingIn > 0 && text.length > 1
+      ? Math.min(
+          letterSpacingIn * Math.min((text.length - 1) * 0.15, 2.5),
+          box.w * (isTextShape ? 0.12 : 0.16),
+        )
+      : 0
+    // 字距膨胀与标点/数学符号字形展开为正交独立的排版误差，组合参与保护
+    const typographicGuard = punctuationGuard + letterSpacingGuard
     const minGuard = isCapsule
       ? Math.min(0.04, box.w * 0.05)
       : (isPaddedShape ? 0.04 : (isTextShape ? 0.02 : 0.04))
@@ -392,12 +405,23 @@ export class TextWidthGuard {
       : 0
     const maxGuard = Math.max(
       isCapsule ? capsuleMaxGuard : (isPaddedShape ? 0.12 : (isTextShape ? 0.04 : 0.08)),
-      box.w * (isStrongShapeGuard ? (isCapsule ? 0.11 : 0.14) : (isTextShape ? 0.06 : 0.11)),
+      box.w * (isStrongShapeGuard ? (isCapsule ? 0.11 : 0.14) : (isTextShape ? 0.06 : 0.16)),
       contentAwareMaxGuard,
-      punctuationGuard,
+      typographicGuard,
       capsuleInsetGuard,
     )
-    return Math.min(maxGuard, Math.max(minGuard, ratioGuard, emGuard, contentComplexityGuard, capsuleInsetGuard, paddingGuard, punctuationGuard))
+    return Math.min(
+      maxGuard,
+      Math.max(
+        minGuard,
+        ratioGuard,
+        emGuard,
+        contentComplexityGuard,
+        capsuleInsetGuard,
+        paddingGuard,
+        typographicGuard,
+      ),
+    )
   }
 
   /**

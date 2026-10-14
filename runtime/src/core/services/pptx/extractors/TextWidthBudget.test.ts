@@ -220,6 +220,39 @@ describe('PPTX 标点与文本扩宽预算', () => {
     // 大胶囊具备足够的 DrawingML 圆角内缩与字号自适应补偿空间
     expect(largeExtra).toBeGreaterThan(smallExtra)
   })
+
+  it('带有字间距与数学符号省略号的单行文本（如 1 + 2 + 3 + ⋯ + 100）获得充分复合保护，防止 PPT 折行', async () => {
+    document.body.innerHTML = `<div id="page" style="width:1920px;height:1080px;position:relative">
+      <div style="position:absolute;left:0;top:0;width:1920px;height:1080px">
+        <span id="formula" style="position:absolute;left:88px;bottom:140px;font-size:24px;font-weight:600;letter-spacing:8.4px">1 + 2 + 3 + ⋯ + 100</span>
+      </div>
+    </div>`
+    const page = document.getElementById('page')!
+    const formula = document.getElementById('formula')!
+    box(page, 0, 0, 1920, 1080)
+    box(formula, 88, 900, 350, 36)
+
+    const primitives = await extract(page)
+    const text = primitives.find(item => item.kind === 'text' && (item.text?.includes('1 + 2 + 3') || item.options?.text?.includes('1 + 2 + 3')))!
+    expect(text).toBeDefined()
+
+    const extraPx = pixels(text.options?.w) - 350
+    // 原先只有 10.8px 的微弱保护，现在复合保护量应在 30px ~ 55px 之间，足以覆盖 DrawingML spc 累积与微软雅黑字形展开
+    expect(extraPx).toBeGreaterThanOrEqual(30)
+    expect(extraPx).toBeLessThanOrEqual(55)
+
+    // 右侧有空间时，文本框在适度保护下不会被异常拉满到全屏宽
+    expect(pixels(text.options?.w)).toBeLessThan(420)
+  })
+
+  it('含有多个数学运算符的表达式能够获得对应符号排版保护', async () => {
+    const { page } = fixture(650, 'left', 'a + b - c × d ÷ e = 0', 300)
+    const primitives = await extract(page)
+    const text = primitives.find(item => item.kind === 'text')!
+    const extraPx = pixels(text.options?.w) - 300
+    expect(extraPx).toBeGreaterThanOrEqual(15)
+  })
 })
+
 
 
