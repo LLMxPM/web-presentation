@@ -37,6 +37,12 @@ export class JsdomFlexFallback {
     if (!(isHTMLElement(element)) || !element.parentElement) {
       return rawBox
     }
+    // 真实浏览器已完成 Flex 排版；首项与父级顶部相同也是有效坐标，不能据此再次估算。
+    // 仅在没有任何实测尺寸时，才使用 CSS 尺寸推断无布局环境中的坐标。
+    const rect = element.getBoundingClientRect()
+    if (rect.width > 0 || rect.height > 0) {
+      return rawBox
+    }
     if (this.isOutOfFlowPositionedElement(element)) {
       return rawBox
     }

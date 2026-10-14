@@ -1,4 +1,4 @@
-/** 文件用途：处理直接子节点绘制顺序，并将无法拆分的滤镜、裁切和组透明度合成为截图。 */
+/** 文件用途：处理直接子节点绘制顺序及无法拆分的视觉合成；普通 overflow 越界优先保留可编辑对象。 */
 import { getComputedStyle, isHTMLElement } from '../dom/PPTXDomEnvironment'
 
 /** 判断 CSS 视觉效果是否启用，兼容测试环境的空字符串。 */
@@ -6,8 +6,8 @@ function enabled(value?: string): boolean {
   return Boolean(value && value !== 'none' && value !== 'normal')
 }
 
-/** 不能由逐个图元绘制表达的合成效果应保留整棵子树的视觉。 */
-export function requiresCompositeScreenshot(element: HTMLElement, pageRoot: HTMLElement): boolean {
+/** 无法逐图元表达的合成效果才截图；overflow 和圆角裁切不触发降级，原生对象保留实测几何。 */
+export function requiresCompositeScreenshot(element: HTMLElement): boolean {
   const style = getComputedStyle(element)
   if (enabled(style.filter) || enabled(style.backdropFilter) || enabled(style.clipPath) ||
     enabled(style.maskImage) || enabled(style.mixBlendMode)) return true
@@ -20,20 +20,6 @@ export function requiresCompositeScreenshot(element: HTMLElement, pageRoot: HTML
     if (boxes.some((box, index) => boxes.slice(index + 1).some(other => box.width > 0 && box.height > 0 &&
       Math.min(box.right, other.right) > Math.max(box.left, other.left) &&
       Math.min(box.bottom, other.bottom) > Math.max(box.top, other.top)))) return true
-  }
-  // 页面边界由 PPT 自然裁切；容器内部的 overflow 则必须检测子节点是否实际越界。
-  if (element !== pageRoot && [style.overflow, style.overflowX, style.overflowY].some(value => ['hidden', 'clip'].includes(value))) {
-    if (Number.parseFloat(style.borderRadius) > 0 && children.length > 0) return true
-    const bounds = element.getBoundingClientRect()
-    if (bounds.width > 0 && bounds.height > 0) {
-      return Array.from(element.querySelectorAll('*')).some(child => {
-        const childStyle = getComputedStyle(child)
-        if (childStyle.display === 'none' || childStyle.visibility === 'hidden') return false
-        const rect = child.getBoundingClientRect()
-        return rect.width > 0 && rect.height > 0 && (rect.left < bounds.left - 0.1 || rect.top < bounds.top - 0.1 ||
-          rect.right > bounds.right + 0.1 || rect.bottom > bounds.bottom + 0.1)
-      })
-    }
   }
   return false
 }

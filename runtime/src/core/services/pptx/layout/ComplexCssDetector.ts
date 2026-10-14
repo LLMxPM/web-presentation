@@ -1,5 +1,5 @@
 /**
- * 文件用途：检测元素是否包含超出 PPT 原生可编辑映射范围的复杂 CSS 特效（滤镜、遮罩、混合模式、复杂变换、圆角裁切、复杂阴影等）。
+ * 文件用途：检测超出 PPT 原生映射范围的滤镜、遮罩、混合模式、复杂变换与阴影；普通 overflow 和圆角裁切保留可编辑对象。
  */
 
 import { getComputedStyle as getOwnerComputedStyle } from '@/core/services/pptx/dom/PPTXDomEnvironment'
@@ -38,8 +38,7 @@ export class ComplexCssDetector {
       this.isEnabledCssEffect((style as CSSStyleDeclaration & { webkitMaskImage?: string }).webkitMaskImage) ||
       this.isComplexTransform(style.transform) ||
       Boolean(style.mixBlendMode && style.mixBlendMode !== 'normal') ||
-      this.isComplexBoxShadow(style.boxShadow, element) ||
-      this.isRoundedClipping(element, style)
+      this.isComplexBoxShadow(style.boxShadow, element)
   }
 
   /**
@@ -72,25 +71,6 @@ export class ComplexCssDetector {
     }
     const result = this.boxShadowParser.parse(value, element, this.colorParser, px => px * 0.75)
     return result.kind === 'complex'
-  }
-
-  /**
-   * 判断元素是否拥有圆角遮罩裁切（overflow: hidden 且 borderRadius > 0）。
-   * @param element 宿主元素
-   * @param style 计算样式
-   */
-  isRoundedClipping(element: HTMLElement, style: CSSStyleDeclaration): boolean {
-    const overflow = String(style.overflow || '').trim()
-    const overflowX = String(style.overflowX || '').trim()
-    const overflowY = String(style.overflowY || '').trim()
-    const isClipping = ['hidden', 'clip'].includes(overflow) ||
-      ['hidden', 'clip'].includes(overflowX) ||
-      ['hidden', 'clip'].includes(overflowY)
-    if (!isClipping) {
-      return false
-    }
-    const borderRadius = Number.parseFloat(style.borderRadius || '0')
-    return Number.isFinite(borderRadius) && borderRadius > 0 && element.children.length > 0
   }
 
   /**

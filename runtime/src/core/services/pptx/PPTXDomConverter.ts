@@ -227,8 +227,8 @@ export class PPTXDomConverter {
    * @param context 当前组合及旋转上下文
    */
   private async visitPreparedElement(element: Element, context: VisitContext): Promise<void> {
-    if (isHTMLElement(element) && requiresCompositeScreenshot(element, this.options.pageElement)) {
-      await this.addScreenshotBlock(element, 'complex-css', '子树视觉合成或裁切无法拆分，已降级为局部截图', context)
+    if (isHTMLElement(element) && requiresCompositeScreenshot(element)) {
+      await this.addScreenshotBlock(element, 'complex-css', '子树视觉合成无法拆分，已降级为局部截图', context)
       return
     }
     if (this.table.isTableElement(element)) {
