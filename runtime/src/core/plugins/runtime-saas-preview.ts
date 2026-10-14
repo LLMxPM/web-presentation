@@ -1374,7 +1374,7 @@ export function buildPreviewHtml(params: {
     <title>Runtime Preview</title>
     <style>
       html, body, #app { margin: 0; width: 100%; height: 100%; background: #f8fafc; }
-      body { overflow: hidden; font-family: "Segoe UI", "PingFang SC", sans-serif; }
+      body { overflow: hidden; font-family: 'Web Presentation Sans', "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
     </style>
     <script>
       window.__RUNTIME_PREVIEW_CONTEXT__ = ${serializedContext};

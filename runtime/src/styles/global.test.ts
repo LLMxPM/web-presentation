@@ -23,6 +23,7 @@ describe('global runtime shell styles', () => {
     expect(css).not.toContain("@import './platform-fonts.css';")
     expect(css).toContain("'Web Presentation Sans', sans-serif")
     expect(css).toContain("'Web Presentation Mono', monospace")
+    expect(css).toMatch(/body\s*\{[\s\S]*?font-family:\s*'Web Presentation Sans'/)
     expect(fontRegistry).toContain("SourceHanSansSC-VF.otf.woff2")
     expect(fontRegistry).toContain('font-weight: 100 900;')
   })
