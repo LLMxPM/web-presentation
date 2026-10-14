@@ -1,6 +1,32 @@
 <!-- 文件功能：展示当前工作空间下的分页项目入口，并提供项目与页面资产管理入口。 -->
 <template>
   <div data-testid="workspace-project-list" class="projects-view space-y-3 pb-12">
+    <!-- 当尚未创建任何访问令牌 (PAT) 时显著在页面最上方展示桌面 Agent 与 CLI 接入指引，创建后自动隐藏 -->
+    <div
+      v-if="hasNoTokens"
+      class="rounded-ui-xl border border-accent/30 bg-accent/5 p-4 flex flex-wrap items-center justify-between gap-3 text-sm text-text shadow-xs"
+      data-testid="workspace-cli-guide-banner"
+    >
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+          <Terminal class="h-4 w-4" />
+        </div>
+        <div class="min-w-0">
+          <span class="font-bold text-text-strong">桌面 Agent 与 CLI 协同创作：</span>
+          <span class="text-xs text-text-secondary">
+            支持使用 Cursor、Claude Desktop 等桌面智能体或终端直接基于组件规范创作幻灯片。
+          </span>
+        </div>
+      </div>
+      <RouterLink
+        to="/settings/account/cli"
+        class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-accent/40 bg-surface px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent hover:text-text-inverse transition-colors"
+      >
+        <span>查看桌面 Agent 接入指南</span>
+        <ArrowRight class="h-3.5 w-3.5" />
+      </RouterLink>
+    </div>
+
     <header class="animate-in fade-in slide-in-from-top-4 duration-700">
       <PageHeader
         :icon="FolderKanban"
@@ -413,11 +439,12 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Archive, Eye, FolderKanban, Layers, Plus, RefreshCw, SquarePen, Upload } from '@lucide/vue'
+import { Archive, ArrowRight, Eye, FolderKanban, Layers, Plus, RefreshCw, SquarePen, Terminal, Upload } from '@lucide/vue'
 
 import { createProject, getWorkspace, listProjects, updateProject, updateWorkspace } from '@/api/catalog'
+import { listAccessTokens } from '@/api/accessTokens'
 import { getErrorMessage } from '@/api/http'
 import { createProjectPreviewArtifact } from '@/api/preview'
 import {
@@ -458,6 +485,16 @@ const router = useRouter()
 const queryClient = useQueryClient()
 
 const workspaceId = computed(() => parseInt(route.params.workspaceId as string, 10))
+
+const accessTokensQuery = useQuery({
+  queryKey: ['accessTokens', 'summary'],
+  queryFn: listAccessTokens,
+  staleTime: 60_000,
+})
+
+const hasNoTokens = computed(() =>
+  Boolean(accessTokensQuery.isSuccess.value && accessTokensQuery.data.value?.items?.length === 0)
+)
 const projectKeyword = ref('')
 const projectSearchKeyword = ref('')
 const projectPage = ref(1)

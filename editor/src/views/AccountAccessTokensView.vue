@@ -6,10 +6,16 @@
       description="用于通过 External API、CLI（wp）及桌面开发工具安全访问工作空间资源。"
     >
       <template #actions>
-        <UiButton variant="primary" @click="openCreateDialog">
-          <template #icon><Key class="h-4 w-4" /></template>
-          创建新令牌
-        </UiButton>
+        <div class="flex items-center gap-2">
+          <UiButton variant="secondary" @click="goToCliGuide">
+            <template #icon><Terminal class="h-4 w-4" /></template>
+            桌面 Agent 接入指南
+          </UiButton>
+          <UiButton variant="primary" @click="openCreateDialog">
+            <template #icon><Key class="h-4 w-4" /></template>
+            创建新令牌
+          </UiButton>
+        </div>
       </template>
     </SettingsPageHeader>
 
@@ -45,13 +51,21 @@
       <div v-if="loading" class="p-8 text-center text-sm text-text-muted">
         正在加载访问令牌...
       </div>
-      <div v-else-if="tokens.length === 0" class="p-12 text-center space-y-3">
+      <div v-else-if="tokens.length === 0" class="p-12 text-center space-y-4">
         <ShieldAlert class="w-10 h-10 text-text-disabled mx-auto" />
-        <p class="text-base font-semibold text-text">暂无访问令牌</p>
-        <p class="text-sm text-text-secondary max-w-md mx-auto">
-          创建个人访问令牌后，您可以在命令行或脚本中直接调用平台 API 与构建服务。
-        </p>
-        <UiButton variant="secondary" size="sm" @click="openCreateDialog">创建首个令牌</UiButton>
+        <div class="space-y-1">
+          <p class="text-base font-semibold text-text">暂无访问令牌</p>
+          <p class="text-sm text-text-secondary max-w-md mx-auto">
+            创建个人访问令牌后，您可以在本地命令行或通过 Cursor、Claude 等桌面智能体直接调用平台 API 与创作页面。
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center justify-center gap-3 pt-1">
+          <UiButton variant="primary" size="sm" @click="openCreateDialog">创建首个令牌</UiButton>
+          <UiButton variant="secondary" size="sm" @click="goToCliGuide">
+            <template #icon><Terminal class="h-4 w-4" /></template>
+            查看桌面 Agent 接入指南 &rarr;
+          </UiButton>
+        </div>
       </div>
       <div v-else class="overflow-x-auto">
         <table class="w-full min-w-[980px] table-fixed text-left text-sm">
@@ -286,40 +300,85 @@
       </template>
     </UiDialog>
 
-    <!-- Token Created Success Dialog -->
+    <!-- Token Created / Reset Success Dialog -->
     <UiDialog
       :open="successDialogOpen"
       :title="successDialogTitle"
-      size="standard"
+      size="wide"
+      :panel-style="{ height: 'auto', maxHeight: 'calc(100dvh - 3rem)' }"
       @update:open="successDialogOpen = $event"
     >
-      <div class="space-y-4">
-        <div class="p-3.5 rounded-lg bg-warning-muted/40 border border-warning-strong/30 flex items-start gap-3">
-          <ShieldAlert class="w-5 h-5 text-warning-strong flex-shrink-0 mt-0.5" />
-          <div class="text-xs text-text space-y-1">
-            <p class="font-semibold text-warning-strong">请立即复制并妥善保管您的访问令牌！</p>
-            <p>出于安全原因，该完整明文令牌<strong>将不会再次显示</strong>。离开本页面后您将无法找回此令牌。</p>
+      <div class="space-y-3.5">
+        <!-- 整合卡片：令牌明文与安全警示合并 -->
+        <div class="rounded-ui-xl border border-warning-strong/30 bg-warning-muted/20 p-3.5 space-y-2">
+          <div class="flex items-center gap-2 text-xs">
+            <ShieldAlert class="w-4 h-4 text-warning-strong shrink-0" />
+            <span class="font-bold text-warning-strong">请妥善保存访问令牌：</span>
+            <span class="text-xs text-text-secondary">出于安全原因，完整明文仅显示一次，离开本页面后将无法找回。</span>
           </div>
-        </div>
 
-        <div class="space-y-2">
-          <label class="text-xs font-semibold text-text-secondary">访问令牌 (Bearer Token)</label>
           <div class="flex items-center gap-2">
             <UiInput
+              data-testid="token-secret-input"
               :model-value="createdTokenSecret"
-              class="font-mono text-xs"
+              class="font-mono text-xs bg-surface"
               readonly
             />
-            <UiButton variant="secondary" size="sm" @click="copySecret">
+            <UiButton variant="secondary" size="sm" class="shrink-0" @click="copySecret">
               <template #icon><Copy class="w-4 h-4 mr-1" /></template>
-              复制
+              复制令牌
             </UiButton>
           </div>
         </div>
 
-        <div class="text-xs text-text-secondary space-y-1 border-t border-border pt-3">
-          <p><strong>使用提示：</strong></p>
-          <p>CLI 快速登录：<code class="font-mono bg-surface-muted px-1.5 py-0.5 rounded text-accent">wp login --token &lt;YOUR_TOKEN&gt;</code></p>
+        <!-- 重置成功时的模式切换：单行简洁分段 -->
+        <div v-if="isResetSuccess" class="flex items-center justify-between text-xs px-0.5">
+          <span class="font-semibold text-text-secondary">配置模式：</span>
+          <UiSegmentedControl
+            v-model="resetDialogMode"
+            :options="resetModeOptions"
+            class="w-48"
+            aria-label="重置后续配置模式"
+          />
+        </div>
+
+        <!-- 核心推荐：一键发给智能体提示词卡片 -->
+        <div class="rounded-ui-xl border border-accent/30 bg-accent/5 p-3.5 space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2.5">
+            <div class="flex items-center gap-2 min-w-0">
+              <Bot class="h-4 w-4 text-accent shrink-0" />
+              <span class="text-xs font-bold text-text-strong truncate">一键发给智能体（推荐）</span>
+              <UiBadge tone="accent" size="sm" class="shrink-0">自动配置</UiBadge>
+            </div>
+
+            <UiButton variant="primary" size="xs" @click="copyAgentPrompt">
+              <template #icon><Copy class="h-3.5 w-3.5" /></template>
+              复制提示词给智能体
+            </UiButton>
+          </div>
+          <p class="text-xs text-text-secondary">
+            将以下指令直接发送给 Cursor、Claude Desktop 或 Codex 等桌面智能体，AI 将自动为您完成环境检查、CLI 安装、平台登录与技能配置：
+          </p>
+          <UiInput
+            data-testid="agent-prompt-textarea"
+            type="textarea"
+            :model-value="currentAgentPrompt"
+            readonly
+            :rows="5"
+            class="font-mono text-xs"
+          />
+        </div>
+
+        <!-- 终端手动操作命令 -->
+        <div class="text-xs text-text-secondary space-y-1.5 border-t border-border pt-2.5">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-text">终端手动登录指令速查：</span>
+            <UiButton variant="ghost" size="xs" @click="copyCode(manualLoginCmd)">
+              <template #icon><Copy class="h-3 w-3" /></template>
+              复制登录命令
+            </UiButton>
+          </div>
+          <p>CLI 快速登录：<code class="font-mono bg-surface-muted px-1.5 py-0.5 rounded text-accent">{{ manualLoginCmd }}</code></p>
           <p>HTTP 调用方式：在请求头中附带 <code class="font-mono bg-surface-muted px-1.5 py-0.5 rounded">Authorization: Bearer &lt;YOUR_TOKEN&gt;</code></p>
         </div>
       </div>
@@ -356,8 +415,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { Copy, Key, RotateCw, ShieldAlert, SquarePen } from '@lucide/vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Bot, Copy, Key, RotateCw, ShieldAlert, SquarePen, Terminal } from '@lucide/vue'
 
 import {
   createAccessToken,
@@ -381,6 +441,16 @@ import type {
 import type { WorkspaceItem } from '@/types/api'
 import { Message } from '@/utils/message'
 import { formatDateTime } from '@/utils/format'
+import { copyTextToClipboard } from '@/utils/clipboard'
+import {
+  buildAgentInstallPrompt,
+  buildAgentReLoginPrompt,
+  buildManualLoginCommand,
+  resolveCurrentEndpoint,
+} from '@/utils/cli-prompts'
+
+const router = useRouter()
+const route = useRoute()
 
 const loading = ref(false)
 const tokens = ref<ApiAccessTokenItem[]>([])
@@ -389,6 +459,50 @@ const availableWorkspaces = ref<WorkspaceItem[]>([])
 const maxActiveTokens = ref<number | null>(null)
 const activeTokenCount = computed(() => tokens.value.filter((token) => token.is_active).length)
 const expiredTokenCount = computed(() => tokens.value.filter((token) => !token.revoked_at && !token.is_active).length)
+
+const isResetSuccess = ref(false)
+const resetDialogMode = ref<'relogin' | 'install'>('relogin')
+
+const resetModeOptions = [
+  { label: '重新登录', value: 'relogin' },
+  { label: '全新安装', value: 'install' },
+]
+
+const currentEndpoint = computed(() => resolveCurrentEndpoint())
+
+const currentAgentPrompt = computed(() => {
+  const endpoint = currentEndpoint.value
+  if (isResetSuccess.value && resetDialogMode.value === 'relogin') {
+    return buildAgentReLoginPrompt({
+      endpoint,
+      token: createdTokenSecret.value,
+    })
+  }
+  return buildAgentInstallPrompt({
+    endpoint,
+    token: createdTokenSecret.value,
+  })
+})
+
+const manualLoginCmd = computed(() =>
+  buildManualLoginCommand(currentEndpoint.value, createdTokenSecret.value)
+)
+
+function goToCliGuide() {
+  void router.push('/settings/account/cli')
+}
+
+async function copyAgentPrompt() {
+  await copyTextToClipboard(
+    currentAgentPrompt.value,
+    '智能体提示词已复制！请直接粘贴给 Cursor / Claude 等 AI 助手。'
+  )
+}
+
+async function copyCode(code: string) {
+  await copyTextToClipboard(code, '命令已复制到剪贴板。')
+}
+
 
 const expiresOptions: SelectOption[] = [
   { label: '7 天', value: 7 },
@@ -601,6 +715,8 @@ async function handleTokenSubmit() {
     const payload = { ...basePayload, expires_in_days: expiresInDays }
     const res = await createAccessToken(payload)
     closeTokenDialog()
+    isResetSuccess.value = false
+    resetDialogMode.value = 'relogin'
     createdTokenSecret.value = res.token
     successDialogTitle.value = '令牌创建成功'
     successDialogOpen.value = true
@@ -638,6 +754,8 @@ async function handleResetToken() {
     }
     const res = await resetAccessToken(tokenToReset.value.id, payload)
     resetDialogOpen.value = false
+    isResetSuccess.value = true
+    resetDialogMode.value = 'relogin'
     createdTokenSecret.value = res.token
     successDialogTitle.value = '令牌重置成功'
     successDialogOpen.value = true
@@ -670,7 +788,28 @@ async function handleRevokeToken() {
   }
 }
 
-onMounted(() => {
-  loadData()
+watch(
+  () => route.query.action,
+  (action) => {
+    if (action === 'create') {
+      openCreateDialog()
+      void router.replace({
+        path: route.path,
+        query: { ...route.query, action: undefined },
+      })
+    }
+  }
+)
+
+onMounted(async () => {
+  await loadData()
+  if (route.query.action === 'create') {
+    await nextTick()
+    openCreateDialog()
+    void router.replace({
+      path: route.path,
+      query: { ...route.query, action: undefined },
+    })
+  }
 })
 </script>

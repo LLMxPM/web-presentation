@@ -147,6 +147,12 @@ const routes = [
             meta: { hideSidebars: true, fullHeight: true, globalPageTitle: '设置与管理' },
           },
           {
+            path: 'account/cli',
+            name: 'accountCliIntegration',
+            component: () => import('@/views/AccountCliIntegrationView.vue'),
+            meta: { hideSidebars: true, fullHeight: false, globalPageTitle: '设置与管理' },
+          },
+          {
             path: 'account/tokens',
             name: 'accountAccessTokens',
             component: () => import('@/views/AccountAccessTokensView.vue'),

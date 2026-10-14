@@ -98,7 +98,7 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { AlertTriangle, Bot, Code2, Cpu, Key, Settings, ShieldCheck, Sparkles, UserCog, Wrench } from '@lucide/vue'
+import { AlertTriangle, Bot, Code2, Cpu, Key, Settings, ShieldCheck, Sparkles, Terminal, UserCog, Wrench } from '@lucide/vue'
 
 import { ADMIN_SETTINGS_QUERY_KEY, fetchAdminSettings } from '@/api/adminSettings'
 import { useAuthStore } from '@/stores/auth'
@@ -131,6 +131,7 @@ const accountNavItems = [
   { label: '助手提示词', path: '/settings/account/prompt', icon: Sparkles },
   { label: '代码规范', path: '/settings/account/code-standards', icon: Code2 },
   { label: '工具配置', path: '/settings/account/tools', icon: Wrench },
+  { label: '桌面 Agent (CLI)', path: '/settings/account/cli', icon: Terminal },
   { label: '访问令牌', path: '/settings/account/tokens', icon: Key },
   { label: '账户安全', path: '/settings/account/security', icon: ShieldCheck },
 ]
@@ -172,6 +173,9 @@ function isActive(path: string): boolean {
     return true
   }
   if (path === '/settings/account/tools' && (route.name === 'accountAiTools' || route.path === '/settings/account/tools')) {
+    return true
+  }
+  if (path === '/settings/account/cli' && (route.name === 'accountCliIntegration' || route.path === '/settings/account/cli')) {
     return true
   }
   if (path === '/settings/account/tokens' && (route.name === 'accountAccessTokens' || route.path === '/account/access-tokens')) {

@@ -10,6 +10,7 @@ import ProjectsView from '@/views/ProjectsView.vue'
 
 const listProjectsMock = vi.fn()
 const getWorkspaceMock = vi.fn()
+const listAccessTokensMock = vi.fn()
 const routeMock = {
   params: {
     workspaceId: '11',
@@ -21,6 +22,14 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({
     push: vi.fn(),
   }),
+  RouterLink: {
+    props: ['to'],
+    template: '<a :href="to"><slot /></a>',
+  },
+}))
+
+vi.mock('@/api/accessTokens', () => ({
+  listAccessTokens: () => listAccessTokensMock(),
 }))
 
 vi.mock('@/api/catalog', () => ({
@@ -80,6 +89,10 @@ const project = createProjectItem('初始项目')
 describe('ProjectsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    listAccessTokensMock.mockResolvedValue({
+      items: [],
+      max_active_tokens: 10,
+    })
     getWorkspaceMock.mockResolvedValue({
       id: 11,
       name: '默认工作空间',
@@ -91,6 +104,25 @@ describe('ProjectsView', () => {
       page: 1,
       page_size: 24,
     })
+  })
+
+  it('当当前用户未创建 PAT (items 为空) 时，工作台顶部应显著渲染桌面 Agent 接入指引横幅', async () => {
+    listAccessTokensMock.mockResolvedValue({ items: [], max_active_tokens: 10 })
+    renderProjectsView()
+
+    expect(await screen.findByTestId('workspace-cli-guide-banner')).toBeInTheDocument()
+    expect(screen.getByText('查看桌面 Agent 接入指南')).toBeInTheDocument()
+  })
+
+  it('当当前用户已拥有 PAT 时，工作台顶部不应渲染桌面 Agent 接入指引横幅', async () => {
+    listAccessTokensMock.mockResolvedValue({
+      items: [{ id: 1, name: 'CLI Token', is_active: true }],
+      max_active_tokens: 10,
+    })
+    renderProjectsView()
+
+    expect(await screen.findByText('初始项目')).toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-cli-guide-banner')).toBeNull()
   })
 
   it.each(['agent:project-updated', 'agent:project-pages-updated'])('收到 %s 后应刷新当前工作空间项目列表', async (eventName) => {
