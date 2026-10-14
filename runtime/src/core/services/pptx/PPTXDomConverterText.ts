@@ -399,6 +399,7 @@ export class PPTXDomConverterText {
       'left',
       false,
       'fragment',
+      textNode,
     )
 
     host.options.slide.addText(text, {

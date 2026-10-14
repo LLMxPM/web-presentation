@@ -325,6 +325,11 @@ export class PPTXDomConverterLayout {
     return this.rootBox.left
   }
 
+  /** 获取当前设计画布根节点，布局约束不能越过该页面进入 Runtime shell。 */
+  rootElement(): HTMLElement {
+    return this.options.pageElement
+  }
+
   rootTop(): number {
     return this.rootBox.top
   }

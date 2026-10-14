@@ -8,6 +8,9 @@ import type { ElementBox, VisitContext } from '@/core/services/pptx/PPTXDomConve
 import { INLINE_TEXT_TAGS } from '@/core/services/pptx/PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import type { ShapeGeometryResolver, TextShapeGeometryKind } from './ShapeGeometryResolver'
+import { calculatePunctuationWidthGuard } from './TextPunctuationGuard'
+import { TextExpansionBoundsResolver } from './TextExpansionBounds'
+import { measureSingleLineText } from './TextLineLayout'
 
 export type TextWidthGuardProfile = 'default' | 'capsule' | 'padded-shape' | 'fragment'
 
@@ -15,10 +18,14 @@ export type TextWidthGuardProfile = 'default' | 'capsule' | 'padded-shape' | 'fr
  * 文本框宽度防折行保护与内边距计算器。
  */
 export class TextWidthGuard {
+  private readonly expansionBounds: TextExpansionBoundsResolver
+
   constructor(
     private readonly layout: PPTXDomConverterLayout,
     private readonly shapeGeometry: ShapeGeometryResolver,
-  ) {}
+  ) {
+    this.expansionBounds = new TextExpansionBoundsResolver(layout)
+  }
 
   /**
    * 尝试将文本框扩展到祖先容器的剩余宽度，降低 flex/list 场景中因为内容贴边导致的 PPT 换行概率。
@@ -33,7 +40,7 @@ export class TextWidthGuard {
     context: VisitContext,
     isMeaningfulElement: (node: HTMLElement) => boolean,
   ): ElementBox {
-    if (!this.shouldExpandToAncestorRemainingWidth(box, styleSource, style, text, isFragment)) {
+    if (!this.shouldExpandToAncestorRemainingWidth(box, styleSource, style, text, isFragment, anchorNode)) {
       return box
     }
 
@@ -60,7 +67,8 @@ export class TextWidthGuard {
         break
       }
 
-      const remainingWidth = this.layout.roundInch(Math.max(0.01, (parentBox.x + parentBox.w) - box.x))
+      const bounds = this.expansionBounds.resolve(anchorNode, box)
+      const remainingWidth = this.layout.roundInch(Math.max(box.w, Math.min(parentBox.x + parentBox.w, bounds.right) - box.x))
       return remainingWidth > box.w
         ? {
             ...box,
@@ -104,7 +112,7 @@ export class TextWidthGuard {
   }
 
   /**
-   * 给 PPT 文本框增加宽度冗余，降低 PowerPoint 字宽差异导致末字换行的概率。
+   * 仅给单行 PPT 文本框增加宽度冗余；多行保留原宽度和对齐位置，避免扩宽改变段落布局。
    */
   applyTextBoxWidthGuard(
     slideWidthIn: number,
@@ -115,26 +123,67 @@ export class TextWidthGuard {
     align: string,
     isTextShape: boolean,
     guardProfile: TextWidthGuardProfile = 'default',
+    anchorNode: Node = element,
   ): ElementBox {
+    if (!this.isLikelySingleLineTextBox(element, box, style, text, anchorNode)) {
+      return box
+    }
     const guardWidth = this.calculateTextWidthGuard(element, box, style, text, isTextShape, guardProfile)
     if (guardWidth <= 0) {
       return box
     }
 
-    let nextX = box.x
-    if (align === 'center') {
-      nextX -= guardWidth / 2
-    } else if (align === 'right') {
-      nextX -= guardWidth
-    }
-
-    nextX = Math.max(0, nextX)
-    const maxWidth = Math.max(0.01, slideWidthIn - nextX)
+    const bounds = this.expansionBounds.resolve(anchorNode, box, slideWidthIn)
+    const leftRoom = Math.max(0, box.x - bounds.left)
+    const rightRoom = Math.max(0, bounds.right - box.x - box.w)
+    const allowLeftShift = !this.hasExplicitWidthConstraint(element)
+    const { extra, shiftLeft } = this.resolveExpansionShift(guardWidth, leftRoom, rightRoom, align, allowLeftShift)
+    if (extra <= 0) return box
+    const nextX = box.x - shiftLeft
     return {
       ...box,
       x: this.layout.roundInch(nextX),
-      w: this.layout.roundInch(Math.min(maxWidth, box.w + guardWidth)),
+      w: this.layout.roundInch(box.w + extra),
     }
+  }
+
+  /**
+   * 计算有界且最贴近对齐意图的扩宽量与 X 坐标偏移，在贴边时允许非对称借用对侧可用空间防折行。
+   */
+  private resolveExpansionShift(
+    guardWidth: number,
+    leftRoom: number,
+    rightRoom: number,
+    align: string,
+    allowLeftShift = true,
+  ): { extra: number; shiftLeft: number } {
+    if (align === 'center') {
+      const symmetricRoom = 2 * Math.min(leftRoom, rightRoom)
+      if (symmetricRoom >= guardWidth) {
+        const extra = guardWidth
+        return { extra, shiftLeft: extra / 2 }
+      }
+      const totalRoom = leftRoom + rightRoom
+      const extra = Math.min(guardWidth, totalRoom)
+      if (extra <= 0) return { extra: 0, shiftLeft: 0 }
+      const minShiftLeft = Math.max(0, extra - rightRoom)
+      const maxShiftLeft = Math.min(leftRoom, extra)
+      const preferredShiftLeft = extra / 2
+      const shiftLeft = Math.max(minShiftLeft, Math.min(maxShiftLeft, preferredShiftLeft))
+      return { extra, shiftLeft }
+    }
+
+    if (align === 'right') {
+      const extra = Math.min(guardWidth, leftRoom)
+      return { extra, shiftLeft: extra }
+    }
+
+    // 默认 left 对齐：优先向右扩；若元素无固定宽度约束且右侧贴边，允许向左借位微移
+    const shiftRight = Math.min(rightRoom, guardWidth)
+    const remainingNeed = guardWidth - shiftRight
+    const shiftLeft = allowLeftShift ? Math.min(leftRoom, remainingNeed) : 0
+    const extra = shiftRight + shiftLeft
+    return { extra, shiftLeft }
   }
 
   /**
@@ -153,17 +202,19 @@ export class TextWidthGuard {
     return margin.some(value => value > 0) ? margin : 0
   }
 
+  /** 仅允许无显式宽度约束的单行复杂文字借用祖先空白，避免多行段落被拉宽。 */
   private shouldExpandToAncestorRemainingWidth(
     box: ElementBox,
     element: HTMLElement,
     style: CSSStyleDeclaration,
     text: string,
     isFragment: boolean,
+    anchorNode: Node,
   ): boolean {
     if (this.hasExplicitWidthConstraint(element)) {
       return false
     }
-    if (!this.isLikelySingleLineTextBox(box, style, text)) {
+    if (!this.isLikelySingleLineTextBox(element, box, style, text, anchorNode)) {
       return false
     }
 
@@ -244,6 +295,7 @@ export class TextWidthGuard {
     return !this.hasExplicitTextShapeWidth(element) && !this.hasFlexGrowth(element, style)
   }
 
+  /** 优先按实际文字行判断；没有浏览器布局时扣除 padding，再估计单行内容高度。 */
   private isLikelySingleLinePaddedShape(
     element: HTMLElement,
     style: CSSStyleDeclaration,
@@ -253,7 +305,9 @@ export class TextWidthGuard {
     if (!this.layout.isSingleLineText(text)) {
       return false
     }
-    if (['nowrap', 'pre', 'pre-line', 'pre-wrap'].includes(style.whiteSpace)) {
+    const measuredSingleLine = measureSingleLineText(element)
+    if (measuredSingleLine !== null) return measuredSingleLine
+    if (['nowrap', 'pre'].includes(style.whiteSpace)) {
       return true
     }
 
@@ -290,6 +344,7 @@ export class TextWidthGuard {
       .some(className => ['flex-1', 'flex-auto', 'grow'].includes(className) || /^grow-/.test(className))
   }
 
+  /** 为已确认的单行文字计算有界宽度余量；调用方负责行布局判断和可用空间限制。 */
   private calculateTextWidthGuard(
     element: HTMLElement,
     box: ElementBox,
@@ -300,55 +355,89 @@ export class TextWidthGuard {
   ): number {
     const fontSizePt = Math.max(1, this.layout.cssPxToPt(this.layout.parseCssPixel(style.fontSize) || 16))
     const fontSizeIn = fontSizePt / 72
-    const isSingleLine = this.isLikelySingleLineTextBox(box, style, text)
     const isCapsule = guardProfile === 'capsule'
     const isPaddedShape = guardProfile === 'padded-shape'
     const isFragment = guardProfile === 'fragment'
     const isStrongShapeGuard = isCapsule || isPaddedShape
-    const ratioGuard = box.w * (
-      isSingleLine
-        ? (isStrongShapeGuard ? 0.024 : (isTextShape ? 0.018 : 0.03))
-        : (isStrongShapeGuard ? 0.012 : (isTextShape ? 0.008 : 0.015))
+    const ratioGuard = box.w * (isStrongShapeGuard ? 0.024 : (isTextShape ? 0.018 : 0.03))
+    const emGuard = fontSizeIn * (this.layout.containsCjkText(text)
+      ? (isStrongShapeGuard ? (isCapsule ? 0.55 : 1) : 0.8)
+      : (isStrongShapeGuard ? (isCapsule ? 0.35 : 0.6) : 0.45))
+    const contentComplexityGuard = this.resolveContentComplexityWidthGuardIn(
+      element,
+      style,
+      text,
+      fontSizeIn,
+      isFragment,
+      isPaddedShape,
     )
-    const emGuard = fontSizeIn * (
-      isSingleLine
-        ? (this.layout.containsCjkText(text) ? (isStrongShapeGuard ? 1 : 0.8) : (isStrongShapeGuard ? 0.6 : 0.45))
-        : (this.layout.containsCjkText(text) ? (isStrongShapeGuard ? 0.45 : 0.35) : (isStrongShapeGuard ? 0.28 : 0.2))
-    )
-    const contentComplexityGuard = isCapsule
-      ? 0
-      : this.resolveContentComplexityWidthGuardIn(
-          element,
-          style,
-          text,
-          fontSizeIn,
-          isFragment,
-          isPaddedShape,
-        )
+    const capsuleNativeInset = isCapsule
+      ? this.resolveCapsuleNativeInsetGuardIn(element, style, box)
+      : 0
+    // 胶囊原生圆角内切补偿量：依据胶囊自身的理论几何内缩与宽度安全比例动态封顶，杜绝固定常数
+    const capsuleInsetGuard = isCapsule
+      ? Math.min(capsuleNativeInset, box.w * 0.11)
+      : 0
     const paddingGuard = isStrongShapeGuard ? this.resolveHorizontalPaddingGuardIn(element, style) : 0
-    const minGuard = isCapsule ? 0.03 : (isPaddedShape ? 0.04 : (isTextShape ? 0.02 : 0.04))
+    const punctuationGuard = calculatePunctuationWidthGuard(text, fontSizeIn, box.w, isTextShape)
+    const minGuard = isCapsule
+      ? Math.min(0.04, box.w * 0.05)
+      : (isPaddedShape ? 0.04 : (isTextShape ? 0.02 : 0.04))
     const contentAwareMaxGuard = contentComplexityGuard > 0
       ? contentComplexityGuard + (isFragment ? 0.03 : 0.02)
       : 0
+    // 胶囊最大保护量上限完全基于胶囊的几何尺寸（长宽比例），杜绝绝对魔数
+    const capsuleMaxGuard = isCapsule
+      ? Math.max(capsuleInsetGuard, Math.min(box.w * 0.12, Math.max(box.h * 0.38, 0.04)))
+      : 0
     const maxGuard = Math.max(
-      isCapsule ? 0.09 : (isPaddedShape ? 0.12 : (isTextShape ? 0.04 : 0.08)),
-      box.w * (isStrongShapeGuard ? 0.12 : (isTextShape ? 0.06 : 0.11)),
+      isCapsule ? capsuleMaxGuard : (isPaddedShape ? 0.12 : (isTextShape ? 0.04 : 0.08)),
+      box.w * (isStrongShapeGuard ? (isCapsule ? 0.11 : 0.14) : (isTextShape ? 0.06 : 0.11)),
       contentAwareMaxGuard,
+      punctuationGuard,
+      capsuleInsetGuard,
     )
-    return Math.min(maxGuard, Math.max(minGuard, ratioGuard, emGuard, contentComplexityGuard, paddingGuard))
+    return Math.min(maxGuard, Math.max(minGuard, ratioGuard, emGuard, contentComplexityGuard, capsuleInsetGuard, paddingGuard, punctuationGuard))
   }
 
-  private isLikelySingleLineTextBox(box: ElementBox, style: CSSStyleDeclaration, text: string): boolean {
+  /**
+   * 计算 PPT 原生 roundRect 几何内切（DrawingML 内缩 il = 0.29289 * R）造成的可用文字宽度缩窄补偿。
+   */
+  private resolveCapsuleNativeInsetGuardIn(
+    element: HTMLElement,
+    style: CSSStyleDeclaration,
+    box: ElementBox,
+  ): number {
+    const radiusPx = this.layout.resolveElementCornerRadiusPx(element, style)
+    const maxRadiusPx = Math.min(box.h / this.layout.inchPerPxY(), box.w / this.layout.inchPerPxX()) / 2
+    const effectiveRadiusPx = radiusPx > 0 ? Math.min(radiusPx, maxRadiusPx) : maxRadiusPx
+    // 左右两侧原生内缩总和 = 2 * 0.29289 * R
+    const totalInsetPx = 2 * 0.29289 * effectiveRadiusPx
+    const measuredInsetPx = this.layout.cssPxToMeasuredPx(totalInsetPx)
+    return this.layout.roundInch(this.layout.measuredPxToInch(measuredInsetPx))
+  }
+
+  /** 优先观察真实文字行；显式多行直接保留，无布局环境才用盒高与行高回退。 */
+  private isLikelySingleLineTextBox(
+    element: HTMLElement,
+    box: ElementBox,
+    style: CSSStyleDeclaration,
+    text: string,
+    anchorNode: Node = element,
+  ): boolean {
     if (!this.layout.isSingleLineText(text)) {
       return false
     }
-    if (['nowrap', 'pre', 'pre-line', 'pre-wrap'].includes(style.whiteSpace)) {
+    const measuredSingleLine = measureSingleLineText(anchorNode)
+    if (measuredSingleLine !== null) return measuredSingleLine
+    if (['nowrap', 'pre'].includes(style.whiteSpace)) {
       return true
     }
 
     const fontSizePx = this.layout.parseCssPixel(style.fontSize) || 16
     const lineHeightPx = this.layout.parseCssPixel(style.lineHeight) || fontSizePx * 1.2
-    const boxHeightPx = box.h / this.layout.inchPerPxY()
+    const padding = this.layout.resolveElementPaddingPixels(element, style)
+    const boxHeightPx = Math.max(0, box.h / this.layout.inchPerPxY() - padding.top - padding.bottom)
     return boxHeightPx <= lineHeightPx * 1.9
   }
 
