@@ -4,12 +4,12 @@
 
 本文由 `web-presentation` 主仓维护，只描述 Backend 对外 CLI 接入必须遵守的 External API v1 契约和协作边界。
 
-本文不维护 `wp` CLI 的具体命令实现、Click 参数、Profile 文件、终端格式、MCP Tool 或 Skill 工作流。那些内容属于同级独立仓库 `web-presentation-agent-kit`：
+本文不维护 `wp` CLI 的具体命令实现、Click 参数、Profile 文件、终端格式或 Skill 工作流。那些内容属于同级独立仓库 `web-presentation-cli`：
 
-- CLI 实施文档：[web-presentation-agent-kit/docs/cli-capability-completion.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/cli-capability-completion.md)
-- CLI 源码：[packages/cli/](https://github.com/LLMxPM/web-presentation-agent-kit/tree/main/packages/cli)
-- 共享客户端：[packages/api-client/](https://github.com/LLMxPM/web-presentation-agent-kit/tree/main/packages/api-client)
-- Skill 知识库：[skills/web-presentation/SKILL.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/skills/web-presentation/SKILL.md)
+- CLI 实施文档：[web-presentation-cli/docs/cli-capability-completion.md](https://github.com/LLMxPM/web-presentation-cli/blob/main/docs/cli-capability-completion.md)
+- CLI 源码：[packages/cli/](https://github.com/LLMxPM/web-presentation-cli/tree/main/packages/cli)
+- 专用客户端：[packages/api-client/](https://github.com/LLMxPM/web-presentation-cli/tree/main/packages/api-client)
+- Skill 知识库：[skills/web-presentation/SKILL.md](https://github.com/LLMxPM/web-presentation-cli/blob/main/skills/web-presentation/SKILL.md)
 
 主仓统一契约正文见：[External API v1 契约与外部 Agent 接入边界](./reference/external-agent-api.md)。
 
@@ -23,12 +23,12 @@
 | operation 注册表和幂等要求 | `web-presentation` | `backend/app/core/external_operations.py` |
 | 工作空间隔离和权限校验 | `web-presentation` | External API 鉴权依赖、契约测试 |
 | Mutation Job 语义 | `web-presentation` | External API 路由、任务模型和契约测试 |
-| CLI 命令和参数 | `web-presentation-agent-kit` | `packages/cli/src/wp/commands/` |
-| CLI Profile、输出和退出码 | `web-presentation-agent-kit` | `packages/cli/` |
-| HTTP、PAT、Header、幂等和轮询适配 | `web-presentation-agent-kit` | `packages/api-client/` |
-| CLI 单元/适配测试 | `web-presentation-agent-kit` | `packages/cli/tests/`、`packages/api-client/tests/` |
+| CLI 命令和参数 | `web-presentation-cli` | `packages/cli/src/wp/commands/` |
+| CLI Profile、输出和退出码 | `web-presentation-cli` | `packages/cli/` |
+| HTTP、PAT、Header、幂等和轮询适配 | `web-presentation-cli` | `packages/api-client/` |
+| CLI 单元/适配测试 | `web-presentation-cli` | `packages/cli/tests/`、`packages/api-client/tests/` |
 
-原则是：主仓改变服务契约，agent-kit 适配实现；agent-kit 不通过复制主仓内部代码建立第二套业务事实。
+原则是：主仓改变服务契约，`web-presentation-cli` 适配实现；CLI 仓不通过复制主仓内部代码建立第二套业务事实。
 
 ## 3. CLI 的平台侧边界
 
@@ -46,7 +46,7 @@ CLI 是 External API v1 的外部客户端：
 
 ## 4. 当前 CLI 接入范围
 
-以下只是平台侧的能力边界索引，不是 CLI 命令清单；命令是否已实现以 agent-kit 实施文档和 `wp --help` 为准。
+以下只是平台侧的能力边界索引，不是 CLI 命令清单；命令是否已实现以 `web-presentation-cli` 实施文档和 `wp --help` 为准。
 
 ### 4.1 自省和基础能力
 
@@ -121,7 +121,7 @@ POST /api/v1/pages/{page_id}/validate
 
 ## 5. CLI 适配变更流程
 
-### 5.1 只改 agent-kit
+### 5.1 只改 web-presentation-cli
 
 以下变化不需要修改主仓文档：
 
@@ -129,7 +129,7 @@ POST /api/v1/pages/{page_id}/validate
 - 修改表格列、Rich 文案和本地退出码；
 - 增加 Profile 命令或本地配置选项；
 - 调整 API Client 的重试、超时和文件落盘实现，但不改变 HTTP 契约；
-- 增加 CLI/MCP 本地测试。
+- 增加 CLI 本地测试。
 
 ### 5.2 必须先改主仓
 
@@ -141,13 +141,13 @@ POST /api/v1/pages/{page_id}/validate
 - 归档、工作空间隔离和文件大小限制；
 - `/standards/*`、`/capabilities` 和 OpenAPI 返回结构。
 
-主仓完成后，再由 agent-kit 更新 CLI 实施文档、适配代码和测试。
+主仓完成后，再由 `web-presentation-cli` 更新 CLI 实施文档、适配代码和测试。
 
 ## 6. 已知契约问题
 
 页面/组件安全元数据 PATCH，以及 Mutation 取消、人工重试和幂等组合语义已经冻结。首版不暴露 Build 执行、产物下载或 Restore 入口。
 
-这些问题的详细记录和 agent-kit 阻塞关系见 [External API v1 契约文档](./reference/external-agent-api.md)。
+这些问题的详细记录和 `web-presentation-cli` 阻塞关系见 [External API v1 契约文档](./reference/external-agent-api.md)。
 
 ## 7. 验证入口
 
@@ -157,11 +157,11 @@ POST /api/v1/pages/{page_id}/validate
 pnpm run test:contracts
 ```
 
-agent-kit：
+`web-presentation-cli`：
 
 ```powershell
 uv run pytest
 uv run --project packages/cli wp --help
 ```
 
-两边联调时，先锁定目标主仓版本，再运行 agent-kit 的 CLI 适配测试和真实 External API smoke；不要只依据单边文档判断兼容性。
+两边联调时，先锁定目标主仓版本，再运行 `web-presentation-cli` 的 CLI 适配测试和真实 External API smoke；不要只依据单边文档判断兼容性。

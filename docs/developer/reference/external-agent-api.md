@@ -2,7 +2,7 @@
 
 ## 1. 文档归属
 
-本文是 `web-presentation` 主仓库维护的 External API v1 契约文档，服务于同级独立仓库 `web-presentation-agent-kit` 的 CLI、MCP Server 和 Skill。
+本文是 `web-presentation` 主仓库维护的 External API v1 契约文档，服务于同级独立仓库 [web-presentation-cli](https://github.com/LLMxPM/web-presentation-cli)（CLI、同步客户端与 Skill）及 [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp)（MCP Server，待完成状态）。
 
 本文只维护平台侧事实：
 
@@ -17,13 +17,13 @@
 - `wp` CLI 的 Click 命令、参数、终端输出和本地 Profile；
 - MCP Tool、Resource、Prompt、传输和协议输出；
 - Agent Skill 的工作流提示词；
-- agent-kit 的 Python 模块结构、发布方式和本仓测试。
+- 外部客户端仓的 Python 模块结构、发布方式和仓内测试。
 
 对应实现文档：
 
-- CLI 实施矩阵：[web-presentation-agent-kit/docs/cli-capability-completion.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/cli-capability-completion.md)
-- MCP 规划参考：[web-presentation-agent-kit/docs/mcp-implementation-plan.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)
-- Skill 知识库：[web-presentation-agent-kit/skills/web-presentation/SKILL.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/skills/web-presentation/SKILL.md)
+- CLI 实施矩阵：[web-presentation-cli/docs/cli-capability-completion.md](https://github.com/LLMxPM/web-presentation-cli/blob/main/docs/cli-capability-completion.md)
+- MCP 实施规划：[web-presentation-mcp/docs/mcp-implementation-plan.md](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/mcp-implementation-plan.md)
+- Skill 知识库：[web-presentation-cli/skills/web-presentation/SKILL.md](https://github.com/LLMxPM/web-presentation-cli/blob/main/skills/web-presentation/SKILL.md)
 
 ## 2. 唯一事实源
 
@@ -34,7 +34,7 @@ External API 契约的优先级如下：
 3. `tests/contracts/` 中的跨模块契约测试；
 4. 本文的语义说明和变更记录。
 
-当本文与代码或契约测试冲突时，先修正主仓契约，再通知 agent-kit 更新适配；不得由 CLI 或 MCP 猜测并绕过主仓事实。
+当本文与代码或契约测试冲突时，先修正主仓契约，再通知客户端仓更新适配；不得由 CLI 或 MCP 猜测并绕过主仓事实。
 
 主仓实现入口：
 
@@ -248,35 +248,28 @@ Mutation 对外状态固定为 `pending | running | succeeded | failed | cancele
 pnpm run test:contracts
 ```
 
-### agent-kit 变更
+### 客户端仓变更
 
-以下内容只在 agent-kit 维护：
+以下内容分别在 `web-presentation-cli` 或 `web-presentation-mcp` 维护：
 
 - CLI 命令名、Click 参数、Profile 和终端输出；
-- 共享 API Client 的传输适配和轮询封装；
+- 专用 API Client 的传输适配和轮询封装；
 - MCP Tool、Resource、Prompt、传输和结构化结果；
 - Skill 工作流和调用检查点；
-- CLI/MCP MockTransport、协议和适配测试。
-
-agent-kit 至少运行：
-
-```powershell
-uv run pytest
-uv run --project packages/cli wp --help
-```
+- CLI / MCP 协议和仓内适配测试。
 
 ### 联动顺序
 
 1. 主仓先修改并测试 External API 契约。
 2. 主仓更新本文和对应 operation 注册表。
-3. 主仓在 PR 或发布说明中标注需要升级的 agent-kit 适配。
-4. agent-kit 更新 CLI/MCP 实现和本仓测试。
+3. 主仓在 PR 或发布说明中标注需要升级的客户端仓适配。
+4. `web-presentation-cli` 与 `web-presentation-mcp` 更新适配实现和测试。
 5. 联调目标主仓版本，确认旧客户端兼容或明确最低版本。
 
 ## 9. 相关文档
 
 - 主仓 CLI 集成边界：[docs/developer/cli.md](../cli.md)
 - 主仓 MCP 集成边界：[docs/developer/mcp.md](../mcp.md)
-- CLI 实施矩阵：[web-presentation-agent-kit/docs/cli-capability-completion.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/cli-capability-completion.md)
-- MCP 规划参考：[web-presentation-agent-kit/docs/mcp-implementation-plan.md](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)
+- CLI 实施矩阵：[web-presentation-cli/docs/cli-capability-completion.md](https://github.com/LLMxPM/web-presentation-cli/blob/main/docs/cli-capability-completion.md)
+- MCP 实施规划：[web-presentation-mcp/docs/mcp-implementation-plan.md](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/mcp-implementation-plan.md)
 - 主仓 AI 工具规格：[docs/developer/backend/ai-tool-specs.md](../backend/ai-tool-specs.md)（仅平台内部 Agent，不作为 External API 契约）

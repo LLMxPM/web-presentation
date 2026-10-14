@@ -14,9 +14,11 @@ from app.services.project_route_service import ProjectRouteService
 def test_skill_route_and_theme_examples():
     """真实文档中的 JSON 必须通过模型及稳定业务规则；缺少相邻仓库时明确跳过。"""
     root = Path(__file__).resolve().parents[3]
-    references = root.parent / 'web-presentation-agent-kit/skills/web-presentation/references'
+    references = root.parent / 'web-presentation-cli/skills/web-presentation/references'
     if not references.is_dir():
-        pytest.skip('需要相邻 web-presentation-agent-kit 仓库以执行跨仓 Skill 示例验证')
+        references = root.parent / 'web-presentation-agent-kit/skills/web-presentation/references'
+    if not references.is_dir():
+        pytest.skip('需要相邻 web-presentation-cli 仓库以执行跨仓 Skill 示例验证')
     route_text = (references / 'route-and-navigation.md').read_text(encoding='utf-8')
     route = ProjectRouteTreeWriteRequest.model_validate(json.loads(re.search(r'```json\s*(.*?)\s*```', route_text, re.S)[1]))
     for item in route.routes:

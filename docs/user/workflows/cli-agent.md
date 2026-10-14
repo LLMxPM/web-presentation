@@ -138,7 +138,7 @@ wp component list --scope suggested --project-id <project_id>
 
 对于使用 Claude Desktop、Cursor、Codex 等桌面 Agent 的场景，推荐配合官方配套的 `web-presentation` Skill 一起使用：
 
-1. **Skill 来源**：位于同级独立仓库 [web-presentation-agent-kit/skills/web-presentation](https://github.com/LLMxPM/web-presentation-agent-kit/tree/main/skills/web-presentation)。
+1. **Skill 来源**：位于同级独立仓库 [web-presentation-cli/skills/web-presentation](https://github.com/LLMxPM/web-presentation-cli/tree/main/skills/web-presentation)。
 2. **闭环工作流**：
    - **构思与设计**：Agent 依据 `wp standards page` 和项目画布尺寸进行版面构图；
    - **资产引用**：查询已发布组件与资源 `name`，通过 `@runtime-kit/...` 引用运行时能力；
@@ -149,7 +149,8 @@ wp component list --scope suggested --project-id <project_id>
 
 ## 6. 相关文档
 
-- [CLI 外部接入仓库 (web-presentation-agent-kit)](https://github.com/LLMxPM/web-presentation-agent-kit)
+- [CLI 外部接入仓库 (web-presentation-cli)](https://github.com/LLMxPM/web-presentation-cli)
+- [MCP 外部接入仓库 (web-presentation-mcp，待完成)](https://github.com/LLMxPM/web-presentation-mcp)
 - [External Agent API v1 契约](../../developer/reference/external-agent-api.md)
 - [CLI 主仓集成边界](../../developer/cli.md)
 - [AI 协作创作工作流](./ai-assisted-creation.md)

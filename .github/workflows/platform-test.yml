@@ -105,15 +105,15 @@ jobs:
           path: web-presentation
       - uses: actions/checkout@v4
         with:
-          repository: LLMxPM/web-presentation-agent-kit
-          path: web-presentation-agent-kit
+          repository: LLMxPM/web-presentation-cli
+          path: web-presentation-cli
       - uses: astral-sh/setup-uv@v6
       - uses: pnpm/action-setup@v4
         with:
           version: 10.30.3
       - run: uv sync --project web-presentation/backend --group dev --locked
-      - run: uv sync --project web-presentation-agent-kit --all-packages
+      - run: uv sync --project web-presentation-cli --all-packages
       - working-directory: web-presentation
         run: pnpm run test:contracts:cli-skill
-      - working-directory: web-presentation-agent-kit
+      - working-directory: web-presentation-cli
         run: uv run pytest packages/cli/tests/test_backend_openapi_contract.py

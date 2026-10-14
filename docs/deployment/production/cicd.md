@@ -29,7 +29,7 @@
   - 镜像 smoke 只重建受影响变体：平台镜像构建输入（`deploy/`、`backend/`、`editor/`、`scripts/`、`Dockerfile*`、根 workspace 锁文件、`runtime/package.json`、Runtime Kit manifest）命中则重建平台 + lite；`runtime/` 命中重建 Runtime 镜像与 lite；`renderer/`、`packages/`、`uv.lock` 命中重建 Renderer 镜像。全部 leg 定义在脚本的 `FULL_MATRIX`，由 `tests/contracts/repository/deployment.test.ts` 校验四类交付 Dockerfile 都在其中。
   - 解析不到 diff base（浅克隆、force push、`github.event.before` 不可达）时脚本保守升级为全量，绝不静默降级。
   - `schedule`（每周一）与 `workflow_dispatch` 且 `full_tests=true` 是全量入口：始终跑完整门禁，E2E 使用 `test:e2e:all`，镜像 smoke 覆盖四个变体的多架构构建。
-  - `cli-contract` 依赖同级 `web-presentation-agent-kit` 仓库，仅在定时与手动触发。
+  - `cli-contract` 依赖同级 `web-presentation-cli` 仓库，仅在定时与手动触发。
 - 并发分组：`schedule` 使用独立 group 且 `cancel-in-progress=false`，避免定时全量被随后的 main push 中途杀掉；其余事件按 PR 号或 ref 分组并自动取消。
 - E2E 在 CI 下允许一次重试（`tests/config/playwright.config.ts` 的 `retries: process.env.CI ? 1 : 0`）：单条用例的定位抖动应在 job 内自愈，不能放大成整套门禁重跑；本地保持 `0` 以暴露真实不稳定。
 

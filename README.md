@@ -1,75 +1,78 @@
 # web-presentation
 
-`web-presentation` 是一个面向 AI 的演示文稿创作平台，用于创作 PPT、图文卡片、专题报告页、数据解读页等视觉化内容。平台把页面内容代码化，把资源、组件、主题和样式沉淀为可复用资产，再通过 Vue、Vite 和 Runtime 预览链路提供快速反馈，让 AI 更适合参与内容生成、结构调整、样式改写和多场景复用。
+English | [简体中文](./README.zh-CN.md)
 
-[官网](https://wp.llmxpm.com/) · [案例展示](https://wp.llmxpm.com/showcases.html) · [用户文档](https://wp.llmxpm.com/docs/user/)
+`web-presentation` is an AI-native presentation authoring platform designed for creating slide decks, visual cards, thematic report pages, and data explanation graphics. It represents slide contents as code, consolidates media assets, components, themes, and styles into reusable workspace libraries, and provides immediate feedback through a Vue 3, Vite, and Runtime preview pipeline—empowering AI to excel at structured content generation, iterative layout refinement, styling adaptations, and multi-scenario asset reuse.
 
-![平台产品总览图](./docs/assets/平台总览.png)
+[Website](https://wp.llmxpm.com/) · [Showcases](https://wp.llmxpm.com/showcases.html) · [User Docs](https://wp.llmxpm.com/docs/user/)
 
-## 产品特点
+![Platform Overview](./docs/assets/平台总览.png)
 
-- **自定义风格**：可以配置 Logo、字体、配色、页面比例等多维度样式，实现组织、企业特定的风格和布局要求。
-- **风格稳定**：通过组件复用和样式约定，能够稳定输出固定风格的演示文稿。
-- **模型要求低**: 可自定义模型，deepseek-V4-flash级别的模型就能跑出可用效果，deepseek-V4-pro级别的模型即可跑出不错的效果。
-- **成本低廉**：10 页 PPT 可在 `1元` 内完成创作。
+## Key Features
 
-## 核心能力
+- **Customizable Brand Styles**: Configure logos, typography, color palettes, aspect ratios, and multi-dimensional design tokens to meet specific organizational and enterprise branding requirements.
+- **Consistent Style & Quality**: Enforce visual consistency across slide decks and pages through component reuse and structured design conventions.
+- **Accessible Model Requirements**: Support custom models—models comparable to DeepSeek V4 Flash deliver viable drafts, while DeepSeek V4 Pro grade models produce polished, presentation-ready results.
+- **Ultra-Low Cost**: Generate a complete 10-slide presentation for under ¥1 (~$0.15 USD).
 
-- **AI 原生创作**：页面内容以代码和结构化配置表达，内容助手通过固定通用工具在同一工作空间跨项目查询和修改业务对象。
-- **页面布局检测**：基于真实DOM，对超高、换行、堆叠等AI常见布局错误，提供自动检测工具，AI自主修复。
-- **资产抽象复用**：工作空间沉淀资源、组件、主题、样式和字体，支持 PPT、图文卡片、报告页、展示页等不同内容形态复用同一套基础资产。
-- **快速可视反馈**：Runtime 基于 Vue 与 Vite 加载页面、组件和配置包，为 Editor 提供 iframe 预览、截图预览、组件预览和构建能力。
-- **受限可视化编辑**：在页面渲染结果旁查看 Vue 容器层级，以表单方式修改静态文本、组件参数和受控 Tailwind 样式。
-- **上下文隔离与注入**：Backend 为 AI 构造当前项目、页面、组件和资源的必要上下文，让 AI 聚焦具体创作，不需要关心 Runtime 内部实现。
-- **工作空间级内容助手**：无需为不同项目切换会话；会话固定工作空间，每个 Run 固化本轮焦点和项目工作集，项目、页面、组件、资源、主题和样式均显式指定目标并逐次校验权限。
-- **隔离式视觉工具**：内容助手通过无历史的单次图片理解工具与持久化图片生成任务处理视觉素材；内容模型只接收附件引用，生成结果自动进入工作空间资源库。
-- **平台化管理**：支持多用户、工作空间、项目、页面、组件、资源、主题、样式、AI 设置和构建产物的集中管理。
-- **开放模型接入**：聊天模型目录由 Models.dev 同步并允许自定义 OpenAI-compatible 连接；图片生成使用独立供应商、凭证和模型能力配置。
-- **私有化交付**：轻量单容器、平台镜像、Runtime 镜像和 compose 模板支持在自有环境中部署，便于团队控制数据、模型凭证和发布流程。
+## Core Capabilities
 
-## 产品定位
+- **AI-Native Authoring**: Express page content as code and structured configurations; the Content Assistant inspects and mutates business objects across projects within the workspace via dedicated, fixed general-purpose tools.
+- **Automated Layout Diagnostic**: Performs DOM-based automated detection for common AI layout defects (e.g. overflow, awkward text wrapping, element overlap) to enable autonomous AI self-healing.
+- **Asset Abstraction & Reuse**: Accumulate media, components, themes, styles, and typography in workspace libraries, enabling PPT decks, visual cards, report pages, and display boards to share the same design foundation.
+- **Rapid Visual Feedback**: The Runtime loads pages, components, and configuration bundles using Vue 3 and Vite, powering Editor features including live iframe preview, remote screenshot capture, component preview, and production builds.
+- **Constrained Visual Editing**: Inspect Vue container hierarchies alongside rendered outputs to modify static text, component props, and controlled Tailwind styles via intuitive form controls.
+- **Context Isolation & Injection**: The Backend injects only the essential context (project, page, component, asset specs) into the AI model, allowing it to focus on creative tasks without runtime overhead or implementation leaks.
+- **Workspace-Scoped Content Assistant**: Eliminates the need to switch chat sessions across projects; sessions are workspace-bound, and each Run snapshot locks its current focus and project working set with explicit permission checks per target.
+- **Isolated Visual Tooling**: Handles visual assets through stateless, single-turn vision analysis and durable background image generation tasks; the language model receives clean asset references while generated images are automatically ingested into workspace storage.
+- **Centralized Platform Governance**: Multi-tenant management for users, workspaces, projects, pages, components, assets, themes, styles, AI configurations, and build artifacts.
+- **Open Model Integration**: Synchronize chat models via Models.dev or connect custom OpenAI-compatible endpoints; image generation uses dedicated providers, credentials, and capabilities.
+- **Self-Hosted & Private Deployment**: Easily deploy via a lightweight all-in-one SQLite container, multi-service Docker images, or Docker Compose templates, keeping your data, keys, and release workflows entirely under your control.
 
-现有 PPT 制作 skill 已经覆盖了几条典型路径，证明了 AI 很适合处理演示文稿中的内容组织、视觉生成和代码化表达。
+## Product Positioning
 
-| 方向 | 典型产物 | 主要优势 | 常见边界 |
+Existing AI slide generation skills and tools demonstrate that AI excels at structuring content, visual layout generation, and code-based expressions.
+
+| Approach | Typical Output | Key Advantages | Typical Boundaries / Limitations |
 | :--- | :--- | :--- | :--- |
-| HTML deck skill | 单文件 HTML 演示页 | 风格稳定、轻交付、适合演讲和封面/配图扩展 | 更偏单次文件生成，团队资产、权限、版本和引用关系通常不进入系统模型 |
-| 原生 PPTX skill | 可逐元素编辑的 `.pptx` | 保留 PowerPoint 文本、形状、图表、动画和模板复刻能力 | 重点在最终 PPTX 质量，运行时能力和跨项目资产复用不是核心 |
-| 前端 slides skill | 零依赖 HTML / Web Slides | 浏览器预览、视觉风格探索、响应式和动效表现强 | 多以本地工作流为中心，项目上下文和组件资产沉淀有限 |
-| `web-presentation` | 平台化页面、组件、资源与构建产物 | 工作空间资产管理、上下文注入、Runtime 预览构建、多用户隔离和私有化部署 | 更适合长期项目和团队资产沉淀，不是追求一次性生成单个文件的最短路径 |
+| HTML deck skills | Single-file HTML presentations | Consistent style, lightweight delivery, great for talks and cover/image extensions | Oriented toward one-off file generation; lacks team asset management, permissions, versioning, and object reference models |
+| Native PPTX skills | Editable `.pptx` files | Preserves PowerPoint native shapes, text, charts, animations, and template replication | Emphasizes final PPTX fidelity; runtime capabilities and cross-project asset reuse are outside scope |
+| Frontend slides skills | Zero-dependency HTML / Web slides | In-browser preview, rich styling, responsive design, smooth animations | Centered on local developer workflows; limited project-level context and long-term asset accumulation |
+| `web-presentation` | Platformized pages, components, assets, and build artifacts | Workspace asset management, AI context injection, Runtime preview & build engine, multi-tenant isolation, self-hosted deployment | Tailored for ongoing projects and institutional asset reuse rather than a quick one-shot file export |
 
-`web-presentation` 的定位不同：它不是一次性的 PPT 生成 skill，也不是单纯的 HTML-to-PPTX 转换链路，而是面向 AI 的演示文稿创作平台。平台把资源、组件、主题、样式和字体抽象为工作空间资产，把页面内容代码化，让不同项目、不同风格、不同内容类型的演示资产可以持续沉淀和复用。AI 看到的是经过隔离和注入的项目上下文、页面上下文、资源清单、组件能力和样式约束；Runtime 负责承载 Vue/Vite 预览、构建、资源加载和基础能力，既利用前端框架的表达力，又避免运行环境细节干扰 AI 的创作任务。
+`web-presentation` occupies a distinct space: it is neither a one-off PPT prompt script nor a simple HTML-to-PPTX conversion utility. It is an **AI-native presentation platform**. It treats media, components, themes, styles, and typography as reusable workspace assets, expresses slide content as code, and enables continuous accumulation and reuse across decks and media types. The AI interacts with clean, isolated project contexts, page states, asset manifests, and component schemas—while the Runtime handles Vue 3 / Vite rendering, asset loading, and live preview, harnessing modern frontend capabilities without leaking runtime complexity to the AI.
 
-## 产品组成
+## Architecture & Components
 
-| 模块 | 面向用户的角色 | 说明 |
+| Component | Role | Description |
 | :--- | :--- | :--- |
-| Editor | 创作工作台 | 管理工作空间、项目、页面、组件、资源、主题和样式，并提供代码编辑、受限可视化编辑、AI 侧边栏和实时预览 |
-| Backend | 平台控制面 | 负责用户、权限、工作空间、项目、页面、资源、组件、主题、样式、AI、渲染请求调度与结果提交 |
-| Runtime | 预览与构建引擎 | 基于 Vue/Vite 渲染页面和组件，承接预览、截图宿主协议、诊断和发布构建 |
-| Renderer | 远程渲染执行服务 | 独立单槽异步 Playwright 服务，执行截图、页面诊断与组件诊断 |
-| Infra | 部署与运行环境 | 提供 Docker 镜像、compose 模板、发布流程和运行时依赖约束 |
-| Agent Kit | 外部 Agent 接入 | 同级 `web-presentation-agent-kit` 仓库提供官方 `wp` CLI、共享 API Client 和配套 Skill（MCP 协议规划暂缓） |
+| Editor | Authoring Studio | Web interface for managing workspaces, projects, pages, components, media assets, themes, and styles; includes code editor, form-based visual editor, AI assistant sidebar, and real-time preview |
+| Backend | Control Plane | Manages authentication, permissions, workspaces, projects, pages, components, assets, themes, styles, AI agent orchestration, render scheduling, and artifact storage |
+| Runtime | Preview & Build Engine | Vue 3 + Vite service rendering pages and components; handles live preview, screenshot host protocols, layout diagnostics, and static production builds |
+| Renderer | Headless Browser Worker | Standalone asynchronous Playwright service for capturing high-fidelity screenshots and layout diagnostic scripts |
+| Infra | Deployment & Infrastructure | Official Docker images, Docker Compose templates, backup/restore scripts, and runtime environment specifications |
+| CLI | Command Line & Agent Skill | Dedicated repository [web-presentation-cli](https://github.com/LLMxPM/web-presentation-cli) provides the official `wp` CLI, dedicated API client, and agent skills |
+| MCP | Remote MCP Server | Dedicated repository [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp) provides standard MCP protocol services (Work in progress) |
 
-详细架构、模块边界和本地开发流程见官网[开发文档](https://presentation.inputloom.com/docs/developer/)。
+For detailed architecture, component boundaries, and local development workflows, refer to the [Developer Documentation](https://presentation.inputloom.com/docs/developer/).
 
-## 案例展示
+## Showcase
 
-![案例展示](./docs/assets/案例.png)
+![Showcases](./docs/assets/案例.png)
 
-预览链接：[案例展示](https://presentation.inputloom.com/showcases.html)
+Interactive Showcase: [View Live Showcase](https://presentation.inputloom.com/showcases.html)
 
-案例基本是用Deepseek-v4-pro / mimo-v2.5-pro 跑出来的，成本均不高于1元。
+All showcase presentations were generated using models like DeepSeek V4 Pro and Mimo v2.5 Pro at a total generation cost under ¥1 (~$0.15 USD) each.
 
-## 在线 Demo
+## Online Demo
 
-公开 Demo 的访问地址、体验账号和 AI 设置说明统一维护在官网的 [Demo 使用指南](https://presentation.inputloom.com/docs/user/demo-guide.html)。
+Access URLs, trial credentials, and AI configuration instructions for the public demo are maintained in the [Demo Guide](https://presentation.inputloom.com/docs/user/demo-guide.html).
 
-## 快速部署
+## Quick Deployment
 
-个人或小团队推荐使用 SQLite Lite 版：单个容器内置 Backend、Editor、Runtime、Renderer（含 Chromium）和 Gateway，使用 SQLite 与进程内运行态存储。首次启动会自动生成管理员密码和加密密钥。
+For individuals and small teams, we recommend the **SQLite Lite** edition: a single container bundling Backend, Editor, Runtime, Renderer (with Chromium), and reverse proxy gateway, using SQLite and in-process runtime storage. Administrator credentials and encryption keys are automatically generated on first launch.
 
-安装 Docker 后，确保本机 `8080` 端口可用，执行：
+With Docker installed and port `8080` available, run:
 
 ```bash
 docker run -d \
@@ -82,37 +85,37 @@ docker run -d \
 docker logs web-presentation
 ```
 
-服务启动后访问 `http://127.0.0.1:8080`，使用账号 `admin` 和首次启动日志中的随机密码登录。数据库、上传资源、截图、构建产物及持久化密钥保存在 `web-presentation-lite-data` 数据卷中，升级或迁移时请保留并备份该卷。
+After the container starts, open `http://127.0.0.1:8080` and log in with username `admin` and the generated password from the container logs. The database, uploaded media, screenshots, build artifacts, and encryption keys are stored in the `web-presentation-lite-data` volume. Always retain and back up this volume during upgrades.
 
-局域网或域名访问可使用仓库中的 [Compose 模板](./deploy/compose/compose.sqlite-lite.yml)，将 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL` 和 `CORS_ORIGINS` 改为实际访问地址。Docker Compose、飞牛 fnOS、群晖的详细步骤见官网[快速部署](https://presentation.inputloom.com/docs/user/quick-deployment/)；HTTPS、PostgreSQL/Redis、多实例和运维配置见官网[生产部署指南](https://presentation.inputloom.com/docs/developer/deployment/)。
+For LAN or custom domain setups, use the provided [Compose template](./deploy/compose/compose.sqlite-lite.yml) and configure `BACKEND_PUBLIC_BASE_URL`, `RUNTIME_PUBLIC_BASE_URL`, and `CORS_ORIGINS` to match your domain. For step-by-step guides on Docker Compose, fnOS, and Synology NAS, see [Quick Deployment Guide](https://presentation.inputloom.com/docs/user/quick-deployment/). For production architectures involving HTTPS, PostgreSQL/Redis, multi-instance setups, and operations, see the [Production Deployment Guide](https://presentation.inputloom.com/docs/developer/deployment/).
 
-## 文档导航
+## Documentation
 
-| 文档 | 内容 |
+| Document | Overview |
 | :--- | :--- |
-| [用户文档](https://presentation.inputloom.com/docs/user/) | 快速上手、AI 协作、资产管理与交付 |
-| [部署指南](https://presentation.inputloom.com/docs/developer/deployment/) | 部署选型、环境配置、备份、升级与排障 |
-| [开发文档](https://presentation.inputloom.com/docs/developer/) | 本地开发、架构、接口与测试 |
+| [User Guide](https://presentation.inputloom.com/docs/user/) | Getting started, AI co-creation, workspace asset management, and export |
+| [Deployment Guide](https://presentation.inputloom.com/docs/developer/deployment/) | Architecture options, environment setup, backup/recovery, upgrades, and troubleshooting |
+| [Developer Guide](https://presentation.inputloom.com/docs/developer/) | Local development, system architecture, API specifications, and testing |
 
-## 仓库结构
+## Repository Structure
 
 ```text
 web-presentation/
-├── backend/                 # Backend 控制面服务
-├── editor/                  # Editor 创作工作台
-├── runtime/                 # 演示文稿/页面运行时服务（Vue 3 + Vite）
-├── renderer/                # 远程无头 Chromium 渲染服务
-├── packages/                # 跨服务共享契约库
-├── tests/                   # 根仓契约测试与 E2E smoke
-├── docs/                    # 用户文档、开发文档和文档图片资源
-├── scripts/                 # 本地开发、测试调度与契约校验脚本
-└── deploy/                  # Compose 模板、Dockerfile 与备份恢复脚本
+├── backend/                 # Backend control plane service
+├── editor/                  # Editor authoring studio
+├── runtime/                 # Presentation/page runtime engine (Vue 3 + Vite)
+├── renderer/                # Remote headless Chromium rendering service
+├── packages/                # Shared cross-service contract libraries
+├── tests/                   # Monorepo contract tests and E2E smoke suites
+├── docs/                    # User manuals, developer docs, and visual assets
+├── scripts/                 # Development, testing orchestration, and contract linting scripts
+└── deploy/                  # Compose templates, Dockerfiles, and backup/restore scripts
 ```
 
 ## License
 
-当前仓库顶层内容采用 Apache License 2.0，见 [LICENSE](./LICENSE)。
+The top-level code in this repository is licensed under the Apache License 2.0. See [LICENSE](./LICENSE).
 
-`runtime/` 包含平台原生演示运行时服务，遵循其目录下声明的 GNU Affero General Public License v3.0 许可证，见 [runtime/LICENSE](./runtime/LICENSE)。
+`runtime/` contains the presentation runtime service and is licensed under the GNU Affero General Public License v3.0 (AGPLv3) as declared in its directory. See [runtime/LICENSE](./runtime/LICENSE).
 
-外部 Agent 接入代码位于同级独立仓库 [web-presentation-agent-kit](https://github.com/LLMxPM/web-presentation-agent-kit)，主仓库仅保留平台 API、架构和集成文档。
+External agent integration code is hosted in dedicated sibling repositories: [web-presentation-cli](https://github.com/LLMxPM/web-presentation-cli) (official `wp` CLI, dedicated API client, and agent skills) and [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp) (MCP server, work in progress). The core repository maintains the platform APIs, architecture, and integration contracts.

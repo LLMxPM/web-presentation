@@ -1,24 +1,24 @@
 # MCP 主仓集成边界
 
-本文档说明主仓库 `web-presentation` 对 MCP 的平台侧约束与历史设计边界。
+本文档说明主仓库 `web-presentation` 对 MCP 的平台侧约束与设计边界。
 
 > [!NOTE]
-> 当前阶段平台优先交付和维护 `wp` CLI 接入能力；MCP Server 处于暂缓占位状态，不属于当前交付和默认发布范围。
+> MCP Server 属于独立仓库 [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp)，目前处于待完成状态（WIP），尚未正式交付生产。
 
-MCP Server 的工具实现、协议适配和发布流程由同级独立仓库 [web-presentation-agent-kit](https://github.com/LLMxPM/web-presentation-agent-kit) 负责。
+MCP Server 的工具实现、协议适配和发布流程由同级独立仓库 [web-presentation-mcp](https://github.com/LLMxPM/web-presentation-mcp) 负责。
 
 ## 1. 权责边界
 
 | 范围 | 负责方 | 说明 |
 | --- | --- | --- |
 | Backend `/api/v1` External API v1 | 主仓库 | 资源、页面、组件、主题、样式、构建任务等平台接口契约 |
-| MCP 工具、参数映射和 transport | agent-kit | 将 MCP 调用映射为主仓库 API 请求，并维护 MCP 运行态行为 |
-| MCP Server 配置与发布 | agent-kit | 负责本地启动、远程部署和版本兼容说明 |
-| 跨仓库契约测试 | 双方 | 主仓库验证 API 契约，agent-kit 验证工具到 API 的映射 |
+| MCP 工具、参数映射和 transport | `web-presentation-mcp` | 将 MCP 调用映射为主仓库 API 请求，并维护 MCP 运行态行为 |
+| MCP Server 配置与发布 | `web-presentation-mcp` | 负责本地启动、远程部署和版本兼容说明 |
+| 跨仓库契约测试 | 双方 | 主仓库验证 API 契约，`web-presentation-mcp` 验证工具到 API 的映射 |
 
 主仓库的 API 事实源是[External API v1 契约](./reference/external-agent-api.md)，不要在此文档复制 MCP 工具清单、参数 Schema 或返回示例。
 
-MCP 的历史实施细节见 agent-kit 的[实施计划参考](https://github.com/LLMxPM/web-presentation-agent-kit/blob/main/docs/mcp-implementation-plan.md)；工具级说明以 agent-kit 的 MCP 文档和源码为准。
+MCP 的实施细节见 [web-presentation-mcp 实施计划参考](https://github.com/LLMxPM/web-presentation-mcp/blob/main/docs/mcp-implementation-plan.md)；工具级说明以 `web-presentation-mcp` 的文档和源码为准。
 
 ## 2. MCP 依赖的主仓能力
 
@@ -38,7 +38,7 @@ MCP Server 依赖以下平台能力，但不在主仓库登记 MCP 工具：
 
 1. 先更新[External API v1 契约](./reference/external-agent-api.md)，明确路径、入参、出参、权限、错误和幂等语义。
 2. 补充主仓库的 API、契约或集成测试。
-3. 在 agent-kit 更新 MCP 工具的映射、Schema、说明和测试。
+3. 在 `web-presentation-mcp` 更新 MCP 工具的映射、Schema、说明和测试。
 4. 联调认证、工作空间隔离、确认语义、错误透传和长任务状态。
 5. 发现接口与 MCP 实现不一致时，优先修复契约或实现，不在两份文档中长期保留不同口径。
 
@@ -46,4 +46,4 @@ MCP Server 依赖以下平台能力，但不在主仓库登记 MCP 工具：
 
 ## 4. 当前契约状态
 
-页面/组件安全元数据 PATCH，以及 Mutation 状态、取消、人工重试和幂等组合语义已经冻结并由 agent-kit 适配。构建产物下载 URL、鉴权方式、过期语义和持久化 Worker 契约仍未冻结，agent-kit 不注册 Build 工具。
+页面/组件安全元数据 PATCH，以及 Mutation 状态、取消、人工重试和幂等组合语义已经冻结并由 `web-presentation-mcp` 适配。构建产物下载 URL、鉴权方式、过期语义和持久化 Worker 契约仍未冻结，暂不注册 Build 工具。
