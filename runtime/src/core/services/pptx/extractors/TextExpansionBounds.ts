@@ -1,10 +1,15 @@
 /** 文件用途：根据真实容器内容边界和同高度相邻对象限制文本扩宽，保留原有位置及越界，不挤占其他内容。 */
-import { getComputedStyle, isTextNode } from '../dom/PPTXDomEnvironment'
+import { getComputedStyle, isSVGElement, isTextNode } from '../dom/PPTXDomEnvironment'
 import type { ElementBox } from '../PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '../PPTXDomConverterLayout'
 
 export interface TextExpansionBounds { left: number; right: number }
 const EPSILON = 0.0001
+
+/** 判断原框是否已经超出可用边界；允许测量取整误差，已有越界不通过扩宽或借位修正。 */
+export function isOutsideTextExpansionBounds(box: ElementBox, bounds: TextExpansionBounds): boolean {
+  return box.x < bounds.left - EPSILON || box.x + box.w > bounds.right + EPSILON
+}
 
 /** 从页面内的实际布局提取左右扩宽边界，不依赖固定模板或作者提供的换行意图。 */
 export class TextExpansionBoundsResolver {
@@ -30,8 +35,7 @@ export class TextExpansionBoundsResolver {
       }
       for (const sibling of parent.childNodes) {
         if (sibling === branch) continue
-        const siblingBox = this.measureObstacle(sibling)
-        if (siblingBox) this.limitByObstacle(bounds, box, siblingBox)
+        for (const siblingBox of this.measureObstacles(sibling)) this.limitByObstacle(bounds, box, siblingBox)
       }
     }
     return bounds
@@ -58,40 +62,56 @@ export class TextExpansionBoundsResolver {
 
   /** 可见背景、边框或 padding 的容器承载独立视觉范围，文字扩宽不得侵入其边缘。 */
   private hasBoxVisual(element: HTMLElement, style: CSSStyleDeclaration): boolean {
-    const background = this.layout.parseCssColor(this.layout.resolveBackgroundColorValue(element, style), element)
     const padding = this.layout.resolveElementPaddingPixels(element, style)
+    return this.hasBoxPaint(element, style) || padding.left > 0 || padding.right > 0
+  }
+
+  /** 判断 HTML 盒自身是否绘制可见内容；padding 只约束自身布局，不代表整块区域有像素。 */
+  private hasBoxPaint(element: HTMLElement, style: CSSStyleDeclaration): boolean {
+    const background = this.layout.parseCssColor(this.layout.resolveBackgroundColorValue(element, style), element)
     return Boolean(background && background.alpha > 0) ||
       Boolean(style.backgroundImage && style.backgroundImage !== 'none') ||
-      this.layout.getBorderInfos(element, style).length > 0 ||
-      padding.left > 0 || padding.right > 0
+      Boolean(style.boxShadow && style.boxShadow !== 'none') ||
+      this.layout.getBorderInfos(element, style).length > 0
   }
 
-  /** 兄弟元素只采用真实布局矩形；无布局环境的零坐标不作为重叠证据，直属文字用 Range 测量。 */
-  private measureObstacle(node: Node): ElementBox | null {
-    if (isTextNode(node)) return this.layout.getPptxTextNodeBox(node)
-    if (node.nodeType !== 1) return null
+  /**
+   * 提取实际可见障碍；透明容器递归测量后代及文字，事件穿透不影响可见性。
+   * SVG 与图片等固有绘制对象保留实测边界；无布局环境的零矩形不作为碰撞证据。
+   */
+  private measureObstacles(node: Node): ElementBox[] {
+    if (isTextNode(node)) {
+      if (!node.textContent?.trim()) return []
+      const parent = node.parentElement
+      if (parent && ['hidden', 'collapse'].includes(getComputedStyle(parent).visibility)) return []
+      const box = this.layout.getPptxTextNodeBox(node)
+      if (box) return [box]
+      // Range 不可用时，仅采用有真实尺寸的叶子文字元素，不回退成透明祖先的大矩形。
+      if (parent && parent.children.length === 0) {
+        const rect = parent.getBoundingClientRect()
+        const fallback = rect.width > 0 && rect.height > 0 ? this.layout.getPptxBox(parent) : null
+        if (fallback) return [fallback]
+      }
+      return []
+    }
+    if (node.nodeType !== 1) return []
     const element = node as Element
     const style = getComputedStyle(element)
-    if (style.display === 'none' || ['hidden', 'collapse'].includes(style.visibility) || Number.parseFloat(style.opacity) === 0) return null
-    if (this.isTransparentDecorator(element as HTMLElement, style)) return null
-    const rect = element.getBoundingClientRect()
-    if (rect.width <= 0 || rect.height <= 0) return null
-    return this.layout.getPptxBox(element)
-  }
-
-  /** 判断元素是否为纯事件穿透或覆盖整页的透明装饰图层，避免将其整块矩形当作阻碍文本扩宽的实体障碍。 */
-  private isTransparentDecorator(element: HTMLElement, style: CSSStyleDeclaration): boolean {
-    if (this.hasBoxVisual(element, style)) return false
-    if (style.pointerEvents === 'none') return true
-    if (['absolute', 'fixed'].includes(style.position)) {
+    if (style.display === 'none' || Number.parseFloat(style.opacity) === 0) return []
+    const boxes: ElementBox[] = []
+    const hasIntrinsicPaint = isSVGElement(element) || ['img', 'canvas', 'video', 'iframe', 'object', 'embed'].includes(element.localName)
+    if (!['hidden', 'collapse'].includes(style.visibility) &&
+      (hasIntrinsicPaint || this.hasBoxPaint(element as HTMLElement, style))) {
       const rect = element.getBoundingClientRect()
-      const root = this.layout.rootElement()
-      const rootRect = root?.getBoundingClientRect()
-      if (rootRect && rect.width >= rootRect.width * 0.95 && rect.height >= rootRect.height * 0.95) {
-        return true
+      if (rect.width > 0 && rect.height > 0) {
+        const box = this.layout.getPptxBox(element)
+        if (box) boxes.push(box)
       }
     }
-    return false
+    if (!hasIntrinsicPaint) {
+      for (const child of element.childNodes) boxes.push(...this.measureObstacles(child))
+    }
+    return boxes
   }
 
   /** 仅限制同高度对象所在方向，避免把上下排列的段落或原有越界当作新增碰撞。 */

@@ -303,11 +303,12 @@ describe('PPTXDomConverter', () => {
       toJSON: () => ({}),
     })
     vi.spyOn(labelElement, 'getBoundingClientRect').mockReturnValue({
-      x: 116,
+      // 父容器左边界 100px + border 1px + padding 16px，文字并未越出内容区。
+      x: 117,
       y: 96,
       top: 96,
-      left: 116,
-      right: 356,
+      left: 117,
+      right: 357,
       bottom: 120,
       width: 240,
       height: 24,
@@ -318,7 +319,7 @@ describe('PPTXDomConverter', () => {
 
     const labelOptions = slide.addText.mock.calls.find(([text]) => text === '反色背景 100 (bg-background-invert-100)')?.[1] as Record<string, unknown>
     const inchPerPx = 13.333 / 1920
-    const originalX = 116 * inchPerPx
+    const originalX = 117 * inchPerPx
     const originalWidth = 240 * inchPerPx
 
     expect(labelOptions?.w as number).toBeGreaterThan(originalWidth + 0.17)

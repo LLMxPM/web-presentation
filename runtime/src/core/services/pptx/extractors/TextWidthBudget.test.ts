@@ -233,7 +233,8 @@ describe('PPTX 标点与文本扩宽预算', () => {
     box(formula, 88, 900, 350, 36)
 
     const primitives = await extract(page)
-    const text = primitives.find(item => item.kind === 'text' && (item.text?.includes('1 + 2 + 3') || item.options?.text?.includes('1 + 2 + 3')))!
+    const text = primitives.find(item => item.kind === 'text' &&
+      (typeof item.text === 'string' ? item.text : item.text.map(run => run.text).join('')).includes('1 + 2 + 3'))!
     expect(text).toBeDefined()
 
     const extraPx = pixels(text.options?.w) - 350

@@ -9,8 +9,9 @@ import { INLINE_TEXT_TAGS } from '@/core/services/pptx/PPTXDomConverter.types'
 import type { PPTXDomConverterLayout } from '@/core/services/pptx/PPTXDomConverterLayout'
 import type { ShapeGeometryResolver, TextShapeGeometryKind } from './ShapeGeometryResolver'
 import { calculatePunctuationWidthGuard } from './TextPunctuationGuard'
-import { TextExpansionBoundsResolver } from './TextExpansionBounds'
+import { isOutsideTextExpansionBounds, TextExpansionBoundsResolver } from './TextExpansionBounds'
 import { measureSingleLineText } from './TextLineLayout'
+import { resolveCapsuleNativeInsetGuard, resolveCapsuleWidthGuardLimit } from './CapsuleWidthBudget'
 
 export type TextWidthGuardProfile = 'default' | 'capsule' | 'padded-shape' | 'fragment'
 
@@ -68,6 +69,7 @@ export class TextWidthGuard {
       }
 
       const bounds = this.expansionBounds.resolve(anchorNode, box)
+      if (isOutsideTextExpansionBounds(box, bounds)) return box
       const remainingWidth = this.layout.roundInch(Math.max(box.w, Math.min(parentBox.x + parentBox.w, bounds.right) - box.x))
       return remainingWidth > box.w
         ? {
@@ -134,6 +136,7 @@ export class TextWidthGuard {
     }
 
     const bounds = this.expansionBounds.resolve(anchorNode, box, slideWidthIn)
+    if (isOutsideTextExpansionBounds(box, bounds)) return box
     const leftRoom = Math.max(0, box.x - bounds.left)
     const rightRoom = Math.max(0, bounds.right - box.x - box.w)
     const allowLeftShift = !this.hasExplicitWidthConstraint(element)
@@ -372,9 +375,9 @@ export class TextWidthGuard {
       isPaddedShape,
     )
     const capsuleNativeInset = isCapsule
-      ? this.resolveCapsuleNativeInsetGuardIn(element, style, box)
+      ? resolveCapsuleNativeInsetGuard(this.layout, element, style, box)
       : 0
-    // 胶囊原生圆角内切补偿量：依据胶囊自身的理论几何内缩与宽度安全比例动态封顶，杜绝固定常数
+    // 几何内缩需求参与总预算，并接受胶囊自身尺寸上限。
     const capsuleInsetGuard = isCapsule
       ? Math.min(capsuleNativeInset, box.w * 0.11)
       : 0
@@ -399,9 +402,8 @@ export class TextWidthGuard {
     const contentAwareMaxGuard = contentComplexityGuard > 0
       ? contentComplexityGuard + (isFragment ? 0.03 : 0.02)
       : 0
-    // 胶囊最大保护量上限完全基于胶囊的几何尺寸（长宽比例），杜绝绝对魔数
     const capsuleMaxGuard = isCapsule
-      ? Math.max(capsuleInsetGuard, Math.min(box.w * 0.12, Math.max(box.h * 0.38, 0.04)))
+      ? resolveCapsuleWidthGuardLimit(box, capsuleNativeInset)
       : 0
     const maxGuard = Math.max(
       isCapsule ? capsuleMaxGuard : (isPaddedShape ? 0.12 : (isTextShape ? 0.04 : 0.08)),
@@ -411,7 +413,7 @@ export class TextWidthGuard {
       capsuleInsetGuard,
     )
     return Math.min(
-      maxGuard,
+      isCapsule ? capsuleMaxGuard : maxGuard,
       Math.max(
         minGuard,
         ratioGuard,
@@ -422,23 +424,6 @@ export class TextWidthGuard {
         typographicGuard,
       ),
     )
-  }
-
-  /**
-   * 计算 PPT 原生 roundRect 几何内切（DrawingML 内缩 il = 0.29289 * R）造成的可用文字宽度缩窄补偿。
-   */
-  private resolveCapsuleNativeInsetGuardIn(
-    element: HTMLElement,
-    style: CSSStyleDeclaration,
-    box: ElementBox,
-  ): number {
-    const radiusPx = this.layout.resolveElementCornerRadiusPx(element, style)
-    const maxRadiusPx = Math.min(box.h / this.layout.inchPerPxY(), box.w / this.layout.inchPerPxX()) / 2
-    const effectiveRadiusPx = radiusPx > 0 ? Math.min(radiusPx, maxRadiusPx) : maxRadiusPx
-    // 左右两侧原生内缩总和 = 2 * 0.29289 * R
-    const totalInsetPx = 2 * 0.29289 * effectiveRadiusPx
-    const measuredInsetPx = this.layout.cssPxToMeasuredPx(totalInsetPx)
-    return this.layout.roundInch(this.layout.measuredPxToInch(measuredInsetPx))
   }
 
   /** 优先观察真实文字行；显式多行直接保留，无布局环境才用盒高与行高回退。 */
