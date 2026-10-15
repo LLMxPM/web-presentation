@@ -41,6 +41,89 @@ async def test_build_artifacts_anonymous_disabled_get_and_head():
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
+async def test_build_artifacts_protected_access_flow(monkeypatch):
+    """测试私有构建授权 access 端点换取短 token，并携带该 token 成功浏览构建静态站。"""
+
+    from app.api.dependencies import get_current_user
+    from app.services.auth_service import AuthContext
+    from app.models.user import User
+    from app.models.project_build_job import ProjectBuildJob
+    from app.services.project_service import ProjectService
+    from app.services.project_build_service import ProjectBuildService
+    from app.services.project_build_artifact_proxy_service import ProjectBuildArtifactProxyService, BuildArtifactProxyResult
+
+    user = User(
+        id=99,
+        username="build_viewer",
+        display_name="Build Viewer",
+        password_hash="fake",
+        preview_size_presets={},
+    )
+    mock_auth = AuthContext(user=user, session_token="s-token", backend_session_id="bs-1")
+
+    job = ProjectBuildJob(
+        id=2,
+        project_id=1,
+        snapshot_release_id=10,
+        base_url="./",
+        status="succeeded",
+        artifact_storage_key="build-artifacts/1/2/attempts/1/dist.zip",
+        artifact_sha256="fake-sha",
+        artifact_size_bytes=100,
+    )
+
+    app.dependency_overrides[get_current_user] = lambda: mock_auth
+
+    try:
+        monkeypatch.setattr(ProjectService, "get", AsyncMock(return_value=None))
+        monkeypatch.setattr(ProjectBuildService, "get_job_by_project_and_id", AsyncMock(return_value=job))
+
+        mock_proxy_result = BuildArtifactProxyResult(
+            content=b"<!DOCTYPE html><html><body>SPA Index</body></html>",
+            media_type="text/html",
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
+        monkeypatch.setattr(ProjectBuildArtifactProxyService, "get_artifact_file", AsyncMock(return_value=mock_proxy_result))
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. 登录用户请求换取构建浏览短期授权
+            access_resp = await client.post("/api/projects/1/build-jobs/2/access")
+            assert access_resp.status_code == 200
+            data = access_resp.json()
+            assert "browse_url" in data
+            assert "token" in data
+            token = data["token"]
+
+            # 2. 携带 token 请求私有构建站点根文件
+            browse_resp = await client.get("/build-artifacts/1/2", params={"token": token})
+            assert browse_resp.status_code == 200
+            assert browse_resp.content == b"<!DOCTYPE html><html><body>SPA Index</body></html>"
+            assert browse_resp.headers["Cache-Control"] == "no-store"
+            # 验证返回了 wp_build_token Cookie
+            assert "wp_build_token" in browse_resp.cookies
+
+            # 3. 后续深层子资源请求自动带 Cookie 访问
+            sub_result = BuildArtifactProxyResult(
+                content=b"console.log('app.js');",
+                media_type="application/javascript",
+                headers={"Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff"},
+            )
+            monkeypatch.setattr(ProjectBuildArtifactProxyService, "get_artifact_file", AsyncMock(return_value=sub_result))
+
+            cookie_resp = await client.get(
+                "/build-artifacts/1/2/assets/app.js",
+                cookies=browse_resp.cookies,
+            )
+            assert cookie_resp.status_code == 200
+            assert cookie_resp.content == b"console.log('app.js');"
+            assert cookie_resp.headers["Cache-Control"] == "private, no-cache"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.unit
 def test_gateway_nginx_conf_blocks_public_and_build_artifacts():
     """验证 Gateway Nginx 配置已收口 /public 与 /build-artifacts，禁止代理到上游或回退到 Editor SPA。"""
 

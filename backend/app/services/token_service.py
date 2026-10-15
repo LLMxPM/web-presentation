@@ -334,3 +334,37 @@ class TokenService:
             audience=settings.runtime_service_token_audience,
             verify_exp=verify_exp,
         )
+
+    @classmethod
+    def generate_build_access_token(
+        cls,
+        *,
+        project_id: int,
+        job_id: int,
+        user_id: int,
+        expires_in_seconds: int = 300,
+    ) -> str:
+        """签发供私有构建浏览的短期访问令牌（默认 5 分钟）。"""
+
+        payload: dict[str, Any] = {
+            "aud": "build-artifact-browser",
+            "scope": "build-artifact-browse",
+            "project_id": int(project_id),
+            "job_id": int(job_id),
+            "user_id": int(user_id),
+        }
+        return cls.generate_signed_token(
+            payload,
+            expires_in_seconds=expires_in_seconds,
+            subject=f"user_{user_id}",
+        )
+
+    @classmethod
+    def verify_build_access_token(cls, token: str, *, verify_exp: bool = True) -> dict[str, Any]:
+        """校验私有构建浏览短期令牌。"""
+
+        return cls.verify_signed_token(
+            token,
+            audience="build-artifact-browser",
+            verify_exp=verify_exp,
+        )

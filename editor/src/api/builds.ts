@@ -73,6 +73,29 @@ export async function downloadProjectBuildArtifact(projectId: number, jobId: num
   window.URL.revokeObjectURL(downloadUrl)
 }
 
+export interface ProjectBuildJobAccessResponse {
+  browse_url: string
+  token: string
+  expires_at: string
+  expires_in_seconds: number
+}
+
+/**
+ * 获取私有构建产物浏览的短期访问授权与地址。
+ * @param projectId 项目 ID
+ * @param jobId 构建任务 ID
+ * @returns 授权与浏览地址
+ */
+export async function getProjectBuildJobAccess(
+  projectId: number,
+  jobId: number,
+): Promise<ProjectBuildJobAccessResponse> {
+  const { data } = await http.post<ProjectBuildJobAccessResponse>(
+    `/projects/${projectId}/build-jobs/${jobId}/access`,
+  )
+  return data
+}
+
 /**
  * 删除指定构建任务的 ZIP 产物，构建历史记录仍会保留。
  * @param projectId 项目 ID

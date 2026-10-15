@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user
 from app.core.exceptions import AppException
 from app.db.session import get_db_session
-from app.schemas.project_build import ProjectBuildAssetSummary, ProjectBuildCreateRequest, ProjectBuildJobResponse
+from app.schemas.project_build import (
+    ProjectBuildAssetSummary,
+    ProjectBuildCreateRequest,
+    ProjectBuildJobAccessResponse,
+    ProjectBuildJobResponse,
+)
 from app.services.auth_service import AuthContext
 from app.services.object_storage_service import ObjectStorageService
 from app.services.project_build_service import ProjectBuildService
@@ -130,3 +135,48 @@ async def delete_project_build_artifact(
     await ProjectService(session).get(project_id, user_id=current.user.id)
     await ProjectBuildService(session).delete_artifact(project_id=project_id, job_id=job_id)
     return Response(status_code=204)
+
+
+@router.post("/projects/{project_id}/build-jobs/{job_id}/access", response_model=ProjectBuildJobAccessResponse)
+async def create_project_build_job_access(
+    project_id: int,
+    job_id: int,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ProjectBuildJobAccessResponse:
+    """为当前登录用户签发私有构建产物浏览的短期访问授权。"""
+
+    import time
+    from datetime import datetime, timezone
+    from app.core.config import get_settings
+    from app.services.token_service import TokenService
+
+    service = ProjectBuildService(session)
+    job = await service.get_job_by_project_and_id(project_id, job_id)
+    await ProjectService(session).get(job.project_id, user_id=current.user.id)
+    if not job.artifact_storage_key:
+        raise AppException(
+            status_code=404,
+            code="BUILD_ARTIFACT_NOT_FOUND",
+            detail="当前构建任务尚未生成可浏览产物。",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    expires_in = 300
+    token = TokenService.generate_build_access_token(
+        project_id=project_id,
+        job_id=job_id,
+        user_id=current.user.id,
+        expires_in_seconds=expires_in,
+    )
+    expires_at = datetime.fromtimestamp(time.time() + expires_in, tz=timezone.utc).isoformat()
+    settings = get_settings()
+    public_base = settings.backend_public_base_url.rstrip("/")
+    browse_url = f"{public_base}/build-artifacts/{project_id}/{job_id}/?token={token}"
+
+    return ProjectBuildJobAccessResponse(
+        browse_url=browse_url,
+        token=token,
+        expires_at=expires_at,
+        expires_in_seconds=expires_in,
+    )

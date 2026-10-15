@@ -306,6 +306,7 @@ import {
   getProjectBuildAssetSummary,
   getLatestProjectBuildJob,
   getProjectBuildJob,
+  getProjectBuildJobAccess,
   listProjectBuildJobs,
 } from '@/api/builds'
 import {
@@ -1363,15 +1364,22 @@ async function handleBuildArtifactDownload(job: ProjectBuildJob): Promise<void> 
 }
 
 /**
- * 在新标签页打开指定构建任务的公开产物入口。
+ * 在新标签页打开指定构建任务的私有受保护产物入口。
  * @param job 构建任务
  */
-function handleBuildArtifactOpen(job: ProjectBuildJob): void {
-  if (!canOpenProjectBuildArtifact(job) || !job.artifact_proxy_url) {
+async function handleBuildArtifactOpen(job: ProjectBuildJob): Promise<void> {
+  if (!canOpenProjectBuildArtifact(job) || !projectDetails.value) {
     return
   }
 
-  window.open(job.artifact_proxy_url, '_blank', 'noopener,noreferrer')
+  try {
+    const access = await getProjectBuildJobAccess(projectDetails.value.id, job.id)
+    if (access.browse_url) {
+      window.open(access.browse_url, '_blank', 'noopener,noreferrer')
+    }
+  } catch (error) {
+    Message.error(getErrorMessage(error, '获取构建产物浏览授权失败。'))
+  }
 }
 
 /**

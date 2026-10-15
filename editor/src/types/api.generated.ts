@@ -2042,6 +2042,13 @@ export type ProjectBuildExtraAssetsConfig = {
   "asset_names"?: (string)[]
 }
 
+export type ProjectBuildJobAccessResponse = {
+  "browse_url": string
+  "token": string
+  "expires_at": string
+  "expires_in_seconds"?: number
+}
+
 export type ProjectBuildJobResponse = {
   "id": number
   "project_id": number

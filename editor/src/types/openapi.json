@@ -23639,6 +23639,74 @@
         }
       }
     },
+    "/api/projects/{project_id}/build-jobs/{job_id}/access": {
+      "post": {
+        "tags": [
+          "build-jobs"
+        ],
+        "summary": "Create Project Build Job Access",
+        "description": "为当前登录用户签发私有构建产物浏览的短期访问授权。",
+        "operationId": "create_project_build_job_access_api_projects__project_id__build_jobs__job_id__access_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectBuildJobAccessResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/testing/e2e-readiness": {
       "get": {
         "tags": [
@@ -23934,7 +24002,7 @@
           "build-artifacts"
         ],
         "summary": "Proxy Project Build Artifact",
-        "description": "公开代理构建产物中的静态文件；匿名访问已关闭。",
+        "description": "受保护的项目构建产物静态站点代理入口。\n\n必须携带有效的构建访问令牌（支持 query token 或 Cookie wp_build_token）；\n无凭证或凭证无效的匿名访问一律返回 404 及 no-store。",
         "operationId": "proxy_project_build_artifact_build_artifacts__project_id___job_id___artifact_path__get",
         "parameters": [
           {
@@ -23993,7 +24061,7 @@
           "build-artifacts"
         ],
         "summary": "Proxy Project Build Artifact",
-        "description": "公开代理构建产物中的静态文件；匿名访问已关闭。",
+        "description": "受保护的项目构建产物静态站点代理入口。\n\n必须携带有效的构建访问令牌（支持 query token 或 Cookie wp_build_token）；\n无凭证或凭证无效的匿名访问一律返回 404 及 no-store。",
         "operationId": "proxy_project_build_artifact_build_artifacts__project_id___job_id__get",
         "parameters": [
           {
@@ -37783,6 +37851,35 @@
         "type": "object",
         "title": "ProjectBuildExtraAssetsConfig",
         "description": "项目级构建额外资源配置，供整包构建补充动态资源依赖。"
+      },
+      "ProjectBuildJobAccessResponse": {
+        "properties": {
+          "browse_url": {
+            "type": "string",
+            "title": "Browse Url"
+          },
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "title": "Expires In Seconds",
+            "default": 300
+          }
+        },
+        "type": "object",
+        "required": [
+          "browse_url",
+          "token",
+          "expires_at"
+        ],
+        "title": "ProjectBuildJobAccessResponse",
+        "description": "项目构建产物私有浏览访问授权响应。"
       },
       "ProjectBuildJobResponse": {
         "properties": {

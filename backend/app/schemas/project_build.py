@@ -51,3 +51,12 @@ class ProjectBuildAssetSummary(BaseModel):
     extra_asset_names: list[str] = Field(default_factory=list)
     included_asset_names: list[str] = Field(default_factory=list)
     dynamic_module_paths: list[str] = Field(default_factory=list)
+
+
+class ProjectBuildJobAccessResponse(BaseModel):
+    """项目构建产物私有浏览访问授权响应。"""
+
+    browse_url: str
+    token: str
+    expires_at: str
+    expires_in_seconds: int = 300
