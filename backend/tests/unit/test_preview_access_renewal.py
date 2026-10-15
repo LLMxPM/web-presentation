@@ -1,0 +1,145 @@
+"""文件功能：测试 preview artifact 短期票据生成与登录会话续签接口 (W04)。"""
+
+from unittest.mock import AsyncMock
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from app.api.dependencies import get_current_user
+from app.core.exceptions import AppException
+from app.db.session import get_db_session
+from app.main import app
+from app.models.user import User
+from app.services.auth_service import AuthContext
+from app.services.preview_service import PreviewService
+from app.services.project_service import ProjectService
+from app.services.runtime_artifact_store import RuntimeArtifactStore
+
+
+@pytest.fixture
+def mock_session():
+    return AsyncMock()
+
+
+@pytest.fixture
+def mock_current_user():
+    user = User(id=42, username="testuser", display_name="Test User", password_hash="hash", preview_size_presets=[])
+    return AuthContext(user=user, session_token="mock-token", backend_session_id="mock-session-id")
+
+
+@pytest.mark.asyncio
+async def test_preview_artifact_renewal_success(mock_session, mock_current_user, monkeypatch):
+    """测试通过合法登录会话为存在的 artifact 续签预览票据成功。"""
+
+    artifact_id = "art-renew-123"
+    manifest = {
+        "artifact_id": artifact_id,
+        "preview_kind": "project",
+        "owner_scope": {
+            "scope_type": "project",
+            "project_id": "100",
+            "workspace_id": "1",
+        },
+        "entry_descriptor": {"entry_type": "route", "route": "/page-1"},
+        "asset_base_url": "/assets",
+        "assets": {},
+        "modules": {},
+    }
+
+    async def mock_get_manifest(self, aid):
+        return manifest if aid == artifact_id else None
+
+    # 模拟项目权限检查通过
+    async def mock_project_get(self, project_id, user_id):
+        assert project_id == 100
+        assert user_id == 42
+        mock_proj = AsyncMock()
+        mock_proj.id = 100
+        mock_proj.workspace_id = 1
+        return mock_proj
+
+    monkeypatch.setattr(RuntimeArtifactStore, "get_manifest", mock_get_manifest)
+    monkeypatch.setattr(ProjectService, "get", mock_project_get)
+
+    app.dependency_overrides[get_current_user] = lambda: mock_current_user
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(f"/api/preview-artifacts/{artifact_id}/access")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["artifact_id"] == artifact_id
+            assert "token" in data
+            assert "expires_at" in data
+            assert "/preview/artifacts/" in data["preview_url"]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db_session, None)
+
+
+@pytest.mark.asyncio
+async def test_preview_artifact_renewal_expired(mock_session, mock_current_user, monkeypatch):
+    """测试 artifact 过期后请求续签返回 410 PREVIEW_ARTIFACT_EXPIRED。"""
+
+    artifact_id = "art-expired-999"
+
+    async def mock_get_manifest(self, aid):
+        return None
+
+    monkeypatch.setattr(RuntimeArtifactStore, "get_manifest", mock_get_manifest)
+
+    app.dependency_overrides[get_current_user] = lambda: mock_current_user
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(f"/api/preview-artifacts/{artifact_id}/access")
+            assert resp.status_code == 410
+            data = resp.json()
+            assert data["code"] == "PREVIEW_ARTIFACT_EXPIRED"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db_session, None)
+
+
+@pytest.mark.asyncio
+async def test_preview_artifact_renewal_permission_denied(mock_session, mock_current_user, monkeypatch):
+    """测试若用户不再具备项目权限时续签被拒绝。"""
+
+    artifact_id = "art-no-perm"
+    manifest = {
+        "artifact_id": artifact_id,
+        "preview_kind": "project",
+        "owner_scope": {
+            "scope_type": "project",
+            "project_id": "200",
+            "workspace_id": "1",
+        },
+        "entry_descriptor": {"entry_type": "route", "route": "/"},
+        "asset_base_url": "/assets",
+    }
+
+    async def mock_get_manifest(self, aid):
+        return manifest if aid == artifact_id else None
+
+    async def mock_project_get(self, project_id, user_id):
+        raise AppException(status_code=403, code="PROJECT_ACCESS_DENIED", detail="无权访问该项目。")
+
+    monkeypatch.setattr(RuntimeArtifactStore, "get_manifest", mock_get_manifest)
+    monkeypatch.setattr(ProjectService, "get", mock_project_get)
+
+    app.dependency_overrides[get_current_user] = lambda: mock_current_user
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(f"/api/preview-artifacts/{artifact_id}/access")
+            assert resp.status_code == 403
+            data = resp.json()
+            assert data["code"] == "PROJECT_ACCESS_DENIED"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db_session, None)

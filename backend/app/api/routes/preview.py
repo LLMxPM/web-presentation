@@ -17,7 +17,11 @@ from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.logging_config import get_current_request_id
 from app.db.session import get_db_session
-from app.schemas.release import PreviewArtifactCreateRequest, PreviewArtifactResponse
+from app.schemas.release import (
+    PreviewArtifactAccessRenewalResponse,
+    PreviewArtifactCreateRequest,
+    PreviewArtifactResponse,
+)
 from app.services.auth_service import AuthContext
 from app.services.preview_service import PreviewService
 from app.services.preview_version_binding import bind_preview_runtime_version
@@ -26,8 +30,28 @@ from app.services.runtime_target_router import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
 
 router_admin = APIRouter()
+router_access = APIRouter()
 router_public = APIRouter(route_class=PreviewDocumentRoute)
 logger = logging.getLogger(__name__)
+
+
+@router_access.post(
+    "/preview-artifacts/{artifact_id}/access",
+    response_model=PreviewArtifactAccessRenewalResponse,
+    response_model_exclude_none=True,
+    summary="重新检查权限并为当前预览 artifact 续签短期访问票据",
+)
+async def renew_preview_artifact_access(
+    artifact_id: str,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PreviewArtifactAccessRenewalResponse:
+    """重新检查当前用户权限并为有效 artifact 换发新的短期预览票据 P。"""
+
+    return await PreviewService(session).renew_preview_access(
+        artifact_id=artifact_id,
+        user_id=current.user.id,
+    )
 
 
 @router_admin.post("/{project_id}/preview-artifacts", response_model=PreviewArtifactResponse, response_model_exclude_none=True)

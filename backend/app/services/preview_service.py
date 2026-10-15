@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import urlencode
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.exceptions import AppException
 from app.models.page import Page
 from app.services.project_artifact_builder import (
     ArtifactSnapshotProfile,
@@ -18,7 +20,11 @@ from app.services.project_artifact_builder import (
     ProjectArtifactBuilder,
     ProjectPageModuleOverride,
 )
-from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
+from app.schemas.release import (
+    PreviewArtifactAccessRenewalResponse,
+    PreviewArtifactResponse,
+    PreviewEntryDescriptor,
+)
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
 
@@ -98,6 +104,8 @@ class PreviewService:
         )
         artifact_store_duration_ms = round((time.perf_counter() - artifact_store_started_at) * 1000, 2)
         trace_id = f"req-{uuid.uuid4().hex[:8]}"
+        now_ts = int(time.time())
+        token_ttl_seconds = 300
         preview_token = TokenService.generate_preview_context_token(
             tenant_id=tenant_id,
             artifact_id=artifact_id,
@@ -108,7 +116,10 @@ class PreviewService:
             entry_descriptor=entry_descriptor_payload,
             asset_base_url=snapshot.asset_base_url,
             trace_id=trace_id,
+            expires_in_seconds=token_ttl_seconds,
         )
+        token_expires_at = datetime.fromtimestamp(now_ts + token_ttl_seconds, tz=UTC).isoformat()
+        artifact_expires_at = datetime.fromtimestamp(now_ts + settings.runtime_preview_artifact_ttl_seconds, tz=UTC).isoformat()
         logger.info(
             "预览 artifact 创建完成。",
             extra={
@@ -138,7 +149,69 @@ class PreviewService:
             viewport_height=snapshot.page_config.height,
             project_id=project_id,
             workspace_id=snapshot.project.workspace_id,
+            expires_at=token_expires_at,
+            artifact_expires_at=artifact_expires_at,
         )
+
+    async def renew_preview_access(
+        self,
+        *,
+        artifact_id: str,
+        user_id: int,
+    ) -> PreviewArtifactAccessRenewalResponse:
+        """为现有有效的 preview artifact 续签短期预览票据 P，重新校验项目与工作空间访问权限。"""
+
+        store = RuntimeArtifactStore()
+        manifest = await store.get_manifest(artifact_id)
+        if manifest is None:
+            raise AppException(
+                status_code=410,
+                code="PREVIEW_ARTIFACT_EXPIRED",
+                detail="预览 artifact 已过期或不存在，请重新创建预览。",
+            )
+
+        owner_scope = manifest.get("owner_scope") or {}
+        project_id_raw = owner_scope.get("project_id")
+        workspace_id_raw = owner_scope.get("workspace_id")
+        if project_id_raw:
+            from app.services.project_service import ProjectService
+            await ProjectService(self.session).get(int(project_id_raw), user_id=user_id)
+        elif workspace_id_raw:
+            from app.services.workspace_service import WorkspaceService
+            await WorkspaceService(self.session).validate_membership(int(workspace_id_raw), user_id=user_id)
+
+        settings = get_settings()
+        now_ts = int(time.time())
+        token_ttl_seconds = 300
+        trace_id = f"req-{uuid.uuid4().hex[:8]}"
+        tenant_id = f"tenant_{user_id}"
+
+        preview_token = TokenService.generate_preview_context_token(
+            tenant_id=tenant_id,
+            artifact_id=artifact_id,
+            preview_kind=str(manifest.get("preview_kind") or "project"),
+            scope_type=str(owner_scope.get("scope_type") or "project"),
+            workspace_id=workspace_id_raw or 0,
+            project_id=int(project_id_raw) if project_id_raw else None,
+            entry_descriptor=manifest.get("entry_descriptor") or {},
+            asset_base_url=str(manifest.get("asset_base_url") or ""),
+            trace_id=trace_id,
+            expires_in_seconds=token_ttl_seconds,
+        )
+
+        token_expires_at = datetime.fromtimestamp(now_ts + token_ttl_seconds, tz=UTC).isoformat()
+        preview_url = (
+            f"{settings.backend_public_base_url.rstrip('/')}/preview/artifacts/"
+            f"{artifact_id}?{urlencode({'token': preview_token})}"
+        )
+
+        return PreviewArtifactAccessRenewalResponse(
+            preview_url=preview_url,
+            token=preview_token,
+            expires_at=token_expires_at,
+            artifact_id=artifact_id,
+        )
+
 
     @staticmethod
     def _append_manifest_extensions(

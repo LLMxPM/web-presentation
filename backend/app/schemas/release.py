@@ -67,3 +67,16 @@ class PreviewArtifactResponse(BaseModel):
     runtime_kit_manifest_version: str | None = None
     asset_id: int | None = None
     asset_name: str | None = None
+    expires_at: str | None = None
+    artifact_expires_at: str | None = None
+
+
+class PreviewArtifactAccessRenewalResponse(BaseModel):
+    """预览票据续签响应。"""
+
+    preview_url: str
+    token: str
+    expires_at: str
+    artifact_expires_at: str | None = None
+    artifact_id: str
+
