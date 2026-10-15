@@ -102,8 +102,20 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
     runtime_url = f"{settings.resolve_runtime_role_base_url('preview')}/__preview"
     runtime_public_base_url = str(settings.runtime_public_base_url or settings.runtime_base_url).strip().rstrip("/")
 
-    headers = dict(request.headers)
-    headers.pop("host", None)
+    # 实施规划第 198 行：Backend 到 Runtime 的代理头使用允许列表，
+    # 严格剥除浏览器业务 Cookie、Authorization、X-Workspace-ID 等敏感凭据。
+    ALLOWED_FORWARD_HEADERS = {
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "user-agent",
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "sec-ch-ua-platform",
+    }
+    headers: dict[str, str] = {
+        k: v for k, v in request.headers.items() if k.lower() in ALLOWED_FORWARD_HEADERS
+    }
     # 期望版本来自服务端绑定的已验签票据，覆盖浏览器可能自填的请求头。
     try:
         claims = TokenService.verify_preview_context_token(preview_token)
@@ -136,9 +148,9 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
         status_code=response.status_code,
         headers={
             "Content-Type": response.headers.get("Content-Type", "text/html"),
-            "Cache-Control": response.headers.get("Cache-Control", "no-store"),
-            **({"Referrer-Policy": response.headers["Referrer-Policy"]}
-               if "Referrer-Policy" in response.headers else {}),
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
             **({"x-runtime-version-fingerprint": response.headers["x-runtime-version-fingerprint"]}
                if "x-runtime-version-fingerprint" in response.headers else {}),
         },

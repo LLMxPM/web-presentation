@@ -86,3 +86,41 @@ async def test_missing_runtime_release_identity_fails_closed(authenticated_clien
     with pytest.raises(AppException) as result:
         await bind_preview_runtime_version(claims)
     assert result.value.code == "RUNTIME_VERSION_UNKNOWN"
+
+
+async def test_preview_proxy_strips_sensitive_client_headers_and_sets_security_headers(authenticated_client, monkeypatch):
+    """预览代理剥除业务 Cookie、Authorization 等请求头，并返回 no-store 与 nosniff 等安全响应头。"""
+
+    token = _generate_preview_token()
+    original = TokenService.verify_preview_context_token(token)
+    received_headers = {}
+
+    def runtime(request):
+        if request.url.path == "/__runtime_healthz":
+            return httpx.Response(200, json={"runtime_kit_version": "1.0.0", "build_id": "release-a"})
+        for k, v in request.headers.items():
+            received_headers[k.lower()] = v
+        return httpx.Response(200, content="<html><body>preview</body></html>", headers={"Content-Type": "text/html"})
+
+    _mock_runtime(monkeypatch, runtime)
+    response = await authenticated_client.get(
+        f"/preview/artifacts/{original['artifact_id']}",
+        params={"token": token},
+        headers={
+            "cookie": "auth_token=super_secret_cookie; session_id=sess_123",
+            "authorization": "Bearer confidential_token",
+            "x-workspace-id": "ws-sensitive-999",
+            "user-agent": "SafeAgent/1.0",
+            "accept": "text/html",
+        },
+    )
+    assert response.status_code == 200
+    assert "cookie" not in received_headers
+    assert "authorization" not in received_headers
+    assert "x-workspace-id" not in received_headers
+    assert received_headers.get("user-agent") == "SafeAgent/1.0"
+    assert received_headers.get("accept") == "text/html"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
