@@ -16,6 +16,8 @@ router = APIRouter()
 
 @router.get("/build-artifacts/{project_id}/{job_id}")
 @router.get("/build-artifacts/{project_id}/{job_id}/{artifact_path:path}")
+@router.head("/build-artifacts/{project_id}/{job_id}", include_in_schema=False)
+@router.head("/build-artifacts/{project_id}/{job_id}/{artifact_path:path}", include_in_schema=False)
 async def proxy_project_build_artifact(
     project_id: int,
     job_id: int,
