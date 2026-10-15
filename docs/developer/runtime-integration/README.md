@@ -7,6 +7,7 @@ Runtime 接入文档说明平台如何组织和调用 `runtime/` 服务，以及
 | 文档 | 内容 |
 | :--- | :--- |
 | [运行时开发与维护](./runtime-workflow.md) | Runtime 本地开发、质量门禁、契约验证与构建部署 |
+| [用户文件存储鉴权与缓存实施规划](./file-storage-auth-cache-plan.md) | 当前文件读取链路、artifact 与任务授权、缓存和存储边界、12 个工作包及发布验收；待实施 |
 | [Runtime Kit 契约](./runtime-kit-contract.md) | manifest 命名、版本化 import path 和 Backend 校验 |
 | [previewSchema 契约](./preview-schema.md) | 组件预览 schema 的能力边界和校验要求 |
 | [三维资源复用与 Three.js 渲染接入分析](./threejs-rendering-and-management-analysis.md) | 标准资源、渲染器与引用实例的边界，GLB/glTF 管理、快照与分发；当前为设计分析 |

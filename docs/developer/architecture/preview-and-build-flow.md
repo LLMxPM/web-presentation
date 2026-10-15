@@ -7,9 +7,11 @@
 1. Editor 保存页面源码或配置。
 2. Backend 校验用户权限和源码导入边界。
 3. Backend 创建 preview artifact，并为 Runtime 签发短期上下文令牌。
-4. Editor iframe 访问 Runtime 预览入口。
-5. Runtime 回源 Backend 读取上下文、配置包、资源和远程模块。
-6. Runtime 渲染页面并把结果展示给 Editor。
+4. Editor iframe 打开 Backend 返回的签名预览地址；Backend 校验票据并代理 Runtime 生成的 HTML。
+5. Runtime 使用 artifact 服务票据回源 Backend 读取 manifest、配置包和模块源码，交给 Vite 作为远程虚拟模块编译；浏览器向 Runtime 请求编译后的模块。
+6. iframe 内的浏览器按 manifest 资源映射向 Backend 请求图片、字体等素材；部分 S3 资源由 Backend 返回签名跳转。浏览器执行 Runtime 页面并展示结果。
+
+单页与整项目预览使用相同机制，分别以模块或路由作为入口；普通预览不把全部素材先复制到 Runtime 临时目录。源码及素材完整落盘发生在下述项目构建流程。当前素材公开入口与源码票据的权限边界不同，收口方案见[用户文件存储鉴权与缓存实施规划](../runtime-integration/file-storage-auth-cache-plan.md)，该规划尚未实施。
 
 页面 iframe 使用版本 1 状态消息回传最终结果：成功发送 `page-preview:ready`，初始化或页面模块失败发送 `page-preview:error`；payload 必须包含当前 `artifactId`。Editor 同时校验消息窗口、origin、协议版本和 artifact，忽略旧预览迟到消息。Editor 在等待 8 秒后展示弱网提示，30 秒后进入可重试错误；超时不会销毁 iframe，因此同一 artifact 的迟到 ready 仍可恢复预览。
 
@@ -24,6 +26,8 @@
 1. Backend 持久化渲染请求，并按租约和并发限制调度受信 Renderer。
 2. Renderer 为本次执行创建独立 Chromium 和 Context，加载 Runtime 的受保护预览页面。
 3. Renderer 等待页面就绪，生成截图或诊断结果并回传 Backend；Backend 关联任务与产物。
+
+页面截图服务把素材交付模式设为 `backend_cache`：Chromium 从 Backend `/public/cached-assets/...` 读取素材，S3 对象可缓存在 Backend 的 `_object-cache`；这不是 Runtime 临时工作区。Renderer 的预览鉴权头只附加到初始文档请求，不能假设后续图片和字体请求带有用户会话或同一组头。
 
 截图任务需要关注 viewport、超时、并发、资源加载和页面 visual-ready 状态。Backend 进程不直接启动浏览器。
 
