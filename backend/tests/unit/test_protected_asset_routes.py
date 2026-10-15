@@ -263,3 +263,69 @@ async def test_preview_protected_asset_if_range_handling(monkeypatch):
         )
         assert resp_mismatch.status_code == 200
         assert resp_mismatch.content == b"0123456789abcdef"
+
+
+@pytest.mark.asyncio
+async def test_editor_page_screenshot_content(monkeypatch, tmp_path):
+    """测试 Editor 页面受保护截图读取端点：验证 get_model ORM 属性、latest 访问与流式交付。"""
+
+    from app.api.dependencies import get_current_user
+    from app.services.auth_service import AuthContext
+    from app.models.user import User
+    from app.models.page import Page
+    from app.services.page_service import PageService
+    from app.services.object_storage_service import ObjectStorageService
+    from contextlib import asynccontextmanager
+
+    user = User(
+        id=1,
+        username="editor_user",
+        display_name="Editor User",
+        password_hash="fake",
+        preview_size_presets={},
+    )
+    mock_auth = AuthContext(user=user, session_token="session-token", backend_session_id="bsid-1")
+
+    mock_page = Page(
+        id=101,
+        workspace_id=1,
+        project_id=2,
+        code="slide-101",
+        title="Slide 101",
+        screenshot_storage_key="page-screenshots/101/v1/conf/1920x1080.png",
+    )
+
+    test_png = b"\x89PNG\r\n\x1a\nscreenshot-for-editor"
+    screenshot_file = tmp_path / "slide-101.png"
+    screenshot_file.write_bytes(test_png)
+
+    @asynccontextmanager
+    async def mock_open_object(self, storage_key, **kwargs):
+        yield screenshot_file
+
+    app.dependency_overrides[get_current_user] = lambda: mock_auth
+
+    try:
+        monkeypatch.setattr(PageService, "get_model", AsyncMock(return_value=mock_page))
+        monkeypatch.setattr(ObjectStorageService, "open_object_for_read", mock_open_object)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/pages/101/screenshots/latest/content")
+            assert resp.status_code == 200
+            assert resp.content == test_png
+            assert resp.headers["Cache-Control"] == "private, no-cache"
+            etag = resp.headers["ETag"]
+
+            # 条件请求 304
+            resp_304 = await client.get(
+                "/api/pages/101/screenshots/latest/content",
+                headers={"If-None-Match": etag},
+            )
+            assert resp_304.status_code == 304
+
+            # 未知 ID 返回 404
+            resp_404 = await client.get("/api/pages/101/screenshots/not-exist-shot/content")
+            assert resp_404.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

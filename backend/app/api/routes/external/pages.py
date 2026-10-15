@@ -423,55 +423,47 @@ async def get_external_page_screenshot_content(
     """External API 读取页面已生成的截图产物。"""
 
     import hashlib
+    from fastapi.responses import StreamingResponse
     from app.services.file_auth_service import FileAuthService
     from app.services.object_storage_service import ObjectStorageService
+    from app.services.page_screenshot_service import PageScreenshotService
 
-    page = await PageService(session).get(page_id, user_id=auth.user.id)
-    if not page or not page.screenshot_storage_key:
-        raise AppException(
-            status_code=404,
-            code="PAGE_SCREENSHOT_NOT_FOUND",
-            detail="页面截图不存在。",
-            headers={"Cache-Control": "no-store"},
-        )
+    page = await PageService(session).get_model(page_id, user_id=auth.user.id)
     await auth.ensure_workspace_access(page.workspace_id or x_workspace_id, session)
+    storage_key, filename = await PageScreenshotService.resolve_screenshot_artifact(session, page, screenshot_id)
 
-    content = await ObjectStorageService().read_object(page.screenshot_storage_key)
-    total_size = len(content)
-    etag = hashlib.sha256(content).hexdigest()
+    async with ObjectStorageService().open_object_for_read(storage_key) as file_path:
+        total_size = file_path.stat().st_size
+        etag = hashlib.sha256(f"{storage_key}:{file_path.stat().st_mtime_ns}".encode()).hexdigest()
 
-    if FileAuthService.evaluate_preconditions(request, etag):
-        return Response(
-            status_code=304,
-            headers=FileAuthService.build_protected_headers(etag=etag, total_size=total_size),
+        if FileAuthService.evaluate_preconditions(request, etag):
+            return Response(
+                status_code=304,
+                headers=FileAuthService.build_protected_headers(etag=etag, total_size=total_size),
+            )
+
+        range_span = None
+        range_header = request.headers.get("range")
+        if range_header and FileAuthService.evaluate_if_range(request, etag):
+            range_span = FileAuthService.parse_single_range(range_header, total_size)
+
+        headers = FileAuthService.build_protected_headers(
+            etag=etag,
+            total_size=total_size,
+            range_span=range_span,
+            is_download=download == 1,
+            original_name=filename,
         )
 
-    range_span = FileAuthService.parse_single_range(request.headers.get("range"), total_size)
-    filename = f"{page.code or f'page-{page.id}'}-screenshot.png"
-    headers = FileAuthService.build_protected_headers(
-        etag=etag,
-        total_size=total_size,
-        range_span=range_span,
-        is_download=download == 1,
-        original_name=filename,
-    )
+        if request.method == "HEAD":
+            return Response(status_code=200 if range_span is None else 206, media_type="image/png", headers=headers)
 
-    if request.method == "HEAD":
-        return Response(status_code=200 if range_span is None else 206, media_type="image/png", headers=headers)
-
-    if range_span is not None:
-        start, end = range_span
-        return Response(
-            content=content[start : end + 1],
-            status_code=206,
+        start = 0 if range_span is None else range_span[0]
+        length = total_size if range_span is None else (range_span[1] - range_span[0] + 1)
+        return StreamingResponse(
+            FileAuthService.stream_file_chunks(file_path, start=start, length=length),
+            status_code=200 if range_span is None else 206,
             media_type="image/png",
             headers=headers,
         )
-
-    return Response(
-        content=content,
-        status_code=200,
-        media_type="image/png",
-        headers=headers,
-    )
 

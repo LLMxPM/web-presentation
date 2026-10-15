@@ -591,3 +591,72 @@ class PageScreenshotService:
         safe_name = re.sub(r'[\\/:*?"<>|\s]+', "-", raw_name).strip("-")[:64] or f"page-{page.id}"
         version_suffix = f"-v{page.screenshot_version_no}" if page.screenshot_version_no else ""
         return f"{index:02d}-{safe_name}{version_suffix}.png"
+
+    @classmethod
+    async def resolve_screenshot_artifact(
+        cls,
+        session: AsyncSession,
+        page: Page,
+        screenshot_id: str,
+    ) -> tuple[str, str]:
+        """解析目标页面的截图 storage_key 与建议文件名。
+
+        支持：
+        - "latest" / "current"：读取页面当前截图指针；
+        - 数字 ID：读取对应已成功执行的 PageScreenshotJob 产物；
+        - 找不到或不属于该页面时抛出 404 PAGE_SCREENSHOT_NOT_FOUND。
+
+        Args:
+            session: 异步数据库会话。
+            page: 目标页面 ORM 对象。
+            screenshot_id: 截图标识符（latest、current 或数字 ID）。
+
+        Returns:
+            (storage_key, filename) 元组。
+        """
+
+        from sqlalchemy import select
+        from app.models.page_screenshot_job import PageScreenshotJob
+
+        clean_id = str(screenshot_id).strip()
+        if clean_id in ("latest", "current"):
+            if not page.screenshot_storage_key:
+                raise AppException(
+                    status_code=404,
+                    code="PAGE_SCREENSHOT_NOT_FOUND",
+                    detail="当前页面尚未生成可用截图。",
+                    headers={"Cache-Control": "no-store"},
+                )
+            filename = f"{page.code or f'page-{page.id}'}-screenshot-latest.png"
+            return str(page.screenshot_storage_key), filename
+
+        if clean_id.isdigit():
+            job_id = int(clean_id)
+            stmt = select(PageScreenshotJob).where(
+                PageScreenshotJob.id == job_id,
+                PageScreenshotJob.page_id == page.id,
+                PageScreenshotJob.status == "succeeded",
+            )
+            job = (await session.execute(stmt)).scalar_one_or_none()
+            if job is None:
+                raise AppException(
+                    status_code=404,
+                    code="PAGE_SCREENSHOT_NOT_FOUND",
+                    detail=f"指定的页面截图记录 ({screenshot_id}) 不存在或尚未就绪。",
+                    headers={"Cache-Control": "no-store"},
+                )
+            storage_key = cls.build_page_screenshot_storage_key(
+                page_id=page.id,
+                page_version_no=job.target_page_version_no,
+                config_hash=job.config_hash,
+                viewport=CaptureViewport(width=job.viewport_width, height=job.viewport_height),
+            )
+            filename = f"{page.code or f'page-{page.id}'}-v{job.target_page_version_no}-screenshot.png"
+            return storage_key, filename
+
+        raise AppException(
+            status_code=404,
+            code="PAGE_SCREENSHOT_NOT_FOUND",
+            detail=f"未识别的页面截图标识 ({screenshot_id})。",
+            headers={"Cache-Control": "no-store"},
+        )

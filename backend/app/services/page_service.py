@@ -103,6 +103,17 @@ class PageService:
             route_bindings = (await ProjectRouteService(self.session).build_page_bindings_map(page_model.project_id)).get(page_model.id)
         return await self._to_item(page_model, route_bindings=route_bindings)
 
+    async def get_model(self, page_id: int, *, user_id: int | None = None) -> Page:
+        """获取单个页面 ORM 模型，并在传入用户时校验工作空间访问权。
+
+        供内部受保护文件流式读取等直接需要底层 storage_key 等 ORM 属性的场景使用。
+        """
+
+        page_model = await self._get_page_or_raise(page_id)
+        if user_id is not None:
+            await self._ensure_page_access(page_model, user_id=user_id)
+        return page_model
+
     async def create(
         self,
         payload: PageCreateRequest,

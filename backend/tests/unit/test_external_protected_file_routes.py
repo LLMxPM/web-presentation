@@ -144,45 +144,85 @@ async def test_external_page_screenshot_content(mock_auth, monkeypatch):
             project_id=2,
             code="cover-slide",
             title="Cover",
-            screenshot_storage_key="screenshots/cover.png",
+            screenshot_storage_key="page-screenshots/5/v1/conf/1920x1080.png",
         )
 
-        async def mock_get_page(self, page_id, user_id=None):
+        from app.schemas.page import PageItem, PageFileType, RecordStatus
+        from datetime import datetime
+
+        dummy_page_item = PageItem(
+            id=5,
+            code="cover-slide",
+            file_type=PageFileType.VUE,
+            title="Cover",
+            summary=None,
+            page_content="<template><div></div></template>",
+            current_version_no=1,
+            status=RecordStatus.ACTIVE,
+            workspace_id=1,
+            project_id=2,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            created_by=1,
+            updated_by=1,
+        )
+
+        async def mock_get(self, page_id, user_id=None):
+            return dummy_page_item
+
+        async def mock_get_model(self, page_id, user_id=None):
             return mock_page
 
-        screenshot_bytes = b"png-screenshot-binary-data"
+        screenshot_bytes = b"\x89PNG\r\n\x1a\npng-screenshot-binary-data"
 
-        async def mock_read_object(self, storage_key):
-            return screenshot_bytes
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+            tf.write(screenshot_bytes)
+            temp_screenshot_path = Path(tf.name)
 
-        monkeypatch.setattr(PageService, "get", mock_get_page)
-        monkeypatch.setattr(ObjectStorageService, "read_object", mock_read_object)
+        from contextlib import asynccontextmanager
 
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            headers = {
-                "Authorization": "Bearer pat_test_123",
-                "X-Workspace-ID": "1",
-            }
+        @asynccontextmanager
+        async def mock_open_object(self, storage_key, **kwargs):
+            yield temp_screenshot_path
 
-            resp = await client.get("/api/v1/pages/5/screenshots/shot-1/content", headers=headers)
-            assert resp.status_code == 200
-            assert resp.content == screenshot_bytes
-            assert resp.headers["Cache-Control"] == "private, no-cache"
-            etag = resp.headers["ETag"]
+        monkeypatch.setattr(PageService, "get", mock_get)
+        monkeypatch.setattr(PageService, "get_model", mock_get_model)
+        monkeypatch.setattr(ObjectStorageService, "open_object_for_read", mock_open_object)
 
-            # 条件请求 304
-            resp_304 = await client.get(
-                "/api/v1/pages/5/screenshots/shot-1/content",
-                headers={**headers, "If-None-Match": etag},
-            )
-            assert resp_304.status_code == 304
-            assert resp_304.content == b""
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                headers = {
+                    "Authorization": "Bearer pat_test_123",
+                    "X-Workspace-ID": "1",
+                }
 
-            # HEAD
-            resp_head = await client.head("/api/v1/pages/5/screenshots/shot-1/content", headers=headers)
-            assert resp_head.status_code == 200
-            assert resp_head.content == b""
+                # 1. 正常读取 latest 截图
+                resp = await client.get("/api/v1/pages/5/screenshots/latest/content", headers=headers)
+                assert resp.status_code == 200
+                assert resp.content == screenshot_bytes
+                assert resp.headers["Cache-Control"] == "private, no-cache"
+                etag = resp.headers["ETag"]
+
+                # 2. 条件请求 304
+                resp_304 = await client.get(
+                    "/api/v1/pages/5/screenshots/latest/content",
+                    headers={**headers, "If-None-Match": etag},
+                )
+                assert resp_304.status_code == 304
+                assert resp_304.content == b""
+
+                # 3. HEAD
+                resp_head = await client.head("/api/v1/pages/5/screenshots/latest/content", headers=headers)
+                assert resp_head.status_code == 200
+                assert resp_head.content == b""
+
+                # 4. 未知 screenshot_id 返回 404
+                resp_404 = await client.get("/api/v1/pages/5/screenshots/unknown-id/content", headers=headers)
+                assert resp_404.status_code == 404
+        finally:
+            if temp_screenshot_path.exists():
+                temp_screenshot_path.unlink()
     finally:
         app.dependency_overrides.pop(get_db_session, None)
         app.dependency_overrides.pop(get_external_auth_context, None)
