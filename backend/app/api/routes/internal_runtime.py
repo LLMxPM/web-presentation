@@ -372,6 +372,45 @@ async def get_preview_artifact_config_bundle(
     return release.config_bundle
 
 
+@router.api_route(
+    "/internal/runtime/preview-artifacts/{artifact_id}/assets/{file_hash}",
+    methods=["GET", "HEAD"],
+    summary="Runtime 内部回源读取受保护素材",
+)
+async def get_internal_runtime_protected_asset(
+    artifact_id: str,
+    file_hash: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    download: int = 0,
+):
+    """Runtime 或构建 Worker 内部回源读取受保护素材，验证服务票据与快照归属。"""
+
+    from app.services.file_auth_service import FileAuthService
+
+    manifest = await RuntimeArtifactStore().get_manifest(artifact_id)
+    if manifest is None:
+        release = await _get_release_or_404(session, artifact_id)
+        manifest = dict(release.manifest or {})
+
+    claims = FileAuthService.verify_internal_asset_access(
+        request=request,
+        artifact_id=artifact_id,
+        file_hash=file_hash,
+        manifest=manifest,
+    )
+    return await FileAuthService.serve_protected_artifact_asset(
+        request=request,
+        artifact_id=artifact_id,
+        file_hash=file_hash,
+        claims=claims,
+        manifest=manifest,
+        session=session,
+        is_download=download == 1,
+        is_head=request.method == "HEAD",
+    )
+
+
 @router.get("/internal/runtime/preview-artifacts/{artifact_id}/modules")
 async def get_preview_artifact_module(
     artifact_id: str,

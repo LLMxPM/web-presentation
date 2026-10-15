@@ -4,7 +4,7 @@ import json
 import urllib.parse
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -193,19 +193,142 @@ async def create_workspace_asset_content(
     return await _build_asset_response(session, workspace_id, asset)
 
 
-@router.get("/workspaces/{workspace_id}/assets/{asset_id}/content", response_model=AssetContentResponse)
+@router.get("/workspaces/{workspace_id}/assets/{asset_id}/content")
 async def get_workspace_asset_content(
     workspace_id: int,
     asset_id: int,
+    request: Request,
     _: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> AssetContentResponse:
-    """读取可编辑资源的文本内容。"""
+    hash: str | None = Query(None, description="可选指定版本 hash"),
+    raw: int = Query(0, description="1 为直接返回二进制文件流"),
+    download: int = Query(0, description="1 为触发附件下载"),
+):
+    """读取可编辑资源的文本内容或二进制文件流。缺省返回 JSON，raw=1 或指定 hash 时返回受保护文件流。"""
 
     service = AssetService(session)
     asset = await service._get_asset_or_raise(workspace_id, asset_id)
-    content = await service.get_asset_content(workspace_id, asset_id)
-    return AssetContentResponse(asset=await _build_asset_response(session, workspace_id, asset), content=content)
+
+    # 默认未指定 raw 且未指定 hash 时，返回原结构化 JSON 响应
+    if raw == 0 and not hash and download == 0 and request.method != "HEAD":
+        content = await service.get_asset_content(workspace_id, asset_id)
+        return AssetContentResponse(asset=await _build_asset_response(session, workspace_id, asset), content=content)
+
+    return await _serve_workspace_asset_binary(
+        request=request,
+        workspace_id=workspace_id,
+        asset=asset,
+        service=service,
+        target_hash=hash,
+        is_download=download == 1,
+        is_head=request.method == "HEAD",
+    )
+
+
+@router.api_route(
+    "/workspaces/{workspace_id}/assets/{asset_id}/file",
+    methods=["GET", "HEAD"],
+    summary="受保护的工作空间资产二进制文件读取",
+)
+async def get_workspace_asset_file(
+    workspace_id: int,
+    asset_id: int,
+    request: Request,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    hash: str | None = Query(None, description="可选指定版本 hash"),
+    download: int = Query(0, description="1 为触发附件下载"),
+):
+    """受保护的工作空间资产二进制读取入口，支持版本 hash、ETag 304 与 Range。"""
+
+    service = AssetService(session)
+    asset = await service._get_asset_or_raise(workspace_id, asset_id)
+    return await _serve_workspace_asset_binary(
+        request=request,
+        workspace_id=workspace_id,
+        asset=asset,
+        service=service,
+        target_hash=hash,
+        is_download=download == 1,
+        is_head=request.method == "HEAD",
+    )
+
+
+async def _serve_workspace_asset_binary(
+    *,
+    request: Request,
+    workspace_id: int,
+    asset: WorkspaceAsset,
+    service: AssetService,
+    target_hash: str | None,
+    is_download: bool,
+    is_head: bool,
+) -> Response:
+    """统一向客户端交付工作空间资产文件，支持版本校验、ETag 304 与 Range。"""
+
+    import mimetypes
+    from app.core.exceptions import AppException
+    from app.services.file_auth_service import FileAuthService
+
+    if target_hash and str(target_hash).strip().lower() != str(asset.file_hash).strip().lower():
+        raise AppException(
+            status_code=404,
+            code="FILE_NOT_FOUND",
+            detail="指定的资源版本不存在或已被替换。",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    driver = service._get_storage_driver()
+    media_type, _ = mimetypes.guess_type(asset.original_name)
+    resolved_media_type = asset.content_type or media_type or "application/octet-stream"
+    etag = asset.file_hash
+    total_size = asset.file_size
+
+    if FileAuthService.evaluate_preconditions(request, etag):
+        return Response(
+            status_code=304,
+            headers=FileAuthService.build_protected_headers(etag=etag, total_size=total_size),
+        )
+
+    range_span = FileAuthService.parse_single_range(request.headers.get("range"), total_size)
+    headers = FileAuthService.build_protected_headers(
+        etag=etag,
+        total_size=total_size,
+        range_span=range_span,
+        is_download=is_download,
+        original_name=asset.original_name,
+    )
+
+    if is_head:
+        return Response(status_code=200 if range_span is None else 206, media_type=resolved_media_type, headers=headers)
+
+    async with driver.open_for_read(
+        workspace_id,
+        asset.file_name,
+        expected_sha256=asset.file_hash,
+        expected_size=asset.file_size,
+    ) as local_file_path:
+        if range_span is not None:
+            start, end = range_span
+            with open(local_file_path, "rb") as f:
+                f.seek(start)
+                chunk = f.read(end - start + 1)
+            return Response(
+                content=chunk,
+                status_code=206,
+                media_type=resolved_media_type,
+                headers=headers,
+            )
+
+        with open(local_file_path, "rb") as f:
+            content = f.read()
+        return Response(
+            content=content,
+            status_code=200,
+            media_type=resolved_media_type,
+            headers=headers,
+        )
+
 
 
 @router.post("/workspaces/{workspace_id}/assets/{asset_id}/preview-artifact", response_model=PreviewArtifactResponse, response_model_exclude_none=True)

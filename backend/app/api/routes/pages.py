@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -299,3 +299,73 @@ async def delete_page(
 
     await PageService(session).delete(page_id, user_id=current.user.id)
     return MessageResponse(message="页面已删除。")
+
+
+@router.api_route(
+    "/{page_id}/screenshots/{screenshot_id}/content",
+    methods=["GET", "HEAD"],
+    summary="受保护的页面截图读取接口",
+)
+async def get_page_screenshot_content(
+    page_id: int,
+    screenshot_id: str,
+    request: Request,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    download: int = 0,
+):
+    """受保护的页面截图读取入口，校验页面访问权限并支持 ETag 304 与 Range。"""
+
+    import hashlib
+    from app.core.exceptions import AppException
+    from app.services.file_auth_service import FileAuthService
+    from app.services.object_storage_service import ObjectStorageService
+
+    page = await PageService(session).get(page_id, user_id=current.user.id)
+    if not page or not page.screenshot_storage_key:
+        raise AppException(
+            status_code=404,
+            code="PAGE_SCREENSHOT_NOT_FOUND",
+            detail="页面截图不存在。",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    content = await ObjectStorageService().read_object(page.screenshot_storage_key)
+    total_size = len(content)
+    etag = hashlib.sha256(content).hexdigest()
+
+    if FileAuthService.evaluate_preconditions(request, etag):
+        return Response(
+            status_code=304,
+            headers=FileAuthService.build_protected_headers(etag=etag, total_size=total_size),
+        )
+
+    range_span = FileAuthService.parse_single_range(request.headers.get("range"), total_size)
+    filename = f"{page.code or f'page-{page.id}'}-screenshot.png"
+    headers = FileAuthService.build_protected_headers(
+        etag=etag,
+        total_size=total_size,
+        range_span=range_span,
+        is_download=download == 1,
+        original_name=filename,
+    )
+
+    if request.method == "HEAD":
+        return Response(status_code=200 if range_span is None else 206, media_type="image/png", headers=headers)
+
+    if range_span is not None:
+        start, end = range_span
+        return Response(
+            content=content[start : end + 1],
+            status_code=206,
+            media_type="image/png",
+            headers=headers,
+        )
+
+    return Response(
+        content=content,
+        status_code=200,
+        media_type="image/png",
+        headers=headers,
+    )
+

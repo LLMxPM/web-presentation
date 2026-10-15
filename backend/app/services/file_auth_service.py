@@ -392,3 +392,145 @@ class FileAuthService:
             headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{encoded_name}"
 
         return headers
+
+    @classmethod
+    async def serve_protected_artifact_asset(
+        cls,
+        *,
+        request: Request,
+        artifact_id: str,
+        file_hash: str,
+        claims: dict[str, Any],
+        manifest: dict[str, Any],
+        session: Any,
+        is_download: bool = False,
+        is_head: bool = False,
+    ) -> Any:
+        """统一交付受保护的预览/内部素材内容，处理条件请求与 Range 切片。
+
+        Args:
+            request: HTTP 请求。
+            artifact_id: 预览 artifact ID。
+            file_hash: 目标素材 hash。
+            claims: 已验签的访问载荷。
+            manifest: 预览快照 manifest。
+            session: AsyncSession 数据库会话。
+            is_download: 是否触发附件下载。
+            is_head: 是否为 HEAD 请求。
+
+        Returns:
+            FileResponse 或 Response 响应。
+        """
+
+        from fastapi.responses import FileResponse, Response
+        from app.services.asset_service import AssetService
+        from app.services.runtime_artifact_store import RuntimeArtifactStore
+
+        # 1. 优先检查是否为模板包临时预览 blob 资源
+        blob = await RuntimeArtifactStore().get_asset_blob(artifact_id, file_hash)
+        if blob is not None:
+            content = blob["content"]
+            media_type = str(blob.get("content_type") or "application/octet-stream")
+            original_name = str(blob.get("original_name") or f"{file_hash}.bin")
+            total_size = len(content)
+            etag = file_hash
+
+            if cls.evaluate_preconditions(request, etag):
+                return Response(
+                    status_code=304,
+                    headers=cls.build_protected_headers(etag=etag, total_size=total_size),
+                )
+
+            range_span = cls.parse_single_range(request.headers.get("range"), total_size)
+            headers = cls.build_protected_headers(
+                etag=etag,
+                total_size=total_size,
+                range_span=range_span,
+                is_download=is_download,
+                original_name=original_name,
+            )
+
+            if is_head:
+                return Response(status_code=200 if range_span is None else 206, media_type=media_type, headers=headers)
+
+            if range_span is not None:
+                start, end = range_span
+                return Response(
+                    content=content[start : end + 1],
+                    status_code=206,
+                    media_type=media_type,
+                    headers=headers,
+                )
+            return Response(content=content, status_code=200, media_type=media_type, headers=headers)
+
+        # 2. 从快照与声明中读取工作空间资产
+        owner_scope = manifest.get("owner_scope")
+        workspace_id_raw: Any = None
+        if isinstance(owner_scope, dict):
+            workspace_id_raw = owner_scope.get("workspace_id")
+        if workspace_id_raw is None:
+            workspace_id_raw = claims.get("workspace_id")
+
+        if not workspace_id_raw:
+            raise AppException(
+                status_code=404,
+                code=FILE_NOT_FOUND,
+                detail="无法确定素材所属工作空间。",
+                headers=NO_STORE_HEADERS,
+            )
+
+        workspace_id = int(str(workspace_id_raw).strip())
+        asset_service = AssetService(session)
+        asset, driver = await asset_service.get_asset_by_hash(workspace_id, file_hash)
+
+        media_type, _ = mimetypes.guess_type(asset.original_name)
+        resolved_media_type = asset.content_type or media_type or "application/octet-stream"
+        etag = asset.file_hash
+        total_size = asset.file_size
+
+        if cls.evaluate_preconditions(request, etag):
+            return Response(
+                status_code=304,
+                headers=cls.build_protected_headers(etag=etag, total_size=total_size),
+            )
+
+        range_span = cls.parse_single_range(request.headers.get("range"), total_size)
+        headers = cls.build_protected_headers(
+            etag=etag,
+            total_size=total_size,
+            range_span=range_span,
+            is_download=is_download,
+            original_name=asset.original_name,
+        )
+
+        if is_head:
+            return Response(status_code=200 if range_span is None else 206, media_type=resolved_media_type, headers=headers)
+
+        async with driver.open_for_read(
+            workspace_id,
+            asset.file_name,
+            expected_sha256=asset.file_hash,
+            expected_size=asset.file_size,
+        ) as local_file_path:
+            if range_span is not None:
+                start, end = range_span
+                with open(local_file_path, "rb") as f:
+                    f.seek(start)
+                    chunk = f.read(end - start + 1)
+                return Response(
+                    content=chunk,
+                    status_code=206,
+                    media_type=resolved_media_type,
+                    headers=headers,
+                )
+
+            # 无 Range 时以二进制直接返回
+            with open(local_file_path, "rb") as f:
+                content = f.read()
+            return Response(
+                content=content,
+                status_code=200,
+                media_type=resolved_media_type,
+                headers=headers,
+            )
+

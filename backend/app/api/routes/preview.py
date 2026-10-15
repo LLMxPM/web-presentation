@@ -121,9 +121,46 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
     )
 
 
+@router_public.api_route(
+    "/preview/artifacts/{artifact_id}/assets/{file_hash}",
+    methods=["GET", "HEAD"],
+    summary="受保护的预览素材读取入口",
+)
+async def get_preview_protected_asset(
+    artifact_id: str,
+    file_hash: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    download: int = 0,
+):
+    """受保护的预览素材读取入口，校验预览令牌 P 与快照成员归属，并支持 ETag 与 Range。"""
+
+    from app.services.file_auth_service import FileAuthService
+    from app.services.runtime_artifact_store import RuntimeArtifactStore
+
+    manifest = await RuntimeArtifactStore().get_manifest(artifact_id)
+    claims = FileAuthService.verify_preview_asset_access(
+        request=request,
+        artifact_id=artifact_id,
+        file_hash=file_hash,
+        manifest=manifest,
+    )
+    return await FileAuthService.serve_protected_artifact_asset(
+        request=request,
+        artifact_id=artifact_id,
+        file_hash=file_hash,
+        claims=claims,
+        manifest=manifest or {},
+        session=session,
+        is_download=download == 1,
+        is_head=request.method == "HEAD",
+    )
+
+
 def _resolve_runtime_service_token_ttl(preview_claims: dict[str, object]) -> int:
     """按预览上下文令牌的剩余有效期生成 Runtime 服务令牌 TTL。"""
 
     now = int(time.time())
     preview_exp = int(preview_claims.get("exp") or now)
     return max(60, preview_exp - now)
+
