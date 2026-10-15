@@ -463,6 +463,8 @@ class ObjectStorageService:
         async with self._s3_client() as client:
             await client.delete_object(Bucket=resolved_bucket, Key=storage_key)
 
+    _in_flight_downloads: dict[str, asyncio.Task[Path]] = {}
+
     async def _ensure_s3_cache_file(
         self,
         storage_key: str,
@@ -471,20 +473,59 @@ class ObjectStorageService:
         expected_size: int | None,
         bucket_name: str | None,
     ) -> Path:
-        """确保 S3 对象已下载到本地缓存，并校验声明的 hash 与大小。"""
+        """确保 S3 对象已安全下载到本地缓存，支持并发回源合并、原子提升与完整性校验。"""
 
         cache_path = self._build_cache_path(storage_key, expected_sha256, expected_size, bucket_name)
         if self._is_valid_cache_file(cache_path, expected_sha256, expected_size):
             self._touch_cache_file(cache_path)
             return cache_path
 
+        # 进程内并发去重：同一缓存路径正在下载时复用 Task
+        cache_key = str(cache_path)
+        existing_task = self._in_flight_downloads.get(cache_key)
+        if existing_task is not None and not existing_task.done():
+            return await existing_task
+
+        task = asyncio.create_task(
+            self._download_s3_object_to_cache_atomic(
+                storage_key=storage_key,
+                cache_path=cache_path,
+                expected_sha256=expected_sha256,
+                expected_size=expected_size,
+                bucket_name=bucket_name,
+            )
+        )
+        self._in_flight_downloads[cache_key] = task
+        try:
+            return await task
+        finally:
+            self._in_flight_downloads.pop(cache_key, None)
+
+    async def _download_s3_object_to_cache_atomic(
+        self,
+        *,
+        storage_key: str,
+        cache_path: Path,
+        expected_sha256: str | None,
+        expected_size: int | None,
+        bucket_name: str | None,
+    ) -> Path:
+        """原子下载 S3 对象到本地缓存临时文件，校验后重命名提升，避免半写文件。"""
+
         if bucket_name is None:
             content = await self._read_s3_object(storage_key)
         else:
             content = await self._read_s3_object(storage_key, bucket_name=bucket_name)
+
         self._validate_object_bytes(content, expected_sha256, expected_size)
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_bytes(content)
+        temp_path = cache_path.with_name(f"{cache_path.name}.tmp.{uuid4().hex[:8]}")
+        try:
+            await asyncio.to_thread(temp_path.write_bytes, content)
+            await asyncio.to_thread(os.replace, temp_path, cache_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
         self._touch_cache_file(cache_path)
         return cache_path
 
@@ -495,13 +536,15 @@ class ObjectStorageService:
         expected_size: int | None,
         bucket_name: str | None,
     ) -> Path:
-        """根据 key、hash 与大小构造稳定缓存文件名。"""
+        """根据存储端点、key、hash 与大小构造稳定缓存文件名，防止存储切换后碰撞。"""
 
+        endpoint = str(self.settings.s3_endpoint_url or "default-s3").strip()
         fingerprint = hashlib.sha256(
-            f"{bucket_name or ''}:{storage_key}:{expected_sha256 or ''}:{expected_size or ''}".encode("utf-8")
+            f"{endpoint}:{bucket_name or ''}:{storage_key}:{expected_sha256 or ''}:{expected_size or ''}".encode("utf-8")
         ).hexdigest()
         suffix = Path(storage_key).suffix or ".bin"
         return self.cache_root / f"{fingerprint}{suffix}"
+
 
     def _list_cache_files(self) -> list[Path]:
         """列出缓存根目录下的普通文件，排除扫描标记。"""
