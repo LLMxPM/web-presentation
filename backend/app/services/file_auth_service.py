@@ -283,6 +283,58 @@ class FileAuthService:
         return False
 
     @staticmethod
+    def evaluate_if_range(request: Request, etag: str) -> bool:
+        """评估 If-Range 条件请求头是否匹配当前资源 ETag。
+
+        RFC 9110 / RFC 7233：
+        - 若请求未提供 If-Range，允许处理 Range 并返回 206；
+        - 若 If-Range 强/弱匹配当前 ETag，允许处理 Range 并返回 206；
+        - 若 If-Range 与当前 ETag 不匹配，必须忽略 Range，返回完整内容的 200 OK。
+
+        Args:
+            request: FastAPI 请求对象。
+            etag: 当前资源计算得出的 ETag。
+
+        Returns:
+            若条件满足处理 Range 返回 True；若不匹配应忽略 Range 返回 False。
+        """
+
+        if_range = request.headers.get("if-range")
+        if not if_range or not if_range.strip():
+            return True
+
+        normalized_target = etag.strip('"').removeprefix("W/").strip('"')
+        normalized_if_range = if_range.strip().strip('"').removeprefix("W/").strip('"')
+        return normalized_target == normalized_if_range
+
+    @staticmethod
+    async def stream_file_chunks(
+        file_path: Path,
+        *,
+        start: int = 0,
+        length: int | None = None,
+        chunk_size: int = 65536,
+    ):
+        """异步流式分块读取指定范围的文件字节，防止大文件同步阻塞事件循环和过多占用内存。"""
+
+        import anyio
+
+        async with await anyio.open_file(file_path, "rb") as f:
+            if start > 0:
+                await f.seek(start)
+            remaining = length
+            while True:
+                read_size = chunk_size if remaining is None else min(remaining, chunk_size)
+                if remaining is not None and remaining <= 0:
+                    break
+                chunk = await f.read(read_size)
+                if not chunk:
+                    break
+                if remaining is not None:
+                    remaining -= len(chunk)
+                yield chunk
+
+    @staticmethod
     def parse_single_range(range_header: str | None, total_size: int) -> tuple[int, int] | None:
         """解析单段 Range 请求头，并验证边界有效性。
 
@@ -441,7 +493,11 @@ class FileAuthService:
                     headers=cls.build_protected_headers(etag=etag, total_size=total_size),
                 )
 
-            range_span = cls.parse_single_range(request.headers.get("range"), total_size)
+            range_span = None
+            range_header = request.headers.get("range")
+            if range_header and cls.evaluate_if_range(request, etag):
+                range_span = cls.parse_single_range(range_header, total_size)
+
             headers = cls.build_protected_headers(
                 etag=etag,
                 total_size=total_size,
@@ -494,7 +550,11 @@ class FileAuthService:
                 headers=cls.build_protected_headers(etag=etag, total_size=total_size),
             )
 
-        range_span = cls.parse_single_range(request.headers.get("range"), total_size)
+        range_span = None
+        range_header = request.headers.get("range")
+        if range_header and cls.evaluate_if_range(request, etag):
+            range_span = cls.parse_single_range(range_header, total_size)
+
         headers = cls.build_protected_headers(
             etag=etag,
             total_size=total_size,
@@ -506,30 +566,20 @@ class FileAuthService:
         if is_head:
             return Response(status_code=200 if range_span is None else 206, media_type=resolved_media_type, headers=headers)
 
+        from fastapi.responses import StreamingResponse
+
         async with driver.open_for_read(
             workspace_id,
             asset.file_name,
             expected_sha256=asset.file_hash,
             expected_size=asset.file_size,
         ) as local_file_path:
-            if range_span is not None:
-                start, end = range_span
-                with open(local_file_path, "rb") as f:
-                    f.seek(start)
-                    chunk = f.read(end - start + 1)
-                return Response(
-                    content=chunk,
-                    status_code=206,
-                    media_type=resolved_media_type,
-                    headers=headers,
-                )
-
-            # 无 Range 时以二进制直接返回
-            with open(local_file_path, "rb") as f:
-                content = f.read()
-            return Response(
-                content=content,
-                status_code=200,
+            start = 0 if range_span is None else range_span[0]
+            length = total_size if range_span is None else (range_span[1] - range_span[0] + 1)
+            status_code = 200 if range_span is None else 206
+            return StreamingResponse(
+                cls.stream_file_chunks(local_file_path, start=start, length=length),
+                status_code=status_code,
                 media_type=resolved_media_type,
                 headers=headers,
             )

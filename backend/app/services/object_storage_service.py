@@ -482,24 +482,21 @@ class ObjectStorageService:
 
         # 进程内并发去重：同一缓存路径正在下载时复用 Task
         cache_key = str(cache_path)
-        existing_task = self._in_flight_downloads.get(cache_key)
-        if existing_task is not None and not existing_task.done():
-            return await existing_task
-
-        task = asyncio.create_task(
-            self._download_s3_object_to_cache_atomic(
-                storage_key=storage_key,
-                cache_path=cache_path,
-                expected_sha256=expected_sha256,
-                expected_size=expected_size,
-                bucket_name=bucket_name,
+        task = self._in_flight_downloads.get(cache_key)
+        if task is None or task.done():
+            task = asyncio.create_task(
+                self._download_s3_object_to_cache_atomic(
+                    storage_key=storage_key,
+                    cache_path=cache_path,
+                    expected_sha256=expected_sha256,
+                    expected_size=expected_size,
+                    bucket_name=bucket_name,
+                )
             )
-        )
-        self._in_flight_downloads[cache_key] = task
-        try:
-            return await task
-        finally:
-            self._in_flight_downloads.pop(cache_key, None)
+            self._in_flight_downloads[cache_key] = task
+            task.add_done_callback(lambda _: self._in_flight_downloads.pop(cache_key, None))
+
+        return await asyncio.shield(task)
 
     async def _download_s3_object_to_cache_atomic(
         self,

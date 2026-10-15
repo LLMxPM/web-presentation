@@ -206,3 +206,60 @@ async def test_internal_runtime_protected_asset_success(monkeypatch):
         assert resp.status_code == 200
         assert resp.content == b"internal-data"
         assert resp.headers["Cache-Control"] == "private, no-cache"
+
+
+@pytest.mark.asyncio
+async def test_preview_protected_asset_if_range_handling(monkeypatch):
+    """测试 If-Range 条件判断：ETag 匹配时返回 206，ETag 不匹配时忽略 Range 返回完整 200。"""
+
+    artifact_id = "art-if-range"
+    file_hash = "hash-current-ver"
+
+    token = TokenService.generate_preview_context_token(
+        artifact_id=artifact_id,
+        preview_kind="project",
+        scope_type="project",
+        workspace_id=1,
+        entry_descriptor={"entry_type": "route", "route": "/"},
+        asset_base_url="/assets",
+        trace_id="tr-test",
+        tenant_id="tenant_1",
+        expires_in_seconds=300,
+    )
+
+    manifest = {"assets": {"video.mp4": file_hash}}
+
+    async def mock_get_manifest(self, aid):
+        return manifest if aid == artifact_id else None
+
+    async def mock_get_asset_blob(self, aid, fhash):
+        if aid == artifact_id and fhash == file_hash:
+            return {
+                "content": b"0123456789abcdef",
+                "content_type": "video/mp4",
+                "original_name": "video.mp4",
+            }
+        return None
+
+    monkeypatch.setattr(RuntimeArtifactStore, "get_manifest", mock_get_manifest)
+    monkeypatch.setattr(RuntimeArtifactStore, "get_asset_blob", mock_get_asset_blob)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. If-Range 匹配：返回 206
+        resp_match = await client.get(
+            f"/preview/artifacts/{artifact_id}/assets/{file_hash}",
+            params={"token": token},
+            headers={"Range": "bytes=0-3", "If-Range": f'"{file_hash}"'},
+        )
+        assert resp_match.status_code == 206
+        assert resp_match.content == b"0123"
+
+        # 2. If-Range 不匹配（例如旧版本 ETag）：忽略 Range，返回完整内容 200
+        resp_mismatch = await client.get(
+            f"/preview/artifacts/{artifact_id}/assets/{file_hash}",
+            params={"token": token},
+            headers={"Range": "bytes=0-3", "If-Range": '"old-version-etag"'},
+        )
+        assert resp_mismatch.status_code == 200
+        assert resp_mismatch.content == b"0123456789abcdef"

@@ -292,7 +292,11 @@ async def _serve_workspace_asset_binary(
             headers=FileAuthService.build_protected_headers(etag=etag, total_size=total_size),
         )
 
-    range_span = FileAuthService.parse_single_range(request.headers.get("range"), total_size)
+    range_span = None
+    range_header = request.headers.get("range")
+    if range_header and FileAuthService.evaluate_if_range(request, etag):
+        range_span = FileAuthService.parse_single_range(range_header, total_size)
+
     headers = FileAuthService.build_protected_headers(
         etag=etag,
         total_size=total_size,
@@ -304,29 +308,20 @@ async def _serve_workspace_asset_binary(
     if is_head:
         return Response(status_code=200 if range_span is None else 206, media_type=resolved_media_type, headers=headers)
 
+    from fastapi.responses import StreamingResponse
+
     async with driver.open_for_read(
         workspace_id,
         asset.file_name,
         expected_sha256=asset.file_hash,
         expected_size=asset.file_size,
     ) as local_file_path:
-        if range_span is not None:
-            start, end = range_span
-            with open(local_file_path, "rb") as f:
-                f.seek(start)
-                chunk = f.read(end - start + 1)
-            return Response(
-                content=chunk,
-                status_code=206,
-                media_type=resolved_media_type,
-                headers=headers,
-            )
-
-        with open(local_file_path, "rb") as f:
-            content = f.read()
-        return Response(
-            content=content,
-            status_code=200,
+        start = 0 if range_span is None else range_span[0]
+        length = total_size if range_span is None else (range_span[1] - range_span[0] + 1)
+        status_code = 200 if range_span is None else 206
+        return StreamingResponse(
+            FileAuthService.stream_file_chunks(local_file_path, start=start, length=length),
+            status_code=status_code,
             media_type=resolved_media_type,
             headers=headers,
         )
