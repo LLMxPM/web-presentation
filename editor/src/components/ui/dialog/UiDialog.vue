@@ -102,25 +102,9 @@ function handleInteractOutside(event: Event): void {
 }
 
 /**
- * 确保在受控弹窗关闭或组件卸载后，body 上的 pointer-events 锁定一定会被安全释放。
- * 避免底层模态层在快速路由替换、多层过渡动画或直接销毁时遗留 pointer-events: none 导致页面假死。
- */
-function cleanupBodyPointerEvents() {
-  if (typeof document === 'undefined') return
-  const tryRestore = () => {
-    const hasOtherDialogs = document.querySelectorAll('.dialog-shell').length > 0
-    if (!hasOtherDialogs && document.body.style.pointerEvents === 'none') {
-      document.body.style.pointerEvents = ''
-    }
-  }
-  setTimeout(tryRestore, 0)
-  setTimeout(tryRestore, 60)
-  setTimeout(tryRestore, 150)
-}
-
-/**
  * 为受控模式补齐焦点恢复。UiDialog 不强制业务方使用 DialogTrigger，
  * 因此需在打开前记录当前元素，并在关闭后将焦点交还给它。
+ * body 的交互锁和滚动锁由 Reka 管理，包装层不直接修改。
  */
 watch(() => props.open, isOpen => {
   if (isOpen) {
@@ -134,7 +118,6 @@ watch(() => props.open, isOpen => {
   if (restoreFocusTarget?.isConnected) {
     focusRestoreTimer = setTimeout(() => restoreFocusTarget?.focus(), 0)
   }
-  cleanupBodyPointerEvents()
 })
 
 /** 阻止 Reka 在无 DialogTrigger 的受控模式中把焦点回退到 body。 */
@@ -149,7 +132,6 @@ onBeforeUnmount(() => {
   if (focusRestoreTimer) {
     clearTimeout(focusRestoreTimer)
   }
-  cleanupBodyPointerEvents()
 })
 </script>
 
