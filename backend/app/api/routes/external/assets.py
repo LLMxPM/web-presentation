@@ -424,3 +424,35 @@ async def batch_archive_assets(
         operation_func=_operation,
     )
     return result if isinstance(result, ExternalBatchArchiveResponse) else ExternalBatchArchiveResponse.model_validate(result)
+
+
+@router.api_route(
+    "/{asset_id}/file",
+    methods=["GET", "HEAD"],
+    summary="External API 读取资源二进制文件",
+)
+async def get_external_asset_file(
+    asset_id: int,
+    request: Request,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.file.get"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
+    hash: str | None = None,
+    download: int = 0,
+):
+    """External API 读取指定资产版本的二进制内容，支持 ETag 304 与 Range。"""
+
+    from app.api.routes.assets import _serve_workspace_asset_binary
+
+    asset_service = AssetService(session)
+    asset = await asset_service._get_asset_or_raise(x_workspace_id, asset_id)
+    return await _serve_workspace_asset_binary(
+        request=request,
+        workspace_id=x_workspace_id,
+        asset=asset,
+        service=asset_service,
+        target_hash=hash,
+        is_download=download == 1,
+        is_head=request.method == "HEAD",
+    )
+

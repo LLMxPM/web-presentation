@@ -2116,6 +2116,190 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/build-jobs/{job_id}/artifact": {
+      "head": {
+        "tags": [
+          "External Projects"
+        ],
+        "summary": "External API 下载项目构建归档产物",
+        "description": "External API 读取或下载指定项目构建任务的 ZIP 归档产物。",
+        "operationId": "get_external_project_build_artifact_api_v1_projects__project_id__build_jobs__job_id__artifact_head",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "External Projects"
+        ],
+        "summary": "External API 下载项目构建归档产物",
+        "description": "External API 读取或下载指定项目构建任务的 ZIP 归档产物。",
+        "operationId": "get_external_project_build_artifact_api_v1_projects__project_id__build_jobs__job_id__artifact_head",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/pages": {
       "post": {
         "tags": [
@@ -3478,6 +3662,210 @@
                 "schema": {
                   "$ref": "#/components/schemas/ExternalBatchArchiveResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pages/{page_id}/screenshots/{screenshot_id}/content": {
+      "head": {
+        "tags": [
+          "External Pages"
+        ],
+        "summary": "External API 读取页面截图",
+        "description": "External API 读取页面已生成的截图产物。",
+        "operationId": "get_external_page_screenshot_content_api_v1_pages__page_id__screenshots__screenshot_id__content_head",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "screenshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Screenshot Id"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "External Pages"
+        ],
+        "summary": "External API 读取页面截图",
+        "description": "External API 读取页面已生成的截图产物。",
+        "operationId": "get_external_page_screenshot_content_api_v1_pages__page_id__screenshots__screenshot_id__content_head",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "screenshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Screenshot Id"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -6116,6 +6504,224 @@
                 "schema": {
                   "$ref": "#/components/schemas/ExternalBatchArchiveResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{asset_id}/file": {
+      "head": {
+        "tags": [
+          "External Assets"
+        ],
+        "summary": "External API 读取资源二进制文件",
+        "description": "External API 读取指定资产版本的二进制内容，支持 ETag 304 与 Range。",
+        "operationId": "get_external_asset_file_api_v1_assets__asset_id__file_head",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hash"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "External Assets"
+        ],
+        "summary": "External API 读取资源二进制文件",
+        "description": "External API 读取指定资产版本的二进制内容，支持 ETag 304 与 Range。",
+        "operationId": "get_external_asset_file_api_v1_assets__asset_id__file_head",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hash"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -15614,13 +16220,13 @@
       }
     },
     "/api/pages/{page_id}/screenshots/{screenshot_id}/content": {
-      "get": {
+      "head": {
         "tags": [
           "pages"
         ],
         "summary": "受保护的页面截图读取接口",
         "description": "受保护的页面截图读取入口，校验页面访问权限并支持 ETag 304 与 Range。",
-        "operationId": "get_page_screenshot_content_api_pages__page_id__screenshots__screenshot_id__content_get",
+        "operationId": "get_page_screenshot_content_api_pages__page_id__screenshots__screenshot_id__content_head",
         "parameters": [
           {
             "name": "page_id",
@@ -15688,13 +16294,13 @@
           }
         }
       },
-      "head": {
+      "get": {
         "tags": [
           "pages"
         ],
         "summary": "受保护的页面截图读取接口",
         "description": "受保护的页面截图读取入口，校验页面访问权限并支持 ETag 304 与 Range。",
-        "operationId": "get_page_screenshot_content_api_pages__page_id__screenshots__screenshot_id__content_get",
+        "operationId": "get_page_screenshot_content_api_pages__page_id__screenshots__screenshot_id__content_head",
         "parameters": [
           {
             "name": "page_id",
@@ -18708,13 +19314,13 @@
       }
     },
     "/api/workspaces/{workspace_id}/assets/{asset_id}/file": {
-      "get": {
+      "head": {
         "tags": [
           "assets"
         ],
         "summary": "受保护的工作空间资产二进制文件读取",
         "description": "受保护的工作空间资产二进制读取入口，支持版本 hash、ETag 304 与 Range。",
-        "operationId": "get_workspace_asset_file_api_workspaces__workspace_id__assets__asset_id__file_get",
+        "operationId": "get_workspace_asset_file_api_workspaces__workspace_id__assets__asset_id__file_head",
         "parameters": [
           {
             "name": "workspace_id",
@@ -18802,13 +19408,13 @@
           }
         }
       },
-      "head": {
+      "get": {
         "tags": [
           "assets"
         ],
         "summary": "受保护的工作空间资产二进制文件读取",
         "description": "受保护的工作空间资产二进制读取入口，支持版本 hash、ETag 304 与 Range。",
-        "operationId": "get_workspace_asset_file_api_workspaces__workspace_id__assets__asset_id__file_get",
+        "operationId": "get_workspace_asset_file_api_workspaces__workspace_id__assets__asset_id__file_head",
         "parameters": [
           {
             "name": "workspace_id",
@@ -23492,13 +24098,13 @@
       }
     },
     "/preview/artifacts/{artifact_id}/assets/{file_hash}": {
-      "get": {
+      "head": {
         "tags": [
           "preview"
         ],
         "summary": "受保护的预览素材读取入口",
         "description": "受保护的预览素材读取入口，校验预览令牌 P 与快照成员归属，并支持 ETag 与 Range。",
-        "operationId": "get_preview_protected_asset_preview_artifacts__artifact_id__assets__file_hash__get",
+        "operationId": "get_preview_protected_asset_preview_artifacts__artifact_id__assets__file_hash__head",
         "parameters": [
           {
             "name": "artifact_id",
@@ -23550,13 +24156,13 @@
           }
         }
       },
-      "head": {
+      "get": {
         "tags": [
           "preview"
         ],
         "summary": "受保护的预览素材读取入口",
         "description": "受保护的预览素材读取入口，校验预览令牌 P 与快照成员归属，并支持 ETag 与 Range。",
-        "operationId": "get_preview_protected_asset_preview_artifacts__artifact_id__assets__file_hash__get",
+        "operationId": "get_preview_protected_asset_preview_artifacts__artifact_id__assets__file_hash__head",
         "parameters": [
           {
             "name": "artifact_id",
@@ -23734,13 +24340,13 @@
       }
     },
     "/internal/runtime/preview-artifacts/{artifact_id}/assets/{file_hash}": {
-      "get": {
+      "head": {
         "tags": [
           "internal-runtime"
         ],
         "summary": "Runtime 内部回源读取受保护素材",
         "description": "Runtime 或构建 Worker 内部回源读取受保护素材，验证服务票据与快照归属。",
-        "operationId": "get_internal_runtime_protected_asset_internal_runtime_preview_artifacts__artifact_id__assets__file_hash__get",
+        "operationId": "get_internal_runtime_protected_asset_internal_runtime_preview_artifacts__artifact_id__assets__file_hash__head",
         "parameters": [
           {
             "name": "artifact_id",
@@ -23792,13 +24398,13 @@
           }
         }
       },
-      "head": {
+      "get": {
         "tags": [
           "internal-runtime"
         ],
         "summary": "Runtime 内部回源读取受保护素材",
         "description": "Runtime 或构建 Worker 内部回源读取受保护素材，验证服务票据与快照归属。",
-        "operationId": "get_internal_runtime_protected_asset_internal_runtime_preview_artifacts__artifact_id__assets__file_hash__get",
+        "operationId": "get_internal_runtime_protected_asset_internal_runtime_preview_artifacts__artifact_id__assets__file_hash__head",
         "parameters": [
           {
             "name": "artifact_id",

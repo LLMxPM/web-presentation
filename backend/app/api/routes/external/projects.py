@@ -456,3 +456,61 @@ async def batch_archive_projects(
         operation_func=_operation,
     )
     return result if isinstance(result, ExternalBatchArchiveResponse) else ExternalBatchArchiveResponse.model_validate(result)
+
+
+@router.api_route(
+    "/{project_id}/build-jobs/{job_id}/artifact",
+    methods=["GET", "HEAD"],
+    summary="External API 下载项目构建归档产物",
+)
+async def get_external_project_build_artifact(
+    project_id: int,
+    job_id: int,
+    request: Request,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.build_job.artifact"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
+):
+    """External API 读取或下载指定项目构建任务的 ZIP 归档产物。"""
+
+    from fastapi.responses import FileResponse
+    from app.services.project_build_service import ProjectBuildService
+    from app.services.object_storage_service import ObjectStorageService
+
+    service = ProjectBuildService(session)
+    job = await service.get_job_by_project_and_id(project_id, job_id)
+    project = await ProjectService(session).get(job.project_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(project.workspace_id or x_workspace_id, session)
+
+    if not job.artifact_storage_key:
+        raise AppException(
+            status_code=404,
+            code="BUILD_ARTIFACT_NOT_FOUND",
+            detail="当前构建任务尚未生成可下载产物。",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    async with ObjectStorageService().open_object_for_read(
+        job.artifact_storage_key,
+        expected_sha256=job.artifact_sha256,
+        expected_size=job.artifact_size_bytes,
+    ) as archive_path:
+        filename = f"project-{project_id}-build-{job_id}.zip"
+        headers = {"Cache-Control": "no-store"}
+        if request.method == "HEAD":
+            return Response(
+                status_code=200,
+                media_type="application/zip",
+                headers={
+                    **headers,
+                    "Content-Disposition": f'attachment; filename="{filename}"',
+                    "Content-Length": str(job.artifact_size_bytes or archive_path.stat().st_size),
+                },
+            )
+        return FileResponse(
+            path=str(archive_path),
+            media_type="application/zip",
+            filename=filename,
+            headers=headers,
+        )
+

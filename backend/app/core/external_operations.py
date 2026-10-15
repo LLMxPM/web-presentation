@@ -107,6 +107,13 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         http_method="POST",
         path_template="/projects/{project_id}/preview-artifact",
     ),
+    "project.build_job.artifact": ExternalOperationSpec(
+        "project.build_job.artifact",
+        ("project:read",),
+        description="下载项目构建任务归档产物",
+        http_method="GET",
+        path_template="/projects/{project_id}/build-jobs/{job_id}/artifact",
+    ),
 
     # Page
     "page.list": ExternalOperationSpec(
@@ -130,6 +137,13 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         "page.screenshot.latest",
         ("page:read", "preview:run"),
         description="获取页面最新截图",
+    ),
+    "page.screenshot.content": ExternalOperationSpec(
+        "page.screenshot.content",
+        ("page:read",),
+        description="读取页面已生成的截图产物",
+        http_method="GET",
+        path_template="/pages/{page_id}/screenshots/{screenshot_id}/content",
     ),
     "page.preview": ExternalOperationSpec(
         "page.preview",
@@ -200,6 +214,13 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     ),
     "asset.get": ExternalOperationSpec(
         "asset.get", ("asset:read",), description="获取资产详情或可编辑文本内容"
+    ),
+    "asset.file.get": ExternalOperationSpec(
+        "asset.file.get",
+        ("asset:read",),
+        description="读取或下载资产二进制文件",
+        http_method="GET",
+        path_template="/assets/{asset_id}/file",
     ),
     "asset.upload": ExternalOperationSpec(
         "asset.upload", ("asset:write",), requires_idempotency_key=True, description="上传资产文件或图片"
@@ -344,6 +365,7 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "project.apply_style": ("POST", "/projects/{project_id}/apply-style"),
     "project.build_assets.update": ("PUT", "/projects/{project_id}/build-assets"),
     "project.preview": ("POST", "/projects/{project_id}/preview-artifact"),
+    "project.build_job.artifact": ("GET", "/projects/{project_id}/build-jobs/{job_id}/artifact"),
     "page.list": ("GET", "/projects/{project_id}/pages"),
     "page.get": ("GET", "/pages/{page_id}"),
     "page.update": ("PATCH", "/pages/{page_id}"),
@@ -354,6 +376,7 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "page.validate": ("POST", "/pages/{page_id}/validate"),
     "page.archive": ("POST", "/pages/{page_id}/archive"),
     "page.screenshot.latest": ("GET", "/pages/{page_id}/screenshot"),
+    "page.screenshot.content": ("GET", "/pages/{page_id}/screenshots/{screenshot_id}/content"),
     "page.preview": ("POST", "/pages/{page_id}/preview-artifact"),
     "component.list": ("GET", "/components"),
     "component.create": ("POST", "/components"),
@@ -366,6 +389,7 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "component.archive": ("POST", "/components/{component_id}/archive"),
     "asset.list": ("GET", "/assets"),
     "asset.get": ("GET", "/assets/{asset_id}"),
+    "asset.file.get": ("GET", "/assets/{asset_id}/file"),
     "asset.upload": ("POST", "/assets"),
     "asset.update": ("PATCH", "/assets/{asset_id}"),
     "asset.archive": ("POST", "/assets/{asset_id}/archive"),

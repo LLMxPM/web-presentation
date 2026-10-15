@@ -278,7 +278,9 @@ async def _serve_workspace_asset_binary(
             headers={"Cache-Control": "no-store"},
         )
 
-    driver = service._get_storage_driver()
+    from app.services.asset_storage_drivers import get_driver
+
+    driver = getattr(service, "driver", None) or get_driver()
     media_type, _ = mimetypes.guess_type(asset.original_name)
     resolved_media_type = asset.content_type or media_type or "application/octet-stream"
     etag = asset.file_hash
