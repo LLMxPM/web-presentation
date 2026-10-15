@@ -11,6 +11,8 @@
 | [本地开发指南](./getting-started.md) | 本地依赖、四个应用服务启动和常用诊断命令 |
 | [平台架构总览](./architecture/overview.md) | 平台目标、控制面/数据面关系、模块职责和主流程 |
 | [模块边界](./architecture/module-boundaries.md) | Backend、Editor、Runtime、Renderer、Infra 的修改边界 |
+| [三维资源复用与 Three.js 渲染接入分析](./runtime-integration/threejs-rendering-and-management-analysis.md) | 标准 GLB/glTF 资源管理、多实例复用、渲染导出与分期实施；当前为设计分析 |
+| [三维资源复用与渲染实施计划](./runtime-integration/threejs-resource-implementation-plan.md) | 标准资源接入的接口、历史与缓存、14 个工作包、实施顺序及发布门槛；待实施 |
 | [现行架构评估与计划](../archive/architecture-2026-09/README.md) | 当前架构复核、改进工作包、下一轮测试机矩阵与归档 |
 | [测试文档入口](./testing/README.md) | 根仓、Backend、Editor、Runtime、契约和 E2E 测试入口 |
 | [部署文档入口](../deployment/production/README.md) | Compose 部署、环境变量、备份恢复、升级回滚和排障 |

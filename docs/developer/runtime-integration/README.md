@@ -9,6 +9,8 @@ Runtime 接入文档说明平台如何组织和调用 `runtime/` 服务，以及
 | [运行时开发与维护](./runtime-workflow.md) | Runtime 本地开发、质量门禁、契约验证与构建部署 |
 | [Runtime Kit 契约](./runtime-kit-contract.md) | manifest 命名、版本化 import path 和 Backend 校验 |
 | [previewSchema 契约](./preview-schema.md) | 组件预览 schema 的能力边界和校验要求 |
+| [三维资源复用与 Three.js 渲染接入分析](./threejs-rendering-and-management-analysis.md) | 标准资源、渲染器与引用实例的边界，GLB/glTF 管理、快照与分发；当前为设计分析 |
+| [三维资源复用与渲染实施计划](./threejs-resource-implementation-plan.md) | M0/M1/M2、接口与历史绑定、14 个工作包、依赖顺序及发布验收；待实施 |
 | [组件 Check 体系设计](./component-code-check-design.md) | 当前 contract/compile 校验与历史浏览器方案的边界 |
 | [页面可视化编辑契约](./page-visual-edit.md) | Backend 源码权威、编辑态 artifact、SFC 节点映射与受限回写协议 |
 | [富文本源码范围定位加固计划（已归档）](../../archive/architecture-2026-09/reports/rich-text-source-range-hardening-plan.md) | 历史修复设计；现有实现的交互验证由现行计划 M08 承接 |

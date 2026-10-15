@@ -29,6 +29,8 @@
 | [Backend 对接 API](./integration/backend-api.md) | Runtime 消费的 Backend 接口 |
 | [Preview Artifact 规范](./integration/release-artifact-spec.md) | 预览产物结构 |
 | [Vue 页面资源引用规范](./integration/asset-usage-guide.md) | 资源 URL 与特殊格式渲染 |
+| [三维资源复用与 Three.js 渲染接入分析](../runtime-integration/threejs-rendering-and-management-analysis.md) | GLB/glTF Viewer、实例视角、首帧、依赖加载与静态导出的拟议接入方案 |
+| [三维资源复用与渲染实施计划](../runtime-integration/threejs-resource-implementation-plan.md) | 标准 Viewer、多实例、首帧、静态导出与构建的工作包和验收门槛 |
 | [PPTX 导出 DOM 契约](./integration/pptx-export-dom-contract.md) | 表格、媒体与连接线的显式导出属性、版本约定与识别优先级 |
 | [PPTX 导出升级规划](./pptx-export-upgrade-plan.md) | 已核实缺陷、分阶段工作包、页面采集与视觉映射边界、性能和产物验收 |
 
