@@ -114,6 +114,7 @@
               @preview-ready="handlePagePreviewReady"
               @preview-error="handlePagePreviewError"
               @retry="retryRuntimePreview"
+              @renew="handlePreviewRenewed"
               @toggle-speaker-notes="isSpeakerNotesPanelOpen = !isSpeakerNotesPanelOpen"
             />
           </div>
@@ -478,6 +479,11 @@ function applyPreviewLink(previewLink: PreviewArtifactResponse) {
   previewFilePath.value = resolvePreviewFilePath(previewLink) ?? ''
   previewViewport.value = resolvePreviewViewport(previewLink)
   bumpPreviewFrameToken()
+}
+
+/** 预览票据后台续签成功后静默更新当前 previewUrl，避免重载 iframe 或丢失当前编辑状态。 */
+function handlePreviewRenewed(newUrl: string): void {
+  previewUrl.value = newUrl
 }
 
 /** 错误态重试始终创建新 artifact，避免复用过期上下文。 */

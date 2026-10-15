@@ -4,6 +4,11 @@ import { render } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { previewTokenExpiresAt, useRuntimePreviewRecovery } from './useRuntimePreviewRecovery'
+import { renewPreviewArtifactAccess } from '@/api/preview'
+
+vi.mock('@/api/preview', () => ({
+  renewPreviewArtifactAccess: vi.fn(),
+}))
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -58,6 +63,73 @@ describe('预览自动恢复', () => {
     expect(previewTokenExpiresAt('https://backend.example/?token=invalid')).toBeNull()
     expect(previewTokenExpiresAt(previewUrl('3600'))).toBeNull()
     expect(previewTokenExpiresAt(previewUrl(3600))).toBe(3600000)
+  })
+
+  it('票据即将到期时优先调用 renewPreviewArtifactAccess 续签，成功更新 URL 且不全量重建', async () => {
+    vi.mocked(renewPreviewArtifactAccess).mockResolvedValueOnce({
+      preview_url: 'https://backend.example/preview/artifacts/art-renewed?token=renewed',
+      token: 'renewed',
+      expires_at: '2026-10-16T12:00:00Z',
+      artifact_id: 'art-test-100',
+    })
+
+    const onRenewed = vi.fn()
+    const recover = vi.fn()
+    const frameUrl = ref(previewUrl(Math.floor(Date.now() / 1000) + 10))
+    const sourceKey = ref('page-1')
+    const artifactId = ref('art-test-100')
+
+    let recovery!: ReturnType<typeof useRuntimePreviewRecovery>
+    render(defineComponent({
+      setup() {
+        recovery = useRuntimePreviewRecovery({
+          frameUrl: () => frameUrl.value,
+          sourceKey: () => sourceKey.value,
+          artifactId: () => artifactId.value,
+          onRenewed,
+          recover,
+        })
+        return () => h('div')
+      },
+    }))
+
+    await recovery.executeRenewOrRecover()
+    await nextTick()
+
+    expect(renewPreviewArtifactAccess).toHaveBeenCalledWith('art-test-100')
+    expect(onRenewed).toHaveBeenCalledWith('https://backend.example/preview/artifacts/art-renewed?token=renewed')
+    expect(recover).not.toHaveBeenCalled()
+  })
+
+  it('续签失败（如 artifact 410 过期）时自动降级回退至 recover 全量重建', async () => {
+    vi.mocked(renewPreviewArtifactAccess).mockRejectedValueOnce(new Error('PREVIEW_ARTIFACT_EXPIRED'))
+
+    const onRenewed = vi.fn()
+    const recover = vi.fn()
+    const frameUrl = ref(previewUrl(Math.floor(Date.now() / 1000) + 10))
+    const sourceKey = ref('page-1')
+    const artifactId = ref('art-expired-200')
+
+    let recovery!: ReturnType<typeof useRuntimePreviewRecovery>
+    render(defineComponent({
+      setup() {
+        recovery = useRuntimePreviewRecovery({
+          frameUrl: () => frameUrl.value,
+          sourceKey: () => sourceKey.value,
+          artifactId: () => artifactId.value,
+          onRenewed,
+          recover,
+        })
+        return () => h('div')
+      },
+    }))
+
+    await recovery.executeRenewOrRecover()
+    await nextTick()
+
+    expect(renewPreviewArtifactAccess).toHaveBeenCalledWith('art-expired-200')
+    expect(onRenewed).not.toHaveBeenCalled()
+    expect(recover).toHaveBeenCalledTimes(1)
   })
 })
 

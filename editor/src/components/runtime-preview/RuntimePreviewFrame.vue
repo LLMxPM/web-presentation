@@ -89,6 +89,7 @@ const emit = defineEmits<{
   ready: []
   error: [message: string, code?: string]
   retry: []
+  renew: [newUrl: string]
 }>()
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
@@ -98,6 +99,8 @@ const effectiveStatus = computed(() => localError.value && props.status === 'idl
 const recovery = useRuntimePreviewRecovery({
   frameUrl: () => props.frameUrl,
   sourceKey: () => props.recoveryKey || props.title,
+  artifactId: () => props.artifactId,
+  onRenewed: (newUrl: string) => emit('renew', newUrl),
   enabled: () => props.autoRecover,
   isPending: () => props.status === 'generating',
   recover: () => emit('retry'),

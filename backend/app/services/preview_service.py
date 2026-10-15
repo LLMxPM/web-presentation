@@ -178,7 +178,7 @@ class PreviewService:
             await ProjectService(self.session).get(int(project_id_raw), user_id=user_id)
         elif workspace_id_raw:
             from app.services.workspace_service import WorkspaceService
-            await WorkspaceService(self.session).validate_membership(int(workspace_id_raw), user_id=user_id)
+            await WorkspaceService(self.session).ensure_access(int(workspace_id_raw), user_id=user_id)
 
         settings = get_settings()
         now_ts = int(time.time())

@@ -41,6 +41,7 @@
       @ready="emit('preview-ready')"
       @error="(message, code) => emit('preview-error', message, code)"
       @retry="emit('retry')"
+      @renew="emit('renew', $event)"
     />
 
     <UiDialog
@@ -65,6 +66,7 @@
           @ready="emit('preview-ready')"
           @error="(message, code) => emit('preview-error', message, code)"
           @retry="emit('retry')"
+          @renew="emit('renew', $event)"
         />
       </div>
     </UiDialog>
@@ -103,6 +105,7 @@ const emit = defineEmits<{
   'preview-ready': []
   'preview-error': [message: string, code?: string]
   retry: []
+  renew: [newUrl: string]
   toggleSpeakerNotes: []
 }>()
 
