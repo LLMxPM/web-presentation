@@ -72,3 +72,17 @@ export async function createAssetPreviewArtifact(workspaceId: number, assetId: n
   )
   return data
 }
+
+/**
+ * 为指定有效 preview artifact 续签短期访问票据。
+ */
+export async function renewPreviewArtifactAccess(artifactId: string) {
+  const { data } = await http.post<{
+    preview_url: string
+    token: string
+    expires_at: string
+    artifact_id: string
+  }>(`/preview-artifacts/${artifactId}/access`)
+  return data
+}
+

@@ -270,7 +270,20 @@ function resolveArtifactMappedPath(params: {
     || params.manifestAssetBaseUrl
     || '',
   ).trim()
-  return joinUrlPath(assetBaseUrl, params.mappedAssetPath)
+  const rawUrl = joinUrlPath(assetBaseUrl, params.mappedAssetPath)
+
+  const previewToken = getRuntimePreviewToken()
+  if (
+    previewToken
+    && (params.artifactKind === 'preview_artifact' || params.artifactKind === 'page_visual_edit_preview')
+    && (rawUrl.includes('/preview/artifacts/') || rawUrl.includes('/assets/'))
+    && !rawUrl.includes('token=')
+  ) {
+    const separator = rawUrl.includes('?') ? '&' : '?'
+    return `${rawUrl}${separator}token=${encodeURIComponent(previewToken)}`
+  }
+
+  return rawUrl
 }
 
 /**

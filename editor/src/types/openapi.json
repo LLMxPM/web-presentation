@@ -15613,6 +15613,156 @@
         }
       }
     },
+    "/api/pages/{page_id}/screenshots/{screenshot_id}/content": {
+      "get": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "受保护的页面截图读取接口",
+        "description": "受保护的页面截图读取入口，校验页面访问权限并支持 ETag 304 与 Range。",
+        "operationId": "get_page_screenshot_content_api_pages__page_id__screenshots__screenshot_id__content_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "screenshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Screenshot Id"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "受保护的页面截图读取接口",
+        "description": "受保护的页面截图读取入口，校验页面访问权限并支持 ETag 304 与 Range。",
+        "operationId": "get_page_screenshot_content_api_pages__page_id__screenshots__screenshot_id__content_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "screenshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Screenshot Id"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/pages/{page_id}/visual-edit/apply": {
       "post": {
         "tags": [
@@ -18379,7 +18529,7 @@
           "assets"
         ],
         "summary": "Get Workspace Asset Content",
-        "description": "读取可编辑资源的文本内容。",
+        "description": "读取可编辑资源的文本内容或二进制文件流。缺省返回 JSON，raw=1 或指定 hash 时返回受保护文件流。",
         "operationId": "get_workspace_asset_content_api_workspaces__workspace_id__assets__asset_id__content_get",
         "parameters": [
           {
@@ -18399,6 +18549,48 @@
               "type": "integer",
               "title": "Asset Id"
             }
+          },
+          {
+            "name": "hash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选指定版本 hash",
+              "title": "Hash"
+            },
+            "description": "可选指定版本 hash"
+          },
+          {
+            "name": "raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "1 为直接返回二进制文件流",
+              "default": 0,
+              "title": "Raw"
+            },
+            "description": "1 为直接返回二进制文件流"
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "1 为触发附件下载",
+              "default": 0,
+              "title": "Download"
+            },
+            "description": "1 为触发附件下载"
           },
           {
             "name": "wp_user_session",
@@ -18422,9 +18614,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AssetContentResponse"
-                }
+                "schema": {}
               }
             }
           },
@@ -18501,6 +18691,196 @@
                 "schema": {
                   "$ref": "#/components/schemas/AssetResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspace_id}/assets/{asset_id}/file": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "受保护的工作空间资产二进制文件读取",
+        "description": "受保护的工作空间资产二进制读取入口，支持版本 hash、ETag 304 与 Range。",
+        "operationId": "get_workspace_asset_file_api_workspaces__workspace_id__assets__asset_id__file_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选指定版本 hash",
+              "title": "Hash"
+            },
+            "description": "可选指定版本 hash"
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "1 为触发附件下载",
+              "default": 0,
+              "title": "Download"
+            },
+            "description": "1 为触发附件下载"
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "受保护的工作空间资产二进制文件读取",
+        "description": "受保护的工作空间资产二进制读取入口，支持版本 hash、ETag 304 与 Range。",
+        "operationId": "get_workspace_asset_file_api_workspaces__workspace_id__assets__asset_id__file_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选指定版本 hash",
+              "title": "Hash"
+            },
+            "description": "可选指定版本 hash"
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "1 为触发附件下载",
+              "default": 0,
+              "title": "Download"
+            },
+            "description": "1 为触发附件下载"
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -22142,6 +22522,65 @@
         }
       }
     },
+    "/api/preview-artifacts/{artifact_id}/access": {
+      "post": {
+        "tags": [
+          "preview"
+        ],
+        "summary": "重新检查权限并为当前预览 artifact 续签短期访问票据",
+        "description": "重新检查当前用户权限并为有效 artifact 换发新的短期预览票据 P。",
+        "operationId": "renew_preview_artifact_access_api_preview_artifacts__artifact_id__access_post",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewArtifactAccessRenewalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/build-assets": {
       "get": {
         "tags": [
@@ -23052,6 +23491,124 @@
         }
       }
     },
+    "/preview/artifacts/{artifact_id}/assets/{file_hash}": {
+      "get": {
+        "tags": [
+          "preview"
+        ],
+        "summary": "受保护的预览素材读取入口",
+        "description": "受保护的预览素材读取入口，校验预览令牌 P 与快照成员归属，并支持 ETag 与 Range。",
+        "operationId": "get_preview_protected_asset_preview_artifacts__artifact_id__assets__file_hash__get",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          },
+          {
+            "name": "file_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Hash"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "preview"
+        ],
+        "summary": "受保护的预览素材读取入口",
+        "description": "受保护的预览素材读取入口，校验预览令牌 P 与快照成员归属，并支持 ETag 与 Range。",
+        "operationId": "get_preview_protected_asset_preview_artifacts__artifact_id__assets__file_hash__get",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          },
+          {
+            "name": "file_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Hash"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/runtime/preview-service-token": {
       "post": {
         "tags": [
@@ -23151,6 +23708,124 @@
             "schema": {
               "type": "string",
               "title": "Artifact Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/runtime/preview-artifacts/{artifact_id}/assets/{file_hash}": {
+      "get": {
+        "tags": [
+          "internal-runtime"
+        ],
+        "summary": "Runtime 内部回源读取受保护素材",
+        "description": "Runtime 或构建 Worker 内部回源读取受保护素材，验证服务票据与快照归属。",
+        "operationId": "get_internal_runtime_protected_asset_internal_runtime_preview_artifacts__artifact_id__assets__file_hash__get",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          },
+          {
+            "name": "file_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Hash"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "internal-runtime"
+        ],
+        "summary": "Runtime 内部回源读取受保护素材",
+        "description": "Runtime 或构建 Worker 内部回源读取受保护素材，验证服务票据与快照归属。",
+        "operationId": "get_internal_runtime_protected_asset_internal_runtime_preview_artifacts__artifact_id__assets__file_hash__get",
+        "parameters": [
+          {
+            "name": "artifact_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Id"
+            }
+          },
+          {
+            "name": "file_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Hash"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
             }
           }
         ],
@@ -36046,6 +36721,46 @@
         "title": "PresentationConfigPatch",
         "description": "展示配置部分更新；显式 null 仅允许用于 theme_key。"
       },
+      "PreviewArtifactAccessRenewalResponse": {
+        "properties": {
+          "preview_url": {
+            "type": "string",
+            "title": "Preview Url"
+          },
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          },
+          "artifact_expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Expires At"
+          },
+          "artifact_id": {
+            "type": "string",
+            "title": "Artifact Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preview_url",
+          "token",
+          "expires_at",
+          "artifact_id"
+        ],
+        "title": "PreviewArtifactAccessRenewalResponse",
+        "description": "预览票据续签响应。"
+      },
       "PreviewArtifactCreateRequest": {
         "properties": {
           "entry_descriptor": {
@@ -36211,6 +36926,28 @@
               }
             ],
             "title": "Asset Name"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "artifact_expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Expires At"
           }
         },
         "type": "object",

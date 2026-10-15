@@ -1964,6 +1964,14 @@ export type PresentationConfigPatch = {
   "style_spec_markdown"?: (string) | (null)
 }
 
+export type PreviewArtifactAccessRenewalResponse = {
+  "preview_url": string
+  "token": string
+  "expires_at": string
+  "artifact_expires_at"?: (string) | (null)
+  "artifact_id": string
+}
+
 export type PreviewArtifactCreateRequest = {
   "entry_descriptor"?: (PreviewEntryDescriptor) | (null)
 }
@@ -1985,6 +1993,8 @@ export type PreviewArtifactResponse = {
   "runtime_kit_manifest_version"?: (string) | (null)
   "asset_id"?: (number) | (null)
   "asset_name"?: (string) | (null)
+  "expires_at"?: (string) | (null)
+  "artifact_expires_at"?: (string) | (null)
 }
 
 export type PreviewEntryDescriptor = {

@@ -673,6 +673,7 @@ export function createBuildBackendClient(options: {
       try {
         response = await fetch(assetUrl, {
           headers: {
+            ...defaultHeaders,
             Accept: '*/*',
           },
           signal,
