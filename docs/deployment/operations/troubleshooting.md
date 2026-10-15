@@ -31,3 +31,7 @@
 ## 图片、字体或构建产物无法访问
 
 local 模式检查 Backend 数据 volume；S3 模式检查 bucket、凭证、region 和 `S3_PUBLIC_BASE_URL`。字体公开 bucket 配置错误会导致页面预览可运行但字体不生效。
+
+旧 `/media` 及其子路径已关闭，返回 404 属于预期行为。请使用业务 API 返回的资源、截图或构建产物地址，不要把 Backend 数据目录通过 Nginx `alias`、`root` 或静态挂载重新公开。该目录可能同时保存数据库、密钥和派生缓存。
+
+升级时需同时更新 Backend 和 Gateway 配置，并确认直接访问 Backend 与经过 Gateway 的 `/media` 请求均返回 404。若旧版本曾对外暴露数据目录，应核查历史访问，并按实际暴露范围处理密钥轮换与凭证迁移；AI 加密密钥迁移参见上文指南。

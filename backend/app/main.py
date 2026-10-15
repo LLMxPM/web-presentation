@@ -12,7 +12,6 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -50,7 +49,6 @@ from app.db.profile import resolve_deployment_profile
 from app.db.sqlite_single_process import SqliteSingleProcessGuard, ensure_sqlite_single_process
 from app.services.bootstrap_service import BootstrapService
 from app.services.ai_model_catalog_service import AiModelCatalogService, run_model_catalog_sync_loop
-from app.services.object_storage_service import ObjectStorageService
 from app.services.system_settings_service import load_system_settings_on_startup, run_system_settings_version_sync_loop
 from app.services.asset_render_hint_backfill_job_service import (
     recover_interrupted_asset_render_hint_backfill_jobs_on_startup,
@@ -326,7 +324,6 @@ def create_app() -> FastAPI:
         return JSONResponse(stats.as_dict())
 
     _mount_ai_runtime(app)
-    app.mount("/media", StaticFiles(directory=ObjectStorageService().ensure_local_root()), name="media")
 
     @app.middleware("http")
     async def bind_request_context(request: Request, call_next):  # noqa: ANN001

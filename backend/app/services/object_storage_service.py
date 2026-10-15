@@ -260,13 +260,6 @@ class ObjectStorageService:
         self.local_root.mkdir(parents=True, exist_ok=True)
         return self.local_root
 
-    def build_media_url(self, storage_key: str | None) -> str | None:
-        """为本地静态挂载构造 /media URL。"""
-
-        if not storage_key:
-            return None
-        return f"/media/{quote(self.normalize_storage_key(storage_key), safe='/')}"
-
     async def generate_presigned_url(
         self,
         storage_key: str,

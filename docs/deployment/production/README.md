@@ -125,7 +125,7 @@ CORS_ORIGINS=["https://presentation.example.com"]
 拆分域名时，外部反向代理需要分别处理：
 
 - `presentation.example.com` 转发到简化版 `platform:80`，或 production env 版 `gateway:80`，用于 Editor 静态资源。
-- `api.presentation.example.com` 转发到 `backend:8000`，用于 `/api`、`/preview`、`/public`、`/build-artifacts`、`/media`。
+- `api.presentation.example.com` 转发到 `backend:8000`，用于 `/api`、`/preview`、`/public`、`/build-artifacts`；旧 `/media` 入口已关闭，不应配置数据目录静态映射。
 - `runtime.presentation.example.com` 转发到 `runtime:7373`，路径不要再加 `/runtime` 前缀。
 
 `RUNTIME_BASE_URL=http://runtime:7373` 是 Backend 容器访问 Runtime 的内网地址，不是浏览器访问地址；即使单独配置 `RUNTIME_PUBLIC_BASE_URL`，通常也不需要改它。
@@ -260,7 +260,8 @@ flowchart LR
 关键路径：
 
 - `/` 由 Gateway 返回 Editor 静态资源。
-- `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 代理到 Backend。
+- `/api`、`/public`、`/build-artifacts`、`/preview` 代理到 Backend。
+- `/media` 及其子路径返回 404；Backend 不再挂载对象存储根目录。
 - `/runtime/` 代理到 Runtime，并保留 `/runtime/` 前缀。
 - Backend 通过 `RUNTIME_BASE_URL` 访问 Runtime。
 - Backend 通过受信控制 API 调度 Renderer；Renderer 在 Chromium 中加载 Runtime 页面并回传截图或诊断结果。

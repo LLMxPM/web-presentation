@@ -171,4 +171,4 @@ Renderer 仍是唯一浏览器执行角色；扩容使用不同 `worker_id` 与�
 
 ## 访问关系
 
-浏览器访问平台 Gateway。Gateway 代理 `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 到 Backend，并代理 `/runtime/` 到 Runtime。
+浏览器访问平台 Gateway。Gateway 代理 `/api`、`/public`、`/build-artifacts`、`/preview` 到 Backend，并代理 `/runtime/` 到 Runtime。旧 `/media` 及其子路径由 Gateway 返回 404，Backend 也不再提供该静态挂载。

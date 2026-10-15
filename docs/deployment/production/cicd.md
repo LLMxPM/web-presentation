@@ -81,7 +81,7 @@ Pre-release 只推送固定版本标签，不移动 `latest` 与 `sqlite-lite`�
 ## 关键访问关系
 
 - 浏览器访问简化版的 `platform:80`，或 production env 版的 `gateway:80`。
-- 平台 Nginx 代理 `/api`、`/public`、`/build-artifacts`、`/preview`、`/media` 到 `backend:8000`。
+- 平台 Nginx 代理 `/api`、`/public`、`/build-artifacts`、`/preview` 到 `backend:8000`；旧 `/media` 及其子路径直接返回 404。
 - 平台 Nginx 代理 `/runtime/` 到 `runtime:7373`，并保留 `/runtime/` 前缀。
 - Backend 通过 `RUNTIME_BASE_URL=http://runtime:7373` 访问 Runtime 内网服务。
 - Runtime 通过 `RUNTIME_BACKEND_API_BASE_URL=http://backend:8000` 回源 Backend 内部接口。
