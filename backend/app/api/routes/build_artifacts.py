@@ -14,14 +14,8 @@ from app.db.session import get_db_session
 router = APIRouter()
 
 
-@router.api_route(
-    "/build-artifacts/{project_id}/{job_id}",
-    methods=["GET", "HEAD"],
-)
-@router.api_route(
-    "/build-artifacts/{project_id}/{job_id}/{artifact_path:path}",
-    methods=["GET", "HEAD"],
-)
+@router.get("/build-artifacts/{project_id}/{job_id}")
+@router.get("/build-artifacts/{project_id}/{job_id}/{artifact_path:path}")
 async def proxy_project_build_artifact(
     project_id: int,
     job_id: int,
