@@ -42,7 +42,7 @@ v-if="pathData" :d="pathData" :stroke="resolvedColor" :stroke-width="strokeWidth
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { createRafResizeObserver } from '@/core/utils/resize-observer'
 
 export interface ConnectorProps {
@@ -106,6 +106,7 @@ const pathData = ref('')
 const uniqueId = ref(Math.random().toString(36).substring(2, 11))
 const svgRef = ref<SVGSVGElement | null>(null)
 const containerRef = ref<HTMLElement | null>(null)
+let disposed = false
 
 // 获取元素（优先在当前组件树/临近上下文中查找）
 const getElement = (target: string | HTMLElement): HTMLElement | null => {
@@ -313,8 +314,10 @@ const generateCurvePath = (
   return `M ${sx} ${sy} Q ${cp1x} ${cp1y} ${ex} ${ey}`
 }
 
-// 更新连接线
+/** 根据当前锚点更新路径；卸载后忽略观察器队列中可能迟到的回调。 */
 const updateConnector = () => {
+  if (disposed) return
+
   const fromElement = getElement(props.from)
   const toElement = getElement(props.to)
 
@@ -386,12 +389,13 @@ watch(
 
 let resizeObserver: ResizeObserver | null = null
 let mutationObserver: MutationObserver | null = null
+const initialUpdateTimers: ReturnType<typeof setTimeout>[] = []
+let mutationFrameId: number | null = null
 
 // 生命周期
 onMounted(() => {
   // 初始化，延迟确保 DOM 完全渲染
-  setTimeout(updateConnector, 50)
-  setTimeout(updateConnector, 200)
+  initialUpdateTimers.push(setTimeout(updateConnector, 50), setTimeout(updateConnector, 200))
 
   // 监听窗口大小变化和滚动
   window.addEventListener('resize', updateConnector)
@@ -409,7 +413,11 @@ onMounted(() => {
 
   // 使用 MutationObserver 监听 DOM 变化
   mutationObserver = new MutationObserver(() => {
-    requestAnimationFrame(updateConnector)
+    if (disposed || mutationFrameId !== null) return
+    mutationFrameId = requestAnimationFrame(() => {
+      mutationFrameId = null
+      updateConnector()
+    })
   })
 
   if (fromElement && toElement) {
@@ -424,7 +432,15 @@ onMounted(() => {
   }
 })
 
-onUnmounted(() => {
+/** 在 DOM 销毁前释放本实例的任务和监听，防止旧页面继续查询新页面或已销毁的 document。 */
+onBeforeUnmount(() => {
+  disposed = true
+  initialUpdateTimers.forEach(clearTimeout)
+  initialUpdateTimers.length = 0
+  if (mutationFrameId !== null) {
+    cancelAnimationFrame(mutationFrameId)
+    mutationFrameId = null
+  }
   window.removeEventListener('resize', updateConnector)
   window.removeEventListener('scroll', updateConnector, true)
 
