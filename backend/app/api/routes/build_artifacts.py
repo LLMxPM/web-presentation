@@ -8,25 +8,31 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import AppException
 from app.db.session import get_db_session
-from app.services.project_build_artifact_proxy_service import ProjectBuildArtifactProxyService
 
 router = APIRouter()
 
 
-@router.get("/build-artifacts/{project_id}/{job_id}")
-@router.get("/build-artifacts/{project_id}/{job_id}/{artifact_path:path}")
+@router.api_route(
+    "/build-artifacts/{project_id}/{job_id}",
+    methods=["GET", "HEAD"],
+)
+@router.api_route(
+    "/build-artifacts/{project_id}/{job_id}/{artifact_path:path}",
+    methods=["GET", "HEAD"],
+)
 async def proxy_project_build_artifact(
     project_id: int,
     job_id: int,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     artifact_path: str = "",
 ) -> Response:
-    """公开代理构建产物中的静态文件，支持 SPA 页面路由回退。"""
+    """公开代理构建产物中的静态文件；匿名访问已关闭。"""
 
-    result = await ProjectBuildArtifactProxyService(session).get_artifact_file(
-        project_id=project_id,
-        job_id=job_id,
-        request_path=artifact_path,
+    raise AppException(
+        status_code=404,
+        code="BUILD_ARTIFACT_ANONYMOUS_DISABLED",
+        detail="构建产物匿名访问已关闭，请使用受保护的私有构建授权接口浏览或下载。",
+        headers={"Cache-Control": "no-store"},
     )
-    return Response(content=result.content, media_type=result.media_type, headers=result.headers)

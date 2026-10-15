@@ -32,6 +32,25 @@ def check_media_blocked(endpoint: str) -> None:
                 assert b'synthetic-private-object' not in body
 
 
+def check_closed_public_surfaces_blocked(endpoint: str) -> None:
+    """验证收口的公开用户文件与匿名构建产物入口返回不可缓存的 404，不返回上游或 Editor SPA。"""
+    paths = [
+        '/public', '/public/', '/public/assets/1/mock.bin',
+        '/build-artifacts', '/build-artifacts/', '/build-artifacts/1/1/index.html',
+    ]
+    for method in ('GET', 'HEAD'):
+        for path in paths:
+            try:
+                urlopen(Request(endpoint + path, method=method), timeout=5)
+                raise AssertionError(f'{method} {path} 未被阻断')
+            except HTTPError as error:
+                assert error.code == 404, (method, path, error.code)
+                assert error.headers.get('Cache-Control') == 'no-store'
+                body = error.read()
+                assert b'editor-fixture' not in body
+                assert b'synthetic-private-object' not in body
+
+
 def main() -> None:
     """创建受控上游和真实网关，用 HTTP 验收后清理本次容器与网络。"""
     root = Path(__file__).resolve().parents[2]
@@ -52,7 +71,12 @@ def main() -> None:
             (directory / 'openapi.json').write_text(json.dumps(document), encoding='utf-8')
             (directory / 'index.html').write_text('<html>editor-fixture</html>', encoding='utf-8')
             # 网关与上游都实际存在虚构文件，确保 404 来自显式阻断而非文件缺失。
-            for relative in ('media/ai_secret.key', 'media/_object-cache/mock.bin'):
+            for relative in (
+                'media/ai_secret.key',
+                'media/_object-cache/mock.bin',
+                'public/assets/1/mock.bin',
+                'build-artifacts/1/1/index.html',
+            ):
                 target = directory / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(b'synthetic-private-object')
@@ -75,6 +99,7 @@ def main() -> None:
                     time.sleep(0.2)
             module.check(endpoint)
             check_media_blocked(endpoint)
+            check_closed_public_surfaces_blocked(endpoint)
             with urlopen(endpoint + '/api/v1/system/health') as response:
                 assert json.load(response)['status'] == 'ok'
             with urlopen(endpoint + '/editor/deep-link') as response:
@@ -86,7 +111,7 @@ def main() -> None:
             except HTTPError as error:
                 assert error.code == 503
                 assert b'editor-fixture' not in error.read()
-            print('真实 Nginx：/media 阻断、上游 503 透传、原 API 与 Editor SPA 检查通过。')
+            print('真实 Nginx：/media 与收口公开路径阻断、上游 503 透传、原 API 与 Editor SPA 检查通过。')
     finally:
         for container in reversed(containers):
             docker('rm', '-f', container)
