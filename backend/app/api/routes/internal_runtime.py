@@ -372,10 +372,13 @@ async def get_preview_artifact_config_bundle(
     return release.config_bundle
 
 
-@router.api_route(
+@router.get(
     "/internal/runtime/preview-artifacts/{artifact_id}/assets/{file_hash}",
-    methods=["GET", "HEAD"],
     summary="Runtime 内部回源读取受保护素材",
+)
+@router.head(
+    "/internal/runtime/preview-artifacts/{artifact_id}/assets/{file_hash}",
+    include_in_schema=False,
 )
 async def get_internal_runtime_protected_asset(
     artifact_id: str,

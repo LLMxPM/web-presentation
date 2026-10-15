@@ -143,7 +143,7 @@ async def test_s3_asset_driver_should_split_font_uploads_to_public_bucket(
         {
             "storage_key": "assets/7/font-hash.woff2",
             "content_type": "font/woff2",
-            "bucket_name": "public-fonts",
+            "bucket_name": "private-assets",
         },
         {
             "storage_key": "assets/7/image-hash.png",

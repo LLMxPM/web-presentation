@@ -301,10 +301,13 @@ async def delete_page(
     return MessageResponse(message="页面已删除。")
 
 
-@router.api_route(
+@router.get(
     "/{page_id}/screenshots/{screenshot_id}/content",
-    methods=["GET", "HEAD"],
     summary="受保护的页面截图读取接口",
+)
+@router.head(
+    "/{page_id}/screenshots/{screenshot_id}/content",
+    include_in_schema=False,
 )
 async def get_page_screenshot_content(
     page_id: int,

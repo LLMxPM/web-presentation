@@ -225,10 +225,13 @@ async def get_workspace_asset_content(
     )
 
 
-@router.api_route(
+@router.get(
     "/workspaces/{workspace_id}/assets/{asset_id}/file",
-    methods=["GET", "HEAD"],
     summary="受保护的工作空间资产二进制文件读取",
+)
+@router.head(
+    "/workspaces/{workspace_id}/assets/{asset_id}/file",
+    include_in_schema=False,
 )
 async def get_workspace_asset_file(
     workspace_id: int,
@@ -254,10 +257,13 @@ async def get_workspace_asset_file(
     )
 
 
-@router.api_route(
+@router.get(
     "/workspaces/{workspace_id}/assets/by-hash/{file_hash}",
-    methods=["GET", "HEAD"],
     summary="按文件 hash 读取受保护的工作空间资产",
+)
+@router.head(
+    "/workspaces/{workspace_id}/assets/by-hash/{file_hash}",
+    include_in_schema=False,
 )
 async def get_workspace_asset_by_hash(
     workspace_id: int,

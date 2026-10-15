@@ -458,10 +458,13 @@ async def batch_archive_projects(
     return result if isinstance(result, ExternalBatchArchiveResponse) else ExternalBatchArchiveResponse.model_validate(result)
 
 
-@router.api_route(
+@router.get(
     "/{project_id}/build-jobs/{job_id}/artifact",
-    methods=["GET", "HEAD"],
     summary="External API 下载项目构建归档产物",
+)
+@router.head(
+    "/{project_id}/build-jobs/{job_id}/artifact",
+    include_in_schema=False,
 )
 async def get_external_project_build_artifact(
     project_id: int,

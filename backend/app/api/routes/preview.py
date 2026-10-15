@@ -157,10 +157,13 @@ async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_s
     )
 
 
-@router_public.api_route(
+@router_public.get(
     "/preview/artifacts/{artifact_id}/assets/{file_hash}",
-    methods=["GET", "HEAD"],
     summary="受保护的预览素材读取入口",
+)
+@router_public.head(
+    "/preview/artifacts/{artifact_id}/assets/{file_hash}",
+    include_in_schema=False,
 )
 async def get_preview_protected_asset(
     artifact_id: str,

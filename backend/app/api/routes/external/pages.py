@@ -406,10 +406,13 @@ async def batch_archive_pages(
     return result if isinstance(result, ExternalBatchArchiveResponse) else ExternalBatchArchiveResponse.model_validate(result)
 
 
-@router.api_route(
+@router.get(
     "/pages/{page_id}/screenshots/{screenshot_id}/content",
-    methods=["GET", "HEAD"],
     summary="External API 读取页面截图",
+)
+@router.head(
+    "/pages/{page_id}/screenshots/{screenshot_id}/content",
+    include_in_schema=False,
 )
 async def get_external_page_screenshot_content(
     page_id: int,

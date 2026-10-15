@@ -426,10 +426,13 @@ async def batch_archive_assets(
     return result if isinstance(result, ExternalBatchArchiveResponse) else ExternalBatchArchiveResponse.model_validate(result)
 
 
-@router.api_route(
+@router.get(
     "/{asset_id}/file",
-    methods=["GET", "HEAD"],
     summary="External API 读取资源二进制文件",
+)
+@router.head(
+    "/{asset_id}/file",
+    include_in_schema=False,
 )
 async def get_external_asset_file(
     asset_id: int,
