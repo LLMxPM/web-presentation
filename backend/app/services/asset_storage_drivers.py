@@ -118,30 +118,16 @@ class S3StorageDriver:
         return f"assets/{workspace_id}/{file_name}"
 
     def _resolve_bucket_name(self, file_name: str) -> str | None:
-        """根据文件类型选择私有 bucket 或公开字体 bucket。"""
+        """用户资产统一进入私有 bucket，禁止按 .woff2 等后缀自动分流到公共桶 (W08,W11)。"""
 
         settings = self.object_storage.settings
-        public_bucket = str(settings.s3_public_bucket or "").strip()
-        if public_bucket and self._is_public_font_file(file_name):
-            return public_bucket
         return str(settings.s3_bucket or "").strip() or None
 
     def _build_public_font_url(self, workspace_id: int, file_name: str) -> str | None:
-        """为公开字体 bucket 构造稳定访问 URL。"""
+        """用户字体与资源文件默认私有，不生成公开直连 URL。"""
 
-        if not self._is_public_font_file(file_name):
-            return None
-        public_base_url = str(self.object_storage.settings.s3_public_base_url or "").strip().rstrip("/")
-        if not public_base_url:
-            return None
-        return f"{public_base_url}/{self._get_s3_key(workspace_id, file_name)}"
+        return None
 
-    @classmethod
-    def _is_public_font_file(cls, file_name: str) -> bool:
-        """判断文件名是否应进入公开字体资源链路。"""
-
-        normalized_name = str(file_name or "").strip().lower()
-        return normalized_name.endswith(cls.PUBLIC_FONT_SUFFIXES)
 
     async def upload(self, workspace_id: int, file_hash: str, ext: str, content: bytes, content_type: str | None = None) -> str:
         save_name = f"{file_hash}{ext}"

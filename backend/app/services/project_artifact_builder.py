@@ -119,6 +119,7 @@ class ProjectArtifactBuilder:
         asset_snapshot_mode: AssetSnapshotMode = "all",
         snapshot_profile: ArtifactSnapshotProfile = "full",
         asset_base_url_override: str | None = None,
+        artifact_id: str | None = None,
     ) -> ProjectArtifactSnapshot:
         """构建项目级预览/构建共用快照。"""
 
@@ -221,6 +222,7 @@ class ProjectArtifactBuilder:
             asset_base_source,
             project.workspace_id,
             asset_delivery_mode,
+            artifact_id=artifact_id,
         )
 
         return ProjectArtifactSnapshot(
@@ -290,13 +292,21 @@ class ProjectArtifactBuilder:
         )
 
     @staticmethod
-    def build_asset_base_url(backend_public_base_url: str, workspace_id: int, mode: AssetDeliveryMode = "public") -> str:
-        """根据资源下发模式构建 manifest 中的资源根地址。"""
+    def build_asset_base_url(
+        backend_public_base_url: str,
+        workspace_id: int,
+        mode: AssetDeliveryMode = "public",
+        artifact_id: str | None = None,
+    ) -> str:
+        """根据资源下发模式构建 manifest 中的资源根地址 (W01,W11)。"""
 
         public_base = backend_public_base_url.rstrip("/")
-        if mode == "backend_cache":
-            return f"{public_base}/public/cached-assets/{workspace_id}"
-        return f"{public_base}/public/assets/{workspace_id}"
+        if artifact_id:
+            if mode == "backend_cache":
+                return f"{public_base}/internal/runtime/preview-artifacts/{artifact_id}/assets"
+            return f"{public_base}/preview/artifacts/{artifact_id}/assets"
+        return f"{public_base}/api/workspaces/{workspace_id}/assets"
+
 
     async def get_project_or_raise(self, project_id: int) -> Project:
         """按主键读取项目；若不存在或已归档则抛出标准错误。"""

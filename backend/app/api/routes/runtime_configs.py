@@ -5,8 +5,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_current_user
 from app.db.session import get_db_session
+from app.services.auth_service import AuthContext
 from app.services.project_config_service import ProjectConfigName, ProjectConfigService
+from app.services.project_service import ProjectService
 
 router = APIRouter()
 
@@ -15,13 +18,20 @@ router = APIRouter()
 async def get_runtime_project_config(
     project_id: int,
     config_file_name: str,
+    current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Response:
-    """按文件名返回项目级 YAML 配置，供 Runtime 在只读模式下拉取。"""
+    """按文件名返回项目级 YAML 配置，严格校验登录用户项目访问权限 (W11)。"""
 
+    await ProjectService(session).get(project_id, user_id=current.user.id)
     config_name = _parse_config_name(config_file_name)
     config_text = await ProjectConfigService(session).get_config_text(project_id, config_name)
-    return Response(content=config_text, media_type="text/yaml; charset=utf-8")
+    return Response(
+        content=config_text,
+        media_type="text/yaml; charset=utf-8",
+        headers={"Cache-Control": "private, no-cache"},
+    )
+
 
 
 def _parse_config_name(config_file_name: str) -> ProjectConfigName:

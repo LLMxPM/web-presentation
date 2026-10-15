@@ -147,3 +147,89 @@ def test_gateway_nginx_conf_blocks_public_and_build_artifacts():
     assert "location ~ ^/(api|preview)(/|$)" in content
     assert "build-artifacts" not in content.split("location ~ ^/")[1].split(")(/|$)")[0]
     assert "public" not in content.split("location ~ ^/")[1].split(")(/|$)")[0]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_runtime_configs_anonymous_denied_and_authenticated_allowed(monkeypatch):
+    """验证项目配置接口禁止匿名读取，严格要求登录鉴权并验证项目访问权 (W11)。"""
+
+    from app.api.dependencies import get_current_user
+    from app.services.auth_service import AuthContext
+    from app.models.user import User
+    from app.services.project_service import ProjectService
+    from app.services.project_config_service import ProjectConfigService
+
+    mock_session = AsyncMock()
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. 匿名访问被拒绝 (401)
+            anon_resp = await client.get("/api/runtime/projects/1/configs/app.config.yaml")
+            assert anon_resp.status_code == 401
+
+            # 2. 伪造登录态但无权访问该项目 (404/403)
+            user = User(id=88, username="test_u", display_name="Test", password_hash="h", preview_size_presets={})
+            auth_ctx = AuthContext(user=user, session_token="s-1", backend_session_id="bs-1")
+            app.dependency_overrides[get_current_user] = lambda: auth_ctx
+
+            from app.core.exceptions import AppException
+            monkeypatch.setattr(ProjectService, "get", AsyncMock(side_effect=AppException(404, "PROJECT_NOT_FOUND", "项目不存在")))
+            forbidden_resp = await client.get("/api/runtime/projects/1/configs/app.config.yaml")
+            assert forbidden_resp.status_code == 404
+
+            # 3. 合法登录用户成功读取并带 private, no-cache
+            monkeypatch.setattr(ProjectService, "get", AsyncMock(return_value=None))
+            monkeypatch.setattr(ProjectConfigService, "get_config_text", AsyncMock(return_value="name: demo\n"))
+            ok_resp = await client.get("/api/runtime/projects/1/configs/app.config.yaml")
+            assert ok_resp.status_code == 200
+            assert "name: demo" in ok_resp.text
+            assert ok_resp.headers["Cache-Control"] == "private, no-cache"
+    finally:
+        app.dependency_overrides.pop(get_db_session, None)
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_backend_direct_public_routes_return_404():
+    """验证 Backend 内部未挂载 /public 路由，直连任何 /public 端点均返回 404 (W11)。"""
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp_assets = await client.get("/public/assets/1/hash-123")
+        assert resp_assets.status_code == 404
+
+        resp_cached = await client.get("/public/cached-assets/1/hash-123")
+        assert resp_cached.status_code == 404
+
+        resp_screenshots = await client.get("/public/page-screenshots/1")
+        assert resp_screenshots.status_code == 404
+
+
+@pytest.mark.unit
+def test_s3_storage_driver_no_font_public_bucket_split(monkeypatch):
+    """验证 S3StorageDriver 上传字体不再分流至 public bucket，统一使用私有 bucket 且不返回公开直连 URL (W08,W11)。"""
+
+    from app.services.asset_storage_drivers import S3StorageDriver
+    from app.services.object_storage_service import ObjectStorageService
+    from app.core.config import AppSettings
+
+    custom_settings = AppSettings(
+        s3_bucket="my-private-bucket",
+        s3_public_bucket="my-public-bucket",
+        s3_public_base_url="https://public.example.com",
+    )
+    monkeypatch.setattr(ObjectStorageService, "settings", property(lambda self: custom_settings))
+    driver = S3StorageDriver()
+
+    # 上传字体统一使用私有 bucket
+    assert driver._resolve_bucket_name("custom-font.woff2") == "my-private-bucket"
+    assert driver._resolve_bucket_name("custom-font.ttf") == "my-private-bucket"
+    assert driver._resolve_bucket_name("image.png") == "my-private-bucket"
+
+    # 不生成公开直连 URL
+    assert driver._build_public_font_url(1, "custom-font.woff2") is None
+

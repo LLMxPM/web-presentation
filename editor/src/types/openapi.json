@@ -19503,6 +19503,160 @@
         }
       }
     },
+    "/api/workspaces/{workspace_id}/assets/by-hash/{file_hash}": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "按文件 hash 读取受保护的工作空间资产",
+        "description": "按文件 hash 读取受保护的工作空间资产，校验工作空间成员权限并支持 ETag 与 Range。",
+        "operationId": "get_workspace_asset_by_hash_api_workspaces__workspace_id__assets_by_hash__file_hash__get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "file_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Hash"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "1 为触发附件下载",
+              "default": 0,
+              "title": "Download"
+            },
+            "description": "1 为触发附件下载"
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "按文件 hash 读取受保护的工作空间资产",
+        "description": "按文件 hash 读取受保护的工作空间资产，校验工作空间成员权限并支持 ETag 与 Range。",
+        "operationId": "get_workspace_asset_by_hash_api_workspaces__workspace_id__assets_by_hash__file_hash__get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "file_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Hash"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "1 为触发附件下载",
+              "default": 0,
+              "title": "Download"
+            },
+            "description": "1 为触发附件下载"
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspaces/{workspace_id}/assets/{asset_id}/preview-artifact": {
       "post": {
         "tags": [
@@ -23737,7 +23891,7 @@
           "runtime-configs"
         ],
         "summary": "Get Runtime Project Config",
-        "description": "按文件名返回项目级 YAML 配置，供 Runtime 在只读模式下拉取。",
+        "description": "按文件名返回项目级 YAML 配置，严格校验登录用户项目访问权限 (W11)。",
         "operationId": "get_runtime_project_config_api_runtime_projects__project_id__configs__config_file_name__get",
         "parameters": [
           {
@@ -23757,221 +23911,22 @@
               "type": "string",
               "title": "Config File Name"
             }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/public/assets/{workspace_id}/{file_hash}": {
-      "get": {
-        "tags": [
-          "public-assets"
-        ],
-        "summary": "Get Public Asset",
-        "description": "公开获取静态资源，该入口地址可通过 manifest 的 asset_base_url 获取。",
-        "operationId": "get_public_asset_public_assets__workspace_id___file_hash__get",
-        "parameters": [
-          {
-            "name": "workspace_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Workspace Id"
-            }
           },
           {
-            "name": "file_hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "File Hash"
-            }
-          },
-          {
-            "name": "download",
-            "in": "query",
+            "name": "wp_user_session",
+            "in": "cookie",
             "required": false,
             "schema": {
-              "type": "integer",
-              "description": "1 to force download",
-              "default": 0,
-              "title": "Download"
-            },
-            "description": "1 to force download"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
                 }
-              }
+              ],
+              "title": "Wp User Session"
             }
-          }
-        }
-      }
-    },
-    "/public/cached-assets/{workspace_id}/{file_hash}": {
-      "get": {
-        "tags": [
-          "public-assets"
-        ],
-        "summary": "Get Public Cached Asset",
-        "description": "公开读取截图专用缓存资源，S3 对象会先落到 Backend 本地派生缓存。",
-        "operationId": "get_public_cached_asset_public_cached_assets__workspace_id___file_hash__get",
-        "parameters": [
-          {
-            "name": "workspace_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Workspace Id"
-            }
-          },
-          {
-            "name": "file_hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "File Hash"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/public/template-package-assets/{artifact_id}/{file_hash}": {
-      "get": {
-        "tags": [
-          "public-assets"
-        ],
-        "summary": "Get Public Template Package Asset",
-        "description": "公开读取模板包预览 artifact 中的短生命周期资源。",
-        "operationId": "get_public_template_package_asset_public_template_package_assets__artifact_id___file_hash__get",
-        "parameters": [
-          {
-            "name": "artifact_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Artifact Id"
-            }
-          },
-          {
-            "name": "file_hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "File Hash"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/public/page-screenshots/{page_id}": {
-      "get": {
-        "tags": [
-          "public-assets"
-        ],
-        "summary": "Get Public Page Screenshot",
-        "description": "公开读取页面截图；S3 私有桶由后端代理返回图片 bytes，并支持下载响应头。",
-        "operationId": "get_public_page_screenshot_public_page_screenshots__page_id__get",
-        "parameters": [
-          {
-            "name": "page_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Page Id"
-            }
-          },
-          {
-            "name": "download",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "description": "1 to force download",
-              "default": 0,
-              "title": "Download"
-            },
-            "description": "1 to force download"
           }
         ],
         "responses": {

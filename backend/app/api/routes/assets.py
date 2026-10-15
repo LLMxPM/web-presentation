@@ -44,11 +44,11 @@ router = APIRouter(dependencies=[Depends(require_workspace_access)])
 
 
 async def _build_asset_response(session: AsyncSession, workspace_id: int, asset: WorkspaceAsset) -> AssetResponse:
-    """把资源 ORM 模型转换为带公开 URL 与字体摘要的接口响应。"""
+    """把资源 ORM 模型转换为带受保护访问 URL 与字体摘要的接口响应 (W10)。"""
 
     settings = get_settings()
     response = AssetResponse.model_validate(asset)
-    response.url = f"{settings.backend_public_base_url.rstrip('/')}/public/assets/{workspace_id}/{asset.file_hash}"
+    response.url = f"{settings.backend_public_base_url.rstrip('/')}/api/workspaces/{workspace_id}/assets/{asset.id}/file?hash={asset.file_hash}"
     enriched_payload = await WorkspaceFontService(session).enrich_asset_payloads(
         workspace_id,
         [asset],
@@ -62,13 +62,13 @@ async def _build_asset_responses(
     workspace_id: int,
     assets: list[WorkspaceAsset],
 ) -> list[AssetResponse]:
-    """批量转换资源响应，避免列表接口重复散落 URL 与字体增强逻辑。"""
+    """批量转换资源响应，避免列表接口重复散落 URL 与字体增强逻辑 (W10)。"""
 
     settings = get_settings()
     payloads = []
     for asset in assets:
         response = AssetResponse.model_validate(asset)
-        response.url = f"{settings.backend_public_base_url.rstrip('/')}/public/assets/{workspace_id}/{asset.file_hash}"
+        response.url = f"{settings.backend_public_base_url.rstrip('/')}/api/workspaces/{workspace_id}/assets/{asset.id}/file?hash={asset.file_hash}"
         payloads.append(response.model_dump())
     enriched_payloads = await WorkspaceFontService(session).enrich_asset_payloads(workspace_id, assets, payloads)
     return [AssetResponse.model_validate(item) for item in enriched_payloads]
@@ -252,6 +252,35 @@ async def get_workspace_asset_file(
         is_download=download == 1,
         is_head=request.method == "HEAD",
     )
+
+
+@router.api_route(
+    "/workspaces/{workspace_id}/assets/by-hash/{file_hash}",
+    methods=["GET", "HEAD"],
+    summary="按文件 hash 读取受保护的工作空间资产",
+)
+async def get_workspace_asset_by_hash(
+    workspace_id: int,
+    file_hash: str,
+    request: Request,
+    _: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    download: int = Query(0, description="1 为触发附件下载"),
+):
+    """按文件 hash 读取受保护的工作空间资产，校验工作空间成员权限并支持 ETag 与 Range。"""
+
+    service = AssetService(session)
+    asset, _ = await service.get_asset_by_hash(workspace_id, file_hash)
+    return await _serve_workspace_asset_binary(
+        request=request,
+        workspace_id=workspace_id,
+        asset=asset,
+        service=service,
+        target_hash=file_hash,
+        is_download=download == 1,
+        is_head=request.method == "HEAD",
+    )
+
 
 
 async def _serve_workspace_asset_binary(

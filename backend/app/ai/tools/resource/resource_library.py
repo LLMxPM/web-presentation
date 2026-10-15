@@ -459,7 +459,7 @@ def _dump_asset(asset: Any) -> dict[str, Any]:
 
     payload = AssetResponse.model_validate(asset).model_dump(mode="json")
     settings = get_settings()
-    payload["url"] = f"{settings.backend_public_base_url.rstrip('/')}/public/assets/{asset.workspace_id}/{asset.file_hash}"
+    payload["url"] = f"{settings.backend_public_base_url.rstrip('/')}/api/workspaces/{asset.workspace_id}/assets/{asset.id}/file?hash={asset.file_hash}"
     return payload
 
 

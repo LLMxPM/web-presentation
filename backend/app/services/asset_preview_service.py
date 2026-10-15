@@ -52,7 +52,8 @@ class AssetPreviewService:
         settings = get_settings()
         asset = await self.asset_service._get_asset_or_raise(workspace_id, asset_id)
         sandbox_project = await self.component_preview_service._ensure_workspace_preview_project(workspace_id)
-        asset_base_url = f"{settings.backend_public_base_url.rstrip('/')}/public/assets/{workspace_id}"
+        artifact_id = f"rt_{uuid.uuid4().hex}"
+        asset_base_url = f"{settings.backend_public_base_url.rstrip('/')}/preview/artifacts/{artifact_id}/assets"
         asset_mapping, asset_metadata = await self.preview_service._build_workspace_asset_mapping(workspace_id)
         self._append_asset_manifest_entry(asset_mapping, asset_metadata, asset)
         entry_descriptor = PreviewEntryDescriptor(entry_type="asset_host")
@@ -79,11 +80,12 @@ class AssetPreviewService:
             asset=asset,
             asset_preview_payload=asset_preview_payload,
         )
-        artifact_id = await RuntimeArtifactStore().put_artifact(
+        await RuntimeArtifactStore().put_artifact(
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             project_id=sandbox_project.id,
             artifact_kind="preview_artifact",
+            artifact_id=artifact_id,
             manifest=manifest,
             config_bundle=config_bundle,
             modules_data=[],

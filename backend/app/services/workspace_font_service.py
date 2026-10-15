@@ -1036,7 +1036,8 @@ class WorkspaceFontService:
 
     @staticmethod
     def _build_asset_url(workspace_id: int, file_hash: str) -> str:
-        """构建字体资产公开访问地址。"""
+        """构建字体资产受保护访问地址 (W01,W11)。"""
 
         settings = get_settings()
-        return f"{settings.backend_public_base_url.rstrip('/')}/public/assets/{workspace_id}/{file_hash}"
+        return f"{settings.backend_public_base_url.rstrip('/')}/api/workspaces/{workspace_id}/assets/by-hash/{file_hash}"
+

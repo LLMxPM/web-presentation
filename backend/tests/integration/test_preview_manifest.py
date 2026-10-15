@@ -85,7 +85,7 @@ async def test_preview_artifact_manifest_should_map_asset_name_to_file_hash(
     manifest = manifest_response.json()
 
     assert manifest["artifact_kind"] == "preview_artifact"
-    assert manifest["asset_base_url"] == f"http://127.0.0.1:8000/public/assets/{workspace_id}"
+    assert manifest["asset_base_url"] == f"http://127.0.0.1:8000/preview/artifacts/{artifact_id}/assets"
     assert manifest["assets"]["Top"] == file_hash
     assert manifest["asset_metadata"]["Top"]["render_type"] == "icon"
     assert manifest["asset_metadata"]["Top"]["asset_role"] == "foundation"

@@ -62,6 +62,7 @@ class PreviewService:
         """
 
         settings = get_settings()
+        artifact_id = f"rt_{uuid.uuid4().hex}"
         snapshot_started_at = time.perf_counter()
         snapshot = await self.artifact_builder.build_snapshot(
             project_id=project_id,
@@ -72,6 +73,7 @@ class PreviewService:
             asset_snapshot_mode="referenced" if snapshot_profile == "page_diagnostics" else "all",
             snapshot_profile=snapshot_profile,
             asset_base_url_override=asset_base_url_override,
+            artifact_id=artifact_id,
         )
         snapshot_duration_ms = round((time.perf_counter() - snapshot_started_at) * 1000, 2)
         entry_descriptor_payload = snapshot.entry_descriptor.model_dump(mode="python", exclude_none=True)
@@ -93,11 +95,12 @@ class PreviewService:
         }
         self._append_manifest_extensions(manifest, manifest_extensions)
         artifact_store_started_at = time.perf_counter()
-        artifact_id = await RuntimeArtifactStore().put_artifact(
+        await RuntimeArtifactStore().put_artifact(
             tenant_id=tenant_id,
             workspace_id=snapshot.project.workspace_id,
             project_id=project_id,
             artifact_kind=artifact_kind,
+            artifact_id=artifact_id,
             manifest=manifest,
             config_bundle=snapshot.config_bundle,
             modules_data=snapshot.modules_data,

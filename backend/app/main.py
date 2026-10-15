@@ -34,7 +34,7 @@ from app.ai.image_generation_queue import (
     run_ai_image_generation_queue_loop,
 )
 from app.api.router import api_router
-from app.api.routes import build_artifacts, public_assets, internal_runtime, runtime_configs, well_known, preview
+from app.api.routes import build_artifacts, internal_runtime, runtime_configs, well_known, preview
 from app.core.config import get_settings, validate_runtime_role_targets
 from app.core.exceptions import AppException
 from app.core.logging_config import bind_request_id, configure_app_logging, reset_request_id, sanitize_log_text
@@ -250,7 +250,6 @@ def create_app() -> FastAPI:
     )
     app.include_router(api_router, prefix="/api")
     app.include_router(runtime_configs.router, tags=["runtime-configs"])
-    app.include_router(public_assets.router, prefix="/public", tags=["public-assets"])
     app.include_router(build_artifacts.router, tags=["build-artifacts"])
     app.include_router(preview.router_public, tags=["preview"])
     app.include_router(internal_runtime.router, tags=["internal-runtime"])

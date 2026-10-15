@@ -559,11 +559,13 @@ class PageScreenshotService:
         """构造页面截图查询结果。"""
 
         storage_key = str(page.screenshot_storage_key or "")
-        settings = get_settings()
         version = page.screenshot_version_no or page.current_version_no
+        screenshot_id = "latest"
         if page.screenshot_updated_at is not None:
-            version = int(normalize_utc(page.screenshot_updated_at).timestamp() * 1000)
-        public_url = f"{settings.backend_public_base_url.rstrip('/')}/public/page-screenshots/{page.id}?v={version}"
+            screenshot_id = str(int(normalize_utc(page.screenshot_updated_at).timestamp() * 1000))
+        elif version:
+            screenshot_id = str(version)
+        public_url = f"{settings.backend_public_base_url.rstrip('/')}/api/pages/{page.id}/screenshots/{screenshot_id}/content"
         return PageScreenshotResult(
             page=page,
             page_item=await self.page_service._to_item(page),

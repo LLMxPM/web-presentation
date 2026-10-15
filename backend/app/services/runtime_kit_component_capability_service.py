@@ -123,8 +123,9 @@ class RuntimeKitComponentCapabilityService:
             runtime_kit_manifest_version=str(capability["manifest_version"]),
         )
         await self.component_preview_service._commit_metadata_backfills()
+        artifact_id = f"rt_{uuid.uuid4().hex}"
         asset_mapping, asset_metadata = await self.preview_service._build_workspace_asset_mapping(workspace_id)
-        asset_base_url = f"{settings.backend_public_base_url.rstrip('/')}/public/assets/{workspace_id}"
+        asset_base_url = f"{settings.backend_public_base_url.rstrip('/')}/preview/artifacts/{artifact_id}/assets"
         entry_descriptor = self.component_preview_service._build_entry_descriptor()
         entry_descriptor_payload = entry_descriptor.model_dump(mode="python", exclude_none=True)
 
@@ -148,11 +149,12 @@ class RuntimeKitComponentCapabilityService:
             "assets": asset_mapping,
             "asset_metadata": asset_metadata,
         }
-        artifact_id = await RuntimeArtifactStore().put_artifact(
+        await RuntimeArtifactStore().put_artifact(
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             project_id=sandbox_project.id,
             artifact_kind="preview_artifact",
+            artifact_id=artifact_id,
             manifest=manifest,
             config_bundle=config_bundle,
             modules_data=[],

@@ -829,7 +829,7 @@ class WorkspaceThemeService:
                 "original_name": asset.original_name,
                 "asset_type": asset.asset_type,
                 "analysis_metadata": asset.analysis_metadata,
-                "url": f"{settings.backend_public_base_url.rstrip('/')}/public/assets/{workspace_id}/{asset.file_hash}",
+                "url": f"{settings.backend_public_base_url.rstrip('/')}/api/workspaces/{workspace_id}/assets/{asset.id}/file?hash={asset.file_hash}",
             }
         )
 
