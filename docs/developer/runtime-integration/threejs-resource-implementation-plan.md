@@ -20,9 +20,9 @@
 | W07 | 已完成 | Editor 三维上传、详情摘要、按 ID 替换（expected hash）、真实预览与 AssetPicker；`test:editor:gate` |
 | W08 | 已完成 | 构建冻结与物化、资源包/组件包/样式包/模板包含三维文件往返、离线产物；`test_project_build.py`、`test_model3d_asset_package.py`、`test_project_template_package_model3d.py` |
 | W09 | Backend 外部件已完成；CLI/MCP 未对接 | External `asset.file.replace`、AI 三维摘要与披露、OpenAPI/参考文档；`test_external_asset_replace.py`；CLI/MCP 见退出项 |
-| W10 | 本次收尾 | 全量 E2E（auth/smoke/visual-edit/ai/runtime-heavy 共 18 例）、迁移对拍、兼容矩阵与文档更新；镜像演练见退出项 |
+| W10 | 本次收尾 | 全量 E2E（auth/smoke/visual-edit/ai/runtime-heavy 共 18 例）、Docker 架构演练（专属 PG/Redis/卷/回环端口）、迁移对拍、兼容矩阵与文档更新 |
 
-集成门禁（2026-10-16/17，分支 `feature/threejs-model3d`）：Backend 全量 1427、Editor gate、Runtime gate、根仓 contracts 59、repository 16、真实 Nginx Gateway 契约、CLI Skill 契约、`pg-claim` 9（专用库）、Renderer 27、`render-e2e` 2/2、`codegen` 无漂移、E2E 全量 18 例（17 通过，1 例跨项目并发 flake 隔离重跑 4/4 通过）。
+集成门禁（2026-10-16/17，分支 `feature/threejs-model3d`）：Backend 全量 1430 通过（14 skip）、Editor gate、Runtime gate、根仓 contracts 59、repository 16、真实 Nginx Gateway 契约、CLI Skill 契约、`pg-claim` 9（专用库）、Renderer 27、`render-e2e` 2/2、`codegen` 无漂移、E2E 全量 18 例（17 通过，1 例跨项目并发 flake 隔离重跑 4/4 通过）、Docker 架构演练 `wp-arch-drill-ab16336a` 与故障注入演练 `wp-arch-drill-d1e9b1a2` 全部阶段通过（证据在 `test-results/docker-architecture/`）：setup/seed/pipeline（经 Gateway 的真实 PNG+ZIP）/jobs/browser-same（双副本 58 条响应、单一版本身份）/browser-cross（三条 `PREVIEW_VERSION_SKEW` 409）/browser-build/credentials/owner/owner-pause/owner-hostname/legacy（旧 schema 前滚）/render-cancel/render-cancel-result/render-timeout/render-kill/render-late/cleanup；三个交付镜像（lite/runtime/renderer）均由本分支代码构建。
 
 ### 已知不稳定用例（非本分支引入）
 
@@ -32,9 +32,9 @@
 ### G1 退出项（未关闭）
 
 - 独立 `web-presentation-cli` 与 `web-presentation-mcp` 尚未对接 model3d（上传、按 ID 替换、查询、原始文件获取）；M1 发布面限制为平台内与 External API 契约，不能标注「完整外部 Agent 支持」。
-- Docker lite/分服务镜像演练：`wp-runtime:drill` 已构建；`wp-lite:drill`、`wp-renderer:drill` 构建与专属环境演练未完成（网络受限，上一轮构建中止）。
+- Docker 架构演练已完成主体阶段（见集成门禁）；依赖 N-1 旧镜像的 `m05-*` 组合矩阵属于 M05 里程碑自身门禁，本轮未构建旧镜像、未执行。
 - W00 首帧时间/峰值内存实测记录未单独留存；T08 真实 PDF/PPTX 双视角目检与 T10「50 次切换无持续增长」测量未执行。
-- 渲染诊断导航回归（`page.diagnose` 曾以桥接宿主页为导航目标导致空等硬期限）已修复（`fix(render): 页面渲染诊断还原 Runtime 直连导航目标`），修复随 W10 验证。
+- 渲染诊断导航回归（`page.diagnose` 曾以桥接宿主页为导航目标导致空等硬期限）已修复，演练探测脚本同步适配桥接宿主页（`test(drill)` 提交），两项均随 W10 验证。
 
 ## 交付目标与范围
 
@@ -324,7 +324,7 @@ flowchart LR
 前置：W01 至 W09；关闭 G1 后交付 M1。
 
 - [x] 补齐本计划测试矩阵中的自动化与人工产物检查；保留 fixture、渲染配置和结果摘要。（自动化证据见「实施状态与证据」；T08/T10 人工产物检查列入 G1 退出项）
-- [ ] 在专属数据库、Redis、卷和回环端口执行 lite/分服务镜像演练，遵循 [本地 Docker 架构演练](../testing/docker-architecture-drill.md)，不复用开发数据。（未完成，见 G1 退出项；`wp-runtime:drill` 已构建）
+- [x] 在专属数据库、Redis、卷和回环端口执行 lite/分服务镜像演练，遵循 [本地 Docker 架构演练](../testing/docker-architecture-drill.md)，不复用开发数据。（`wp-arch-drill-ab16336a` 与 `wp-arch-drill-d1e9b1a2` 全部阶段通过，证据在 `test-results/docker-architecture/`；三个交付镜像均由本分支代码构建；依赖 N-1 旧镜像的 `m05-*` 见 G1 退出项）
 - [x] 验证新增迁移、升级顺序、旧 Runtime 不承接新组件、任务取消/超时、清理和恢复。（`pg-claim` 双库迁移对拍；旧 Runtime 由 manifest 能力位拒绝；取消/超时/清理由 Renderer 与检查持有释放测试覆盖）
 - [x] 更新 Runtime 构建身份及兼容矩阵；只有代码、协议、资源服务与交付镜像均就绪后才开放 manifest 能力与 Editor 入口。（`model3d_engine` 清单块与三端指纹；兼容矩阵声明拒绝语义）
 - [x] 更新用户资源管理、Runtime Kit、页面资源引用、PPTX DOM、部署与 External/CLI 文档；产品正式支持时更新顶层 README。（`resources.md`、`asset-reuse.md`、`runtime-kit-capabilities.md`、`pptx-export-dom-contract.md`、`external-agent-api.md`、`troubleshooting.md`、`compatibility-matrix.md`；CLI/MCP 文档随消费者对接补齐）
@@ -400,7 +400,7 @@ flowchart LR
 | T09 | `test_model3d_asset_package.py`、`test_project_template_package_model3d.py`（往返字节保持与重新绑定）；离线物化由构建测试覆盖 | — |
 | T10 | `backend/tests/unit/test_asset_binding_service.py`（持有保护/释放/对账） | 「50 次切换无持续增长」人工测量未执行 |
 | T11 | `test_private_asset_chains.py`、file_auth 单测、真实 Nginx Gateway 契约回归 | — |
-| T12 | Renderer 单测（槽位与清理）与 `test:render-e2e` 真实 PNG；E2E 截图 smoke | lite/分服务镜像演练未完成（退出项） |
+| T12 | Renderer 单测（槽位与清理）与 `test:render-e2e` 真实 PNG；E2E 截图 smoke；Docker 演练 pipeline（真实 PNG+ZIP）、browser-same/cross、render-cancel/timeout/kill/late 全部阶段通过 | `m05-*` 组合矩阵依赖 N-1 旧镜像，本轮未构建、未执行 |
 
 ### 门槛与执行命令
 
