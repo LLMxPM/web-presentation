@@ -22,6 +22,8 @@
 
 先检查 `renderer` 容器健康与日志，再核对 Backend 的 `RENDER_WORKERS_CONFIG`、Renderer 的 `RENDER_WORKER_ID`、两侧共享凭据及 `RENDER_PROFILE_DIGEST`。Renderer 还必须能访问 Runtime 的预览文档和静态资源；Backend 不在本进程内执行 Chromium。
 
+含三维模型的页面截图依赖 Renderer 环境可用的 WebGL（实际使用 WebGL 2）。如果页面正常但模型区域空白或截图失败，先确认 Renderer 容器支持软件渲染的 WebGL，并检查模型文件是否通过平台上传（外部 URL 引用会被拒绝）。构建产物与 PPTX/PDF 导出使用模型静态帧，模型未就绪时导出会回退局部截图并记录原因。
+
 ## AI 设置保存后无法解密或启动报密钥占位错误
 
 若后端启动报 `SigningIdentityError: AI_SECRET_ENCRYPTION_KEY 禁止使用默认/示例占位值`，说明配置了内置示例弱密钥被安全拦截；若启动后进入 AI 页面解密失败（报 `500 AI_LLM_API_KEY_INVALID`），通常是 `AI_SECRET_ENCRYPTION_KEY` 改变导致。

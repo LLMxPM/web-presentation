@@ -10,7 +10,7 @@
 | Backend | Release tag / Git SHA / 镜像 digest | 发布流水线；`alembic_version` 另记 DB revision |
 | Runtime（preview/build/check） | 同一镜像 tag + `runtime_kit_version` + `build_id` | `/__runtime_healthz` |
 | Renderer | Release tag / 镜像 digest | `capabilities.protocol_version` = `internal/render/v1` |
-| Runtime Kit | `runtime-kit.manifest.json` 的 `version`（当前 `1.0.0`）与导出 `.vN` | 清单与 `@runtime-kit` import path |
+| Runtime Kit | `runtime-kit.manifest.json` 的 `version`（当前 `1.0.0`）与导出 `.vN`；`model3d_engine` 声明三维引擎版本与色彩/曝光策略 | 清单与 `@runtime-kit` import path；引擎身份随清单进入检查/截图指纹 |
 | 渲染契约 | `PROTOCOL_VERSION` = `internal/render/v1`；`RUNTIME_RENDER_PROTOCOL_VERSION` = `render-ready.v1` | `packages/render-contracts` |
 | 数据库 | Alembic `alembic_version` | `backend/migrations/versions/` |
 | 页面/组件产物 | 预览 artifact、构建 ZIP、组件 previewSchema | 存储中的产物元数据 |
@@ -43,6 +43,7 @@ N/N-1 必须绑定具体版本。本轮 N 为 `73b0036 + 迁移事务/Renderer �
 | N Backend + DB 仍停在 N-1 schema | 启动失败（`UndefinedColumnError`，如 `ai_agent_runs.process_owner`）；必须先 migration |
 | 完整 `4c7eee8` Lite + 远程 Renderer，Runtime 角色基址仍为容器回环 | 截图 `RENDER_INTERNAL_ERROR`；须配置同一受信网络内可达的 `RUNTIME_PREVIEW_BASE_URL`。本轮 `http://m05_lite:7373` 通过，不改旧源码或 CMD；端口未向主机发布 |
 | 预览请求 `x-expected-runtime-version-fingerprint` 与副本不符 | **409** `PREVIEW_VERSION_SKEW`（不得收成 500） |
+| 页面/组件已引用三维资源（`AssetModel.v1`），但 Runtime 副本的 Kit 清单不含该导出 | 模块导入边界或预览版本门禁拒绝，不承接含三维资源的预览/构建；需先整池升级 Runtime 再发布三维页面 |
 | 破坏性 External API 字段变更未做消费者迁移 | CLI/Skill/Editor 契约门禁失败；禁止静默兼容 |
 
 ### 2.2 固定样本的产物组合
