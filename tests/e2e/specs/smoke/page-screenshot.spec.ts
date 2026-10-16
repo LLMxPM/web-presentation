@@ -145,8 +145,9 @@ import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v1.vue'
 
   try {
     // 通过截图任务走完整 Backend→Renderer→Runtime 链路；模型就绪由 render-ready 探针保证。
+    // 使用项目默认视口：页面详情的最新判定按默认视口比对，显式覆盖会被保守标为非最新。
     const jobResponse = await api.post(`/api/pages/${modelPage.id}/screenshot-jobs`, {
-      data: { viewport_width: 1280, viewport_height: 720 },
+      data: {},
     })
     expect(jobResponse.ok(), await jobResponse.text()).toBeTruthy()
     const job = (await jobResponse.json()) as { id: number }
