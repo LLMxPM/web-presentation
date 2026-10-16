@@ -291,3 +291,24 @@ export function normalizeModelViewOptions(payload: unknown): NormalizeModelViewO
 
 /** 公开组件 props 与共享类型的兼容别名，供渲染器与单测引用。 */
 export type AssetModelViewProps = ModelViewOptions
+
+/**
+ * 构建实例视角身份键，供导出静态帧缓存分区使用。
+ *
+ * 覆盖字段与需求一致：场景/相机选择、显式相机位置与目标、视场角、背景与光照策略。
+ * 字段顺序固定且只含规范化后的展示参数，同一实例参数变化必须产出不同键，
+ * 避免「相同资源不同视角共用同一帧」；与资源地址、视口尺寸的组合由缓存键构建方负责。
+ * @param options 规范化后的展示参数
+ * @returns 确定性视角键
+ */
+export function buildModelViewIdentityKey(options: NormalizedModelViewOptions): string {
+  return JSON.stringify({
+    sceneIndex: options.sceneIndex,
+    cameraIndex: options.cameraIndex,
+    cameraPosition: options.cameraPosition,
+    cameraTarget: options.cameraTarget,
+    cameraFov: options.cameraFov,
+    background: options.background,
+    lighting: options.lighting,
+  })
+}

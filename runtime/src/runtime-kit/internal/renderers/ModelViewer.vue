@@ -45,6 +45,12 @@ import type * as ThreeNamespace from 'three'
 import { getRuntimePreloadedConfig } from '@/core/utils/path'
 import { normalizeAssetKey } from '@/core/shared/runtime-preview'
 import {
+  MODEL_STATIC_FRAME_HANDLE_KEY,
+  type ModelStaticFrameCapture,
+  type ModelStaticFrameHandle,
+  type ModelStaticFrameIdentity,
+} from '@/core/shared/model-static-frame-contract'
+import {
   MODEL3D_ENGINE_POLICY,
   cloneSceneForInstance,
   configureModel3dRenderer,
@@ -64,7 +70,7 @@ import {
   type BoundingSphere,
   type OrthoFrustum,
 } from './model3d/camera-fit'
-import { DEFAULT_MODEL_FALLBACK_MESSAGE, normalizeModelViewOptions, isTransparentBackground, parseBackgroundColor } from './model3d/view-options'
+import { DEFAULT_MODEL_FALLBACK_MESSAGE, buildModelViewIdentityKey, normalizeModelViewOptions, isTransparentBackground, parseBackgroundColor } from './model3d/view-options'
 
 defineOptions({ inheritAttrs: false })
 
@@ -151,6 +157,14 @@ let intersectionObserver: IntersectionObserver | null = null
 let visibilityHandler: (() => void) | null = null
 let contextLostHandler: ((event: Event) => void) | null = null
 let contextRestoredHandler: (() => void) | null = null
+
+// —— 导出静态帧身份（采集句柄在 describe/capture 时读取最新值） ——
+/** 当前加载使用的资源地址；未加载成功时为空串。 */
+let activeStaticFrameSrc = ''
+/** 当前加载使用的视角身份键；由规范化展示参数派生。 */
+let activeStaticFrameViewKey = ''
+/** 已注册到根元素的采集句柄；卸载时按同一引用注销。 */
+let registeredStaticFrameHandle: ModelStaticFrameHandle | null = null
 
 /**
  * 有界化错误/诊断文案，避免超长消息进入探针。
@@ -794,6 +808,10 @@ async function startLoad(token: number): Promise<void> {
   }
   const options = normalized.options
 
+  // 记录本次加载的资源与视角身份，供导出静态帧采集句柄分区使用。
+  activeStaticFrameSrc = src
+  activeStaticFrameViewKey = buildModelViewIdentityKey(options)
+
   const metadata = resolveAssetMetadata(name)
   if (metadata?.render_type && metadata.render_type !== 'model3d') {
     fail(`资源 ${name} 的 render_type 为 ${metadata.render_type}，不是三维模型资源。`, token)
@@ -919,6 +937,7 @@ watch(
 
 onMounted(async () => {
   await nextTick()
+  installStaticFrameHandle()
   if (viewerRoot.value && typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => handleResize())
     resizeObserver.observe(viewerRoot.value)
@@ -949,6 +968,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   disposed = true
   requestToken += 1
+  uninstallStaticFrameHandle()
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
@@ -965,19 +985,105 @@ onBeforeUnmount(() => {
 })
 
 /**
- * 采集当前静态帧；仅同步 render 后 toDataURL，不改变视角、不启用交互。
- * @returns PNG dataURL；尚未就绪或采集失败时返回 null
+ * 解析静态帧采集上下文；仅在实例真实就绪、已渲染且画布尺寸有效时返回。
+ * 约束：取消/错误/上下文丢失与零尺寸画布都必须拒绝采集，避免导出空白帧。
+ * @returns 画布与场景/相机；不可采集时返回 null
  */
-function captureStaticFrame(): string | null {
+function resolveStaticFrameContext(): {
+  canvas: HTMLCanvasElement
+  scene: ThreeNamespace.Scene
+  camera: ThreeNamespace.Camera
+} | null {
+  if (disposed || state.value !== 'ready' || !hasRenderedFrame) {
+    return null
+  }
   if (!renderer || !activeScene || !activeCamera) {
     return null
   }
+  const canvas = renderer.domElement as HTMLCanvasElement | undefined
+  if (!canvas || canvas.width <= 1 || canvas.height <= 1) {
+    return null
+  }
+  return { canvas, scene: activeScene, camera: activeCamera }
+}
+
+/**
+ * 读取当前实例的静态帧身份；未就绪时返回 null。
+ * 身份包含资源名/资源地址、视角键与帧像素尺寸，供导出侧缓存分区。
+ * @returns 实例身份；不可采集时返回 null
+ */
+function describeStaticFrame(): ModelStaticFrameIdentity | null {
+  const context = resolveStaticFrameContext()
+  if (!context) {
+    return null
+  }
+  if (!activeStaticFrameSrc) {
+    return null
+  }
+  return {
+    resourceName: String(props.name || '').trim(),
+    resourceSrc: activeStaticFrameSrc,
+    viewKey: activeStaticFrameViewKey,
+    frameWidth: context.canvas.width,
+    frameHeight: context.canvas.height,
+  }
+}
+
+/**
+ * 采集当前静态帧：同步重绘后立即读回 PNG，不改变视角、不启用交互。
+ * 关键约束：renderer 使用 preserveDrawingBuffer: false，必须 render 与 toDataURL 处于同一同步任务。
+ * @returns PNG dataURL 与采集时刻身份；尚未就绪或采集失败时返回 null
+ */
+function captureStaticFrame(): ModelStaticFrameCapture | null {
+  const context = resolveStaticFrameContext()
+  if (!context) {
+    return null
+  }
   try {
-    renderer.render(activeScene, activeCamera)
-    return renderer.domElement.toDataURL('image/png')
+    renderFrame()
+    const dataUrl = context.canvas.toDataURL('image/png')
+    if (!dataUrl.startsWith('data:image/png')) {
+      return null
+    }
+    const identity = describeStaticFrame()
+    if (!identity) {
+      return null
+    }
+    return { ...identity, dataUrl }
   } catch {
     return null
   }
+}
+
+/**
+ * 向根元素注册静态帧采集句柄，供 PDF/PPTX 导出在采集前读取当前帧。
+ * 卸载时必须按同一引用注销，避免残留悬空句柄。
+ */
+function installStaticFrameHandle(): void {
+  const root = viewerRoot.value
+  if (!root) {
+    return
+  }
+  const handle: ModelStaticFrameHandle = {
+    describe: describeStaticFrame,
+    capture: captureStaticFrame,
+  }
+  ;(root as unknown as Record<string, unknown>)[MODEL_STATIC_FRAME_HANDLE_KEY] = handle
+  registeredStaticFrameHandle = handle
+}
+
+/**
+ * 注销根元素上的静态帧采集句柄；仅移除本实例注册的引用。
+ */
+function uninstallStaticFrameHandle(): void {
+  const root = viewerRoot.value
+  if (root) {
+    const record = root as unknown as Record<string, unknown>
+    if (record[MODEL_STATIC_FRAME_HANDLE_KEY] === registeredStaticFrameHandle) {
+      delete record[MODEL_STATIC_FRAME_HANDLE_KEY]
+    }
+  }
+  registeredStaticFrameHandle = null
 }
 
 defineExpose({

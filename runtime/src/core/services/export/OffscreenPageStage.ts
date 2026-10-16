@@ -3,6 +3,7 @@ import { pageCaptureService } from '@/core/services/PageCaptureService'
 import type { CaptureOptions } from '@/core/types/export-common'
 import { appPageConfig } from '@/core/utils/config'
 import { runWithExportDeadline, throwIfExportAborted } from './ExportCancellation'
+import { ModelStaticFrameCache, cleanupModelStaticFrames, prepareModelStaticFrames } from './model-static-frames'
 
 export interface RuntimeCaptureRoute { path: string; hash: string }
 export interface OffscreenPreparedPage { element: HTMLElement; cleanup: () => void }
@@ -65,6 +66,8 @@ export function createOffscreenPageStage(): OffscreenPageStage {
   })
   document.body.appendChild(frame)
   let disposed = false
+  // 任务级静态帧缓存：同一导出任务内按实例视角复用，dispose 时统一释放。
+  const staticFrameCache = new ModelStaticFrameCache()
 
   /** 验证当前票据对应的页面，再等待该文档的资源和动画；允许同路径更新复用 DOM。 */
   async function preparePage(route: string, options?: OffscreenPrepareOptions): Promise<OffscreenPreparedPage> {
@@ -93,7 +96,9 @@ export function createOffscreenPageStage(): OffscreenPageStage {
           }
           throwIfExportAborted(signal)
           await freezeDocumentAnimationsToFinalState(doc)
-          return { element: target, cleanup: () => {} }
+          // 页面就绪后逐实例准备静态帧：克隆与转换阶段看到的是 PNG 覆盖图，而不是空白 WebGL 画布。
+          const staticFrames = prepareModelStaticFrames(target, { cache: staticFrameCache })
+          return { element: target, cleanup: () => cleanupModelStaticFrames(staticFrames) }
         }
         await new Promise(resolve => setTimeout(resolve, 25))
       }
@@ -108,7 +113,11 @@ export function createOffscreenPageStage(): OffscreenPageStage {
     finally { prepared.cleanup() }
   }
 
-  /** 移除 iframe，终止其页面脚本和资源占用。 */
-  function dispose(): void { disposed = true; frame.remove() }
+  /** 移除 iframe，终止其页面脚本和资源占用，并释放任务级静态帧缓存。 */
+  function dispose(): void {
+    disposed = true
+    staticFrameCache.clear()
+    frame.remove()
+  }
   return { preparePage, capture, dispose }
 }

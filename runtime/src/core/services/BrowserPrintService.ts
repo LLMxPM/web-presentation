@@ -17,6 +17,7 @@ import type {
 } from '@/core/types/pdf-export'
 import { appPageConfig } from '@/core/utils/config'
 import { collectAllExportPages } from '@/core/utils/export-pages'
+import { cleanupModelStaticFrames, prepareModelStaticFrames } from '@/core/services/export/model-static-frames'
 
 const PRINT_IFRAME_ID = 'runtime-browser-print-frame'
 const PRINT_READY_DELAY = 100
@@ -597,24 +598,30 @@ export class BrowserPrintService {
       throw new Error('打印文档初始化失败')
     }
 
-    const page = iframeDocument.createElement('section')
-    page.className = 'print-page'
+    // 静态帧必须在 clone 前准备：克隆的 WebGL 画布没有像素缓冲，打印文档里只能靠 PNG 覆盖图。
+    const staticFrames = prepareModelStaticFrames(sourceElement)
+    try {
+      const page = iframeDocument.createElement('section')
+      page.className = 'print-page'
 
-    const content = iframeDocument.createElement('div')
-    content.className = 'print-page__content'
+      const content = iframeDocument.createElement('div')
+      content.className = 'print-page__content'
 
-    const clone = sourceElement.cloneNode(true) as HTMLElement
-    this.copyCanvasContents(sourceElement, clone)
-    clone.style.transform = 'none'
-    clone.style.transformOrigin = 'top left'
-    clone.style.width = `${appPageConfig.value.width || 1920}px`
-    clone.style.height = `${appPageConfig.value.height || 1080}px`
-    clone.style.minWidth = `${appPageConfig.value.width || 1920}px`
-    clone.style.minHeight = `${appPageConfig.value.height || 1080}px`
-    clone.style.overflow = 'hidden'
-    content.appendChild(clone)
-    page.appendChild(content)
-    root.appendChild(page)
+      const clone = sourceElement.cloneNode(true) as HTMLElement
+      this.copyCanvasContents(sourceElement, clone)
+      clone.style.transform = 'none'
+      clone.style.transformOrigin = 'top left'
+      clone.style.width = `${appPageConfig.value.width || 1920}px`
+      clone.style.height = `${appPageConfig.value.height || 1080}px`
+      clone.style.minWidth = `${appPageConfig.value.width || 1920}px`
+      clone.style.minHeight = `${appPageConfig.value.height || 1080}px`
+      clone.style.overflow = 'hidden'
+      content.appendChild(clone)
+      page.appendChild(content)
+      root.appendChild(page)
+    } finally {
+      cleanupModelStaticFrames(staticFrames)
+    }
   }
 
   /**

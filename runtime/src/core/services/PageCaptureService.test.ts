@@ -6,6 +6,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PageCaptureService } from './PageCaptureService'
+import { MODEL_STATIC_FRAME_HANDLE_KEY } from '@/core/shared/model-static-frame-contract'
+import { clearDefaultModelStaticFrameCache } from '@/core/services/export/model-static-frames'
 
 const mockSnapdom = vi.hoisted(() => vi.fn())
 
@@ -59,9 +61,38 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   document.body.innerHTML = ''
+  clearDefaultModelStaticFrameCache()
   delete window.__RUNTIME_PREVIEW_CONTEXT__
   delete window.__RUNTIME_PRELOADED_CONFIG__
 })
+
+/**
+ * 在指定模型根元素上注册静态帧采集句柄（模拟 ModelViewer 挂载行为）。
+ * @param root 模型根元素
+ * @param captures 采集计数器
+ */
+function registerModelStaticFrameHandle(root: HTMLElement, captures: { count: number }): void {
+  ;(root as unknown as Record<string, unknown>)[MODEL_STATIC_FRAME_HANDLE_KEY] = {
+    describe: () => ({
+      resourceName: 'product',
+      resourceSrc: 'product.glb',
+      viewKey: 'vk',
+      frameWidth: 360,
+      frameHeight: 240,
+    }),
+    capture: () => {
+      captures.count += 1
+      return {
+        resourceName: 'product',
+        resourceSrc: 'product.glb',
+        viewKey: 'vk',
+        frameWidth: 360,
+        frameHeight: 240,
+        dataUrl: 'data:image/png;base64,frame',
+      }
+    },
+  }
+}
 
 describe('PageCaptureService', () => {
   it('底部缩略图模式下应捕获运行时页面源节点，而不是布局容器', async () => {
@@ -207,6 +238,85 @@ describe('PageCaptureService', () => {
     expect(proxiedImageUrl.searchParams.get('url')).toBe(assetUrl)
     expect(capturedBackgroundImage).toContain('https://runtime.example.com/__runtime-snapdom-resource-proxy')
     expect(capturedBackgroundImage).toContain(encodeURIComponent(assetUrl))
+  })
+
+  it('当前页捕获应在 snapdom 前准备静态帧覆盖图，并在清理后恢复源页面', async () => {
+    const captures = { count: 0 }
+    renderRuntimeLayout(`
+      <div class="runtime-page-print-source" data-runtime-route-path="/model" style="width: 1920px; height: 1080px;">
+        <div class="model-viewer" data-runtime-kit-media="v1" data-runtime-kit-media-kind="model3d"
+          style="position: relative; width: 360px; height: 240px;">
+          <canvas width="360" height="240" style="width: 360px; height: 240px;"></canvas>
+        </div>
+      </div>
+    `)
+    const modelRoot = document.querySelector<HTMLElement>('.model-viewer') as HTMLElement
+    const canvas = modelRoot.querySelector('canvas') as HTMLCanvasElement
+    registerModelStaticFrameHandle(modelRoot, captures)
+
+    let overlaySeenBySnapdom = false
+    let hiddenDuringSnapdom = false
+    mockSnapdom.mockImplementationOnce(async (element: HTMLElement) => {
+      const overlay = element.querySelector('img[data-runtime-model-frame="v1"]')
+      overlaySeenBySnapdom = Boolean(overlay)
+      hiddenDuringSnapdom = canvas.style.visibility === 'hidden'
+      return { toPng: vi.fn(async () => createLoadedImage()) }
+    })
+
+    const service = new PageCaptureService()
+    await service.captureCurrentPage({ routePath: '/model' })
+
+    expect(captures.count).toBe(1)
+    expect(overlaySeenBySnapdom).toBe(true)
+    expect(hiddenDuringSnapdom).toBe(true)
+
+    // 采集结束后源页面与截图沙箱都不得残留覆盖层或隐藏状态。
+    expect(document.querySelector('img[data-runtime-model-frame="v1"]')).toBeNull()
+    expect(canvas.style.visibility).toBe('')
+  })
+
+  it('局部元素捕获（截图沙箱内）应在 finally 中清理静态帧', async () => {
+    const captures = { count: 0 }
+    document.body.innerHTML = `
+      <div id="local-root" style="width: 640px; height: 480px;">
+        <div class="model-viewer" data-runtime-kit-media="v1" data-runtime-kit-media-kind="model3d"
+          style="position: relative; width: 360px; height: 240px;">
+          <canvas width="360" height="240" style="width: 360px; height: 240px;"></canvas>
+        </div>
+      </div>
+    `
+    const root = document.getElementById('local-root') as HTMLElement
+    const modelRoot = root.querySelector<HTMLElement>('.model-viewer') as HTMLElement
+    const canvas = modelRoot.querySelector('canvas') as HTMLCanvasElement
+    registerModelStaticFrameHandle(modelRoot, captures)
+
+    const service = new PageCaptureService()
+    await service.captureElement(root, { skipPageWait: true })
+
+    expect(captures.count).toBe(1)
+    expect(root.querySelector('img[data-runtime-model-frame="v1"]')).toBeNull()
+    expect(canvas.style.visibility).toBe('')
+  })
+
+  it('snapdom 失败时也应清理静态帧覆盖图', async () => {
+    const captures = { count: 0 }
+    document.body.innerHTML = `
+      <div id="fail-root" style="width: 640px; height: 480px;">
+        <div class="model-viewer" data-runtime-kit-media="v1" data-runtime-kit-media-kind="model3d"
+          style="position: relative; width: 360px; height: 240px;">
+          <canvas width="360" height="240" style="width: 360px; height: 240px;"></canvas>
+        </div>
+      </div>
+    `
+    const root = document.getElementById('fail-root') as HTMLElement
+    const modelRoot = root.querySelector<HTMLElement>('.model-viewer') as HTMLElement
+    registerModelStaticFrameHandle(modelRoot, captures)
+    mockSnapdom.mockRejectedValueOnce(new Error('捕获失败'))
+
+    const service = new PageCaptureService()
+    await expect(service.captureElement(root, { skipPageWait: true })).rejects.toThrow('页面捕获失败')
+
+    expect(root.querySelector('img[data-runtime-model-frame="v1"]')).toBeNull()
   })
 })
 

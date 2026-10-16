@@ -2,6 +2,11 @@
  * 文件用途：提供 PDF 导出截图专用的 DOM 定位、离屏沙箱和 canvas 位图复制能力。
  */
 
+import {
+  cleanupModelStaticFrames,
+  prepareModelStaticFrames,
+} from '@/core/services/export/model-static-frames'
+
 export const RUNTIME_PAGE_PRINT_SOURCE_SELECTOR = '.runtime-page-print-source'
 
 interface RuntimePageCaptureTargetOptions {
@@ -60,38 +65,49 @@ export function createRuntimePageCaptureTarget(
   const width = resolvePositiveNumber(options.width, sourceSize.width, 1920)
   const height = resolvePositiveNumber(options.height, sourceSize.height, 1080)
   const sandbox = document.createElement('div')
-  const clone = sourceElement.cloneNode(true) as HTMLElement
-  const runtimeVariables = collectRuntimeCssVariables(sourceElement)
 
-  sandbox.className = 'runtime-export-capture-sandbox'
-  sandbox.setAttribute('aria-hidden', 'true')
-  Object.assign(sandbox.style, {
-    position: 'fixed',
-    left: '-100000px',
-    top: '0',
-    width: `${width}px`,
-    height: `${height}px`,
-    margin: '0',
-    padding: '0',
-    overflow: 'hidden',
-    pointerEvents: 'none',
-    background: options.backgroundColor || '#ffffff',
-    zIndex: '-1',
-  })
+  // 静态帧必须在 clone 前准备：WebGL 画布的像素缓冲不会被 cloneNode 复制，
+  // 克隆出的 DOM 必须已包含 PNG 覆盖图，snapdom 才能采到模型内容。
+  const staticFrames = prepareModelStaticFrames(sourceElement)
+  try {
+    const clone = sourceElement.cloneNode(true) as HTMLElement
+    const runtimeVariables = collectRuntimeCssVariables(sourceElement)
 
-  applyRuntimeVariables(sandbox, runtimeVariables)
-  prepareClonedPageRoot(clone, width, height, runtimeVariables)
-  stabilizeSingleLineText(sourceElement, clone)
-  suppressScrollableOverflowForCapture(sourceElement, clone)
-  copyCanvasContents(sourceElement, clone)
+    sandbox.className = 'runtime-export-capture-sandbox'
+    sandbox.setAttribute('aria-hidden', 'true')
+    Object.assign(sandbox.style, {
+      position: 'fixed',
+      left: '-100000px',
+      top: '0',
+      width: `${width}px`,
+      height: `${height}px`,
+      margin: '0',
+      padding: '0',
+      overflow: 'hidden',
+      pointerEvents: 'none',
+      background: options.backgroundColor || '#ffffff',
+      zIndex: '-1',
+    })
 
-  sandbox.appendChild(clone)
-  document.body.appendChild(sandbox)
+    applyRuntimeVariables(sandbox, runtimeVariables)
+    prepareClonedPageRoot(clone, width, height, runtimeVariables)
+    stabilizeSingleLineText(sourceElement, clone)
+    suppressScrollableOverflowForCapture(sourceElement, clone)
+    copyCanvasContents(sourceElement, clone)
+
+    sandbox.appendChild(clone)
+    document.body.appendChild(sandbox)
+  } catch (error) {
+    // 沙箱构造中途失败时同样要恢复源页面，避免残留覆盖层。
+    cleanupModelStaticFrames(staticFrames)
+    throw error
+  }
 
   return {
     sourceElement,
     captureElement: sandbox,
     cleanup: () => {
+      cleanupModelStaticFrames(staticFrames)
       if (sandbox.parentNode) {
         sandbox.parentNode.removeChild(sandbox)
       }

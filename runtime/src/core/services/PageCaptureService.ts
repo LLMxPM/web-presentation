@@ -11,6 +11,11 @@ import { waitForPageLoad, waitForImages, getPageDimensions } from '../utils/dom'
 import { optimizeCanvas } from '../utils/file'
 import { appPageConfig } from '@/core/utils/config'
 import { createRuntimePageCaptureTarget } from '@/core/utils/export-dom'
+import {
+  cleanupModelStaticFrames,
+  prepareModelStaticFrames,
+  type ModelStaticFramesHandle,
+} from '@/core/services/export/model-static-frames'
 import { getRuntimePreloadedConfig, getRuntimePreviewContext } from '@/core/utils/path'
 import { normalizeAssetKey } from '@/core/shared/runtime-preview'
 
@@ -73,6 +78,7 @@ export class PageCaptureService {
       // 预处理元素以优化捕获效果
       const cleanup = this.preprocessElement(element)
       const cleanupResourceProxy = this.applyCaptureResourceProxy(element, mergedOptions.proxyUrl)
+      let modelStaticFrames: ModelStaticFramesHandle | null = null
 
       try {
         if (!mergedOptions.skipPageWait) {
@@ -93,6 +99,10 @@ export class PageCaptureService {
         if (captureSize.width === 0 || captureSize.height === 0) {
           throw new Error(`元素尺寸无效: ${captureSize.width}x${captureSize.height}`)
         }
+
+        // 静态帧准备：snapdom 克隆前把三维模型当前帧重绘为 PNG 覆盖图并隐藏 canvas，
+        // 否则 preserveDrawingBuffer: false 的 WebGL 画布在克隆与光栅化后是空白。
+        modelStaticFrames = prepareModelStaticFrames(element)
 
         // 使用 snapdom 捕获（支持 useProxy）
         const capPromise = snapdom(element, {
@@ -247,7 +257,8 @@ export class PageCaptureService {
 
         return finalCanvas
       } finally {
-        // 清理预处理效果
+        // 清理预处理效果；静态帧覆盖层成功或异常都必须移除
+        cleanupModelStaticFrames(modelStaticFrames)
         cleanupResourceProxy()
         cleanup()
       }

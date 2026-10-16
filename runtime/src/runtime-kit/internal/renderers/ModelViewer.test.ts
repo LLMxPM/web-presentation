@@ -9,6 +9,7 @@ import { createApp, nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
+import { MODEL_STATIC_FRAME_HANDLE_KEY, readModelStaticFrameHandle } from '@/core/shared/model-static-frame-contract'
 
 import ModelViewer from './ModelViewer.vue'
 import { DEFAULT_MODEL_FALLBACK_MESSAGE } from './model3d/view-options'
@@ -100,5 +101,33 @@ describe('ModelViewer 状态机', () => {
     expect(host.textContent).toContain(DEFAULT_MODEL_FALLBACK_MESSAGE)
 
     app.unmount()
+  })
+
+  it('挂载应注册静态帧采集句柄，卸载应注销；未就绪时 describe/capture 返回 null', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+
+    const app = createApp(ModelViewer, {
+      name: 'product',
+      src: '',
+    })
+    app.mount(host)
+    await flush()
+
+    const root = host.querySelector<HTMLElement>('.model-viewer')
+    expect(root).not.toBeNull()
+
+    // jsdom 无 WebGL：实例处于错误态，句柄存在但必须拒绝采集。
+    const handle = readModelStaticFrameHandle(root!)
+    expect(handle).not.toBeNull()
+    expect(handle?.describe()).toBeNull()
+    expect(handle?.capture()).toBeNull()
+
+    // 暴露的采集入口与句柄共享同一套就绪门禁
+    const exposed = (app._instance?.exposed ?? {}) as { captureStaticFrame?: () => unknown }
+    expect(exposed.captureStaticFrame?.()).toBeNull()
+
+    app.unmount()
+    expect((root as unknown as Record<string, unknown>)[MODEL_STATIC_FRAME_HANDLE_KEY]).toBeUndefined()
   })
 })

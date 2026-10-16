@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_MODEL_BACKGROUND,
   DEFAULT_MODEL_CAMERA_FOV,
+  buildModelViewIdentityKey,
   normalizeModelViewOptions,
   parseBackgroundColor,
   validateModelViewOptions,
@@ -87,6 +88,45 @@ describe('normalizeModelViewOptions 共享正反例', () => {
     expect(result.options.cameraFov).toBe(60)
     expect(result.options.interactive).toBe(true)
     expect(result.options.lighting).toBe('source')
+  })
+})
+
+describe('buildModelViewIdentityKey 视角身份键', () => {
+  /**
+   * 规范化并构建视角键的便捷入口。
+   * @param payload 展示参数
+   */
+  function keyOf(payload: Record<string, unknown>): string {
+    const result = normalizeModelViewOptions(payload)
+    expect(result.ok).toBe(true)
+    return buildModelViewIdentityKey(result.options)
+  }
+
+  it('相同展示参数应产出相同键（字段顺序固定）', () => {
+    const first = keyOf({ name: 'product', sceneIndex: 0, background: '#112233' })
+    const second = keyOf({ name: 'product', sceneIndex: 0, background: '#112233' })
+
+    expect(first).toBe(second)
+  })
+
+  it('资源名不参与视角键（资源身份由缓存键的其他部分承载）', () => {
+    expect(keyOf({ name: 'product-a' })).toBe(keyOf({ name: 'product-b' }))
+  })
+
+  it.each([
+    ['场景', { name: 'product' }, { name: 'product', sceneIndex: 1 }],
+    ['相机索引', { name: 'product' }, { name: 'product', cameraIndex: 1 }],
+    ['显式相机', { name: 'product' }, { name: 'product', cameraPosition: [0, 1, 4], cameraTarget: [0, 0, 0] }],
+    ['相机目标', { name: 'product', cameraPosition: [0, 1, 4], cameraTarget: [0, 0, 0] }, { name: 'product', cameraPosition: [0, 1, 4], cameraTarget: [0, 1, 0] }],
+    ['视场角', { name: 'product', cameraPosition: [0, 1, 4], cameraTarget: [0, 0, 0], cameraFov: 45 }, { name: 'product', cameraPosition: [0, 1, 4], cameraTarget: [0, 0, 0], cameraFov: 60 }],
+    ['背景策略', { name: 'product' }, { name: 'product', background: '#000000' }],
+    ['光照策略', { name: 'product' }, { name: 'product', lighting: 'source' }],
+  ])('%s 不同应产出不同键，避免不同视角共用静态帧', (_label, left, right) => {
+    expect(keyOf(left)).not.toBe(keyOf(right))
+  })
+
+  it('交互开关不参与视角键（不改变静态帧像素）', () => {
+    expect(keyOf({ name: 'product' })).toBe(keyOf({ name: 'product', interactive: true }))
   })
 })
 
