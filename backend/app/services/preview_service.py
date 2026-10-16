@@ -108,7 +108,7 @@ class PreviewService:
         artifact_store_duration_ms = round((time.perf_counter() - artifact_store_started_at) * 1000, 2)
         trace_id = f"req-{uuid.uuid4().hex[:8]}"
         now_ts = int(time.time())
-        token_ttl_seconds = 300
+        token_ttl_seconds = settings.runtime_preview_token_ttl_seconds
         preview_token = TokenService.generate_preview_context_token(
             tenant_id=tenant_id,
             artifact_id=artifact_id,
@@ -185,7 +185,7 @@ class PreviewService:
 
         settings = get_settings()
         now_ts = int(time.time())
-        token_ttl_seconds = 300
+        token_ttl_seconds = settings.runtime_preview_token_ttl_seconds
         trace_id = f"req-{uuid.uuid4().hex[:8]}"
         tenant_id = f"tenant_{user_id}"
         artifact_expires_at = manifest.get("artifact_expires_at")

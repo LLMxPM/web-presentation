@@ -226,6 +226,7 @@ class AppSettings(BaseSettings):
     redis_key_prefix: str = "web_presentation"
     redis_healthcheck_timeout_seconds: float = 2.0
     runtime_preview_artifact_ttl_seconds: int = 3600
+    runtime_preview_token_ttl_seconds: int = 300
     runtime_artifact_sweep_interval_seconds: float = 30.0
     runtime_build_state_ttl_seconds: int = 604800
     # 进程内 memory:// 运行态的有限 payload 预算：2C4G Lite 实测混合负载峰值约 105MB，
@@ -747,6 +748,7 @@ class AppSettings(BaseSettings):
 
     @field_validator(
         "runtime_preview_artifact_ttl_seconds",
+        "runtime_preview_token_ttl_seconds",
         "runtime_build_state_ttl_seconds",
         "runtime_state_memory_max_bytes",
         "runtime_state_memory_max_item_bytes",
