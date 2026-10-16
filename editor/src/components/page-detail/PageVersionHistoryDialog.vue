@@ -97,6 +97,7 @@
                 empty-title="版本预览准备中"
                 empty-description="正在生成所选版本的 Runtime 预览，请稍候。"
                 @retry="retryVersionPreview"
+                @renew="activeVersionNo !== null && emit('renew-preview', activeVersionNo, $event)"
               />
             </div>
           </div>
@@ -153,6 +154,7 @@ const emit = defineEmits<{
   'diff-version': [versionNo: number]
   'open-snapshot': [versionNo: number]
   'restore-version': [versionNo: number]
+  'renew-preview': [versionNo: number, newUrl: string]
 }>()
 
 const activeVersionNo = computed(() => props.historyPanel?.versionNo ?? null)

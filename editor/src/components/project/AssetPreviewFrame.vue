@@ -30,6 +30,7 @@
       empty-title="请选择资源"
       empty-description="资源预览会在这里打开。"
       @retry="loadPreview(true)"
+      @renew="handleRenew"
     />
   </section>
 </template>
@@ -112,5 +113,10 @@ async function loadPreview(recovering = false): Promise<void> {
   } finally {
     if (sequence === previewRequestSequence) loading.value = false
   }
+}
+
+/** 续签成功后写回 previewUrl，使 previewFrameUrl 计算属性与 iframe 保持一致。 */
+function handleRenew(newUrl: string): void {
+  previewUrl.value = newUrl
 }
 </script>

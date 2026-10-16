@@ -66,8 +66,13 @@ export function useComponentPreviewSession() {
   const recovery = useRuntimePreviewRecovery({
     frameUrl: () => previewUrl.value,
     sourceKey: () => null,
+    artifactId: () => previewArtifactId.value,
     isPending: () => previewStatus.value === 'generating',
     enabled: () => previewLoader !== null,
+    onRenewed: (newUrl: string) => {
+      previewUrl.value = newUrl
+      refreshPreviewFrame()
+    },
     recover: async () => { if (previewLoader) await runPreview(previewLoader, previewAppliedConfig.value) },
     onFailure: error => markPreviewError(getErrorMessage(error, '重新生成组件预览失败。')),
   })

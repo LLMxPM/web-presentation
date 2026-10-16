@@ -224,6 +224,7 @@
         @diff-version="toggleVersionDiff"
         @open-snapshot="openSnapshotDialog"
         @restore-version="handleRestoreVersion"
+        @renew-preview="handleVersionPreviewRenew"
       />
 
       <PageSnapshotDialog
@@ -1430,6 +1431,20 @@ async function refreshVersionPreview(versionNo: number): Promise<void> {
     if (targetPageId === pageId.value) Message.error(getErrorMessage(error, '重新生成历史版本预览失败。'))
   } finally {
     if (targetPageId === pageId.value) previewingRuntimeVersionNo.value = null
+  }
+}
+
+/** 历史版本预览续签成功后写回本地映射，避免重新计算或切换选项卡时丢失新票据。 */
+function handleVersionPreviewRenew(versionNo: number, newUrl: string): void {
+  const existing = versionPreviewLinkMap.value[versionNo]
+  if (existing) {
+    versionPreviewLinkMap.value = {
+      ...versionPreviewLinkMap.value,
+      [versionNo]: {
+        ...existing,
+        preview_url: newUrl,
+      },
+    }
   }
 }
 

@@ -10,6 +10,7 @@ import {
 } from '@/api/page-visual-edit'
 import { getErrorMessage } from '@/api/http'
 import { usePageVisualEditDraft } from '@/composables/usePageVisualEditDraft'
+import { useRuntimePreviewRecovery } from '@/composables/useRuntimePreviewRecovery'
 import {
   PAGE_VISUAL_EDIT_PROTOCOL_VERSION,
   PAGE_VISUAL_EDIT_SELECT_NODE_EVENT,
@@ -38,6 +39,32 @@ export function usePageVisualEditSession() {
   const errorMessage = ref('')
   const lastRefreshSucceeded = ref(true)
   let requestSequence = 0
+  let lastPageId: number | null = null
+  let lastBaseVersionNo: number | null = null
+
+  const recovery = useRuntimePreviewRecovery({
+    frameUrl: () => artifact.value?.preview_url ?? '',
+    sourceKey: () => artifact.value?.artifact_id ?? null,
+    artifactId: () => artifact.value?.artifact_id ?? '',
+    isPending: () => loading.value || saving.value,
+    enabled: () => artifact.value !== null,
+    onRenewed: (newUrl: string) => {
+      if (artifact.value) {
+        artifact.value = {
+          ...artifact.value,
+          preview_url: newUrl,
+        }
+      }
+    },
+    recover: async () => {
+      if (lastPageId !== null && lastBaseVersionNo !== null) {
+        await analyze(lastPageId, lastBaseVersionNo)
+      }
+    },
+    onFailure: error => {
+      errorMessage.value = getErrorMessage(error, '重新生成可视化编辑预览失败。')
+    },
+  })
 
   const manifest = computed(() => artifact.value?.visual_edit.manifest ?? null)
   const previewOrigin = computed(() => resolveUrlOrigin(artifact.value?.preview_url ?? ''))
@@ -63,6 +90,8 @@ export function usePageVisualEditSession() {
         base_version_no: baseVersionNo,
       })
       if (sequence !== requestSequence) return null
+      lastPageId = pageId
+      lastBaseVersionNo = baseVersionNo
       artifact.value = response
       stale.value = false
       lastRefreshSucceeded.value = true
@@ -176,6 +205,9 @@ export function usePageVisualEditSession() {
   /** 清空 artifact、选择和草稿，用于页面切换或组件卸载。 */
   function reset(): void {
     requestSequence += 1
+    lastPageId = null
+    lastBaseVersionNo = null
+    recovery.reset()
     artifact.value = null
     selectedNodeId.value = ''
     selectedBindingId.value = ''

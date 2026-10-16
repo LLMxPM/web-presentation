@@ -108,6 +108,7 @@
       @retry-preview-version="refreshVersionPreview"
       @diff-version="toggleVersionDiff"
       @restore-version="restoreVersionToDraft"
+      @renew-preview="handleVersionPreviewRenew"
     />
 
     <ComponentReferenceDialog
@@ -629,6 +630,20 @@ async function refreshVersionPreview(versionNo: number): Promise<void> {
     if (componentId === currentComponent.value?.id) Message.error(getErrorMessage(error, '重新生成组件发布版本预览失败。'))
   } finally {
     if (componentId === currentComponent.value?.id) previewingVersionNo.value = null
+  }
+}
+
+/** 组件历史版本预览续签成功后写回本地映射，避免重新计算或切换选项卡时丢失新票据。 */
+function handleVersionPreviewRenew(versionNo: number, newUrl: string): void {
+  const existing = versionPreviewMap.value[versionNo]
+  if (existing) {
+    versionPreviewMap.value = {
+      ...versionPreviewMap.value,
+      [versionNo]: {
+        ...existing,
+        preview_url: newUrl,
+      },
+    }
   }
 }
 

@@ -55,7 +55,8 @@
       <div class="h-full min-h-0 bg-surface-muted p-3">
         <RuntimePreviewFrame
           v-if="props.previewFrameUrl"
-          :frame-url="props.previewFrameUrl"
+          auto-recover
+          :frame-url="activePreviewFrameUrl"
           title="runtime-preview-dialog"
           :viewport="props.previewViewport"
           :artifact-id="props.previewArtifactId"
