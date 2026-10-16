@@ -18,6 +18,7 @@ from app.models.project_build_job import ProjectBuildJob
 from app.models.release import Release
 from app.schemas.release import PreviewEntryDescriptor
 from app.services.object_storage_service import ObjectStorageService
+from app.services.preview_origin_service import isolated_preview_origin
 from app.services.project_artifact_builder import ProjectArtifactSnapshot
 from app.services.project_build_artifact_proxy_service import ProjectBuildArtifactProxyService
 from app.services.project_build_service import (
@@ -706,7 +707,7 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """Runtime 上传构建产物后，应支持下载、公开代理和保留历史的产物删除。"""
+    """Runtime 上传构建产物后，应支持下载、私有票据浏览和保留历史的产物删除。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
 
@@ -803,41 +804,64 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     assert download_response.headers["content-type"] == "application/zip"
     assert download_response.content == archive_content
 
+    access_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs/{build_job['id']}/access"
+    )
+    assert access_response.status_code == 200
+    access_payload = access_response.json()
+    browse_token = access_payload["token"]
+    browse_prefix = f"{isolated_preview_origin()}/build-artifacts/{project_id}/{build_job['id']}"
+    assert access_payload["browse_url"].startswith(f"{browse_prefix}/")
+    assert access_payload["expires_in_seconds"] > 0
+
+    # 无票据、无 Cookie 的匿名访问一律 404，不泄露产物是否已生成。
+    authenticated_client.cookies.delete(f"wp_build_token_{project_id}_{build_job['id']}")
+    anonymous_proxy_response = await authenticated_client.get(f"{browse_prefix}/")
+    assert anonymous_proxy_response.status_code == 404
+    assert anonymous_proxy_response.json()["code"] == "BUILD_ARTIFACT_ANONYMOUS_DISABLED"
+
     root_proxy_response = await authenticated_client.get(
-        f"/build-artifacts/{project_id}/{build_job['id']}/"
+        f"{isolated_preview_origin()}/build-artifacts/{project_id}/{build_job['id']}/",
+        params={"token": browse_token},
     )
     assert root_proxy_response.status_code == 200
     assert root_proxy_response.headers["content-type"].startswith("text/html")
-    assert root_proxy_response.headers["cache-control"] == "no-cache"
+    assert root_proxy_response.headers["cache-control"] == "no-store"
+    assert root_proxy_response.headers["referrer-policy"] == "no-referrer"
     assert root_proxy_response.content == index_html
+    assert f"wp_build_token_{project_id}_{build_job['id']}" in root_proxy_response.cookies
 
     asset_proxy_response = await authenticated_client.get(
-        f"/build-artifacts/{project_id}/{build_job['id']}/assets/app.js"
+        f"{isolated_preview_origin()}/build-artifacts/{project_id}/{build_job['id']}/assets/app.js",
+        params={"token": browse_token},
     )
     assert asset_proxy_response.status_code == 200
     assert "javascript" in asset_proxy_response.headers["content-type"]
-    assert asset_proxy_response.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert asset_proxy_response.headers["cache-control"] == "private, no-cache"
     assert asset_proxy_response.content == app_js
 
     spa_route_response = await authenticated_client.get(
-        f"/build-artifacts/{project_id}/{build_job['id']}/slides/intro"
+        f"{isolated_preview_origin()}/build-artifacts/{project_id}/{build_job['id']}/slides/intro",
+        params={"token": browse_token},
     )
     assert spa_route_response.status_code == 200
     assert spa_route_response.headers["content-type"].startswith("text/html")
     assert spa_route_response.content == index_html
 
     missing_asset_response = await authenticated_client.get(
-        f"/build-artifacts/{project_id}/{build_job['id']}/assets/missing.js"
+        f"{isolated_preview_origin()}/build-artifacts/{project_id}/{build_job['id']}/assets/missing.js",
+        params={"token": browse_token},
     )
     assert missing_asset_response.status_code == 404
     assert missing_asset_response.json()["code"] == "BUILD_ARTIFACT_FILE_NOT_FOUND"
 
     _, other_project_id = await create_active_project(authenticated_client)
     cross_project_response = await authenticated_client.get(
-        f"/build-artifacts/{other_project_id}/{build_job['id']}/"
+        f"{isolated_preview_origin()}/build-artifacts/{other_project_id}/{build_job['id']}/",
+        params={"token": browse_token},
     )
     assert cross_project_response.status_code == 404
-    assert cross_project_response.json()["code"] == "BUILD_JOB_NOT_FOUND"
+    assert cross_project_response.json()["code"] == "BUILD_ARTIFACT_ANONYMOUS_DISABLED"
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -884,11 +908,19 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     assert deleted_download_response.status_code == 404
     assert deleted_download_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
 
+    # 产物删除后：即使票据仍在有效期内，也已读不到任何内容。
     deleted_proxy_response = await authenticated_client.get(
-        f"/build-artifacts/{project_id}/{build_job['id']}/"
+        f"{isolated_preview_origin()}/build-artifacts/{project_id}/{build_job['id']}/",
+        params={"token": browse_token},
     )
     assert deleted_proxy_response.status_code == 404
     assert deleted_proxy_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
+
+    deleted_access_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs/{build_job['id']}/access"
+    )
+    assert deleted_access_response.status_code == 404
+    assert deleted_access_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
 
     repeated_delete_response = await authenticated_client.delete(
         f"/api/projects/{project_id}/build-jobs/{build_job['id']}/artifact"
@@ -1192,7 +1224,7 @@ async def test_project_build_artifact_proxy_should_report_missing_archive(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """构建任务未上传归档时，公开代理入口应返回产物不存在。"""
+    """构建任务未上传归档时，私有授权签发与匿名代理入口都应拒绝访问。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
 
@@ -1218,11 +1250,17 @@ async def test_project_build_artifact_proxy_should_report_missing_archive(
     assert create_response.status_code == 200
     build_job = create_response.json()
 
+    access_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs/{build_job['id']}/access"
+    )
+    assert access_response.status_code == 404
+    assert access_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
+
     proxy_response = await authenticated_client.get(
-        f"/build-artifacts/{project_id}/{build_job['id']}/"
+        f"{isolated_preview_origin()}/build-artifacts/{project_id}/{build_job['id']}/"
     )
     assert proxy_response.status_code == 404
-    assert proxy_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
+    assert proxy_response.json()["code"] == "BUILD_ARTIFACT_ANONYMOUS_DISABLED"
 
 
 def test_project_build_artifact_proxy_should_reject_unsafe_paths() -> None:

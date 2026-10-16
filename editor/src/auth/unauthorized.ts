@@ -4,6 +4,7 @@
 import type { Router } from 'vue-router'
 
 import { registerUnauthorizedHandler } from '@/api/http'
+import { clearAllPreviewRenewTimers } from '@/composables/useRuntimePreviewRecovery'
 import { useAuthStore } from '@/stores/auth'
 
 let isRedirecting = false
@@ -15,6 +16,7 @@ let isRedirecting = false
 export function setupUnauthorizedRedirect(router: Router) {
   registerUnauthorizedHandler(async () => {
     const authStore = useAuthStore()
+    clearAllPreviewRenewTimers()
     authStore.user = null
     authStore.initialized = true
 

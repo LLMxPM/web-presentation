@@ -266,4 +266,74 @@ describe('runtime path helpers', () => {
 
     expect(resolveResourcePath('img/logo/ppt-e.png')).toBe('./__build_assets/logo-a1b2c3.png')
   })
+
+  it('素材票据按上下文声明查表：preview_token 才附加、none 不附加', () => {
+    const base = 'https://backend.example/preview/artifacts/rt_1/assets'
+
+    function mountMappedAsset(assetBaseUrlAuth: 'preview_token' | 'none') {
+      setRuntimePreviewContext({
+        artifactId: 'rt_1',
+        tenantId: 'tenant_1',
+        previewKind: 'project',
+        scopeType: 'project',
+        workspaceId: '1',
+        entryDescriptor: { entry_type: 'route', route: '/home' },
+        assetBaseUrl: base,
+        assetBaseUrlAuth,
+        traceId: 'trace_auth',
+      })
+      setRuntimePreloadedConfig({
+        manifest: {
+          artifact_id: 'rt_1',
+          artifact_kind: 'preview_artifact',
+          tenant_id: 'tenant_1',
+          preview_kind: 'project',
+          asset_base_url: base,
+          owner_scope: { scope_type: 'project', workspace_id: '1' },
+          entry_descriptor: { entry_type: 'route', route: '/home' },
+          modules: {},
+          assets: { 'img/logo.png': 'hash-a1', 'vendor/assets/icon.png': 'hash-b2' },
+        }
+      })
+      setRuntimePreviewToken('preview-token-P')
+    }
+
+    mountMappedAsset('preview_token')
+    expect(resolveResourcePath('img/logo.png')).toBe(`${base}/hash-a1?token=preview-token-P`)
+
+    mountMappedAsset('none')
+    expect(resolveResourcePath('img/logo.png')).toBe(`${base}/hash-a1`)
+  })
+
+  it('声明缺失时不附加票据，且资源路径包含 /assets/ 片段也不会误拼', () => {
+    const base = 'https://assets.example/releases/release_1'
+    setRuntimePreviewContext({
+      artifactId: 'rt_2',
+      tenantId: 'tenant_1',
+      previewKind: 'project',
+      scopeType: 'project',
+      workspaceId: '1',
+      entryDescriptor: { entry_type: 'route', route: '/home' },
+      assetBaseUrl: base,
+      traceId: 'trace_legacy',
+    })
+    setRuntimePreloadedConfig({
+      manifest: {
+        artifact_id: 'rt_2',
+        artifact_kind: 'preview_artifact',
+        tenant_id: 'tenant_1',
+        preview_kind: 'project',
+        asset_base_url: base,
+        owner_scope: { scope_type: 'project', workspace_id: '1' },
+        entry_descriptor: { entry_type: 'route', route: '/home' },
+        modules: {},
+        assets: { 'vendor/assets/icon.png': 'hashed/assets/icon-a1.png' },
+      }
+    })
+    setRuntimePreviewToken('preview-token-P')
+
+    expect(resolveResourcePath('vendor/assets/icon.png')).toBe(
+      `${base}/hashed/assets/icon-a1.png`,
+    )
+  })
 })

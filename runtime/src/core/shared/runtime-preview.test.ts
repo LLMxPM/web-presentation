@@ -14,6 +14,7 @@ import {
   normalizeRuntimeModulePath,
   normalizeViewModulePath,
   parseRemoteModuleId,
+  resolvePreviewAssetBaseAuth,
   resolvePreviewEntryModulePath,
   toAliasModulePath,
   toAliasViewPath,
@@ -161,5 +162,29 @@ describe('runtime preview shared helpers', () => {
     expect(manifest.artifact_kind).toBe('page_visual_edit_preview')
     expect(manifest.visual_edit?.protocol_version).toBe(1)
     expect(manifest.visual_edit?.module_path).toBe('src/views/PGdemo.vue')
+  })
+})
+
+describe('预览素材票据声明', () => {
+  const protectedBase = 'https://backend.example/preview/artifacts/rt_1/assets'
+  const legacyBase = 'https://assets.example/releases/release_1'
+
+  it('应直接采用 Backend 签发的显式声明', () => {
+    expect(resolvePreviewAssetBaseAuth('preview_token', legacyBase)).toBe('preview_token')
+    expect(resolvePreviewAssetBaseAuth('none', protectedBase)).toBe('none')
+  })
+
+  it('旧票据缺失声明时按签发的基础地址形态退化推断', () => {
+    expect(resolvePreviewAssetBaseAuth(undefined, protectedBase)).toBe('preview_token')
+    expect(resolvePreviewAssetBaseAuth(undefined, `${protectedBase}?v=2`)).toBe('preview_token')
+    expect(resolvePreviewAssetBaseAuth(undefined, `${protectedBase}/`)).toBe('preview_token')
+    expect(resolvePreviewAssetBaseAuth(undefined, legacyBase)).toBe('none')
+    expect(resolvePreviewAssetBaseAuth(undefined, '')).toBe('none')
+  })
+
+  it('非字符串或未知声明不得被当成需要票据', () => {
+    for (const raw of [1, true, {}, [], 'PREVIEW_TOKEN', 'service_token']) {
+      expect(resolvePreviewAssetBaseAuth(raw, legacyBase)).toBe('none')
+    }
   })
 })

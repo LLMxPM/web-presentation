@@ -6,7 +6,6 @@ import io
 import hashlib
 import logging
 import re
-import time
 import zipfile
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
@@ -419,7 +418,7 @@ class PageScreenshotService:
         settings = get_settings()
         runtime_service_token = TokenService.generate_runtime_service_access_token(
             artifact_id=artifact_id,
-            expires_in_seconds=self._resolve_runtime_service_token_ttl(preview_claims),
+            expires_in_seconds=TokenService.resolve_preview_service_token_ttl(preview_claims),
         )
         # 浏览器（含远程 Renderer）必须访问 navigation/asset 基址，不能使用 Backend→Runtime 回环。
         targets = RenderTargetResolver(settings)
@@ -476,17 +475,6 @@ class PageScreenshotService:
 
         query = parse_qs(urlsplit(preview_url).query)
         return str((query.get("token") or [""])[0]).strip()
-
-    @staticmethod
-    def _resolve_runtime_service_token_ttl(preview_claims: dict[str, object]) -> int:
-        """按预览上下文令牌剩余有效期生成 Runtime 服务令牌 TTL。"""
-
-        now = int(time.time())
-        try:
-            preview_exp = int(preview_claims.get("exp") or now)
-        except (TypeError, ValueError):
-            preview_exp = now
-        return max(60, preview_exp - now)
 
     @staticmethod
     def build_page_screenshot_storage_key(

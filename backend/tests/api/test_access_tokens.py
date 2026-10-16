@@ -6,6 +6,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.db.session import get_session_factory
 from app.models.enums import RecordStatus, UserRole
 from app.models.user import User
@@ -13,6 +14,16 @@ from app.models.workspace import Workspace, WorkspaceMember
 from app.schemas.api_access_token import ApiAccessTokenCreateRequest
 from app.schemas.preview_size_preset import build_default_preview_size_presets
 from app.services.api_access_token_service import ApiAccessTokenService
+
+
+def _trusted_console_origin() -> str:
+    """控制台写接口使用的受信浏览器来源：与真实浏览器一致，取平台业务公开基址。
+
+    受信来源由 `app.api.business_origin.trusted_business_origins()` 统一提供，
+    端点级 CSRF 校验与全局 CSRF 中间件共用同一份白名单。
+    """
+
+    return get_settings().backend_public_base_url.rstrip("/")
 
 
 async def _seed_admin_token(session, suffix: str) -> tuple[int, int]:
@@ -118,7 +129,7 @@ async def test_update_access_token_configuration(authenticated_client: AsyncClie
             "scopes": ["project:read"],
             "expires_in_days": None,
         },
-        headers={"Origin": "http://testserver"},
+        headers={"Origin": _trusted_console_origin()},
     )
     assert response.status_code == 200
     assert response.json()["name"] == "Updated Web API Token"
@@ -155,14 +166,14 @@ async def test_update_access_token_rejects_csrf_and_invalid_payload(authenticate
     invalid_scope = await authenticated_client.patch(
         f"/api/access-tokens/{token_id}",
         json={"scopes": ["not-a-scope"]},
-        headers={"Origin": "http://testserver"},
+        headers={"Origin": _trusted_console_origin()},
     )
     assert invalid_scope.status_code == 422
 
     incomplete_workspace = await authenticated_client.patch(
         f"/api/access-tokens/{token_id}",
         json={"workspace_ids": [workspace_id]},
-        headers={"Origin": "http://testserver"},
+        headers={"Origin": _trusted_console_origin()},
     )
     assert incomplete_workspace.status_code == 422
 
@@ -181,7 +192,7 @@ async def test_update_access_token_rejects_revoked_token(authenticated_client: A
     response = await authenticated_client.patch(
         f"/api/access-tokens/{token_id}",
         json={"name": "Should Fail"},
-        headers={"Origin": "http://testserver"},
+        headers={"Origin": _trusted_console_origin()},
     )
     assert response.status_code == 409
     assert response.json()["code"] == "PAT_REVOKED"
@@ -229,7 +240,7 @@ async def test_update_access_token_rejects_non_member_workspace(authenticated_cl
             "workspace_ids": [other_workspace_id],
             "all_workspaces": False,
         },
-        headers={"Origin": "http://testserver"},
+        headers={"Origin": _trusted_console_origin()},
     )
     assert response.status_code == 403
 
@@ -282,7 +293,7 @@ async def test_update_access_token_hides_other_user_token(authenticated_client: 
     response = await authenticated_client.patch(
         f"/api/access-tokens/{other_token_id}",
         json={"name": "Should Not Update"},
-        headers={"Origin": "http://testserver"},
+        headers={"Origin": _trusted_console_origin()},
     )
     assert response.status_code == 404
 
@@ -304,7 +315,7 @@ async def test_reset_access_token_endpoint(authenticated_client: AsyncClient) ->
     reset_response = await authenticated_client.post(
         f"/api/access-tokens/{token_id}/reset",
         json={"expires_in_days": 15},
-        headers={"Origin": "http://testserver"},
+        headers={"Origin": _trusted_console_origin()},
     )
     assert reset_response.status_code == 200
     assert "no-store" in reset_response.headers.get("Cache-Control", "")

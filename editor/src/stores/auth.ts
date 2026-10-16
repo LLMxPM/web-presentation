@@ -4,6 +4,7 @@
 import { defineStore } from 'pinia'
 
 import { fetchMe, login, logout } from '@/api/auth'
+import { clearAllPreviewRenewTimers } from '@/composables/useRuntimePreviewRecovery'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -36,12 +37,13 @@ export const useAuthStore = defineStore('auth', {
       return response.user
     },
     /**
-     * 退出登录并清空本地用户状态。
+     * 退出登录并清空本地用户状态，同时清理预览续签计时器避免跨会话复用旧票据。
      */
     async signOut() {
       try {
         await logout()
       } finally {
+        clearAllPreviewRenewTimers()
         this.user = null
         this.initialized = true
       }

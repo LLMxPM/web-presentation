@@ -54,7 +54,13 @@ async def test_browser_entry_binds_version_in_isolated_frame(authenticated_clien
     target = urlsplit(unescape(re.search(r'<iframe[^>]+src="([^"]+)"', response.text).group(1)))
     assert target.hostname == "preview.localhost"
     bound = TokenService.verify_preview_context_token(parse_qs(target.query)["token"][0])
-    assert bound == {**original, "runtime_version_fingerprint": "1.0.0+release-a"}
+    # 重新签发会产生新的 iat / jti：只比较稳定声明，避免跨秒边界造成偶发失败。
+    volatile_claims = {"iat", "exp", "jti"}
+    assert {key: value for key, value in bound.items() if key not in volatile_claims} == {
+        **{key: value for key, value in original.items() if key not in volatile_claims},
+        "runtime_version_fingerprint": "1.0.0+release-a",
+    }
+    assert int(bound["exp"]) <= int(original["exp"])
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
     assert "Content-Security-Policy" in response.headers

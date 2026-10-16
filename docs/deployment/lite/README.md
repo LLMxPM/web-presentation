@@ -51,7 +51,7 @@ docker logs web-presentation
 | :--- | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | `http://127.0.0.1:8080`（局域网示例：`http://192.168.1.20:8080`） | 浏览器访问平台的外部入口，系统用它生成平台链接 |
 | `RUNTIME_PUBLIC_BASE_URL` | `http://preview.localhost:8080/runtime`（本机）；局域网可用 `http://preview.home.arpa:8080/runtime` | 独立预览主机名，需通过局域网 DNS / hosts 解析到同一 Gateway；不能复用业务 IP 或主机名 |
-| `CORS_ORIGINS` | `'["http://127.0.0.1:8080"]'`（局域网示例：`'["http://192.168.1.20:8080"]'`） | 允许访问平台的浏览器来源，必须填写平台外部入口 |
+| `CORS_ORIGINS` | `'["http://127.0.0.1:8080","http://localhost:8080"]'`（局域网示例：`'["http://192.168.1.20:8080"]'`） | 允许访问平台的浏览器来源，必须填写平台外部入口；业务写接口（含登录）要求浏览器来源精确命中该列表或 `BACKEND_PUBLIC_BASE_URL` |
 | `DEFAULT_ADMIN_PASSWORD` | 留空（自动生成随机密码）或自定义强密码 | 首次建库时的管理员初始口令 |
 
 ### 容器内地址与端口映射说明

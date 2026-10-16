@@ -1,6 +1,6 @@
 # 用户文件存储鉴权与缓存实施规划
 
-状态：实施中，2026-10-16 修复复审发现的链路与缓存问题。代码验证、生产桶策略、真实 S3 兼容服务和多副本部署验收分别记录，不能将单元测试通过等同于 W01～W12 全部完成，也未开展生产计费周期观测。
+状态：实施中，2026-10-16 修复复审发现的链路与缓存问题，同日完成第二轮独立复核整改（P0–P2：业务写接口受信来源统一、旧公开面测试迁移、S 令牌期限对齐 §4.2、素材票据显式声明、登出续签清理与续签 fail-closed）。代码验证、生产桶策略、真实 S3 兼容服务和多副本部署验收分别记录，不能将单元测试通过等同于 W01～W12 全部完成，也未开展生产计费周期观测。
 
 本规划覆盖 Editor、Backend、Runtime、Renderer 与 S3 / 本地存储之间的文件访问，重点解决预览、截图、构建使用不同身份读取同一资源的问题。实施目标是关闭用户文件的匿名读取入口，在不破坏渲染链路的前提下保留服务器缓存和浏览器条件缓存。
 
@@ -212,7 +212,7 @@ P 属于持有即可使用的短期授权；拿到完整链接的人在有效期
 
 `RUNTIME_PUBLIC_BASE_URL` 必须使用不同于 Backend 和业务 CORS 主机的域名。仅本地回环地址可自动改写为 `preview.localhost`；远程同主机名配置返回 `PREVIEW_ORIGIN_NOT_ISOLATED`。生产为预览域配置 DNS / TLS，并把 `/runtime/` 与 `/build-artifacts/` 路由到现有 Gateway；根路径 Runtime 部署也需保留私有构建代理。业务会话使用 host-only Cookie，不设置父域 Domain，不把预览域加入业务 API 的 CORS 白名单。
 
-独立 origin 与 host-only Cookie 仍不足以阻止预览脚本主动向 Editor origin 发起带凭证请求。管理 API 的写入必须校验受信 Origin / CSRF，不能仅依赖 SameSite 或 CORS；同站点的不同子域也要验证。Backend 到 Runtime 的代理头使用允许列表，不透传浏览器的业务 Cookie、Authorization 或客户端自填的服务凭证。
+独立 origin 与 host-only Cookie 仍不足以阻止预览脚本主动向 Editor origin 发起带凭证请求。管理 API 的写入必须校验受信 Origin / CSRF，不能仅依赖 SameSite 或 CORS；同站点的不同子域也要验证。受信来源白名单由 `app.api.business_origin.trusted_business_origins()` 统一提供（业务公开基址 ∪ CORS 白名单），全局中间件与 Web 控制台端点级校验共用同一份定义，不额外信任请求自身 Host；部署必须让浏览器访问地址精确命中该白名单，否则写接口（含登录）一律 403。Backend 到 Runtime 的代理头使用允许列表，不透传浏览器的业务 Cookie、Authorization 或客户端自填的服务凭证。
 
 iframe 消息严格检查 origin、source、artifact 和消息类型；票据不经通配 `postMessage` 发送。Editor 的页面、组件与可视化编辑 iframe 使用 `referrerpolicy="origin"`，只向可信宿主页提供实际工作台来源；Backend 在 CORS 白名单内精确匹配该来源作为消息回传目标，避免 `localhost` / `127.0.0.1` 等多入口下把 ready 发往错误 origin。预览响应继续使用 `Referrer-Policy: no-referrer`；可信宿主页的内部 iframe 单独使用 `origin`，只把 Backend origin 交给 Runtime 现有可视化编辑桥，不泄露带票据的地址。日志遮蔽 token、ctx、S3 签名参数。业务 CORS 仅允许受信 Editor，文件入口按其独立权限处理。
 
@@ -233,6 +233,8 @@ flowchart LR
 ```
 
 第一阶段的预览素材字节经过 Backend，避免新增 Runtime 全量素材目录，并统一 local / S3、字体、文本 fetch 和浏览器导出行为。这会占用 Backend 对外带宽，必须计入成本，不宣称比 S3 直连天然便宜。
+
+素材是否需要附带预览票据由 Backend 随预览上下文签发 `asset_base_url_auth` 显式声明（受保护预览素材入口为 `preview_token`，其余形态为 `none`）；Runtime 只按声明查表，不对拼接后的资源路径做子串推断。滚动发布期间缺失该声明的旧票据按同一票据签发的 `asset_base_url` 形态退化推断，旧票据过期后该兼容路径可移除。
 
 后台任务使用内部 Backend 基址；用户页面使用公开文件基址。逻辑对象身份相同，网络地址按访问方生成，禁止把容器名或 `127.0.0.1` 写入外部 Renderer 的浏览器资源地址。
 
@@ -432,7 +434,7 @@ Backend 代理交付另计“S3 到 Backend 的回源成本 + Backend 到请求�
 | W01 访问基线 | 枚举资产、字体、截图、模板、构建、AI、配置入口及全部消费者；记录 local / S3 和现有缓存行为 | 无 | 可复现当前公开路径与业务流程，建立匿名 / 跨用户反例 | 已实施（已建立受保护基线与负向测试覆盖） |
 | W02 文件授权核心 | Backend 统一资源身份解析、P / S / 用户 / 任务授权适配、错误码与条件读取顺序 | W01 | 不同凭证用途不能混用；缓存热态仍拒绝越权 | 已实施（`FileAuthService` 统一鉴权切面） |
 | W03 受保护资源接口 | 预览 / 内部 / 用户文件入口，GET / HEAD / Range / ETag，local 与 S3 行为一致 | W02 | 文件完整性、条件响应、跨租户测试通过 | 已实施（受保护文件入口、If-Range、分块流式交付） |
-| W04 快照与票据 | 资源引用收敛、结构化访问描述、协议版本、P 续签、期限传播 | W02 | 旧 P 不能自行续签，资源范围固定，短票据不改变内容指纹 | 已实施（快照绑定受保护素材端点与 P 续签） |
+| W04 快照与票据 | 资源引用收敛、结构化访问描述、协议版本、P 续签、期限传播 | W02 | 旧 P 不能自行续签，资源范围固定，短票据不改变内容指纹 | 已实施（快照绑定受保护素材端点与 P 续签；`asset_base_url_auth` 显式声明素材票据类型；S 令牌 TTL 不超过来源 P 剩余期限） |
 | W05 Runtime 与 Editor | 统一 URL 解析、字体与文本加载、模块缓存前鉴权、iframe 恢复与独立标签页到期提示 | W03 W04 | 单页、整项目、组件、资源及历史预览成功，错误不回退 public | 已实施（Runtime 路径解析、前端 45s 定时自动续签） |
 | W06 Renderer 与构建 | 任务预览授权、内部素材基址、构建读取授权续期、浏览器导出代理适配 | W03 W04 | 真实截图与构建产物成功；过期 / 取消 / 租约失守可解释 | 已实施（构建 Worker 受保护下载、Renderer 鉴权） |
 | W07 预览源站隔离 | 部署 origin、Cookie 范围、预览跳转、消息校验、Origin / CSRF、CORS 和日志脱敏 | W04 W05 | 生成代码所在 origin 不携带业务 Cookie，不能跨源代发业务写入，字体与导出通过 | 代码已实施；生产预览域 DNS / TLS 与 Cookie 验收待发布 |
@@ -450,7 +452,7 @@ Backend 代理交付另计“S3 到 Backend 的回源成本 + Backend 到请求�
 
 ## 11 验证矩阵与性能证据
 
-2026-10-16 本地复验结果：Backend 完整单元集及相关权限、截图和预览 API / 集成测试 778 项通过；Editor 809 项通过，类型检查与生产构建通过；Runtime 863 项通过、3 项跳过，类型检查与生产构建通过。根仓契约 59 项、仓库文档 / 部署检查 16 项、OpenAPI 生成对拍与真实 Docker Nginx 网关回归通过。
+2026-10-16 本地复验结果（第二轮复核整改后）：Backend `-m unit` 742 项、`-m api` 219 项、`-m integration` 325 项通过（7 项跳过，0 失败），合计 1286 项；Editor 812 项通过，类型检查与生产构建通过；Runtime 869 项通过、3 项跳过，类型检查与生产构建通过。OpenAPI 生成对拍（258 paths / 340 schemas）与真实 Docker Nginx 网关回归通过；根仓契约与部署文档检查沿用第一轮记录，本轮未重复执行。第一轮复验只覆盖 `backend/tests/unit`，`-m api` 与 `-m integration` 存在阻断项，详见[代码审查报告 §11](./file-storage-auth-cache-review.md#11-第二轮独立复核与整改记录2026-10-16p0p2)。
 
 实际浏览器已分别验证：单页隔离预览与 host-only Cookie、可视化编辑循环项 / 字体样式 / 图片替换保存、Backend → Renderer → Runtime 的真实 PNG、含图片的项目构建与 ZIP 下载、私有构建 HTML / CSS / 图片及匿名子资源拒绝、整项目预览中的真实 PPTX 下载。PPTX / PDF 共用的捕获舞台改为视口内透明 iframe，避免 Chromium 暂停屏幕外跨源嵌套帧的 rAF 导致永不就绪。上述浏览器环境使用专用 `_e2e` SQLite、Redis 测试库和临时本地对象目录；S3 缓存与旧字体迁移使用内存 S3 原件加真实磁盘缓存的测试替身，不能替代真实 S3、生产或多副本验收。
 

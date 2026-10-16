@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hmac
-import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated, Any
@@ -90,17 +89,6 @@ class BuildJobCompleteRequest(BaseModel):
 
     success: bool
     error_message: str | None = Field(default=None, max_length=2000)
-
-
-def _resolve_runtime_service_token_ttl(preview_claims: dict[str, object]) -> int:
-    """按 PreviewContextToken 剩余有效期生成短期服务令牌 TTL，至少 60 秒。"""
-
-    now = int(time.time())
-    try:
-        preview_exp = int(preview_claims.get("exp") or now)
-    except (TypeError, ValueError):
-        preview_exp = now
-    return max(60, preview_exp - now)
 
 
 async def _get_release_or_404(session: AsyncSession, artifact_id: str) -> Release:
@@ -304,7 +292,7 @@ async def exchange_preview_service_token(payload: PreviewServiceTokenExchangeReq
     授权语义：
     - 仅接受 `aud=runtime-preview` 的有效 PreviewContextToken（验签并校验过期），过期或伪造令牌直接 401；
     - 签发的服务令牌为 `sub=runtime-service`、`scope=runtime-artifact-read`，且绑定 `artifact_id`，只能读取该 artifact；
-    - TTL 与预览令牌剩余有效期对齐，属于短期票据，可被 Runtime 反复换发；
+    - TTL 与预览令牌剩余有效期对齐且不超过来源到期，属于短期票据，可被 Runtime 反复换发；
     - 本端点位于 `/internal/` 前缀，不经公开 Gateway 暴露，只有受信网络内的 Runtime 可访问；
       响应体包含服务令牌原文，仅供 Runtime 进程内使用，禁止转发给浏览器；
     - 日志只记录 artifact_id，不记录任何令牌原文。
@@ -323,7 +311,7 @@ async def exchange_preview_service_token(payload: PreviewServiceTokenExchangeReq
     if not artifact_id:
         raise AppException(status_code=401, code="PREVIEW_CONTEXT_INVALID", detail="预览上下文缺少 artifact_id。")
 
-    expires_in = _resolve_runtime_service_token_ttl(claims)
+    expires_in = TokenService.resolve_preview_service_token_ttl(claims)
     service_token = TokenService.generate_runtime_service_access_token(
         artifact_id=artifact_id,
         expires_in_seconds=expires_in,

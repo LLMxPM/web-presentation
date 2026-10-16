@@ -34,6 +34,18 @@ logger = logging.getLogger(__name__)
 PreviewArtifactKind = Literal["preview_artifact", "page_visual_edit_preview"]
 
 
+def _parse_manifest_owner_id(raw: object) -> int | None:
+    """把 manifest 归属信息中的 ID 解析为正整数；缺失或非法返回 None，由调用方 fail-closed。"""
+
+    if raw is None:
+        return None
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
 class PreviewService:
     """项目/页面预览服务，负责构建短生命周期 preview artifact。"""
 
@@ -174,14 +186,22 @@ class PreviewService:
             )
 
         owner_scope = manifest.get("owner_scope") or {}
-        project_id_raw = owner_scope.get("project_id")
-        workspace_id_raw = owner_scope.get("workspace_id")
-        if project_id_raw:
+        project_id = _parse_manifest_owner_id(owner_scope.get("project_id"))
+        workspace_id = _parse_manifest_owner_id(owner_scope.get("workspace_id"))
+        if project_id is not None:
             from app.services.project_service import ProjectService
-            await ProjectService(self.session).get(int(project_id_raw), user_id=user_id)
-        elif workspace_id_raw:
+            await ProjectService(self.session).get(project_id, user_id=user_id)
+        elif workspace_id is not None:
             from app.services.workspace_service import WorkspaceService
-            await WorkspaceService(self.session).ensure_access(int(workspace_id_raw), user_id=user_id)
+            await WorkspaceService(self.session).ensure_access(workspace_id, user_id=user_id)
+        else:
+            # fail-closed：快照缺少可校验的归属信息时不得签发票据，避免出现无授权依据的预览入口。
+            raise AppException(
+                status_code=404,
+                code="FILE_NOT_FOUND",
+                detail="预览快照缺少归属信息，无法确认访问权限。",
+                headers={"Cache-Control": "no-store"},
+            )
 
         settings = get_settings()
         now_ts = int(time.time())
@@ -190,7 +210,13 @@ class PreviewService:
         tenant_id = f"tenant_{user_id}"
         artifact_expires_at = manifest.get("artifact_expires_at")
         if artifact_expires_at:
-            remaining = int(datetime.fromisoformat(str(artifact_expires_at)).timestamp()) - now_ts
+            try:
+                artifact_expires_ts = int(datetime.fromisoformat(str(artifact_expires_at)).timestamp())
+            except (TypeError, ValueError):
+                raise AppException(
+                    410, "PREVIEW_ARTIFACT_EXPIRED", "预览 artifact 已过期。", headers={"Cache-Control": "no-store"},
+                ) from None
+            remaining = artifact_expires_ts - now_ts
             if remaining <= 0:
                 raise AppException(410, "PREVIEW_ARTIFACT_EXPIRED", "预览 artifact 已过期。", headers={"Cache-Control": "no-store"})
             token_ttl_seconds = min(token_ttl_seconds, remaining)
@@ -209,8 +235,8 @@ class PreviewService:
             artifact_id=artifact_id,
             preview_kind=str(manifest.get("preview_kind") or "project"),
             scope_type=scope_type,
-            workspace_id=workspace_id_raw or 0,
-            project_id=int(project_id_raw) if project_id_raw else None,
+            workspace_id=workspace_id or 0,
+            project_id=project_id,
             entry_descriptor=manifest.get("entry_descriptor") or {},
             asset_base_url=str(manifest.get("asset_base_url") or ""),
             trace_id=trace_id,

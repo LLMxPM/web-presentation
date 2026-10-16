@@ -23642,7 +23642,7 @@
           "internal-runtime"
         ],
         "summary": "Exchange Preview Service Token",
-        "description": "用已签名的 PreviewContextToken 换取 artifact 作用域的短期 Runtime 服务令牌。\n\n授权语义：\n- 仅接受 `aud=runtime-preview` 的有效 PreviewContextToken（验签并校验过期），过期或伪造令牌直接 401；\n- 签发的服务令牌为 `sub=runtime-service`、`scope=runtime-artifact-read`，且绑定 `artifact_id`，只能读取该 artifact；\n- TTL 与预览令牌剩余有效期对齐，属于短期票据，可被 Runtime 反复换发；\n- 本端点位于 `/internal/` 前缀，不经公开 Gateway 暴露，只有受信网络内的 Runtime 可访问；\n  响应体包含服务令牌原文，仅供 Runtime 进程内使用，禁止转发给浏览器；\n- 日志只记录 artifact_id，不记录任何令牌原文。",
+        "description": "用已签名的 PreviewContextToken 换取 artifact 作用域的短期 Runtime 服务令牌。\n\n授权语义：\n- 仅接受 `aud=runtime-preview` 的有效 PreviewContextToken（验签并校验过期），过期或伪造令牌直接 401；\n- 签发的服务令牌为 `sub=runtime-service`、`scope=runtime-artifact-read`，且绑定 `artifact_id`，只能读取该 artifact；\n- TTL 与预览令牌剩余有效期对齐且不超过来源到期，属于短期票据，可被 Runtime 反复换发；\n- 本端点位于 `/internal/` 前缀，不经公开 Gateway 暴露，只有受信网络内的 Runtime 可访问；\n  响应体包含服务令牌原文，仅供 Runtime 进程内使用，禁止转发给浏览器；\n- 日志只记录 artifact_id，不记录任何令牌原文。",
         "operationId": "exchange_preview_service_token_internal_runtime_preview_service_token_post",
         "requestBody": {
           "content": {

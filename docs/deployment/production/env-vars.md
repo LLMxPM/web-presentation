@@ -8,7 +8,7 @@ production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy
 | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | 平台对外访问地址 |
 | `RUNTIME_PUBLIC_BASE_URL` | 独立预览主机名的浏览器访问地址，例如 `https://preview.example.com/runtime`；与业务主机名相同会拒绝预览 |
-| `CORS_ORIGINS` | 允许访问 Backend 的前端源 |
+| `CORS_ORIGINS` | 允许访问 Backend 的前端源；业务写接口（含登录）要求浏览器来源精确命中该列表或 `BACKEND_PUBLIC_BASE_URL`，否则 403 |
 | `SESSION_SECURE` | HTTPS 部署应设为 `true` |
 | `APP_TIMEZONE` | 业务时区，默认 `Asia/Shanghai`；Editor 启动时自动读取，无需重建前端 |
 

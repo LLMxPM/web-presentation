@@ -97,7 +97,7 @@ docker run --rm \
 | :--- | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | 浏览器访问平台的完整公网/局域网根地址<br>如：`http://192.168.1.50:8080` 或 `https://ppt.yourdomain.com` | **结尾不要带斜杠**；用于平台生成公开链接和回调 |
 | `RUNTIME_PUBLIC_BASE_URL` | 独立预览主机名<br>如：`http://preview.home.arpa:8080/runtime` 或 `https://preview.yourdomain.com/runtime` | DNS / hosts 指向同一 Gateway；业务 Cookie 保持 host-only，预览域不加入业务 CORS |
-| `CORS_ORIGINS` | 合法的浏览器 Origin JSON 数组<br>如：`'["http://192.168.1.50:8080"]'` 或 `'["https://ppt.yourdomain.com"]'` | **必须为合法 JSON 数组字符串**；若来源不在列表中，前端 API 请求将被浏览器拦截 |
+| `CORS_ORIGINS` | 合法的浏览器 Origin JSON 数组<br>如：`'["http://192.168.1.50:8080"]'` 或 `'["https://ppt.yourdomain.com"]'` | **必须为合法 JSON 数组字符串**；若来源不在列表中，前端 API 请求将被浏览器拦截。业务写接口（含登录）要求浏览器来源精确命中该列表或 `BACKEND_PUBLIC_BASE_URL`，否则返回 403 `UNTRUSTED_BUSINESS_ORIGIN` |
 
 > **提示**：`RUNTIME_BASE_URL`、`RUNTIME_PREVIEW_JWKS_URL` 和 `RUNTIME_BACKEND_API_BASE_URL` 是容器内部回源地址，保持镜像内置的 `127.0.0.1` 即可，**绝对不要**改成公网域名或局域网 IP。
 

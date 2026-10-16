@@ -61,7 +61,7 @@ services:
       # 外部访问地址（局域网请将 127.0.0.1 替换为实际主机 IP，如 192.168.1.20）
       BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"
       RUNTIME_PUBLIC_BASE_URL: "http://preview.localhost:8080/runtime"
-      CORS_ORIGINS: '["http://127.0.0.1:8080"]'
+      CORS_ORIGINS: '["http://127.0.0.1:8080","http://localhost:8080"]'
       # 可选：显式指定管理员密码（留空则首启自动生成随机密码）
       # DEFAULT_ADMIN_PASSWORD: "MyCustomStrongPassword123"
 
@@ -91,7 +91,7 @@ docker compose logs -f platform-lite
 | :--- | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | `http://127.0.0.1:8080` | 浏览器外部访问平台的基础 URL。若通过局域网其它电脑或域名访问，填入对应实际地址。 |
 | `RUNTIME_PUBLIC_BASE_URL` | `http://preview.localhost:8080/runtime`（本机） | 独立预览主机名，局域网需配置解析到同一 Gateway 的域名；不能复用业务主机名。 |
-| `CORS_ORIGINS` | `'["http://127.0.0.1:8080"]'` | 允许的跨域来源 JSON 数组，需与浏览器访问地址保持一致。 |
+| `CORS_ORIGINS` | `'["http://127.0.0.1:8080","http://localhost:8080"]'` | 允许的跨域来源 JSON 数组，需与浏览器访问地址保持一致；业务写接口要求浏览器来源精确命中该列表或 `BACKEND_PUBLIC_BASE_URL`。 |
 | `DEFAULT_ADMIN_PASSWORD` | *(未配置时首启自动生成)* | 初始管理员账号密码。若设置了自定义密码，首次建库时将直接采用。 |
 | `AI_SECRET_ENCRYPTION_KEY` | *(未配置时自动生成落盘)* | 大模型凭证对称加密密钥（Fernet）。未配置时系统首次启动自动生成 32 字节密钥并持久化保存至 `/app/backend/data/ai_secret.key`，用户无需手动生成或配置。 |
 

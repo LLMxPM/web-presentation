@@ -297,7 +297,7 @@ assetUrl ? `URL ${assetUrl}` : '',    // ← 原样内联，不脱敏
 
 ## 10. 整改与闭环落地记录（2026-10-16）
 
-上述审查发现的所有问题均已完成代码整改、测试覆盖并按领域分步提交入库：
+本章记录**第一轮**审查发现的整改落地情况（M1–M3、L1–L4、S1 与安全补丁）；S2 的整改与第二轮独立复核（P0–P2）的处理见 §11。
 
 | 项 | 描述 | 整改实施与提交 | 状态 |
 | :--- | :--- | :--- | :--- |
@@ -305,8 +305,59 @@ assetUrl ? `URL ${assetUrl}` : '',    // ← 原样内联，不脱敏
 | **M2** | 续签失败区分网络抖动与终态失效 | `useRuntimePreviewRecovery` 在捕获续签异常时，精准识别 410/401/403/404 终态并才降级全量重建；对网络抖动与临时 5xx 按 10 秒退避重试，不消耗 `attempted` 全量重建预算。<br>提交：`8e8a9ae` | **已闭环** |
 | **M3** | 构建产物打开异步弹窗拦截 | `PagesView.vue` 的 `handleBuildArtifactOpen` 改为在用户点击同步手势内预先打开 `about:blank` 标签页，拿到短期签名 `browse_url` 后再跳转并切断 opener，并在授权失败时自动关闭占位页。<br>提交：`8e8a9ae` | **已闭环** |
 | **L1** | 构建产物入口判断解耦废弃字段 | `project-build.ts` 的 `canOpenProjectBuildArtifact` 改为优先基于 `job.artifact_storage_key` 判定，兼容保留 `artifact_proxy_url`。<br>提交：`8e8a9ae` | **已闭环** |
-| **L2** | Runtime 素材路径启发式收敛 | `runtime/src/core/utils/path.ts` 引入 `isProtectedPreviewAssetUrl` 严格判定受保护素材路径，避免宽泛的 `/assets/` 子串匹配误拼 Token。<br>提交：`e9e3dfa` | **已闭环** |
+| **L2** | Runtime 素材路径启发式收敛 | 第一轮以 `isProtectedPreviewAssetUrl` 收窄匹配范围；第二轮改为由 Backend 显式签发 `asset_base_url_auth` 声明、运行时查表（见 §11），启发式仅保留在旧票据的兼容推断中。<br>提交：`e9e3dfa`、第二轮整改 | **已闭环**（最终形态见 §11） |
 | **L3** | 构建素材网络异常日志 URL 脱敏 | `runtime-build-runner.ts` 引入 `sanitizeAssetUrl` 对下载失败的静态资源 URL 执行正则凭据脱敏，消除构建错误与控制台的 Token 外泄面。<br>提交：`e9e3dfa` | **已闭环** |
 | **L4** | 宿主组件监听 `@renew` 保持状态一致 | `AssetPreviewFrame.vue`、`PageVersionHistoryDialog.vue`、`PageDetailView.vue`、`ComponentVersionHistoryDialog.vue`、`WorkspaceComponentWorkbench.vue` 统一接入 `@renew` / `@renew-preview` 并写回上层状态。<br>提交：`c5f4892` | **已闭环** |
 | **S1** | iframe 统一 `referrerpolicy="no-referrer"` | `RuntimePreviewFrame.vue`、`ComponentPreviewWorkbench.vue`、`PageVisualEditPanel.vue` 全部统一为 `referrerpolicy="no-referrer"`。<br>提交：`8e8a9ae`、`c5f4892` | **已闭环** |
-| **安全补丁** | 审查遗留的安全保留字段与越权漏洞 | 补丁 `146aa31` 已入库：Token 保留声明强制覆盖、External API 跨工作空间隔离校验、内部回源 410 过期识别、服务令牌最小下限保护。<br>提交：`146aa31` | **已闭环** |
+| **安全补丁** | 审查遗留的安全保留字段与越权漏洞 | 补丁 `146aa31` 已入库：Token 保留声明强制覆盖、External API 跨工作空间隔离校验、内部回源 410 过期识别、服务令牌最小下限保护。<br>提交：`146aa31` | **已闭环**（其中"服务令牌最小 60 秒下限"与规划 §4.2 冲突，第二轮已改为不超过来源 P 剩余期限，见 §11） |
+| **S2** | 登出时未清理预览资源引用 | 第一轮未整改（记录于本节时缺项），第二轮补齐：`useRuntimePreviewRecovery` 增加会话级取消注册表，登出与 401 失效统一清理续签计时器。见 §11。 | **已闭环** |
+
+---
+
+## 11. 第二轮独立复核与整改记录（2026-10-16，P0–P2）
+
+- **复核范围**：`a94ae57..HEAD` 共 25 个提交（含第一轮整改后新增的 6 个提交）
+- **复核方式**：代码走查 + 全量门禁实跑。第一轮只跑了 `backend/tests/unit`，`-m api` 与 `-m integration` 未覆盖，这是本轮发现阻断项的直接原因
+- **结论**：改造主线（票据作用域、缓存并发、公开面收口、源站隔离）未发现新增高危；本轮问题集中在**门禁一致性、旧用例迁移、期限语义与启发式残留**
+
+### 11.1 复核发现
+
+| 级别 | 问题 | 证据（修复前） |
+| :--- | :--- | :--- |
+| P0 | `enforce_business_origin` 与 PAT 控制台端点级 CSRF 各自维护来源白名单：中间件只认 `BACKEND_PUBLIC_BASE_URL` ∪ CORS，端点级还额外信任请求自身 Host | `-m api` 5 项失败（`tests/api/test_access_tokens.py`）；`test:backend:api` 是每次质量门禁都执行的步骤。部署侧同源影响：`localhost` 与 `127.0.0.1` 访问差异会让写接口（含登录）全部 403 |
+| P0 | 公开面关闭后旧正向用例未迁移 | `-m integration` 10 项失败：`test_public_assets.py`×5、`test_public_cached_assets.py`×3 仍断言已关闭的 `/public/*` 返回 200/302；`test_project_build.py`×2 仍断言匿名 `/build-artifacts` 返回 200 与 `BUILD_ARTIFACT_NOT_FOUND` |
+| P1 | 服务令牌 TTL 使用 `max(60, exp-now)` 最小下限 | 与规划 §4.2「不得通过最小 TTL 把授权延长到来源到期以后」冲突，S 令牌最多比来源 P 多活 55 秒 |
+| P1 | 整改记录声称「所有问题均已闭环」，但 S2 未整改也未列入闭环表 | `stores/auth.ts` 的 `signOut` 未清理预览续签计时器 |
+| P2 | 续签终态判定对错误消息做数字子串匹配（`includes('410')` 等） | `timeout of 10410ms exceeded` 一类文案会被误判终态，触发全量重建并消耗恢复预算 |
+| P2 | Runtime 素材票据仍靠路径子串启发式判定 | 与规划「结构化访问描述」方向不一致 |
+| P2 | `renew_preview_access` 在快照缺少归属信息时不校验任何权限即签发票据 | 无授权依据的签发路径，应为 fail-closed |
+
+### 11.2 整改内容
+
+| 项 | 整改 |
+| :--- | :--- |
+| P0-1 | 新增 `app/api/business_origin.py::trusted_business_origins()` 作为唯一受信来源白名单（业务公开基址 ∪ CORS，统一小写比较），全局中间件与 PAT 控制台端点级校验共用；端点级不再信任请求自身 Host；403 文案给出受信来源提示。测试改用平台公开基址作为 Origin，并新增白名单一致性守卫测试；Lite 模板与文档把 `http://localhost:8080` 一并加入默认 `CORS_ORIGINS` |
+| P0-2 | 删除 `test_public_assets.py`、`test_public_cached_assets.py`，新增 `test_workspace_asset_delivery.py`（登录要求、本地交付、S3 回源与缓存复用、字体私有桶、版本校验、对象缺失共 5 项，含本地对象根目录隔离夹具）；`test_project_build.py` 两项改走私有构建授权接口（匿名 404、票据浏览、跨项目与删除后语义）；顺带修复 `test_preview_version_binding.py` 比较全量 claims 导致的跨秒偶发失败 |
+| P1-3 | 服务令牌 TTL 收敛为 `TokenService.resolve_preview_service_token_ttl()`（不超过来源 P 剩余期限，`max(1, exp-now)`），预览服务与截图服务两处调用点统一，并新增「不得延长」回归用例 |
+| P1-4 | `useRuntimePreviewRecovery` 增加会话级续签取消注册表，`clearAllPreviewRenewTimers()` 在登出与 401 失效时统一清理；新增登出清理回归用例（含未清理时会触发续签的正例对照） |
+| P2-5 | 终态判定只认结构化状态码与错误码文本，不再对消息里的数字做子串猜测；新增超时文案不被误判的用例 |
+| P2-6 | 素材票据类型下沉为显式声明：新增 `app/services/asset_access_policy.py::resolve_asset_base_url_auth()`，签发预览上下文时写入 `asset_base_url_auth`；Runtime 契约新增 `PreviewAssetBaseAuth` 与 `resolvePreviewAssetBaseAuth()`（旧票据缺失声明时按签发基础地址退化推断），`path.ts` 改为查表并删除启发式 |
+| P2-8 | `renew_preview_access` 在归属信息缺失或非法时 fail-closed（404），补齐 artifact 到期时间解析异常兜底 |
+
+### 11.3 本轮验证结果（HEAD 工作区）
+
+| 门禁 | 结果 |
+| :--- | :--- |
+| `pytest -m unit` | **742 passed**（含新增票据声明、白名单一致性、登出清理与 fail-closed 用例） |
+| `pytest -m api` | **219 passed**（此前 5 项失败已修复） |
+| `pytest -m integration` | **325 passed / 7 skipped / 0 failed**（332 项；此前 10 项失败已迁移或重写） |
+| `test:contracts:generated` | **通过**（258 paths / 340 schemas；服务令牌交换端点描述变更已重新生成，`api.generated.ts` 无变化） |
+| Editor | `vue-tsc -b` 通过；vitest **812 passed**（145 文件）；生产构建通过 |
+| Runtime | `vue-tsc -b` 通过；vitest **869 passed / 3 skipped**（120 文件）；生产构建通过 |
+| 网关契约（真实 Nginx） | 通过（本轮未改动网关路由） |
+
+补充说明：
+
+- 两个平台相关测试的偶发问题已一并处理：`test_preview_version_binding.py` 的全量 claims 比较改为忽略 `iat/exp/jti`；`runtime-build-worker.test.ts` 的超时恢复用例把 200ms 预算放宽到 1500ms（首次调用永久不响应，超时必触发；200ms 在 Windows 冷启动下会误报，属测试预算问题而非 worker 逻辑缺陷）。
+- 本机验证时，沙箱的批量删除守卫会拦截 `vite build` 清空 `dist/` 与 pytest 清理临时目录，表现为构建/汇总行被中断；生产构建已用 `--emptyOutDir=false` 单独复验通过，上述中断不代表代码问题。
+- 仍未完成的是需要真实环境的事项：生产桶策略与 ACL、真实 S3 兼容服务、多副本、预览域 DNS/TLS 与 host-only Cookie 实机验收、一个计费周期的成本观测（与规划 §12/§13 一致）。

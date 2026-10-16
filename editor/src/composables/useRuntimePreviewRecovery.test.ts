@@ -3,7 +3,7 @@ import { defineComponent, h, nextTick, ref } from 'vue'
 import { render } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { previewTokenExpiresAt, useRuntimePreviewRecovery } from './useRuntimePreviewRecovery'
+import { previewTokenExpiresAt, useRuntimePreviewRecovery, clearAllPreviewRenewTimers } from './useRuntimePreviewRecovery'
 import { renewPreviewArtifactAccess } from '@/api/preview'
 
 vi.mock('@/api/preview', () => ({
@@ -164,7 +164,85 @@ describe('预览自动恢复', () => {
     // 预算未被消耗：若后续收到结构化失效事件仍能正常触发恢复
     expect(recovery.tryRecover('PREVIEW_CONTEXT_INVALID')).toBe(true)
   })
+
+  it('消息里出现状态码数字不会被误判为终态失效，仍保留重建预算', async () => {
+    vi.mocked(renewPreviewArtifactAccess).mockRejectedValueOnce(new Error('timeout of 10410ms exceeded'))
+
+    const onRenewed = vi.fn()
+    const recover = vi.fn()
+    const frameUrl = ref(previewUrl(Math.floor(Date.now() / 1000) + 10))
+    const sourceKey = ref('page-1')
+    const artifactId = ref('art-timeout-500')
+
+    let recovery!: ReturnType<typeof useRuntimePreviewRecovery>
+    render(defineComponent({
+      setup() {
+        recovery = useRuntimePreviewRecovery({
+          frameUrl: () => frameUrl.value,
+          sourceKey: () => sourceKey.value,
+          artifactId: () => artifactId.value,
+          onRenewed,
+          recover,
+        })
+        return () => h('div')
+      },
+    }))
+
+    await recovery.executeRenewOrRecover()
+    await nextTick()
+
+    expect(recover).not.toHaveBeenCalled()
+    expect(recovery.tryRecover('PREVIEW_CONTEXT_INVALID')).toBe(true)
+  })
+
+  it('登出清理会取消已排期的续签，残留预览不会在下一会话复用旧票据', async () => {
+    vi.mocked(renewPreviewArtifactAccess).mockResolvedValue({
+      preview_url: 'https://backend.example/preview/artifacts/art-logout?token=renewed',
+      token: 'renewed',
+      expires_at: '2026-10-16T12:00:00Z',
+      artifact_id: 'art-logout-400',
+    })
+    vi.useFakeTimers()
+    try {
+      // 正例：不清理时，到期前 45 秒排期的续签会真实触发。
+      const scheduled = mountScheduledRenew('art-logout-401')
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+      expect(renewPreviewArtifactAccess).toHaveBeenCalledWith('art-logout-401')
+      expect(scheduled.onRenewed).toHaveBeenCalledTimes(1)
+
+      vi.mocked(renewPreviewArtifactAccess).mockClear()
+
+      // 反例：登出清理后，同一排期不得再发出续签请求。
+      mountScheduledRenew('art-logout-402')
+      clearAllPreviewRenewTimers()
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+      expect(renewPreviewArtifactAccess).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
+
+/** 挂载带 artifactId 与续签回调的预览，用于验证自动排期与登出清理。 */
+function mountScheduledRenew(artifactId: string) {
+  const frameUrl = ref(previewUrl(Math.floor(Date.now() / 1000) + 600))
+  const sourceKey = ref('page-1')
+  const onRenewed = vi.fn()
+  const recover = vi.fn()
+  render(defineComponent({
+    setup() {
+      useRuntimePreviewRecovery({
+        frameUrl: () => frameUrl.value,
+        sourceKey: () => sourceKey.value,
+        artifactId: () => artifactId,
+        onRenewed,
+        recover,
+      })
+      return () => h('div')
+    },
+  }))
+  return { frameUrl, sourceKey, onRenewed, recover }
+}
 
 /** 挂载恢复生命周期，便于验证真实 DOM 事件订阅与卸载。 */
 function mountRecovery() {

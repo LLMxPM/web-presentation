@@ -116,7 +116,11 @@ async def test_exchange_should_return_artifact_scoped_service_token(
     assert payload["token_type"] == "Bearer"
     assert payload["artifact_id"] == artifact_id
     assert payload["scope"] == "runtime-artifact-read"
-    assert payload["expires_in"] >= 60
+    # 服务令牌 TTL 与来源票据剩余期限对齐，且不得超过来源到期（规划 §4.2）。
+    preview_remaining = int(TokenService.verify_preview_context_token(preview_token)["exp"]) - int(time.time())
+    assert 0 < payload["expires_in"]
+    assert payload["expires_in"] >= preview_remaining
+    assert payload["expires_in"] - preview_remaining <= 5
     assert "preview_token" not in payload
     service_token = payload["service_token"]
     assert service_token != preview_token
@@ -148,6 +152,28 @@ async def test_exchange_should_reject_expired_preview_token(
     )
     assert exchange_response.status_code == 401
     assert exchange_response.json()["code"] == "PREVIEW_CONTEXT_INVALID"
+
+
+async def test_exchange_should_not_extend_service_token_beyond_preview_token(
+    authenticated_client: AsyncClient,
+) -> None:
+    """来源票据仅剩数秒时，服务令牌不得超过其剩余期限：不允许用最小 TTL 延长授权。"""
+
+    short_token = _generate_preview_token(
+        artifact_id="artifact-exchange-short",
+        expires_in_seconds=20,
+    )
+
+    exchange_response = await authenticated_client.post(
+        "/internal/runtime/preview-service-token",
+        json={"preview_token": short_token},
+    )
+    assert exchange_response.status_code == 200
+    payload = exchange_response.json()
+    assert 0 < payload["expires_in"] <= 20
+
+    claims = TokenService.verify_runtime_service_access_token(payload["service_token"])
+    assert int(claims["exp"]) <= int(TokenService.verify_preview_context_token(short_token, verify_exp=False)["exp"])
 
 
 async def test_exchange_should_reject_invalid_or_missing_preview_token(

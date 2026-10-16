@@ -22,6 +22,7 @@ import {
   isRuntimeLocalPublicModulePath,
   normalizeRuntimeModulePath,
   parseRemoteModuleId,
+  resolvePreviewAssetBaseAuth,
   RUNTIME_SNAPDOM_RESOURCE_PROXY_PATH,
   type ComponentPreviewMode,
   type PreviewKind,
@@ -90,6 +91,7 @@ interface PreviewTokenClaims extends JWTPayload {
   project_id?: string
   entry_descriptor: RuntimePreviewEntryDescriptor
   asset_base_url: string
+  asset_base_url_auth?: string
   trace_id: string
   component_preview_mode?: ComponentPreviewMode
   component_source?: 'workspace_component' | 'runtime_kit'
@@ -788,6 +790,7 @@ async function verifyPreviewToken(token: string, options: { jwksUrl: string; aud
       projectId: claims.project_id ? String(claims.project_id) : undefined,
       entryDescriptor,
       assetBaseUrl: String(claims.asset_base_url),
+      assetBaseUrlAuth: resolvePreviewAssetBaseAuth(claims.asset_base_url_auth, String(claims.asset_base_url)),
       traceId: String(claims.trace_id),
       componentPreviewMode: claims.component_preview_mode,
       componentSource: claims.component_source,

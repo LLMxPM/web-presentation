@@ -19,6 +19,28 @@ export interface PreviewRecoveryOptions {
 const RECOVERABLE_CODES = new Set(['PREVIEW_CONTEXT_INVALID', 'PREVIEW_CONTEXT_REQUIRED', 'ARTIFACT_NOT_FOUND'])
 
 /**
+ * 会话级注册表：记录所有已挂载预览的续签取消函数。
+ * 登出或登录态失效时统一调用，避免残留定时器在下一个会话里带着旧票据发起续签请求。
+ */
+const activeRenewCancels = new Set<() => void>()
+
+/**
+ * 会话结束时清理所有活跃预览的续签计时器与在途回调。
+ * 组件卸载仍是常规清理路径；本函数只覆盖"登出到视图卸载"之间的窗口。
+ */
+export function clearAllPreviewRenewTimers(): void {
+  for (const cancel of [...activeRenewCancels]) {
+    cancel()
+  }
+}
+
+/**
+ * 终态失效错误码集合（预览 artifact 过期/缺失、文件访问类授权拒绝）。
+ * 只匹配错误码文本本身，不对消息中的状态码数字做子串猜测。
+ */
+const TERMINAL_ERROR_CODE_PATTERN = /(?:PREVIEW_ARTIFACT_EXPIRED|ARTIFACT_NOT_FOUND|FILE_ACCESS_[A-Z]*)/
+
+/**
  * 判断预览续签异常是否属于确定性终态失效（如 410 过期、401/403 越权或 404 缺失）。
  * 只有终态失效才触发高成本全量重建并消耗预算；网络波动或服务重启应退避重试。
  */
@@ -26,30 +48,14 @@ function isArtifactRenewalTerminalError(error: unknown): boolean {
   if (!error) return false
   if (axios.isAxiosError(error)) {
     const status = error.response?.status
-    const code = (error.response?.data as { code?: string } | undefined)?.code
     if (status === 410 || status === 404 || status === 401 || status === 403) {
       return true
     }
-    if (code === 'PREVIEW_ARTIFACT_EXPIRED' || code === 'ARTIFACT_NOT_FOUND' || code?.startsWith('FILE_ACCESS_')) {
-      return true
-    }
-    return false
+    const code = (error.response?.data as { code?: string } | undefined)?.code
+    return typeof code === 'string' && TERMINAL_ERROR_CODE_PATTERN.test(code)
   }
-  if (error instanceof Error) {
-    const message = error.message
-    if (
-      message.includes('PREVIEW_ARTIFACT_EXPIRED')
-      || message.includes('ARTIFACT_NOT_FOUND')
-      || message.includes('FILE_ACCESS_')
-      || message.includes('410')
-      || message.includes('404')
-      || message.includes('401')
-      || message.includes('403')
-    ) {
-      return true
-    }
-  }
-  return false
+  // 非 Axios 错误只接受错误码文本；"timeout of 10410ms" 这类含数字的消息必须按可重试处理。
+  return error instanceof Error && TERMINAL_ERROR_CODE_PATTERN.test(error.message)
 }
 
 /** 新 URL 不重置失败链预算；只有成功 ready、用户重试或切换目标才能开始新恢复周期。 */
@@ -64,6 +70,13 @@ export function useRuntimePreviewRecovery(options: PreviewRecoveryOptions) {
       clearTimeout(renewTimer)
       renewTimer = null
     }
+  }
+
+  /** 会话结束：停止本实例的续签排期并作废在途回调，不影响组件自身状态。 */
+  function cancelRenewForSession(): void {
+    clearRenewTimer()
+    pending = false
+    sequence += 1
   }
 
   /** 为当前票据排期自动续签（到期前 45 秒触发）。 */
@@ -167,10 +180,12 @@ export function useRuntimePreviewRecovery(options: PreviewRecoveryOptions) {
   watch(options.frameUrl, scheduleAutoRenew)
 
   onMounted(() => {
+    activeRenewCancels.add(cancelRenewForSession)
     scheduleAutoRenew()
     document.addEventListener('visibilitychange', handleVisibilityChange)
   })
   onUnmounted(() => {
+    activeRenewCancels.delete(cancelRenewForSession)
     clearRenewTimer()
     sequence += 1
     pending = false

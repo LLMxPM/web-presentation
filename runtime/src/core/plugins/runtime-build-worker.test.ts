@@ -339,7 +339,9 @@ describe('runtime build worker', () => {
     const invocationPath = join(tempRoot, 'worker-invocation.txt').replace(/\\/g, '\\\\')
     const worker = new RuntimeDiagnosticsWorker({
       tempRoot,
-      timeoutMs: 200,
+      // 首次调用永久不响应，超时必然触发；重启后的第二次调用需要重新拉起 Node 子进程，
+      // 200ms 预算在 Windows 冷启动与负载下会误报，这里给足重启窗口。
+      timeoutMs: 1500,
       workerScriptSource: createTimeoutRecoveryScript(lifecycleLogPath, invocationPath),
     })
     try {

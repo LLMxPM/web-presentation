@@ -174,3 +174,24 @@ async def test_untrusted_preview_origin_cannot_write_business_api(authenticated_
         response = await authenticated_client.post("/api/workspaces", json={"name": "must-not-create"}, headers={"Origin": origin})
         assert response.status_code == 403
         assert response.json()["code"] == "UNTRUSTED_BUSINESS_ORIGIN"
+
+
+def test_console_csrf_shares_trusted_origin_allowlist(monkeypatch):
+    """全局 CSRF 中间件与 PAT 控制台端点级校验必须共用同一份受信来源白名单。"""
+    from app.api import business_origin
+    from app.api.routes import access_tokens
+
+    cfg = AppSettings(backend_public_base_url="https://App.example", cors_origins=["http://127.0.0.1:5173"])
+    monkeypatch.setattr(business_origin, "get_settings", lambda: cfg)
+    # 大小写差异不应造成误拒：统一小写后比较。
+    assert business_origin.trusted_business_origins() == {"https://app.example", "http://127.0.0.1:5173"}
+
+    # 端点级校验复用同一白名单：受信来源放行、非受信来源与缺失来源头均 403。
+    for origin, expected_code in (("https://app.example", None), ("https://preview.example", "CSRF_CHECK_FAILED"), (None, "CSRF_CHECK_FAILED")):
+        request = _request({"Origin": origin} if origin else None)
+        try:
+            access_tokens._verify_csrf_origin(request)
+        except AppException as exc:
+            assert expected_code is not None and exc.code == expected_code
+        else:
+            assert expected_code is None

@@ -8,8 +8,8 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.business_origin import trusted_business_origins
 from app.api.dependencies import get_current_user
-from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.external_operations import ALL_VALID_SCOPES, OPERATION_REGISTRY
 from app.db.session import get_db_session
@@ -28,7 +28,11 @@ router = APIRouter()
 
 
 def _verify_csrf_origin(request: Request) -> None:
-    """校验 Web 控制台写操作的 Origin/Referer 请求头，防止跨站请求伪造 (CSRF)。"""
+    """校验 Web 控制台写操作的 Origin/Referer 请求头，防止跨站请求伪造 (CSRF)。
+
+    与全局 `enforce_business_origin` 中间件共用 `trusted_business_origins()` 白名单，
+    不额外信任请求自身 Host，避免两处来源判定漂移；这里额外要求来源头必须存在。
+    """
 
     origin = request.headers.get("origin")
     referer = request.headers.get("referer")
@@ -49,17 +53,7 @@ def _verify_csrf_origin(request: Request) -> None:
         )
 
     candidate_origin = f"{parsed.scheme}://{parsed.netloc}".lower().rstrip("/")
-
-    # 允许来自请求自身精确 Host 或服务端配置中的 CORS 白名单来源 (严格包含 scheme, host, port)
-    settings = get_settings()
-    allowed_origins = {cors_origin.lower().rstrip("/") for cors_origin in settings.cors_origins if cors_origin}
-
-    request_scheme = request.url.scheme.lower()
-    host_header = request.headers.get("host", "").lower()
-    if host_header:
-        allowed_origins.add(f"{request_scheme}://{host_header}")
-
-    if candidate_origin not in allowed_origins:
+    if candidate_origin not in trusted_business_origins():
         raise AppException(
             status_code=403,
             code="CSRF_CHECK_FAILED",

@@ -8,6 +8,8 @@ export type PreviewScopeType = 'project' | 'workspace_component' | 'runtime_kit_
 export type PreviewEntryType = 'route' | 'module' | 'component_host' | 'asset_host'
 export type ComponentPreviewMode = 'saved' | 'draft'
 export type RuntimeComponentPreviewSource = 'workspace_component' | 'runtime_kit'
+/** 素材基础地址的读取票据类型：平台受保护预览入口需要预览票据，其余无需附票。 */
+export type PreviewAssetBaseAuth = 'preview_token' | 'none'
 
 export interface RuntimePreviewEntryDescriptor {
   entry_type: PreviewEntryType
@@ -36,6 +38,11 @@ export interface RuntimePreviewContext {
   projectId?: string
   entryDescriptor: RuntimePreviewEntryDescriptor
   assetBaseUrl: string
+  /**
+   * 素材读取票据声明（由 Backend 签发的 `asset_base_url_auth` 解析而来）。
+   * 运行时按声明查表决定是否给素材 URL 附加预览票据，不再对拼接后的路径做子串推断。
+   */
+  assetBaseUrlAuth?: PreviewAssetBaseAuth
   traceId: string
   componentPreviewMode?: ComponentPreviewMode
   componentSource?: RuntimeComponentPreviewSource
@@ -44,6 +51,23 @@ export interface RuntimePreviewContext {
   runtimeKitComponentName?: string
   runtimeKitManifestVersion?: string
   assetId?: string
+}
+
+/**
+ * 解析素材基础地址的读取票据声明。
+ *
+ * 声明由 Backend 在签发预览上下文时写入 `asset_base_url_auth`；旧票据缺失该声明时，
+ * 仅按同一票据签发的 asset_base_url 形态退化推断（滚动发布兼容，旧票据过期后可移除）。
+ * @param rawDeclared claims 中的 asset_base_url_auth 声明
+ * @param assetBaseUrl 同一 claims 中签发的素材基础地址
+ * @returns 素材读取是否需要附加预览票据
+ */
+export function resolvePreviewAssetBaseAuth(rawDeclared: unknown, assetBaseUrl: string): PreviewAssetBaseAuth {
+  if (rawDeclared === 'preview_token' || rawDeclared === 'none') {
+    return rawDeclared
+  }
+  const path = String(assetBaseUrl || '').trim().split(/[?#]/)[0].replace(/\/+$/, '')
+  return path.includes('/preview/artifacts/') && path.endsWith('/assets') ? 'preview_token' : 'none'
 }
 
 export interface RuntimeReleaseManifestModule {

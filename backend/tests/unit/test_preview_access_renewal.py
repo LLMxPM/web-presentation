@@ -176,6 +176,47 @@ async def test_preview_artifact_renewal_permission_denied(mock_session, mock_cur
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "owner_scope",
+    [{}, {"workspace_id": "abc"}, {"project_id": 0}],
+)
+async def test_renewal_should_fail_closed_without_verifiable_owner_scope(
+    mock_session,
+    mock_current_user,
+    monkeypatch,
+    owner_scope,
+):
+    """快照缺少可校验的归属信息（缺失或非法）时不得签发票据。"""
+
+    artifact_id = "art-no-scope"
+    manifest = {
+        "artifact_id": artifact_id,
+        "preview_kind": "project",
+        "owner_scope": owner_scope,
+        "entry_descriptor": {"entry_type": "route", "route": "/"},
+        "asset_base_url": "/assets",
+    }
+
+    async def mock_get_manifest(self, aid):
+        return manifest if aid == artifact_id else None
+
+    monkeypatch.setattr(RuntimeArtifactStore, "get_manifest", mock_get_manifest)
+
+    app.dependency_overrides[get_current_user] = lambda: mock_current_user
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(f"/api/preview-artifacts/{artifact_id}/access")
+            assert resp.status_code == 404
+            assert resp.json()["code"] == "FILE_NOT_FOUND"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db_session, None)
+
+
+@pytest.mark.asyncio
 async def test_workspace_preview_artifact_renewal_success(mock_session, mock_current_user, monkeypatch):
     """测试工作空间级预览（无 project_id）通过 WorkspaceService.ensure_access 成功续签。"""
 

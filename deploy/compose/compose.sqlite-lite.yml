@@ -16,7 +16,9 @@ services:
     environment:
       BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"
       RUNTIME_PUBLIC_BASE_URL: "http://preview.localhost:8080/runtime"
-      CORS_ORIGINS: '["http://127.0.0.1:8080"]'
+      # 回环别名同时放行：浏览器访问 http://localhost:8080 与 http://127.0.0.1:8080 均可正常写入。
+      # 业务写接口要求浏览器来源精确命中 BACKEND_PUBLIC_BASE_URL 或 CORS_ORIGINS，其它主机名会被拒绝。
+      CORS_ORIGINS: '["http://127.0.0.1:8080","http://localhost:8080"]'
     volumes:
       - lite-data:/app/backend/data
     ports:

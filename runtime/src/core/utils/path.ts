@@ -229,7 +229,7 @@ export function resolveResourcePath(resourcePath: string): string {
 }
 
 /**
- * 规范化 artifact 类型，未声明时视为本地模式。
+ * 解析 artifact 类型，未声明时视为本地模式。
  * @param rawArtifactKind manifest 中的 artifact_kind
  * @returns 当前资源解析策略对应的 artifact 类型
  */
@@ -245,32 +245,6 @@ function getRuntimeArtifactKind(rawArtifactKind: unknown): RuntimeArtifactKind |
     return normalizedValue
   }
   return 'local'
-}
-
-/**
- * 严格判断资源地址是否属于受保护的平台预览素材。
- * 避免因 URL 任意位置包含 '/assets/' 盲目追加敏感预览 Token。
- * @param url 待检查资源地址
- * @returns 是否需要附加预览 Token
- */
-function isProtectedPreviewAssetUrl(url: string): boolean {
-  if (!url) {
-    return false
-  }
-  if (url.includes('/preview/artifacts/')) {
-    return true
-  }
-  try {
-    const parsed = new URL(url, 'https://wp.local')
-    const pathname = parsed.pathname
-    return (
-      /\/api\/v1\/(?:workspaces\/[^/]+\/)?assets\/[^/]+\/content(?:\/|$)/i.test(pathname)
-      || /^\/assets\/[a-f0-9]{32,64}/i.test(pathname)
-      || (pathname.startsWith('/assets/') && !pathname.startsWith('/assets/vendor/'))
-    )
-  } catch {
-    return false
-  }
 }
 
 /**
@@ -300,10 +274,13 @@ function resolveArtifactMappedPath(params: {
   const rawUrl = joinUrlPath(assetBaseUrl, params.mappedAssetPath)
 
   const previewToken = getRuntimePreviewToken()
+  // 是否附加预览票据由预览上下文的显式声明决定（Backend 签发 asset_base_url_auth），
+  // 不再对拼接后的路径做子串推断。
+  const requiresPreviewToken = params.previewContext?.assetBaseUrlAuth === 'preview_token'
   if (
     previewToken
     && (params.artifactKind === 'preview_artifact' || params.artifactKind === 'page_visual_edit_preview' || params.artifactKind === 'project_template_preview')
-    && isProtectedPreviewAssetUrl(rawUrl)
+    && requiresPreviewToken
     && !rawUrl.includes('token=')
   ) {
     const separator = rawUrl.includes('?') ? '&' : '?'

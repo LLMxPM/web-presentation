@@ -8,6 +8,7 @@ import jwt
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.services.asset_access_policy import resolve_asset_base_url_auth
 from app.services.signing_identity import SigningKeyring, load_signing_keyring
 
 
@@ -150,6 +151,8 @@ class TokenService:
             "workspace_id": str(workspace_id),
             "entry_descriptor": entry_descriptor,
             "asset_base_url": asset_base_url,
+            # 素材读取票据类型显式随票据签发，运行时按声明查表，不做路径子串推断。
+            "asset_base_url_auth": resolve_asset_base_url_auth(asset_base_url),
             "trace_id": trace_id,
             "iat": now,
             "exp": now + expires_in_seconds,
@@ -188,6 +191,22 @@ class TokenService:
             audience="runtime-preview",
             verify_exp=verify_exp,
         )
+
+    @staticmethod
+    def resolve_preview_service_token_ttl(preview_claims: dict[str, object]) -> int:
+        """按来源 PreviewContextToken 的剩余有效期解析服务令牌 TTL。
+
+        规划 §4.2：服务令牌不得超过来源票据的剩余期限，不存在最小 TTL 下限——
+        "避免瞬时过期"不能用把授权延长到来源到期之后来换取；剩余不足 1 秒时按 1 秒签发，
+        由调用方在票据续签后重新换票。
+        """
+
+        now = int(time.time())
+        try:
+            preview_exp = int(preview_claims.get("exp") or now)
+        except (TypeError, ValueError):
+            preview_exp = now
+        return max(1, preview_exp - now)
 
     @classmethod
     def generate_runtime_build_command_token(
