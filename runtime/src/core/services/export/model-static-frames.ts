@@ -41,7 +41,7 @@ const preparedModelRoots = new WeakSet<Element>()
  * 构建静态帧缓存键。
  * 键组成与需求字段一一对应：
  * - 资源身份：resourceName + resourceSrc（同名不同版本不共用）；
- * - 实例视角参数与背景策略：viewKey（ModelViewer 从规范化展示参数派生）；
+ * - 实例视角与背景策略：viewKey（ModelViewer 从规范化参数、实际相机姿态与投影派生）；
  * - 视口尺寸 + DPR/scale：frameWidth × frameHeight（画布缓冲区像素 = 视口 CSS 尺寸 × 已收敛 DPR）。
  * @param identity 实例帧身份
  * @returns 稳定的字符串键

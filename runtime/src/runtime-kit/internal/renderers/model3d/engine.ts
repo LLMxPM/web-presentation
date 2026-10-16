@@ -18,7 +18,7 @@ export const MODEL3D_ENGINE_POLICY = {
   toneMapping: 'ACESFilmic',
   exposure: 1,
   maxPixelRatio: 2,
-  validationProfile: 'model3d-glb-v1',
+  validationProfile: 'model3d-glb-v2',
 } as const
 
 export type ThreeModule = typeof import('three')

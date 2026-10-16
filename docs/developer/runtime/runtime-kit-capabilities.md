@@ -39,6 +39,7 @@
 - 实际页面中的资源渲染容器应通过 `class` 同时声明明确宽度和高度；避免使用 `style`、`min-h`、`max-height` 或内容自由高度作为尺寸来源。
 - `AssetImage` 的 `class` 控制外层图片框，不是内部 `img` 的 class；完整展示高图时使用 `fit="contain"` 和明确的 `h-*` 图片框，不要写 `object-contain` 类或用外层 `overflow-hidden` 裁剪。
 - `AssetModel` 通过稳定资源名 `name` 引用自包含 GLB；`cameraIndex` 使用源文件相机索引，与 `cameraPosition`/`cameraTarget` 成对参数互斥；未指定时按源默认场景和自动取景渲染。多实例可分别设置视角，M1 只渲染静态姿态，不播放动画。
+- `AssetModel` 尺寸变化时原位更新相机，保留交互控制器及用户姿态。静态帧缓存同时包含声明参数、实际相机世界姿态与投影，因此同 props 的实例在旋转后分别导出当前视角，再次导出也会更新帧。
 - 非主题字体应使用静态字体资源名声明，例如 `useAssetFontFamily('BrandSerif')`，Backend 会据此下发字体包。
 - 不要让页面源码引用 `@runtime-kit/internal/renderers/*`。
 

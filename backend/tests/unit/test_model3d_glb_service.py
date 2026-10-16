@@ -111,7 +111,7 @@ def test_minimal_glb_produces_summary() -> None:
     assert summary["cameras"] == []
     assert summary["animations"] == []
     assert summary["extensions_required"] == []
-    assert summary["validation_profile"] == "model3d-glb-v1"
+    assert summary["validation_profile"] == "model3d-glb-v2"
     assert summary["warnings"] == []
 
 

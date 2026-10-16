@@ -104,24 +104,39 @@ class AssetBindingService:
         """
 
         self._ensure_owner_kind(owner_kind)
-        bindings: list[AssetReferenceBinding] = []
-        seen_names: set[str] = set()
+        snapshots: dict[str, WorkspaceAsset] = {}
         for asset in assets:
-            if not asset.name or asset.name in seen_names:
+            if not asset.name or asset.name in snapshots:
                 continue
-            seen_names.add(asset.name)
-            snapshot = await self.ensure_reference_snapshot(workspace_id, asset)
-            bindings.append(
-                AssetReferenceBinding(
-                    workspace_id=workspace_id,
-                    owner_kind=owner_kind,
-                    owner_key=str(owner_key),
-                    resource_name=asset.name,
-                    snapshot_asset_id=snapshot.id,
-                    file_hash=str(asset.file_hash),
-                    expires_at=expires_at,
-                )
+            snapshots[asset.name] = await self.ensure_reference_snapshot(workspace_id, asset)
+        return await self._replace_snapshot_bindings(
+            workspace_id=workspace_id, owner_kind=owner_kind, owner_key=owner_key,
+            snapshots=snapshots, expires_at=expires_at,
+        )
+
+    async def _replace_snapshot_bindings(
+        self,
+        *,
+        workspace_id: int,
+        owner_kind: str,
+        owner_key: str,
+        snapshots: Mapping[str, WorkspaceAsset],
+        expires_at: datetime | None,
+    ) -> list[AssetReferenceBinding]:
+        """按逻辑资源名写入已经解析的不可写快照；同一 owner 的旧绑定整体替换。"""
+
+        bindings = [
+            AssetReferenceBinding(
+                workspace_id=workspace_id,
+                owner_kind=owner_kind,
+                owner_key=str(owner_key),
+                resource_name=name,
+                snapshot_asset_id=snapshot.id,
+                file_hash=str(snapshot.file_hash),
+                expires_at=expires_at,
             )
+            for name, snapshot in snapshots.items()
+        ]
         await self.session.execute(
             delete(AssetReferenceBinding)
             .where(AssetReferenceBinding.owner_kind == owner_kind)
@@ -141,39 +156,60 @@ class AssetBindingService:
         asset_metadata: Mapping[str, Mapping[str, object]] | None,
         expires_at: datetime | None = None,
     ) -> list[AssetReferenceBinding]:
-        """按 manifest 资源元数据筛选三维资源并为 owner 建立持有；无三维资源时不产生绑定。"""
+        """按 manifest 的 name→hash 冻结身份建立持有；缺失版本时拒绝，不回退当前文件。"""
 
         self._ensure_owner_kind(owner_kind)
-        names = sorted(
-            str(name)
+        required_hashes = {
+            str(name): str((meta or {}).get("file_hash") or "").strip()
             for name, meta in (asset_metadata or {}).items()
             if str(name or "").strip()
             and str((meta or {}).get("render_type") or "") == AssetType.MODEL3D.value
+        }
+        snapshots = await self._resolve_model3d_snapshots(workspace_id, required_hashes)
+        return await self._replace_snapshot_bindings(
+            workspace_id=workspace_id, owner_kind=owner_kind, owner_key=owner_key,
+            snapshots=snapshots, expires_at=expires_at,
         )
-        if not names:
-            return []
+
+    async def _resolve_model3d_snapshots(
+        self, workspace_id: int, required_hashes: Mapping[str, str]
+    ) -> dict[str, WorkspaceAsset]:
+        """按工作空间与内容 hash 解析历史或当前文件，资源改名/替换不改变 manifest 身份。
+
+        同字节可复用已有不可写历史记录；只有当前根资源时才创建参考快照。
+        先完整解析再改写 owner 绑定，缺失任何文件版本都不留下部分新绑定。
+        """
+
+        if not required_hashes:
+            return {}
         assets = list(
             (
                 await self.session.execute(
                     select(WorkspaceAsset)
                     .where(WorkspaceAsset.workspace_id == workspace_id)
-                    .where(WorkspaceAsset.source_asset_id.is_(None))
                     .where(WorkspaceAsset.asset_type == AssetType.MODEL3D.value)
-                    .where(WorkspaceAsset.name.in_(names))
+                    .where(WorkspaceAsset.file_hash.in_(set(required_hashes.values())))
                 )
             )
             .scalars()
             .all()
         )
-        if not assets:
-            return []
-        return await self.replace_owner_bindings(
-            workspace_id=workspace_id,
-            owner_kind=owner_kind,
-            owner_key=owner_key,
-            assets=assets,
-            expires_at=expires_at,
-        )
+        by_hash: dict[str, WorkspaceAsset] = {}
+        for asset in sorted(assets, key=lambda item: (item.source_asset_id is None, item.id)):
+            by_hash.setdefault(str(asset.file_hash), asset)
+        snapshots: dict[str, WorkspaceAsset] = {}
+        for name, file_hash in required_hashes.items():
+            asset = by_hash.get(file_hash) if file_hash else None
+            if asset is None:
+                raise AppException(
+                    status_code=409, code="ASSET_BINDING_FILE_NOT_FOUND",
+                    detail=f"三维资源 {name} 的冻结文件版本不存在，无法建立持有。",
+                )
+            snapshots[name] = (
+                asset if asset.source_asset_id is not None
+                else await self.ensure_reference_snapshot(workspace_id, asset)
+            )
+        return snapshots
 
     async def list_owner_bindings(self, owner_kind: str, owner_key: str) -> list[AssetReferenceBinding]:
         """列出指定 owner 的全部有效绑定。"""
@@ -304,6 +340,6 @@ async def run_asset_binding_expiry_loop(session_factory: Callable[..., AsyncSess
         except asyncio.CancelledError:
             logger.info("资源绑定过期对账循环已取消")
             break
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("资源绑定过期对账循环异常: %s", exc, exc_info=True)
             await asyncio.sleep(5.0)

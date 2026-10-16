@@ -75,7 +75,7 @@ class AssetModel3dAnalysisPayload(BaseModel):
     animations: list[AssetModel3dAnimationSummary] = Field(default_factory=list)
     extensions_used: list[str] = Field(default_factory=list)
     extensions_required: list[str] = Field(default_factory=list)
-    validation_profile: str = "model3d-glb-v1"
+    validation_profile: str = "model3d-glb-v2"
     warnings: list[str] = Field(default_factory=list)
 
 

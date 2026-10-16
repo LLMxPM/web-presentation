@@ -27729,7 +27729,7 @@
           "validation_profile": {
             "type": "string",
             "title": "Validation Profile",
-            "default": "model3d-glb-v1"
+            "default": "model3d-glb-v2"
           },
           "warnings": {
             "items": {

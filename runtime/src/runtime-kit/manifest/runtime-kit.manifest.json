@@ -7,7 +7,7 @@
     "toneMapping": "ACESFilmic",
     "exposure": 1,
     "maxPixelRatio": 2,
-    "validationProfile": "model3d-glb-v1"
+    "validationProfile": "model3d-glb-v2"
   },
   "exports": [
     {

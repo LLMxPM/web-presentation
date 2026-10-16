@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.models.asset import WorkspaceAsset
@@ -20,6 +18,7 @@ from app.services.asset_binding_service import (
     OWNER_KIND_PREVIEW_ARTIFACT,
     AssetBindingService,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def _create_workspace(session: AsyncSession, suffix: str) -> Workspace:
@@ -185,3 +184,78 @@ async def test_protected_snapshot_asset_ids_and_invalid_owner_kind(app_session: 
             assets=[asset],
         )
     assert error.value.code == "ASSET_BINDING_OWNER_INVALID"
+
+
+async def test_manifest_holds_exact_hash_after_replace_and_rename(app_session: AsyncSession) -> None:
+    """manifest 指向 A 后根资源替换并改名为 B，仍持有不可写 A 快照。"""
+
+    workspace = await _create_workspace(app_session, "frozen-manifest")
+    asset = _build_root_asset(workspace.id, name="product", file_hash="a" * 64)
+    app_session.add(asset)
+    await app_session.flush()
+    service = AssetBindingService(app_session)
+    original = await service.ensure_reference_snapshot(workspace.id, asset)
+    asset.name, asset.file_hash, asset.file_name = "renamed", "b" * 64, "b.glb"
+    await app_session.flush()
+    bindings = await service.bind_owner_model3d_assets(
+        workspace_id=workspace.id, owner_kind=OWNER_KIND_PREVIEW_ARTIFACT, owner_key="frozen-manifest",
+        asset_metadata={"product": {"render_type": "model3d", "file_hash": "a" * 64}},
+    )
+    assert [(item.resource_name, item.file_hash, item.snapshot_asset_id) for item in bindings] == [
+        ("product", "a" * 64, original.id)
+    ]
+    assert await service.protected_snapshot_asset_ids([original.id]) == {original.id}
+
+
+async def test_manifest_can_hold_history_asset_under_its_own_name(app_session: AsyncSession) -> None:
+    """资源详情历史预览使用历史资源名时，同样保护对应历史文件。"""
+
+    workspace = await _create_workspace(app_session, "history-manifest")
+    asset = _build_root_asset(workspace.id, name="product", file_hash="a" * 64)
+    app_session.add(asset)
+    await app_session.flush()
+    service = AssetBindingService(app_session)
+    history = await service.ensure_reference_snapshot(workspace.id, asset)
+    bindings = await service.bind_owner_model3d_assets(
+        workspace_id=workspace.id, owner_kind=OWNER_KIND_PREVIEW_ARTIFACT, owner_key="history-manifest",
+        asset_metadata={history.name: {"render_type": "model3d", "file_hash": history.file_hash}},
+    )
+    assert bindings[0].resource_name == history.name
+    assert bindings[0].snapshot_asset_id == history.id
+
+
+@pytest.mark.parametrize("missing_hash", ["", "b" * 64])
+async def test_missing_manifest_hash_preserves_previous_bindings(app_session: AsyncSession, missing_hash: str) -> None:
+    """缺失/未知冻结 hash 必须拒绝，原 owner 的有效绑定不能被部分覆盖。"""
+
+    workspace = await _create_workspace(app_session, "missing-manifest")
+    asset = _build_root_asset(workspace.id, name="product", file_hash="a" * 64)
+    app_session.add(asset)
+    await app_session.flush()
+    service = AssetBindingService(app_session)
+    previous = await service.replace_owner_bindings(
+        workspace_id=workspace.id, owner_kind=OWNER_KIND_PREVIEW_ARTIFACT, owner_key="missing-manifest", assets=[asset],
+    )
+    with pytest.raises(AppException) as error:
+        await service.bind_owner_model3d_assets(
+            workspace_id=workspace.id, owner_kind=OWNER_KIND_PREVIEW_ARTIFACT, owner_key="missing-manifest",
+            asset_metadata={"product": {"render_type": "model3d", "file_hash": missing_hash}},
+        )
+    assert error.value.code == "ASSET_BINDING_FILE_NOT_FOUND"
+    current = await service.list_owner_bindings(OWNER_KIND_PREVIEW_ARTIFACT, "missing-manifest")
+    assert [item.id for item in current] == [item.id for item in previous]
+
+
+async def test_manifest_hash_cannot_resolve_another_workspace(app_session: AsyncSession) -> None:
+    """同 hash 只允许在目标工作空间内解析，不能借其他工作空间的文件完成持有。"""
+
+    target = await _create_workspace(app_session, "target-manifest")
+    other = await _create_workspace(app_session, "other-manifest")
+    app_session.add(_build_root_asset(other.id, name="product", file_hash="a" * 64))
+    await app_session.flush()
+    with pytest.raises(AppException) as error:
+        await AssetBindingService(app_session).bind_owner_model3d_assets(
+            workspace_id=target.id, owner_kind=OWNER_KIND_PREVIEW_ARTIFACT, owner_key="other-manifest",
+            asset_metadata={"product": {"render_type": "model3d", "file_hash": "a" * 64}},
+        )
+    assert error.value.code == "ASSET_BINDING_FILE_NOT_FOUND"

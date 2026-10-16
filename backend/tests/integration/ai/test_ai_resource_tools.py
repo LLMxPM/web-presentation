@@ -215,7 +215,7 @@ async def test_get_resource_asset_detail_tool_should_return_model3d_analysis(
     assert analysis["kind"] == "model3d"
     assert analysis["model3d"]["format"] == "glb"
     assert analysis["model3d"]["scene_count"] == 1
-    assert analysis["model3d"]["validation_profile"] == "model3d-glb-v1"
+    assert analysis["model3d"]["validation_profile"] == "model3d-glb-v2"
 
 
 async def test_list_resource_assets_tool_should_reject_invalid_scope(

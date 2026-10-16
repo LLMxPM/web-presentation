@@ -14,11 +14,15 @@ from urllib.parse import unquote_to_bytes
 from app.core.exceptions import AppException
 from app.services.model3d_acceptance_policy import (
     MODEL3D_ACCEPTANCE_POLICY,
-    MODEL3D_ERROR_EXTERNAL_URI_FORBIDDEN,
     MODEL3D_ERROR_EXTENSION_UNSUPPORTED,
+    MODEL3D_ERROR_EXTERNAL_URI_FORBIDDEN,
     MODEL3D_ERROR_FORMAT_INVALID,
     MODEL3D_ERROR_LIMIT_EXCEEDED,
     Model3dAcceptancePolicy,
+)
+from app.services.model3d_structure_limits import (
+    assert_acyclic_nodes,
+    validate_accessor_decoded_budget,
 )
 
 _GLB_MAGIC = b"glTF"
@@ -207,6 +211,13 @@ class Model3dGlbService:
         buffers = cls._validate_buffers(root, bin_bytes)
         views = cls._validate_buffer_views(root, buffers)
         accessors = cls._validate_accessors(root, buffers, views)
+        validate_accessor_decoded_budget(
+            (
+                (accessor["count"], _COMPONENT_TYPE_BYTES[accessor["componentType"]] * _ACCESSOR_TYPE_COMPONENTS[accessor["type"]])
+                for accessor in accessors
+            ),
+            policy=policy,
+        )
         cls._validate_nodes_and_scenes(root, policy)
         cls._validate_meshes(root, accessors, policy)
         images = cls._validate_images(root, buffers, views, policy)
@@ -340,9 +351,10 @@ class Model3dGlbService:
             if byte_offset + byte_length > buffers[buffer_index].byte_length:
                 raise _format_invalid(f"bufferViews[{index}] 引用范围超出 buffers[{buffer_index}]。")
             byte_stride = view.get("byteStride")
-            if byte_stride is not None:
-                if not _is_int(byte_stride) or not 4 <= byte_stride <= 252 or byte_stride % 4 != 0:
-                    raise _format_invalid(f"bufferViews[{index}].byteStride 必须是 4 到 252 之间的 4 字节倍数。")
+            if byte_stride is not None and (
+                not _is_int(byte_stride) or not 4 <= byte_stride <= 252 or byte_stride % 4 != 0
+            ):
+                raise _format_invalid(f"bufferViews[{index}].byteStride 必须是 4 到 252 之间的 4 字节倍数。")
             result.append(
                 _BufferViewInfo(
                     buffer_index=buffer_index,
@@ -483,7 +495,7 @@ class Model3dGlbService:
             ):
                 raise _format_invalid(f"nodes[{index}].weights 必须是有限数值数组。")
 
-        cls._assert_acyclic(nodes)
+        assert_acyclic_nodes(nodes)
 
         scenes = root.get("scenes", [])
         if not isinstance(scenes, list):
@@ -502,25 +514,6 @@ class Model3dGlbService:
             not _is_int(default_scene) or not 0 <= default_scene < len(scenes)
         ):
             raise _format_invalid("scene 默认场景索引越界。")
-
-    @staticmethod
-    def _assert_acyclic(nodes: list[dict[str, Any]]) -> None:
-        """用三色标记法检测节点父子环。"""
-
-        state = [0] * len(nodes)
-
-        def visit(index: int) -> None:
-            if state[index] == 1:
-                raise _format_invalid("nodes 存在父子环。")
-            if state[index] == 2:
-                return
-            state[index] = 1
-            for child in nodes[index].get("children", []) or []:
-                visit(child)
-            state[index] = 2
-
-        for index in range(len(nodes)):
-            visit(index)
 
     @classmethod
     def _validate_meshes(cls, root: dict[str, Any], accessors: list[dict[str, Any]], policy: Model3dAcceptancePolicy) -> None:

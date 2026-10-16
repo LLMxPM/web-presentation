@@ -62,9 +62,9 @@ import {
   type ParsedModelResource,
 } from './model3d/engine'
 import { buildModelCacheKey } from './model3d/model-cache'
+import { buildModelCameraViewKey, resizeAutoFitCamera } from './model3d/camera-state'
 import {
   adaptOrthographicFrustum,
-  computeAutoFitCamera,
   resolveCameraAspect,
   resolveOrthographicSourceFrustum,
   type BoundingSphere,
@@ -502,11 +502,8 @@ function createAutoFitCamera(
   engineRef: Model3dEngine,
 ): ThreeNamespace.PerspectiveCamera {
   const { THREE } = engineRef
-  const view = computeAutoFitCamera({ sphere, fovDeg, aspect })
-  const camera = new THREE.PerspectiveCamera(fovDeg, aspect, view.near, view.far)
-  camera.position.set(view.position.x, view.position.y, view.position.z)
-  camera.lookAt(view.target.x, view.target.y, view.target.z)
-  camera.updateMatrixWorld(true)
+  const camera = new THREE.PerspectiveCamera(fovDeg, aspect)
+  resizeAutoFitCamera(camera, sphere, fovDeg, aspect, false)
   return camera
 }
 
@@ -703,7 +700,10 @@ function applyContainerSize(): void {
 
   if (activeCamera && engine) {
     if (cameraMode === 'auto' && autoFitSphere) {
-      activeCamera = createAutoFitCamera(autoFitSphere, props.cameraFov ?? 45, aspect, engine)
+      resizeAutoFitCamera(
+        activeCamera as ThreeNamespace.PerspectiveCamera,
+        autoFitSphere, props.cameraFov ?? 45, aspect, controls !== null,
+      )
     } else if (cameraMode === 'source') {
       adaptSourceCamera(activeCamera, aspect)
     }
@@ -1023,7 +1023,7 @@ function describeStaticFrame(): ModelStaticFrameIdentity | null {
   return {
     resourceName: String(props.name || '').trim(),
     resourceSrc: activeStaticFrameSrc,
-    viewKey: activeStaticFrameViewKey,
+    viewKey: buildModelCameraViewKey(activeStaticFrameViewKey, context.camera),
     frameWidth: context.canvas.width,
     frameHeight: context.canvas.height,
   }

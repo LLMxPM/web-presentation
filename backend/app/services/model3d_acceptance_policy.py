@@ -37,7 +37,7 @@ class Model3dAcceptancePolicy:
     """
 
     # 本次接受策略版本，写入分析摘要，供运行时与缓存身份使用。
-    validation_profile: str = "model3d-glb-v1"
+    validation_profile: str = "model3d-glb-v2"
 
     # 文件级预算：单文件上限与 JSON chunk 上限（字节）。
     max_file_bytes: int = 32 * 1024 * 1024
@@ -46,6 +46,10 @@ class Model3dAcceptancePolicy:
     # 结构规模预算。
     max_nodes: int = 2048
     max_triangles: int = 300_000
+
+    # accessor 解码预算包含零填充/稀疏数据，不以文件大小或索引三角形数量代替。
+    max_accessor_decoded_bytes: int = 64 * 1024 * 1024
+    max_total_accessor_decoded_bytes: int = 128 * 1024 * 1024
 
     # 纹理解码预算：单纹理最长边与全部纹理解码总像素。
     max_texture_edge: int = 4096
@@ -82,6 +86,8 @@ def build_model3d_support_matrix() -> dict[str, object]:
         "max_json_chunk_bytes": policy.max_json_chunk_bytes,
         "max_nodes": policy.max_nodes,
         "max_triangles": policy.max_triangles,
+        "max_accessor_decoded_bytes": policy.max_accessor_decoded_bytes,
+        "max_total_accessor_decoded_bytes": policy.max_total_accessor_decoded_bytes,
         "max_texture_edge": policy.max_texture_edge,
         "max_texture_pixels": policy.max_texture_pixels,
         "required_extensions": sorted(policy.required_extension_allowlist),

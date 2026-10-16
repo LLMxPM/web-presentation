@@ -134,7 +134,7 @@ async def test_model3d_asset_package_roundtrip_should_preserve_bytes_and_reparse
         )
         assert asset_json["content_type"] == "model/gltf-binary"
         assert asset_json["analysis_metadata"]["kind"] == "model3d"
-        assert asset_json["analysis_metadata"]["model3d"]["validation_profile"] == "model3d-glb-v1"
+        assert asset_json["analysis_metadata"]["model3d"]["validation_profile"] == "model3d-glb-v2"
         assert archive.read(f"assets/{exported_entry['entry_key']}/product.glb") == payload
 
     import_payload = await _import_package(authenticated_client, target_workspace_id, export_response.content)
@@ -155,7 +155,7 @@ async def test_model3d_asset_package_roundtrip_should_preserve_bytes_and_reparse
     analysis = imported_asset["analysis_metadata"]
     assert analysis["kind"] == "model3d"
     assert analysis["model3d"]["scene_count"] == 1
-    assert analysis["model3d"]["validation_profile"] == "model3d-glb-v1"
+    assert analysis["model3d"]["validation_profile"] == "model3d-glb-v2"
 
     file_response = await authenticated_client.get(
         f"/api/workspaces/{target_workspace_id}/assets/{imported_asset['id']}/file"

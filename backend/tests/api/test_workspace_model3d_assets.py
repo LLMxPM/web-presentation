@@ -96,7 +96,7 @@ async def test_model3d_upload_produces_summary_and_protected_delivery(
     assert analysis["kind"] == "model3d"
     assert analysis["model3d"]["format"] == "glb"
     assert analysis["model3d"]["scene_count"] == 1
-    assert analysis["model3d"]["validation_profile"] == "model3d-glb-v1"
+    assert analysis["model3d"]["validation_profile"] == "model3d-glb-v2"
 
     # 列表按类型筛选可命中。
     list_response = await authenticated_client.get(

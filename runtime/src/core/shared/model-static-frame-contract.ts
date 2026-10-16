@@ -35,7 +35,7 @@ export interface ModelStaticFrameIdentity {
   resourceName: string
   /** 已解析的资源地址（含文件身份与预览票据），用于区分同名不同版本。 */
   resourceSrc: string
-  /** 实例视角键：场景/相机/position/target/fov/背景与光照策略。 */
+  /** 实例视角键：声明参数与采集时的实际相机世界姿态、投影；交互变化必须更新此键。 */
   viewKey: string
   /** 帧像素宽度（= 视口 CSS 宽度 × 已收敛 DPR）。 */
   frameWidth: number
