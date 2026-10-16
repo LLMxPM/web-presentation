@@ -299,53 +299,35 @@ describe('PPTX 转换器分派', () => {
       ])
     })
 
-    it('未取得静态帧时应回退局部截图并保持报告源类型为 model3d', async () => {
+    it('未取得静态帧时应按 skipped 语义记录且不尝试局部截图', async () => {
       renderModelPage('')
       const slide = createSlideMock()
       const captureElementAsPng = vi.fn(async (_element: Element) => 'data:image/png;base64,screenshot')
 
       const report = await convert(slide, captureElementAsPng)
 
-      expect(captureElementAsPng).toHaveBeenCalledTimes(1)
-      expect(captureElementAsPng.mock.calls[0]?.[0]).toBe(document.querySelector(`[${RUNTIME_KIT_MEDIA_KIND_ATTR}="model3d"]`))
-      expect(slide.addImage).toHaveBeenCalledTimes(1)
-      expect(report.items).toEqual([
-        expect.objectContaining({
-          sourceType: 'model3d',
-          result: 'screenshot',
-          reason: '未取得三维静态帧，降级为局部截图',
-        }),
-      ])
-    })
-
-    it('静态帧缺失且局部截图失败时应按 skipped 语义记录 model3d', async () => {
-      renderModelPage('')
-      const slide = createSlideMock()
-      const captureElementAsPng = vi.fn(async () => {
-        throw new Error('捕捉失败')
-      })
-
-      const report = await convert(slide, captureElementAsPng)
-
+      // WebGL 画布 preserveDrawingBuffer: false，局部截图必然空白，不应再尝试。
+      expect(captureElementAsPng).not.toHaveBeenCalled()
       expect(slide.addImage).not.toHaveBeenCalled()
       expect(report.items).toEqual([
         expect.objectContaining({
           sourceType: 'model3d',
           result: 'skipped',
+          reason: expect.stringContaining('未取得三维静态帧'),
         }),
       ])
     })
 
-    it('未带标记的图片不应被误认成静态帧', async () => {
+    it('未带标记的图片不应被误认成静态帧，同样按 skipped 记录', async () => {
       renderModelPage('<img src="data:image/png;base64,plain" style="position: absolute; inset: 0;" />')
 
       const slide = createSlideMock()
       const captureElementAsPng = vi.fn(async () => 'data:image/png;base64,screenshot')
       const report = await convert(slide, captureElementAsPng)
 
-      expect(captureElementAsPng).toHaveBeenCalledTimes(1)
+      expect(captureElementAsPng).not.toHaveBeenCalled()
       expect(report.items).toEqual([
-        expect.objectContaining({ sourceType: 'model3d', result: 'screenshot' }),
+        expect.objectContaining({ sourceType: 'model3d', result: 'skipped' }),
       ])
     })
   })

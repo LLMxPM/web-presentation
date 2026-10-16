@@ -14,6 +14,7 @@ import { createRuntimePageCaptureTarget } from '@/core/utils/export-dom'
 import {
   cleanupModelStaticFrames,
   prepareModelStaticFrames,
+  runWithModelStaticFrameSpan,
   type ModelStaticFramesHandle,
 } from '@/core/services/export/model-static-frames'
 import { getRuntimePreloadedConfig, getRuntimePreviewContext } from '@/core/utils/path'
@@ -60,12 +61,29 @@ export class PageCaptureService {
   }
 
   /**
-   * 捕获指定元素
+   * 捕获指定元素：串行化「静态帧准备 → snapdom → 清理」span。
+   *
+   * preparedModelRoots 标记是模块级共享的，主文档上并发的两个捕获任务
+   * 会让后到者跳过准备、并在前者 cleanup 后采到空白 WebGL 画布，因此入队执行。
    * @param element 要捕获的HTML元素
    * @param options 捕获选项
    * @returns Promise<HTMLCanvasElement>
    */
   async captureElement(
+    element: HTMLElement,
+    options?: CaptureOptions
+  ): Promise<HTMLCanvasElement> {
+    return runWithModelStaticFrameSpan(() => this.captureElementInner(element, options))
+  }
+
+  /**
+   * 捕获指定元素的内部实现；不获取模块级 span 锁。
+   * 仅供 captureElement（加锁包装）与 captureCurrentPage（已持锁的复合 span）调用。
+   * @param element 要捕获的HTML元素
+   * @param options 捕获选项
+   * @returns Promise<HTMLCanvasElement>
+   */
+  private async captureElementInner(
     element: HTMLElement,
     options?: CaptureOptions
   ): Promise<HTMLCanvasElement> {
@@ -281,33 +299,38 @@ export class PageCaptureService {
    * @returns Promise<HTMLCanvasElement>
    */
   async captureCurrentPage(options?: CaptureOptions): Promise<HTMLCanvasElement> {
-    const runtimeTarget = createRuntimePageCaptureTarget({
-      routePath: options?.routePath,
-      width: appPageConfig.value.width,
-      height: appPageConfig.value.height,
-      backgroundColor: options?.backgroundColor ?? this.defaultOptions.backgroundColor,
-    })
+    // 复合 span：createRuntimePageCaptureTarget 的源节点静态帧准备与沙箱捕获必须同持锁，
+    // 避免并发的另一个任务在 prepare 与 cleanup 之间插入同源节点的准备/清理；
+    // 内部走 captureElementInner，避免重复入队死锁。
+    return runWithModelStaticFrameSpan(async () => {
+      const runtimeTarget = createRuntimePageCaptureTarget({
+        routePath: options?.routePath,
+        width: appPageConfig.value.width,
+        height: appPageConfig.value.height,
+        backgroundColor: options?.backgroundColor ?? this.defaultOptions.backgroundColor,
+      })
 
-    if (runtimeTarget) {
-      const captureOptions = { ...options }
-      delete captureOptions.routePath
+      if (runtimeTarget) {
+        const captureOptions = { ...options }
+        delete captureOptions.routePath
 
-      try {
-        return await this.captureElement(runtimeTarget.captureElement, captureOptions)
-      } finally {
-        runtimeTarget.cleanup()
+        try {
+          return await this.captureElementInner(runtimeTarget.captureElement, captureOptions)
+        } finally {
+          runtimeTarget.cleanup()
+        }
       }
-    }
 
-    console.warn('未找到运行时页面源节点，将使用旧内容区域选择器兜底')
+      console.warn('未找到运行时页面源节点，将使用旧内容区域选择器兜底')
 
-    // 查找主要内容区域，优先级更高
-    const contentElement = this.findBestContentElement()
-    if (!contentElement) {
-      throw new Error('未找到页面内容区域')
-    }
+      // 查找主要内容区域，优先级更高
+      const contentElement = this.findBestContentElement()
+      if (!contentElement) {
+        throw new Error('未找到页面内容区域')
+      }
 
-    return this.captureElement(contentElement, options)
+      return this.captureElementInner(contentElement, options)
+    })
   }
 
 

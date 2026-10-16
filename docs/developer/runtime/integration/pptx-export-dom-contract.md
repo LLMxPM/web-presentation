@@ -96,7 +96,7 @@ Runtime 的可编辑 PPTX 导出会把页面 DOM 转换成 PowerPoint 原生图�
 **消费者**：
 
 - `PPTXDomConverterMedia.isMediaElement()` 判断是否走媒体导出分支。
-- `PPTXDomConverterMedia.resolveMediaSourceType()` 决定导出策略：`formula` 逐段导出 MathJax SVG，`chart` 优先验证下述图表数据载荷；`model3d` 优先使用静态帧覆盖图，缺失时回退局部截图；未支持的图表与 `mermaid` / `drawio` 优先找可序列化 SVG（`chart` 再退 canvas），`video` 取封面或当前帧，`image` 走图片路径或 data URL，全部失败时降级为局部截图。
+- `PPTXDomConverterMedia.resolveMediaSourceType()` 决定导出策略：`formula` 逐段导出 MathJax SVG，`chart` 优先验证下述图表数据载荷；`model3d` 优先使用静态帧覆盖图，缺失时直接按 `skipped` 语义记录（WebGL 画布 `preserveDrawingBuffer: false`，局部截图必然空白，不再回退）；未支持的图表与 `mermaid` / `drawio` 优先找可序列化 SVG（`chart` 再退 canvas），`video` 取封面或当前帧，`image` 走图片路径或 data URL，全部失败时降级为局部截图。
 - `PPTXDomConverterRaster.isTerminalMediaElement()` 判断 3D CSS 降级截图时哪些子树不该继续深入，必须与上面的媒体识别保持一致，否则会出现「媒体节点被当成普通容器整块栅格化」。
 
 **词汇表不含 `canvas` / `svg` / `connector`**：`canvas` 和 `svg` 由标签名判定，不来自 Runtime Kit 组件；连接线走独立契约，且 `PptxReportSourceType` 中没有 `connector` 成员，硬塞进媒体词汇会让报告类型失真。
@@ -112,9 +112,9 @@ Runtime 的可编辑 PPTX 导出会把页面 DOM 转换成 PowerPoint 原生图�
 - `prepareModelStaticFrames(root)` 查询 `[data-runtime-kit-media-kind="model3d"]` 根节点，通过采集句柄取帧，插入 `<img data-runtime-model-frame="v1">` 覆盖层（绝对定位、100% 尺寸）并隐藏 canvas；`cleanup` 幂等移除覆盖层并恢复 canvas 可见性。
 - 采集句柄由 `ModelViewer.vue` 挂载时写入根元素属性 `__runtimeModelStaticFrameHandleV1`（字符串属性名，跨 realm 有效），卸载时按同一引用注销；句柄只暴露 `describe()`（身份）与 `capture()`（同步 render + `toDataURL('image/png')`），未就绪、上下文丢失或画布退化时返回 null。
 - 静态帧缓存为任务级：`OffscreenPageStage` 每任务持有 `ModelStaticFrameCache` 并在 `dispose()` 释放；键包含资源名 + 资源地址 + 视角键（场景/相机/position/target/fov/背景/光照）+ 帧像素尺寸（视口 × 收敛 DPR）。相同资源不同视角不得共用。
-- 接入点：`OffscreenPageStage.preparePage`（PDF/PPTX 全部页）、`PageCaptureService.captureElement`（snapdom 前准备、finally 清理）、`createRuntimePageCaptureTarget`（clone 前准备，覆盖非项目路由 PDF 当前页）、`BrowserPrintService.appendPrintPage`（打印 clone 前准备）。已准备元素有幂等保护，内层 cleanup 不移除外层创建的覆盖层。
+- 接入点：`OffscreenPageStage.preparePage`（PDF/PPTX 全部页，复用 DOM 前先清理上一页句柄）、`PageCaptureService.captureElement`（snapdom 前准备、finally 清理；经 `runWithModelStaticFrameSpan` 串行化，`captureCurrentPage` 的源节点准备与沙箱捕获同持锁）、`createRuntimePageCaptureTarget`（clone 前准备，覆盖非项目路由 PDF 当前页）、`BrowserPrintService.appendPrintPage`（打印 clone 前准备）。已准备元素有幂等保护，内层 cleanup 不移除外层创建的覆盖层。主文档路径的 prepare 与 cleanup 之间存在 await，并发任务会互相跳过准备，因此必须经 `runWithModelStaticFrameSpan` 队列串行执行。
 
-**消费者**：`PPTXDomConverterMedia.addModel3dStaticFrameBlock()` 只在模型根的直接子级里查找带标记的覆盖图：命中则整块导出为图片块（`sourceType: 'model3d'`、`result: 'image'`）；未命中时回退既有局部截图（`result: 'screenshot'`），截图失败按 `addSkippedItem` 语义记录。`ElementRasterizer` 局部截图路径经 `captureElement` 内部同样会准备静态帧。
+**消费者**：`PPTXDomConverterMedia.addModel3dStaticFrameBlock()` 只在模型根的直接子级里查找带标记的覆盖图：命中则整块导出为图片块（`sourceType: 'model3d'`、`result: 'image'`）；未命中时直接按 `addSkippedItem` 语义记录（`result: 'skipped'`），不再尝试局部截图。`ElementRasterizer` 局部截图路径经 `captureElement` 内部同样会准备静态帧。
 
 **改动影响**：覆盖图标记属性丢失会让 PPTX 退化为局部截图（模型可能空白）；句柄属性名或覆盖层结构改变会同时破坏 PDF 与 PPTX 两条路径。回归由 `model-static-frames.test.ts`、`PageCaptureService.test.ts`、`OffscreenPageStage.test.ts` 与 `PPTXRuntimeKitExportDom.test.ts` 拦截。
 

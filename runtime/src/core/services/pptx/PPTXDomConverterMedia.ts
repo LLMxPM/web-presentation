@@ -237,8 +237,8 @@ export class PPTXDomConverterMedia {
    * 添加三维模型静态帧，整块导出为图片块。
    *
    * 优先使用采集阶段准备的带标记覆盖图（与模型容器同尺寸、dataURL 来源）；
-   * 未取得静态帧时保留原有局部截图能力作为兜底，报告源类型固定为 model3d，
-   * 截图失败由 addScreenshotBlock 内部转入 addSkippedItem 语义。
+   * 未取得静态帧时直接按 skipped 语义记录：WebGL 画布使用 preserveDrawingBuffer: false，
+   * 局部截图必然空白，静默产出空白块比明确跳过更具误导性。报告源类型固定为 model3d。
    * @param host 导出宿主能力
    * @param element 模型根元素
    * @param label 元素标签
@@ -265,7 +265,7 @@ export class PPTXDomConverterMedia {
       return
     }
 
-    await this.addScreenshotBlock(host, element, 'model3d', '未取得三维静态帧，降级为局部截图', context)
+    host.addSkippedItem('model3d', label, '未取得三维静态帧（模型未就绪或上下文丢失），已跳过导出', context)
   }
 
   /**

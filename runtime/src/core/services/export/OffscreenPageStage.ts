@@ -3,7 +3,7 @@ import { pageCaptureService } from '@/core/services/PageCaptureService'
 import type { CaptureOptions } from '@/core/types/export-common'
 import { appPageConfig } from '@/core/utils/config'
 import { runWithExportDeadline, throwIfExportAborted } from './ExportCancellation'
-import { ModelStaticFrameCache, cleanupModelStaticFrames, prepareModelStaticFrames } from './model-static-frames'
+import { ModelStaticFrameCache, cleanupModelStaticFrames, prepareModelStaticFrames, type ModelStaticFramesHandle } from './model-static-frames'
 
 export interface RuntimeCaptureRoute { path: string; hash: string }
 export interface OffscreenPreparedPage { element: HTMLElement; cleanup: () => void }
@@ -68,6 +68,9 @@ export function createOffscreenPageStage(): OffscreenPageStage {
   let disposed = false
   // 任务级静态帧缓存：同一导出任务内按实例视角复用，dispose 时统一释放。
   const staticFrameCache = new ModelStaticFrameCache()
+  // 上一页的静态帧句柄：同路径 hash 导航复用 DOM 时元素不变，
+  // 若旧句柄未清理，preparedModelRoots 标记会让新一轮 prepare 跳过补帧。先清旧再备新。
+  let activeStaticFrameHandle: ModelStaticFramesHandle | null = null
 
   /** 验证当前票据对应的页面，再等待该文档的资源和动画；允许同路径更新复用 DOM。 */
   async function preparePage(route: string, options?: OffscreenPrepareOptions): Promise<OffscreenPreparedPage> {
@@ -98,6 +101,8 @@ export function createOffscreenPageStage(): OffscreenPageStage {
           await freezeDocumentAnimationsToFinalState(doc)
           // 页面就绪后逐实例准备静态帧：克隆与转换阶段看到的是 PNG 覆盖图，而不是空白 WebGL 画布。
           const staticFrames = prepareModelStaticFrames(target, { cache: staticFrameCache })
+          cleanupModelStaticFrames(activeStaticFrameHandle)
+          activeStaticFrameHandle = staticFrames
           return { element: target, cleanup: () => cleanupModelStaticFrames(staticFrames) }
         }
         await new Promise(resolve => setTimeout(resolve, 25))
@@ -116,6 +121,8 @@ export function createOffscreenPageStage(): OffscreenPageStage {
   /** 移除 iframe，终止其页面脚本和资源占用，并释放任务级静态帧缓存。 */
   function dispose(): void {
     disposed = true
+    cleanupModelStaticFrames(activeStaticFrameHandle)
+    activeStaticFrameHandle = null
     staticFrameCache.clear()
     frame.remove()
   }

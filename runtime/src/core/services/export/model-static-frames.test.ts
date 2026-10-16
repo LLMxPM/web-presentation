@@ -25,6 +25,7 @@ import {
   clearDefaultModelStaticFrameCache,
   cleanupModelStaticFrames,
   prepareModelStaticFrames,
+  runWithModelStaticFrameSpan,
 } from './model-static-frames'
 
 interface StubModelRoot {
@@ -436,5 +437,39 @@ describe('共享契约读取', () => {
 
     expect(() => prepareModelStaticFrames(root)).not.toThrow()
     expect(prepareModelStaticFrames(root).preparedCount).toBe(0)
+  })
+})
+
+describe('runWithModelStaticFrameSpan 串行队列', () => {
+  it('并发的多个 span 应按入队顺序串行执行，不互相交叠', async () => {
+    const events: string[] = []
+
+    const first = runWithModelStaticFrameSpan(async () => {
+      events.push('first:start')
+      await new Promise(resolve => setTimeout(resolve, 20))
+      events.push('first:end')
+      return 'a'
+    })
+    const second = runWithModelStaticFrameSpan(async () => {
+      events.push('second:start')
+      await new Promise(resolve => setTimeout(resolve, 5))
+      events.push('second:end')
+      return 'b'
+    })
+
+    expect(await first).toBe('a')
+    expect(await second).toBe('b')
+    // second 必须等 first 完整结束（含 await 间隙）才开始，避免覆盖图被交叉清理。
+    expect(events).toEqual(['first:start', 'first:end', 'second:start', 'second:end'])
+  })
+
+  it('span 抛异常时应释放队列，后续 span 仍可执行', async () => {
+    const failing = runWithModelStaticFrameSpan(async () => {
+      throw new Error('span 失败')
+    })
+    await expect(failing).rejects.toThrow('span 失败')
+
+    const result = await runWithModelStaticFrameSpan(async () => 'ok')
+    expect(result).toBe('ok')
   })
 })

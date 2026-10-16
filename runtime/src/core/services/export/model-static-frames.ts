@@ -134,6 +134,35 @@ export function clearDefaultModelStaticFrameCache(): void {
   defaultModelStaticFrameCache?.clear()
 }
 
+/**
+ * 「准备 → 转换 → 清理」span 的模块级执行队列（promise 链锁）。
+ *
+ * preparedModelRoots 是跨任务共享的模块级标记：两个并发导出任务作用在同一文档时，
+ * 后到者会因标记已存在而跳过准备，前者 cleanup 后其转换阶段将无覆盖图可用。
+ * 主文档路径（PDF 截图等）的 prepare 与 cleanup 之间存在 await，必须串行化整个 span。
+ * 离屏舞台（OffscreenPageStage）使用独立 iframe 文档与任务级缓存，不经过该队列。
+ */
+let modelStaticFrameSpanQueue: Promise<unknown> = Promise.resolve()
+
+/**
+ * 串行执行一次包含静态帧准备的异步 span。
+ * @param task span 主体：应在其中完成 prepare、DOM 采集/转换与 cleanup
+ * @returns task 的完成值
+ */
+export async function runWithModelStaticFrameSpan<T>(task: () => Promise<T>): Promise<T> {
+  const previous = modelStaticFrameSpanQueue
+  let release: () => void = () => {}
+  modelStaticFrameSpanQueue = new Promise<void>(resolve => {
+    release = resolve
+  })
+  await previous
+  try {
+    return await task()
+  } finally {
+    release()
+  }
+}
+
 export interface ModelStaticFramePrepareOptions {
   /**
    * 任务级缓存：同一导出任务内复用同视角的帧。
