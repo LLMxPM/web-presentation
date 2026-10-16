@@ -302,7 +302,7 @@ describe('PPTX 转换器分派', () => {
     it('未取得静态帧时应回退局部截图并保持报告源类型为 model3d', async () => {
       renderModelPage('')
       const slide = createSlideMock()
-      const captureElementAsPng = vi.fn(async () => 'data:image/png;base64,screenshot')
+      const captureElementAsPng = vi.fn(async (_element: Element) => 'data:image/png;base64,screenshot')
 
       const report = await convert(slide, captureElementAsPng)
 
