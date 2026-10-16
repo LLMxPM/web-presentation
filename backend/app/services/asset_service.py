@@ -33,6 +33,7 @@ from app.schemas.asset import AssetReferenceSummary, resolve_asset_content_edita
 from app.services.asset_storage_drivers import BaseStorageDriver, get_driver
 from app.services.icon_analysis_service import IconAnalysisService
 from app.repositories.component_resource_index_repository import ComponentResourceIndexRepository
+from app.services.asset_binding_service import AssetBindingService
 from app.services.asset_render_metadata_service import AssetRenderMetadataService, AspectRatioSource
 from app.services.component_resource_index_service import ComponentResourceIndexService
 from app.services.model3d_acceptance_policy import (
@@ -801,6 +802,7 @@ class AssetService:
             .scalars()
             .all()
         )
+        await self._ensure_no_asset_binding_holds(asset, history_assets)
         deleted_assets = [asset, *history_assets]
         file_names = {item.file_name for item in deleted_assets if item.file_name}
         await self._detach_promoted_image_attachments(workspace_id, deleted_assets)
@@ -1156,6 +1158,22 @@ class AssetService:
             )
             or 0
         )
+
+    async def _ensure_no_asset_binding_holds(
+        self,
+        asset: WorkspaceAsset,
+        history_assets: list[WorkspaceAsset],
+    ) -> None:
+        """拒绝删除仍被版本或产物绑定持有的资源及历史副本，避免历史还原与冻结产物失效。"""
+
+        candidate_ids = [int(asset.id), *(int(item.id) for item in history_assets)]
+        protected_ids = await AssetBindingService(self.session).protected_snapshot_asset_ids(candidate_ids)
+        if protected_ids:
+            raise AppException(
+                status_code=409,
+                code="ASSET_DELETE_FORBIDDEN",
+                detail="资源文件仍被版本或产物持有，历史还原依赖这些文件，请先处理相关版本后再删除。",
+            )
 
     async def _delete_asset_records_and_unused_files(self, workspace_id: int, asset: WorkspaceAsset) -> None:
         """硬删除当前资产及其历史记录，并清理不再被资产记录复用的物理文件。"""

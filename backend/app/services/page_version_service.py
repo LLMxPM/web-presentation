@@ -17,8 +17,11 @@ from app.models.page import Page
 from app.models.page_version import PageVersion
 from app.repositories.page_version_repository import PageVersionRepository
 from app.schemas.page import PageVersionContent, PageVersionListItem
+from app.services.asset_binding_service import OWNER_KIND_PAGE_VERSION, AssetBindingService
 from app.services.component_dependency_service import ComponentDependencyService
+from app.services.model3d_reference_collector import Model3dReferenceCollector
 from app.services.page_component_index_service import PageComponentIndexService
+from app.services.resource_reference_parser import ResourceReferenceParser
 
 
 class _SpeakerNotesUnset:
@@ -76,6 +79,7 @@ class PageVersionService:
             page_content=normalized_page_content,
             file_type=page.file_type,
         )
+        await self._sync_page_version_asset_bindings(page, version)
         return version
 
     async def save_new_version(
@@ -101,14 +105,24 @@ class PageVersionService:
         else:
             normalized_speaker_notes = normalize_text_to_lf(str(speaker_notes))
         normalized_file_type = file_type.value
+        latest_version = await self.repository.get_latest_by_page_id(page.id)
         if (
             normalized_existing_content == normalized_page_content
             and page.file_type == normalized_file_type
             and normalized_existing_speaker_notes == normalized_speaker_notes
         ):
-            return None
+            if latest_version is None:
+                return None
+            if not await self._is_page_binding_outdated(
+                page=page,
+                latest_version=latest_version,
+                page_content=normalized_page_content,
+                file_type=normalized_file_type,
+            ):
+                return None
+            # 源码未变但三维资源版本已切换：仍需落版本以冻结新的资源身份。
+            change_note = change_note or "资源版本更新"
 
-        latest_version = await self.repository.get_latest_by_page_id(page.id)
         if latest_version is None:
             latest_version = await self.initialize_page_version(page, operator_id)
 
@@ -148,12 +162,60 @@ class PageVersionService:
             page_content=normalized_page_content,
             file_type=normalized_file_type,
         )
+        await self._sync_page_version_asset_bindings(page, new_version)
 
         page.page_content = normalized_page_content
         page.file_type = normalized_file_type
         page.speaker_notes = normalized_speaker_notes
         page.current_version_no = new_version.version_no
         return new_version
+
+    async def _sync_page_version_asset_bindings(self, page: Page, page_version: PageVersion) -> None:
+        """按版本资源索引与组件闭包收集三维资源，重建该版本的永久绑定。"""
+
+        resource_rows = await self.component_index_service.list_resource_items_by_version(page_version.id)
+        static_items = [(row.component_name, row.resource_name) for row in resource_rows]
+        collection = await Model3dReferenceCollector(self.session).collect_for_page_version(
+            workspace_id=page.workspace_id,
+            page_version_id=page_version.id,
+            static_resource_items=static_items,
+        )
+        await AssetBindingService(self.session).replace_owner_bindings(
+            workspace_id=page.workspace_id,
+            owner_kind=OWNER_KIND_PAGE_VERSION,
+            owner_key=str(page_version.id),
+            assets=collection.assets,
+        )
+
+    async def _is_page_binding_outdated(
+        self,
+        *,
+        page: Page,
+        latest_version: PageVersion,
+        page_content: str,
+        file_type: str,
+    ) -> bool:
+        """比较当前三维资源版本与最新版本绑定摘要，判断是否需要新建“资源版本更新”版本。"""
+
+        static_items = self._collect_static_resource_items(page_content, file_type)
+        collection = await Model3dReferenceCollector(self.session).collect_for_page_version(
+            workspace_id=page.workspace_id,
+            page_version_id=latest_version.id,
+            static_resource_items=static_items,
+        )
+        current_map = {str(asset.name): str(asset.file_hash) for asset in collection.assets}
+        bound_map = await AssetBindingService(self.session).owner_binding_hash_map(
+            OWNER_KIND_PAGE_VERSION, str(latest_version.id)
+        )
+        return current_map != bound_map
+
+    @staticmethod
+    def _collect_static_resource_items(page_content: str, file_type: str) -> list[tuple[str, str]]:
+        """解析待保存内容中的静态资源引用；非 Vue 文件没有资源索引。"""
+
+        if str(file_type) != PageFileType.VUE.value:
+            return []
+        return ResourceReferenceParser.collect_vue_component_resource_items(page_content)
 
     async def list_versions(self, page: Page) -> list[PageVersionListItem]:
         """列出页面所有版本，并计算每个版本恢复后的真实内容大小。"""

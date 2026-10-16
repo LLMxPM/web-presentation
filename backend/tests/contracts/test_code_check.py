@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import struct
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import func, select
 
 from app.db.session import get_session_factory
+from app.models.asset_binding import AssetReferenceBinding
 from app.services.code_check_service import CodeCheckService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
@@ -127,6 +132,84 @@ class FakePageRenderDiagnosticsService:
             if self.status == "unavailable":
                 payload["retryable"] = True
         return payload
+
+
+class BindingProbeRuntimeDiagnosticsClient(FakeRuntimeDiagnosticsClient):
+    """在诊断调用时记录 artifact 的三维资源持有条数，验证持有存在于检查执行期间。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.binding_counts: dict[str, int] = {}
+
+    async def dispatch_artifact_diagnostics(
+        self,
+        *,
+        artifact_id: str,
+        diagnostics_token: str,
+        label: str | None = None,
+    ) -> dict[str, object]:
+        """记录持有条数后再执行原诊断逻辑。"""
+
+        self.binding_counts[str(artifact_id)] = await _count_preview_artifact_bindings(str(artifact_id))
+        return await super().dispatch_artifact_diagnostics(
+            artifact_id=artifact_id,
+            diagnostics_token=diagnostics_token,
+            label=label,
+        )
+
+
+async def _count_preview_artifact_bindings(artifact_id: str) -> int:
+    """统计指定 artifact 的 preview_artifact 绑定条数。"""
+
+    async with get_session_factory()() as session:
+        count = await session.scalar(
+            select(func.count())
+            .select_from(AssetReferenceBinding)
+            .where(AssetReferenceBinding.owner_kind == "preview_artifact")
+            .where(AssetReferenceBinding.owner_key == artifact_id)
+        )
+    return int(count or 0)
+
+
+def _pad4(data: bytes, pad: bytes = b"\x00") -> bytes:
+    """按 4 字节对齐填充。"""
+
+    if len(data) % 4:
+        data = data + pad * (4 - len(data) % 4)
+    return data
+
+
+def _valid_glb(marker: float = 0.0) -> bytes:
+    """构造最小合法 GLB；marker 用于生成不同哈希。"""
+
+    positions = struct.pack("<9f", marker, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+    gltf = {
+        "asset": {"version": "2.0", "generator": "code-check-binding-test"},
+        "buffers": [{"byteLength": len(positions)}],
+        "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": len(positions)}],
+        "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+        "nodes": [{"mesh": 0}],
+        "scenes": [{"nodes": [0]}],
+        "scene": 0,
+    }
+    json_bytes = _pad4(json.dumps(gltf).encode("utf-8"), b" ")
+    chunks = struct.pack("<II", len(json_bytes), 0x4E4F534A) + json_bytes
+    bin_bytes = _pad4(positions)
+    chunks += struct.pack("<II", len(bin_bytes), 0x004E4942) + bin_bytes
+    return b"glTF" + struct.pack("<II", 2, 12 + len(chunks)) + chunks
+
+
+async def _upload_model3d(authenticated_client: AsyncClient, workspace_id: int, name: str) -> dict:
+    """上传三维资源并返回接口载荷。"""
+
+    response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": (f"{name}.glb", _valid_glb(), "model/gltf-binary")},
+        data={"asset_type": "model3d", "tags": "[]", "name": name},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int:
@@ -1079,3 +1162,87 @@ async def test_page_code_check_should_reject_cross_workspace_before_cache(
         assert exc_info.value.code == "AI_PAGE_SCOPE_DENIED"
         # 鉴权失败不得推进缓存查找计数
         assert cache.snapshot_metrics()["lookups"] == 1
+
+
+async def test_page_code_check_should_release_model3d_bindings_after_diagnostics(
+    authenticated_client: AsyncClient,
+) -> None:
+    """页面检查期间持有三维资源文件，诊断完成后立即释放持有。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "检查绑定释放工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "检查绑定释放项目")
+    asset = await _upload_model3d(authenticated_client, workspace_id, "product")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "三维检查页面",
+            "page_content": '<template><div class="p-8"><AssetModel name="product" class="w-full h-80" /></div></template>',
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200
+    fake_runtime = BindingProbeRuntimeDiagnosticsClient()
+    fake_render = FakePageRenderDiagnosticsService()
+
+    async with get_session_factory()() as session:
+        result = await CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+            render_diagnostics_service=fake_render,
+        ).check_page_code(
+            page_id=page_response.json()["id"],
+            workspace_id=workspace_id,
+            user_id=1,
+        )
+
+    assert result["success"] is True, result
+    artifact_id = str(result["artifact_id"])
+    snapshot = fake_runtime.artifact_snapshots[artifact_id]
+    manifest = snapshot["manifest"]
+    assert isinstance(manifest, dict)
+    assert manifest["assets"]["product"] == asset["file_hash"]
+    # 诊断执行期间持有存在，检查结束（artifact 主动清理）后释放。
+    assert fake_runtime.binding_counts[artifact_id] == 1
+    assert await _count_preview_artifact_bindings(artifact_id) == 0
+
+
+async def test_component_code_check_should_release_model3d_bindings_after_diagnostics(
+    authenticated_client: AsyncClient,
+) -> None:
+    """组件检查期间持有三维资源文件，编译诊断完成后立即释放持有。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "组件检查绑定释放工作空间")
+    await _upload_model3d(authenticated_client, workspace_id, "gear")
+    component_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "三维检查组件",
+            "import_name": "ModelCheckCard",
+            "content": '<template><div class="p-4"><AssetModel name="gear" class="w-full h-64" /></div></template>',
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert component_response.status_code == 200, component_response.text
+    fake_runtime = BindingProbeRuntimeDiagnosticsClient()
+
+    async with get_session_factory()() as session:
+        result = await CodeCheckService(
+            session,
+            runtime_client=fake_runtime,
+        ).check_component_code(
+            workspace_id=workspace_id,
+            user_id=1,
+            component_id=component_response.json()["id"],
+        )
+
+    assert result["success"] is True, result
+    artifact_id = str(result["artifact_id"])
+    assert fake_runtime.binding_counts[artifact_id] >= 1
+    assert await RuntimeArtifactStore().get_manifest(artifact_id) is None
+    assert await _count_preview_artifact_bindings(artifact_id) == 0

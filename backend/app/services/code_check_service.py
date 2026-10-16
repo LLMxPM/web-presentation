@@ -19,6 +19,7 @@ from app.core.text_normalizer import normalize_text_to_lf
 from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.page import Page
 from app.schemas.release import PreviewEntryDescriptor
+from app.services.asset_binding_service import OWNER_KIND_PREVIEW_ARTIFACT, AssetBindingService
 from app.services.capture_viewport_resolver import CaptureViewport
 from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
 from app.services.code_check_result_cache import (
@@ -99,7 +100,7 @@ class CodeCheckService:
         self.session = session
         self.runtime_client = runtime_client or RuntimeDiagnosticsClient()
         self.render_diagnostics_service = render_diagnostics_service or PageRenderDiagnosticsService()
-        self.component_validation_service = ComponentValidationService(self.runtime_client)
+        self.component_validation_service = ComponentValidationService(self.runtime_client, session)
         self.result_cache = result_cache if result_cache is not None else get_code_check_result_cache()
         self.fingerprint_builder = CodeCheckFingerprintBuilder(session)
 
@@ -516,6 +517,21 @@ class CodeCheckService:
                         extra={"event": "runtime.artifact.cleanup.failed", "artifact_id": artifact_id},
                         exc_info=True,
                     )
+                # artifact 主动清理后同步释放资源持有；延迟清理（在途渲染仍在使用）走 TTL 对账。
+                await self._release_preview_artifact_bindings(artifact_id)
+
+    async def _release_preview_artifact_bindings(self, artifact_id: str) -> None:
+        """释放检查 artifact 的三维资源持有；释放失败由 TTL 对账兜底，不打断检查结果。"""
+
+        try:
+            await AssetBindingService(self.session).release_owner(OWNER_KIND_PREVIEW_ARTIFACT, artifact_id)
+            await self.session.commit()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "检查 artifact 资源持有释放失败，将由 TTL 对账兜底。",
+                extra={"event": "code_check.binding.release.failed", "artifact_id": artifact_id},
+                exc_info=True,
+            )
 
     async def _release_session_before_diagnostics(self) -> None:
         """结束 artifact 准备阶段的只读事务后再进入慢诊断。"""

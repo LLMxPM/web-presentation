@@ -6,9 +6,12 @@ import hashlib
 import json
 import logging
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.text_normalizer import normalize_text_to_lf
 from app.models.enums import WorkspaceComponentType
 from app.schemas.component_validation import ComponentValidationResult
+from app.services.asset_binding_service import OWNER_KIND_PREVIEW_ARTIFACT, AssetBindingService
 from app.services.component_validation_profile import COMPONENT_VALIDATION_PROFILE_VERSION
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.runtime_diagnostics_client import RuntimeDiagnosticsClient
@@ -24,8 +27,12 @@ class ComponentValidationService:
     def __init__(
         self,
         runtime_client: RuntimeDiagnosticsClient,
+        session: AsyncSession,
     ) -> None:
+        """持有诊断客户端与数据库会话，会话仅用于释放临时 artifact 的资源持有。"""
+
         self.runtime_client = runtime_client
+        self.session = session
 
     async def dispatch(
         self,
@@ -132,6 +139,20 @@ class ComponentValidationService:
                     extra={"event": "runtime.component_artifact.cleanup.failed", "artifact_id": artifact_id},
                     exc_info=True,
                 )
+            await self._release_preview_artifact_bindings(artifact_id)
+
+    async def _release_preview_artifact_bindings(self, artifact_id: str) -> None:
+        """释放组件检查 artifact 的三维资源持有；释放失败由 TTL 对账兜底，不打断校验结果。"""
+
+        try:
+            await AssetBindingService(self.session).release_owner(OWNER_KIND_PREVIEW_ARTIFACT, artifact_id)
+            await self.session.commit()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "组件检查 artifact 资源持有释放失败，将由 TTL 对账兜底。",
+                extra={"event": "component_validation.binding.release.failed", "artifact_id": artifact_id},
+                exc_info=True,
+            )
 
     @staticmethod
     def contract_failed_result(

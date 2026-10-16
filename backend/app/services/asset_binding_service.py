@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import asyncio
+import logging
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.models.asset import WorkspaceAsset
 from app.models.asset_binding import AssetReferenceBinding
-from app.models.enums import RecordStatus
+from app.models.enums import AssetType, RecordStatus
+
+logger = logging.getLogger(__name__)
 
 OWNER_KIND_PAGE_VERSION = "page_version"
 OWNER_KIND_COMPONENT_VERSION = "component_version"
@@ -127,6 +132,49 @@ class AssetBindingService:
         await self.session.flush()
         return bindings
 
+    async def bind_owner_model3d_assets(
+        self,
+        *,
+        workspace_id: int,
+        owner_kind: str,
+        owner_key: str,
+        asset_metadata: Mapping[str, Mapping[str, object]] | None,
+        expires_at: datetime | None = None,
+    ) -> list[AssetReferenceBinding]:
+        """按 manifest 资源元数据筛选三维资源并为 owner 建立持有；无三维资源时不产生绑定。"""
+
+        self._ensure_owner_kind(owner_kind)
+        names = sorted(
+            str(name)
+            for name, meta in (asset_metadata or {}).items()
+            if str(name or "").strip()
+            and str((meta or {}).get("render_type") or "") == AssetType.MODEL3D.value
+        )
+        if not names:
+            return []
+        assets = list(
+            (
+                await self.session.execute(
+                    select(WorkspaceAsset)
+                    .where(WorkspaceAsset.workspace_id == workspace_id)
+                    .where(WorkspaceAsset.source_asset_id.is_(None))
+                    .where(WorkspaceAsset.asset_type == AssetType.MODEL3D.value)
+                    .where(WorkspaceAsset.name.in_(names))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not assets:
+            return []
+        return await self.replace_owner_bindings(
+            workspace_id=workspace_id,
+            owner_kind=owner_kind,
+            owner_key=owner_key,
+            assets=assets,
+            expires_at=expires_at,
+        )
+
     async def list_owner_bindings(self, owner_kind: str, owner_key: str) -> list[AssetReferenceBinding]:
         """列出指定 owner 的全部有效绑定。"""
 
@@ -144,6 +192,30 @@ class AssetBindingService:
 
         bindings = await self.list_owner_bindings(owner_kind, owner_key)
         return {item.resource_name: item.file_hash for item in bindings}
+
+    async def resolve_binding_assets(
+        self, bindings: Sequence[AssetReferenceBinding]
+    ) -> dict[str, WorkspaceAsset]:
+        """按绑定记录批量加载不可写快照资产，返回 resource_name→快照记录映射。"""
+
+        snapshot_ids = {int(item.snapshot_asset_id) for item in bindings}
+        if not snapshot_ids:
+            return {}
+        rows = (
+            (
+                await self.session.execute(
+                    select(WorkspaceAsset).where(WorkspaceAsset.id.in_(sorted(snapshot_ids)))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        by_id = {int(asset.id): asset for asset in rows}
+        return {
+            item.resource_name: by_id[int(item.snapshot_asset_id)]
+            for item in bindings
+            if int(item.snapshot_asset_id) in by_id
+        }
 
     async def release_owner(self, owner_kind: str, owner_key: str) -> int:
         """释放 owner 的全部绑定，返回删除条数；重复释放保持幂等。"""
@@ -207,3 +279,31 @@ class AssetBindingService:
 
         if owner_kind not in OWNER_KINDS:
             raise AppException(status_code=400, code="ASSET_BINDING_OWNER_INVALID", detail="资源绑定 owner 种类不合法。")
+
+
+async def run_asset_binding_expiry_loop(session_factory: Callable[..., AsyncSession]) -> None:
+    """后台循环：定期释放过期的临时资源持有，保证 artifact/请求到期后文件可按规则回收。
+
+    永久版本持有（页面/组件版本、Release）不设置 expires_at，不受该对账影响；
+    artifact 与渲染请求的显式释放仍是主路径，本循环只兜底 TTL 到期与进程崩溃遗留。
+    """
+
+    interval = max(30.0, float(get_settings().runtime_artifact_sweep_interval_seconds))
+    logger.info("资源绑定过期对账循环启动")
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            async with session_factory() as session:
+                released = await AssetBindingService(session).release_expired()
+                await session.commit()
+            if released:
+                logger.info(
+                    "资源绑定过期对账完成。",
+                    extra={"event": "asset.binding.expired.released", "released": released},
+                )
+        except asyncio.CancelledError:
+            logger.info("资源绑定过期对账循环已取消")
+            break
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("资源绑定过期对账循环异常: %s", exc, exc_info=True)
+            await asyncio.sleep(5.0)

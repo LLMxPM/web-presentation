@@ -9,8 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppException
 from app.repositories.page_version_repository import PageVersionRepository
 from app.schemas.release import PreviewArtifactResponse
+from app.models.asset import WorkspaceAsset
 from app.models.page import Page
 from app.schemas.release import PreviewEntryDescriptor
+from app.services.asset_binding_service import OWNER_KIND_PAGE_VERSION, AssetBindingService
 from app.services.page_version_service import PageVersionService
 from app.services.preview_service import PreviewService
 from app.services.project_artifact_builder import AssetDeliveryMode, ProjectPageModuleOverride
@@ -95,6 +97,7 @@ class PagePreviewService:
         version_content = await self.page_version_service.get_version_content(page, version_no)
         module_path = self._build_page_module_path(page)
         tenant_id = f"tenant_{user_id}"
+        frozen_assets = await self._load_page_version_frozen_assets(page.workspace_id, target_version.id)
 
         return await self.preview_service.create_preview_artifact(
             project_id=page.project_id,
@@ -109,7 +112,21 @@ class PagePreviewService:
                     override_speaker_notes=True,
                 )
             },
+            frozen_assets=frozen_assets,
         )
+
+    async def _load_page_version_frozen_assets(
+        self,
+        workspace_id: int,
+        page_version_id: int,
+    ) -> dict[str, WorkspaceAsset]:
+        """读取页面版本绑定的三维资源快照；旧版本无绑定时返回空映射并保持现状解析。"""
+
+        binding_service = AssetBindingService(self.session)
+        bindings = await binding_service.list_owner_bindings(OWNER_KIND_PAGE_VERSION, str(page_version_id))
+        if not bindings:
+            return {}
+        return await binding_service.resolve_binding_assets(bindings)
 
     @staticmethod
     def _build_page_module_path(page: Page) -> str:

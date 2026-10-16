@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Literal
 
 from sqlalchemy import select
@@ -120,6 +120,7 @@ class ProjectArtifactBuilder:
         snapshot_profile: ArtifactSnapshotProfile = "full",
         asset_base_url_override: str | None = None,
         artifact_id: str | None = None,
+        frozen_assets: Mapping[str, WorkspaceAsset] | None = None,
     ) -> ProjectArtifactSnapshot:
         """构建项目级预览/构建共用快照。"""
 
@@ -216,6 +217,7 @@ class ProjectArtifactBuilder:
         asset_mapping, asset_metadata = await self.build_workspace_asset_snapshot(
             project.workspace_id,
             required_asset_names=required_asset_names,
+            frozen_assets=frozen_assets,
         )
         asset_base_source = asset_base_url_override or settings.backend_public_base_url
         asset_base_url = self.build_asset_base_url(
@@ -327,8 +329,13 @@ class ProjectArtifactBuilder:
         workspace_id: int,
         *,
         required_asset_names: Iterable[str] | None = None,
+        frozen_assets: Mapping[str, WorkspaceAsset] | None = None,
     ) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
-        """构建 manifest 资源映射与构建期资源元信息。"""
+        """构建 manifest 资源映射与构建期资源元信息。
+
+        `frozen_assets` 为版本保存时固定的 resource_name→快照记录映射（历史预览场景）：
+        冻结条目覆盖当前根资源解析结果，替换后的新文件不会混入历史视图。
+        """
 
         normalized_required_names = self.normalize_asset_names(required_asset_names or [])
         if required_asset_names is not None and not normalized_required_names:
@@ -354,6 +361,8 @@ class ProjectArtifactBuilder:
             asset_mapping.setdefault(asset_name, file_hash)
             asset_metadata.setdefault(asset_name, build_asset_manifest_metadata(asset))
 
+        self.apply_frozen_asset_overrides(asset_mapping, asset_metadata, frozen_assets)
+
         if required_asset_names is not None:
             missing_names = [name for name in normalized_required_names if name not in asset_mapping]
             if missing_names:
@@ -370,6 +379,22 @@ class ProjectArtifactBuilder:
             asset_metadata = {name: asset_metadata[name] for name in normalized_required_names if name in asset_metadata}
 
         return asset_mapping, asset_metadata
+
+    @staticmethod
+    def apply_frozen_asset_overrides(
+        asset_mapping: dict[str, str],
+        asset_metadata: dict[str, dict[str, object]],
+        frozen_assets: Mapping[str, WorkspaceAsset] | None,
+    ) -> None:
+        """把历史版本冻结的资源身份覆盖进 manifest 映射，禁止当前文件冒充历史版本。"""
+
+        for name, asset in (frozen_assets or {}).items():
+            normalized_name = str(name or "").strip()
+            file_hash = str(getattr(asset, "file_hash", "") or "").strip()
+            if not normalized_name or not file_hash:
+                continue
+            asset_mapping[normalized_name] = file_hash
+            asset_metadata[normalized_name] = build_asset_manifest_metadata(asset)
 
     async def collect_build_required_asset_names(
         self,

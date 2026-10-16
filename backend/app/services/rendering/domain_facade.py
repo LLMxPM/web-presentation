@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Mapping
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
+from app.services.asset_binding_service import OWNER_KIND_RENDER_REQUEST, AssetBindingService
 from app.services.rendering.coordinator import RenderCoordinator, get_render_coordinator
 from app.services.rendering.credentials import RenderCredentialService
 from app.services.rendering.errors import render_error_to_app_exception
@@ -22,6 +23,7 @@ from app.services.rendering.request_service import RenderRequestService
 from app.services.rendering.sanitize import sanitize_error_message
 from app.services.rendering.snapshot_service import RenderSnapshotService
 from app.services.rendering.target_resolver import RenderTargetResolver
+from app.services.runtime_artifact_store import RuntimeArtifactStore
 from render_contracts.constants import (
     OPERATION_PAGE_CAPTURE,
     OPERATION_PAGE_DIAGNOSE,
@@ -249,9 +251,21 @@ class RenderDomainFacade:
                 trace_id=str(uuid.uuid4()),
                 timeout_seconds=timeout_seconds,
             )
-            # 独立会话提交，保证协调器可见且不污染调用方事务。
+            # 先提交请求行，再写入三维资源持有；持有写入失败不得回滚渲染请求。
             await write_session.commit()
             request_id = int(request.id)
+            try:
+                await self._bind_render_request_model3d_assets(
+                    session=write_session,
+                    workspace_id=int(workspace_id),
+                    request_id=request_id,
+                    artifact_id=resolved_artifact,
+                    snapshot=snapshot,
+                )
+                await write_session.commit()
+            except Exception:
+                await write_session.rollback()
+                logger.warning("渲染请求三维资源持有写入失败。", exc_info=True)
         except Exception:
             if owns_write and write_session is not None:
                 await write_session.close()
@@ -289,6 +303,8 @@ class RenderDomainFacade:
         consume_session = get_session_factory()()
         try:
             await RenderRequestService(consume_session).mark_result_consumed(request_id)
+            # 结果消费即终态出口：释放请求级三维资源持有，无需等待 TTL 对账。
+            await AssetBindingService(consume_session).release_owner(OWNER_KIND_RENDER_REQUEST, str(request_id))
             await consume_session.commit()
         except Exception:  # noqa: BLE001
             logger.warning("渲染结果消费标记失败。", extra={"request_id": request_id}, exc_info=True)
@@ -300,12 +316,51 @@ class RenderDomainFacade:
             await consume_session.close()
         return payload
 
+    async def _bind_render_request_model3d_assets(
+        self,
+        *,
+        session: AsyncSession,
+        workspace_id: int,
+        request_id: int,
+        artifact_id: str,
+        snapshot: Mapping[str, Any],
+    ) -> None:
+        """读取渲染输入的 artifact manifest，为其中三维资源建立请求级临时持有。"""
+
+        manifest = await RuntimeArtifactStore().get_manifest(artifact_id)
+        if not manifest:
+            return
+        asset_metadata = manifest.get("asset_metadata")
+        if not isinstance(asset_metadata, dict) or not asset_metadata:
+            return
+        await AssetBindingService(session).bind_owner_model3d_assets(
+            workspace_id=workspace_id,
+            owner_kind=OWNER_KIND_RENDER_REQUEST,
+            owner_key=str(request_id),
+            asset_metadata=asset_metadata,
+            expires_at=self._resolve_snapshot_expiry(snapshot),
+        )
+
+    def _resolve_snapshot_expiry(self, snapshot: Mapping[str, Any]) -> datetime:
+        """解析 snapshot 中的预览授权到期时间；缺失或非法时回退预览 artifact TTL。"""
+
+        raw = str(snapshot.get("expires_at") or "").strip()
+        if raw:
+            try:
+                parsed = datetime.fromisoformat(raw)
+                return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+            except ValueError:
+                pass
+        return utc_now() + timedelta(seconds=self.settings.runtime_preview_artifact_ttl_seconds)
+
     async def _cancel_request_after_timeout(self, request_id: int) -> None:
         """等待超时时持久化取消标记，避免后台继续使用已结束调用方的输入。"""
 
         cancel_session = get_session_factory()()
         try:
             await RenderRequestService(cancel_session).cancel_request(request_id)
+            # 取消是终态出口：释放请求级三维资源持有，在途 attempt 仍持有自己的输入快照。
+            await AssetBindingService(cancel_session).release_owner(OWNER_KIND_RENDER_REQUEST, str(request_id))
             await cancel_session.commit()
         except Exception:  # noqa: BLE001
             logger.warning(

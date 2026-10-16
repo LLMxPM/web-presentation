@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import urlencode
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.models.asset import WorkspaceAsset
 from app.models.page import Page
 from app.services.project_artifact_builder import (
     ArtifactSnapshotProfile,
@@ -25,6 +27,7 @@ from app.schemas.release import (
     PreviewArtifactResponse,
     PreviewEntryDescriptor,
 )
+from app.services.asset_binding_service import OWNER_KIND_PREVIEW_ARTIFACT, AssetBindingService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
 
@@ -66,11 +69,13 @@ class PreviewService:
         artifact_kind: PreviewArtifactKind = "preview_artifact",
         manifest_extensions: dict[str, object] | None = None,
         snapshot_profile: ArtifactSnapshotProfile = "full",
+        frozen_assets: Mapping[str, WorkspaceAsset] | None = None,
     ) -> PreviewArtifactResponse:
         """基于项目当前状态创建无状态预览 artifact，并返回带签名的预览入口。
 
         ``manifest_extensions`` 仅供 Backend 内部的专用预览能力附加版本化元数据，
-        不允许覆盖标准 manifest 字段。
+        不允许覆盖标准 manifest 字段。``frozen_assets`` 为历史版本的资源冻结映射，
+        覆盖 manifest 中的当前根资源身份，替换后的新文件不会混入历史预览。
         """
 
         settings = get_settings()
@@ -86,6 +91,7 @@ class PreviewService:
             snapshot_profile=snapshot_profile,
             asset_base_url_override=asset_base_url_override,
             artifact_id=artifact_id,
+            frozen_assets=frozen_assets,
         )
         snapshot_duration_ms = round((time.perf_counter() - snapshot_started_at) * 1000, 2)
         entry_descriptor_payload = snapshot.entry_descriptor.model_dump(mode="python", exclude_none=True)
@@ -105,7 +111,13 @@ class PreviewService:
             "assets": snapshot.asset_mapping,
             "asset_metadata": snapshot.asset_metadata,
         }
-        self._append_manifest_extensions(manifest, manifest_extensions)
+        merged_extensions: dict[str, object] = dict(manifest_extensions or {})
+        if frozen_assets:
+            merged_extensions["asset_binding"] = {
+                "mode": "frozen",
+                "frozen_names": sorted(str(name) for name in frozen_assets if str(name or "").strip()),
+            }
+        self._append_manifest_extensions(manifest, merged_extensions)
         artifact_store_started_at = time.perf_counter()
         await RuntimeArtifactStore().put_artifact(
             tenant_id=tenant_id,
@@ -134,7 +146,14 @@ class PreviewService:
             expires_in_seconds=token_ttl_seconds,
         )
         token_expires_at = datetime.fromtimestamp(now_ts + token_ttl_seconds, tz=UTC).isoformat()
-        artifact_expires_at = datetime.fromtimestamp(now_ts + settings.runtime_preview_artifact_ttl_seconds, tz=UTC).isoformat()
+        artifact_expires_at_dt = datetime.fromtimestamp(now_ts + settings.runtime_preview_artifact_ttl_seconds, tz=UTC)
+        artifact_expires_at = artifact_expires_at_dt.isoformat()
+        await self._bind_preview_artifact_model3d_assets(
+            workspace_id=snapshot.project.workspace_id,
+            artifact_id=artifact_id,
+            asset_metadata=snapshot.asset_metadata,
+            expires_at=artifact_expires_at_dt,
+        )
         logger.info(
             "预览 artifact 创建完成。",
             extra={
@@ -258,6 +277,26 @@ class PreviewService:
             artifact_expires_at=str(artifact_expires_at) if artifact_expires_at else None,
         )
 
+
+    async def _bind_preview_artifact_model3d_assets(
+        self,
+        *,
+        workspace_id: int,
+        artifact_id: str,
+        asset_metadata: dict[str, dict[str, object]],
+        expires_at: datetime,
+    ) -> None:
+        """为预览 artifact 中的三维资源建立临时持有并提交，artifact 到期后由对账释放。"""
+
+        bindings = await AssetBindingService(self.session).bind_owner_model3d_assets(
+            workspace_id=workspace_id,
+            owner_kind=OWNER_KIND_PREVIEW_ARTIFACT,
+            owner_key=artifact_id,
+            asset_metadata=asset_metadata,
+            expires_at=expires_at,
+        )
+        if bindings:
+            await self.session.commit()
 
     @staticmethod
     def _append_manifest_extensions(

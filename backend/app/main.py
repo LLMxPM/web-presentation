@@ -49,6 +49,7 @@ from app.db.profile import resolve_deployment_profile
 from app.db.sqlite_single_process import SqliteSingleProcessGuard, ensure_sqlite_single_process
 from app.services.bootstrap_service import BootstrapService
 from app.services.ai_model_catalog_service import AiModelCatalogService, run_model_catalog_sync_loop
+from app.services.asset_binding_service import run_asset_binding_expiry_loop
 from app.services.system_settings_service import load_system_settings_on_startup, run_system_settings_version_sync_loop
 from app.services.asset_render_hint_backfill_job_service import (
     recover_interrupted_asset_render_hint_backfill_jobs_on_startup,
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI):
     ai_process_monitor_task: asyncio.Task[None] | None = None
     api_mutation_worker_task: asyncio.Task[None] | None = None
     api_mutation_sweeper_task: asyncio.Task[None] | None = None
+    asset_binding_expiry_task: asyncio.Task[None] | None = None
     project_build_queue_task: asyncio.Task[None] | None = None
     render_coordinator_task: asyncio.Task[None] | None = None
     render_coordinator = get_render_coordinator()
@@ -143,6 +145,10 @@ async def lifespan(app: FastAPI):
         runtime_artifact_sweeper_task = asyncio.create_task(
             run_runtime_artifact_sweeper(),
             name="runtime-artifact-sweeper",
+        )
+        asset_binding_expiry_task = asyncio.create_task(
+            run_asset_binding_expiry_loop(session_factory),
+            name="asset-binding-expiry",
         )
         api_mutation_worker_task = asyncio.create_task(
             run_api_mutation_worker_loop(session_factory),
@@ -201,6 +207,8 @@ async def lifespan(app: FastAPI):
             await _stop_background_task(asset_render_hint_backfill_queue_task)
         if runtime_artifact_sweeper_task is not None:
             await _stop_background_task(runtime_artifact_sweeper_task)
+        if asset_binding_expiry_task is not None:
+            await _stop_background_task(asset_binding_expiry_task)
         if api_mutation_worker_task is not None:
             await _stop_background_task(api_mutation_worker_task)
         if api_mutation_sweeper_task is not None:

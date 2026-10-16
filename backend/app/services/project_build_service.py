@@ -24,6 +24,7 @@ from app.models.project_build_job import ProjectBuildJob
 from app.models.workspace import Project
 from app.models.release import Release, ReleaseModule
 from app.schemas.project_build import ProjectBuildAssetSummary, ProjectBuildCreateRequest
+from app.services.asset_binding_service import OWNER_KIND_RELEASE, AssetBindingService
 from app.services.project_artifact_builder import ProjectArtifactBuilder
 from app.services.object_storage_service import ObjectStorageService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
@@ -134,6 +135,11 @@ class ProjectBuildService:
                     content_hash=module_item["content_hash"],
                 )
             )
+        await self._bind_release_model3d_assets(
+            release_id=release.id,
+            workspace_id=snapshot.project.workspace_id,
+            asset_metadata=snapshot.asset_metadata,
+        )
 
         now = utc_now()
         job = ProjectBuildJob(
@@ -179,6 +185,22 @@ class ProjectBuildService:
             },
         )
         return job
+
+    async def _bind_release_model3d_assets(
+        self,
+        *,
+        release_id: int,
+        workspace_id: int,
+        asset_metadata: dict[str, dict[str, object]],
+    ) -> None:
+        """为构建快照中的三维资源建立 Release 持有，构建执行期按冻结 hash 回源不受替换影响。"""
+
+        await AssetBindingService(self.session).bind_owner_model3d_assets(
+            workspace_id=workspace_id,
+            owner_kind=OWNER_KIND_RELEASE,
+            owner_key=str(release_id),
+            asset_metadata=asset_metadata,
+        )
 
     async def get_asset_summary(self, project_id: int) -> ProjectBuildAssetSummary:
         """读取项目当前构建资源引用摘要。"""

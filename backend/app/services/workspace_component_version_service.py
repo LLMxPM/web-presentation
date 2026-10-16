@@ -14,9 +14,11 @@ from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.repositories.workspace_component_version_repository import WorkspaceComponentVersionRepository
 from app.schemas.component import WorkspaceComponentVersionContent, WorkspaceComponentVersionListItem
+from app.services.asset_binding_service import OWNER_KIND_COMPONENT_VERSION, AssetBindingService
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.component_fingerprint_service import ComponentFingerprintService
 from app.services.component_resource_index_service import ComponentResourceIndexService
+from app.services.model3d_reference_collector import Model3dReferenceCollector
 
 
 class WorkspaceComponentVersionService:
@@ -111,6 +113,7 @@ class WorkspaceComponentVersionService:
             component=component,
             component_version=version,
         )
+        await self._sync_component_version_asset_bindings(component, version)
         await ComponentFingerprintService(self.session).ensure_workspace_component_version_fingerprint(
             component=component,
             version=version,
@@ -121,6 +124,27 @@ class WorkspaceComponentVersionService:
         component.draft_base_version_no = version.version_no
         component.published_at = created_at
         return version
+
+    async def _sync_component_version_asset_bindings(
+        self,
+        component: WorkspaceComponent,
+        version: WorkspaceComponentVersion,
+    ) -> None:
+        """按发布版本的资源索引与依赖组件闭包收集三维资源，重建版本永久绑定。"""
+
+        resource_rows = await self.resource_index_service.list_resource_items_by_version(version.id)
+        static_items = [(row.component_name, row.resource_name) for row in resource_rows]
+        collection = await Model3dReferenceCollector(self.session).collect_for_component_version(
+            workspace_id=component.workspace_id,
+            component_version_id=version.id,
+            static_resource_items=static_items,
+        )
+        await AssetBindingService(self.session).replace_owner_bindings(
+            workspace_id=component.workspace_id,
+            owner_kind=OWNER_KIND_COMPONENT_VERSION,
+            owner_key=str(version.id),
+            assets=collection.assets,
+        )
 
     async def list_versions(self, component: WorkspaceComponent) -> list[WorkspaceComponentVersionListItem]:
         """列出组件的正式发布版本历史。"""
