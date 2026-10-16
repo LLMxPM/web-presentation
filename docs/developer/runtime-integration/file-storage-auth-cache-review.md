@@ -251,7 +251,7 @@ assetUrl ? `URL ${assetUrl}` : '',    // ← 原样内联，不脱敏
 
 ### S2｜登出时未清理预览资源引用
 
-`editor/src/api/auth.ts` 的 `signOut` 未显式清理预览 artifact 引用（`previewArtifactId` / `previewUrl` / 定时器）。多账号切换场景下，残留状态可能让下一个会话短暂复用上一个会话的票据 URL。建议在 `signOut` 中统一清理预览上下文并 `clearRenewTimer`。
+`editor/src/stores/auth.ts` 的 `signOut` 未显式清理预览 artifact 引用（`previewArtifactId` / `previewUrl` / 定时器）。多账号切换场景下，残留状态可能让下一个会话短暂复用上一个会话的票据 URL。建议在 `signOut` 中统一清理预览上下文并 `clearRenewTimer`。
 
 ---
 
@@ -292,3 +292,21 @@ assetUrl ? `URL ${assetUrl}` : '',    // ← 原样内联，不脱敏
 - 未做端到端部署验证（nginx 实际生效行为、跨主机名 iframe 的真实 Referrer/Origin 表现）；
 - 未覆盖未提交改动之外的运行时配置差异（如 `runtime_preview_artifact_ttl_seconds` 在生产环境的取值）；
 - 前端问题基于静态阅读与现有单测推断，未在浏览器中复现 M1 / M3。
+
+---
+
+## 10. 整改与闭环落地记录（2026-10-16）
+
+上述审查发现的所有问题均已完成代码整改、测试覆盖并按领域分步提交入库：
+
+| 项 | 描述 | 整改实施与提交 | 状态 |
+| :--- | :--- | :--- | :--- |
+| **M1** | 组件预览、可视化编辑、全屏弹窗续签 | 1. `useComponentPreviewSession` 补齐 `artifactId`、`onRenewed` 闭环并由 `ready` 消息重置恢复预算；<br>2. `usePageVisualEditSession` 内置 `useRuntimePreviewRecovery` 自动续签机制；<br>3. `PageDetailPreviewPanel` 全屏预览弹窗增加 `auto-recover` 属性并绑定 `activePreviewFrameUrl`；<br>4. 后端 `Settings` 增加 `runtime_preview_token_ttl_seconds = 300` 配置项，消除硬编码约束。<br>提交：`0a04ea6`（后端）、`c5f4892`（前端） | **已闭环** |
+| **M2** | 续签失败区分网络抖动与终态失效 | `useRuntimePreviewRecovery` 在捕获续签异常时，精准识别 410/401/403/404 终态并才降级全量重建；对网络抖动与临时 5xx 按 10 秒退避重试，不消耗 `attempted` 全量重建预算。<br>提交：`8e8a9ae` | **已闭环** |
+| **M3** | 构建产物打开异步弹窗拦截 | `PagesView.vue` 的 `handleBuildArtifactOpen` 改为在用户点击同步手势内预先打开 `about:blank` 标签页，拿到短期签名 `browse_url` 后再跳转并切断 opener，并在授权失败时自动关闭占位页。<br>提交：`8e8a9ae` | **已闭环** |
+| **L1** | 构建产物入口判断解耦废弃字段 | `project-build.ts` 的 `canOpenProjectBuildArtifact` 改为优先基于 `job.artifact_storage_key` 判定，兼容保留 `artifact_proxy_url`。<br>提交：`8e8a9ae` | **已闭环** |
+| **L2** | Runtime 素材路径启发式收敛 | `runtime/src/core/utils/path.ts` 引入 `isProtectedPreviewAssetUrl` 严格判定受保护素材路径，避免宽泛的 `/assets/` 子串匹配误拼 Token。<br>提交：`e9e3dfa` | **已闭环** |
+| **L3** | 构建素材网络异常日志 URL 脱敏 | `runtime-build-runner.ts` 引入 `sanitizeAssetUrl` 对下载失败的静态资源 URL 执行正则凭据脱敏，消除构建错误与控制台的 Token 外泄面。<br>提交：`e9e3dfa` | **已闭环** |
+| **L4** | 宿主组件监听 `@renew` 保持状态一致 | `AssetPreviewFrame.vue`、`PageVersionHistoryDialog.vue`、`PageDetailView.vue`、`ComponentVersionHistoryDialog.vue`、`WorkspaceComponentWorkbench.vue` 统一接入 `@renew` / `@renew-preview` 并写回上层状态。<br>提交：`c5f4892` | **已闭环** |
+| **S1** | iframe 统一 `referrerpolicy="no-referrer"` | `RuntimePreviewFrame.vue`、`ComponentPreviewWorkbench.vue`、`PageVisualEditPanel.vue` 全部统一为 `referrerpolicy="no-referrer"`。<br>提交：`8e8a9ae`、`c5f4892` | **已闭环** |
+| **安全补丁** | 审查遗留的安全保留字段与越权漏洞 | 补丁 `146aa31` 已入库：Token 保留声明强制覆盖、External API 跨工作空间隔离校验、内部回源 410 过期识别、服务令牌最小下限保护。<br>提交：`146aa31` | **已闭环** |
