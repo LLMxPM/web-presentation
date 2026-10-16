@@ -267,3 +267,115 @@ async def test_component_version_binding_freezes_history_preview(
     manifest = await _load_manifest(authenticated_client, preview_response.json()["artifact_id"], runtime_service_headers)
     assert manifest["assets"]["gear"] == asset["file_hash"]
     assert manifest["asset_metadata"]["gear"]["file_hash"] == asset["file_hash"]
+
+
+async def test_page_should_reject_dynamic_model_reference_at_save(
+    authenticated_client: AsyncClient,
+) -> None:
+    """动态 AssetModel 资源名无法冻结：页面保存必须返回 MODEL3D_REFERENCE_UNRESOLVED。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "动态引用页面空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "动态引用页面项目")
+    await _upload_model3d(authenticated_client, workspace_id)
+
+    dynamic_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": '<template><div class="p-8"><AssetModel :name="dynamicModel" class="w-full h-80" /></div></template>',
+            "file_type": "vue",
+            "title": "动态引用页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert dynamic_response.status_code == 409, dynamic_response.text
+    assert dynamic_response.json()["code"] == "MODEL3D_REFERENCE_UNRESOLVED"
+
+    # 同一页面改用静态资源名后可以正常保存。
+    static_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": '<template><div class="p-8"><AssetModel name="product" class="w-full h-80" /></div></template>',
+            "file_type": "vue",
+            "title": "静态引用页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert static_response.status_code == 200, static_response.text
+
+
+async def test_component_publish_should_reject_dynamic_model_reference(
+    authenticated_client: AsyncClient,
+) -> None:
+    """动态 AssetModel 资源名无法冻结：组件发布必须返回 MODEL3D_REFERENCE_UNRESOLVED。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "动态引用组件空间")
+    await _upload_model3d(authenticated_client, workspace_id, name="gear")
+
+    component_response = await authenticated_client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": "动态引用组件",
+            "import_name": "DynamicModelCard",
+            "content": '<template><div class="p-4"><AssetModel :name="gearName" class="w-full h-64" /></div></template>',
+            "preview_schema": '{"props":{"height":{"type":"number","label":"高度","default":320}}}',
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert component_response.status_code == 200, component_response.text
+
+    publish_response = await authenticated_client.post(
+        f"/api/components/{component_response.json()['id']}/publish",
+        json={"change_note": "动态引用发布"},
+    )
+    assert publish_response.status_code == 409, publish_response.text
+    assert publish_response.json()["code"] == "MODEL3D_REFERENCE_UNRESOLVED"
+
+
+async def test_render_snapshot_digest_should_follow_model3d_file_identity(
+    authenticated_client: AsyncClient,
+) -> None:
+    """同一页面版本的渲染输入摘要必须随三维资源替换变化，旧 digest 不冒充当前输入。"""
+
+    from app.services.rendering.snapshot_service import RenderSnapshotService
+
+    workspace_id = await _create_workspace(authenticated_client, "渲染摘要空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "渲染摘要项目")
+    asset = await _upload_model3d(authenticated_client, workspace_id)
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": '<template><div class="p-8"><AssetModel name="product" class="w-full h-80" /></div></template>',
+            "file_type": "vue",
+            "title": "渲染摘要页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert page_response.status_code == 200, page_response.text
+    page_id = int(page_response.json()["id"])
+
+    async def build_digest() -> str:
+        async with get_session_factory()() as session:
+            snapshot = await RenderSnapshotService(session).build_page_snapshot(
+                page_id=page_id,
+                artifact_id="artifact-render-digest",
+                preview_token="preview-token",
+                viewport={"width": 1920, "height": 1080},
+                operation_options={},
+                preview_url="http://runtime.local/preview",
+            )
+        return str(snapshot["input_digest"])
+
+    first_digest = await build_digest()
+    assert first_digest == await build_digest()
+
+    replaced = await _replace_model3d(authenticated_client, workspace_id, asset, marker=2.0)
+    assert replaced["file_hash"] != asset["file_hash"]
+    assert await build_digest() != first_digest

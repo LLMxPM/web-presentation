@@ -19,6 +19,7 @@ ALLOWED_SUBSECOND_LOOP_FILES = {
     "app/services/asset_render_hint_backfill_job_service.py",
     "app/services/runtime_artifact_store.py",
     "app/services/project_build_service.py",
+    "app/services/asset_binding_service.py",
 }
 
 

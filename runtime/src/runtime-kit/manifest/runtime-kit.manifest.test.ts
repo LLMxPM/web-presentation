@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 
+import { MODEL3D_ENGINE_POLICY } from '../internal/renderers/model3d/engine'
 import manifest from './runtime-kit.manifest.json'
 
 const PUBLIC_CATEGORIES = ['asset', 'page', 'runtime']
@@ -455,6 +456,10 @@ describe('runtime kit manifest', () => {
         `${item.name} 缺少 constraints`
       ).toEqual(expect.arrayContaining([expect.any(String)]))
     })
+  })
+
+  it('清单三维引擎身份必须与运行时 MODEL3D_ENGINE_POLICY 一致', () => {
+    expect(manifest.model3d_engine).toEqual(MODEL3D_ENGINE_POLICY)
   })
 })
 

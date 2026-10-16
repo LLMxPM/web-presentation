@@ -18,6 +18,7 @@ from app.services.asset_binding_service import OWNER_KIND_COMPONENT_VERSION, Ass
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.component_fingerprint_service import ComponentFingerprintService
 from app.services.component_resource_index_service import ComponentResourceIndexService
+from app.services.model3d_acceptance_policy import MODEL3D_ERROR_REFERENCE_UNRESOLVED
 from app.services.model3d_reference_collector import Model3dReferenceCollector
 
 
@@ -139,6 +140,12 @@ class WorkspaceComponentVersionService:
             component_version_id=version.id,
             static_resource_items=static_items,
         )
+        if collection.dynamic_unresolved:
+            raise AppException(
+                status_code=409,
+                code=MODEL3D_ERROR_REFERENCE_UNRESOLVED,
+                detail="组件存在无法静态解析的三维资源名（AssetModel 动态绑定），无法冻结资源版本；请改用静态资源名或有限静态数组后发布。",
+            )
         await AssetBindingService(self.session).replace_owner_bindings(
             workspace_id=component.workspace_id,
             owner_kind=OWNER_KIND_COMPONENT_VERSION,

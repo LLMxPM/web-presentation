@@ -163,3 +163,20 @@ def _build_manifest_item(base_name: str, version_no: int) -> dict[str, object]:
             "audiences": ["backend", "agent"],
         },
     }
+
+
+def test_runtime_kit_manifest_model3d_engine_identity_should_match_runtime_package() -> None:
+    """清单三维引擎身份必须与后端接受策略版本和 Runtime three 依赖版本一致。"""
+
+    import json
+    from pathlib import Path
+
+    from app.services.model3d_acceptance_policy import MODEL3D_ACCEPTANCE_POLICY
+
+    manifest = load_runtime_kit_manifest()
+    engine_identity = manifest["model3d_engine"]
+    assert engine_identity["validationProfile"] == MODEL3D_ACCEPTANCE_POLICY.validation_profile
+
+    repo_root = Path(__file__).resolve().parents[3]
+    runtime_package = json.loads((repo_root / "runtime" / "package.json").read_text(encoding="utf-8"))
+    assert engine_identity["engineVersion"] == runtime_package["dependencies"]["three"]

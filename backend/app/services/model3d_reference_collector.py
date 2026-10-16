@@ -12,6 +12,7 @@ from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, RecordStatus
 from app.repositories.component_resource_index_repository import ComponentResourceIndexRepository
 from app.repositories.module_dependency_repository import ModuleDependencyRepository
+from app.services.asset_binding_service import AssetBindingService
 from app.services.resource_reference_parser import DYNAMIC_RESOURCE_NAME
 
 _MODEL_COMPONENT_NAME = "AssetModel"
@@ -79,6 +80,56 @@ class Model3dReferenceCollector:
             root_component_version_ids=root_component_version_ids,
         )
 
+    async def list_owner_live_asset_tokens(self, *, workspace_id: int, owner_kind: str, owner_key: str) -> list[str]:
+        """按绑定名集合解析当前实时文件身份，返回排序后的 name:file_hash 指纹 token 列表。
+
+        绑定名集合来自版本冻结（含组件闭包），哈希取当前 active 根资源；
+        供截图/渲染指纹使用：资源替换后摘要随之变化，旧文件版本的临时产物不会当作当前结果复用。
+        """
+
+        bindings = await AssetBindingService(self.session).list_owner_bindings(owner_kind, owner_key)
+        names = sorted(
+            {str(item.resource_name or "").strip() for item in bindings if str(item.resource_name or "").strip()}
+        )
+        if not names:
+            return []
+        assets = await self._load_active_model3d_assets(workspace_id=workspace_id, names=names)
+        return [
+            f"{name}:{assets[name].file_hash}" if name in assets else f"{name}:missing"
+            for name in names
+        ]
+
+    async def _load_active_model3d_assets(
+        self,
+        *,
+        workspace_id: int,
+        names: Iterable[str],
+    ) -> dict[str, WorkspaceAsset]:
+        """按资源名批量加载当前 active 三维根资源，按创建时间取最新同名记录。"""
+
+        normalized_names = sorted({str(name or "").strip() for name in names if str(name or "").strip()})
+        if not normalized_names:
+            return {}
+        rows = (
+            (
+                await self.session.execute(
+                    select(WorkspaceAsset)
+                    .where(WorkspaceAsset.workspace_id == workspace_id)
+                    .where(WorkspaceAsset.source_asset_id.is_(None))
+                    .where(WorkspaceAsset.status == RecordStatus.ACTIVE.value)
+                    .where(WorkspaceAsset.asset_type == AssetType.MODEL3D.value)
+                    .where(WorkspaceAsset.name.in_(normalized_names))
+                    .order_by(WorkspaceAsset.created_at.desc(), WorkspaceAsset.id.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        deduplicated: dict[str, WorkspaceAsset] = {}
+        for asset in rows:
+            deduplicated.setdefault(str(asset.name), asset)
+        return deduplicated
+
     async def _collect(
         self,
         *,
@@ -122,22 +173,5 @@ class Model3dReferenceCollector:
         if not names:
             return Model3dReferenceCollection(assets=[], dynamic_unresolved=dynamic_unresolved)
 
-        rows = (
-            (
-                await self.session.execute(
-                    select(WorkspaceAsset)
-                    .where(WorkspaceAsset.workspace_id == workspace_id)
-                    .where(WorkspaceAsset.source_asset_id.is_(None))
-                    .where(WorkspaceAsset.status == RecordStatus.ACTIVE.value)
-                    .where(WorkspaceAsset.asset_type == AssetType.MODEL3D.value)
-                    .where(WorkspaceAsset.name.in_(sorted(names)))
-                    .order_by(WorkspaceAsset.created_at.desc(), WorkspaceAsset.id.desc())
-                )
-            )
-            .scalars()
-            .all()
-        )
-        deduplicated: dict[str, WorkspaceAsset] = {}
-        for asset in rows:
-            deduplicated.setdefault(str(asset.name), asset)
+        deduplicated = await self._load_active_model3d_assets(workspace_id=workspace_id, names=names)
         return Model3dReferenceCollection(assets=list(deduplicated.values()), dynamic_unresolved=dynamic_unresolved)

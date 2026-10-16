@@ -1,6 +1,14 @@
 {
   "version": "1.0.0",
   "alias": "@runtime-kit",
+  "model3d_engine": {
+    "engineVersion": "0.186.1",
+    "colorSpace": "srgb",
+    "toneMapping": "ACESFilmic",
+    "exposure": 1,
+    "maxPixelRatio": 2,
+    "validationProfile": "model3d-glb-v1"
+  },
   "exports": [
     {
       "kind": "component",

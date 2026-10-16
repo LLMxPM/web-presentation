@@ -168,3 +168,44 @@ async def test_collector_should_ignore_archived_and_non_model_assets(app_session
 
     assert collection.dynamic_unresolved is False
     assert [asset.name for asset in collection.assets] == ["active_model"]
+
+
+@pytest.mark.asyncio
+async def test_collector_should_resolve_owner_bindings_to_live_asset_tokens(app_session: AsyncSession) -> None:
+    """绑定名集合应解析为当前实时文件身份；替换、归档与无绑定各有明确 token。"""
+
+    from app.services.asset_binding_service import AssetBindingService
+
+    workspace = await _create_workspace(app_session, "tokens")
+    asset = _build_asset(workspace.id, name="live_model", asset_type="model3d", file_hash="e" * 64)
+    app_session.add(asset)
+    await app_session.flush()
+    collector = Model3dReferenceCollector(app_session)
+
+    async def tokens() -> list[str]:
+        return await collector.list_owner_live_asset_tokens(
+            workspace_id=workspace.id,
+            owner_kind="component_version",
+            owner_key="42",
+        )
+
+    # 无绑定 owner 返回空摘要，不猜测任何资源身份。
+    assert await tokens() == []
+
+    await AssetBindingService(app_session).replace_owner_bindings(
+        workspace_id=workspace.id,
+        owner_kind="component_version",
+        owner_key="42",
+        assets=[asset],
+    )
+    assert await tokens() == [f"live_model:{'e' * 64}"]
+
+    # 资源替换后绑定名解析到新文件身份，实时摘要随替换变化。
+    asset.file_hash = "f" * 64
+    await app_session.flush()
+    assert await tokens() == [f"live_model:{'f' * 64}"]
+
+    # 资源归档后不再解析为可渲染文件，旧摘要不得冒充当前身份。
+    asset.status = RecordStatus.ARCHIVED.value
+    await app_session.flush()
+    assert await tokens() == ["live_model:missing"]

@@ -952,3 +952,116 @@ def test_page_screenshot_currentness_should_include_viewport_snapshot() -> None:
         "hash",
         viewport=CaptureViewport(width=1280, height=720),
     )
+
+
+def _model3d_glb(marker: float = 0.0) -> bytes:
+    """构造最小合法 GLB；marker 用于生成不同哈希。"""
+
+    import json as json_module
+    import struct
+
+    def pad4(data: bytes, pad: bytes = b"\x00") -> bytes:
+        if len(data) % 4:
+            data = data + pad * (4 - len(data) % 4)
+        return data
+
+    positions = struct.pack("<9f", marker, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+    gltf = {
+        "asset": {"version": "2.0", "generator": "screenshot-fingerprint-test"},
+        "buffers": [{"byteLength": len(positions)}],
+        "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": len(positions)}],
+        "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+        "nodes": [{"mesh": 0}],
+        "scenes": [{"nodes": [0]}],
+        "scene": 0,
+    }
+    json_bytes = pad4(json_module.dumps(gltf).encode("utf-8"), b" ")
+    chunks = struct.pack("<II", len(json_bytes), 0x4E4F534A) + json_bytes
+    bin_bytes = pad4(positions)
+    chunks += struct.pack("<II", len(bin_bytes), 0x004E4942) + bin_bytes
+    return b"glTF" + struct.pack("<II", 2, 12 + len(chunks)) + chunks
+
+
+async def test_page_screenshot_should_be_marked_outdated_after_model3d_asset_replace(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """三维资源替换后，页面版本未变也应标记旧截图：config hash 纳入资源实时身份。"""
+
+    workspace_id, project_id = await _create_workspace_project(authenticated_client, "截图三维指纹")
+    upload_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": ("product.glb", _model3d_glb(), "model/gltf-binary")},
+        data={"asset_type": "model3d", "tags": "[]", "name": "product"},
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    asset = upload_response.json()
+
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": '<template><div class="p-8"><AssetModel name="product" class="w-full h-80" /></div></template>',
+            "file_type": "vue",
+            "title": "三维截图指纹页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert page_response.status_code == 200, page_response.text
+    page_data = page_response.json()
+
+    async def fake_create_page_preview(  # noqa: ANN001, ARG001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
+        return PagePreviewResult(
+            file_path=f"src/views/{page.code}.vue",
+            preview_url="http://runtime.local/__preview?ticket=model3d",
+        )
+
+    async def fake_capture_preview(  # noqa: ARG001
+        self,
+        preview_url: str,
+        viewport: CaptureViewport,
+        *,
+        extra_http_headers=None,  # noqa: ANN001
+        **kwargs,  # noqa: ARG001
+    ) -> bytes:
+        return b"model3d-png"
+
+    async def fake_put_object(self, storage_key: str, content: bytes, content_type: str | None = None) -> str:  # noqa: ARG001
+        return storage_key
+
+    monkeypatch.setattr("app.services.page_screenshot_service.PagePreviewService.create_page_preview", fake_create_page_preview)
+    monkeypatch.setattr("app.services.page_screenshot_service.BrowserCaptureService.capture_preview", fake_capture_preview)
+    monkeypatch.setattr("app.services.page_screenshot_service.ObjectStorageService.put_object", fake_put_object)
+
+    screenshot_response = await authenticated_client.post(
+        f"/api/pages/{page_data['id']}/screenshot",
+        json={},
+    )
+    assert screenshot_response.status_code == 200, screenshot_response.text
+    screenshot_data = screenshot_response.json()
+    assert screenshot_data["screenshot_is_latest"] is True
+
+    replace_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}/replace",
+        files={"file": ("product.glb", _model3d_glb(2.0), "model/gltf-binary")},
+        data={"expected_file_hash": asset["file_hash"]},
+    )
+    assert replace_response.status_code == 200, replace_response.text
+    assert replace_response.json()["file_hash"] != asset["file_hash"]
+
+    detail_response = await authenticated_client.get(f"/api/pages/{page_data['id']}")
+    assert detail_response.status_code == 200
+    detail_data = detail_response.json()
+    # 源码未变、页面版本号不变，但三维资源身份变化必须使旧截图过期。
+    assert detail_data["current_version_no"] == 1
+    assert detail_data["screenshot_version_no"] == 1
+    assert detail_data["screenshot_is_latest"] is False

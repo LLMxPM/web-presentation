@@ -30,6 +30,7 @@ from app.services.component_dependency_service import ComponentDependencyService
 from app.services.component_validation_profile import (
     COMPONENT_VALIDATION_PROFILE_VERSION,
 )
+from app.services.model3d_acceptance_policy import build_model3d_support_matrix
 from app.services.page_screenshot_fingerprint_service import (
     PageScreenshotFingerprintService,
 )
@@ -372,7 +373,7 @@ class CodeCheckFingerprintBuilder:
 
 
 def _compiler_identity() -> dict[str, object]:
-    """编译器/规则身份：Kit 清单内容 hash + 解析器配置，避免只依赖进程级版本字符串。"""
+    """编译器/规则身份：Kit 清单内容 hash + 三维规则与引擎身份 + 解析器配置，避免只依赖进程级版本字符串。"""
 
     manifest = load_runtime_kit_manifest()
     # 清单全文入指纹：即使 version 字段未变，exports 结构变化也必须失效缓存。
@@ -381,6 +382,9 @@ def _compiler_identity() -> dict[str, object]:
         "runtime_kit_version": str(manifest.get("version") or ""),
         "runtime_kit_manifest_hash": manifest_hash,
         "compile_config": _hash_json_payload(build_runtime_module_resolver_config()),
+        # 三维接受规则与运行时引擎策略同源入指纹：规则或引擎策略变化必须使检查缓存失效。
+        "model3d_rules_identity": _hash_json_payload(build_model3d_support_matrix()),
+        "model3d_engine_identity": _hash_json_payload(manifest.get("model3d_engine") or {}),
     }
 
 

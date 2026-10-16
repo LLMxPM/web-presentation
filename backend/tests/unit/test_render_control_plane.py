@@ -218,6 +218,13 @@ def test_page_snapshot_digest_uses_candidate_source_override() -> None:
         async def scalar(self, *_args):
             return version
 
+        async def execute(self, *_args, **_kwargs):
+            """绑定名集合查询返回空结果，本测试不覆盖三维资源身份。"""
+
+            from types import SimpleNamespace
+
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
+
     service = RenderSnapshotService(_Session())
 
     async def _run() -> None:
@@ -429,6 +436,13 @@ def test_timeout_cancellation_uses_independent_session(monkeypatch) -> None:
 
         async def close(self) -> None:
             calls["close"] = True
+
+        async def execute(self, *_args, **_kwargs):
+            """资源持有释放语句返回空行集；本测试只验证会话生命周期。"""
+
+            from types import SimpleNamespace
+
+            return SimpleNamespace(rowcount=0)
 
     session = _Session()
 

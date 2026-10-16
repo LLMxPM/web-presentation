@@ -23,3 +23,27 @@ def test_screenshot_fingerprint_should_include_platform_font_revision(monkeypatc
     )
 
     assert changed_hash != original_hash
+
+
+def test_screenshot_fingerprint_should_include_model3d_identity(monkeypatch) -> None:
+    """三维引用实时身份与引擎身份必须入截图指纹：资源替换或引擎策略变化都使旧截图失效。"""
+
+    page_config = ProjectAppPageConfig()
+    common = dict(page_config=page_config, theme_key="lightblue", theme_config={})
+    no_models = PageScreenshotFingerprintService.build_hash(**common)
+
+    first = PageScreenshotFingerprintService.build_hash(**common, model3d_tokens=["product:" + "a" * 64])
+    assert first != no_models
+
+    # 资源替换（同名校验值不变、文件哈希变化）必须生成新指纹。
+    replaced = PageScreenshotFingerprintService.build_hash(**common, model3d_tokens=["product:" + "b" * 64])
+    assert replaced != first
+
+    # 引擎策略身份变化同样必须使旧截图失效。
+    monkeypatch.setattr(
+        fingerprint_module,
+        "load_runtime_kit_manifest",
+        lambda: {"model3d_engine": {"engineVersion": "next-engine-version"}},
+    )
+    changed_engine = PageScreenshotFingerprintService.build_hash(**common, model3d_tokens=["product:" + "a" * 64])
+    assert changed_engine != first

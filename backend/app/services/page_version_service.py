@@ -19,6 +19,7 @@ from app.repositories.page_version_repository import PageVersionRepository
 from app.schemas.page import PageVersionContent, PageVersionListItem
 from app.services.asset_binding_service import OWNER_KIND_PAGE_VERSION, AssetBindingService
 from app.services.component_dependency_service import ComponentDependencyService
+from app.services.model3d_acceptance_policy import MODEL3D_ERROR_REFERENCE_UNRESOLVED
 from app.services.model3d_reference_collector import Model3dReferenceCollector
 from app.services.page_component_index_service import PageComponentIndexService
 from app.services.resource_reference_parser import ResourceReferenceParser
@@ -180,6 +181,12 @@ class PageVersionService:
             page_version_id=page_version.id,
             static_resource_items=static_items,
         )
+        if collection.dynamic_unresolved:
+            raise AppException(
+                status_code=409,
+                code=MODEL3D_ERROR_REFERENCE_UNRESOLVED,
+                detail="页面存在无法静态解析的三维资源名（AssetModel 动态绑定），无法冻结资源版本；请改用静态资源名或有限静态数组后保存。",
+            )
         await AssetBindingService(self.session).replace_owner_bindings(
             workspace_id=page.workspace_id,
             owner_kind=OWNER_KIND_PAGE_VERSION,
