@@ -412,10 +412,19 @@ async def replace_workspace_asset_file(
     file: Annotated[UploadFile, File(...)],
     _: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    expected_file_hash: Annotated[str | None, Form()] = None,
 ) -> AssetResponse:
-    """使用新文件替换指定资源，保留逻辑名和引用关系，并生成历史副本。"""
+    """使用新文件替换指定资源，保留逻辑名和引用关系，并生成历史副本。
 
-    asset = await AssetService(session).replace_asset_file(workspace_id, asset_id, file)
+    三维资源必须携带 expected_file_hash 版本基线；基线不匹配返回 409，缺失返回 422。
+    """
+
+    asset = await AssetService(session).replace_asset_file(
+        workspace_id,
+        asset_id,
+        file,
+        expected_file_hash=expected_file_hash,
+    )
     return await _build_asset_response(session, workspace_id, asset)
 
 

@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 from fastapi import UploadFile
-from sqlalchemy import String, func, or_, select
+from sqlalchemy import String, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,7 +35,21 @@ from app.services.icon_analysis_service import IconAnalysisService
 from app.repositories.component_resource_index_repository import ComponentResourceIndexRepository
 from app.services.asset_render_metadata_service import AssetRenderMetadataService, AspectRatioSource
 from app.services.component_resource_index_service import ComponentResourceIndexService
+from app.services.model3d_acceptance_policy import (
+    ASSET_ERROR_OVERWRITE_REQUIRES_REPLACE,
+    ASSET_ERROR_VERSION_CONFLICT,
+    MODEL3D_ACCEPTANCE_POLICY,
+    MODEL3D_ACCEPTED_CONTENT_TYPES,
+    MODEL3D_CANONICAL_CONTENT_TYPE,
+    MODEL3D_ERROR_LIMIT_EXCEEDED,
+    MODEL3D_ERROR_REPLACE_BASELINE_REQUIRED,
+)
+from app.services.model3d_glb_service import Model3dGlbService
 from app.services.workspace_font_service import WorkspaceFontService
+
+
+# 分析摘要未预计算哨兵：区分「调用方未提供」与「提供且为 None」。
+_ANALYSIS_UNSET: Any = object()
 
 
 class AssetService:
@@ -50,6 +64,7 @@ class AssetService:
         AssetType.MERMAID: {".mmd", ".mermaid", ".txt"},
         AssetType.CHART: {".json", ".yaml", ".yml"},
         AssetType.FORMULA: {".tex", ".txt"},
+        AssetType.MODEL3D: {".glb"},
     }
     CONTENT_EDITABLE_TYPES = {
         AssetType.ICON,
@@ -192,8 +207,9 @@ class AssetService:
         normalized_description = self._normalize_description(description)
         content_type = self._normalize_content_type(file.content_type)
         self._validate_asset_file_type(asset_type, original_name, content_type)
+        content_type = self._normalize_model3d_content_type(asset_type, content_type)
 
-        content = await file.read()
+        content = await self._read_upload_content(file, asset_type=asset_type)
         if not content:
             raise AppException(status_code=400, code="ASSET_CONTENT_EMPTY", detail="资源内容不能为空。")
         self._validate_uploaded_asset_content(asset_type, original_name, content)
@@ -204,6 +220,7 @@ class AssetService:
         existing_by_original_name = await self._get_active_asset_by_original_name(workspace_id, original_name)
         overwrite_target = existing_by_original_name or existing_by_name
         if overwrite_target is not None:
+            self._ensure_model3d_overwrite_guard(asset_type, overwrite_target)
             self._ensure_can_write_current_asset(overwrite_target)
             if not overwrite:
                 detail = (
@@ -212,6 +229,9 @@ class AssetService:
                     else f'资源 name "{asset_name}" 已存在，请确认是否覆盖。'
                 )
                 raise AppException(status_code=409, code="ASSET_NAME_CONFLICT", detail=detail)
+
+        # 三维资源在写盘前完成解析与预算校验，避免为非法内容落盘孤立 blob。
+        analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content)
 
         ext = "".join(Path(original_name).suffixes)
         save_name = await self.driver.upload(workspace_id, file_hash, ext, content, content_type)
@@ -228,9 +248,9 @@ class AssetService:
                 description=normalized_description,
                 create_history_snapshot=True,
                 commit=commit,
+                analysis_metadata=analysis_metadata,
             )
 
-        analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content)
         render_metadata = AssetRenderMetadataService.build_auto_metadata(asset_type, original_name, content_type, content)
         asset = WorkspaceAsset(
             workspace_id=workspace_id,
@@ -379,24 +399,60 @@ class AssetService:
         workspace_id: int,
         asset_id: int,
         file: UploadFile,
+        *,
+        expected_file_hash: str | None = None,
     ) -> WorkspaceAsset:
-        """按资源 ID 替换文件内容，并在写入前自动生成历史副本。"""
+        """按资源 ID 替换文件内容，并在写入前自动生成历史副本。
+
+        `expected_file_hash` 为提交前的版本基线：三维资源必填（缺失返回 422），
+        其余类型可选；提供时在提交前复核并以条件更新保证并发替换只成功一次。
+        """
 
         asset = await self._get_asset_or_raise(workspace_id, asset_id)
         self._ensure_can_write_current_asset(asset)
         asset_type = AssetType(asset.asset_type)
+        normalized_expected = str(expected_file_hash or "").strip() or None
+        if asset_type == AssetType.MODEL3D and normalized_expected is None:
+            raise AppException(
+                status_code=422,
+                code=MODEL3D_ERROR_REPLACE_BASELINE_REQUIRED,
+                detail="三维资源替换必须携带 expected_file_hash 版本基线。",
+            )
+        if normalized_expected is not None and normalized_expected.lower() != str(asset.file_hash).strip().lower():
+            raise AppException(
+                status_code=409,
+                code=ASSET_ERROR_VERSION_CONFLICT,
+                detail="资源文件已被更新，请重新读取最新版本后再提交替换。",
+            )
+
         original_name = self._normalize_original_name(file.filename or "unknown")
         content_type = self._normalize_content_type(file.content_type)
         self._validate_asset_file_type(asset_type, original_name, content_type)
+        content_type = self._normalize_model3d_content_type(asset_type, content_type)
 
-        content = await file.read()
+        content = await self._read_upload_content(file, asset_type=asset_type)
         if not content:
             raise AppException(status_code=400, code="ASSET_CONTENT_EMPTY", detail="资源内容不能为空。")
         self._validate_uploaded_asset_content(asset_type, original_name, content)
         file_hash = hashlib.sha256(content).hexdigest()
         file_size = len(content)
+        analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content)
         ext = "".join(Path(original_name).suffixes)
         file_name = await self.driver.upload(workspace_id, file_hash, ext, content, content_type)
+
+        if normalized_expected is not None:
+            return await self._replace_asset_file_with_cas(
+                asset,
+                expected_file_hash=normalized_expected,
+                original_name=original_name,
+                asset_type=asset_type,
+                content=content,
+                content_type=content_type,
+                file_hash=file_hash,
+                file_name=file_name,
+                file_size=file_size,
+                analysis_metadata=analysis_metadata,
+            )
 
         return await self._overwrite_asset(
             asset,
@@ -409,7 +465,71 @@ class AssetService:
             file_size=file_size,
             description=None,
             create_history_snapshot=True,
+            analysis_metadata=analysis_metadata,
         )
+
+    async def _replace_asset_file_with_cas(
+        self,
+        asset: WorkspaceAsset,
+        *,
+        expected_file_hash: str,
+        original_name: str,
+        asset_type: AssetType,
+        content: bytes,
+        content_type: str | None,
+        file_hash: str,
+        file_name: str,
+        file_size: int,
+        analysis_metadata: dict | None,
+    ) -> WorkspaceAsset:
+        """以条件更新完成按 ID 替换：旧文件指针与当前记录只在基线仍匹配时切换。
+
+        历史快照与指针切换处于同一事务；基线在提交前被并发替换更新时整体回滚，
+        返回 409 版本冲突，不改变当前记录，也不删除仍被历史引用的旧文件。
+        """
+
+        old_file_name = asset.file_name
+        render_metadata = AssetRenderMetadataService.preserve_manual_or_build_auto(
+            asset_type=asset_type,
+            original_name=original_name,
+            content_type=content_type,
+            content=content,
+            existing_metadata=asset.render_metadata,
+        )
+        await self._create_history_snapshot(asset)
+        result = await self.session.execute(
+            update(WorkspaceAsset)
+            .where(WorkspaceAsset.id == asset.id)
+            .where(WorkspaceAsset.workspace_id == asset.workspace_id)
+            .where(WorkspaceAsset.status == RecordStatus.ACTIVE.value)
+            .where(WorkspaceAsset.source_asset_id.is_(None))
+            .where(func.lower(WorkspaceAsset.file_hash) == expected_file_hash.lower())
+            .values(
+                file_name=file_name,
+                original_name=original_name,
+                file_size=file_size,
+                file_hash=file_hash,
+                content_type=content_type,
+                asset_type=asset_type.value,
+                analysis_metadata=analysis_metadata,
+                render_metadata=render_metadata,
+            )
+        )
+        if result.rowcount != 1:
+            await self.session.rollback()
+            raise AppException(
+                status_code=409,
+                code=ASSET_ERROR_VERSION_CONFLICT,
+                detail="资源文件已被其他请求更新，本次替换未生效，请重新读取后再提交。",
+            )
+        await self.session.commit()
+        await self.session.refresh(asset)
+        if old_file_name != file_name and await self._count_file_name_references(asset.workspace_id, old_file_name) == 0:
+            try:
+                await self.driver.delete(asset.workspace_id, old_file_name)
+            except Exception:
+                pass
+        return asset
 
     async def copy_asset(
         self,
@@ -869,6 +989,7 @@ class AssetService:
         create_history_snapshot: bool,
         history_reason: str | None = None,
         commit: bool = True,
+        analysis_metadata: Any = _ANALYSIS_UNSET,
     ) -> WorkspaceAsset:
         """覆盖当前资源记录；写入前可复制旧文件指针为 archived 历史副本。"""
 
@@ -876,7 +997,11 @@ class AssetService:
         if create_history_snapshot:
             await self._create_history_snapshot(asset, reason=history_reason)
 
-        analysis_metadata = self._build_analysis_metadata(asset_type, original_name, content_type, content)
+        resolved_analysis_metadata = (
+            self._build_analysis_metadata(asset_type, original_name, content_type, content)
+            if analysis_metadata is _ANALYSIS_UNSET
+            else analysis_metadata
+        )
         render_metadata = AssetRenderMetadataService.preserve_manual_or_build_auto(
             asset_type=asset_type,
             original_name=original_name,
@@ -890,7 +1015,7 @@ class AssetService:
         asset.file_hash = file_hash
         asset.content_type = content_type
         asset.asset_type = asset_type.value
-        asset.analysis_metadata = analysis_metadata
+        asset.analysis_metadata = resolved_analysis_metadata
         asset.render_metadata = render_metadata
         if description is not None:
             asset.description = description
@@ -1359,8 +1484,15 @@ class AssetService:
         content_type: str | None,
         content: bytes,
     ) -> dict | None:
-        """生成图标分析元数据，非图标返回空。"""
+        """生成资源分析元数据：图标产生 icon 分支，三维资源产生 model3d 分支，其余返回空。
 
+        三维资源在此完成 GLB 容器、结构与预算校验；校验失败直接抛错，
+        调用方应保证落盘发生在校验之后。
+        """
+
+        if asset_type == AssetType.MODEL3D:
+            summary = Model3dGlbService.analyze(content)
+            return {"schema_version": 1, "kind": "model3d", "model3d": summary}
         if asset_type != AssetType.ICON:
             return None
         return IconAnalysisService.analyze_icon_asset(file_name=original_name, content_type=content_type, content=content)
@@ -1488,6 +1620,58 @@ class AssetService:
         normalized_value = str(value or "").strip().lower()
         return normalized_value or None
 
+    @staticmethod
+    def _normalize_model3d_content_type(asset_type: AssetType, content_type: str | None) -> str | None:
+        """把三维资源的宽松/缺省 MIME 归一化为规范值，保持下载响应正确。"""
+
+        if asset_type != AssetType.MODEL3D:
+            return content_type
+        normalized = str(content_type or "").split(";", 1)[0].strip().lower()
+        if not normalized or normalized in MODEL3D_ACCEPTED_CONTENT_TYPES:
+            return MODEL3D_CANONICAL_CONTENT_TYPE
+        return content_type
+
+    async def _read_upload_content(self, file: UploadFile, *, asset_type: AssetType) -> bytes:
+        """读取上传内容；三维资源按策略上限分块有界读入，避免依赖客户端 Content-Length。"""
+
+        if asset_type != AssetType.MODEL3D:
+            return await file.read()
+        limit = MODEL3D_ACCEPTANCE_POLICY.max_file_bytes
+        chunk_size = 1024 * 1024
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > limit:
+                raise AppException(
+                    status_code=400,
+                    code=MODEL3D_ERROR_LIMIT_EXCEEDED,
+                    detail=f"三维资源文件超过上限 {limit} 字节。",
+                )
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    @staticmethod
+    def _ensure_model3d_overwrite_guard(asset_type: AssetType, overwrite_target: WorkspaceAsset) -> None:
+        """拦截三维资源的通用覆盖上传，引导使用按 ID 替换并携带版本基线。"""
+
+        target_type = str(overwrite_target.asset_type or "").strip()
+        if asset_type == AssetType.MODEL3D:
+            raise AppException(
+                status_code=409,
+                code=ASSET_ERROR_OVERWRITE_REQUIRES_REPLACE,
+                detail="三维资源不支持通用覆盖上传，请改用按 ID 替换并携带 expected_file_hash。",
+            )
+        if target_type == AssetType.MODEL3D.value:
+            raise AppException(
+                status_code=409,
+                code=ASSET_ERROR_OVERWRITE_REQUIRES_REPLACE,
+                detail='该 name 已被三维资源占用，不能覆盖为其他资源类型；请另选 name 或先归档原资源。',
+            )
+
     @classmethod
     def _validate_asset_file_type(cls, asset_type: AssetType, original_name: str, content_type: str | None) -> None:
         """按资源类型校验文件扩展名和关键 MIME 类型约束。"""
@@ -1509,3 +1693,9 @@ class AssetService:
             or base_content_type in {"application/mp4", "application/octet-stream"}
         ):
             raise AppException(status_code=400, code="ASSET_CONTENT_TYPE_UNSUPPORTED", detail="视频资源的 MIME 类型不符合要求。")
+        if asset_type == AssetType.MODEL3D and base_content_type and base_content_type not in MODEL3D_ACCEPTED_CONTENT_TYPES:
+            raise AppException(
+                status_code=400,
+                code="ASSET_CONTENT_TYPE_UNSUPPORTED",
+                detail="三维资源仅接受 model/gltf-binary（.glb）MIME 类型。",
+            )

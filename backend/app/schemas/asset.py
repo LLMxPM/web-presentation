@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from typing import Literal, Optional
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_serializer, model_validator
 
 from app.models.enums import AssetRole, AssetType, RecordStatus
 from app.schemas.common import SchemaBase
@@ -96,6 +96,17 @@ class AssetAnalysisMetadata(BaseModel):
         if self.kind == "model3d" and self.model3d is None:
             raise ValueError("model3d 分析元数据缺少 model3d 载荷。")
         return self
+
+    @model_serializer(mode="wrap")
+    def serialize_active_payload(self, handler):
+        """序列化时只保留与 kind 对应的载荷，不输出另一分支的 null 键。"""
+
+        data = handler(self)
+        return {
+            key: value
+            for key, value in data.items()
+            if not (key in {"icon", "model3d"} and value is None)
+        }
 
 
 class AssetResponse(BaseModel):

@@ -154,6 +154,7 @@ class AssetPackageService:
         except ValueError as error:
             raise AppException(status_code=400, code="ASSET_PACKAGE_ASSET_TYPE_INVALID", detail=f"资源 {name} 类型不受支持。") from error
         content_type = AssetService._normalize_content_type(str(metadata.get("content_type") or "") or None)
+        content_type = AssetService._normalize_model3d_content_type(asset_type, content_type)
         content = package_asset.content
         if not content:
             raise AppException(status_code=400, code="ASSET_CONTENT_EMPTY", detail=f"资源 {name} 内容不能为空。")
@@ -171,8 +172,12 @@ class AssetPackageService:
 
         ext = "".join(Path(original_name).suffixes)
         save_name = await self.asset_service.driver.upload(workspace_id, file_hash, ext, content, content_type)
-        analysis_metadata = self._resolve_metadata_dict(metadata.get("analysis_metadata")) \
-            or AssetService._build_analysis_metadata(asset_type, original_name, content_type, content)
+        if asset_type == AssetType.MODEL3D:
+            # 三维资源以实际字节为准重建摘要并完成校验，包内声明不得绕过解析。
+            analysis_metadata = AssetService._build_analysis_metadata(asset_type, original_name, content_type, content)
+        else:
+            analysis_metadata = self._resolve_metadata_dict(metadata.get("analysis_metadata")) \
+                or AssetService._build_analysis_metadata(asset_type, original_name, content_type, content)
         render_metadata = self._resolve_render_metadata(metadata, asset_type, original_name, content_type, content)
         asset = WorkspaceAsset(
             workspace_id=workspace_id,
