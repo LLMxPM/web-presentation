@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import struct
 from collections.abc import AsyncIterator
 from io import BytesIO
 from types import SimpleNamespace
@@ -17,6 +19,7 @@ from app.db.session import get_session_factory
 from app.models.project_build_job import ProjectBuildJob
 from app.models.release import Release
 from app.schemas.release import PreviewEntryDescriptor
+from app.services.asset_service import AssetService
 from app.services.object_storage_service import ObjectStorageService
 from app.services.preview_origin_service import isolated_preview_origin
 from app.services.project_artifact_builder import ProjectArtifactSnapshot
@@ -26,6 +29,45 @@ from app.services.project_build_service import (
     normalize_project_build_base_url,
 )
 from app.services.token_service import TokenService
+
+_GLB_JSON_CHUNK_TYPE = 0x4E4F534A
+_GLB_BIN_CHUNK_TYPE = 0x004E4942
+
+
+def _pad_glb_chunk(data: bytes, pad: bytes = b"\x00") -> bytes:
+    """按 4 字节对齐填充 GLB chunk。"""
+
+    if len(data) % 4:
+        data = data + pad * (4 - len(data) % 4)
+    return data
+
+
+def _build_glb(json_doc: dict, bin_chunk: bytes | None = None) -> bytes:
+    """构造测试用 GLB 字节。"""
+
+    json_bytes = _pad_glb_chunk(json.dumps(json_doc).encode("utf-8"), b" ")
+    chunks = struct.pack("<II", len(json_bytes), _GLB_JSON_CHUNK_TYPE) + json_bytes
+    if bin_chunk is not None:
+        bin_bytes = _pad_glb_chunk(bin_chunk)
+        chunks += struct.pack("<II", len(bin_bytes), _GLB_BIN_CHUNK_TYPE) + bin_bytes
+    return b"glTF" + struct.pack("<II", 2, 12 + len(chunks)) + chunks
+
+
+def _valid_glb(marker: float = 0.0) -> bytes:
+    """构造最小合法 GLB；marker 用于生成不同哈希。"""
+
+    positions = struct.pack("<9f", marker, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+    gltf = {
+        "asset": {"version": "2.0", "generator": "project-build-test"},
+        "buffers": [{"byteLength": len(positions)}],
+        "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": len(positions)}],
+        "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+        "nodes": [{"mesh": 0}],
+        "scenes": [{"nodes": [0]}],
+        "scene": 0,
+    }
+    return _build_glb(gltf, positions)
 
 
 async def create_active_project(authenticated_client: AsyncClient) -> tuple[int, int]:
@@ -69,6 +111,24 @@ async def upload_build_asset(
         data={"asset_type": asset_type, "tags": "[]", "name": name},
     )
     assert response.status_code == 200
+    return response.json()
+
+
+async def upload_build_model3d_asset(
+    authenticated_client: AsyncClient,
+    workspace_id: int,
+    name: str,
+    *,
+    marker: float = 0.0,
+) -> dict:
+    """上传构建测试使用的三维资源并返回接口响应。"""
+
+    response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": (f"{name}.glb", _valid_glb(marker), "model/gltf-binary")},
+        data={"asset_type": "model3d", "tags": "[]", "name": name},
+    )
+    assert response.status_code == 200, response.text
     return response.json()
 
 
@@ -461,6 +521,140 @@ async def test_project_build_should_return_structured_missing_asset_error(
     payload = response.json()
     assert payload["code"] == "PROJECT_BUILD_ASSET_MISSING"
     assert "missing_image" in payload["data"]["missing_asset_names"]
+
+
+@pytest.mark.asyncio
+async def test_project_build_snapshot_should_include_model3d_static_reference(
+    authenticated_client: AsyncClient,
+) -> None:
+    """构建快照应物化 AssetModel 静态引用的三维资源，并携带规范交付元数据。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    asset = await upload_build_model3d_asset(authenticated_client, workspace_id, "product")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetModel name="product" /></template>',
+    )
+
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200, create_response.text
+
+    async with get_session_factory()() as session:
+        release = await session.get(Release, create_response.json()["snapshot_release_id"])
+
+    assert release is not None
+    assert release.manifest["assets"] == {"product": asset["file_hash"]}
+    metadata = release.manifest["asset_metadata"]["product"]
+    assert metadata["file_hash"] == asset["file_hash"]
+    assert metadata["original_name"] == "product.glb"
+    assert metadata["content_type"] == "model/gltf-binary"
+    assert metadata["render_type"] == "model3d"
+    assert metadata["asset_role"] == "content"
+
+
+@pytest.mark.asyncio
+async def test_project_build_should_return_structured_model3d_reference_errors(
+    authenticated_client: AsyncClient,
+) -> None:
+    """三维资源的动态引用与缺失引用都应返回可展示的结构化错误。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    dynamic_page = await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetModel :name="dynamicModelName" /></template>',
+    )
+
+    dynamic_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert dynamic_response.status_code == 409
+    dynamic_payload = dynamic_response.json()
+    assert dynamic_payload["code"] == "PROJECT_BUILD_DYNAMIC_ASSET_REFERENCE"
+    assert dynamic_payload["data"]["dynamic_module_paths"]
+
+    update_response = await authenticated_client.patch(
+        f"/api/pages/{dynamic_page['id']}",
+        json={"page_content": '<template><AssetModel name="missing_model" /></template>'},
+    )
+    assert update_response.status_code == 200, update_response.text
+
+    missing_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert missing_response.status_code == 409
+    missing_payload = missing_response.json()
+    assert missing_payload["code"] == "PROJECT_BUILD_ASSET_MISSING"
+    assert "missing_model" in missing_payload["data"]["missing_asset_names"]
+
+
+@pytest.mark.asyncio
+async def test_project_build_snapshot_should_keep_frozen_model3d_hash_after_replacement(
+    authenticated_client: AsyncClient,
+) -> None:
+    """构建任务冻结快照后替换三维资源，Release 仍引用旧 hash 且旧字节可按 hash 回源。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    frozen_payload = _valid_glb()
+    original_asset = await upload_build_model3d_asset(authenticated_client, workspace_id, "product")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetModel name="product" /></template>',
+    )
+
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200, create_response.text
+    release_id = create_response.json()["snapshot_release_id"]
+
+    async with get_session_factory()() as session:
+        release = await session.get(Release, release_id)
+    assert release is not None
+    assert release.manifest["assets"]["product"] == original_asset["file_hash"]
+
+    # 构建任务创建后替换资源：主记录切换到新文件。
+    next_payload = _valid_glb(2.0)
+    replace_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/{original_asset['id']}/replace",
+        files={"file": ("product.glb", next_payload, "model/gltf-binary")},
+        data={"expected_file_hash": original_asset["file_hash"]},
+    )
+    assert replace_response.status_code == 200, replace_response.text
+    assert replace_response.json()["file_hash"] != original_asset["file_hash"]
+
+    # 已冻结的 Release 不受替换影响，仍绑定旧 hash。
+    async with get_session_factory()() as session:
+        frozen_release = await session.get(Release, release_id)
+    assert frozen_release is not None
+    assert frozen_release.manifest["assets"]["product"] == original_asset["file_hash"]
+
+    # 旧 hash 仍可按 hash 回源读到冻结字节，保证已有 Release 离线可渲染。
+    async with get_session_factory()() as session:
+        frozen_asset, driver = await AssetService(session).get_asset_by_hash(
+            workspace_id, original_asset["file_hash"]
+        )
+        frozen_bytes = await driver.read_content(workspace_id, frozen_asset.file_name)
+    assert frozen_bytes == frozen_payload
+
+    # 新 hash 同样可回源，构建期间替换不会把旧 Release 指向新字节。
+    async with get_session_factory()() as session:
+        replaced_asset, replaced_driver = await AssetService(session).get_asset_by_hash(
+            workspace_id, replace_response.json()["file_hash"]
+        )
+        replaced_bytes = await replaced_driver.read_content(workspace_id, replaced_asset.file_name)
+    assert replaced_bytes == next_payload
 
 
 @pytest.mark.asyncio
