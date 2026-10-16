@@ -35,7 +35,9 @@ page.on('response', response => {
         // 用该浏览器实际发出的原 URL 再读错误详情，独立标记来源，不构造版本头。
         const detail = await page.request.get(response.url())
         if (detail.status() !== 409 || detail.headers()['x-runtime-version-fingerprint'] !== headers['x-runtime-version-fingerprint']) throw new Error('版本拒绝复查与浏览器响应不一致')
-        code = (await detail.json()).code
+        const detailText = await detail.text()
+        // 桥接宿主页等 HTML 响应也可能带 409：正文非 JSON 时只留脱敏摘要，不能让采集链崩溃。
+        try { code = JSON.parse(detailText).code } catch { bodyError = detailText.slice(0, 200) }
         codeSource = 'exact_browser_url_http_replay'
       }
     }
@@ -45,6 +47,31 @@ page.on('response', response => {
 page.on('pageerror', error => errors.push(error.message.replace(/\?.*$/s, '?[redacted]')))
 page.on('requestfailed', request => failedRequests.push({ path: new URL(request.url()).pathname, error: request.failure()?.errorText }))
 const report = { status: 'failed', mode, browser: browser.version(), requests, failed_requests: failedRequests, errors }
+let probeFrame = null
+
+/**
+ * 定位实际渲染探测页的最深子帧。
+ * Backend 预览入口是可信桥接宿主页（严格 CSP，只运行固定桥接代码），用户页面始终在
+ * 第二层 iframe 的独立 Runtime 主机名执行；固定层级假设会让等待落在桥接页上。
+ * @param {import('@playwright/test').Page} page 浏览器页面
+ * @param {{ timeoutMs: number }} options 等待预算
+ * @returns {Promise<import('@playwright/test').Frame | null>} 渲染探测页的帧
+ */
+async function findProbeFrame(page, { timeoutMs }) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue
+      try {
+        if (await frame.evaluate(() => Boolean(document.querySelector('.probe')))) return frame
+      } catch {
+        // 帧仍在导航或已分离时忽略，继续等待。
+      }
+    }
+    await page.waitForTimeout(250)
+  }
+  return null
+}
 try {
   let url
   if (data.preview_gateway_override) {
@@ -94,8 +121,9 @@ try {
     await page.setContent('<iframe title="architecture-preview" style="width:1920px;height:1080px;border:0"></iframe>')
     await page.locator('iframe').evaluate((element, value) => { element.src = value }, url)
     if (mode === 'same' || mode === 'single') {
-      await page.frameLocator('iframe').getByRole('heading', { name: 'Docker architecture probe' }).waitFor({ timeout: 45_000 })
-      await page.frameLocator('iframe').getByText('Rendered by Runtime', { exact: true }).waitFor()
+      probeFrame = await findProbeFrame(page, { timeoutMs: 45_000 })
+      if (!probeFrame) throw new Error('未在 iframe 中找到渲染探测页（等待 45 秒超时）')
+      await probeFrame.getByText('Rendered by Runtime', { exact: true }).waitFor()
     } else {
       await page.waitForResponse(response => response.status() === 409 && new URL(response.url()).pathname.startsWith('/runtime/'), { timeout: 30_000 })
       // 收集同一导航引发的模块、CSS 与 Vite 请求，不给浏览器注入任何期望版本头。
@@ -103,7 +131,7 @@ try {
     }
   }
   if (mode !== 'cross') {
-    const frame = mode === 'same' || mode === 'single' ? page.frames().find(item => item.parentFrame()) : page.mainFrame()
+    const frame = mode === 'same' || mode === 'single' ? probeFrame : page.mainFrame()
     report.page_style = await frame.evaluate(async () => {
       // 目标样式必须真正生效；字体下载和解析也应完成，不能以响应 200 代替可用性。
       await document.fonts.ready
@@ -138,7 +166,7 @@ try {
     for (const suffix of ['/src/main.ts', '/__preview-tailwind.css', '/@vite/client']) {
       if (!relevant.some(item => item.path.endsWith(suffix) && item.status === 409 && item.code === 'PREVIEW_VERSION_SKEW')) throw new Error(`未覆盖 ${suffix} 的明确版本拒绝`)
     }
-    if (await page.frameLocator('iframe').getByRole('heading', { name: 'Docker architecture probe' }).count()) throw new Error('跨版页面意外加载')
+    if (await findProbeFrame(page, { timeoutMs: 2_000 })) throw new Error('跨版页面意外加载')
   } else if (mode === 'single') {
     if (relevant.some(item => item.status >= 400) || errors.length) throw new Error('单副本预览有失败请求或页面异常')
     report.versions = [...new Set(relevant.map(item => item.version).filter(Boolean))]

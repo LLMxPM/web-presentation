@@ -174,12 +174,22 @@ def write_gateway(directory: Path, mode: str) -> None:
     target = "preview_b:7373" if mode == "cross" else "preview_pool"
     context = json.loads((directory / "context.json").read_text(encoding="utf-8"))
     fault_location = "location = /runtime/__preview { proxy_pass http://gate:8091; proxy_read_timeout 100s; }" if context.get("fault_injection") else ""
+    # 桥接宿主页架构下，浏览器在独立预览主机名加载 /runtime/__preview 入口：
+    # 入口必须由票据绑定身份命中的 A 提供（Backend 探测 RUNTIME_PREVIEW_BASE_URL=preview_a），
+    # 跨版场景只把带版本路径的子请求强制到发布身份不同的 B，保持「HTML 绑定 A、子请求 409」语义。
+    cross_entry = (
+        "location = /runtime/__preview {\n"
+        "  proxy_pass http://preview_a:7373; proxy_http_version 1.1; proxy_set_header Host gateway;\n"
+        "  add_header X-Drill-Upstream $upstream_addr always;\n"
+        " }"
+    ) if mode == "cross" else ""
     text = f"""# 文件功能：隔离演练 Gateway，不作为生产模板。
 map $http_upgrade $connection_upgrade {{ default upgrade; '' close; }}
 upstream preview_pool {{ server preview_a:7373; server preview_b:7373; }}
 server {{
  listen 80; access_log off; client_max_body_size 100m;
  {fault_location}
+ {cross_entry}
  location /runtime/ {{
   proxy_pass http://{target}; proxy_http_version 1.1; proxy_set_header Host gateway;
   proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $connection_upgrade;
