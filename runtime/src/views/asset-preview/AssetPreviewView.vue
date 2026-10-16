@@ -73,6 +73,12 @@
       :show-border="false"
       controls
     />
+    <AssetModel
+      v-else-if="renderType === 'model3d'"
+      :name="assetConfig.name"
+      :fallback="assetConfig.url || ''"
+      class="w-full h-full"
+    />
     <div v-else class="asset-preview-view__state">
       暂不支持预览该资源类型：{{ renderType || 'unknown' }}
     </div>
@@ -87,6 +93,7 @@ import AssetDrawio from '@runtime-kit/public/components/assets/AssetDrawio.v1.vu
 import AssetFormula from '@runtime-kit/public/components/assets/AssetFormula.v1.vue'
 import AssetImage from '@runtime-kit/public/components/assets/AssetImage.v1.vue'
 import AssetMermaid from '@runtime-kit/public/components/assets/AssetMermaid.v1.vue'
+import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v1.vue'
 import AssetVideo from '@runtime-kit/public/components/assets/AssetVideo.v1.vue'
 import {
   normalizeAssetPreviewBackground,

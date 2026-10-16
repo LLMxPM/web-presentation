@@ -9,7 +9,7 @@ export interface EditorVisualAssetWaitOptions {
 
 export interface EditorVisualAssetIssue {
   /** 资源类型，用于 Backend 压缩错误详情。 */
-  type: 'view-preview' | 'drawio' | 'mermaid' | 'image' | 'background' | 'font'
+  type: 'view-preview' | 'drawio' | 'mermaid' | 'model3d' | 'image' | 'background' | 'font'
   /** 资源地址；非 URL 类问题可为空。 */
   url?: string
   /** 面向诊断的简短信息。 */
@@ -41,7 +41,7 @@ interface VisualAssetTask {
 }
 
 type TaskStatus = 'pending' | 'loaded' | 'failed'
-type RuntimeDiagramType = Extract<EditorVisualAssetIssue['type'], 'drawio' | 'mermaid'>
+type RuntimeDiagramType = Extract<EditorVisualAssetIssue['type'], 'drawio' | 'mermaid' | 'model3d'>
 
 interface RuntimeDiagramProbe {
   type: RuntimeDiagramType
@@ -57,6 +57,7 @@ const ANIMATION_SETTLE_TIMEOUT_MS = 5000
 const VIEW_PREVIEW_STATE_SELECTOR = '[data-runtime-view-preview-state]'
 const DRAWIO_STATE_SELECTOR = '[data-runtime-drawio-state]'
 const MERMAID_STATE_SELECTOR = '[data-runtime-mermaid-state]'
+const MODEL_STATE_SELECTOR = '[data-runtime-model-state]'
 const RUNTIME_DIAGRAM_PROBES: RuntimeDiagramProbe[] = [
   {
     type: 'drawio',
@@ -73,6 +74,14 @@ const RUNTIME_DIAGRAM_PROBES: RuntimeDiagramProbe[] = [
     messageDatasetKey: 'runtimeMermaidMessage',
     failedMessage: 'Mermaid 图表渲染失败。',
     timeoutMessage: 'Mermaid 图表渲染超时。',
+  },
+  {
+    type: 'model3d',
+    stateSelector: MODEL_STATE_SELECTOR,
+    stateDatasetKey: 'runtimeModelState',
+    messageDatasetKey: 'runtimeModelMessage',
+    failedMessage: '三维模型渲染失败。',
+    timeoutMessage: '三维模型渲染超时。',
   },
 ]
 

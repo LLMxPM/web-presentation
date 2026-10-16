@@ -96,7 +96,7 @@ export default defineConfig(({ command, mode }) => {
         localsConvention: 'camelCase'
       }
     },
-    assetsInclude: ['**/*.drawio'],
+    assetsInclude: ['**/*.drawio', '**/*.glb', '**/*.gltf'],
     test: {
       environment: 'jsdom',
       globals: true,

@@ -36,6 +36,7 @@
     "svg-pan-zoom": "^3.6.2",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^3.4.1",
+    "three": "0.186.1",
     "typescript": "~5.9.3",
     "vite": "^8.0.14",
     "vue": "^3.5.34",
@@ -45,6 +46,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.15.30",
+    "@types/three": "0.186.0",
     "@typescript-eslint/eslint-plugin": "^8.59.4",
     "@typescript-eslint/parser": "^8.59.4",
     "@vue/eslint-config-prettier": "^10.2.0",

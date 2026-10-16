@@ -398,7 +398,7 @@
       "category": "asset",
       "description": "按资源逻辑名渲染标准 glTF 2.0 / GLB 三维模型，支持多实例独立视角。",
       "capability": {
-        "enabled": false,
+        "enabled": true,
         "previewable": true,
         "recommendation_level": "default",
         "display_name": "三维模型渲染",
