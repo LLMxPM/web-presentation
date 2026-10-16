@@ -40,5 +40,10 @@ test('页面截图应通过远程 Renderer 生成可下载 PNG', async ({ page, 
   expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
   expect(png.readUInt32BE(16)).toBe(job.viewport_width)
   expect(png.readUInt32BE(20)).toBe(job.viewport_height)
+  // 浏览器中的私有截图应通过登录所在的 API 入口加载，覆盖公开基址别名导致 Cookie 丢失的回归。
+  const thumbnail = firstCard.getByRole('img', { name: `${pageTitle} 截图`, exact: true })
+  await expect(thumbnail).toBeVisible()
+  await expect.poll(() => thumbnail.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+  expect(new URL((await thumbnail.getAttribute('src'))!, page.url()).origin).toBe(new URL(page.url()).origin)
   await testInfo.attach('remote-render.png', { body: png, contentType: 'image/png' })
 })

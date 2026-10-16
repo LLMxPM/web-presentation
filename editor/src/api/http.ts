@@ -2,6 +2,7 @@
  * 文件功能：封装 Axios 实例，统一处理后台 API 前缀、Cookie 和错误提取逻辑。
  */
 import axios from 'axios'
+import { normalizeAuthenticatedFileUrls } from '@/api/file-urls'
 
 type UnauthorizedHandler = () => void | Promise<void>
 
@@ -45,7 +46,10 @@ function shouldNotifyUnauthorized(requestUrl?: string) {
 }
 
 http.interceptors.response.use(
-  response => response,
+  response => {
+    normalizeAuthenticatedFileUrls(response.data, response.config.baseURL || resolveApiBaseUrl())
+    return response
+  },
   (error) => {
     if (
       axios.isAxiosError(error)

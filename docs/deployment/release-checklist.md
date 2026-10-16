@@ -9,6 +9,7 @@
 - 旧字体桶关闭匿名 ACL / policy，保留 Backend 服务身份迁移读取权限；检查历史绝对 public URL，不能通过重新开放旧入口回滚。
 - 排空不兼容 Runtime / Renderer 和构建 attempt；新截图使用内容 hash，旧截图 latest 兼容，不宣称历史表已回填。
 - 补齐真实 S3 兼容服务、跨副本、浏览器导出与外部客户端矩阵；采集成本与回源指标后再决定 CDN。
+- Editor 私有截图、资源图片、主题 Logo 与字体地址统一对齐实际 API 入口，验证工作台使用 `localhost`、Backend 公开基址使用 `127.0.0.1` 时图片仍能带登录态加载；External API 的绝对文件地址保持原契约。
 
 ---
 

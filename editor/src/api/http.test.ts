@@ -22,6 +22,15 @@ describe('http api base url', () => {
     expect(resolveApiBaseUrl()).toBe('http://127.0.0.1:8000/api')
   })
 
+  it('私有文件响应进入业务层前应改走实际 API 入口', async () => {
+    const response = await http.get('/pages', {
+      baseURL: '/api',
+      adapter: async config => ({ config, status: 200, statusText: 'OK', headers: {},
+        data: { items: [{ screenshot_url: 'http://127.0.0.1:8000/api/pages/561/screenshots/latest/content' }] } }),
+    })
+    expect(response.data.items[0].screenshot_url).toBe('/api/pages/561/screenshots/latest/content')
+  })
+
   it('接口返回 401 时应触发全局未授权处理器', async () => {
     const handler = vi.fn()
     registerUnauthorizedHandler(handler)

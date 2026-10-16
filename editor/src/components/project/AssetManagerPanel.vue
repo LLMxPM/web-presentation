@@ -200,7 +200,7 @@
         </div>
       </div>
       <div class="pointer-events-auto absolute right-3 top-3 flex gap-3 sm:right-6 sm:top-6">
-        <a v-if="previewAsset.url" :href="previewAsset.url + '?download=1'" download class="rounded-full bg-surface/10 p-2.5 text-text-inverse backdrop-blur transition-all hover:bg-surface/20">
+        <a v-if="previewAsset.url" :href="buildFileDownloadUrl(previewAsset.url)" download class="rounded-full bg-surface/10 p-2.5 text-text-inverse backdrop-blur transition-all hover:bg-surface/20">
           <Download class="h-5 w-5" />
         </a>
         <BaseCloseButton tone="inverse" label="关闭资源预览" @click="previewAsset = null" />
@@ -213,6 +213,7 @@
 </template>
 
 <script setup lang="ts">
+import { buildFileDownloadUrl } from '@/api/file-urls'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {

@@ -176,7 +176,7 @@ flowchart LR
 - [ ] 将 model3d 加入现有可 fetch 资源的代理规则；本地与 S3 路径验证正确 MIME、缓存、跨域和完整内容，避免在全量响应中额外复制大型文件。
 - [ ] 扩展资源筛选、派生字段、归档/恢复/引用保护和摘要。格式通过只表示结构接受，不伪造“已通过浏览器视觉检查”。
 
-测试：扩展 [test_workspace_assets.py](../../../backend/tests/api/test_workspace_assets.py)、[test_public_assets.py](../../../backend/tests/integration/test_public_assets.py)，新增 model3d parser 单测；覆盖畸形字节、越界、跨用户、上传与包导入、同 hash 替换和并发两个不同文件替换。
+测试：扩展 [test_workspace_assets.py](../../../backend/tests/api/test_workspace_assets.py)、[test_workspace_asset_delivery.py](../../../backend/tests/integration/test_workspace_asset_delivery.py)，新增 model3d parser 单测；覆盖畸形字节、越界、跨用户、上传与包导入、同 hash 替换和并发两个不同文件替换。
 
 验收：所有写入入口校验一致；同一 expected hash 的两个并发替换只成功一个；历史和原始下载正确，存储失败或事务回滚不破坏旧文件。
 
