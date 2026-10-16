@@ -343,16 +343,27 @@ export function useAssetDetail(options: AssetDetailOptions) {
       replacingAsset.value = null
       return
     }
+    // 三维资源必须携带版本基线：以当前详情快照的 hash 提交，冲突时后端拒绝而不是静默覆盖。
+    // 快照异常缺失 hash 时前置拦截，避免发出不带基线的请求被后端 422 后陷入刷新重试循环。
+    const expectedFileHash = asset.asset_type === 'model3d' ? asset.file_hash : undefined
+    if (asset.asset_type === 'model3d' && !expectedFileHash) {
+      Message.error('三维资源缺少版本基线（file_hash），请刷新资源列表后重试；若仍缺失请联系管理员。')
+      target.value = ''
+      replacingAsset.value = null
+      return
+    }
     try {
-      // 三维资源必须携带版本基线：以当前详情快照的 hash 提交，冲突时后端拒绝而不是静默覆盖。
-      const expectedFileHash = asset.asset_type === 'model3d' ? asset.file_hash : undefined
       const updated = await replaceWorkspaceAssetFile(options.workspaceId.value, asset.id, file, expectedFileHash)
       Message.success('资源文件已替换')
       detailAsset.value = updated
       selectedAsset.value = updated
       await options.onRefresh()
     } catch (error) {
-      if (isReplaceVersionConflict(error)) {
+      if (isReplaceBaselineMissing(error)) {
+        Message.error('三维资源缺少版本基线，请刷新资源列表后重试；若仍缺失请联系管理员。')
+        await options.onRefresh()
+        syncDetailAssetAfterRefresh()
+      } else if (isReplaceVersionConflict(error)) {
         Message.warning('资源已被其他操作更新，已为你刷新最新文件信息；请确认后重新提交替换。')
         await options.onRefresh()
         syncDetailAssetAfterRefresh()
@@ -366,14 +377,25 @@ export function useAssetDetail(options: AssetDetailOptions) {
   }
 
   /**
-   * 判断替换失败是否属于版本基线冲突（含并发更新与缺失基线）。
+   * 判断替换失败是否属于三维基线缺失（422 MODEL3D_REPLACE_BASELINE_REQUIRED）。
+   * 与版本冲突分开处理：缺失基线重试同样会失败，不能引导用户进入刷新重试循环。
+   * @param error 接口异常
+   * @returns 是否基线缺失
+   */
+  function isReplaceBaselineMissing(error: unknown): boolean {
+    const responseData = (error as { response?: { data?: { code?: string } } } | null)?.response?.data
+    return String(responseData?.code || '') === 'MODEL3D_REPLACE_BASELINE_REQUIRED'
+  }
+
+  /**
+   * 判断替换失败是否属于版本基线冲突（并发更新）。
    * @param error 接口异常
    * @returns 是否版本相关冲突
    */
   function isReplaceVersionConflict(error: unknown): boolean {
     const responseData = (error as { response?: { data?: { code?: string } } } | null)?.response?.data
     const code = String(responseData?.code || '')
-    return code === 'ASSET_VERSION_CONFLICT' || code === 'MODEL3D_REPLACE_BASELINE_REQUIRED'
+    return code === 'ASSET_VERSION_CONFLICT'
   }
 
   /**

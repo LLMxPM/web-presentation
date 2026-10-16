@@ -12,11 +12,25 @@ const directory = mkdtempSync(join(temporaryRoot, 'wp-codegen-'))
 function generate(script, args) {
   execFileSync(process.execPath, [join(root, 'scripts/codegen', script), ...args], { cwd: root, stdio: 'inherit' })
 }
+/** 各生成物对应的重生成命令；漂移报错时给出准确的修复入口。 */
+const REGEN_COMMAND_HINTS = [
+  { files: ['editor/src/types/openapi.json', 'editor/src/types/api.generated.ts'], command: 'pnpm run codegen:editor-api' },
+  {
+    files: ['editor/src/types/component-preview.generated.ts', 'runtime/src/core/shared/component-preview.generated.ts'],
+    command: 'pnpm run codegen:preview-types',
+  },
+  {
+    files: ['editor/src/types/model-view-options.generated.ts', 'runtime/src/core/shared/model-view-options.generated.ts'],
+    command: 'pnpm run codegen:model-view-types',
+  },
+]
 /** 统一换行后比较完整产物，字段类型、必填性和嵌套结构均在检查范围。 */
 function verify(actual, committed) {
   const normalize = value => value.replace(/\r\n/g, '\n')
   if (normalize(readFileSync(actual, 'utf8')) !== normalize(readFileSync(join(root, committed), 'utf8'))) {
-    throw new Error(`生成物漂移：${committed}；请运行 pnpm run codegen:editor-api 和 pnpm run codegen:preview-types`)
+    const hint = REGEN_COMMAND_HINTS.find(entry => entry.files.includes(committed))?.command
+    const guidance = hint ?? REGEN_COMMAND_HINTS.map(entry => entry.command).join(' / ')
+    throw new Error(`生成物漂移：${committed}；请运行 ${guidance}`)
   }
 }
 try {

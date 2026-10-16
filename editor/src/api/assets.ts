@@ -304,7 +304,8 @@ export async function replaceWorkspaceAssetFile(
 ): Promise<AssetResponse> {
   const formData = new FormData()
   formData.append('file', file)
-  if (expectedFileHash) {
+  // 严格判空：三维资源基线缺失时应由调用方前置拦截，这里防止空字符串被静默当成"未携带"。
+  if (expectedFileHash != null && expectedFileHash !== '') {
     formData.append('expected_file_hash', expectedFileHash)
   }
 

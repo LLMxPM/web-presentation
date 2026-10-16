@@ -167,10 +167,13 @@ import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v1.vue'
     const png = Buffer.from(await imageResponse.body())
 
     // 像素级断言：模型真实渲染出现，而不是 WebGL 空白帧或占位。
+    // 先附上截图再断言：断言失败时证据已归档，便于直接看图排障。
+    await testInfo.attach('model-screenshot.png', { body: png, contentType: 'image/png' })
     const decoded = decodePngPixels(png)
     const redPixels = countStrongRedPixels(decoded)
-    expect(redPixels, `红色模型像素数量=${redPixels}`).toBeGreaterThan(1_000)
-    await testInfo.attach('model-screenshot.png', { body: png, contentType: 'image/png' })
+    // 用占比而非绝对像素数：默认视口下红色三角约占 1%～3%，占比阈值不随视口尺寸漂移。
+    const totalPixels = decoded.width * decoded.height
+    expect(redPixels / totalPixels, `红色模型像素数量=${redPixels}/${totalPixels}`).toBeGreaterThan(0.005)
   } finally {
     await api.patch(`/api/pages/${modelPage.id}`, { data: { status: 'archived' } }).catch(() => undefined)
   }
