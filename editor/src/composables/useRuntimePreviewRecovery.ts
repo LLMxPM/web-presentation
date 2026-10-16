@@ -1,6 +1,7 @@
 /**
  * 文件功能：管理预览 iframe 的票据生命周期，支持到期自动续签、失效恢复与标签页激活检测。
  */
+import axios from 'axios'
 import { onMounted, onUnmounted, watch } from 'vue'
 import { renewPreviewArtifactAccess } from '@/api/preview'
 
@@ -16,6 +17,40 @@ export interface PreviewRecoveryOptions {
 }
 
 const RECOVERABLE_CODES = new Set(['PREVIEW_CONTEXT_INVALID', 'PREVIEW_CONTEXT_REQUIRED', 'ARTIFACT_NOT_FOUND'])
+
+/**
+ * 判断预览续签异常是否属于确定性终态失效（如 410 过期、401/403 越权或 404 缺失）。
+ * 只有终态失效才触发高成本全量重建并消耗预算；网络波动或服务重启应退避重试。
+ */
+function isArtifactRenewalTerminalError(error: unknown): boolean {
+  if (!error) return false
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status
+    const code = (error.response?.data as { code?: string } | undefined)?.code
+    if (status === 410 || status === 404 || status === 401 || status === 403) {
+      return true
+    }
+    if (code === 'PREVIEW_ARTIFACT_EXPIRED' || code === 'ARTIFACT_NOT_FOUND' || code?.startsWith('FILE_ACCESS_')) {
+      return true
+    }
+    return false
+  }
+  if (error instanceof Error) {
+    const message = error.message
+    if (
+      message.includes('PREVIEW_ARTIFACT_EXPIRED')
+      || message.includes('ARTIFACT_NOT_FOUND')
+      || message.includes('FILE_ACCESS_')
+      || message.includes('410')
+      || message.includes('404')
+      || message.includes('401')
+      || message.includes('403')
+    ) {
+      return true
+    }
+  }
+  return false
+}
 
 /** 新 URL 不重置失败链预算；只有成功 ready、用户重试或切换目标才能开始新恢复周期。 */
 export function useRuntimePreviewRecovery(options: PreviewRecoveryOptions) {
@@ -50,6 +85,7 @@ export function useRuntimePreviewRecovery(options: PreviewRecoveryOptions) {
     if (pending || options.enabled?.() === false || options.isPending?.()) return
     const currentSequence = sequence
     const artId = options.artifactId?.()
+    let shouldRecover = false
     if (artId && options.onRenewed) {
       pending = true
       try {
@@ -59,13 +95,26 @@ export function useRuntimePreviewRecovery(options: PreviewRecoveryOptions) {
           attempted = false
           return
         }
-      } catch {
-        // 续签失败（如 artifact 已 410 过期或无权限），回退至全量重建
+      } catch (error: unknown) {
+        // 区分错误类型：仅在 artifact 明确过期（410）、无权限（401/403）或不存在（404）时降级全量重建
+        const isTerminal = isArtifactRenewalTerminalError(error)
+        if (isTerminal) {
+          shouldRecover = true
+        } else if (currentSequence === sequence && options.enabled?.() !== false) {
+          // 瞬时网络异常或服务端重启：按退避重试排期，不消耗本轮全量重建预算
+          clearRenewTimer()
+          renewTimer = setTimeout(() => {
+            void executeRenewOrRecover()
+          }, 10000)
+        }
       } finally {
         if (currentSequence === sequence) pending = false
       }
+    } else {
+      shouldRecover = true
     }
-    if (currentSequence === sequence && options.enabled?.() !== false && !options.isPending?.()) {
+
+    if (shouldRecover && currentSequence === sequence && options.enabled?.() !== false && !options.isPending?.()) {
       tryRecover('PREVIEW_CONTEXT_INVALID')
     }
   }

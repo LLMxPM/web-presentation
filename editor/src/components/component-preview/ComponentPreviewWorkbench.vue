@@ -135,7 +135,7 @@
                   :src="previewFrameUrl"
                   :title="iframeTitle"
                   class="block h-full w-full bg-[rgb(var(--ui-surface-muted))]"
-                  referrerpolicy="same-origin"
+                  referrerpolicy="no-referrer"
                 />
               </div>
             </div>

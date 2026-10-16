@@ -112,10 +112,10 @@ export function canDownloadProjectBuildArtifact(job: ProjectBuildJob): boolean {
 }
 
 /**
- * 判断当前构建任务是否已有可打开的公开静态站点入口。
+ * 判断当前构建任务是否已有可在线浏览的私有构建产物入口。
  * @param job 构建任务
  * @returns 是否可打开
  */
 export function canOpenProjectBuildArtifact(job: ProjectBuildJob): boolean {
-  return Boolean(job.artifact_proxy_url)
+  return Boolean(job.artifact_storage_key || job.artifact_proxy_url)
 }

@@ -7,7 +7,7 @@
       :src="effectiveFrameUrl"
       :title="props.title"
       :class="props.iframeClass"
-      referrerpolicy="same-origin"
+      referrerpolicy="no-referrer"
     />
     <div v-else-if="props.status === 'idle'" :class="props.emptyContentClass">
       <div class="space-y-3">

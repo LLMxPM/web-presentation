@@ -131,6 +131,39 @@ describe('预览自动恢复', () => {
     expect(onRenewed).not.toHaveBeenCalled()
     expect(recover).toHaveBeenCalledTimes(1)
   })
+
+  it('续签遇到临时网络抖动时不降级全量重建且保留恢复预算', async () => {
+    vi.mocked(renewPreviewArtifactAccess).mockRejectedValueOnce(new Error('Network Error: Failed to fetch'))
+
+    const onRenewed = vi.fn()
+    const recover = vi.fn()
+    const frameUrl = ref(previewUrl(Math.floor(Date.now() / 1000) + 10))
+    const sourceKey = ref('page-1')
+    const artifactId = ref('art-transient-300')
+
+    let recovery!: ReturnType<typeof useRuntimePreviewRecovery>
+    render(defineComponent({
+      setup() {
+        recovery = useRuntimePreviewRecovery({
+          frameUrl: () => frameUrl.value,
+          sourceKey: () => sourceKey.value,
+          artifactId: () => artifactId.value,
+          onRenewed,
+          recover,
+        })
+        return () => h('div')
+      },
+    }))
+
+    await recovery.executeRenewOrRecover()
+    await nextTick()
+
+    expect(renewPreviewArtifactAccess).toHaveBeenCalledWith('art-transient-300')
+    expect(onRenewed).not.toHaveBeenCalled()
+    expect(recover).not.toHaveBeenCalled()
+    // 预算未被消耗：若后续收到结构化失效事件仍能正常触发恢复
+    expect(recovery.tryRecover('PREVIEW_CONTEXT_INVALID')).toBe(true)
+  })
 })
 
 /** 挂载恢复生命周期，便于验证真实 DOM 事件订阅与卸载。 */

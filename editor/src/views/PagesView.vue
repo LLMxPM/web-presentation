@@ -1372,12 +1372,23 @@ async function handleBuildArtifactOpen(job: ProjectBuildJob): Promise<void> {
     return
   }
 
+  // 同步用户手势内预先创建新窗口，规避浏览器异步网络请求后因缺少激活而静默拦截弹窗
+  const targetWindow = window.open('about:blank', '_blank')
+  if (targetWindow) {
+    targetWindow.opener = null
+  }
+
   try {
     const access = await getProjectBuildJobAccess(projectDetails.value.id, job.id)
-    if (access.browse_url) {
-      window.open(access.browse_url, '_blank', 'noopener,noreferrer')
+    if (access.browse_url && targetWindow) {
+      targetWindow.location.href = access.browse_url
+    } else if (targetWindow) {
+      targetWindow.close()
     }
   } catch (error) {
+    if (targetWindow) {
+      targetWindow.close()
+    }
     Message.error(getErrorMessage(error, '获取构建产物浏览授权失败。'))
   }
 }
