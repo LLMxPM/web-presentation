@@ -229,7 +229,11 @@ class AssetPackageService:
         changed = False
         next_description = AssetService._normalize_description(metadata.get("description"))
         next_tags = self._normalize_tags(metadata.get("tags"))
-        next_analysis_metadata = self._resolve_metadata_dict(metadata.get("analysis_metadata"))
+        if asset_type == AssetType.MODEL3D:
+            # 三维资源摘要始终以实际字节重解析为准，包内声明不得覆盖既有摘要。
+            next_analysis_metadata = AssetService._build_analysis_metadata(asset_type, original_name, content_type, content)
+        else:
+            next_analysis_metadata = self._resolve_metadata_dict(metadata.get("analysis_metadata"))
         next_render_metadata = self._resolve_render_metadata(
             metadata,
             asset_type,

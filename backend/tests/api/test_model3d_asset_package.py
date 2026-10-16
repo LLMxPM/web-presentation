@@ -239,3 +239,57 @@ async def test_model3d_asset_package_import_should_reparse_forged_summary_and_re
         )
         total = list_response.json()["total"]
         assert total == (1 if workspace_id == forged_workspace_id else 0)
+
+
+async def test_model3d_asset_package_reimport_should_ignore_forged_metadata_for_existing_asset(
+    authenticated_client: AsyncClient,
+) -> None:
+    """同名同内容资源复用导入时，包内伪造摘要不得覆盖既有平台摘要。"""
+
+    source_workspace_id = await _create_workspace(authenticated_client, "三维复用源空间")
+    target_workspace_id = await _create_workspace(authenticated_client, "三维复用目标空间")
+    asset = await _upload_model3d(authenticated_client, source_workspace_id)
+
+    export_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace_id}/assets/export-package",
+        json={"asset_ids": [asset["id"]]},
+    )
+    assert export_response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+    asset_json_path = f"assets/{manifest['assets'][0]['entry_key']}/asset.json"
+
+    # 先正常导入，目标空间获得平台解析摘要。
+    first_payload = await _import_package(authenticated_client, target_workspace_id, export_response.content)
+    assert first_payload["imported_count"] == 1
+    assert first_payload["assets"][0]["action"] == "create"
+
+    # 再用携带伪造摘要的同名同内容包导入：复用路径必须忽略包内摘要声明。
+    forged_archive = _rewrite_zip_json(
+        export_response.content,
+        asset_json_path,
+        lambda metadata: {
+            **metadata,
+            "description": "复用同步描述",
+            "analysis_metadata": {
+                "schema_version": 1,
+                "kind": "model3d",
+                "model3d": {"format": "glb", "scene_count": 999},
+                "forged": True,
+            },
+        },
+    )
+    second_payload = await _import_package(authenticated_client, target_workspace_id, forged_archive)
+    assert second_payload["imported_count"] == 0
+    assert second_payload["failed_count"] == 0
+    assert second_payload["assets"][0]["action"] == "update_metadata"
+
+    list_response = await authenticated_client.get(
+        f"/api/workspaces/{target_workspace_id}/assets",
+        params={"asset_type": "model3d"},
+    )
+    reimported = list_response.json()["items"][0]
+    # 描述等元数据正常同步，但分析摘要保持平台重解析结果。
+    assert reimported["description"] == "复用同步描述"
+    assert reimported["analysis_metadata"]["model3d"]["scene_count"] == 1
+    assert "forged" not in reimported["analysis_metadata"]
