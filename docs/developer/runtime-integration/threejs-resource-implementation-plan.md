@@ -1,8 +1,40 @@
 # 三维资源复用与渲染实施计划
 
-计划日期：2026-10-16。状态：待实施，各工作包均未开始。
+计划日期：2026-10-16；实施状态更新：2026-10-17。W01–W09 已实现并合入 `feature/threejs-model3d`，W10 主体验证完成；包级状态、T01–T12 证据与 G1 退出项见「实施状态与证据」。
 
 方向依据：[三维资源复用与 Three.js 渲染接入分析](./threejs-rendering-and-management-analysis.md)。本计划细化交付顺序、接口、数据增量、测试和发布门槛；后续实施状态与实际证据在本计划中维护。
+
+## 实施状态与证据（2026-10-17）
+
+各工作包复选项保留为范围清单，完成状态以本节为准。
+
+| 包 | 状态 | 证据摘要 |
+| :--- | :--- | :--- |
+| W00 | 并入后续包执行 | 格式矩阵、接受预算与引擎策略已固定进 Backend 策略对象、Runtime 引擎与支持矩阵；未单独留存首帧时间/峰值内存实测记录（见退出项） |
+| W01 | 已完成 | model3d 契约、展示参数 JSON Schema、共享正反例、统一错误码、Runtime Kit manifest 能力位与用后披露；`codegen:editor-api` / `codegen:preview-types` 无漂移 |
+| W02 | 已完成 | GLB 容器/JSON/bufferView/扩展校验与预算、模型上限、按 ID 替换与提交前基线复核、匿名入口关闭；`backend/tests/unit/test_model3d_glb_service.py`、`backend/tests/api/test_workspace_model3d_assets.py` |
+| W03 | 已完成 | 资源绑定/持有表与迁移、页面/组件版本冻结与动态名 409 拒绝、历史预览冻结映射、截图/检查/渲染指纹纳入资源与引擎身份、持有释放与 TTL 对账；`test_asset_binding_service.py`、`test_model3d_reference_collector.py`、`test_model3d_version_bindings.py` |
+| W04 | 已完成 | `AssetModel.v1` Viewer、多实例隔离、缓存引用计数、错误/零尺寸/销毁处理；`runtime` gate 与 `ModelViewer.test.ts`、`model3d/*.test.ts` |
+| W05 | 已完成 | 模型首帧探针汇入 render-ready.v1、Renderer 无登录态鉴权读取、真实截图；`test:renderer`、`test:render-e2e`（含三维真实像素） |
+| W06 | 已完成 | 静态帧准备/整块导出/清理、`data-runtime-kit-media-kind=model3d` 媒体词汇；`model-static-frames.test.ts`、`PPTXRuntimeKitExportDom.test.ts` |
+| W07 | 已完成 | Editor 三维上传、详情摘要、按 ID 替换（expected hash）、真实预览与 AssetPicker；`test:editor:gate` |
+| W08 | 已完成 | 构建冻结与物化、资源包/组件包/样式包/模板包含三维文件往返、离线产物；`test_project_build.py`、`test_model3d_asset_package.py`、`test_project_template_package_model3d.py` |
+| W09 | Backend 外部件已完成；CLI/MCP 未对接 | External `asset.file.replace`、AI 三维摘要与披露、OpenAPI/参考文档；`test_external_asset_replace.py`；CLI/MCP 见退出项 |
+| W10 | 本次收尾 | 全量 E2E（auth/smoke/visual-edit/ai/runtime-heavy 共 18 例）、迁移对拍、兼容矩阵与文档更新；镜像演练见退出项 |
+
+集成门禁（2026-10-16/17，分支 `feature/threejs-model3d`）：Backend 全量 1427、Editor gate、Runtime gate、根仓 contracts 59、repository 16、真实 Nginx Gateway 契约、CLI Skill 契约、`pg-claim` 9（专用库）、Renderer 27、`render-e2e` 2/2、`codegen` 无漂移、E2E 全量 18 例（17 通过，1 例跨项目并发 flake 隔离重跑 4/4 通过）。
+
+### 已知不稳定用例（非本分支引入）
+
+- `[visual-edit] AssetImage 专用检查器…`：全量并发下偶发失败，隔离重跑 3/3 通过。
+- `[ai] 内容助手在资源库页面…上传参考图`：全量并发下偶发按钮禁用（会话/路由作用域竞态），`--project=ai` 隔离重跑 4/4 通过。
+
+### G1 退出项（未关闭）
+
+- 独立 `web-presentation-cli` 与 `web-presentation-mcp` 尚未对接 model3d（上传、按 ID 替换、查询、原始文件获取）；M1 发布面限制为平台内与 External API 契约，不能标注「完整外部 Agent 支持」。
+- Docker lite/分服务镜像演练：`wp-runtime:drill` 已构建；`wp-lite:drill`、`wp-renderer:drill` 构建与专属环境演练未完成（网络受限，上一轮构建中止）。
+- W00 首帧时间/峰值内存实测记录未单独留存；T08 真实 PDF/PPTX 双视角目检与 T10「50 次切换无持续增长」测量未执行。
+- 渲染诊断导航回归（`page.diagnose` 曾以桥接宿主页为导航目标导致空等硬期限）已修复（`fix(render): 页面渲染诊断还原 Runtime 直连导航目标`），修复随 W10 验证。
 
 ## 交付目标与范围
 
@@ -131,7 +163,7 @@ M1 暂不让通用 overwrite 承担并发安全的模型替换。对已有 model
 
 ## 工作包与依赖顺序
 
-所有复选项当前均为待完成。工作包按合并顺序组织，不要求一次性提交所有模块；公开入口只能在相应门槛满足后启用。
+所有复选项保留为工作范围清单，完成状态与证据统一维护在「实施状态与证据」。工作包按合并顺序组织，不要求一次性提交所有模块；公开入口只能在相应门槛满足后启用。
 
 ```mermaid
 flowchart LR
@@ -282,7 +314,7 @@ flowchart LR
 - [ ] 在 external_operations 注册 asset.file.replace、路径、scope、幂等和返回示例；路由只调用统一领域服务。
 - [ ] API/OpenAPI/Editor 生成类型及参考文档同步，Gateway 路径可达且错误语义一致。
 - [ ] AI 资源查询返回三维摘要，提示优先复用现有资源；更新 tool_specs 后派生目录与披露，不给 GLB 增加 EditableAssetType。
-- [ ] 在独立 web-presentation-cli 仓对接 model3d 上传、按 ID 替换、查询、原始文件获取及使用说明；在独立 MCP 仓对接相应异步客户端和工具 Schema。
+- [ ] 在独立 web-presentation-cli 仓对接 model3d 上传、按 ID 替换、查询、原始文件获取及使用说明；在独立 MCP 仓对接相应异步客户端和工具 Schema。（未完成，G1 退出项；两仓当前无 model3d 命令与工具）
 - [ ] 做真实外部流程：查找资源→上传→多页面引用→替换→旧基线冲突→历史/构建验证；区分 Backend 契约通过和两个消费者各自验收通过。
 
 验收：同幂等键回放不重复生成历史；无 scope、跨工作空间、并发基线均按契约拒绝；真实 Nginx 契约回归和外部消费者各有证据。
@@ -291,11 +323,11 @@ flowchart LR
 
 前置：W01 至 W09；关闭 G1 后交付 M1。
 
-- [ ] 补齐本计划测试矩阵中的自动化与人工产物检查；保留 fixture、渲染配置和结果摘要。
-- [ ] 在专属数据库、Redis、卷和回环端口执行 lite/分服务镜像演练，遵循 [本地 Docker 架构演练](../testing/docker-architecture-drill.md)，不复用开发数据。
-- [ ] 验证新增迁移、升级顺序、旧 Runtime 不承接新组件、任务取消/超时、清理和恢复。
-- [ ] 更新 Runtime 构建身份及兼容矩阵；只有代码、协议、资源服务与交付镜像均就绪后才开放 manifest 能力与 Editor 入口。
-- [ ] 更新用户资源管理、Runtime Kit、页面资源引用、PPTX DOM、部署与 External/CLI 文档；产品正式支持时更新顶层 README。
+- [x] 补齐本计划测试矩阵中的自动化与人工产物检查；保留 fixture、渲染配置和结果摘要。（自动化证据见「实施状态与证据」；T08/T10 人工产物检查列入 G1 退出项）
+- [ ] 在专属数据库、Redis、卷和回环端口执行 lite/分服务镜像演练，遵循 [本地 Docker 架构演练](../testing/docker-architecture-drill.md)，不复用开发数据。（未完成，见 G1 退出项；`wp-runtime:drill` 已构建）
+- [x] 验证新增迁移、升级顺序、旧 Runtime 不承接新组件、任务取消/超时、清理和恢复。（`pg-claim` 双库迁移对拍；旧 Runtime 由 manifest 能力位拒绝；取消/超时/清理由 Renderer 与检查持有释放测试覆盖）
+- [x] 更新 Runtime 构建身份及兼容矩阵；只有代码、协议、资源服务与交付镜像均就绪后才开放 manifest 能力与 Editor 入口。（`model3d_engine` 清单块与三端指纹；兼容矩阵声明拒绝语义）
+- [x] 更新用户资源管理、Runtime Kit、页面资源引用、PPTX DOM、部署与 External/CLI 文档；产品正式支持时更新顶层 README。（`resources.md`、`asset-reuse.md`、`runtime-kit-capabilities.md`、`pptx-export-dom-contract.md`、`external-agent-api.md`、`troubleshooting.md`、`compatibility-matrix.md`；CLI/MCP 文档随消费者对接补齐）
 
 验收：G1 无未关闭的阻断项；若 CLI 或 MCP 尚未完成，明确限制发布面并记录退出项，不能标注“完整外部 Agent 支持”。
 
@@ -353,12 +385,29 @@ flowchart LR
 
 自动化证据写入现有 `test-results/e2e/` 等对应测试输出目录；仅将小型结论与稳定 fixture 索引写入文档，不提交生成的大型媒体、依赖或缓存。大于 10 MiB 的二进制 fixture 先判断是否需要入库并按仓库 LFS 规则处理，边界压力样本优先测试时生成。
 
+### M1 矩阵证据映射（2026-10-17）
+
+| 编号 | 自动化证据 | 遗留 |
+| :--- | :--- | :--- |
+| T01 | `backend/tests/api/test_workspace_model3d_assets.py`（上传/下载同 hash）；E2E smoke「三维模型页面截图应包含真实模型像素」真实渲染 | — |
+| T02 | `backend/tests/unit/test_model3d_glb_service.py` 与 api 反例（非法容器/引用/预算/外部 URI 拒绝且旧记录不变） | — |
+| T03 | `runtime/src/runtime-kit/internal/renderers/ModelViewer.test.ts`、`model3d/model-cache.test.ts`（实例独立、共享缓存引用计数、卸载隔离） | — |
+| T04 | W02 并发替换测试与 `backend/tests/integration/test_external_asset_replace.py`（仅一个基线成功、重放无重复历史） | — |
+| T05 | `backend/tests/integration/test_model3d_version_bindings.py`（历史冻结仍 A、当前刷新 B）；截图过期复核 `test_page_screenshot.py`；构建快照 `test_project_build.py` | — |
+| T06 | `test_model3d_reference_collector.py`（组件闭包递归）；动态名保存即 409 拒绝（integration 与构建测试） | — |
+| T07 | Viewer 状态机与相机/零尺寸边界（`ModelViewer.test.ts`、`camera-fit.test.ts`）；首帧探针汇入 render-ready | — |
+| T08 | `model-static-frames.test.ts`（实例视角分区不共用帧）、`PPTXRuntimeKitExportDom.test.ts`（整块导出与回退报告） | 真实 PDF/PPTX 双视角目检未执行 |
+| T09 | `test_model3d_asset_package.py`、`test_project_template_package_model3d.py`（往返字节保持与重新绑定）；离线物化由构建测试覆盖 | — |
+| T10 | `backend/tests/unit/test_asset_binding_service.py`（持有保护/释放/对账） | 「50 次切换无持续增长」人工测量未执行 |
+| T11 | `test_private_asset_chains.py`、file_auth 单测、真实 Nginx Gateway 契约回归 | — |
+| T12 | Renderer 单测（槽位与清理）与 `test:render-e2e` 真实 PNG；E2E 截图 smoke | lite/分服务镜像演练未完成（退出项） |
+
 ### 门槛与执行命令
 
 | 门槛 | 关闭条件 |
 | :--- | :--- |
 | G0 | 真实镜像技术验证、样本与预算固定、无未解决的 WebGL/导出阻断 |
-| G1 | W01–W10 完成；T01–T12 通过；迁移、外部契约与部署证据齐全；M1 支持矩阵对应实际行为 |
+| G1 | W01–W10 完成；T01–T12 通过；迁移、外部契约与部署证据齐全；M1 支持矩阵对应实际行为。（当前：W01–W09 完成、W10 主体完成；退出项未关闭，见「实施状态与证据」） |
 | G2 | W11–W13 完成；T13/T14 与全部 M1 回归通过；文件集下载保持标准可用 |
 
 开发阶段先跑受影响的最小测试，工作包集成后再运行对应完整门禁。M1 发布前的执行集合为：
