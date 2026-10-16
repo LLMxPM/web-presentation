@@ -21,6 +21,7 @@ from app.models.api_access_token import ApiAccessToken, ApiAccessTokenScope, Api
 from app.models.api_idempotency_record import ApiIdempotencyRecord
 from app.models.api_mutation_job import ApiMutationJob
 from app.models.asset import WorkspaceAsset
+from app.models.asset_binding import AssetReferenceBinding
 from app.models.asset_render_hint_backfill_job import AssetRenderHintBackfillJob
 from app.models.component_component_dependency import ComponentVersionComponentDependency
 from app.models.component_resource import ComponentVersionComponentResource
@@ -109,6 +110,7 @@ __all__ = [
     "ComponentVersionComponentDependency",
     "ComponentVersionComponentResource",
     "WorkspaceAsset",
+    "AssetReferenceBinding",
     "AssetRenderHintBackfillJob",
     "WorkspaceFontConfig",
     "WorkspaceFontFamily",
