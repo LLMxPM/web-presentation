@@ -561,31 +561,32 @@ async def test_project_build_snapshot_should_include_model3d_static_reference(
 async def test_project_build_should_return_structured_model3d_reference_errors(
     authenticated_client: AsyncClient,
 ) -> None:
-    """三维资源的动态引用与缺失引用都应返回可展示的结构化错误。"""
+    """三维动态引用在版本冻结即被拒绝，缺失静态引用在构建时返回结构化错误。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
-    dynamic_page = await create_routed_build_page(
+
+    # 动态模型名无法冻结资源版本：页面保存直接返回结构化错误，不进入构建。
+    dynamic_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "动态模型引用页面",
+            "page_content": '<template><AssetModel :name="dynamicModelName" /></template>',
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert dynamic_response.status_code == 409
+    assert dynamic_response.json()["code"] == "MODEL3D_REFERENCE_UNRESOLVED"
+
+    # 缺失的静态引用可以通过保存，但构建时必须返回可展示的结构化错误。
+    await create_routed_build_page(
         authenticated_client,
         workspace_id,
         project_id,
-        '<template><AssetModel :name="dynamicModelName" /></template>',
+        '<template><AssetModel name="missing_model" /></template>',
     )
-
-    dynamic_response = await authenticated_client.post(
-        f"/api/projects/{project_id}/build-jobs",
-        json={"base_url": "./"},
-    )
-    assert dynamic_response.status_code == 409
-    dynamic_payload = dynamic_response.json()
-    assert dynamic_payload["code"] == "PROJECT_BUILD_DYNAMIC_ASSET_REFERENCE"
-    assert dynamic_payload["data"]["dynamic_module_paths"]
-
-    update_response = await authenticated_client.patch(
-        f"/api/pages/{dynamic_page['id']}",
-        json={"page_content": '<template><AssetModel name="missing_model" /></template>'},
-    )
-    assert update_response.status_code == 200, update_response.text
-
     missing_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs",
         json={"base_url": "./"},
