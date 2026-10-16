@@ -66,6 +66,10 @@ export async function loadModel3dEngine(interactive = false): Promise<Model3dEng
   if (!interactive) {
     if (!enginePromise) {
       enginePromise = createBaseEngine()
+      // 动态 import 失败（网络抖动、chunk 缺失）时重置缓存，允许后续调用重新加载。
+      enginePromise.catch(() => {
+        enginePromise = null
+      })
     }
     return enginePromise
   }
@@ -76,6 +80,10 @@ export async function loadModel3dEngine(interactive = false): Promise<Model3dEng
       const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls.js')
       return { ...base, OrbitControls }
     })()
+    // 同基础引擎：失败后重置，避免页面生命周期内永久持有 rejected Promise。
+    interactiveEnginePromise.catch(() => {
+      interactiveEnginePromise = null
+    })
   }
   return interactiveEnginePromise
 }
@@ -273,7 +281,9 @@ function assertSelfContainedGlb(buffer: ArrayBuffer): void {
   for (const [label, list] of groups) {
     for (const item of list ?? []) {
       const uri = item?.uri
-      if (typeof uri === 'string' && uri && !/^(data:|blob:)/i.test(uri)) {
+      // 只放行 data: 内嵌数据；blob: 是运行时会话内地址，出现在源 GLB 中跨会话必失效，
+      // 放行只会把错误推迟到 loader 的 fetch 阶段，难以排查。
+      if (typeof uri === 'string' && uri && !/^data:/i.test(uri)) {
         throw new Error(`三维资源包含外部 ${label} 依赖 ${uri}，首期只支持自包含 GLB。`)
       }
     }

@@ -32,10 +32,11 @@ function buildGlb(json: unknown): ArrayBuffer {
 
 /**
  * 构造 GLTFLoader 桩：记录调用并回传最小 gltf 结果。
+ * @param sceneOverride 可选的自定义场景桩（默认 traverse 为空实现）
  * @returns 引擎桩与解析探针
  */
-function createEngineStub(): { engine: Model3dEngine; parse: ReturnType<typeof vi.fn> } {
-  const scene = { traverse: () => undefined }
+function createEngineStub(sceneOverride?: unknown): { engine: Model3dEngine; parse: ReturnType<typeof vi.fn> } {
+  const scene = sceneOverride ?? { traverse: () => undefined }
   const parse = vi.fn((
     _data: ArrayBuffer,
     _path: string,
@@ -92,5 +93,77 @@ describe('parseGlbToResource 加载链路', () => {
     })
 
     await expect(parseGlbToResource(buffer, engine)).rejects.toThrow(/外部 image 依赖/)
+  })
+
+  it('源 GLB 内出现 blob: URI 时应拒绝（跨会话地址必然失效）', async () => {
+    const { engine } = createEngineStub()
+    const buffer = buildGlb({
+      asset: { version: '2.0' },
+      images: [{ uri: 'blob:https://example.com/abcd' }],
+    })
+
+    await expect(parseGlbToResource(buffer, engine)).rejects.toThrow(/外部 image 依赖/)
+  })
+})
+
+describe('disposeObject3DResources 释放链路（经 parseGlbToResource.dispose）', () => {
+  /**
+   * 构造带真实 traverse 遍历的场景桩：遍历时回调注入的对象。
+   * @param children traverse 回调需要访问的对象列表
+   * @returns 场景桩
+   */
+  function createTraversableScene(children: unknown[]): { traverse: (cb: (object: unknown) => void) => void } {
+    return {
+      traverse: (cb: (object: unknown) => void) => {
+        for (const child of children) {
+          cb(child)
+        }
+      },
+    }
+  }
+
+  it('dispose 应释放几何、材质、纹理并回收 blob 图片地址', async () => {
+    const geometryDispose = vi.fn()
+    const materialDispose = vi.fn()
+    const textureDispose = vi.fn()
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    const mesh = {
+      geometry: { dispose: geometryDispose },
+      material: {
+        map: { isTexture: true, dispose: textureDispose, image: { src: 'blob:https://example.com/tex' } },
+        normalMap: { isTexture: true, dispose: vi.fn(), image: { src: 'data:image/png;base64,AAAA' } },
+        dispose: materialDispose,
+      },
+    }
+    const scene = createTraversableScene([mesh])
+    const { engine } = createEngineStub(scene)
+    const buffer = buildGlb({ asset: { version: '2.0' }, scenes: [{}] })
+
+    const resource = await parseGlbToResource(buffer, engine)
+    resource.dispose()
+
+    expect(geometryDispose).toHaveBeenCalledTimes(1)
+    expect(materialDispose).toHaveBeenCalledTimes(1)
+    expect(textureDispose).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:https://example.com/tex')
+    revokeObjectURL.mockRestore()
+  })
+
+  it('材质数组与无 dispose 方法的对象都应安全处理', async () => {
+    const geometryDispose = vi.fn()
+    const firstMaterialDispose = vi.fn()
+    const mesh = {
+      geometry: { dispose: geometryDispose },
+      material: [{ dispose: firstMaterialDispose }, {}],
+    }
+    const scene = createTraversableScene([mesh, { geometry: undefined, material: undefined }])
+    const { engine } = createEngineStub(scene)
+    const buffer = buildGlb({ asset: { version: '2.0' }, scenes: [{}] })
+
+    const resource = await parseGlbToResource(buffer, engine)
+    expect(() => resource.dispose()).not.toThrow()
+    expect(geometryDispose).toHaveBeenCalledTimes(1)
+    expect(firstMaterialDispose).toHaveBeenCalledTimes(1)
   })
 })

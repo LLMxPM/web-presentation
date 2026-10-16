@@ -148,6 +148,8 @@ let frameHandle: number | null = null
 let needsRender = false
 let paused = false
 let hasRenderedFrame = false
+/** 上下文丢失后置位：要求恢复后重新取得一次真实渲染证据才能回到 ready。 */
+let pendingRenderProof = false
 let disposed = false
 let requestToken = 0
 let abortController: AbortController | null = null
@@ -213,6 +215,7 @@ function renderFrame(): void {
   controls?.update()
   renderer.render(activeScene, activeCamera)
   hasRenderedFrame = true
+  pendingRenderProof = false
 }
 
 /**
@@ -315,6 +318,32 @@ async function markReady(token: number): Promise<void> {
 }
 
 /**
+ * WebGL 上下文恢复后的就绪门禁：等待真实渲染出新的一帧才回到 ready。
+ *
+ * 与首次加载不同，恢复后的 rAF 可能先于调度渲染触发，且历史 hasRenderedFrame
+ * 无法证明恢复后的绘制成功，因此这里循环等待并主动补排帧；超时则保持 error 态。
+ * @param token 恢复时的加载令牌
+ */
+async function markReadyAfterRenderedFrame(token: number): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await waitForAnimationFrame()
+    if (token !== requestToken || disposed) {
+      return
+    }
+    if (hasRenderedFrame && !pendingRenderProof) {
+      state.value = 'ready'
+      stateMessage.value = ''
+      return
+    }
+    requestRender()
+  }
+  if (token === requestToken && !disposed) {
+    state.value = 'error'
+    stateMessage.value = boundMessage('WebGL 上下文已恢复，但未能完成渲染，请刷新后重试。')
+  }
+}
+
+/**
  * 释放当前实例：取消在途请求、断开控制器、释放渲染器与缓存引用。
  */
 function teardownInstance(): void {
@@ -362,6 +391,7 @@ function teardownInstance(): void {
   orthoSourceFrustum = null
   cameraMode = 'auto'
   hasRenderedFrame = false
+  pendingRenderProof = false
 }
 
 /**
@@ -746,15 +776,18 @@ function handleContextLost(event: Event): void {
     stateMessage.value = boundMessage('WebGL 上下文丢失，正在尝试恢复。')
   }
   paused = true
+  // 丢失前的渲染证据不再可信：恢复后必须重新渲染成功才能回到 ready。
+  pendingRenderProof = true
 }
 
 /**
- * 处理 WebGL 上下文恢复：重建绘制并回到 ready。
+ * 处理 WebGL 上下文恢复：重建绘制，等待新的一帧真实渲染后再回到 ready。
  */
 function handleContextRestored(): void {
+  const token = requestToken
   paused = false
   requestRender()
-  void markReady(requestToken)
+  void markReadyAfterRenderedFrame(token)
 }
 
 /**

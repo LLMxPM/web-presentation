@@ -50,6 +50,9 @@ import ModelViewer from '@runtime-kit/internal/renderers/ModelViewer.vue'
 import { resolveAssetFallbackMessage, resolveAssetFallbackUrl } from '@runtime-kit/internal/utils/asset-fallback'
 import { DEFAULT_MODEL_FALLBACK_MESSAGE } from '@runtime-kit/internal/renderers/model3d/view-options'
 
+// attrs 已在双分支模板中显式 v-bind="$attrs" 透传，关闭自动 fallthrough 避免重复继承与非单根告警。
+defineOptions({ inheritAttrs: false })
+
 interface Props {
   /** 资源逻辑名 `asset.name` */
   name: string
