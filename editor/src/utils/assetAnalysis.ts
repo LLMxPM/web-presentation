@@ -9,7 +9,7 @@ import type { AssetAnalysisMetadata } from '@/types/api'
  * @param analysis 资产分析元数据
  */
 export function isStrokeWidthEditable(analysis: AssetAnalysisMetadata | null | undefined): boolean {
-  return Boolean(analysis?.icon.stroke_width_editable)
+  return Boolean(analysis?.icon?.stroke_width_editable)
 }
 
 /**
@@ -17,8 +17,9 @@ export function isStrokeWidthEditable(analysis: AssetAnalysisMetadata | null | u
  * @param analysis 资产分析元数据
  */
 export function getRenderModeLabel(analysis: AssetAnalysisMetadata | null | undefined): string {
-  if (!analysis) return '未分析'
-  return analysis.icon.render_mode === 'inline_svg' ? '内联 SVG' : '图片'
+  const icon = analysis?.icon
+  if (!icon) return '未分析'
+  return icon.render_mode === 'inline_svg' ? '内联 SVG' : '图片'
 }
 
 /**
@@ -26,7 +27,8 @@ export function getRenderModeLabel(analysis: AssetAnalysisMetadata | null | unde
  * @param analysis 资产分析元数据
  */
 export function getIconStyleLabel(analysis: AssetAnalysisMetadata | null | undefined): string {
-  if (!analysis) return '未分析'
+  const icon = analysis?.icon
+  if (!icon) return '未分析'
   const styleMap: Record<string, string> = {
     stroke: '描边',
     fill: '填充',
@@ -34,7 +36,7 @@ export function getIconStyleLabel(analysis: AssetAnalysisMetadata | null | undef
     complex: '复杂',
     unknown: '未知',
   }
-  return styleMap[analysis.icon.style ?? 'unknown'] || '未知'
+  return styleMap[icon.style ?? 'unknown'] || '未知'
 }
 
 /**
@@ -42,13 +44,14 @@ export function getIconStyleLabel(analysis: AssetAnalysisMetadata | null | undef
  * @param analysis 资产分析元数据
  */
 export function getAnalysisStatusLabel(analysis: AssetAnalysisMetadata | null | undefined): string {
-  if (!analysis) return '未分析'
+  const icon = analysis?.icon
+  if (!icon) return '未分析'
   const statusMap: Record<string, string> = {
     analyzed: '已分析',
     unsupported: '不支持',
     error: '分析失败',
   }
-  return statusMap[analysis.icon.analysis_status ?? ''] || '未分析'
+  return statusMap[icon.analysis_status ?? ''] || '未分析'
 }
 
 /**
@@ -56,7 +59,7 @@ export function getAnalysisStatusLabel(analysis: AssetAnalysisMetadata | null | 
  * @param analysis 资产分析元数据
  */
 export function getIconCapabilitySummary(analysis: AssetAnalysisMetadata | null | undefined): string {
-  if (!analysis) {
+  if (!analysis?.icon) {
     return '未分析，默认描边宽度不会生效'
   }
   const supportText = analysis.icon.stroke_width_editable ? '支持描边宽度' : '不支持描边宽度'

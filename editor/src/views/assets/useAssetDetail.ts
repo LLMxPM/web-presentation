@@ -110,6 +110,28 @@ export function useAssetDetail(options: AssetDetailOptions) {
     )
   })
 
+  /**
+   * 三维资源（model3d）分析摘要；非三维资源或缺少摘要时返回 null。
+   */
+  const model3dSummary = computed(() => {
+    const analysis = detailAsset.value?.analysis_metadata
+    const payload = analysis?.kind === 'model3d' ? analysis.model3d : null
+    if (!payload) return null
+    const sceneCount = payload.scene_count ?? 0
+    return {
+      scenes: `${sceneCount} 个场景${payload.default_scene_index == null ? '' : `，默认场景 #${payload.default_scene_index}`}`,
+      cameras: payload.cameras?.length
+        ? payload.cameras.map(item => `#${item.index}${item.name ? ` ${item.name}` : ''}（${item.type === 'orthographic' ? '正交' : '透视'}）`).join('、')
+        : '无源相机（自动取景）',
+      animations: payload.animations?.length
+        ? payload.animations.map(item => `#${item.index}${item.name ? ` ${item.name}` : ''}`).join('、')
+        : '无动画',
+      extensionsRequired: payload.extensions_required?.length ? payload.extensions_required.join('、') : '无必需扩展',
+      validationProfile: payload.validation_profile || '',
+      warnings: payload.warnings ?? [],
+    }
+  })
+
   const activeReplaceAccept = computed(() => {
     const assetType = replacingAsset.value?.asset_type || detailAsset.value?.asset_type
     return assetType ? ASSET_UPLOAD_ACCEPT[assetType] : ''
@@ -322,16 +344,48 @@ export function useAssetDetail(options: AssetDetailOptions) {
       return
     }
     try {
-      const updated = await replaceWorkspaceAssetFile(options.workspaceId.value, asset.id, file)
+      // 三维资源必须携带版本基线：以当前详情快照的 hash 提交，冲突时后端拒绝而不是静默覆盖。
+      const expectedFileHash = asset.asset_type === 'model3d' ? asset.file_hash : undefined
+      const updated = await replaceWorkspaceAssetFile(options.workspaceId.value, asset.id, file, expectedFileHash)
       Message.success('资源文件已替换')
       detailAsset.value = updated
       selectedAsset.value = updated
       await options.onRefresh()
     } catch (error) {
-      Message.error(getErrorMessage(error, '替换资源文件失败'))
+      if (isReplaceVersionConflict(error)) {
+        Message.warning('资源已被其他操作更新，已为你刷新最新文件信息；请确认后重新提交替换。')
+        await options.onRefresh()
+        syncDetailAssetAfterRefresh()
+      } else {
+        Message.error(getErrorMessage(error, '替换资源文件失败'))
+      }
     } finally {
       target.value = ''
       replacingAsset.value = null
+    }
+  }
+
+  /**
+   * 判断替换失败是否属于版本基线冲突（含并发更新与缺失基线）。
+   * @param error 接口异常
+   * @returns 是否版本相关冲突
+   */
+  function isReplaceVersionConflict(error: unknown): boolean {
+    const responseData = (error as { response?: { data?: { code?: string } } } | null)?.response?.data
+    const code = String(responseData?.code || '')
+    return code === 'ASSET_VERSION_CONFLICT' || code === 'MODEL3D_REPLACE_BASELINE_REQUIRED'
+  }
+
+  /**
+   * 详情资源在外部刷新后用列表中的最新快照同步当前详情，避免展示过期 hash。
+   */
+  function syncDetailAssetAfterRefresh(): void {
+    const currentId = detailAsset.value?.id
+    if (currentId == null) return
+    const refreshed = options.assets.value.find(candidate => candidate.id === currentId)
+    if (refreshed) {
+      detailAsset.value = refreshed
+      selectedAsset.value = refreshed
     }
   }
 
@@ -432,6 +486,7 @@ export function useAssetDetail(options: AssetDetailOptions) {
     canSaveContent,
     referenceGroups,
     referenceCountText,
+    model3dSummary,
     activeReplaceAccept,
     canRecalculateDetailAspectRatio,
     openAssetDetail,

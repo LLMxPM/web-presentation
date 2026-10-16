@@ -208,7 +208,7 @@ watch(
   () => [props.projectIconUrl, props.projectIconName, props.projectIconAnalysis] as const,
   async ([nextProjectIconUrl, , nextProjectIconAnalysis]) => {
     projectIconSvgContent.value = ''
-    const iconFormat = nextProjectIconAnalysis?.icon.format
+    const iconFormat = nextProjectIconAnalysis?.icon?.format
     if (!nextProjectIconUrl || iconFormat !== 'svg') {
       return
     }
@@ -249,7 +249,7 @@ const projectIconUrl = computed(() => props.projectIconUrl || '')
 const projectIconName = computed(() => props.projectIconName || '未设置项目图标')
 const projectIconInitial = computed(() => projectIconName.value.charAt(0).toUpperCase() || '?')
 const projectIconSupportsStrokeWidth = computed(() => isStrokeWidthEditable(props.projectIconAnalysis))
-const projectIconIsSvg = computed(() => props.projectIconAnalysis?.icon.format === 'svg')
+const projectIconIsSvg = computed(() => props.projectIconAnalysis?.icon?.format === 'svg')
 const projectIconPreviewSize = computed(() => 24)
 const projectIconFrameSize = computed(() => 42)
 const normalizedPreviewStrokeWidth = computed(() => Math.max(1, Number(props.iconDefaultStrokeWidth) || 2))

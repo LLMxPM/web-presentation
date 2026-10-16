@@ -122,6 +122,34 @@
                 重新计算比例
               </UiButton>
             </section>
+            <section v-if="detail.model3dSummary.value" class="rounded-xl border border-border bg-canvas p-4">
+              <h3 class="text-sm font-bold text-text">三维模型摘要</h3>
+              <dl class="mt-3 space-y-2 text-xs">
+                <div class="flex justify-between gap-4">
+                  <dt class="shrink-0 text-text-muted">场景</dt>
+                  <dd class="min-w-0 truncate text-right font-semibold text-text">{{ detail.model3dSummary.value.scenes }}</dd>
+                </div>
+                <div class="flex justify-between gap-4">
+                  <dt class="shrink-0 text-text-muted">源相机</dt>
+                  <dd class="min-w-0 truncate text-right font-semibold text-text">{{ detail.model3dSummary.value.cameras }}</dd>
+                </div>
+                <div class="flex justify-between gap-4">
+                  <dt class="shrink-0 text-text-muted">动画</dt>
+                  <dd class="min-w-0 truncate text-right font-semibold text-text">{{ detail.model3dSummary.value.animations }}</dd>
+                </div>
+                <div class="flex justify-between gap-4">
+                  <dt class="shrink-0 text-text-muted">必需扩展</dt>
+                  <dd class="min-w-0 truncate text-right font-semibold text-text">{{ detail.model3dSummary.value.extensionsRequired }}</dd>
+                </div>
+                <div v-if="detail.model3dSummary.value.validationProfile" class="flex justify-between gap-4">
+                  <dt class="shrink-0 text-text-muted">校验策略</dt>
+                  <dd class="min-w-0 truncate text-right font-mono text-text-emphasis">{{ detail.model3dSummary.value.validationProfile }}</dd>
+                </div>
+              </dl>
+              <ul v-if="detail.model3dSummary.value.warnings.length" class="mt-3 space-y-1 text-xs leading-5 text-warning-strong">
+                <li v-for="warning in detail.model3dSummary.value.warnings" :key="warning">{{ warning }}</li>
+              </ul>
+            </section>
             <div>
               <label class="mb-1 block text-xs font-bold text-text-muted">资源 name</label>
               <UiInput v-model="detail.editForm.name" />
@@ -149,7 +177,8 @@
               <div>
                 <FileText class="mx-auto mb-3 h-10 w-10 text-text-faint" />
                 <p class="text-sm font-bold text-text-secondary">该资源不支持文本内容编辑</p>
-                <p class="mt-2 text-xs leading-6 text-text-disabled">位图图标和位图图片只能复制、归档、删除或维护元数据。</p>
+                <p v-if="detail.detailAsset.value.asset_type === 'model3d'" class="mt-2 text-xs leading-6 text-text-disabled">三维模型是标准二进制资源：请通过「替换」上传新的 GLB 文件更新内容；页面通过资源名引用并各自设置视角。</p>
+                <p v-else class="mt-2 text-xs leading-6 text-text-disabled">位图图标和位图图片只能复制、归档、删除或维护元数据。</p>
               </div>
             </div>
             <template v-else>

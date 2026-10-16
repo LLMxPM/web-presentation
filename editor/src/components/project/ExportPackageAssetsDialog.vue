@@ -246,7 +246,7 @@ const emit = defineEmits<{
   confirm: []
 }>()
 
-const assetTypeOrder: AssetType[] = ['image', 'icon', 'font', 'video', 'drawio', 'mermaid', 'chart', 'formula']
+const assetTypeOrder: AssetType[] = ['image', 'icon', 'font', 'video', 'drawio', 'mermaid', 'chart', 'formula', 'model3d']
 const assetTypeLabels: Record<AssetType, string> = {
   image: '图片',
   icon: '图标',
@@ -256,6 +256,7 @@ const assetTypeLabels: Record<AssetType, string> = {
   mermaid: 'Mermaid',
   chart: '图表',
   formula: '公式',
+  model3d: '三维模型',
 }
 
 type AssetTypeTabKey = 'all' | AssetType

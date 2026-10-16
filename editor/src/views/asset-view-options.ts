@@ -48,6 +48,7 @@ export const ASSET_TYPE_OPTIONS: Array<{ value: AssetType; label: string }> = [
   { value: 'mermaid', label: 'Mermaid' },
   { value: 'chart', label: 'Chart' },
   { value: 'formula', label: 'Formula' },
+  { value: 'model3d', label: '三维模型' },
 ]
 
 export const ASSET_SORT_OPTIONS = [

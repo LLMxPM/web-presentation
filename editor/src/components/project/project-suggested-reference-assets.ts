@@ -12,4 +12,5 @@ export const PROJECT_SUGGESTED_REFERENCE_ASSET_TYPES: AssetType[] = [
   'mermaid',
   'chart',
   'formula',
+  'model3d',
 ]

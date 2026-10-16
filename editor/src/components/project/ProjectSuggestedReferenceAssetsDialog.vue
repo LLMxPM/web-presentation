@@ -228,6 +228,7 @@ const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   mermaid: 'Mermaid',
   chart: '图表',
   formula: '公式',
+  model3d: '三维模型',
 }
 
 const loading = ref(false)

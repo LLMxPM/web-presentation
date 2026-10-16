@@ -293,15 +293,20 @@ function sleep(ms: number): Promise<void> {
  * @param workspaceId 工作空间 ID
  * @param assetId 当前要替换的资源 ID
  * @param file 新文件对象
+ * @param expectedFileHash 可选版本基线；三维资源必填，缺失时后端返回 422
  * @returns 替换后的资源详情
  */
 export async function replaceWorkspaceAssetFile(
   workspaceId: number,
   assetId: number,
   file: File,
+  expectedFileHash?: string,
 ): Promise<AssetResponse> {
   const formData = new FormData()
   formData.append('file', file)
+  if (expectedFileHash) {
+    formData.append('expected_file_hash', expectedFileHash)
+  }
 
   const { data } = await http.post<AssetResponse>(`/workspaces/${workspaceId}/assets/${assetId}/replace`, formData, {
     headers: {

@@ -160,6 +160,7 @@
                 <BarChart3 v-else-if="asset.asset_type === 'chart'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-success" />
                 <Sigma v-else-if="asset.asset_type === 'formula'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-ai" />
                 <Video v-else-if="asset.asset_type === 'video'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-danger" />
+                <Box v-else-if="asset.asset_type === 'model3d'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-ai-strong" />
                 <FileText v-else class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-text-disabled" />
 
                 <div class="absolute inset-0 flex items-center justify-center gap-2 bg-overlay/0 opacity-0 transition-all group-hover:bg-overlay/20 group-hover:opacity-100">
@@ -411,6 +412,7 @@ import { useQuery } from '@tanstack/vue-query'
 import {
   Archive,
   BarChart3,
+  Box,
   Copy,
   Download,
   FilePlus2,

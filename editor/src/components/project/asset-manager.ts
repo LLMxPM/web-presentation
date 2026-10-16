@@ -22,6 +22,7 @@ export const ASSET_GROUPS: { key: string; label: string; types: { label: string;
       { label: 'Mermaid', value: 'mermaid' },
       { label: '图表', value: 'chart' },
       { label: '公式', value: 'formula' },
+      { label: '三维模型', value: 'model3d' },
     ],
   },
 ]
@@ -35,6 +36,7 @@ export const ASSET_ALLOWED_EXTENSIONS: Record<AssetType, string[]> = {
   mermaid: ['.mmd', '.mermaid', '.txt'],
   chart: ['.json', '.yaml', '.yml'],
   formula: ['.tex', '.txt'],
+  model3d: ['.glb'],
 }
 
 const ASSET_ACCEPT_MIME_TYPES: Record<AssetType, string[]> = {
@@ -46,6 +48,7 @@ const ASSET_ACCEPT_MIME_TYPES: Record<AssetType, string[]> = {
   mermaid: ['text/plain'],
   chart: ['application/json', 'text/yaml', 'text/plain'],
   formula: ['text/plain'],
+  model3d: ['model/gltf-binary'],
 }
 
 export const ASSET_UPLOAD_ACCEPT: Record<AssetType, string> = {
@@ -57,6 +60,7 @@ export const ASSET_UPLOAD_ACCEPT: Record<AssetType, string> = {
   mermaid: [...ASSET_ALLOWED_EXTENSIONS.mermaid, ...ASSET_ACCEPT_MIME_TYPES.mermaid].join(','),
   chart: [...ASSET_ALLOWED_EXTENSIONS.chart, ...ASSET_ACCEPT_MIME_TYPES.chart].join(','),
   formula: [...ASSET_ALLOWED_EXTENSIONS.formula, ...ASSET_ACCEPT_MIME_TYPES.formula].join(','),
+  model3d: [...ASSET_ALLOWED_EXTENSIONS.model3d, ...ASSET_ACCEPT_MIME_TYPES.model3d].join(','),
 }
 
 export const TEXT_CREATABLE_ASSET_TYPES: AssetType[] = ['icon', 'image', 'drawio', 'mermaid', 'chart', 'formula']
@@ -86,6 +90,8 @@ const TEXT_ASSET_DEFAULTS: Record<AssetType, { fileName: string; contentType: st
     contentType: 'text/plain',
     content: 'E = mc^2',
   },
+  // 三维模型只支持文件上传，不使用文本模板；占位值不会被文本创建流程读取。
+  model3d: { fileName: 'model.glb', contentType: 'model/gltf-binary', content: '' },
 }
 
 /**

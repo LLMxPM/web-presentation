@@ -78,6 +78,7 @@
             <BarChart3 v-else-if="asset.asset_type === 'chart'" class="h-5 w-5 text-success" />
             <Sigma v-else-if="asset.asset_type === 'formula'" class="h-5 w-5 text-ai" />
             <Video v-else-if="asset.asset_type === 'video'" class="h-5 w-5 text-danger" />
+            <Box v-else-if="asset.asset_type === 'model3d'" class="h-5 w-5 text-ai-strong" />
             <FileText v-else class="h-5 w-5 text-text-disabled" />
           </div>
 
@@ -219,6 +220,7 @@ import { useRouter } from 'vue-router'
 import {
   ArrowUpRight,
   BarChart3,
+  Box,
   Copy,
   Download,
   FileText,
