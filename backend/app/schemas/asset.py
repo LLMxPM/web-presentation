@@ -48,12 +48,54 @@ class AssetIconAnalysisPayload(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class AssetModel3dCameraSummary(BaseModel):
+    """三维资源内可静态读取的相机摘要；索引为源文件身份，名称仅作辅助。"""
+
+    index: int = Field(ge=0)
+    name: str | None = None
+    type: Literal["perspective", "orthographic"] = "perspective"
+
+
+class AssetModel3dAnimationSummary(BaseModel):
+    """三维资源内保留的动画摘要；首期只展示摘要，不播放。"""
+
+    index: int = Field(ge=0)
+    name: str | None = None
+    channel_count: int = Field(default=0, ge=0)
+
+
+class AssetModel3dAnalysisPayload(BaseModel):
+    """三维资源（model3d）静态分析结果的结构化载荷。"""
+
+    format: Literal["glb", "gltf"] = "glb"
+    gltf_version: str = "2.0"
+    scene_count: int = Field(default=0, ge=0)
+    default_scene_index: int | None = Field(default=None, ge=0)
+    cameras: list[AssetModel3dCameraSummary] = Field(default_factory=list)
+    animations: list[AssetModel3dAnimationSummary] = Field(default_factory=list)
+    extensions_used: list[str] = Field(default_factory=list)
+    extensions_required: list[str] = Field(default_factory=list)
+    validation_profile: str = "model3d-glb-v1"
+    warnings: list[str] = Field(default_factory=list)
+
+
 class AssetAnalysisMetadata(BaseModel):
-    """资产机器分析结构化元数据。"""
+    """资产机器分析结构化元数据；按 kind 选择 icon 或 model3d 载荷。"""
 
     schema_version: int = 1
-    kind: Literal["icon"] = "icon"
-    icon: AssetIconAnalysisPayload
+    kind: Literal["icon", "model3d"] = "icon"
+    icon: AssetIconAnalysisPayload | None = None
+    model3d: AssetModel3dAnalysisPayload | None = None
+
+    @model_validator(mode="after")
+    def validate_kind_payload(self) -> "AssetAnalysisMetadata":
+        """校验 kind 与实际载荷一致，避免出现半截分析摘要。"""
+
+        if self.kind == "icon" and self.icon is None:
+            raise ValueError("icon 分析元数据缺少 icon 载荷。")
+        if self.kind == "model3d" and self.model3d is None:
+            raise ValueError("model3d 分析元数据缺少 model3d 载荷。")
+        return self
 
 
 class AssetResponse(BaseModel):

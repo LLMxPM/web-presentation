@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://web-presentation.local/schemas/model-view-options.v1.json",
+  "title": "ModelViewOptions",
+  "description": "AssetModel.v1 实例展示参数契约的单一源：只描述如何查看标准 glTF 2.0 / GLB 资源，不定义物体、材质或场景内容。坐标系与单位与源资源一致；未声明字段由宿主按 Vue attrs 处理。",
+  "type": "object",
+  "required": ["name"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "工作空间内稳定的三维资源逻辑名；M1 不开放任意 URL、内联 GLB 或 base64。"
+    },
+    "sceneIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "源文件场景索引；缺省时取 glTF 默认场景，仍缺省时取第一个有效场景。空场景或越界报错。"
+    },
+    "cameraIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "源文件相机索引，须属于选中场景；与显式 cameraPosition/cameraTarget 互斥。无效索引报错。"
+    },
+    "cameraPosition": {
+      "$ref": "#/$defs/vector3",
+      "description": "显式相机位置，源资源单位；必须与 cameraTarget 成对提供，两点不可重合。"
+    },
+    "cameraTarget": {
+      "$ref": "#/$defs/vector3",
+      "description": "显式相机目标点，源资源单位；必须与 cameraPosition 成对提供。"
+    },
+    "cameraFov": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 180,
+      "default": 45,
+      "description": "仅显式透视相机配置可用的垂直视场角（度），默认 45；正交相机忽略该参数。"
+    },
+    "background": {
+      "type": "string",
+      "default": "transparent",
+      "description": "背景色；默认透明。接受 transparent 或 #RGB/#RRGGBB/#RRGGBBAA 十六进制颜色，不接受 CSS 函数或 URL 表达式。"
+    },
+    "lighting": {
+      "enum": ["auto", "source"],
+      "default": "auto",
+      "description": "auto 仅在选中场景无可用光照时添加查看器默认光照；source 只使用源文件光照。"
+    },
+    "interactive": {
+      "type": "boolean",
+      "default": false,
+      "description": "是否开启查看交互（旋转/缩放）；页面编辑态默认关闭，演示或资源详情可显式开启。首期无自动旋转。"
+    },
+    "fallback": {
+      "type": "string",
+      "description": "资源加载失败时展示的兜底文案；不影响资源本体。"
+    },
+    "class": {
+      "type": "string",
+      "description": "唯一的容器样式入口，需声明明确宽高（如 Tailwind w-full h-80）；不要用 min-h 或自由高度作为尺寸来源。"
+    }
+  },
+  "$defs": {
+    "vector3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "number"
+      }
+    }
+  },
+  "x-typescript-types": {
+    "#": "ModelViewOptions",
+    "#/$defs/vector3": "ModelViewVector3"
+  }
+}

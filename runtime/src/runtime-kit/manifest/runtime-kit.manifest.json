@@ -391,6 +391,153 @@
     },
     {
       "kind": "component",
+      "base_name": "AssetModel",
+      "version_no": 1,
+      "name": "AssetModel.v1",
+      "import_path": "@runtime-kit/public/components/assets/AssetModel.v1.vue",
+      "category": "asset",
+      "description": "按资源逻辑名渲染标准 glTF 2.0 / GLB 三维模型，支持多实例独立视角。",
+      "capability": {
+        "enabled": false,
+        "previewable": true,
+        "recommendation_level": "default",
+        "display_name": "三维模型渲染",
+        "summary": "渲染 render_type=model3d 的自包含 GLB 资源；实例可分别设置场景、相机、背景与交互，同一资源可在多页面、多实例复用。",
+        "tags": ["model3d", "glb", "gltf"],
+        "usage": [
+          "import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v1.vue'",
+          "布局提示：实际页面中的资源渲染容器必须通过 class 声明明确宽度和高度（如 Tailwind w-full h-80），不要用内联 style 替代 class，避免使用 min-h 或内容自由高度作为尺寸来源。",
+          "<AssetModel name=\"product\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />",
+          "<AssetModel name=\"product\" :camera-position=\"[0, 1, 4]\" :camera-target=\"[0, 0, 0]\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />",
+          "<AssetModel name=\"product\" :camera-index=\"1\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />"
+        ],
+        "returns": "Vue 组件；渲染三维模型的静态视角视图。",
+        "return_example": ["<AssetModel name=\"product\" :camera-position=\"[0, 1, 4]\" :camera-target=\"[0, 0, 0]\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />"],
+        "constraints": [
+          "适用于 asset_metadata.render_type=model3d 的资源；首期只接受自包含 GLB（不引用外部文件）。",
+          "相机优先级固定为显式 cameraPosition/cameraTarget → cameraIndex → 选中场景中按源索引排序的首个有效相机 → 自动取景；显式无效选择报错。",
+          "cameraIndex 与显式 cameraPosition/cameraTarget 互斥；cameraPosition 与 cameraTarget 必须成对提供且不重合。",
+          "实例参数不修改几何尺寸与文件材质；每个实例的节点、相机状态独立，卸载一个实例不影响另一个。",
+          "Backend/Agent 只选择组件并传入资源名与展示参数，不直接依赖 Three.js 初始化细节。",
+          "实际页面使用时应为资源容器设置明确 width 和 height；避免用 min-h 或内容自由高度作为尺寸来源。"
+        ],
+        "audiences": ["backend", "agent"],
+        "preview_schema": {
+          "props": {
+            "name": {
+              "type": "string",
+              "label": "三维资源名",
+              "description": "工作空间 model3d 资源的逻辑名 asset.name；首期只支持自包含 GLB。",
+              "default": "",
+              "placeholder": "product"
+            },
+            "sceneIndex": {
+              "type": "number",
+              "label": "场景索引",
+              "description": "源文件场景索引；留空时取默认场景，仍缺省时取第一个有效场景。",
+              "placeholder": "0"
+            },
+            "cameraIndex": {
+              "type": "number",
+              "label": "源相机索引",
+              "description": "源文件相机索引，须属于选中场景；与显式相机位置/目标互斥。",
+              "placeholder": "0"
+            },
+            "cameraPosition": {
+              "type": "json",
+              "label": "相机位置",
+              "description": "显式相机位置 [x, y, z]，与 cameraTarget 成对提供，坐标使用源资源单位。",
+              "placeholder": "[0, 1, 4]"
+            },
+            "cameraTarget": {
+              "type": "json",
+              "label": "相机目标",
+              "description": "显式相机目标点 [x, y, z]，与 cameraPosition 成对提供。",
+              "placeholder": "[0, 0, 0]"
+            },
+            "cameraFov": {
+              "type": "number",
+              "label": "视场角（度）",
+              "description": "仅显式透视相机配置可用的垂直视场角，默认 45，范围大于 0 且小于 180。",
+              "default": 45
+            },
+            "background": {
+              "type": "string",
+              "label": "背景色",
+              "description": "默认透明；接受 transparent 或 #RGB/#RRGGBB/#RRGGBBAA 十六进制颜色，不接受 CSS 函数或 URL。",
+              "default": "transparent"
+            },
+            "lighting": {
+              "type": "select",
+              "label": "光照来源",
+              "description": "auto 仅在选中场景无可用光照时添加查看器默认光照；source 只使用源文件光照。",
+              "default": "auto",
+              "options": [
+                { "label": "自动（缺光照时补默认灯光）", "value": "auto" },
+                { "label": "仅源文件光照", "value": "source" }
+              ]
+            },
+            "interactive": {
+              "type": "boolean",
+              "label": "启用查看交互",
+              "description": "开启后允许旋转/缩放查看；页面编辑态默认关闭，演示或资源详情可显式开启。",
+              "default": false
+            },
+            "fallback": {
+              "type": "string",
+              "label": "兜底文案",
+              "description": "三维资源无法渲染时展示的兜底文案；该字段不向 Agent 暴露。",
+              "default": "三维资源无法渲染，请检查资源名称或文件内容。",
+              "agent_visible": false
+            },
+            "class": {
+              "type": "string",
+              "label": "Tailwind 类",
+              "description": "唯一的容器样式入口。使用完整静态 Tailwind 类声明明确宽高、圆角、边框、内边距、背景和裁剪；实际页面必须同时包含明确 w-/h- 或等效宽高，避免用 min-h 或自由高度作为尺寸来源。例如：w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden。",
+              "default": "w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden"
+            }
+          },
+          "presets": [
+            {
+              "key": "front-view",
+              "label": "正面视角示例",
+              "props": {
+                "name": "",
+                "cameraPosition": [0, 1, 4],
+                "cameraTarget": [0, 0, 0],
+                "class": "w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden"
+              }
+            },
+            {
+              "key": "interactive-view",
+              "label": "可交互查看",
+              "props": {
+                "name": "",
+                "interactive": true,
+                "class": "w-full h-96 rounded-lg border border-border p-0 bg-transparent overflow-hidden"
+              }
+            }
+          ]
+        },
+        "preview_options": {
+          "page": {
+            "width": 960,
+            "height": 540
+          },
+          "placement": {
+            "width_mode": "percent",
+            "width_value": 86,
+            "height_mode": "auto",
+            "height_value": null,
+            "horizontal_align": "center",
+            "vertical_align": "center",
+            "padding": 48
+          }
+        }
+      }
+    },
+    {
+      "kind": "component",
       "base_name": "AssetMermaid",
       "version_no": 1,
       "name": "AssetMermaid.v1",

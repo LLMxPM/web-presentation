@@ -23,13 +23,17 @@ try {
   const openapi = join(directory, 'openapi.json')
   const api = join(directory, 'api.ts')
   const preview = join(directory, 'preview.ts')
+  const modelView = join(directory, 'model-view.ts')
   generate('dump-openapi.mjs', [openapi])
   generate('generate-editor-api-types.mjs', [openapi, api])
   generate('generate-preview-types.mjs', [preview])
+  generate('generate-model-view-types.mjs', [modelView])
   verify(openapi, 'editor/src/types/openapi.json')
   verify(api, 'editor/src/types/api.generated.ts')
   verify(preview, 'editor/src/types/component-preview.generated.ts')
   verify(preview, 'runtime/src/core/shared/component-preview.generated.ts')
+  verify(modelView, 'editor/src/types/model-view-options.generated.ts')
+  verify(modelView, 'runtime/src/core/shared/model-view-options.generated.ts')
   console.log('当前 Backend 与提交契约生成物完全一致')
 } finally {
   // 删除前核对绝对父路径与本次固定前缀，只清理 mkdtemp 创建的目录。

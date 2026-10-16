@@ -27034,20 +27034,37 @@
           },
           "kind": {
             "type": "string",
-            "const": "icon",
+            "enum": [
+              "icon",
+              "model3d"
+            ],
             "title": "Kind",
             "default": "icon"
           },
           "icon": {
-            "$ref": "#/components/schemas/AssetIconAnalysisPayload"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetIconAnalysisPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model3d": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetModel3dAnalysisPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
-        "required": [
-          "icon"
-        ],
         "title": "AssetAnalysisMetadata",
-        "description": "资产机器分析结构化元数据。"
+        "description": "资产机器分析结构化元数据；按 kind 选择 icon 或 model3d 载荷。"
       },
       "AssetArchiveRequest": {
         "properties": {
@@ -27550,6 +27567,152 @@
         "type": "object",
         "title": "AssetIconAnalysisPayload",
         "description": "图标资产分析结果的结构化载荷。"
+      },
+      "AssetModel3dAnalysisPayload": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "glb",
+              "gltf"
+            ],
+            "title": "Format",
+            "default": "glb"
+          },
+          "gltf_version": {
+            "type": "string",
+            "title": "Gltf Version",
+            "default": "2.0"
+          },
+          "scene_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Scene Count",
+            "default": 0
+          },
+          "default_scene_index": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Scene Index"
+          },
+          "cameras": {
+            "items": {
+              "$ref": "#/components/schemas/AssetModel3dCameraSummary"
+            },
+            "type": "array",
+            "title": "Cameras"
+          },
+          "animations": {
+            "items": {
+              "$ref": "#/components/schemas/AssetModel3dAnimationSummary"
+            },
+            "type": "array",
+            "title": "Animations"
+          },
+          "extensions_used": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Extensions Used"
+          },
+          "extensions_required": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Extensions Required"
+          },
+          "validation_profile": {
+            "type": "string",
+            "title": "Validation Profile",
+            "default": "model3d-glb-v1"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "title": "AssetModel3dAnalysisPayload",
+        "description": "三维资源（model3d）静态分析结果的结构化载荷。"
+      },
+      "AssetModel3dAnimationSummary": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Index"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "channel_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Channel Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "index"
+        ],
+        "title": "AssetModel3dAnimationSummary",
+        "description": "三维资源内保留的动画摘要；首期只展示摘要，不播放。"
+      },
+      "AssetModel3dCameraSummary": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Index"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "perspective",
+              "orthographic"
+            ],
+            "title": "Type",
+            "default": "perspective"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index"
+        ],
+        "title": "AssetModel3dCameraSummary",
+        "description": "三维资源内可静态读取的相机摘要；索引为源文件身份，名称仅作辅助。"
       },
       "AssetPackageExportRequest": {
         "properties": {
@@ -28412,7 +28575,8 @@
           "drawio",
           "mermaid",
           "chart",
-          "formula"
+          "formula",
+          "model3d"
         ],
         "title": "AssetType",
         "description": "资源库静态资源大类枚举。"

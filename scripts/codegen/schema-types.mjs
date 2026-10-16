@@ -11,7 +11,16 @@ export function schemaType(schema, referenceName = ref => ref.split('/').pop()) 
   if (schema.anyOf || schema.oneOf) return (schema.anyOf || schema.oneOf).map(value => `(${schemaType(value, referenceName)})`).join(' | ')
   if (schema.allOf) return schema.allOf.map(value => `(${schemaType(value, referenceName)})`).join(' & ')
   if (Array.isArray(schema.type)) return schema.type.map(type => schemaType({ ...schema, type }, referenceName)).join(' | ')
-  if (schema.type === 'array') return `(${schemaType(schema.items ?? {}, referenceName)})[]`
+  if (schema.type === 'array') {
+    const itemSchema = schema.items ?? {}
+    // 定长数组生成元组类型：仅当 items 为具体基本类型且长度固定，避免把带引用或开放数组误判为元组。
+    const tupleLength = Number.isInteger(schema.minItems) && schema.minItems === schema.maxItems ? schema.minItems : null
+    if (tupleLength !== null && tupleLength > 0 && !itemSchema.$ref && itemSchema.type !== undefined) {
+      const itemType = schemaType(itemSchema, referenceName)
+      return `[${new Array(tupleLength).fill(itemType).join(', ')}]`
+    }
+    return `(${schemaType(itemSchema, referenceName)})[]`
+  }
   if (schema.type === 'object' || schema.properties) {
     const required = new Set(schema.required || [])
     const fields = Object.entries(schema.properties || {}).map(([name, value]) =>

@@ -79,7 +79,7 @@ export interface RuntimePreviewAssetMetadata {
   file_hash: string
   original_name?: string
   asset_role?: 'foundation' | 'content'
-  render_type?: 'icon' | 'font' | 'image' | 'drawio' | 'mermaid' | 'chart' | 'formula' | 'video'
+  render_type?: 'icon' | 'font' | 'image' | 'drawio' | 'mermaid' | 'chart' | 'formula' | 'video' | 'model3d'
   content_type?: string
   approx_aspect_ratio?: string
   approx_aspect_ratio_value?: number

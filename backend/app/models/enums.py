@@ -110,6 +110,7 @@ class AssetType(str, Enum):
     MERMAID = "mermaid"
     CHART = "chart"
     FORMULA = "formula"
+    MODEL3D = "model3d"
 
 
 class AssetRole(str, Enum):

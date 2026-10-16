@@ -25,6 +25,7 @@
     "codegen:editor-api:types": "node scripts/codegen/generate-editor-api-types.mjs",
     "codegen:editor-api": "pnpm run codegen:editor-api:openapi && pnpm run codegen:editor-api:types",
     "codegen:preview-types": "node scripts/codegen/generate-preview-types.mjs",
+    "codegen:model-view-types": "node scripts/codegen/generate-model-view-types.mjs",
     "test:contracts:generated": "node scripts/codegen/check-generated.mjs",
     "test:python-workspace": "uv run --all-packages --all-groups --all-extras pytest tests/workspace",
     "test:contracts:gateway": "python scripts/contracts/test-gateway-openapi.py",

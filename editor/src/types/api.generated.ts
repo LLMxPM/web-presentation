@@ -451,8 +451,9 @@ export type ApiAccessTokenUpdateRequest = {
 
 export type AssetAnalysisMetadata = {
   "schema_version"?: number
-  "kind"?: "icon"
-  "icon": AssetIconAnalysisPayload
+  "kind"?: "icon" | "model3d"
+  "icon"?: (AssetIconAnalysisPayload) | (null)
+  "model3d"?: (AssetModel3dAnalysisPayload) | (null)
 }
 
 export type AssetArchiveRequest = {
@@ -547,6 +548,31 @@ export type AssetIconAnalysisPayload = {
   "stroke_width_editable"?: boolean
   "analysis_status"?: "analyzed" | "unsupported" | "error"
   "reasons"?: (string)[]
+}
+
+export type AssetModel3dAnalysisPayload = {
+  "format"?: "glb" | "gltf"
+  "gltf_version"?: string
+  "scene_count"?: number
+  "default_scene_index"?: (number) | (null)
+  "cameras"?: (AssetModel3dCameraSummary)[]
+  "animations"?: (AssetModel3dAnimationSummary)[]
+  "extensions_used"?: (string)[]
+  "extensions_required"?: (string)[]
+  "validation_profile"?: string
+  "warnings"?: (string)[]
+}
+
+export type AssetModel3dAnimationSummary = {
+  "index": number
+  "name"?: (string) | (null)
+  "channel_count"?: number
+}
+
+export type AssetModel3dCameraSummary = {
+  "index": number
+  "name"?: (string) | (null)
+  "type"?: "perspective" | "orthographic"
 }
 
 export type AssetPackageExportRequest = {
@@ -681,7 +707,7 @@ export type AssetRestoreRequest = {
 
 export type AssetRole = "foundation" | "content"
 
-export type AssetType = "icon" | "font" | "image" | "video" | "drawio" | "mermaid" | "chart" | "formula"
+export type AssetType = "icon" | "font" | "image" | "video" | "drawio" | "mermaid" | "chart" | "formula" | "model3d"
 
 export type AssetUpdateRequest = {
   "name"?: (string) | (null)

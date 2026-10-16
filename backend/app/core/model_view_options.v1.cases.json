@@ -1,0 +1,81 @@
+{
+  "description": "ModelViewOptions 共享正反例：Backend 与 Runtime 校验实现必须对同一组用例给出相同结论。",
+  "valid": [
+    { "name": "product" },
+    {
+      "name": "product",
+      "sceneIndex": 0,
+      "background": "transparent",
+      "lighting": "auto",
+      "interactive": false
+    },
+    { "name": "product", "cameraIndex": 1 },
+    {
+      "name": "product",
+      "cameraPosition": [0, 1, 4],
+      "cameraTarget": [0, 0, 0],
+      "cameraFov": 60
+    },
+    { "name": "product", "cameraPosition": [0, 1, 4], "cameraTarget": [0, 0, 0] },
+    { "name": "product", "background": "#0f0f10", "class": "w-full h-80" },
+    { "name": "product", "background": "#fff" },
+    { "name": "product", "background": "#11223344" },
+    {
+      "name": "product",
+      "lighting": "source",
+      "interactive": true,
+      "fallback": "模型加载失败"
+    },
+    { "name": "product", "sceneIndex": 2, "cameraIndex": 0, "class": "w-full h-96" }
+  ],
+  "invalid": [
+    { "reason": "name 缺失", "value": {} },
+    { "reason": "name 为空字符串", "value": { "name": "   " } },
+    { "reason": "sceneIndex 为负", "value": { "name": "p", "sceneIndex": -1 } },
+    { "reason": "sceneIndex 非整数", "value": { "name": "p", "sceneIndex": 1.5 } },
+    {
+      "reason": "cameraIndex 与显式相机互斥",
+      "value": {
+        "name": "p",
+        "cameraIndex": 0,
+        "cameraPosition": [0, 0, 0],
+        "cameraTarget": [0, 0, 1]
+      }
+    },
+    { "reason": "cameraPosition 缺少 cameraTarget", "value": { "name": "p", "cameraPosition": [0, 1, 4] } },
+    { "reason": "cameraTarget 缺少 cameraPosition", "value": { "name": "p", "cameraTarget": [0, 0, 0] } },
+    {
+      "reason": "相机向量长度不足 3",
+      "value": { "name": "p", "cameraPosition": [0, 1], "cameraTarget": [0, 0, 0] }
+    },
+    {
+      "reason": "相机两点重合",
+      "value": { "name": "p", "cameraPosition": [0, 0, 0], "cameraTarget": [0, 0, 0] }
+    },
+    {
+      "reason": "cameraFov 达到上界 180",
+      "value": { "name": "p", "cameraPosition": [0, 1, 4], "cameraTarget": [0, 0, 0], "cameraFov": 180 }
+    },
+    {
+      "reason": "cameraFov 为零",
+      "value": { "name": "p", "cameraPosition": [0, 1, 4], "cameraTarget": [0, 0, 0], "cameraFov": 0 }
+    },
+    {
+      "reason": "cameraFov 缺少显式相机",
+      "value": { "name": "p", "cameraIndex": 0, "cameraFov": 45 }
+    },
+    { "reason": "background 使用 CSS 函数", "value": { "name": "p", "background": "rgb(0,0,0)" } },
+    {
+      "reason": "background 使用 URL 表达式",
+      "value": { "name": "p", "background": "url(https://example.com/bg.png)" }
+    },
+    { "reason": "background 使用颜色单词", "value": { "name": "p", "background": "red" } },
+    { "reason": "background 十六进制长度非法", "value": { "name": "p", "background": "#12345" } },
+    { "reason": "lighting 取值非法", "value": { "name": "p", "lighting": "none" } },
+    { "reason": "interactive 非布尔", "value": { "name": "p", "interactive": "yes" } },
+    {
+      "reason": "cameraPosition 元素非数值",
+      "value": { "name": "p", "cameraPosition": [0, "1", 4], "cameraTarget": [0, 0, 0] }
+    }
+  ]
+}
