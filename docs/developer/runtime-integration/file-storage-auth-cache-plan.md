@@ -214,7 +214,7 @@ P 属于持有即可使用的短期授权；拿到完整链接的人在有效期
 
 独立 origin 与 host-only Cookie 仍不足以阻止预览脚本主动向 Editor origin 发起带凭证请求。管理 API 的写入必须校验受信 Origin / CSRF，不能仅依赖 SameSite 或 CORS；同站点的不同子域也要验证。Backend 到 Runtime 的代理头使用允许列表，不透传浏览器的业务 Cookie、Authorization 或客户端自填的服务凭证。
 
-iframe 消息严格检查 origin、source、artifact 和消息类型；票据不经通配 `postMessage` 发送。预览响应使用 `Referrer-Policy: no-referrer`；可信宿主页的内部 iframe 单独使用 `origin`，只把 Backend origin 交给 Runtime 现有可视化编辑桥，不泄露带票据的地址。日志遮蔽 token、ctx、S3 签名参数。业务 CORS 仅允许受信 Editor，文件入口按其独立权限处理。
+iframe 消息严格检查 origin、source、artifact 和消息类型；票据不经通配 `postMessage` 发送。Editor 的页面、组件与可视化编辑 iframe 使用 `referrerpolicy="origin"`，只向可信宿主页提供实际工作台来源；Backend 在 CORS 白名单内精确匹配该来源作为消息回传目标，避免 `localhost` / `127.0.0.1` 等多入口下把 ready 发往错误 origin。预览响应继续使用 `Referrer-Policy: no-referrer`；可信宿主页的内部 iframe 单独使用 `origin`，只把 Backend origin 交给 Runtime 现有可视化编辑桥，不泄露带票据的地址。日志遮蔽 token、ctx、S3 签名参数。业务 CORS 仅允许受信 Editor，文件入口按其独立权限处理。
 
 ## 5 目标读取链路与接口契约
 

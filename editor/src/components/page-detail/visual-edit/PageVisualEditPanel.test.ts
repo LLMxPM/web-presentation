@@ -53,6 +53,7 @@ describe('PageVisualEditPanel', () => {
     })
 
     const iframe = await screen.findByTitle('测试页面 可视化编辑画布')
+    expect(iframe).toHaveAttribute('referrerpolicy', 'origin')
     expect(createMock).toHaveBeenCalledTimes(1)
     expect(screen.getByText('点击画布中的文字、区块或组件进行编辑')).toBeInTheDocument()
     expect(screen.queryByRole('tree', { name: '页面结构' })).toBeNull()

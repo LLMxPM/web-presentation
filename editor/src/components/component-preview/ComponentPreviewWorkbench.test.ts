@@ -100,7 +100,7 @@ describe('ComponentPreviewWorkbench', () => {
       isDraftPreview: true,
     }
 
-    renderWorkbench(source)
+    const { findByTitle } = renderWorkbench(source)
 
     await waitFor(() => {
       expect(createComponentPreviewArtifactFromSourceMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -112,6 +112,7 @@ describe('ComponentPreviewWorkbench', () => {
       }))
     })
     expect(createRuntimeKitComponentPreviewArtifactMock).not.toHaveBeenCalled()
+    expect(await findByTitle('component-preview')).toHaveAttribute('referrerpolicy', 'origin')
   })
 
   it('runtime-kit 来源应调用 Runtime Kit 预览 artifact API', async () => {

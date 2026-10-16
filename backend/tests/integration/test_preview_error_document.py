@@ -19,11 +19,13 @@ from tests.integration.test_preview_service_token_exchange import _generate_prev
     ("http://127.0.0.1:8080", ["http://127.0.0.1:8080"], "", "http://127.0.0.1:8080/"),
     ("https://api.example.com", ["https://editor.example.com"], "https://api.example.com/preview/x", "https://editor.example.com/"),
     ("https://api.example.com", ["https://editor.example.com"], "https://evil.example/", "https://editor.example.com/"),
+    ("http://127.0.0.1:8000", ["http://127.0.0.1:5173", "http://localhost:5173"], "http://localhost:5173/", "http://localhost:5173/"),
+    ("http://127.0.0.1:8000", ["http://localhost:5173", "http://127.0.0.1:5173"], "http://127.0.0.1:5173/", "http://127.0.0.1:5173/"),
 ])
 def test_workbench_exit_follows_deployment_origins(
     monkeypatch: pytest.MonkeyPatch, public_url: str, origins: list[str], referer: str, expected: str,
 ) -> None:
-    """网关单源、独立 API 域名与伪造来源都应返回配置允许的 Editor 入口。"""
+    """优先匹配实际受信来源（含本地双地址），伪造来源只能回退到配置允许的 Editor。"""
 
     monkeypatch.setattr(preview_error_response, "get_settings", lambda: SimpleNamespace(
         backend_public_base_url=public_url, cors_origins=origins,

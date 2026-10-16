@@ -130,12 +130,13 @@
                 class="absolute left-0 top-0 overflow-hidden rounded-[var(--ui-radius-lg)] border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] shadow-sm"
                 :style="previewFrameContainerStyle"
               >
+                <!-- 宿主页通过受信 Referer origin 识别当前工作台，避免完成通知发往其他访问地址。 -->
                 <iframe
                   :ref="bindPreviewFrameRef"
                   :src="previewFrameUrl"
                   :title="iframeTitle"
                   class="block h-full w-full bg-[rgb(var(--ui-surface-muted))]"
-                  referrerpolicy="no-referrer"
+                  referrerpolicy="origin"
                 />
               </div>
             </div>

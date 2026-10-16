@@ -1,13 +1,14 @@
 <!-- 文件功能：封装 Runtime 预览 iframe 与空态展示，统一处理比例容器和填充容器两种模式。 -->
 <template>
   <div data-testid="page-preview-frame" class="relative" :class="props.containerClass" :style="containerStyle">
+    <!-- 仅向可信宿主页发送工作台 origin，供消息桥精确回传 ready/error；不发送页面路径或查询串。 -->
     <iframe
       v-if="props.frameUrl"
       ref="iframeRef"
       :src="effectiveFrameUrl"
       :title="props.title"
       :class="props.iframeClass"
-      referrerpolicy="no-referrer"
+      referrerpolicy="origin"
     />
     <div v-else-if="props.status === 'idle'" :class="props.emptyContentClass">
       <div class="space-y-3">

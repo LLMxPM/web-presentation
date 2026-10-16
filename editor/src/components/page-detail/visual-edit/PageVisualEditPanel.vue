@@ -109,12 +109,13 @@
         </div>
 
         <div v-if="session.artifact.value" class="h-full overflow-hidden rounded-lg border border-border-strong bg-surface shadow-sm">
+          <!-- 只传工作台 origin，让可信宿主页把选中与编辑消息回传到当前工作台。 -->
           <iframe
             ref="previewFrame"
             :src="session.artifact.value.preview_url"
             :title="`${props.pageTitle} 可视化编辑画布`"
             class="h-full w-full border-0 bg-surface"
-            referrerpolicy="no-referrer"
+            referrerpolicy="origin"
             @load="session.syncPreviewSelection"
           />
         </div>
