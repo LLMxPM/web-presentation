@@ -658,7 +658,11 @@ class ComponentSharePackageService(ComponentSharePackageHelperMixin):
         )
 
     async def _import_assets(self, workspace_id: int, package_assets: list[PackageAsset]) -> None:
-        """导入或复用包内资源。"""
+        """导入或复用包内资源。
+
+        关键约束：三维资源（GLB）的 file_hash 必须与包内声明对拍，分析摘要
+        强制以实际字节重解析，包内自带 analysis_metadata 不参与信任。
+        """
 
         for package_asset in package_assets:
             metadata = package_asset.metadata
@@ -669,8 +673,17 @@ class ComponentSharePackageService(ComponentSharePackageHelperMixin):
             asset_type = AssetType(str(metadata["asset_type"]))
             content = package_asset.content
             file_hash = hashlib.sha256(content).hexdigest()
+            declared_hash = str(metadata.get("file_hash") or "").strip()
+            if declared_hash and declared_hash != file_hash:
+                raise AppException(
+                    status_code=400,
+                    code="COMPONENT_SHARE_ASSET_HASH_MISMATCH",
+                    detail=f"资源 {name} 文件 hash 与元数据不一致。",
+                )
             original_name = self._safe_archive_filename(str(metadata["original_name"]))
-            AssetService._validate_asset_file_type(asset_type, original_name, metadata.get("content_type"))
+            content_type = AssetService._normalize_content_type(str(metadata.get("content_type") or "") or None)
+            content_type = AssetService._normalize_model3d_content_type(asset_type, content_type)
+            AssetService._validate_asset_file_type(asset_type, original_name, content_type)
             AssetService._validate_uploaded_asset_content(asset_type, original_name, content)
             ext = "".join(Path(original_name).suffixes)
             save_name = await self.asset_service.driver.upload(
@@ -678,18 +691,22 @@ class ComponentSharePackageService(ComponentSharePackageHelperMixin):
                 file_hash,
                 ext,
                 content,
-                str(metadata.get("content_type") or "") or None,
+                content_type,
             )
-            analysis_metadata = metadata.get("analysis_metadata") or AssetService._build_analysis_metadata(
-                asset_type,
-                original_name,
-                metadata.get("content_type"),
-                content,
-            )
+            if asset_type == AssetType.MODEL3D:
+                # 三维资源以实际字节重建分析摘要并完成 GLB 校验，包内声明不得绕过解析。
+                analysis_metadata = AssetService._build_analysis_metadata(asset_type, original_name, content_type, content)
+            else:
+                analysis_metadata = metadata.get("analysis_metadata") or AssetService._build_analysis_metadata(
+                    asset_type,
+                    original_name,
+                    content_type,
+                    content,
+                )
             render_metadata = (
                 metadata.get("render_metadata")
                 if AssetRenderMetadataService.is_render_hint(metadata.get("render_metadata"))
-                else AssetRenderMetadataService.build_auto_metadata(asset_type, original_name, metadata.get("content_type"), content)
+                else AssetRenderMetadataService.build_auto_metadata(asset_type, original_name, content_type, content)
             )
             self.session.add(
                 WorkspaceAsset(
@@ -700,7 +717,7 @@ class ComponentSharePackageService(ComponentSharePackageHelperMixin):
                     description=metadata.get("description"),
                     file_size=len(content),
                     file_hash=file_hash,
-                    content_type=metadata.get("content_type"),
+                    content_type=content_type,
                     asset_type=asset_type.value,
                     tags=list(metadata.get("tags") or []),
                     analysis_metadata=analysis_metadata,
@@ -1067,6 +1084,14 @@ class ComponentSharePackageService(ComponentSharePackageHelperMixin):
                 asset_type = AssetType(str(metadata.get("asset_type") or ""))
                 AssetService._validate_asset_file_type(asset_type, str(metadata.get("original_name") or ""), metadata.get("content_type"))
                 AssetService._validate_uploaded_asset_content(asset_type, str(metadata.get("original_name") or ""), package_asset.content)
+                if asset_type == AssetType.MODEL3D:
+                    # 三维资源预检即以实际字节完成 GLB 解析校验，包内声明不参与信任。
+                    AssetService._build_analysis_metadata(
+                        asset_type,
+                        str(metadata.get("original_name") or ""),
+                        metadata.get("content_type"),
+                        package_asset.content,
+                    )
             except ValueError:
                 errors.append(f"资源 {name} 的 asset_type 不受支持。")
             except AppException as error:

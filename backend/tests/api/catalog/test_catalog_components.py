@@ -4,10 +4,12 @@
 # ruff: noqa: F401
 
 from tests.api.catalog.catalog_components_cases import (
-    test_content_component_should_require_size_control_preview_schema,
     test_component_package_export_should_warn_and_allow_manual_assets,
     test_component_package_import_should_reject_legacy_schema_and_tampered_fingerprint,
     test_component_package_import_should_return_imported_components,
+    test_component_package_model3d_import_should_reject_tampered_payload,
+    test_component_package_model3d_roundtrip_should_reparse_analysis_metadata,
+    test_content_component_should_require_size_control_preview_schema,
     test_workspace_component_archive_and_restore_round_trip,
     test_workspace_component_import_name_should_be_required_valid_and_unique,
     test_workspace_component_list_should_support_published_only_filter,

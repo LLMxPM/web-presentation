@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
+import struct
 import zipfile
 
 from httpx import AsyncClient
@@ -701,3 +703,260 @@ async def test_workspace_component_restore_should_reject_conflicting_import_name
     )
     assert active_list.status_code == 200
     assert [item["id"] for item in active_list.json()["items"]] == [replacement_id]
+
+
+_GLB_JSON_CHUNK_TYPE = 0x4E4F534A
+_GLB_BIN_CHUNK_TYPE = 0x004E4942
+
+
+def _pad_glb_chunk(data: bytes, pad: bytes = b"\x00") -> bytes:
+    """按 4 字节对齐填充 GLB chunk。"""
+
+    if len(data) % 4:
+        data = data + pad * (4 - len(data) % 4)
+    return data
+
+
+def _build_model3d_glb(json_doc: dict, bin_chunk: bytes | None = None) -> bytes:
+    """构造测试用 GLB 字节。"""
+
+    json_bytes = _pad_glb_chunk(json.dumps(json_doc).encode("utf-8"), b" ")
+    chunks = struct.pack("<II", len(json_bytes), _GLB_JSON_CHUNK_TYPE) + json_bytes
+    if bin_chunk is not None:
+        bin_bytes = _pad_glb_chunk(bin_chunk)
+        chunks += struct.pack("<II", len(bin_bytes), _GLB_BIN_CHUNK_TYPE) + bin_bytes
+    return b"glTF" + struct.pack("<II", 2, 12 + len(chunks)) + chunks
+
+
+def _valid_model3d_glb(marker: float = 0.0) -> bytes:
+    """构造最小合法 GLB；marker 用于生成不同哈希。"""
+
+    positions = struct.pack("<9f", marker, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+    gltf = {
+        "asset": {"version": "2.0", "generator": "component-package-test"},
+        "buffers": [{"byteLength": len(positions)}],
+        "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": len(positions)}],
+        "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+        "nodes": [{"mesh": 0}],
+        "scenes": [{"nodes": [0]}],
+        "scene": 0,
+    }
+    return _build_model3d_glb(gltf, positions)
+
+
+def _rewrite_zip_binary(archive_content: bytes, target_name: str, content: bytes) -> bytes:
+    """重写 Zip 内指定文件的原始字节，保留其它条目不变。"""
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(archive_content)) as source_archive:
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as target_archive:
+            for item in source_archive.infolist():
+                entry_content = content if item.filename == target_name else source_archive.read(item.filename)
+                target_archive.writestr(item, entry_content)
+    return buffer.getvalue()
+
+
+async def _upload_catalog_model3d_asset(
+    client: AsyncClient,
+    workspace_id: int,
+    *,
+    name: str = "product",
+    payload: bytes | None = None,
+) -> dict:
+    """上传组件分享包测试使用的 model3d 资源。"""
+
+    response = await client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": (f"{name}.glb", payload or _valid_model3d_glb(), "model/gltf-binary")},
+        data={"asset_type": "model3d", "tags": "[]", "name": name},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def _create_published_model3d_component(
+    client: AsyncClient,
+    workspace_id: int,
+    *,
+    name: str = "三维卡片",
+    import_name: str = "Model3dCard",
+) -> dict:
+    """创建并发布引用 AssetModel 静态资源名的组件，返回发布后的组件载荷。"""
+
+    create_response = await client.post(
+        "/api/components",
+        json={
+            "workspace_id": workspace_id,
+            "name": name,
+            "import_name": import_name,
+            "component_type": "内容组件",
+            "content": '<template><AssetModel name="product" class="w-full h-80" /></template>',
+            "preview_schema": CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA,
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    component = create_response.json()
+    publish_response = await client.post(
+        f"/api/components/{component['id']}/publish",
+        json={"release_name": "三维导出版"},
+    )
+    assert publish_response.status_code == 200, publish_response.text
+    return publish_response.json()
+
+
+async def test_component_package_model3d_roundtrip_should_reparse_analysis_metadata(
+    authenticated_client: AsyncClient,
+) -> None:
+    """组件包携带 model3d 资源时应可完整往返；包内伪造的分析摘要必须被平台解析器覆盖。"""
+
+    source_workspace = await _create_catalog_workspace(authenticated_client, "三维组件源空间")
+    target_workspace = await _create_catalog_workspace(authenticated_client, "三维组件目标空间")
+    payload = _valid_model3d_glb()
+    asset = await _upload_catalog_model3d_asset(authenticated_client, source_workspace["id"], payload=payload)
+    published = await _create_published_model3d_component(authenticated_client, source_workspace["id"])
+    component_code = published["code"]
+
+    export_response = await authenticated_client.post(
+        "/api/components/export-package",
+        json={"workspace_id": source_workspace["id"], "component_ids": [published["id"]]},
+    )
+    assert export_response.status_code == 200, export_response.text
+    asset_json_path = f"assets/{asset['file_hash']}/asset.json"
+    asset_file_path = f"assets/{asset['file_hash']}/product.glb"
+    with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
+        archive_names = set(archive.namelist())
+        assert asset_json_path in archive_names
+        assert asset_file_path in archive_names
+        component_payload = json.loads(archive.read(f"components/{component_code}/component.json").decode("utf-8"))
+        assert component_payload["asset_names"] == ["product"]
+        exported_asset_json = json.loads(archive.read(asset_json_path).decode("utf-8"))
+        assert exported_asset_json["content_type"] == "model/gltf-binary"
+        assert exported_asset_json["analysis_metadata"]["kind"] == "model3d"
+
+    # 伪造包内分析摘要：导入必须忽略声明并按实际字节重新解析。
+    forged_archive = _rewrite_zip_json(
+        export_response.content,
+        asset_json_path,
+        lambda metadata: {
+            **metadata,
+            "analysis_metadata": {
+                "schema_version": 1,
+                "kind": "model3d",
+                "model3d": {"format": "glb", "scene_count": 999},
+                "forged": True,
+            },
+        },
+    )
+    validate_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target_workspace["id"])},
+        files={"archive": ("components.zip", forged_archive, "application/zip")},
+    )
+    assert validate_response.status_code == 200
+    assert validate_response.json()["valid"] is True, validate_response.json()
+
+    import_response = await authenticated_client.post(
+        "/api/components/import-package",
+        data={"workspace_id": str(target_workspace["id"])},
+        files={"archive": ("components.zip", forged_archive, "application/zip")},
+    )
+    assert import_response.status_code == 200, import_response.text
+    assert import_response.json()["components"][0]["action"] == "create"
+
+    list_response = await authenticated_client.get(
+        f"/api/workspaces/{target_workspace['id']}/assets",
+        params={"asset_type": "model3d"},
+    )
+    assert list_response.status_code == 200
+    imported_items = list_response.json()["items"]
+    assert [item["name"] for item in imported_items] == ["product"]
+    imported_asset = imported_items[0]
+    assert imported_asset["file_hash"] == asset["file_hash"]
+    assert imported_asset["content_type"] == "model/gltf-binary"
+    analysis = imported_asset["analysis_metadata"]
+    assert analysis["kind"] == "model3d"
+    assert analysis["model3d"]["scene_count"] == 1
+    assert "forged" not in analysis
+
+    file_response = await authenticated_client.get(
+        f"/api/workspaces/{target_workspace['id']}/assets/{imported_asset['id']}/file"
+    )
+    assert file_response.status_code == 200
+    assert file_response.content == payload
+
+
+async def test_component_package_model3d_import_should_reject_tampered_payload(
+    authenticated_client: AsyncClient,
+) -> None:
+    """组件包中字节损坏或 hash 不一致的 model3d 资源必须在预检与导入阶段被拒绝。"""
+
+    source_workspace = await _create_catalog_workspace(authenticated_client, "三维组件篡改源空间")
+    target_workspace = await _create_catalog_workspace(authenticated_client, "三维组件篡改目标空间")
+    asset = await _upload_catalog_model3d_asset(authenticated_client, source_workspace["id"])
+    published = await _create_published_model3d_component(
+        authenticated_client,
+        source_workspace["id"],
+        name="三维篡改卡片",
+        import_name="Model3dTamperedCard",
+    )
+    export_response = await authenticated_client.post(
+        "/api/components/export-package",
+        json={"workspace_id": source_workspace["id"], "component_ids": [published["id"]]},
+    )
+    assert export_response.status_code == 200, export_response.text
+    asset_json_path = f"assets/{asset['file_hash']}/asset.json"
+    asset_file_path = f"assets/{asset['file_hash']}/product.glb"
+    broken_bytes = b"broken-model3d-payload"
+
+    # 场景一：字节被替换但 hash 声明不变，预检即报 hash 不一致。
+    hash_mismatch_archive = _rewrite_zip_binary(export_response.content, asset_file_path, broken_bytes)
+    mismatch_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target_workspace["id"])},
+        files={"archive": ("components.zip", hash_mismatch_archive, "application/zip")},
+    )
+    assert mismatch_response.status_code == 200
+    mismatch_payload = mismatch_response.json()
+    assert mismatch_payload["valid"] is False
+    assert any("file_hash" in error for error in mismatch_payload["errors"])
+
+    # 场景二：字节与 file_hash 同步伪造，预检必须以真实字节解析 GLB 并报格式错误。
+    broken_hash = hashlib.sha256(broken_bytes).hexdigest()
+    decodable_archive = _rewrite_zip_binary(export_response.content, asset_file_path, broken_bytes)
+    decodable_archive = _rewrite_zip_json(
+        decodable_archive,
+        asset_json_path,
+        lambda metadata: {
+            **metadata,
+            "file_hash": broken_hash,
+            "file_size": len(broken_bytes),
+        },
+    )
+    format_response = await authenticated_client.post(
+        "/api/components/import-package/validate",
+        data={"workspace_id": str(target_workspace["id"])},
+        files={"archive": ("components.zip", decodable_archive, "application/zip")},
+    )
+    assert format_response.status_code == 200
+    format_payload = format_response.json()
+    assert format_payload["valid"] is False
+    assert any("GLB" in error for error in format_payload["errors"])
+
+    import_response = await authenticated_client.post(
+        "/api/components/import-package",
+        data={"workspace_id": str(target_workspace["id"])},
+        files={"archive": ("components.zip", decodable_archive, "application/zip")},
+    )
+    assert import_response.status_code == 400
+    assert import_response.json()["code"] == "COMPONENT_SHARE_PACKAGE_INVALID"
+
+    # 目标空间不残留任何被拒绝的资源。
+    list_response = await authenticated_client.get(
+        f"/api/workspaces/{target_workspace['id']}/assets",
+        params={"asset_type": "model3d"},
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["total"] == 0
