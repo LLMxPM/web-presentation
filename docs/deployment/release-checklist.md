@@ -3,6 +3,13 @@
 
 以下事项从 [部署形态收敛与配置治理工作计划](../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md) 提取，在计划归档后继续追踪。文档归档不代表验收完成。
 
+2026-10-16 文件鉴权修复新增发布条件，详见[文件存储鉴权规划](../developer/runtime-integration/file-storage-auth-cache-plan.md)：
+
+- 配置独立预览主机名的 DNS / TLS，验证 `/runtime/` 与受保护 `/build-artifacts/`；业务 Cookie 不设置父域 Domain，预览域不加入业务 CORS。
+- 旧字体桶关闭匿名 ACL / policy，保留 Backend 服务身份迁移读取权限；检查历史绝对 public URL，不能通过重新开放旧入口回滚。
+- 排空不兼容 Runtime / Renderer 和构建 attempt；新截图使用内容 hash，旧截图 latest 兼容，不宣称历史表已回填。
+- 补齐真实 S3 兼容服务、跨副本、浏览器导出与外部客户端矩阵；采集成本与回源指标后再决定 CDN。
+
 ---
 
 ## 1. Renderer 首次发布与匿名拉取验证

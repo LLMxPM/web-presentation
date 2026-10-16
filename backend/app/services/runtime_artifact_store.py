@@ -53,6 +53,7 @@ class RuntimeArtifactStore:
             **manifest,
             "artifact_id": resolved_artifact_id,
             "version": str(manifest.get("version") or "redis-preview-artifact"),
+            "artifact_expires_at": expires_at.isoformat(),
         }
         meta_payload = {
             "artifact_id": resolved_artifact_id,

@@ -2,7 +2,7 @@
  * 文件用途：定义无状态预览运行时共享契约、远程模块标识与资源路径解析辅助函数。
  */
 
-export type RuntimeArtifactKind = 'preview_artifact' | 'page_visual_edit_preview' | 'build_snapshot' | 'build_release'
+export type RuntimeArtifactKind = 'preview_artifact' | 'page_visual_edit_preview' | 'project_template_preview' | 'build_snapshot' | 'build_release'
 export type PreviewKind = 'project' | 'page' | 'component' | 'asset'
 export type PreviewScopeType = 'project' | 'workspace_component' | 'runtime_kit_component' | 'workspace_asset'
 export type PreviewEntryType = 'route' | 'module' | 'component_host' | 'asset_host'

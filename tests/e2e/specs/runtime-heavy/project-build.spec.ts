@@ -8,7 +8,7 @@ interface BuildJob {
   status: string
 }
 
-test('沙箱项目应完成一次真实构建并展示构建成功', async ({ page, context, visualEditSandbox }) => {
+test('沙箱项目应完成一次真实构建并展示构建成功', async ({ page, context, browser, visualEditSandbox }) => {
   await page.goto(`/workspaces/${visualEditSandbox.workspaceId}/projects/${visualEditSandbox.projectId}/pages`)
   await expect(page.locator('[data-testid="project-pages-view"]')).toBeVisible()
   await page.locator('[data-testid="project-build-open"]').click()
@@ -32,6 +32,33 @@ test('沙箱项目应完成一次真实构建并展示构建成功', async ({ pa
     `/api/projects/${visualEditSandbox.projectId}/build-jobs/${latestJob.id}/artifact`,
   )
   expect(artifactResponse.ok()).toBeTruthy()
+
+  const accessResponse = await api.post(
+    `/api/projects/${visualEditSandbox.projectId}/build-jobs/${latestJob.id}/access`,
+  )
+  expect(accessResponse.ok()).toBeTruthy()
+  const access = await accessResponse.json()
+  expect(new URL(access.browse_url).hostname).toBe('preview.localhost')
+  const builtPage = await context.newPage()
+  const navigation = await builtPage.goto(access.browse_url)
+  expect(navigation?.headers()['cache-control']).toBe('no-store')
+  // 构建站点缩略图也会渲染同一页；校验主画布中的最后一个实例。
+  await expect(builtPage.getByRole('heading', { name: visualEditSandbox.pageTitle, exact: true }).last()).toBeVisible()
+  const builtImage = builtPage.getByRole('img', { name: 'Smoke illustration', exact: true }).last()
+  await expect(builtImage).toBeVisible()
+  await expect(builtImage).toHaveJSProperty('naturalWidth', 320)
+  const cssUrl = await builtPage.locator('link[rel="stylesheet"]').first().getAttribute('href')
+  const privateCssUrl = new URL(cssUrl!, builtPage.url()).href
+  const cssResponse = await api.get(privateCssUrl)
+  expect(cssResponse.ok()).toBeTruthy()
+  expect(cssResponse.headers()['cache-control']).toBe('private, no-cache')
+  const anonymous = await browser.newContext()
+  try {
+    expect((await anonymous.request.get(privateCssUrl)).status()).toBe(404)
+  } finally {
+    await anonymous.close()
+    await builtPage.close()
+  }
 
   // 提交后弹窗会自动关闭；重新打开并刷新，验证用户可见的历史状态与下载入口。
   await page.locator('[data-testid="project-build-open"]').click()

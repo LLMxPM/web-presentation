@@ -152,6 +152,7 @@ Runtime Kit 约束：
 
 多部署 / 多副本约束（与代码保持一致，禁止只改文档宣称）：
 
+- **私有文件与预览源站**：浏览器与 Renderer 浏览器使用 artifact 预览票据 P 读取素材，Runtime / 构建 Worker 使用内部服务票据 S 回源，不得混用端点或恢复 public fallback。用户 HTML 必须在 `RUNTIME_PUBLIC_BASE_URL` 的独立主机名执行；Backend 预览入口仅返回可信桥接宿主页，业务 Cookie 保持 host-only，预览域不得加入业务 CORS。文件鉴权先于缓存、304、HEAD 和 Range；截图内容 URL 绑定 hash，旧可变 key 仅按 latest 兼容。实施边界见[文件存储鉴权规划](./docs/developer/runtime-integration/file-storage-auth-cache-plan.md)。
 - **Runtime 角色**：`preview` / `build` / `check` / `all` 由 `runtime-role.ts` 与 `vite.config.ts` 真实注销端点；分角色 compose 见 `deploy/compose/compose.runtime-roles.yml`。角色独立执行预算与健康输出以 Runtime 插件为准，不得把死配置写成已达成门槛。
 - **构建 attempt 围栏**：产物提升必须匹配 Job 当前 `attempt_id`（INV-5）；租约过期/回收一律作废 attempt，禁止迟到上传提升旧产物。
 - **检查指纹缓存**：`CodeCheckFingerprintBuilder` 覆盖源码、依赖版本、引用资源身份、Runtime Kit 清单内容 hash、主题/字体与规则版本；新增会影响检查结果的输入必须进指纹，否则缓存会返回陈旧结果。

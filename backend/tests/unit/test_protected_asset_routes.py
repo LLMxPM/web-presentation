@@ -308,6 +308,7 @@ async def test_editor_page_screenshot_content(monkeypatch, tmp_path):
     try:
         monkeypatch.setattr(PageService, "get_model", AsyncMock(return_value=mock_page))
         monkeypatch.setattr(ObjectStorageService, "open_object_for_read", mock_open_object)
+        monkeypatch.setattr(ObjectStorageService, "read_object", AsyncMock(return_value=test_png))
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

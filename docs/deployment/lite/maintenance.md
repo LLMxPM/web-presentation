@@ -96,7 +96,7 @@ docker run --rm \
 | 环境变量 | 规则与示例 | 注意事项 |
 | :--- | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | 浏览器访问平台的完整公网/局域网根地址<br>如：`http://192.168.1.50:8080` 或 `https://ppt.yourdomain.com` | **结尾不要带斜杠**；用于平台生成公开链接和回调 |
-| `RUNTIME_PUBLIC_BASE_URL` | 浏览器加载预览和资源的外部路径<br>如：`http://192.168.1.50:8080/runtime` 或 `https://ppt.yourdomain.com/runtime` | 单体版通常就是平台根地址加上 `/runtime` |
+| `RUNTIME_PUBLIC_BASE_URL` | 独立预览主机名<br>如：`http://preview.home.arpa:8080/runtime` 或 `https://preview.yourdomain.com/runtime` | DNS / hosts 指向同一 Gateway；业务 Cookie 保持 host-only，预览域不加入业务 CORS |
 | `CORS_ORIGINS` | 合法的浏览器 Origin JSON 数组<br>如：`'["http://192.168.1.50:8080"]'` 或 `'["https://ppt.yourdomain.com"]'` | **必须为合法 JSON 数组字符串**；若来源不在列表中，前端 API 请求将被浏览器拦截 |
 
 > **提示**：`RUNTIME_BASE_URL`、`RUNTIME_PREVIEW_JWKS_URL` 和 `RUNTIME_BACKEND_API_BASE_URL` 是容器内部回源地址，保持镜像内置的 `127.0.0.1` 即可，**绝对不要**改成公网域名或局域网 IP。
@@ -106,6 +106,6 @@ docker run --rm \
 如果你在平台前端挂载了 Nginx Proxy Manager (NPM)、Caddy 或群晖反向代理并开启了 HTTPS：
 
 1. 将 `BACKEND_PUBLIC_BASE_URL` 改为 `https://ppt.yourdomain.com`；
-2. 将 `RUNTIME_PUBLIC_BASE_URL` 改为 `https://ppt.yourdomain.com/runtime`；
+2. 为独立预览域配置 DNS / TLS，将 `RUNTIME_PUBLIC_BASE_URL` 改为 `https://preview.yourdomain.com/runtime`，转发到同一 Gateway；
 3. 将 `CORS_ORIGINS` 改为 `'["https://ppt.yourdomain.com"]'`；
 4. 反向代理配置时，请确保传递标准代理头（`Host`、`X-Real-IP`、`X-Forwarded-For`、`X-Forwarded-Proto`），并支持 WebSocket 和 Server-Sent Events (SSE) 长连接（不要开启 Response Buffering 缓冲）。

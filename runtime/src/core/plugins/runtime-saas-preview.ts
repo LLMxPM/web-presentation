@@ -40,6 +40,7 @@ import {
   inferContentTypeFromUrl,
   isAllowedSnapdomProxyResourceUrl,
   isHttpUrl,
+  resolveSnapdomProxySourceUrl,
 } from './runtime-snapdom-resource-proxy'
 import {
   PreviewServiceTokenError,
@@ -165,11 +166,14 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
             if (!remote.previewToken) {
               throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '缺少预览上下文令牌。')
             }
-            await verifyPreviewToken(remote.previewToken, {
+            const verified = await verifyPreviewToken(remote.previewToken, {
               jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
               audience: options.previewAudience || process.env.RUNTIME_PREVIEW_TOKEN_AUDIENCE || DEFAULT_PREVIEW_AUDIENCE,
               timeoutMs: jwksTimeoutMs,
             })
+            if (verified.publicContext.artifactId !== remote.artifactId) {
+              throw new PreviewGatewayError(403, 'ARTIFACT_MISMATCH', '预览票据与模块 artifact 不一致。')
+            }
             await prepareRemoteSfcSubrequest(server, strippedUrl)
           } catch (error) {
             return sendPreviewError(res, error)
@@ -218,7 +222,12 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
           assertExpectedRuntimeFingerprint(req.headers, localFingerprint)
           // preview 执行预算：HTML/模块转换走独立 lane，RUNTIME_PREVIEW_VITE_TASK_* 生效。
           await runWithPreviewBudget(async () => {
-          const previewToken = String(req.headers[previewHeaderName] || '')
+          const queryToken = new URL(strippedUrl || '/', 'http://runtime.local').searchParams.get('token') || ''
+          const headerToken = String(req.headers[previewHeaderName] || '')
+          if (headerToken && queryToken && headerToken !== queryToken) {
+            throw new PreviewGatewayError(403, 'PREVIEW_CONTEXT_CONFLICT', '预览票据来源冲突。')
+          }
+          const previewToken = headerToken || queryToken
           if (!previewToken) {
             throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '缺少预览上下文令牌。')
           }
@@ -1178,9 +1187,10 @@ async function handleSnapdomResourceProxyRequest(
     }
 
     const response = await fetchWithTimeout(
-      sourceUrl,
+      resolveSnapdomProxySourceUrl(sourceUrl, manifest, verified.publicContext, options.backendApiBaseUrl),
       {
         headers: buildSnapdomProxyFetchHeaders(sourceUrl, serviceToken, previewToken, manifest, verified.publicContext),
+        redirect: 'error',
       },
       options.backendRequestTimeoutMs,
       'SNAPDOM_PROXY_REQUEST_TIMEOUT',

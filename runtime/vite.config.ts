@@ -44,6 +44,7 @@ export default defineConfig(({ command, mode }) => {
   const runtimeAllowedHosts = resolveRuntimeServerAllowedHosts(env.RUNTIME_SERVER_ALLOWED_HOSTS, [
     'runtime',
     'localhost',
+    'preview.localhost',
     '127.0.0.1',
     env.RUNTIME_PUBLIC_BASE_URL,
     env.BACKEND_PUBLIC_BASE_URL,
@@ -66,6 +67,10 @@ export default defineConfig(({ command, mode }) => {
       strictPort: true,
       cors: true,
       allowedHosts: runtimeAllowedHosts,
+      // 独立 Runtime 源站也承载私有构建入口；授权仍由 Backend 逐文件执行。
+      proxy: roleSurface.preview && env.RUNTIME_BACKEND_API_BASE_URL ? {
+        '/build-artifacts': { target: env.RUNTIME_BACKEND_API_BASE_URL, changeOrigin: false },
+      } : undefined,
     },
     customLogger: createRuntimeViteLogger(),
     plugins: buildRuntimeServePlugins(roleSurface, {
@@ -138,7 +143,10 @@ export function buildRuntimeServePlugins(
   plugins.push(runtimeVersionGuard(), runtimeHealth())
   if (surface.preview) {
     plugins.push(
-      runtimeStandalonePreviewGate({ enabled: options.standalonePreviewEnabled }),
+      runtimeStandalonePreviewGate({
+        enabled: options.standalonePreviewEnabled,
+        privateBuildProxyEnabled: Boolean(options.backendApiBaseUrl),
+      }),
       vue(),
       runtimeSaaSPreview({
         jwksUrl: options.jwksUrl,

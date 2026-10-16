@@ -18,6 +18,12 @@ type MockServerResponse = Pick<ServerResponse, 'statusCode' | 'setHeader' | 'end
 }
 
 describe('runtime standalone preview gate', () => {
+  it('仅在已配置私有构建代理时放行构建 HTML 导航', () => {
+    const request = { method: 'GET', url: '/build-artifacts/1/2/', headers: { accept: 'text/html' } }
+    expect(shouldBlockStandalonePreviewRequest(request)).toBe(true)
+    expect(shouldBlockStandalonePreviewRequest(request, '', true)).toBe(false)
+  })
+
   it('默认启用独立页面入口，仅显式关闭值会禁用', () => {
     expect(resolveStandalonePreviewEnabled(undefined)).toBe(true)
     expect(resolveStandalonePreviewEnabled('')).toBe(true)

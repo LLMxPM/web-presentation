@@ -1,12 +1,13 @@
-"""文件功能：提供构建产物 ZIP 的公开静态站点代理入口。"""
+"""文件功能：提供隔离预览主机名下按构建票据鉴权的静态产物代理入口。"""
 
 from __future__ import annotations
 
 import hashlib
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
@@ -31,11 +32,12 @@ async def proxy_project_build_artifact(
 ) -> Response:
     """受保护的项目构建产物静态站点代理入口。
 
-    必须携带有效的构建访问令牌（支持 query token 或 Cookie wp_build_token）；
+    必须携带有效的构建访问令牌（支持 query token 或 project/job 专用 Cookie）；
     无凭证或凭证无效的匿名访问一律返回 404 及 no-store。
     """
 
-    token = request.query_params.get("token") or request.cookies.get("wp_build_token")
+    cookie_name = f"wp_build_token_{project_id}_{job_id}"
+    token = request.query_params.get("token") or request.cookies.get(cookie_name)
     if not token and request.headers.get("authorization"):
         parts = request.headers["authorization"].strip().split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
@@ -67,6 +69,16 @@ async def proxy_project_build_artifact(
             headers={"Cache-Control": "no-store"},
         )
 
+    from app.services.preview_origin_service import isolated_preview_origin
+    from urllib.parse import urlsplit
+    preview_origin = isolated_preview_origin()
+    if request.url.hostname != urlsplit(preview_origin).hostname:
+        # 业务源站不能执行用户构建 HTML；有效票据只能跳转至隔离源站。
+        return RedirectResponse(
+            f"{preview_origin}{request.url.path}?token={token}", status_code=307,
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        )
+
     result = await ProjectBuildArtifactProxyService(session).get_artifact_file(
         project_id=project_id,
         job_id=job_id,
@@ -92,11 +104,13 @@ async def proxy_project_build_artifact(
 
     if request.query_params.get("token"):
         resp.set_cookie(
-            key="wp_build_token",
+            key=cookie_name,
             value=token,
-            max_age=300,
+            max_age=max(0, min(300, int(claims["exp"]) - int(time.time()))),
             httponly=True,
             samesite="lax",
+            secure=request.url.scheme == "https",
+            path=f"/build-artifacts/{project_id}/{job_id}/",
         )
     return resp
 

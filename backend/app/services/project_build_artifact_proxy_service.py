@@ -188,5 +188,5 @@ class ProjectBuildArtifactProxyService:
         """为 HTML 与静态资源设置差异化缓存策略。"""
 
         if media_type == "text/html":
-            return {"Cache-Control": "no-cache"}
-        return {"Cache-Control": "public, max-age=31536000, immutable"}
+            return {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"}
+        return {"Cache-Control": "private, no-cache", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"}

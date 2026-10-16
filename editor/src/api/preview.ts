@@ -3,6 +3,7 @@
  */
 import { http } from '@/api/http'
 import type { ComponentPreviewOptions, PreviewArtifactResponse } from '@/types/api'
+import type { PreviewArtifactAccessRenewalResponse } from '@/types/api.generated'
 
 /**
  * 锁定当前配置并生成项目或单页面 preview artifact。
@@ -77,12 +78,7 @@ export async function createAssetPreviewArtifact(workspaceId: number, assetId: n
  * 为指定有效 preview artifact 续签短期访问票据。
  */
 export async function renewPreviewArtifactAccess(artifactId: string) {
-  const { data } = await http.post<{
-    preview_url: string
-    token: string
-    expires_at: string
-    artifact_id: string
-  }>(`/preview-artifacts/${artifactId}/access`)
+  const { data } = await http.post<PreviewArtifactAccessRenewalResponse>(`/preview-artifacts/${artifactId}/access`)
   return data
 }
 

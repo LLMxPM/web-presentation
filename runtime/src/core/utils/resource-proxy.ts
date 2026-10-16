@@ -189,14 +189,18 @@ function addComparableUrl(target: Set<string>, rawUrl: string): void {
 function normalizeComparableUrl(rawUrl: string): string {
   if (typeof window === 'undefined') {
     try {
-      return new URL(rawUrl).href
+      const parsed = new URL(rawUrl)
+      parsed.searchParams.delete('token')
+      return parsed.href
     } catch {
       return ''
     }
   }
 
   try {
-    return new URL(rawUrl, window.location.href).href
+    const parsed = new URL(rawUrl, window.location.href)
+    parsed.searchParams.delete('token')
+    return parsed.href
   } catch {
     return ''
   }

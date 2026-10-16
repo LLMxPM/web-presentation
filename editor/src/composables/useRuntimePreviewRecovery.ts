@@ -108,6 +108,13 @@ export function useRuntimePreviewRecovery(options: PreviewRecoveryOptions) {
   }
 
   watch(options.sourceKey, reset)
+  if (options.artifactId) watch(options.artifactId, () => {
+    // 自动重建会更换 artifact；作废旧续签回调但保留失败链预算，防止循环重建。
+    clearRenewTimer()
+    pending = false
+    sequence += 1
+    scheduleAutoRenew()
+  })
   watch(options.frameUrl, scheduleAutoRenew)
 
   onMounted(() => {
@@ -116,7 +123,8 @@ export function useRuntimePreviewRecovery(options: PreviewRecoveryOptions) {
   })
   onUnmounted(() => {
     clearRenewTimer()
-    reset()
+    sequence += 1
+    pending = false
     document.removeEventListener('visibilitychange', handleVisibilityChange)
   })
   return { tryRecover, reset, executeRenewOrRecover }

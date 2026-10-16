@@ -4,7 +4,7 @@
     <iframe
       v-if="props.frameUrl"
       ref="iframeRef"
-      :src="props.frameUrl"
+      :src="effectiveFrameUrl"
       :title="props.title"
       :class="props.iframeClass"
       referrerpolicy="same-origin"
@@ -93,19 +93,25 @@ const emit = defineEmits<{
 }>()
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
+const renewedFrameUrl = ref('')
+const effectiveFrameUrl = computed(() => renewedFrameUrl.value || props.frameUrl)
 const localError = ref('')
 let lastErrorFingerprint = ''
 const effectiveStatus = computed(() => localError.value && props.status === 'idle' ? 'error' : props.status)
 const recovery = useRuntimePreviewRecovery({
-  frameUrl: () => props.frameUrl,
+  frameUrl: () => effectiveFrameUrl.value,
   sourceKey: () => props.recoveryKey || props.title,
   artifactId: () => props.artifactId,
-  onRenewed: (newUrl: string) => emit('renew', newUrl),
+  onRenewed: (newUrl: string) => {
+    renewedFrameUrl.value = newUrl
+    emit('renew', newUrl)
+  },
   enabled: () => props.autoRecover,
   isPending: () => props.status === 'generating',
   recover: () => emit('retry'),
 })
 watch(() => props.frameUrl, () => {
+  renewedFrameUrl.value = ''
   localError.value = ''
   lastErrorFingerprint = ''
 })
@@ -172,7 +178,7 @@ function handleWindowMessage(event: MessageEvent<unknown>): void {
     return
   }
   try {
-    if (event.origin !== new URL(props.frameUrl).origin) {
+    if (event.origin !== new URL(effectiveFrameUrl.value).origin) {
       return
     }
   } catch {

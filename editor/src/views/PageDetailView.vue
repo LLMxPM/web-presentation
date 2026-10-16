@@ -481,7 +481,7 @@ function applyPreviewLink(previewLink: PreviewArtifactResponse) {
   bumpPreviewFrameToken()
 }
 
-/** 预览票据后台续签成功后静默更新当前 previewUrl，避免重载 iframe 或丢失当前编辑状态。 */
+/** 续签后更新 iframe 授权地址，重新加载预览内容并保留父级工作台编辑状态。 */
 function handlePreviewRenewed(newUrl: string): void {
   previewUrl.value = newUrl
 }

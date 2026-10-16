@@ -299,3 +299,41 @@ def test_build_protected_headers():
     assert headers["Content-Range"] == "bytes 0-511/1024"
     assert headers["Content-Length"] == "512"
     assert "attachment; filename*=UTF-8''" in headers["Content-Disposition"]
+
+
+def test_generate_signed_token_overwrites_security_claims():
+    """验证 generate_signed_token 强制覆盖 payload 中伪造的安全保留声明。"""
+    payload = {
+        "iss": "attacker",
+        "exp": 9999999999,
+        "iat": 1000,
+        "custom_key": "custom_val",
+    }
+    token = TokenService.generate_signed_token(
+        payload,
+        expires_in_seconds=60,
+        issuer="backend",
+    )
+    claims = TokenService.verify_signed_token(token)
+    assert claims["iss"] == "backend"
+    assert claims["custom_key"] == "custom_val"
+    assert claims["exp"] < 9000000000  # 伪造的远期 exp 已被覆盖并按入参生效
+
+
+def test_verify_internal_asset_access_expired():
+    """验证内部回源凭证过期时准确返回 FILE_ACCESS_EXPIRED。"""
+    expired_token = TokenService.generate_signed_token(
+        {"artifact_id": "art-1", "aud": "runtime-service"},
+        expires_in_seconds=-10,  # 已过期
+    )
+    request = _create_mock_request(headers={"Authorization": f"Bearer {expired_token}"})
+    with pytest.raises(AppException) as exc:
+        FileAuthService.verify_internal_asset_access(
+            request=request,
+            artifact_id="art-1",
+            file_hash="hash-1",
+            manifest={"assets": {"test.png": "hash-1"}},
+        )
+    assert exc.value.status_code == 401
+    assert exc.value.code == "FILE_ACCESS_EXPIRED"
+

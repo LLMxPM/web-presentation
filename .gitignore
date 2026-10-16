@@ -74,3 +74,4 @@ temp/
 *.tmp
 # 测试机可再生产物不入库；摘要记录 sha256
 docs/archive/architecture-2026-09/runs/**/build.zip
+.workbuddy/

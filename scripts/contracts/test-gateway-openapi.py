@@ -80,7 +80,16 @@ def main() -> None:
                 target = directory / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(b'synthetic-private-object')
-            (directory / 'upstream.conf').write_text('server { listen 8000; root /fixture; location = /api/v1/system/health { default_type application/json; return 200 \'{"status":"ok"}\'; } location = /openapi.json { default_type application/json; try_files $uri =503; } }', encoding='utf-8')
+            (directory / 'upstream.conf').write_text('''server {
+                listen 8000; root /fixture;
+                location = /api/v1/system/health { default_type application/json; return 200 '{"status":"ok"}'; }
+                location = /openapi.json { default_type application/json; try_files $uri =503; }
+                location ^~ /build-artifacts/ {
+                    add_header Cache-Control "private, no-cache" always;
+                    if ($arg_token != "contract-authorized") { add_header Cache-Control "no-store" always; return 404; }
+                    try_files $uri =404;
+                }
+            }''', encoding='utf-8')
             backend = name + '-backend'
             docker('run', '-d', '--name', backend, '--network', network, '--network-alias', 'backend', '--network-alias', 'runtime', '-v', f'{directory.as_posix()}:/fixture:ro', '-v', f'{(directory / "upstream.conf").as_posix()}:/etc/nginx/conf.d/default.conf:ro', 'nginx:1.28-alpine')
             containers.append(backend)
@@ -100,6 +109,13 @@ def main() -> None:
             module.check(endpoint)
             check_media_blocked(endpoint)
             check_closed_public_surfaces_blocked(endpoint)
+            # 有效授权必须抵达受控 Backend；不能用网关整目录 404 伪造权限验收通过。
+            for method in ('GET', 'HEAD'):
+                with urlopen(Request(endpoint + '/build-artifacts/1/1/index.html?token=contract-authorized', method=method)) as response:
+                    assert response.status == 200
+                    assert response.headers.get('Cache-Control') == 'private, no-cache'
+                    if method == 'GET':
+                        assert response.read() == b'synthetic-private-object'
             with urlopen(endpoint + '/api/v1/system/health') as response:
                 assert json.load(response)['status'] == 'ok'
             with urlopen(endpoint + '/editor/deep-link') as response:

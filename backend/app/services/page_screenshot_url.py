@@ -1,7 +1,7 @@
-"""文件功能：统一生成页面截图的版本化公开访问地址。"""
+"""文件功能：统一生成页面截图按内容版本寻址的受保护访问地址。"""
 
-from app.core.time_utils import normalize_utc
 from app.models.page import Page
+from app.services.screenshot_artifact_service import screenshot_content_id
 
 
 def build_page_screenshot_url(page: Page, backend_public_base_url: str) -> str | None:
@@ -10,9 +10,7 @@ def build_page_screenshot_url(page: Page, backend_public_base_url: str) -> str |
     if page.screenshot_storage_key is None:
         return None
 
-    screenshot_id = "latest"
-    if page.screenshot_updated_at is not None:
-        screenshot_id = str(int(normalize_utc(page.screenshot_updated_at).timestamp() * 1000))
+    screenshot_id = screenshot_content_id(page)
 
     return (
         f"{backend_public_base_url.rstrip('/')}"

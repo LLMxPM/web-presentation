@@ -321,46 +321,14 @@ async def _serve_workspace_asset_binary(
     etag = asset.file_hash
     total_size = asset.file_size
 
-    if FileAuthService.evaluate_preconditions(request, etag):
-        return Response(
-            status_code=304,
-            headers=FileAuthService.build_protected_headers(etag=etag, total_size=total_size),
-        )
-
-    range_span = None
-    range_header = request.headers.get("range")
-    if range_header and FileAuthService.evaluate_if_range(request, etag):
-        range_span = FileAuthService.parse_single_range(range_header, total_size)
-
-    headers = FileAuthService.build_protected_headers(
-        etag=etag,
-        total_size=total_size,
-        range_span=range_span,
-        is_download=is_download,
-        original_name=asset.original_name,
+    return await FileAuthService.serve_protected_file(
+        request=request,
+        open_file=driver.open_for_read(
+            workspace_id, asset.file_name, expected_sha256=asset.file_hash, expected_size=asset.file_size,
+        ),
+        etag=etag, media_type=resolved_media_type,
+        is_download=is_download, original_name=asset.original_name,
     )
-
-    if is_head:
-        return Response(status_code=200 if range_span is None else 206, media_type=resolved_media_type, headers=headers)
-
-    from fastapi.responses import StreamingResponse
-
-    async with driver.open_for_read(
-        workspace_id,
-        asset.file_name,
-        expected_sha256=asset.file_hash,
-        expected_size=asset.file_size,
-    ) as local_file_path:
-        start = 0 if range_span is None else range_span[0]
-        length = total_size if range_span is None else (range_span[1] - range_span[0] + 1)
-        status_code = 200 if range_span is None else 206
-        return StreamingResponse(
-            FileAuthService.stream_file_chunks(local_file_path, start=start, length=length),
-            status_code=status_code,
-            media_type=resolved_media_type,
-            headers=headers,
-        )
-
 
 
 @router.post("/workspaces/{workspace_id}/assets/{asset_id}/preview-artifact", response_model=PreviewArtifactResponse, response_model_exclude_none=True)

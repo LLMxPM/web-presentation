@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import logging
 import re
 import time
@@ -325,6 +326,7 @@ class PageScreenshotService:
                     page_version_no=target_page_version_no,
                     config_hash=config_hash,
                     viewport=viewport,
+                    content_sha256=hashlib.sha256(screenshot_content).hexdigest(),
                 ),
                 content=screenshot_content,
                 content_type="image/png",
@@ -493,9 +495,13 @@ class PageScreenshotService:
         page_version_no: int,
         config_hash: str,
         viewport: CaptureViewport,
+        content_sha256: str | None = None,
     ) -> str:
         """根据页面版本、展示配置和视口构造可安全重试的不可变对象键。"""
 
+        if content_sha256:
+            from app.services.screenshot_artifact_service import screenshot_object_key
+            return screenshot_object_key(page_id, content_sha256)
         return (
             f"page-screenshots/{int(page_id)}/v{int(page_version_no)}/"
             f"{str(config_hash).strip()}/{int(viewport.width)}x{int(viewport.height)}.png"
@@ -559,13 +565,8 @@ class PageScreenshotService:
         """构造页面截图查询结果。"""
 
         storage_key = str(page.screenshot_storage_key or "")
-        version = page.screenshot_version_no or page.current_version_no
-        screenshot_id = "latest"
-        if page.screenshot_updated_at is not None:
-            screenshot_id = str(int(normalize_utc(page.screenshot_updated_at).timestamp() * 1000))
-        elif version:
-            screenshot_id = str(version)
-        public_url = f"{settings.backend_public_base_url.rstrip('/')}/api/pages/{page.id}/screenshots/{screenshot_id}/content"
+        from app.services.page_screenshot_url import build_page_screenshot_url
+        public_url = build_page_screenshot_url(page, self.settings.backend_public_base_url) or ""
         return PageScreenshotResult(
             page=page,
             page_item=await self.page_service._to_item(page),
@@ -605,60 +606,17 @@ class PageScreenshotService:
 
         支持：
         - "latest" / "current"：读取页面当前截图指针；
-        - 数字 ID：读取对应已成功执行的 PageScreenshotJob 产物；
+        - 64 位内容 hash：读取该页面对应的不可变截图对象；
         - 找不到或不属于该页面时抛出 404 PAGE_SCREENSHOT_NOT_FOUND。
 
         Args:
             session: 异步数据库会话。
             page: 目标页面 ORM 对象。
-            screenshot_id: 截图标识符（latest、current 或数字 ID）。
+            screenshot_id: 截图标识符（latest、current 或内容 hash）。
 
         Returns:
             (storage_key, filename) 元组。
         """
 
-        from sqlalchemy import select
-        from app.models.page_screenshot_job import PageScreenshotJob
-
-        clean_id = str(screenshot_id).strip()
-        if clean_id in ("latest", "current"):
-            if not page.screenshot_storage_key:
-                raise AppException(
-                    status_code=404,
-                    code="PAGE_SCREENSHOT_NOT_FOUND",
-                    detail="当前页面尚未生成可用截图。",
-                    headers={"Cache-Control": "no-store"},
-                )
-            filename = f"{page.code or f'page-{page.id}'}-screenshot-latest.png"
-            return str(page.screenshot_storage_key), filename
-
-        if clean_id.isdigit():
-            job_id = int(clean_id)
-            stmt = select(PageScreenshotJob).where(
-                PageScreenshotJob.id == job_id,
-                PageScreenshotJob.page_id == page.id,
-                PageScreenshotJob.status == "succeeded",
-            )
-            job = (await session.execute(stmt)).scalar_one_or_none()
-            if job is None:
-                raise AppException(
-                    status_code=404,
-                    code="PAGE_SCREENSHOT_NOT_FOUND",
-                    detail=f"指定的页面截图记录 ({screenshot_id}) 不存在或尚未就绪。",
-                    headers={"Cache-Control": "no-store"},
-                )
-            storage_key = cls.build_page_screenshot_storage_key(
-                page_id=page.id,
-                page_version_no=job.target_page_version_no,
-                config_hash=job.config_hash,
-                viewport=CaptureViewport(width=job.viewport_width, height=job.viewport_height),
-            )
-            filename = f"{page.code or f'page-{page.id}'}-v{job.target_page_version_no}-screenshot.png"
-            return storage_key, filename
-
-        raise AppException(
-            status_code=404,
-            code="PAGE_SCREENSHOT_NOT_FOUND",
-            detail=f"未识别的页面截图标识 ({screenshot_id})。",
-            headers={"Cache-Control": "no-store"},
-        )
+        from app.services.screenshot_artifact_service import resolve_screenshot_object
+        return resolve_screenshot_object(page, screenshot_id)

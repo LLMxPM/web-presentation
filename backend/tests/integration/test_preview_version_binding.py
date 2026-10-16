@@ -29,42 +29,37 @@ def _mock_runtime(monkeypatch, responder):
     monkeypatch.setattr(httpx, "AsyncClient", factory)
 
 
-async def test_browser_entry_binds_signed_version_and_preserves_skew_response(authenticated_client, monkeypatch):
-    """浏览器无需自填期望头；HTML 子票据保留 exp/权限，409 与版本响应透传。"""
+async def test_browser_entry_binds_version_in_isolated_frame(authenticated_client, monkeypatch):
+    """Backend 仅签发带版本的隔离 iframe，不在业务 origin 代理用户 HTML。"""
+    from html import unescape
+    import re
+    from urllib.parse import urlsplit, parse_qs
 
     token = _generate_preview_token()
     original = TokenService.verify_preview_context_token(token)
     seen = []
 
     def runtime(request):
-        """模拟版本探针后命中另一副本，必须显式拒绝而不能返回静默混版页面。"""
-
-        if request.url.path == "/__runtime_healthz":
-            return httpx.Response(200, json={"runtime_kit_version": "1.0.0", "build_id": "release-a"})
-        bound = TokenService.verify_preview_context_token(request.headers["x-runtime-preview-context"])
-        seen.append(bound)
-        assert request.headers["x-expected-runtime-version-fingerprint"] == "1.0.0+release-a"
-        assert request.headers["x-runtime-preview-artifact-id"] == original["artifact_id"]
-        assert "untrusted.example" not in request.headers["x-runtime-preview-workbench-url"]
-        return httpx.Response(409, content="PREVIEW_VERSION_SKEW", headers={
-            "Content-Type": "text/html", "x-runtime-version-fingerprint": "1.0.0+release-b",
-            "Referrer-Policy": "no-referrer",
-        })
+        """只允许受信版本探针；不应再从 Backend 请求用户 HTML。"""
+        seen.append(request)
+        assert request.url.path == "/__runtime_healthz"
+        return httpx.Response(200, json={"runtime_kit_version": "1.0.0", "build_id": "release-a"})
 
     _mock_runtime(monkeypatch, runtime)
     response = await authenticated_client.get(
         f"/preview/artifacts/{original['artifact_id']}", params={"token": token},
-        headers={
-            "x-expected-runtime-version-fingerprint": "untrusted-browser-value",
-            "x-runtime-preview-artifact-id": "untrusted-artifact",
-            "x-runtime-preview-workbench-url": "https://untrusted.example/",
-        },
+        headers={"x-runtime-preview-context": "untrusted", "cookie": "private-business-cookie", "authorization": "Bearer private"},
     )
-    assert response.status_code == 409
-    assert response.headers["x-runtime-version-fingerprint"] == "1.0.0+release-b"
+    assert response.status_code == 200
+    target = urlsplit(unescape(re.search(r'<iframe[^>]+src="([^"]+)"', response.text).group(1)))
+    assert target.hostname == "preview.localhost"
+    bound = TokenService.verify_preview_context_token(parse_qs(target.query)["token"][0])
+    assert bound == {**original, "runtime_version_fingerprint": "1.0.0+release-a"}
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
-    assert seen[0] == {**original, "runtime_version_fingerprint": "1.0.0+release-a"}
+    assert "Content-Security-Policy" in response.headers
+    assert "private-business-cookie" not in response.text
+    assert "cookie" not in seen[0].headers and "authorization" not in seen[0].headers
 
 
 async def test_bound_preview_keeps_version_without_reprobing(authenticated_client, monkeypatch):
@@ -88,39 +83,24 @@ async def test_missing_runtime_release_identity_fails_closed(authenticated_clien
     assert result.value.code == "RUNTIME_VERSION_UNKNOWN"
 
 
-async def test_preview_proxy_strips_sensitive_client_headers_and_sets_security_headers(authenticated_client, monkeypatch):
-    """预览代理剥除业务 Cookie、Authorization 等请求头，并返回 no-store 与 nosniff 等安全响应头。"""
-
+async def test_preview_shell_does_not_forward_client_credentials(authenticated_client, monkeypatch):
+    """浏览器凭证不得进入 Runtime 网络请求或用户页面，宿主页只有固定桥接脚本。"""
     token = _generate_preview_token()
-    original = TokenService.verify_preview_context_token(token)
-    received_headers = {}
+    artifact_id = TokenService.verify_preview_context_token(token)["artifact_id"]
+    received = []
 
     def runtime(request):
-        if request.url.path == "/__runtime_healthz":
-            return httpx.Response(200, json={"runtime_kit_version": "1.0.0", "build_id": "release-a"})
-        for k, v in request.headers.items():
-            received_headers[k.lower()] = v
-        return httpx.Response(200, content="<html><body>preview</body></html>", headers={"Content-Type": "text/html"})
+        """记录实际版本探针的请求头。"""
+        received.append(request.headers)
+        return httpx.Response(200, json={"runtime_kit_version": "1.0.0", "build_id": "release-a"})
 
     _mock_runtime(monkeypatch, runtime)
     response = await authenticated_client.get(
-        f"/preview/artifacts/{original['artifact_id']}",
-        params={"token": token},
-        headers={
-            "cookie": "auth_token=super_secret_cookie; session_id=sess_123",
-            "authorization": "Bearer confidential_token",
-            "x-workspace-id": "ws-sensitive-999",
-            "user-agent": "SafeAgent/1.0",
-            "accept": "text/html",
-        },
+        f"/preview/artifacts/{artifact_id}", params={"token": token},
+        headers={"cookie": "private-cookie", "authorization": "Bearer private-token", "x-workspace-id": "private-workspace"},
     )
     assert response.status_code == 200
-    assert "cookie" not in received_headers
-    assert "authorization" not in received_headers
-    assert "x-workspace-id" not in received_headers
-    assert received_headers.get("user-agent") == "SafeAgent/1.0"
-    assert received_headers.get("accept") == "text/html"
-    assert response.headers["cache-control"] == "no-store"
-    assert response.headers["referrer-policy"] == "no-referrer"
+    assert received
+    assert all(key not in received[0] for key in ("cookie", "authorization", "x-workspace-id"))
     assert response.headers["x-content-type-options"] == "nosniff"
-
+    assert all(secret not in response.text for secret in ("private-cookie", "private-token", "private-workspace"))

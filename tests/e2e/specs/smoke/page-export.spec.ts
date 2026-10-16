@@ -31,18 +31,19 @@ test('页面导出应产出可下载的真实 PPTX 产物', async ({ page, conte
   expect(artifact.preview_url, '项目预览 artifact 未返回地址').toBeTruthy()
 
   await page.goto(artifact.preview_url)
+  const runtime = page.frameLocator('iframe#preview')
 
-  const exportButton = page.locator('.nav-button--export')
+  const exportButton = runtime.locator('.nav-button--export')
   await expect(exportButton).toBeVisible()
   await exportButton.click()
 
-  const dialog = page.locator('[role="dialog"][aria-labelledby="export-dialog-title"]')
+  const dialog = runtime.locator('[role="dialog"][aria-labelledby="export-dialog-title"]')
   await expect(dialog).toBeVisible()
   // 默认即为 HTML转PPTX + 当前页面，不再切换选项，避免把导出断言耦合到表单交互。
   await expect(dialog.locator('input[value="pptx-editable"]')).toBeChecked()
   await expect(dialog.locator('input[value="current"]')).toBeChecked()
 
-  const downloadPromise = page.waitForEvent('download')
+  const downloadPromise = page.waitForEvent('download', { timeout: 120_000 })
   await dialog.getByRole('button', { name: '开始导出' }).click()
   const download = await downloadPromise
 

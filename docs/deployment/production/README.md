@@ -80,7 +80,7 @@ production env 版至少修改：
 | 变量 | 要求 |
 | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | Backend 对外公开地址，用于生成资源、截图、构建产物和预览入口链接 |
-| `RUNTIME_PUBLIC_BASE_URL` | Runtime 对外公开地址；同域 Gateway 模式通常为平台入口追加 `/runtime` |
+| `RUNTIME_PUBLIC_BASE_URL` | 独立预览主机名，例如 `https://preview.example.com/runtime`；不得与业务主机名相同 |
 | `RUNTIME_SERVER_BASE_PATH` | Runtime Vite 资源挂载路径，应与 `RUNTIME_PUBLIC_BASE_URL` 的 URL path 一致；例如 `/runtime/` 或 `/` |
 | `CORS_ORIGINS` | JSON 数组字符串，应包含浏览器访问平台的公网地址 |
 | `DATABASE_URL` | 已有 PostgreSQL 连接串，数据库和用户需要提前创建 |
@@ -102,16 +102,16 @@ SQLite 轻量单容器版和简化版默认使用 `http://127.0.0.1:8080` 和 `S
 
 ## 公网 URL 配置
 
-常规部署推荐同域 Gateway 模式：外层反向代理只把整个域名转发到简化版的 `platform:80`，或 production env 版的 `gateway:80`，再由平台内置 Nginx 处理 `/api`、`/preview`、`/public` 和 `/runtime/`。
+平台与预览使用不同主机名，两者均可转发到同一 `platform:80` 或 `gateway:80`。预览域的 `/runtime/` 和 `/build-artifacts/` 必须可达；旧 `/public` 与 `/media` 保持关闭。业务登录 Cookie 不设置父域 Domain，预览域不加入业务 CORS。Backend 在业务域仅返回可信桥接宿主页，用户代码实际运行于预览域 iframe。
 
 ```text
 BACKEND_PUBLIC_BASE_URL=https://presentation.example.com
-RUNTIME_PUBLIC_BASE_URL=https://presentation.example.com/runtime
+RUNTIME_PUBLIC_BASE_URL=https://preview.example.com/runtime
 RUNTIME_SERVER_BASE_PATH=/runtime/
 CORS_ORIGINS=["https://presentation.example.com"]
 ```
 
-这种模式下，外部反向代理不需要单独处理 `/runtime`，平台 Gateway 会把 `/runtime/` 转发到 `runtime:7373` 并保留 `/runtime/` 前缀，Runtime Vite 会按 `RUNTIME_SERVER_BASE_PATH=/runtime/` 解析资源路径。
+为两个主机名配置 DNS 与 TLS 后转发到同一 Gateway。Gateway 会把预览域的 `/runtime/` 转发到 `runtime:7373` 并保留前缀，`/build-artifacts/` 转给 Backend 逐文件鉴权。Runtime Vite 按 `RUNTIME_SERVER_BASE_PATH=/runtime/` 解析资源路径。同一业务主机名仅换端口不能隔离 Cookie，远程同主机名配置将返回 `PREVIEW_ORIGIN_NOT_ISOLATED`。
 
 如果要把 Backend 或 Runtime 单独暴露成独立域名，可以改成：
 
@@ -125,12 +125,12 @@ CORS_ORIGINS=["https://presentation.example.com"]
 拆分域名时，外部反向代理需要分别处理：
 
 - `presentation.example.com` 转发到简化版 `platform:80`，或 production env 版 `gateway:80`，用于 Editor 静态资源。
-- `api.presentation.example.com` 转发到 `backend:8000`，用于 `/api`、`/preview`、`/public`、`/build-artifacts`；旧 `/media` 入口已关闭，不应配置数据目录静态映射。
-- `runtime.presentation.example.com` 转发到 `runtime:7373`，路径不要再加 `/runtime` 前缀。
+- `api.presentation.example.com` 转发到 `backend:8000`，用于 `/api` 和可信 `/preview` 宿主页；旧 `/public`、`/media` 已关闭，不配置数据目录静态映射。
+- `runtime.presentation.example.com` 转发到 `runtime:7373`，路径不要再加 `/runtime` 前缀；保留 `/build-artifacts/` 到 Backend 的受保护代理，Runtime 的 Backend 地址配置后也提供此代理。
 
 `RUNTIME_BASE_URL=http://runtime:7373` 是 Backend 容器访问 Runtime 的内网地址，不是浏览器访问地址；即使单独配置 `RUNTIME_PUBLIC_BASE_URL`，通常也不需要改它。
 
-`RUNTIME_SERVER_BASE_PATH` 本质上就是 `RUNTIME_PUBLIC_BASE_URL` 的 URL path 部分，并规范化为以 `/` 开头和结尾。比如 `https://presentation.example.com/runtime` 对应 `/runtime/`，`https://runtime.example.com` 对应 `/`，`https://runtime.example.com/app-runtime` 对应 `/app-runtime/`。
+`RUNTIME_SERVER_BASE_PATH` 本质上就是 `RUNTIME_PUBLIC_BASE_URL` 的 URL path 部分，并规范化为以 `/` 开头和结尾。比如 `https://preview.example.com/runtime` 对应 `/runtime/`，`https://runtime.example.com` 对应 `/`，`https://runtime.example.com/app-runtime` 对应 `/app-runtime/`。
 
 ## 启动部署
 
@@ -260,8 +260,8 @@ flowchart LR
 关键路径：
 
 - `/` 由 Gateway 返回 Editor 静态资源。
-- `/api`、`/public`、`/build-artifacts`、`/preview` 代理到 Backend。
-- `/media` 及其子路径返回 404；Backend 不再挂载对象存储根目录。
+- `/api`、受保护 `/build-artifacts`、可信 `/preview` 宿主页代理到 Backend。
+- `/media`、`/public` 及其子路径返回 404；Backend 不再挂载对象存储根目录。
 - `/runtime/` 代理到 Runtime，并保留 `/runtime/` 前缀。
 - Backend 通过 `RUNTIME_BASE_URL` 访问 Runtime。
 - Backend 通过受信控制 API 调度 Renderer；Renderer 在 Chromium 中加载 Runtime 页面并回传截图或诊断结果。

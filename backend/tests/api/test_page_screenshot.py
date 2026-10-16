@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import hashlib
 import zipfile
 from urllib.parse import quote, urlsplit
 
@@ -37,9 +38,12 @@ async def _create_workspace_project(client: AsyncClient, name: str) -> tuple[int
 async def test_page_screenshot_should_save_and_expose_public_url(
     authenticated_client: AsyncClient,
     monkeypatch,
+    tmp_path,
 ) -> None:
     """截图接口应保存截图元数据，并在详情与列表接口中返回公开地址。"""
 
+    from app.services.object_storage_service import ObjectStorageService
+    monkeypatch.setattr(ObjectStorageService, "local_root", property(lambda self: tmp_path))
     workspace_id, project_id = await _create_workspace_project(authenticated_client, "截图页面")
     create_response = await authenticated_client.post(
         "/api/pages",
@@ -91,6 +95,9 @@ async def test_page_screenshot_should_save_and_expose_public_url(
         captured["storage_key"] = storage_key
         captured["content"] = content
         captured["content_type"] = content_type
+        target = tmp_path / storage_key
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
         return storage_key
 
     monkeypatch.setattr("app.services.page_screenshot_service.PagePreviewService.create_page_preview", fake_create_page_preview)
@@ -110,17 +117,16 @@ async def test_page_screenshot_should_save_and_expose_public_url(
     assert captured["preview_url"] == "http://runtime.local/__preview?ticket=demo"
     assert captured["viewport"] == (1920, 1080)
     storage_key = str(captured["storage_key"])
-    assert storage_key.startswith(f"page-screenshots/{page_data['id']}/v1/")
-    assert storage_key.endswith("/1920x1080.png")
+    assert storage_key == f"page-screenshots/{page_data['id']}/objects/{hashlib.sha256(b'fake-png').hexdigest()}.png"
     assert captured["content"] == b"fake-png"
     assert captured["content_type"] == "image/png"
-    expected_screenshot_url_prefix = f"http://127.0.0.1:8000/public/page-screenshots/{page_data['id']}?v="
+    expected_screenshot_url_prefix = f"http://127.0.0.1:8000/api/pages/{page_data['id']}/screenshots/"
     assert screenshot_data["screenshot_url"].startswith(expected_screenshot_url_prefix)
-    assert screenshot_data["screenshot_url"].removeprefix(expected_screenshot_url_prefix).isdigit()
+    assert screenshot_data["screenshot_url"].endswith("/content")
+    assert len(screenshot_data["screenshot_url"].removeprefix(expected_screenshot_url_prefix).split("/")[0]) == 64
     assert screenshot_data["screenshot_version_no"] == screenshot_data["current_version_no"]
     assert isinstance(screenshot_data["screenshot_config_hash"], str)
     assert len(screenshot_data["screenshot_config_hash"]) == 64
-    assert f"/{screenshot_data['screenshot_config_hash']}/" in storage_key
     assert screenshot_data["screenshot_is_latest"] is True
     assert screenshot_data["screenshot_updated_at"] is not None
 
@@ -235,9 +241,10 @@ async def test_page_screenshot_should_be_marked_outdated_after_page_update(
     )
     assert screenshot_response.status_code == 200
     screenshot_data = screenshot_response.json()
-    expected_screenshot_url_prefix = f"http://127.0.0.1:8000/public/page-screenshots/{page_data['id']}?v="
+    expected_screenshot_url_prefix = f"http://127.0.0.1:8000/api/pages/{page_data['id']}/screenshots/"
     assert screenshot_data["screenshot_url"].startswith(expected_screenshot_url_prefix)
-    assert screenshot_data["screenshot_url"].removeprefix(expected_screenshot_url_prefix).isdigit()
+    assert screenshot_data["screenshot_url"].endswith("/content")
+    assert len(screenshot_data["screenshot_url"].removeprefix(expected_screenshot_url_prefix).split("/")[0]) == 64
     assert screenshot_data["screenshot_version_no"] == 1
     assert isinstance(screenshot_data["screenshot_config_hash"], str)
     assert screenshot_data["screenshot_is_latest"] is True
@@ -551,7 +558,7 @@ async def test_page_screenshot_preview_artifact_should_use_cached_asset_base(
         headers=runtime_service_headers(artifact_id),
     )
     assert manifest_response.status_code == 200
-    assert manifest_response.json()["asset_base_url"] == f"http://127.0.0.1:8000/public/cached-assets/{workspace_id}"
+    assert manifest_response.json()["asset_base_url"] == f"http://127.0.0.1:8000/preview/artifacts/{artifact_id}/assets"
 
 
 async def test_page_screenshot_should_not_save_when_visual_assets_not_ready(

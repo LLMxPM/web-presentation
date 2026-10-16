@@ -302,8 +302,7 @@ class ProjectArtifactBuilder:
 
         public_base = backend_public_base_url.rstrip("/")
         if artifact_id:
-            if mode == "backend_cache":
-                return f"{public_base}/internal/runtime/preview-artifacts/{artifact_id}/assets"
+            # Renderer 的浏览器同样持有 P；是否使用 Backend 缓存不改变浏览器授权身份。
             return f"{public_base}/preview/artifacts/{artifact_id}/assets"
         return f"{public_base}/api/workspaces/{workspace_id}/assets"
 

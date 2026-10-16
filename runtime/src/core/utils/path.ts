@@ -237,6 +237,7 @@ function getRuntimeArtifactKind(rawArtifactKind: unknown): RuntimeArtifactKind |
   const normalizedValue = String(rawArtifactKind || '').trim()
   if (
     normalizedValue === 'preview_artifact'
+    || normalizedValue === 'project_template_preview'
     || normalizedValue === 'page_visual_edit_preview'
     || normalizedValue === 'build_snapshot'
     || normalizedValue === 'build_release'
@@ -275,7 +276,7 @@ function resolveArtifactMappedPath(params: {
   const previewToken = getRuntimePreviewToken()
   if (
     previewToken
-    && (params.artifactKind === 'preview_artifact' || params.artifactKind === 'page_visual_edit_preview')
+    && (params.artifactKind === 'preview_artifact' || params.artifactKind === 'page_visual_edit_preview' || params.artifactKind === 'project_template_preview')
     && (rawUrl.includes('/preview/artifacts/') || rawUrl.includes('/assets/'))
     && !rawUrl.includes('token=')
   ) {

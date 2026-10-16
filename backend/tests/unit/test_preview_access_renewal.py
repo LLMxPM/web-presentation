@@ -13,6 +13,7 @@ from app.services.auth_service import AuthContext
 from app.services.preview_service import PreviewService
 from app.services.project_service import ProjectService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
+from app.services.token_service import TokenService
 
 
 @pytest.fixture
@@ -76,6 +77,35 @@ async def test_preview_artifact_renewal_success(mock_session, mock_current_user,
     finally:
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_db_session, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["workspace_component", "workspace_asset", "runtime_kit_component"])
+async def test_renewal_preserves_scope_claims_and_artifact_deadline(scope, monkeypatch):
+    """续签不得丢失组件/资源的必需声明，也不能超过快照剩余期限。"""
+    from datetime import timedelta
+    from app.core.time_utils import utc_now
+    from app.services.preview_service import PreviewService
+    from app.services.workspace_service import WorkspaceService
+
+    deadline = utc_now() + timedelta(seconds=30)
+    manifest = {
+        "owner_scope": {"scope_type": scope, "workspace_id": "1", "asset_id": "7", "component_code": "card", "component_version_no": 2},
+        "preview_kind": "component" if scope != "workspace_asset" else "asset",
+        "entry_descriptor": {"entry_type": "component_host"}, "asset_base_url": "http://backend/preview/artifacts/rt_1/assets",
+        "runtime_kit_component_name": "Card", "runtime_kit_manifest_version": "1", "artifact_expires_at": deadline.isoformat(),
+    }
+    monkeypatch.setattr(RuntimeArtifactStore, "get_manifest", AsyncMock(return_value=manifest))
+    monkeypatch.setattr(WorkspaceService, "ensure_access", AsyncMock())
+    result = await PreviewService(AsyncMock()).renew_preview_access(artifact_id="rt_1", user_id=1)
+    claims = TokenService.verify_preview_context_token(result.token)
+    assert claims["exp"] <= int(deadline.timestamp())
+    if scope == "workspace_component":
+        assert claims["component_code"] == "card" and claims["component_version_no"] == 2
+    elif scope == "workspace_asset":
+        assert claims["asset_id"] == "7"
+    else:
+        assert claims["component_source"] == "runtime_kit" and claims["runtime_kit_component_name"] == "Card"
 
 
 @pytest.mark.asyncio

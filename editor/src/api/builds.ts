@@ -4,6 +4,8 @@
 
 import { http } from '@/api/http'
 import type { ProjectBuildAssetSummary, ProjectBuildCreateRequest, ProjectBuildJob } from '@/types/api'
+import type { ProjectBuildJobAccessResponse } from '@/types/api.generated'
+export type { ProjectBuildJobAccessResponse } from '@/types/api.generated'
 
 /**
  * 创建项目整包构建任务。
@@ -71,13 +73,6 @@ export async function downloadProjectBuildArtifact(projectId: number, jobId: num
   link.click()
   link.remove()
   window.URL.revokeObjectURL(downloadUrl)
-}
-
-export interface ProjectBuildJobAccessResponse {
-  browse_url: string
-  token: string
-  expires_at: string
-  expires_in_seconds: number
 }
 
 /**

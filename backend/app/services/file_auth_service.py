@@ -6,6 +6,7 @@ import mimetypes
 import re
 import urllib.parse
 from typing import Any
+from pathlib import Path
 
 from fastapi import Request
 import jwt
@@ -169,6 +170,13 @@ class FileAuthService:
         # 尝试使用 Runtime 服务票据验签
         try:
             claims = TokenService.verify_signed_token(token, audience=settings.runtime_service_token_audience)
+        except jwt.ExpiredSignatureError:
+            raise AppException(
+                status_code=401,
+                code=FILE_ACCESS_EXPIRED,
+                detail="内部回源访问凭证已过期。",
+                headers=NO_STORE_HEADERS,
+            ) from None
         except Exception:  # noqa: BLE001
             claims = None
 
@@ -176,6 +184,13 @@ class FileAuthService:
         if claims is None:
             try:
                 claims = TokenService.verify_runtime_build_command_token(token)
+            except jwt.ExpiredSignatureError:
+                raise AppException(
+                    status_code=401,
+                    code=FILE_ACCESS_EXPIRED,
+                    detail="内部回源访问凭证已过期。",
+                    headers=NO_STORE_HEADERS,
+                ) from None
             except Exception:  # noqa: BLE001
                 claims = None
 
@@ -288,7 +303,7 @@ class FileAuthService:
 
         RFC 9110 / RFC 7233：
         - 若请求未提供 If-Range，允许处理 Range 并返回 206；
-        - 若 If-Range 强/弱匹配当前 ETag，允许处理 Range 并返回 206；
+        - 若 If-Range 强匹配当前 ETag，允许处理 Range 并返回 206；
         - 若 If-Range 与当前 ETag 不匹配，必须忽略 Range，返回完整内容的 200 OK。
 
         Args:
@@ -303,9 +318,24 @@ class FileAuthService:
         if not if_range or not if_range.strip():
             return True
 
-        normalized_target = etag.strip('"').removeprefix("W/").strip('"')
-        normalized_if_range = if_range.strip().strip('"').removeprefix("W/").strip('"')
+        # If-Range 只能强比较；弱 ETag 不能授权续传另一份表示。
+        if if_range.strip().startswith("W/") or etag.startswith("W/"):
+            return False
+        normalized_target = etag.strip('"')
+        normalized_if_range = if_range.strip().strip('"')
         return normalized_target == normalized_if_range
+
+    @staticmethod
+    async def serve_protected_file(**kwargs: Any) -> Any:
+        """复用带读占用生命周期的文件交付器；调用前必须完成业务授权。"""
+        from app.services.protected_file_response import protected_file_response
+        return await protected_file_response(**kwargs)
+
+    @staticmethod
+    def serve_protected_bytes(**kwargs: Any) -> Any:
+        """复用内存对象的私有条件响应协议。"""
+        from app.services.protected_file_response import protected_bytes_response
+        return protected_bytes_response(**kwargs)
 
     @staticmethod
     async def stream_file_chunks(
@@ -429,6 +459,8 @@ class FileAuthService:
             "Accept-Ranges": "bytes",
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "no-referrer",
+            # 受保护资源完全依赖 URL/Header 中的短期 Token 鉴权，不携带 Cookie 凭证（绝不设置 Access-Control-Allow-Credentials: true），
+            # 允许独立域名的 Runtime iframe 与预览容器跨源加载音视频与图片素材。
             "Access-Control-Allow-Origin": "*",
         }
 
@@ -474,7 +506,7 @@ class FileAuthService:
             FileResponse 或 Response 响应。
         """
 
-        from fastapi.responses import FileResponse, Response
+        from fastapi.responses import Response
         from app.services.asset_service import AssetService
         from app.services.runtime_artifact_store import RuntimeArtifactStore
 
@@ -535,7 +567,15 @@ class FileAuthService:
                 headers=NO_STORE_HEADERS,
             )
 
-        workspace_id = int(str(workspace_id_raw).strip())
+        try:
+            workspace_id = int(str(workspace_id_raw).strip())
+        except (ValueError, TypeError):
+            raise AppException(
+                status_code=404,
+                code=FILE_NOT_FOUND,
+                detail="无法确定素材所属工作空间。",
+                headers=NO_STORE_HEADERS,
+            ) from None
         asset_service = AssetService(session)
         asset, driver = await asset_service.get_asset_by_hash(workspace_id, file_hash)
 
@@ -544,43 +584,11 @@ class FileAuthService:
         etag = asset.file_hash
         total_size = asset.file_size
 
-        if cls.evaluate_preconditions(request, etag):
-            return Response(
-                status_code=304,
-                headers=cls.build_protected_headers(etag=etag, total_size=total_size),
-            )
-
-        range_span = None
-        range_header = request.headers.get("range")
-        if range_header and cls.evaluate_if_range(request, etag):
-            range_span = cls.parse_single_range(range_header, total_size)
-
-        headers = cls.build_protected_headers(
-            etag=etag,
-            total_size=total_size,
-            range_span=range_span,
-            is_download=is_download,
-            original_name=asset.original_name,
+        return await cls.serve_protected_file(
+            request=request,
+            open_file=driver.open_for_read(
+                workspace_id, asset.file_name, expected_sha256=asset.file_hash, expected_size=asset.file_size,
+            ),
+            etag=etag, media_type=resolved_media_type,
+            is_download=is_download, original_name=asset.original_name,
         )
-
-        if is_head:
-            return Response(status_code=200 if range_span is None else 206, media_type=resolved_media_type, headers=headers)
-
-        from fastapi.responses import StreamingResponse
-
-        async with driver.open_for_read(
-            workspace_id,
-            asset.file_name,
-            expected_sha256=asset.file_hash,
-            expected_size=asset.file_size,
-        ) as local_file_path:
-            start = 0 if range_span is None else range_span[0]
-            length = total_size if range_span is None else (range_span[1] - range_span[0] + 1)
-            status_code = 200 if range_span is None else 206
-            return StreamingResponse(
-                cls.stream_file_chunks(local_file_path, start=start, length=length),
-                status_code=status_code,
-                media_type=resolved_media_type,
-                headers=headers,
-            )
-

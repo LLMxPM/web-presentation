@@ -188,6 +188,7 @@ async def test_external_page_screenshot_content(mock_auth, monkeypatch):
         monkeypatch.setattr(PageService, "get", mock_get)
         monkeypatch.setattr(PageService, "get_model", mock_get_model)
         monkeypatch.setattr(ObjectStorageService, "open_object_for_read", mock_open_object)
+        monkeypatch.setattr(ObjectStorageService, "read_object", AsyncMock(return_value=screenshot_bytes))
 
         try:
             transport = ASGITransport(app=app)
@@ -305,3 +306,45 @@ async def test_external_project_build_artifact_download(mock_auth, monkeypatch):
     finally:
         app.dependency_overrides.pop(get_db_session, None)
         app.dependency_overrides.pop(get_external_auth_context, None)
+
+
+@pytest.mark.asyncio
+async def test_external_file_routes_workspace_isolation(mock_auth, monkeypatch):
+    """测试 External API 严格校验工作空间归属：页面截图与构建产物跨工作空间请求必须返回 404。"""
+    mock_session = AsyncMock()
+    mock_auth_ensure = AsyncMock()
+    monkeypatch.setattr(ExternalAuthContext, "ensure_workspace_access", mock_auth_ensure)
+
+    app.dependency_overrides[get_db_session] = lambda: mock_session
+    app.dependency_overrides[get_external_auth_context] = lambda: mock_auth
+
+    try:
+        # mock 页面归属于 workspace_id=999
+        mock_page = Page(id=5, workspace_id=999, project_id=2, code="cover", title="Cover")
+        monkeypatch.setattr(PageService, "get_model", AsyncMock(return_value=mock_page))
+
+        # mock 项目归属于 workspace_id=999
+        mock_job = ProjectBuildJob(id=7, project_id=2, status="success", artifact_storage_key="builds/p2-job7.zip")
+        mock_project = Project(id=2, workspace_id=999, name="Test Project", code="test-proj")
+        monkeypatch.setattr(ProjectBuildService, "get_job_by_project_and_id", AsyncMock(return_value=mock_job))
+        monkeypatch.setattr(ProjectService, "get", AsyncMock(return_value=mock_project))
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            headers = {
+                "Authorization": "Bearer pat_test_123",
+                "X-Workspace-ID": "1",  # 声明操作工作空间 1，但资源属于 999
+            }
+            # 1. 跨工作空间请求页面截图返回 404
+            resp_page = await client.get("/api/v1/pages/5/screenshots/latest/content", headers=headers)
+            assert resp_page.status_code == 404
+            assert resp_page.json()["code"] == "PAGE_NOT_FOUND"
+
+            # 2. 跨工作空间请求构建产物返回 404
+            resp_build = await client.get("/api/v1/projects/2/build-jobs/7/artifact", headers=headers)
+            assert resp_build.status_code == 404
+            assert resp_build.json()["code"] == "PROJECT_NOT_FOUND"
+    finally:
+        app.dependency_overrides.pop(get_db_session, None)
+        app.dependency_overrides.pop(get_external_auth_context, None)
+

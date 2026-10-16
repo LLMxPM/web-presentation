@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Protocol
 
 from app.core.config import get_settings
+from app.core.exceptions import AppException
 from app.services.object_storage_service import ObjectStorageService
 
 
@@ -166,10 +167,32 @@ class S3StorageDriver:
         )
 
     async def read_content(self, workspace_id: int, file_name: str) -> bytes:
-        return await self.object_storage.read_object(
-            self._get_s3_key(workspace_id, file_name),
-            bucket_name=self._resolve_bucket_name(file_name),
-        )
+        """私有桶未命中时，仅对旧字体执行受控复制迁移。"""
+        try:
+            return await self.object_storage.read_object(
+                self._get_s3_key(workspace_id, file_name), bucket_name=self._resolve_bucket_name(file_name),
+            )
+        except AppException as exc:
+            if exc.code != "OBJECT_NOT_FOUND":
+                raise
+        return await self._migrate_legacy_font(workspace_id, file_name)
+
+    async def _migrate_legacy_font(self, workspace_id: int, file_name: str) -> bytes:
+        """服务端读取旧字体桶并校验后复制到私有桶；不公开链接，不删除原件。"""
+        import hashlib
+        import mimetypes
+
+        legacy = str(self.object_storage.settings.s3_public_bucket or "").strip()
+        private = self._resolve_bucket_name(file_name)
+        if not legacy or legacy == private or not file_name.lower().endswith(self.PUBLIC_FONT_SUFFIXES):
+            raise AppException(404, "OBJECT_NOT_FOUND", "对象文件不存在。")
+        key = self._get_s3_key(workspace_id, file_name)
+        content = await self.object_storage.read_object(key, bucket_name=legacy)
+        digest = Path(file_name).stem
+        if len(digest) == 64 and hashlib.sha256(content).hexdigest() != digest:
+            raise AppException(409, "OBJECT_SHA256_MISMATCH", "存量字体内容与登记身份不一致。")
+        await self.object_storage.put_object(key, content, mimetypes.guess_type(file_name)[0], bucket_name=private)
+        return content
 
     @asynccontextmanager
     async def open_for_read(
@@ -180,14 +203,22 @@ class S3StorageDriver:
         expected_sha256: str | None = None,
         expected_size: int | None = None,
     ) -> AsyncIterator[Path]:
-        """打开 S3 资源的本地缓存路径，并沿用字体公开 bucket 分流规则。"""
-
-        async with self.object_storage.open_object_for_read(
-            self._get_s3_key(workspace_id, file_name),
-            expected_sha256=expected_sha256,
-            expected_size=expected_size,
-            bucket_name=self._resolve_bucket_name(file_name),
-        ) as file_path:
+        """打开私有桶缓存；旧字体仅在对象不存在时迁移后重试。"""
+        async with AsyncExitStack() as stack:
+            try:
+                file_path = await stack.enter_async_context(self.object_storage.open_object_for_read(
+                    self._get_s3_key(workspace_id, file_name), expected_sha256=expected_sha256,
+                    expected_size=expected_size, bucket_name=self._resolve_bucket_name(file_name),
+                ))
+            except AppException as exc:
+                if exc.code != "OBJECT_NOT_FOUND":
+                    raise
+                await self._migrate_legacy_font(workspace_id, file_name)
+                file_path = await stack.enter_async_context(self.object_storage.open_object_for_read(
+                    self._get_s3_key(workspace_id, file_name), expected_sha256=expected_sha256,
+                    expected_size=expected_size, bucket_name=self._resolve_bucket_name(file_name),
+                ))
+            # 只捕获打开阶段的缺失，不能把响应消费期间的业务异常解释成字体迁移。
             yield file_path
 
 

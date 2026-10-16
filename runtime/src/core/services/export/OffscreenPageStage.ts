@@ -58,7 +58,9 @@ export function createOffscreenPageStage(): OffscreenPageStage {
   frame.setAttribute('aria-hidden', 'true')
   frame.inert = true
   Object.assign(frame.style, {
-    position: 'fixed', left: '-100000px', top: '0', border: '0',
+    // 预览处于跨源嵌套 iframe 时，屏幕外子框架会被 Chromium 暂停 rAF，导致挂载永不就绪。
+    // 保持几何区域在视口内，以透明和禁止交互隐藏舞台，仍按固定画布尺寸完成真实布局。
+    position: 'fixed', left: '0', top: '0', border: '0', opacity: '0', pointerEvents: 'none', zIndex: '-1',
     width: `${appPageConfig.value.width}px`, height: `${appPageConfig.value.height}px`,
   })
   document.body.appendChild(frame)

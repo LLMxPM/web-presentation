@@ -34,7 +34,7 @@
    - **新手或极简体验可完全留空！** 平台所有密钥（含 AI 凭据 Fernet 密钥）与内部通信凭证均由系统启动时自动生成并持久化保存在上述数据文件夹中。
    - 若希望局域网其它设备访问飞牛（假设飞牛局域网 IP 为 `192.168.1.20`），可按需添加以下 3 个外部入口变量：
      - `BACKEND_PUBLIC_BASE_URL` = `http://192.168.1.20:8080`
-     - `RUNTIME_PUBLIC_BASE_URL` = `http://192.168.1.20:8080/runtime`
+     - `RUNTIME_PUBLIC_BASE_URL` = `http://preview.home.arpa:8080/runtime`（局域网 DNS / hosts 解析到 `192.168.1.20`，预览与业务使用不同主机名）
      - `CORS_ORIGINS` = `["http://192.168.1.20:8080"]`
 6. 点击“完成”，系统将自动创建并启动容器。
 

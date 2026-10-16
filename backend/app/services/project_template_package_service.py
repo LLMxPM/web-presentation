@@ -243,7 +243,7 @@ class ProjectTemplatePackageService:
 
         settings = get_settings()
         artifact_id = f"tpl_{uuid.uuid4().hex}"
-        asset_base_url = f"{settings.backend_public_base_url.rstrip('/')}/public/template-package-assets/{artifact_id}"
+        asset_base_url = f"{settings.backend_public_base_url.rstrip('/')}/preview/artifacts/{artifact_id}/assets"
         page_config = self._build_page_config(parsed.project)
         config_bundle = self._build_preview_config_bundle(parsed)
         modules_metadata, modules_data = self._build_preview_modules(parsed)

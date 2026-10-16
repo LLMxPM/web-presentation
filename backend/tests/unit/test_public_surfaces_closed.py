@@ -87,7 +87,7 @@ async def test_build_artifacts_protected_access_flow(monkeypatch):
         monkeypatch.setattr(ProjectBuildArtifactProxyService, "get_artifact_file", AsyncMock(return_value=mock_proxy_result))
 
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(transport=transport, base_url="http://preview.localhost:7373") as client:
             # 1. 登录用户请求换取构建浏览短期授权
             access_resp = await client.post("/api/projects/1/build-jobs/2/access")
             assert access_resp.status_code == 200
@@ -102,7 +102,7 @@ async def test_build_artifacts_protected_access_flow(monkeypatch):
             assert browse_resp.content == b"<!DOCTYPE html><html><body>SPA Index</body></html>"
             assert browse_resp.headers["Cache-Control"] == "no-store"
             # 验证返回了 wp_build_token Cookie
-            assert "wp_build_token" in browse_resp.cookies
+            assert "wp_build_token_1_2" in browse_resp.cookies
 
             # 3. 后续深层子资源请求自动带 Cookie 访问
             sub_result = BuildArtifactProxyResult(

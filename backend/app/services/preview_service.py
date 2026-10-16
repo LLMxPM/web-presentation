@@ -188,18 +188,34 @@ class PreviewService:
         token_ttl_seconds = 300
         trace_id = f"req-{uuid.uuid4().hex[:8]}"
         tenant_id = f"tenant_{user_id}"
+        artifact_expires_at = manifest.get("artifact_expires_at")
+        if artifact_expires_at:
+            remaining = int(datetime.fromisoformat(str(artifact_expires_at)).timestamp()) - now_ts
+            if remaining <= 0:
+                raise AppException(410, "PREVIEW_ARTIFACT_EXPIRED", "预览 artifact 已过期。", headers={"Cache-Control": "no-store"})
+            token_ttl_seconds = min(token_ttl_seconds, remaining)
+        scope_type = str(owner_scope.get("scope_type") or "project")
+        extra_claims = {
+            key: manifest.get(key, owner_scope.get(key)) for key in (
+                "component_preview_mode", "component_code", "component_version_no",
+                "runtime_kit_component_name", "runtime_kit_manifest_version", "asset_id",
+            )
+        }
+        if scope_type in {"workspace_component", "runtime_kit_component"}:
+            extra_claims["component_source"] = "runtime_kit" if scope_type == "runtime_kit_component" else "workspace_component"
 
         preview_token = TokenService.generate_preview_context_token(
             tenant_id=tenant_id,
             artifact_id=artifact_id,
             preview_kind=str(manifest.get("preview_kind") or "project"),
-            scope_type=str(owner_scope.get("scope_type") or "project"),
+            scope_type=scope_type,
             workspace_id=workspace_id_raw or 0,
             project_id=int(project_id_raw) if project_id_raw else None,
             entry_descriptor=manifest.get("entry_descriptor") or {},
             asset_base_url=str(manifest.get("asset_base_url") or ""),
             trace_id=trace_id,
             expires_in_seconds=token_ttl_seconds,
+            **extra_claims,
         )
 
         token_expires_at = datetime.fromtimestamp(now_ts + token_ttl_seconds, tz=UTC).isoformat()
@@ -213,6 +229,7 @@ class PreviewService:
             token=preview_token,
             expires_at=token_expires_at,
             artifact_id=artifact_id,
+            artifact_expires_at=str(artifact_expires_at) if artifact_expires_at else None,
         )
 
 

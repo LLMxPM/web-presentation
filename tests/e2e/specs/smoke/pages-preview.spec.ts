@@ -10,4 +10,12 @@ test('创建后的页面应可进入详情并展示预览 iframe', async ({ page
   await openSmokeProject(page)
   await openSmokePage(page)
   await expect(page.locator('[data-testid="page-preview-frame"]')).toBeVisible()
+  const preview = page.frameLocator('[data-testid="page-preview-frame"] iframe').frameLocator('iframe#preview')
+  await expect(preview.getByRole('heading', { name: /Smoke/ })).toBeVisible()
+  const userFrame = page.frames().find(frame => {
+    try { return new URL(frame.url()).hostname === 'preview.localhost' } catch { return false }
+  })
+  expect(userFrame).toBeTruthy()
+  expect(await userFrame!.evaluate(() => window.location.hostname)).toBe('preview.localhost')
+  expect((await page.context().cookies('http://preview.localhost:7373')).some(cookie => cookie.name === 'wp_user_session')).toBe(false)
 })

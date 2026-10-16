@@ -116,6 +116,15 @@ class ProjectBuildService:
         self.session.add(release)
         await self.session.flush()
 
+        # 构建素材由服务端 Worker 持 S 回源，不能复用浏览器入口或用户 Cookie 接口。
+        release.manifest = {
+            **release.manifest,
+            "asset_base_url": (
+                f"{self.settings.backend_public_base_url.rstrip('/')}/internal/runtime/"
+                f"preview-artifacts/{release.id}/assets"
+            ),
+        }
+
         for module_item in snapshot.modules_data:
             self.session.add(
                 ReleaseModule(

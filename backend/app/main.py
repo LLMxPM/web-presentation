@@ -249,6 +249,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(api_router, prefix="/api")
+    from app.api.business_origin import enforce_business_origin
+    app.middleware("http")(enforce_business_origin)
     app.include_router(runtime_configs.router, tags=["runtime-configs"])
     app.include_router(build_artifacts.router, tags=["build-artifacts"])
     app.include_router(preview.router_public, tags=["preview"])

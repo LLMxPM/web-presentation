@@ -23413,7 +23413,7 @@
           "build-artifacts"
         ],
         "summary": "Proxy Project Build Artifact",
-        "description": "受保护的项目构建产物静态站点代理入口。\n\n必须携带有效的构建访问令牌（支持 query token 或 Cookie wp_build_token）；\n无凭证或凭证无效的匿名访问一律返回 404 及 no-store。",
+        "description": "受保护的项目构建产物静态站点代理入口。\n\n必须携带有效的构建访问令牌（支持 query token 或 project/job 专用 Cookie）；\n无凭证或凭证无效的匿名访问一律返回 404 及 no-store。",
         "operationId": "proxy_project_build_artifact_build_artifacts__project_id___job_id___artifact_path__get",
         "parameters": [
           {
@@ -23472,7 +23472,7 @@
           "build-artifacts"
         ],
         "summary": "Proxy Project Build Artifact",
-        "description": "受保护的项目构建产物静态站点代理入口。\n\n必须携带有效的构建访问令牌（支持 query token 或 Cookie wp_build_token）；\n无凭证或凭证无效的匿名访问一律返回 404 及 no-store。",
+        "description": "受保护的项目构建产物静态站点代理入口。\n\n必须携带有效的构建访问令牌（支持 query token 或 project/job 专用 Cookie）；\n无凭证或凭证无效的匿名访问一律返回 404 及 no-store。",
         "operationId": "proxy_project_build_artifact_build_artifacts__project_id___job_id__get",
         "parameters": [
           {
@@ -23531,8 +23531,8 @@
         "tags": [
           "preview"
         ],
-        "summary": "代理给 Runtime 执行预览展示",
-        "description": "对外代理预览入口，并把签名上下文透传给 Runtime。",
+        "summary": "返回隔离 Runtime 预览的可信宿主页",
+        "description": "校验预览上下文并返回跨主机名 iframe 宿主页，不在业务源站执行用户 HTML。",
         "operationId": "preview_artifact_proxy_preview_artifacts__artifact_id__get",
         "parameters": [
           {

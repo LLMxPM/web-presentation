@@ -172,23 +172,29 @@ class ObjectStorageService:
             return
 
         self.sweep_object_cache_if_needed()
+        identity = str(self._build_cache_path(normalized_key, expected_sha256, expected_size, bucket_name))
+        self._read_pins[identity] = self._read_pins.get(identity, 0) + 1
         try:
-            cache_path = await self._ensure_s3_cache_file(
-                normalized_key,
-                expected_sha256=expected_sha256,
-                expected_size=expected_size,
-                bucket_name=bucket_name,
-            )
+            try:
+                cache_path = await self._ensure_s3_cache_file(
+                    normalized_key, expected_sha256=expected_sha256,
+                    expected_size=expected_size, bucket_name=bucket_name,
+                )
+            except AppException as exc:
+                if exc.code == "OBJECT_NOT_FOUND":
+                    local_path = self.resolve_local_path(normalized_key)
+                    if local_path.is_file():
+                        yield local_path
+                        return
+                raise
             self._touch_cache_file(cache_path)
             yield cache_path
-        except AppException as exc:
-            if exc.code == "OBJECT_NOT_FOUND":
-                local_path = self.resolve_local_path(normalized_key)
-                if local_path.is_file():
-                    logger.info("S3 未命中对象 %s，触发回退打开本地历史文件", normalized_key)
-                    yield local_path
-                    return
-            raise
+        finally:
+            remaining = self._read_pins.get(identity, 1) - 1
+            if remaining:
+                self._read_pins[identity] = remaining
+            else:
+                self._read_pins.pop(identity, None)
 
     def sweep_object_cache_if_needed(self) -> None:
         """按配置的扫描间隔机会式清理 S3 本地派生缓存。"""
@@ -220,6 +226,8 @@ class ObjectStorageService:
         cache_files = self._list_cache_files()
 
         for file_path in cache_files:
+            if self._cache_file_in_use(file_path):
+                continue
             try:
                 if current_time - file_path.stat().st_mtime > idle_seconds:
                     file_path.unlink(missing_ok=True)
@@ -240,6 +248,8 @@ class ObjectStorageService:
         for file_path, _, file_size in sorted(sized_files, key=lambda item: item[1]):
             if total_bytes <= max_bytes:
                 break
+            if self._cache_file_in_use(file_path):
+                continue
             try:
                 file_path.unlink(missing_ok=True)
                 total_bytes -= file_size
@@ -463,7 +473,17 @@ class ObjectStorageService:
         async with self._s3_client() as client:
             await client.delete_object(Bucket=resolved_bucket, Key=storage_key)
 
+    # 进程内并发回源去重与读取引用计数（作用域为当前 Python 进程内的单一事件循环）。
+    # 在当前部署形态下供各请求实例共享状态；若将来切换为多进程 prefork 模型，需引入分布式锁或仅在进程级别依靠原子文件系统写入。
     _in_flight_downloads: dict[str, asyncio.Task[Path]] = {}
+    _read_pins: dict[str, int] = {}
+
+    def _cache_file_in_use(self, path: Path) -> bool:
+        """保护响应中的文件及仍在下载的临时文件；崩溃遗留临时文件仍可清理。"""
+        identity = str(path)
+        target = identity.rsplit(".tmp.", 1)[0]
+        task = self._in_flight_downloads.get(target)
+        return identity in self._read_pins or bool(task and not task.done())
 
     async def _ensure_s3_cache_file(
         self,
@@ -476,7 +496,7 @@ class ObjectStorageService:
         """确保 S3 对象已安全下载到本地缓存，支持并发回源合并、原子提升与完整性校验。"""
 
         cache_path = self._build_cache_path(storage_key, expected_sha256, expected_size, bucket_name)
-        if self._is_valid_cache_file(cache_path, expected_sha256, expected_size):
+        if await asyncio.to_thread(self._is_valid_cache_file, cache_path, expected_sha256, expected_size):
             self._touch_cache_file(cache_path)
             return cache_path
 
@@ -494,7 +514,13 @@ class ObjectStorageService:
                 )
             )
             self._in_flight_downloads[cache_key] = task
-            task.add_done_callback(lambda _: self._in_flight_downloads.pop(cache_key, None))
+            def drop_finished(completed: asyncio.Task[Path]) -> None:
+                """只移除本轮 Task，并消费全部等待者取消后可能无人接收的异常。"""
+                if self._in_flight_downloads.get(cache_key) is completed:
+                    self._in_flight_downloads.pop(cache_key, None)
+                if not completed.cancelled():
+                    completed.exception()
+            task.add_done_callback(drop_finished)
 
         return await asyncio.shield(task)
 
@@ -537,7 +563,7 @@ class ObjectStorageService:
 
         endpoint = str(self.settings.s3_endpoint_url or "default-s3").strip()
         fingerprint = hashlib.sha256(
-            f"{endpoint}:{bucket_name or ''}:{storage_key}:{expected_sha256 or ''}:{expected_size or ''}".encode("utf-8")
+            f"{endpoint}:{self._resolve_s3_bucket_name(bucket_name) or ''}:{storage_key}:{expected_sha256 or ''}:{expected_size or ''}".encode("utf-8")
         ).hexdigest()
         suffix = Path(storage_key).suffix or ".bin"
         return self.cache_root / f"{fingerprint}{suffix}"
@@ -579,13 +605,22 @@ class ObjectStorageService:
     def _is_valid_cache_file(cache_path: Path, expected_sha256: str | None, expected_size: int | None) -> bool:
         """判断缓存文件是否满足本次读取约束。"""
 
-        if not cache_path.is_file():
-            return False
-        content = cache_path.read_bytes()
         try:
-            ObjectStorageService._validate_object_bytes(content, expected_sha256, expected_size)
-        except AppException:
+            if not cache_path.is_file():
+                return False
+            if expected_size is not None and cache_path.stat().st_size != int(expected_size):
+                return False
+        except OSError:
             return False
+        if expected_sha256:
+            digest = hashlib.sha256()
+            try:
+                with cache_path.open("rb") as source:
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(chunk)
+            except OSError:
+                return False
+            return digest.hexdigest() == expected_sha256.strip().lower()
         return True
 
     @staticmethod

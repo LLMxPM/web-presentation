@@ -1,21 +1,15 @@
-"""文件功能：提供预览 artifact 创建接口，并实现 Browser -> Runtime 的无状态预览代理。"""
+"""文件功能：提供预览 artifact 创建接口，并生成隔离 Runtime 源站的可信宿主页。"""
 
 from __future__ import annotations
 
-import time
-import logging
 from typing import Annotated
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.api.preview_error_response import PreviewDocumentRoute, preview_workbench_url
-from app.core.config import get_settings
 from app.core.exceptions import AppException
-from app.core.logging_config import get_current_request_id
 from app.db.session import get_db_session
 from app.schemas.release import (
     PreviewArtifactAccessRenewalResponse,
@@ -26,13 +20,11 @@ from app.services.auth_service import AuthContext
 from app.services.preview_service import PreviewService
 from app.services.preview_version_binding import bind_preview_runtime_version
 from app.services.project_service import ProjectService
-from app.services.runtime_target_router import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
 
 router_admin = APIRouter()
 router_access = APIRouter()
 router_public = APIRouter(route_class=PreviewDocumentRoute)
-logger = logging.getLogger(__name__)
 
 
 @router_access.post(
@@ -72,13 +64,13 @@ async def create_preview_artifact(
     )
 
 
-@router_public.get("/preview/artifacts/{artifact_id}", summary="代理给 Runtime 执行预览展示")
+@router_public.get("/preview/artifacts/{artifact_id}", summary="返回隔离 Runtime 预览的可信宿主页")
 async def preview_artifact_proxy(
     artifact_id: str,
     request: Request,
     token: str,
 ):
-    """对外代理预览入口，并把签名上下文透传给 Runtime。"""
+    """校验预览上下文并返回跨主机名 iframe 宿主页，不在业务源站执行用户 HTML。"""
 
     try:
         preview_claims = TokenService.verify_preview_context_token(token)
@@ -86,74 +78,12 @@ async def preview_artifact_proxy(
         raise AppException(status_code=401, code="PREVIEW_CONTEXT_INVALID", detail="预览上下文令牌非法或已过期。") from exc
     if str(preview_claims.get("artifact_id") or "") != str(artifact_id):
         raise HTTPException(status_code=403, detail="PREVIEW_ARTIFACT_MISMATCH")
-    service_token_ttl_seconds = _resolve_runtime_service_token_ttl(preview_claims)
-    runtime_service_token = TokenService.generate_runtime_service_access_token(
-        artifact_id=str(artifact_id),
-        expires_in_seconds=service_token_ttl_seconds,
-    )
     bound_preview_token = await bind_preview_runtime_version(preview_claims)
-    return await _proxy_runtime_preview(request, bound_preview_token, runtime_service_token)
-
-
-async def _proxy_runtime_preview(request: Request, preview_token: str, runtime_service_token: str) -> StreamingResponse:
-    """统一代理 Runtime `/__preview`，并透传预览上下文 Token。"""
-
-    settings = get_settings()
-    runtime_url = f"{settings.resolve_runtime_role_base_url('preview')}/__preview"
-    runtime_public_base_url = str(settings.runtime_public_base_url or settings.runtime_base_url).strip().rstrip("/")
-
-    # 实施规划第 198 行：Backend 到 Runtime 的代理头使用允许列表，
-    # 严格剥除浏览器业务 Cookie、Authorization、X-Workspace-ID 等敏感凭据。
-    ALLOWED_FORWARD_HEADERS = {
-        "accept",
-        "accept-encoding",
-        "accept-language",
-        "user-agent",
-        "sec-ch-ua",
-        "sec-ch-ua-mobile",
-        "sec-ch-ua-platform",
-    }
-    headers: dict[str, str] = {
-        k: v for k, v in request.headers.items() if k.lower() in ALLOWED_FORWARD_HEADERS
-    }
-    # 期望版本来自服务端绑定的已验签票据，覆盖浏览器可能自填的请求头。
-    try:
-        claims = TokenService.verify_preview_context_token(preview_token)
-    except Exception as exc:  # noqa: BLE001
-        raise AppException(status_code=401, code="PREVIEW_CONTEXT_INVALID", detail="预览上下文令牌非法或已过期。") from exc
-    headers["x-expected-runtime-version-fingerprint"] = str(claims["runtime_version_fingerprint"])
-    headers["x-runtime-preview-context"] = preview_token
-    headers["x-runtime-preview-artifact-id"] = str(claims["artifact_id"])
-    headers["x-runtime-preview-workbench-url"] = preview_workbench_url(request, claims)
-    headers["x-runtime-public-base-url"] = runtime_public_base_url
-    headers[RUNTIME_SERVICE_TOKEN_HEADER] = runtime_service_token
-    headers["X-Request-ID"] = get_current_request_id()
-
-    try:
-        async with httpx.AsyncClient(timeout=settings.runtime_request_timeout_seconds) as client:
-            response = await client.get(runtime_url, headers=headers)
-    except httpx.TimeoutException as exc:
-        logger.error("Runtime 预览入口请求超时。", extra={"event": "runtime.preview.timeout"})
-        raise AppException(status_code=504, code="RUNTIME_PREVIEW_TIMEOUT", detail="Runtime 预览入口请求超时。") from exc
-    except httpx.RequestError as exc:
-        logger.error("Runtime 预览入口不可访问。", extra={"event": "runtime.preview.unavailable"})
-        raise AppException(status_code=502, code="RUNTIME_PREVIEW_UNAVAILABLE", detail="Runtime 预览入口不可访问。") from exc
-    logger.info(
-        "Runtime 预览入口代理完成。",
-        extra={"event": "runtime.preview.proxy.completed", "status_code": response.status_code},
-    )
-
-    return StreamingResponse(
-        iter([response.content]),
-        status_code=response.status_code,
-        headers={
-            "Content-Type": response.headers.get("Content-Type", "text/html"),
-            "Cache-Control": "no-store",
-            "Referrer-Policy": "no-referrer",
-            "X-Content-Type-Options": "nosniff",
-            **({"x-runtime-version-fingerprint": response.headers["x-runtime-version-fingerprint"]}
-               if "x-runtime-version-fingerprint" in response.headers else {}),
-        },
+    from app.services.preview_origin_service import preview_shell
+    return preview_shell(
+        artifact_id=artifact_id, token=bound_preview_token,
+        workbench_url=preview_workbench_url(request, preview_claims),
+        parameters={k: v for k, v in request.query_params.items() if k != "token"},
     )
 
 
@@ -194,12 +124,3 @@ async def get_preview_protected_asset(
         is_download=download == 1,
         is_head=request.method == "HEAD",
     )
-
-
-def _resolve_runtime_service_token_ttl(preview_claims: dict[str, object]) -> int:
-    """按预览上下文令牌的剩余有效期生成 Runtime 服务令牌 TTL。"""
-
-    now = int(time.time())
-    preview_exp = int(preview_claims.get("exp") or now)
-    return max(60, preview_exp - now)
-

@@ -10,6 +10,7 @@ import { stripRuntimeRequestBase as stripBasePath } from './runtime-request-path
 
 interface RuntimeStandalonePreviewGateOptions {
   enabled?: boolean
+  privateBuildProxyEnabled?: boolean
 }
 
 export interface StandalonePreviewRequestLike {
@@ -55,7 +56,11 @@ export function resolveStandalonePreviewEnabled(rawValue?: string | boolean | nu
  * @param basePath Runtime 挂载路径前缀
  * @returns 是否应返回禁用响应
  */
-export function shouldBlockStandalonePreviewRequest(req: StandalonePreviewRequestLike, basePath = ''): boolean {
+export function shouldBlockStandalonePreviewRequest(
+  req: StandalonePreviewRequestLike,
+  basePath = '',
+  privateBuildProxyEnabled = false,
+): boolean {
   const method = String(req.method || 'GET').toUpperCase()
   if (method !== 'GET' && method !== 'HEAD') {
     return false
@@ -65,6 +70,9 @@ export function shouldBlockStandalonePreviewRequest(req: StandalonePreviewReques
   }
 
   const pathname = stripBasePath(getRequestPathname(req.url || '/'), basePath)
+  if (privateBuildProxyEnabled && pathname.startsWith('/build-artifacts/')) {
+    return false
+  }
   if (isPlatformRuntimePath(pathname)) {
     return false
   }
@@ -102,7 +110,7 @@ export default function runtimeStandalonePreviewGate(options: RuntimeStandaloneP
       }
 
       server.middlewares.use((req, res, next) => {
-        if (!shouldBlockStandalonePreviewRequest(req, basePath)) {
+        if (!shouldBlockStandalonePreviewRequest(req, basePath, options.privateBuildProxyEnabled)) {
           return next()
         }
         sendStandalonePreviewDisabledResponse(req, res)

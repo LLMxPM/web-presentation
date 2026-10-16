@@ -171,7 +171,8 @@ async def create_project_build_job_access(
     )
     expires_at = datetime.fromtimestamp(time.time() + expires_in, tz=timezone.utc).isoformat()
     settings = get_settings()
-    public_base = settings.backend_public_base_url.rstrip("/")
+    from app.services.preview_origin_service import isolated_preview_origin
+    public_base = isolated_preview_origin()
     browse_url = f"{public_base}/build-artifacts/{project_id}/{job_id}/?token={token}"
 
     return ProjectBuildJobAccessResponse(

@@ -670,13 +670,24 @@ export function createBuildBackendClient(options: {
 
     async fetchAssetBinary(assetUrl: string, context?: BuildAssetFetchContext, signal?: AbortSignal): Promise<Buffer> {
       let response: Response
+      // 回源地址只认 artifact 与 hash；服务凭据仅发给配置的 Backend 内网源站。
+      const parsedAsset = new URL(assetUrl, `${apiBaseUrl}/`)
+      let assetPath = parsedAsset.pathname
+      if (assetPath.startsWith('/preview/artifacts/')) {
+        assetPath = assetPath.replace('/preview/artifacts/', '/internal/runtime/preview-artifacts/')
+      }
+      if (!/^\/internal\/runtime\/preview-artifacts\/[^/]+\/assets\/[^/]+$/.test(assetPath)) {
+        throw new RuntimeBuildError(409, 'BUILD_ASSET_URL_INVALID', '构建素材缺少 artifact 作用域内部地址。')
+      }
+      const internalAssetUrl = `${apiBaseUrl}${assetPath}`
       try {
-        response = await fetch(assetUrl, {
+        response = await fetch(internalAssetUrl, {
           headers: {
             ...defaultHeaders,
             Accept: '*/*',
           },
           signal,
+          redirect: 'error',
         })
       } catch (error) {
         throw buildAssetFetchNetworkError(assetUrl, error, context)

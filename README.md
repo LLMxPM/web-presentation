@@ -87,7 +87,7 @@ docker logs web-presentation
 
 After the container starts, open `http://127.0.0.1:8080` and log in with username `admin` and the generated password from the container logs. The database, uploaded media, screenshots, build artifacts, and encryption keys are stored in the `web-presentation-lite-data` volume. Always retain and back up this volume during upgrades.
 
-For LAN or custom domain setups, use the provided [Compose template](./deploy/compose/compose.sqlite-lite.yml) and configure `BACKEND_PUBLIC_BASE_URL`, `RUNTIME_PUBLIC_BASE_URL`, and `CORS_ORIGINS` to match your domain. For step-by-step guides on Docker Compose, fnOS, and Synology NAS, see [Quick Deployment Guide](https://wp.llmxpm.com/docs/user/quick-deployment/). For production architectures involving HTTPS, PostgreSQL/Redis, multi-instance setups, and operations, see the [Production Deployment Guide](https://wp.llmxpm.com/docs/developer/deployment/).
+局域网或自定义域名部署使用 [Compose 模板](./deploy/compose/compose.sqlite-lite.yml)，配置 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL` 和 `CORS_ORIGINS`。预览与私有构建会执行用户代码，`RUNTIME_PUBLIC_BASE_URL` 必须使用独立于工作台和 Backend 的主机名；本机示例为 `preview.localhost`，局域网需配置可解析到同一 Gateway 的预览域名，生产需配置对应 DNS / TLS。业务 Cookie 保持 host-only，业务 CORS 不包含预览域。参见 [生产部署说明](./docs/deployment/production/README.md) 和 [文件鉴权规划](./docs/developer/runtime-integration/file-storage-auth-cache-plan.md)。
 
 ## Documentation
 

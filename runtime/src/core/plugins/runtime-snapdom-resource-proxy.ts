@@ -58,6 +58,18 @@ export function isAllowedSnapdomProxyResourceUrl(
  * 判断是否是 http/https URL。
  * @param value 待判断文本
  */
+/** 将白名单中的 Backend 资源映射到内部入口；浏览器查询票据不转发给上游。 */
+export function resolveSnapdomProxySourceUrl(
+  sourceUrl: string,
+  manifest: RuntimePreviewArtifactManifest,
+  previewContext: RuntimePreviewContext,
+  backendApiBaseUrl: string,
+): string {
+  if (!shouldForwardPreviewAuthHeaders(sourceUrl, manifest, previewContext)) return sourceUrl
+  const hash = new URL(sourceUrl).pathname.split('/').filter(Boolean).at(-1) || ''
+  return `${backendApiBaseUrl.replace(/\/+$/, '')}/internal/runtime/preview-artifacts/${encodeURIComponent(previewContext.artifactId)}/assets/${encodeURIComponent(hash)}`
+}
+
 export function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(String(value || '').trim())
 }
@@ -182,7 +194,9 @@ function normalizeAssetBaseUrl(rawValue: unknown): string {
  */
 function normalizeComparableUrl(rawUrl: string): string {
   try {
-    return new URL(rawUrl).href
+    const parsed = new URL(rawUrl)
+    parsed.searchParams.delete('token')
+    return parsed.href
   } catch {
     return ''
   }

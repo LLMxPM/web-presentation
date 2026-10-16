@@ -63,11 +63,12 @@ class TokenService:
         keyring = cls._ensure_keys_loaded()
         now = int(time.time())
         normalized_payload = dict(payload)
-        normalized_payload.setdefault("iss", issuer)
-        normalized_payload.setdefault("iat", now)
-        normalized_payload.setdefault("exp", now + expires_in_seconds)
+        # 核心安全声明由入参显式控制并强制覆盖，防止 payload 注入越权声明或篡改有效期
+        normalized_payload["iss"] = issuer
+        normalized_payload["iat"] = now
+        normalized_payload["exp"] = now + expires_in_seconds
         if subject is not None:
-            normalized_payload.setdefault("sub", subject)
+            normalized_payload["sub"] = subject
 
         return jwt.encode(
             normalized_payload,
@@ -89,7 +90,7 @@ class TokenService:
         keyring = cls._ensure_keys_loaded()
         decode_kwargs: dict[str, Any] = {
             "algorithms": ["RS256"],
-            "options": {"verify_exp": verify_exp},
+            "options": {"verify_exp": verify_exp, "require": ["exp"]},
         }
         if audience is not None:
             decode_kwargs["audience"] = audience

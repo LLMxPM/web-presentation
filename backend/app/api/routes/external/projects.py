@@ -483,7 +483,14 @@ async def get_external_project_build_artifact(
     service = ProjectBuildService(session)
     job = await service.get_job_by_project_and_id(project_id, job_id)
     project = await ProjectService(session).get(job.project_id, user_id=auth.user.id)
-    await auth.ensure_workspace_access(project.workspace_id or x_workspace_id, session)
+    if project.workspace_id != x_workspace_id:
+        raise AppException(
+            status_code=404,
+            code="PROJECT_NOT_FOUND",
+            detail="项目不存在或不属于当前工作空间。",
+            headers={"Cache-Control": "no-store"},
+        )
+    await auth.ensure_workspace_access(x_workspace_id, session)
 
     if not job.artifact_storage_key:
         raise AppException(

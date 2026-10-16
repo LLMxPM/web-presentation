@@ -15,7 +15,7 @@ services:
     working_dir: /app/backend
     environment:
       BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"
-      RUNTIME_PUBLIC_BASE_URL: "http://127.0.0.1:8080/runtime"
+      RUNTIME_PUBLIC_BASE_URL: "http://preview.localhost:8080/runtime"
       CORS_ORIGINS: '["http://127.0.0.1:8080"]'
     volumes:
       - lite-data:/app/backend/data
