@@ -248,6 +248,32 @@ function getRuntimeArtifactKind(rawArtifactKind: unknown): RuntimeArtifactKind |
 }
 
 /**
+ * 严格判断资源地址是否属于受保护的平台预览素材。
+ * 避免因 URL 任意位置包含 '/assets/' 盲目追加敏感预览 Token。
+ * @param url 待检查资源地址
+ * @returns 是否需要附加预览 Token
+ */
+function isProtectedPreviewAssetUrl(url: string): boolean {
+  if (!url) {
+    return false
+  }
+  if (url.includes('/preview/artifacts/')) {
+    return true
+  }
+  try {
+    const parsed = new URL(url, 'https://wp.local')
+    const pathname = parsed.pathname
+    return (
+      /\/api\/v1\/(?:workspaces\/[^/]+\/)?assets\/[^/]+\/content(?:\/|$)/i.test(pathname)
+      || /^\/assets\/[a-f0-9]{32,64}/i.test(pathname)
+      || (pathname.startsWith('/assets/') && !pathname.startsWith('/assets/vendor/'))
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
  * 按 artifact 类型解析 manifest 命中的资源路径。
  * @param params 解析参数
  * @returns 浏览器可直接访问的最终资源地址
@@ -277,7 +303,7 @@ function resolveArtifactMappedPath(params: {
   if (
     previewToken
     && (params.artifactKind === 'preview_artifact' || params.artifactKind === 'page_visual_edit_preview' || params.artifactKind === 'project_template_preview')
-    && (rawUrl.includes('/preview/artifacts/') || rawUrl.includes('/assets/'))
+    && isProtectedPreviewAssetUrl(rawUrl)
     && !rawUrl.includes('token=')
   ) {
     const separator = rawUrl.includes('?') ? '&' : '?'

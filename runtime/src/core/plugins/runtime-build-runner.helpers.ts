@@ -215,3 +215,18 @@ export function stripInspectableComments(content: string): string {
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
 }
+
+/**
+ * 脱敏构建素材下载 URL，防止将预览 Token 或签名凭据泄露进错误日志或前端面板。
+ * @param url 待脱敏 URL
+ * @returns 脱敏后的安全 URL
+ */
+export function sanitizeAssetUrl(url: string): string {
+  if (!url) {
+    return ''
+  }
+  return url
+    .replace(/([?&](?:token|ctx|authorization|api_key|apikey|secret|password)=)[^&]+/gi, '$1[redacted]')
+    .replace(/\bBearer\s+[A-Za-z0-9_.=-]{16,}/gi, 'Bearer [redacted]')
+    .replace(/\b[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\b/g, '[redacted-token]')
+}

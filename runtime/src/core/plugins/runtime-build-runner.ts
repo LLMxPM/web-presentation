@@ -20,6 +20,7 @@ import {
   buildStaticAssetPath,
   hasForbiddenRootAbsoluteAssetPath,
   normalizeBuildBaseUrl,
+  sanitizeAssetUrl,
 } from './runtime-build-runner.helpers'
 import {
   createBuildEntrySource,
@@ -690,20 +691,20 @@ export function createBuildBackendClient(options: {
           redirect: 'error',
         })
       } catch (error) {
-        throw buildAssetFetchNetworkError(assetUrl, error, context)
+        throw buildAssetFetchNetworkError(internalAssetUrl, error, context)
       }
       if (!response.ok) {
         const buildError = await toBuildError(response, 'ASSET_FETCH_FAILED')
         throw new RuntimeBuildError(
           buildError.statusCode,
           buildError.code,
-          appendAssetFetchContext(buildError.message, assetUrl, context),
+          appendAssetFetchContext(buildError.message, internalAssetUrl, context),
         )
       }
       try {
         return Buffer.from(await response.arrayBuffer())
       } catch (error) {
-        throw buildAssetFetchNetworkError(assetUrl, error, context)
+        throw buildAssetFetchNetworkError(internalAssetUrl, error, context)
       }
     },
 
@@ -902,11 +903,12 @@ function buildArtifactUploadNetworkError(uploadUrl: string, error: unknown, atte
  * @returns 带定位信息的错误消息
  */
 function appendAssetFetchContext(message: string, assetUrl: string, context?: BuildAssetFetchContext): string {
+  const safeUrl = sanitizeAssetUrl(assetUrl)
   const details = [
     context?.logicalName ? `资源名 ${context.logicalName}` : '',
     context?.fileHash ? `hash ${context.fileHash}` : '',
     context?.originalName ? `原始文件 ${context.originalName}` : '',
-    assetUrl ? `URL ${assetUrl}` : '',
+    safeUrl ? `URL ${safeUrl}` : '',
   ].filter(Boolean)
   return details.length > 0 ? `${message}（${details.join('，')}）` : message
 }

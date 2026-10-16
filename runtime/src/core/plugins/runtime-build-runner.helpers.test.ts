@@ -16,6 +16,7 @@ import {
   buildStaticAssetPath,
   hasForbiddenRootAbsoluteAssetPath,
   normalizeBuildBaseUrl,
+  sanitizeAssetUrl,
   stripInspectableComments,
 } from './runtime-build-runner.helpers'
 
@@ -140,6 +141,14 @@ describe('runtime build runner helpers', () => {
     expect(sanitizedCode).not.toContain("'/img/")
     expect(sanitizedCode).not.toContain('"/img/')
     expect(hasForbiddenRootAbsoluteAssetPath(sourceCode)).toBe(false)
+  })
+
+  it('应正确脱敏素材下载异常中的 Token 与敏感凭据', () => {
+    const rawUrl = 'https://assets.example/preview/artifacts/art-1/assets/hash1?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc&other=1'
+    expect(sanitizeAssetUrl(rawUrl)).toBe('https://assets.example/preview/artifacts/art-1/assets/hash1?token=[redacted]&other=1')
+
+    const bearerUrl = 'https://assets.example/assets/hash2?authorization=Bearer secret_token_123456789'
+    expect(sanitizeAssetUrl(bearerUrl)).toBe('https://assets.example/assets/hash2?authorization=[redacted]')
   })
 })
 
