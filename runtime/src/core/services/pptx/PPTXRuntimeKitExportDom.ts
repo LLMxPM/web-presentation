@@ -38,6 +38,7 @@ export const RUNTIME_KIT_MEDIA_KINDS = [
   'chart',
   'video',
   'image',
+  'model3d',
 ] as const
 
 /** 媒体类型取值，字面量均为 PptxReportSourceType 成员，可直接作为报告源类型返回。 */

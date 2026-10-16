@@ -3,6 +3,7 @@
  */
 
 import { getComputedStyle as getOwnerComputedStyle, isHTMLCanvasElement, isHTMLElement, isHTMLImageElement, isHTMLVideoElement, isSVGSVGElement } from '@/core/services/pptx/dom/PPTXDomEnvironment'
+import { findModelStaticFrameImage } from '@/core/shared/model-static-frame-contract'
 
 import type {
   PptxExportReportItem,
@@ -103,6 +104,11 @@ export class PPTXDomConverterMedia {
 
     if (sourceType === 'formula') {
       await this.addFormulaSvgBlocks(host, element, label, context)
+      return
+    }
+
+    if (sourceType === 'model3d') {
+      await this.addModel3dStaticFrameBlock(host, element, label, context)
       return
     }
 
@@ -225,6 +231,41 @@ export class PPTXDomConverterMedia {
     } catch {
       await this.addScreenshotBlock(host, element, 'video', '视频无封面且当前帧不可读取，降级为局部截图', context)
     }
+  }
+
+  /**
+   * 添加三维模型静态帧，整块导出为图片块。
+   *
+   * 优先使用采集阶段准备的带标记覆盖图（与模型容器同尺寸、dataURL 来源）；
+   * 未取得静态帧时保留原有局部截图能力作为兜底，报告源类型固定为 model3d，
+   * 截图失败由 addScreenshotBlock 内部转入 addSkippedItem 语义。
+   * @param host 导出宿主能力
+   * @param element 模型根元素
+   * @param label 元素标签
+   * @param context 当前组合上下文
+   */
+  private async addModel3dStaticFrameBlock(
+    host: PptxDomMediaExportHost,
+    element: Element,
+    label: string,
+    context: VisitContext,
+  ): Promise<void> {
+    const frame = findModelStaticFrameImage(element)
+    const frameSource = frame ? (frame.currentSrc || frame.src) : ''
+    if (frameSource) {
+      await this.addImageDataBlock(
+        host,
+        frameSource,
+        element,
+        'model3d',
+        label,
+        '三维模型静态帧导出为图片块',
+        context,
+      )
+      return
+    }
+
+    await this.addScreenshotBlock(host, element, 'model3d', '未取得三维静态帧，降级为局部截图', context)
   }
 
   /**

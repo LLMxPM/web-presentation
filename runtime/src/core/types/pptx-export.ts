@@ -29,6 +29,7 @@ export type PptxReportSourceType =
   | 'chart'
   | 'canvas'
   | 'video'
+  | 'model3d'
   | 'complex-css'
   | 'unknown'
 

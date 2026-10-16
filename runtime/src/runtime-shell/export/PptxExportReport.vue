@@ -76,6 +76,7 @@ const SOURCE_LABELS: Record<PptxReportSourceType, string> = {
   chart: '图表',
   canvas: 'Canvas',
   video: '视频',
+  model3d: '三维模型',
   'complex-css': '复杂容器',
   unknown: '未知对象',
 }

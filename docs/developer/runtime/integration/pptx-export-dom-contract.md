@@ -48,10 +48,11 @@ Runtime 的可编辑 PPTX 导出会把页面 DOM 转换成 PowerPoint 原生图�
 | :--- | :--- | :--- | :--- | :--- |
 | 表格 | `data-runtime-kit-table` | — | `DataTable.v1.vue` 根节点 | `PPTXDomConverterTable` |
 | 表格单元格 | `data-runtime-kit-table-cell` | `data-row-index`、`data-column-index` | `DataTable.v1.vue` 单元格 | `PPTXDomConverterTable` |
-| 媒体 | `data-runtime-kit-media` | `data-runtime-kit-media-kind` | 6 个 internal viewer 根节点 | `PPTXDomConverterMedia`、`PPTXDomConverterRaster` |
+| 媒体 | `data-runtime-kit-media` | `data-runtime-kit-media-kind` | 7 个 internal viewer 根节点 | `PPTXDomConverterMedia`、`PPTXDomConverterRaster` |
+| 三维静态帧 | `data-runtime-model-frame` | — | `model-static-frames.ts` prepare 阶段 | `PPTXDomConverterMedia` |
 | 连接线 | `data-runtime-kit-connector` | — | `Connector.v1.vue` 根 `<svg>` | `svg/ConnectorTightBounds` |
 
-媒体契约的读取实现集中在 `runtime/src/core/services/pptx/PPTXRuntimeKitExportDom.ts`，属性名、类型词汇与兜底顺序都以该文件为单一事实源。表格契约的属性名内联在 `PPTXDomConverterTable.ts` 中。
+媒体契约的读取实现集中在 `runtime/src/core/services/pptx/PPTXRuntimeKitExportDom.ts`，属性名、类型词汇与兜底顺序都以该文件为单一事实源。表格契约的属性名内联在 `PPTXDomConverterTable.ts` 中。三维静态帧契约的常量与类型收口在 `runtime/src/core/shared/model-static-frame-contract.ts`。
 
 ## 表格契约
 
@@ -78,7 +79,7 @@ Runtime 的可编辑 PPTX 导出会把页面 DOM 转换成 PowerPoint 原生图�
 
 ## 媒体契约
 
-**生产者**：`runtime/src/runtime-kit/internal/renderers/` 下的 6 个 viewer，属性打在各自根节点上。
+**生产者**：`runtime/src/runtime-kit/internal/renderers/` 下的 7 个 viewer，属性打在各自根节点上。
 
 | 组件 | 根节点 | `data-runtime-kit-media-kind` | 报告源类型 |
 | :--- | :--- | :--- | :--- |
@@ -88,18 +89,34 @@ Runtime 的可编辑 PPTX 导出会把页面 DOM 转换成 PowerPoint 原生图�
 | `EchartsViewer.vue` | `section.echarts-viewer` | `chart` | `chart` |
 | `VideoViewer.vue` | `section.video-viewer` | `video` | `video` |
 | `ImageViewer.vue` | `figure.image-viewer` | `image` | `image` |
+| `ModelViewer.vue`（`AssetModel.v1`） | `div.model-viewer` | `model3d` | `model3d` |
 
-`data-runtime-kit-media` 固定为 `v1`。类型词汇表 `RUNTIME_KIT_MEDIA_KINDS` 的取值与 `PptxReportSourceType` 对齐，因此可以直接作为报告源类型返回。注意组件类名与类型取值并非同名：`latex-viewer` 对应 `formula`，`echarts-viewer` 对应 `chart`。
+`data-runtime-kit-media` 固定为 `v1`。类型词汇表 `RUNTIME_KIT_MEDIA_KINDS` 的取值与 `PptxReportSourceType` 对齐，因此可以直接作为报告源类型返回。注意组件类名与类型取值并非同名：`latex-viewer` 对应 `formula`，`echarts-viewer` 对应 `chart`；`model-viewer` 没有进入类名兜底集合，`model3d` 识别只依赖显式契约（WebGL 画布在克隆后本就是空白，兜底截图没有意义）。
 
 **消费者**：
 
 - `PPTXDomConverterMedia.isMediaElement()` 判断是否走媒体导出分支。
-- `PPTXDomConverterMedia.resolveMediaSourceType()` 决定导出策略：`formula` 逐段导出 MathJax SVG，`chart` 优先验证下述图表数据载荷；未支持的图表与 `mermaid` / `drawio` 优先找可序列化 SVG（`chart` 再退 canvas），`video` 取封面或当前帧，`image` 走图片路径或 data URL，全部失败时降级为局部截图。
+- `PPTXDomConverterMedia.resolveMediaSourceType()` 决定导出策略：`formula` 逐段导出 MathJax SVG，`chart` 优先验证下述图表数据载荷；`model3d` 优先使用静态帧覆盖图，缺失时回退局部截图；未支持的图表与 `mermaid` / `drawio` 优先找可序列化 SVG（`chart` 再退 canvas），`video` 取封面或当前帧，`image` 走图片路径或 data URL，全部失败时降级为局部截图。
 - `PPTXDomConverterRaster.isTerminalMediaElement()` 判断 3D CSS 降级截图时哪些子树不该继续深入，必须与上面的媒体识别保持一致，否则会出现「媒体节点被当成普通容器整块栅格化」。
 
 **词汇表不含 `canvas` / `svg` / `connector`**：`canvas` 和 `svg` 由标签名判定，不来自 Runtime Kit 组件；连接线走独立契约，且 `PptxReportSourceType` 中没有 `connector` 成员，硬塞进媒体词汇会让报告类型失真。
 
 **改动影响**：去掉属性不会立刻坏——类名兜底会接住。真正的风险是**同时**改类名和属性，或者只改属性取值而词汇表没跟上：此时节点仍被识别为媒体，但 `resolveMediaSourceType` 落到标签名判定，公式会被当成普通 SVG、图表会被当成截图。新增 viewer 时必须同时补属性和 `ViewerExportDom.test.ts` 用例。
+
+## 三维模型静态帧契约
+
+**背景**：`ModelViewer` 的 WebGL 渲染器使用 `preserveDrawingBuffer: false`，画布像素缓冲不会被 `cloneNode` 复制，snapdom / drawImage 路径拿到的必然是空白帧。因此导出流程必须在 DOM 采集前把每个模型实例的当前帧**同步重绘并立即读回**为 PNG。
+
+**生产者**：`runtime/src/core/services/export/model-static-frames.ts`
+
+- `prepareModelStaticFrames(root)` 查询 `[data-runtime-kit-media-kind="model3d"]` 根节点，通过采集句柄取帧，插入 `<img data-runtime-model-frame="v1">` 覆盖层（绝对定位、100% 尺寸）并隐藏 canvas；`cleanup` 幂等移除覆盖层并恢复 canvas 可见性。
+- 采集句柄由 `ModelViewer.vue` 挂载时写入根元素属性 `__runtimeModelStaticFrameHandleV1`（字符串属性名，跨 realm 有效），卸载时按同一引用注销；句柄只暴露 `describe()`（身份）与 `capture()`（同步 render + `toDataURL('image/png')`），未就绪、上下文丢失或画布退化时返回 null。
+- 静态帧缓存为任务级：`OffscreenPageStage` 每任务持有 `ModelStaticFrameCache` 并在 `dispose()` 释放；键包含资源名 + 资源地址 + 视角键（场景/相机/position/target/fov/背景/光照）+ 帧像素尺寸（视口 × 收敛 DPR）。相同资源不同视角不得共用。
+- 接入点：`OffscreenPageStage.preparePage`（PDF/PPTX 全部页）、`PageCaptureService.captureElement`（snapdom 前准备、finally 清理）、`createRuntimePageCaptureTarget`（clone 前准备，覆盖非项目路由 PDF 当前页）、`BrowserPrintService.appendPrintPage`（打印 clone 前准备）。已准备元素有幂等保护，内层 cleanup 不移除外层创建的覆盖层。
+
+**消费者**：`PPTXDomConverterMedia.addModel3dStaticFrameBlock()` 只在模型根的直接子级里查找带标记的覆盖图：命中则整块导出为图片块（`sourceType: 'model3d'`、`result: 'image'`）；未命中时回退既有局部截图（`result: 'screenshot'`），截图失败按 `addSkippedItem` 语义记录。`ElementRasterizer` 局部截图路径经 `captureElement` 内部同样会准备静态帧。
+
+**改动影响**：覆盖图标记属性丢失会让 PPTX 退化为局部截图（模型可能空白）；句柄属性名或覆盖层结构改变会同时破坏 PDF 与 PPTX 两条路径。回归由 `model-static-frames.test.ts`、`PageCaptureService.test.ts`、`OffscreenPageStage.test.ts` 与 `PPTXRuntimeKitExportDom.test.ts` 拦截。
 
 ## 图表数据契约
 
@@ -168,8 +185,10 @@ v1 示例：
 
 | 测试 | 覆盖内容 |
 | :--- | :--- |
-| `PPTXRuntimeKitExportDom.test.ts` | 契约识别正反例、类型词汇与各 kind 映射、类名兜底顺序、连接线守卫、转换器分派 |
-| `ViewerExportDom.test.ts` | 6 个 viewer 真实挂载后属性存在，且能被消费端识别；移除属性后类名兜底仍生效 |
+| `PPTXRuntimeKitExportDom.test.ts` | 契约识别正反例、类型词汇与各 kind 映射、类名兜底顺序、连接线守卫、转换器分派（含 model3d 静态帧/回退） |
+| `ViewerExportDom.test.ts` | 6 个 legacy viewer 真实挂载后属性存在，且能被消费端识别；移除属性后类名兜底仍生效 |
+| `ModelViewer.test.ts` | 三维契约标记、采集句柄注册/注销与未就绪门禁 |
+| `model-static-frames.test.ts` | 覆盖图准备/清理幂等、重复 prepare 保护、缓存分区（视角/视口/资源身份）与跨 realm 契约 |
 | `Connector.v1.test.ts` | Connector 根 SVG 属性存在，且不与媒体契约混用 |
 | `ConnectorTightBounds.test.ts` | 守卫负例，以及仅带属性（无类名）时的紧边界导出结果 |
 | `PPTXDomConverterTable.integration.test.ts` | HTML 表格与 DataTable 两条路径的真实 OOXML 输出 |

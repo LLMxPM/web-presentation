@@ -4,7 +4,7 @@
  * 文件用途：验证 Runtime Kit 显式导出 DOM 契约的识别、类型词汇、类名兜底顺序、连接线守卫与转换器分派。
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   hasRuntimeKitMediaMarker,
@@ -22,6 +22,7 @@ import {
   RUNTIME_KIT_MEDIA_KINDS,
   RUNTIME_KIT_MEDIA_KIND_ATTR,
 } from './PPTXRuntimeKitExportDom'
+import { MODEL_STATIC_FRAME_IMG_ATTR, MODEL_STATIC_FRAME_VERSION } from '@/core/shared/model-static-frame-contract'
 import { convert, createSlideMock } from './PPTXDomConverter.test-support'
 
 /**
@@ -255,5 +256,97 @@ describe('PPTX 转换器分派', () => {
     const report = await convert(slide)
 
     expect(report.items.some(item => item.sourceType === 'chart')).toBe(true)
+  })
+
+  describe('model3d 静态帧分派', () => {
+    /**
+     * 构造含模型根节点的页面。
+     * @param frameMarkup 模型根内部的静态帧标记片段
+     */
+    function renderModelPage(frameMarkup: string): void {
+      document.body.innerHTML = `
+        <div id="page" style="width: 1920px; height: 1080px; background: #ffffff;">
+          <div ${RUNTIME_KIT_MEDIA_ATTR}="v1" ${RUNTIME_KIT_MEDIA_KIND_ATTR}="model3d" style="position: absolute; left: 120px; top: 90px; width: 360px; height: 240px;">
+            <div class="model-viewer__surface" style="position: absolute; inset: 0;"><canvas width="720" height="480" style="width: 360px; height: 240px;"></canvas></div>
+            ${frameMarkup}
+          </div>
+        </div>
+      `
+    }
+
+    it('词汇表应包含 model3d 且解析为同名报告源类型', () => {
+      expect(RUNTIME_KIT_MEDIA_KINDS).toContain('model3d')
+      expect(isRuntimeKitMediaKind('model3d')).toBe(true)
+      expect(resolveRuntimeKitMediaSourceType(createMediaNode('model3d'))).toBe('model3d')
+    })
+
+    it('存在静态帧覆盖图时应整块导出为图片块并报告 image', async () => {
+      renderModelPage(`<img ${MODEL_STATIC_FRAME_IMG_ATTR}="${MODEL_STATIC_FRAME_VERSION}" src="data:image/png;base64,frame" alt="" style="position: absolute; inset: 0; width: 100%; height: 100%;" />`)
+      const slide = createSlideMock()
+
+      const report = await convert(slide)
+
+      expect(slide.addImage).toHaveBeenCalledTimes(1)
+      expect(slide.addImage.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+        data: 'data:image/png;base64,frame',
+      }))
+      expect(report.items).toEqual([
+        expect.objectContaining({
+          sourceType: 'model3d',
+          result: 'image',
+          reason: '三维模型静态帧导出为图片块',
+        }),
+      ])
+    })
+
+    it('未取得静态帧时应回退局部截图并保持报告源类型为 model3d', async () => {
+      renderModelPage('')
+      const slide = createSlideMock()
+      const captureElementAsPng = vi.fn(async () => 'data:image/png;base64,screenshot')
+
+      const report = await convert(slide, captureElementAsPng)
+
+      expect(captureElementAsPng).toHaveBeenCalledTimes(1)
+      expect(captureElementAsPng.mock.calls[0]?.[0]).toBe(document.querySelector(`[${RUNTIME_KIT_MEDIA_KIND_ATTR}="model3d"]`))
+      expect(slide.addImage).toHaveBeenCalledTimes(1)
+      expect(report.items).toEqual([
+        expect.objectContaining({
+          sourceType: 'model3d',
+          result: 'screenshot',
+          reason: '未取得三维静态帧，降级为局部截图',
+        }),
+      ])
+    })
+
+    it('静态帧缺失且局部截图失败时应按 skipped 语义记录 model3d', async () => {
+      renderModelPage('')
+      const slide = createSlideMock()
+      const captureElementAsPng = vi.fn(async () => {
+        throw new Error('捕捉失败')
+      })
+
+      const report = await convert(slide, captureElementAsPng)
+
+      expect(slide.addImage).not.toHaveBeenCalled()
+      expect(report.items).toEqual([
+        expect.objectContaining({
+          sourceType: 'model3d',
+          result: 'skipped',
+        }),
+      ])
+    })
+
+    it('未带标记的图片不应被误认成静态帧', async () => {
+      renderModelPage('<img src="data:image/png;base64,plain" style="position: absolute; inset: 0;" />')
+
+      const slide = createSlideMock()
+      const captureElementAsPng = vi.fn(async () => 'data:image/png;base64,screenshot')
+      const report = await convert(slide, captureElementAsPng)
+
+      expect(captureElementAsPng).toHaveBeenCalledTimes(1)
+      expect(report.items).toEqual([
+        expect.objectContaining({ sourceType: 'model3d', result: 'screenshot' }),
+      ])
+    })
   })
 })
