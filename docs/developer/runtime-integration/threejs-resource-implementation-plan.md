@@ -1,6 +1,6 @@
 # 三维资源复用与渲染实施计划
 
-计划日期：2026-10-15。状态：待实施，各工作包均未开始。
+计划日期：2026-10-16。状态：待实施，各工作包均未开始。
 
 方向依据：[三维资源复用与 Three.js 渲染接入分析](./threejs-rendering-and-management-analysis.md)。本计划细化交付顺序、接口、数据增量、测试和发布门槛；后续实施状态与实际证据在本计划中维护。
 
@@ -31,7 +31,7 @@ M1 不依赖完整建模器、对象树编辑器、时间轴和 GPU 硬件集群
 | 检查指纹已有资源名与 hash 处理 | [CodeCheckFingerprintBuilder](../../../backend/app/services/code_check_fingerprint.py) | 复用解析服务，补三维规则、执行引擎与版本模式 |
 | asset_host、Runtime Kit、visual-assets 和 render-ready 已存在 | [AssetPreviewService](../../../backend/app/services/asset_preview_service.py)、[就绪协议](../../../runtime/src/core/utils/render-ready.ts) | W04/W05 接入模型 Viewer 和首帧状态 |
 | External 上传支持 overwrite，但按原文件名或资源名匹配，尚无按 ID 的文件替换路由 | [External assets](../../../backend/app/api/routes/external/assets.py)、[operation 目录](../../../backend/app/core/external_operations.py) | W09 新增明确的二进制替换契约 |
-| `/public/assets` 是现有公开 hash 资源读取路径 | [public_assets](../../../backend/app/api/routes/public_assets.py) | 复用现有读策略；管理权限与文件公开访问语义分别描述，不宣称新增私有文件授权 |
+| 文件读取已按用户、预览 artifact 和内部任务分为受保护入口 | [工作空间资产文件入口](../../../backend/app/api/routes/assets.py)、[预览素材入口](../../../backend/app/api/routes/preview.py)、[Runtime 内部素材入口](../../../backend/app/api/routes/internal_runtime.py)、[FileAuthService](../../../backend/app/services/file_auth_service.py) | 按下方 C05 接入；不复用未挂载的旧 `public_assets.py`，不新建匿名 GLB/纹理读取路径 |
 
 所有改动遵循仓库分层和 [DESIGN.md](../../../DESIGN.md)。数据库锁、重试与时间处理复用现有适配层；浏览器仅在 Renderer 执行。文中拟新增的模块名和字段名是实施默认方案，实际命名可随现有边界调整，行为与门槛保持一致。
 
@@ -114,6 +114,21 @@ M1 暂不让通用 overwrite 承担并发安全的模型替换。对已有 model
 
 静态 name、可解析的有限数组、previewSchema 与组件资源索引作为首期可精确冻结的引用来源。无法解析的动态模型名不得默认为已覆盖：项目构建可沿用现有额外资源清单；版本冻结须能取得完整有限集合，否则返回 `MODEL3D_REFERENCE_UNRESOLVED` 并提示补充声明或使用静态资源名。AI 默认生成静态引用。
 
+### C05 文件读取与鉴权
+
+三维文件复用平台现有受保护文件链路，授权用途不能互换：
+
+| 读取方 | 入口与凭证 | 实施要求 |
+| :--- | :--- | :--- |
+| Editor 用户 | `GET /api/workspaces/{workspace_id}/assets/{asset_id}/file?hash={hash}`，用户会话 | 检查当前工作空间权限及当前文件版本；历史版本通过冻结快照读取，资源响应中的下载 URL 不能视为匿名公开链接 |
+| Runtime 预览 / Renderer 浏览器 | `GET /preview/artifacts/{artifact_id}/assets/{file_hash}?token=P`，短期预览票据 | P 只读该 artifact manifest 中的资源；Runtime 按 `asset_base_url_auth=preview_token` 显式附加，不向浏览器交付 S 或业务 Cookie |
+| Runtime / Build Worker | `GET /internal/runtime/preview-artifacts/{artifact_id}/assets/{file_hash}`，服务票据 S 或任务授权 | 仅允许配置的 Backend 内部源站；校验 artifact 和 manifest 成员，不跟随重定向、不向外站发送凭证 |
+| 已生成网页 | 构建工作区内物化的静态文件 | 发布文件不包含 P、S 或 Backend 文件 URL；加载时不依赖在线授权服务 |
+
+旧 `public_assets.py` 文件虽仍在源码树中，但没有挂入当前 Backend API Router；Gateway 同时阻断 `/public`。W02/W04 不得把 `/public/assets` 重新作为 GLB 或纹理路径。三维资源加入预览 manifest 时绑定确定的文件 hash 和引用闭包；不得扩大成新的工作空间通配授权。若上游 artifact manifest 仍包含超出三维引用所需的资源，应与[文件存储鉴权与缓存规划](./file-storage-auth-cache-plan.md)的 manifest 范围收敛工作一起验收后再开放模型能力。
+
+所有入口先完成本次请求授权和版本/manifest 成员检查，再处理缓存、ETag、HEAD、Range 或回源。P 到期由已登录 Editor 重新检查权限并续签同一 artifact；artifact 到期则重建。M2 每个 glTF 相对依赖都必须映射到同一 revision 的校验成员，不允许外部 URL、预签名对象存储地址或路径拼接绕过 manifest。
+
 ## 工作包与依赖顺序
 
 所有复选项当前均为待完成。工作包按合并顺序组织，不要求一次性提交所有模块；公开入口只能在相应门槛满足后启用。
@@ -167,16 +182,16 @@ flowchart LR
 
 ### W02 Backend 文件管理和边界校验
 
-前置：W01。重点入口：AssetService、schemas/asset、asset_storage_drivers、public_assets；新增格式解析与预算模块按职责拆分。
+前置：W01。重点入口：AssetService、schemas/asset、asset_storage_drivers、FileAuthService 与受保护文件路由；新增格式解析与预算模块按职责拆分。
 
 - [ ] 支持 GLB 扩展名与 MIME；应用通用上传上限与 model3d 上限，读入前/过程中有界检查，不只依赖客户端 Content-Length。
 - [ ] 解析容器、JSON、bufferView/accessor/image 引用范围与扩展；检查有限数值、引用索引、树结构和预算，拒绝全量解码前即可确定的非法输入。
 - [ ] 接入 create、replace、overwrite 拦截、包导入等所有落库入口，同一校验服务防止导入绕过；GLB 内容读写接口返回不支持。
 - [ ] 完成 C03 内部按 ID 替换与提交前版本复核；保留 id/name/类型与原始下载字节，失败保持旧记录和引用不变。
-- [ ] 将 model3d 加入现有可 fetch 资源的代理规则；本地与 S3 路径验证正确 MIME、缓存、跨域和完整内容，避免在全量响应中额外复制大型文件。
+- [ ] 将 model3d 纳入受保护的工作空间文件与 artifact manifest 读取流程；不接入匿名 `/public/assets`。本地与 S3 路径验证正确 MIME、缓存、跨域和完整内容，避免在全量响应中额外复制大型文件。
 - [ ] 扩展资源筛选、派生字段、归档/恢复/引用保护和摘要。格式通过只表示结构接受，不伪造“已通过浏览器视觉检查”。
 
-测试：扩展 [test_workspace_assets.py](../../../backend/tests/api/test_workspace_assets.py)、[test_workspace_asset_delivery.py](../../../backend/tests/integration/test_workspace_asset_delivery.py)，新增 model3d parser 单测；覆盖畸形字节、越界、跨用户、上传与包导入、同 hash 替换和并发两个不同文件替换。
+测试：扩展 [test_workspace_assets.py](../../../backend/tests/api/test_workspace_assets.py)、[test_workspace_asset_delivery.py](../../../backend/tests/integration/test_workspace_asset_delivery.py) 和受保护素材路由测试，新增 model3d parser 单测；覆盖畸形字节、越界、跨用户、P/S 用途或 artifact 不匹配、manifest 外 hash、上传与包导入、同 hash 替换和并发两个不同文件替换。
 
 验收：所有写入入口校验一致；同一 expected hash 的两个并发替换只成功一个；历史和原始下载正确，存储失败或事务回滚不破坏旧文件。
 
@@ -201,7 +216,7 @@ flowchart LR
 前置：W01；正式联调等待 W02。重点目录：runtime-kit/public/components/assets、内部 model3d 渲染模块、asset-preview、core/shared/runtime-preview。
 
 - [ ] 新增 AssetModel.v1.vue；内部按 loader、实例、相机、释放、静态帧职责拆分模块，用根 pnpm workspace 增加 three 生产依赖。
-- [ ] 按资源 metadata 验证 model3d，解析 name→hash→URL，独立 LoadingManager 拒绝非受控依赖；加载和引擎代码按需导入。
+- [ ] 按资源 metadata 验证 model3d，解析 name→hash→manifest 声明的 URL；预览票据只按 `asset_base_url_auth` 声明添加，独立 LoadingManager 拒绝非受控依赖；加载和引擎代码按需导入。
 - [ ] 实现多场景、源相机、显式相机与自动取景，固定灯光、色彩空间、曝光和容器尺寸策略；不缩放改写源几何。
 - [ ] 实现请求序号/取消与异步晚到处理；共享下载和解析的缓存须按 workspace/hash/策略版本分区，相机、骨骼和节点状态各实例独立。
 - [ ] 明确 geometry/material/texture/ImageBitmap/Blob 的所有权；Observer、事件、控制器、循环和 GPU 资源按实例释放与缓存引用计数回收。
@@ -218,6 +233,7 @@ flowchart LR
 - [ ] 增加 model3d 加载、ready、error 探针，汇总所有实例；ready 以必需纹理、解码、实例配置与实际绘制完成为依据。
 - [ ] 截图模式禁用查看交互与动效，固定静态姿态；场景初始化错误进入现有失败链路并返回有界诊断。
 - [ ] 保留 artifactId/inputDigest 双向核对，不用固定 sleep 或 networkidle 替代模型就绪。
+- [ ] 用无用户登录态的 Renderer 浏览器验证 P 读取 manifest 内 GLB/纹理、越权 hash 与过期 P 被拒绝；续签只经 Editor 当前会话，不把 S 传给页面。
 - [ ] 复用 render-ready.v1 的现有结构；确需增加远程字段或错误协议时同步 render-contracts、Backend、Renderer，而非只改 Viewer。
 - [ ] 将模型资源摘要和策略身份纳入渲染日志；已有请求取消、期限与 attempt 围栏传播保持一致。
 
@@ -252,7 +268,7 @@ flowchart LR
 前置：W03/W06。重点入口：ProjectArtifactBuilder、ProjectBuildService、runtime-build-worker、资源/组件/样式/项目模板包服务。
 
 - [ ] 静态引用、组件递归与项目额外资源规则收集 model3d，构建 Release 使用已经冻结的 hash 和文件持有。
-- [ ] 三维引擎和 GLTFLoader 在生产裁剪后可用；构建不依赖预览 token、Backend 地址或外部 CDN。
+- [ ] Build Worker 通过 S/任务授权从 artifact-scoped 内部入口读取冻结文件并物化到工作区；三维引擎和 GLTFLoader 在生产裁剪后可用，构建与最终产物不依赖预览 token、Backend 地址或外部 CDN。
 - [ ] 资源包、组件包、样式包、项目模板包导出包含所有实际三维文件与对应历史身份；导入后保持标准字节并重新绑定工作空间资源名。
 - [ ] 包导入复用 W02 校验，名称冲突、同 hash 复用、整个事务失败和部分文件清理遵循现有包语义并补测。
 - [ ] 构建期间替换资源，验证新文件不混进旧 Release；attempt 过期或迟到上传不得提升旧产物。
@@ -300,7 +316,7 @@ flowchart LR
 前置：W11。负责范围：Runtime、Backend manifest 与包服务、外部消费者。
 
 - [ ] 为 manifest 增加版本化的 model3d 文件集描述：逻辑入口、成员映射、内容摘要；不改变旧 GLB 的 name→hash 入口兼容。
-- [ ] 为成员提供版本绑定的读取接口或等效内部映射，所有读取使用 workspace+resource revision 身份；不能将后端 hash URL 的目录直接当成模型相对目录。
+- [ ] 为成员提供版本绑定的受保护读取映射；所有成员必须属于 artifact manifest 中冻结的 workspace+resource revision，不能将后端 hash URL 的目录直接当成模型相对目录，也不能把预签名地址写入 Runtime 页面。
 - [ ] 使用 LoadingManager 将标准相对 URI 解析到验证过的成员；创建的 Blob URL、缓存和实例释放遵循 W04 的所有权规则。
 - [ ] 构建物化保留目录并使用稳定 base；原始资源下载和各类包导出提供完整标准文件集，外部工具无须平台 SDK 即可读取。
 - [ ] 将文件集完整摘要接入历史绑定、截图/检查指纹、替换 CAS、存储清理及 CLI/MCP。
@@ -330,7 +346,7 @@ flowchart LR
 | T08 | 相同模型不同视角 PDF/PPTX | 实际产物中视角不同，无空白或缺纹理 | W06 |
 | T09 | 离线构建与跨空间导入 | 无 Backend/CDN 依赖，资源重新绑定正确 | W08 |
 | T10 | 资源清理与生命周期 | 有持有不可删除；到期/删除 owner 后按规则回收；50 次切换无持续增长 | W03/W04 |
-| T11 | 权限与现有公开读语义 | 管理隔离正确，公开 hash 访问按现有策略，令牌不进入产物 | W02/W09 |
+| T11 | 受保护素材鉴权 | 用户会话、P、S/任务授权各自只读其范围；artifact 外 hash、错用途和过期票据拒绝；鉴权先于热缓存、304、HEAD、Range；`/public` 无回退；令牌不进入产物 | W02/W04/W05/W08 |
 | T12 | 镜像、任务超时、取消和 attempt | 实际 PNG 正确；无浏览器孤儿、临时产物或槽位泄漏 | W05/W10 |
 | T13 | glTF 多文件正常/反例与原子替换 | 完整闭包或整批拒绝，新旧成员不混用 | W11/W12 |
 | T14 | 标准文件集再利用 | 独立工具可读取下载/导出文件，不需平台解析器 | W12/W13 |
@@ -390,6 +406,8 @@ pnpm run test:e2e:regression
 | W13 | 2–3 | W12 |
 
 详细拆分后，M0+M1 约 22–34 人日，M2 追加 8–12 人日，总计 30–46 人日。相较分析阶段的粗估，本计划显式纳入资源持有与历史还原、相同源码的资源版本保存、并发替换、两个外部消费者和真实镜像验收；后续排期以本计划为准。若缩减发布面，必须在 G1 中明确移除的承诺与退出项，不以跳过验证压缩估算。
+
+上述估算假设 C05 复用已落地的用户文件入口、artifact-scoped P、内部 S/任务授权和统一文件响应，不另建鉴权系统；本次链路调整本身不增加新的鉴权子系统工期。若实现前发现三维资源所需的 manifest 引用范围收敛尚未满足，或必须改造通用 artifact 授权范围，则先复核 W02/W03 依赖和人日，再承诺排期。
 
 主要工期变量是 W03 的历史保留与清理接入、W00 的容器渲染能力，以及两个独立消费者的接口适配。遇到预算或兼容问题，先缩减格式扩展、自动缩略图和交互能力；资源身份、并发正确性、首帧与静态导出属于已承诺核心能力。
 

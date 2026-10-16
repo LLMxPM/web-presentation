@@ -1,8 +1,23 @@
 # 三维资源复用与 Three.js 渲染接入分析
 
-分析日期：2026-10-15。状态：设计分析，尚未实施。
+分析日期：2026-10-16。状态：设计分析，尚未实施。
 
 详细工作包、契约、依赖、验收门槛与修订后的工作量见[三维资源复用与渲染实施计划](./threejs-resource-implementation-plan.md)，后续排期以实施计划为准。
+
+## 与文件存储鉴权链路的对齐
+
+本分析按 2026-10-16 的受保护文件交付链路规划。详细平台目标与迁移状态见[文件存储鉴权与缓存规划](./file-storage-auth-cache-plan.md)。三维资源沿用现有文件身份和授权入口，不新增匿名素材通道，也不把 Three.js Loader 直接接到对象存储。
+
+| 读取场景 | 身份与入口 | 三维接入约束 |
+| :--- | :--- | :--- |
+| Editor 资源库下载、直接读取 | 当前用户会话访问 `/api/workspaces/{workspace_id}/assets/{asset_id}/file?hash={hash}` | Backend 检查工作空间权限和当前文件版本；历史版本通过冻结快照读取，URL 不能当作公开链接 |
+| Runtime 预览与 Renderer 浏览器 | 短期预览票据 P 访问 `/preview/artifacts/{artifact_id}/assets/{file_hash}?token=P` | P 绑定 artifact；文件必须属于该 artifact 的 manifest。Runtime 只在 `asset_base_url_auth=preview_token` 时附加 P；续签由 Editor 会话重新检查权限，不能由旧 P 自行续期 |
+| Runtime / 构建 Worker 内部回源 | 服务票据 S 或构建任务授权访问 `/internal/runtime/preview-artifacts/{artifact_id}/assets/{file_hash}` | Backend 校验 artifact 与 manifest 成员；S 不进入用户 HTML、页面源码、构建产物或外部地址 |
+| 独立构建运行 | Build Worker 将已授权素材物化进构建工作区 | 产物只包含本地文件和 Three.js 运行时代码，不依赖预览票据、服务凭证或在线 Backend |
+
+旧 `public_assets.py` 源文件仍保留，但它没有挂入当前 Backend API Router；Gateway 也阻断 `/public`。因此不能沿用 `/public/assets` 作为 GLB 或纹理读取路径，也不能以此处的旧实现推导当前访问语义。鉴权必须先于缓存、条件响应和文件读取；缓存命中、304、HEAD、Range 均不得补足或绕过授权。
+
+M1 的 GLB 必须以固定文件 hash 进入预览 artifact manifest，自包含性校验拒绝任何外部依赖。当前页面创建预览时绑定当时解析到的资源版本；历史页面、截图任务和构建 Release 使用各自冻结的 hash。M2 多文件 glTF 的相对 URI 只能解析到已校验并纳入同一 revision 与 manifest 的成员，不能拼接任意 Backend、对象存储或外部 URL。无法静态确定的动态资源名必须由依赖清单明确声明，否则不能声称快照完整。
 
 ## 平台定位与接入方向
 
@@ -59,12 +74,12 @@ Draco、KTX2、Meshopt 等能力需要额外解码集成。应发布明确的扩
 | 上传与替换 | [AssetService](../../../backend/app/services/asset_service.py) 提供上传、替换、覆盖历史及引用保护；Draw.io 额外支持文本读写 | GLB 使用二进制上传与替换；不接入面向文本的 512 KiB 内容编辑流程 |
 | HTTP 契约 | [内部资源路由](../../../backend/app/api/routes/assets.py)、[External 资源路由](../../../backend/app/api/routes/external/assets.py)、[DTO](../../../backend/app/schemas/asset.py) | 扩展枚举、格式校验、元数据和外部文件替换契约 |
 | Editor 管理 | [资源库](../../../editor/src/views/AssetsView.vue)、[资源详情逻辑](../../../editor/src/views/assets/useAssetDetail.ts)、[类型配置](../../../editor/src/components/project/asset-manager.ts) | 增加上传、详情、替换、历史、引用入口与三维筛选 |
-| 资源预览 | [AssetPreviewService](../../../backend/app/services/asset_preview_service.py) 创建 `asset_host`；[AssetPreviewFrame](../../../editor/src/components/project/AssetPreviewFrame.vue) 打开 Runtime iframe | 复用预览壳、令牌和 artifact，增加三维资源宿主分支 |
+| 资源预览 | [AssetPreviewService](../../../backend/app/services/asset_preview_service.py) 创建 `asset_host` 和短期 P；[AssetPreviewFrame](../../../editor/src/components/project/AssetPreviewFrame.vue) 打开隔离 Runtime iframe | 复用 artifact-scoped 受保护素材入口；三维文件必须命中 manifest，不能走匿名 URL |
 | 页面引用 | [AssetDrawio.v1.vue](../../../runtime/src/runtime-kit/public/components/assets/AssetDrawio.v1.vue) 按资源名解析并渲染 | 新增 `AssetModel.v1.vue`，按资源名加载标准文件，接受实例展示参数 |
 | 实际渲染 | [DrawioViewer](../../../runtime/src/runtime-kit/internal/renderers/DrawioViewer.vue) 加载 XML 和 GraphViewer 后输出 SVG | 新增 Runtime 内部模型 Viewer，按需加载本地打包的 Three.js 与 loader |
 | 首帧等待 | [visual-assets](../../../runtime/src/core/utils/visual-assets.ts) 识别 Draw.io 状态，聚合到 [render-ready.v1](../../../runtime/src/core/utils/render-ready.ts) | 增加模型与纹理解码、实例设置和首帧完成的探针 |
 | 引用与构建 | [ResourceReferenceParser](../../../backend/app/services/resource_reference_parser.py)、[ProjectArtifactBuilder](../../../backend/app/services/project_artifact_builder.py) 收集引用与构建资源 | 补测 AssetModel 静态引用；多文件阶段展开标准文件依赖 |
-| 资源回源 | [public_assets](../../../backend/app/api/routes/public_assets.py) 对 Draw.io 等可 fetch 文本资源做代理 | 验证 GLB 与纹理的实际响应、MIME、CORS 和 hash 地址解析 |
+| 资源回源 | [工作空间文件入口](../../../backend/app/api/routes/assets.py)、[预览素材入口](../../../backend/app/api/routes/preview.py)、[Runtime 内部入口](../../../backend/app/api/routes/internal_runtime.py) 共用受保护文件响应与授权校验 | GLB 和纹理按用户会话、P 或 S 的用途读取；逐条验证 manifest 归属、MIME、CORS、hash 与缓存前鉴权，不回退 `/public/assets` |
 | 导出 | [PPTX 媒体转换](../../../runtime/src/core/services/pptx/PPTXDomConverterMedia.ts) 有 SVG 与 canvas 路径 | 补齐确定的三维静态帧采集，供 PNG、PDF 和 PPTX 使用 |
 
 当前 [runtime/package.json](../../../runtime/package.json) 未声明 `three`，资源枚举和 Runtime Kit 清单也没有三维公共组件。现有 `analysis_metadata` DTO 主要描述图标分析，三维分析摘要需要同步定义新的类型结构。
@@ -229,7 +244,7 @@ HTTP DTO 改动后执行 codegen:editor-api 和 test:contracts:generated；独�
 | P1 单文件资源复用 | model3d、上传替换与历史、AssetModel、实例视角、Editor、引用索引、快照与缓存、外部契约 | 一份 GLB 多页面多视角复用，更新与旧快照行为正确 |
 | P2 多文件与格式扩展 | glTF 文件集、成员存储、依赖校验、原子版本、包导入导出与构建；按需增加解码器和动画播放 | 标准资源及依赖可完整迁移和交付，支持矩阵对应实际能力 |
 
-上表为分析阶段的初步拆分。详细计划计入资源持有、历史还原、并发替换、独立 CLI/MCP 和镜像验收后，M0+M1 修订为 22–34 人日，多文件 M2 追加 8–12 人日，后续排期以[实施计划](./threejs-resource-implementation-plan.md)为准。三维建模器、场景 DSL 和对象树编辑器不纳入上述范围，后续有明确产品需求时单独评估。
+上表为分析阶段的初步拆分。详细计划计入资源持有、历史还原、并发替换、独立 CLI/MCP 和镜像验收后，M0+M1 修订为 22–34 人日，多文件 M2 追加 8–12 人日；该估算假设复用现有受保护文件链路，不另建授权系统，后续排期以[实施计划](./threejs-resource-implementation-plan.md)为准。三维建模器、场景 DSL 和对象树编辑器不纳入上述范围，后续有明确产品需求时单独评估。
 
 | 模块 | 重点入口 | 主要增量 |
 | :--- | :--- | :--- |
