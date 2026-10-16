@@ -401,11 +401,13 @@ class AssetService:
         file: UploadFile,
         *,
         expected_file_hash: str | None = None,
+        commit: bool = True,
     ) -> WorkspaceAsset:
         """按资源 ID 替换文件内容，并在写入前自动生成历史副本。
 
         `expected_file_hash` 为提交前的版本基线：三维资源必填（缺失返回 422），
         其余类型可选；提供时在提交前复核并以条件更新保证并发替换只成功一次。
+        `commit=False` 供 External 幂等事务复用，由调用方统一提交。
         """
 
         asset = await self._get_asset_or_raise(workspace_id, asset_id)
@@ -452,6 +454,7 @@ class AssetService:
                 file_name=file_name,
                 file_size=file_size,
                 analysis_metadata=analysis_metadata,
+                commit=commit,
             )
 
         return await self._overwrite_asset(
@@ -466,6 +469,7 @@ class AssetService:
             description=None,
             create_history_snapshot=True,
             analysis_metadata=analysis_metadata,
+            commit=commit,
         )
 
     async def _replace_asset_file_with_cas(
@@ -481,11 +485,14 @@ class AssetService:
         file_name: str,
         file_size: int,
         analysis_metadata: dict | None,
+        commit: bool = True,
     ) -> WorkspaceAsset:
         """以条件更新完成按 ID 替换：旧文件指针与当前记录只在基线仍匹配时切换。
 
         历史快照与指针切换处于同一事务；基线在提交前被并发替换更新时整体回滚，
         返回 409 版本冲突，不改变当前记录，也不删除仍被历史引用的旧文件。
+        commit=False 时由调用方统一提交；历史快照始终复用旧文件名，
+        提交后的旧文件清理与 commit=True 路径一致地不会误删。
         """
 
         old_file_name = asset.file_name
@@ -522,13 +529,17 @@ class AssetService:
                 code=ASSET_ERROR_VERSION_CONFLICT,
                 detail="资源文件已被其他请求更新，本次替换未生效，请重新读取后再提交。",
             )
-        await self.session.commit()
-        await self.session.refresh(asset)
-        if old_file_name != file_name and await self._count_file_name_references(asset.workspace_id, old_file_name) == 0:
-            try:
-                await self.driver.delete(asset.workspace_id, old_file_name)
-            except Exception:
-                pass
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(asset)
+            if old_file_name != file_name and await self._count_file_name_references(asset.workspace_id, old_file_name) == 0:
+                try:
+                    await self.driver.delete(asset.workspace_id, old_file_name)
+                except Exception:
+                    pass
+        else:
+            await self.session.flush()
+            await self.session.refresh(asset)
         return asset
 
     async def copy_asset(

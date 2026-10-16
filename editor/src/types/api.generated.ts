@@ -748,8 +748,14 @@ export type Body_import_workspace_style_package_api_workspaces__workspace_id__st
   "archive": string
 }
 
+export type Body_replace_asset_file_api_v1_assets__asset_id__replace_post = {
+  "file": string
+  "expected_file_hash": string
+}
+
 export type Body_replace_workspace_asset_file_api_workspaces__workspace_id__assets__asset_id__replace_post = {
   "file": string
+  "expected_file_hash"?: (string) | (null)
 }
 
 export type Body_upload_agent_image_attachment_api_ai_sessions__session_id__attachments_images_post = {

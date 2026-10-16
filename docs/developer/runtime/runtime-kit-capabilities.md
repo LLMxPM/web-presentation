@@ -20,6 +20,7 @@
 | --------------------- | ---------------------------------------------------------- | ---------------------------------- |
 | `AssetImage`          | `asset_metadata.render_type=image` 的图片资源              | 普通 HTML 布局和图片说明样式       |
 | `AssetVideo`          | `render_type=video` 的视频资源，支持 `posterName` 解析封面 | 视频区域外的标题、卡片和说明排版   |
+| `AssetModel`          | `render_type=model3d` 的自包含 GLB 三维资源                | 物体/材质编辑、动画播放和场景 DSL  |
 | `AssetDrawio`         | Draw.io XML 图表资源                                       | Backend 已生成的普通 SVG/PNG 图片  |
 | `AssetMermaid`        | Mermaid 文本图表资源                                       | 普通流程图布局组件                 |
 | `AssetChart`          | ECharts option JSON 资源                                   | Backend 直接生成的静态表格或指标块 |
@@ -33,10 +34,11 @@
 选择规则：
 
 - Backend/Agent 优先读取 `asset_metadata.render_type`。
-- `image/video/drawio/mermaid/chart/formula` 分别选择显式组件。
+- `image/video/drawio/mermaid/chart/formula/model3d` 分别选择显式组件。
 - 需要自定义 DOM 结构时使用 `useAssetSrc`、`useAssetBackground` 或 `useAssetFontFamily`。
 - 实际页面中的资源渲染容器应通过 `class` 同时声明明确宽度和高度；避免使用 `style`、`min-h`、`max-height` 或内容自由高度作为尺寸来源。
 - `AssetImage` 的 `class` 控制外层图片框，不是内部 `img` 的 class；完整展示高图时使用 `fit="contain"` 和明确的 `h-*` 图片框，不要写 `object-contain` 类或用外层 `overflow-hidden` 裁剪。
+- `AssetModel` 通过稳定资源名 `name` 引用自包含 GLB；`cameraIndex` 使用源文件相机索引，与 `cameraPosition`/`cameraTarget` 成对参数互斥；未指定时按源默认场景和自动取景渲染。多实例可分别设置视角，M1 只渲染静态姿态，不播放动画。
 - 非主题字体应使用静态字体资源名声明，例如 `useAssetFontFamily('BrandSerif')`，Backend 会据此下发字体包。
 - 不要让页面源码引用 `@runtime-kit/internal/renderers/*`。
 

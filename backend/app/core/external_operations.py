@@ -225,6 +225,14 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "asset.upload": ExternalOperationSpec(
         "asset.upload", ("asset:write",), requires_idempotency_key=True, description="上传资产文件或图片"
     ),
+    "asset.file.replace": ExternalOperationSpec(
+        "asset.file.replace",
+        ("asset:write",),
+        requires_idempotency_key=True,
+        description="按 ID 替换资产二进制文件（multipart file 与 expected_file_hash 版本基线）",
+        http_method="POST",
+        path_template="/assets/{asset_id}/replace",
+    ),
     "asset.update": ExternalOperationSpec(
         "asset.update", ("asset:write",), requires_idempotency_key=True, description="更新可编辑资产内容或元数据"
     ),
@@ -391,6 +399,7 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "asset.get": ("GET", "/assets/{asset_id}"),
     "asset.file.get": ("GET", "/assets/{asset_id}/file"),
     "asset.upload": ("POST", "/assets"),
+    "asset.file.replace": ("POST", "/assets/{asset_id}/replace"),
     "asset.update": ("PATCH", "/assets/{asset_id}"),
     "asset.archive": ("POST", "/assets/{asset_id}/archive"),
     "asset.content.create": ("POST", "/assets/content"),

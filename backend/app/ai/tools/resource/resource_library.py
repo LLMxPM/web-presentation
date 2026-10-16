@@ -467,7 +467,7 @@ def _dump_asset_list_item(asset: Any) -> dict[str, Any]:
     """转换资源为面向 LLM 列表选择的简化摘要。"""
 
     payload = _dump_asset(asset)
-    return {
+    item = {
         "id": payload["id"],
         "name": payload["name"],
         "original_name": payload["original_name"],
@@ -481,6 +481,26 @@ def _dump_asset_list_item(asset: Any) -> dict[str, Any]:
         "approx_aspect_ratio_value": payload.get("approx_aspect_ratio_value"),
         "aspect_ratio_source": payload.get("aspect_ratio_source"),
         "updated_at": payload["updated_at"],
+    }
+    model3d_summary = _build_model3d_list_summary(payload.get("analysis_metadata"))
+    if model3d_summary is not None:
+        item["model3d"] = model3d_summary
+    return item
+
+
+def _build_model3d_list_summary(analysis_metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    """从完整分析元数据提取三维资源的精简列表摘要；非三维资源返回 None。"""
+
+    if not isinstance(analysis_metadata, dict) or analysis_metadata.get("kind") != "model3d":
+        return None
+    model3d = analysis_metadata.get("model3d") or {}
+    if not isinstance(model3d, dict):
+        return None
+    return {
+        "format": model3d.get("format"),
+        "scene_count": model3d.get("scene_count", 0),
+        "camera_count": len(model3d.get("cameras") or []),
+        "animation_count": len(model3d.get("animations") or []),
     }
 
 

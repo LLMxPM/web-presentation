@@ -150,6 +150,7 @@ POST     /api/v1/assets/content
 GET/PUT  /api/v1/assets/{asset_id}/content
 POST     /api/v1/assets/{asset_id}/content/preview
 POST     /api/v1/assets/{asset_id}/copy
+POST     /api/v1/assets/{asset_id}/replace
 GET      /api/v1/assets/tags
 GET      /api/v1/runtime-kit
 GET      /api/v1/runtime-kit/{item}
@@ -160,6 +161,16 @@ POST     /api/v1/validate/entity
 `validate/entity` 的 `entity_type` 为 `page | component`，`mode` 为 `current | content | edits`。项目配置、路由树、主题、样式和资源内容写入均由 Backend Schema 最终校验。
 
 样式创建 `POST /api/v1/styles` 同时接受规范的 `configuration.presentation` 嵌套配置和顶层完整展示字段；OpenAPI 请求 Schema 与该接口保持一致。
+
+#### 资源文件替换
+
+`POST /api/v1/assets/{asset_id}/replace`（operation `asset.file.replace`，scope `asset:write`）以 multipart 上传新二进制文件并按 ID 替换，不改动 asset_type、id 与 name：
+
+- 必须同时携带 `Idempotency-Key` 与 `expected_file_hash`；缺基线按请求校验返回 422。
+- `expected_file_hash` 是提交前的版本基线，取资源响应中的 `file_hash`；基线不匹配返回 409 `ASSET_VERSION_CONFLICT`，客户端必须重新读取资源后再决定，不得用旧视图静默覆盖。
+- 三维资源（`asset_type=model3d`）必须通过本接口替换；同名覆盖上传会被拒绝，避免按文件名匹配误选其他资源。
+- 同幂等键同输入重放首次结果且不生成第二份历史；不同输入复用键返回 409。
+- 成功返回 200 `AssetResponse`，`file_hash` 为新文件哈希；历史副本按平台归档规则创建。
 
 ### 5.2 页面和组件重任务
 

@@ -218,6 +218,63 @@ async def upload_asset(
     return result if isinstance(result, AssetResponse) else AssetResponse.model_validate(result)
 
 
+@router.post("/{asset_id}/replace", response_model=AssetResponse)
+async def replace_asset_file(
+    request: Request,
+    response: Response,
+    asset_id: int,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("asset.file.replace"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
+    file: UploadFile = File(...),
+    expected_file_hash: str = Form(...),
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> AssetResponse:
+    """按资源 ID 替换二进制文件，不改变 asset_type、id 与 name。
+
+    必须携带 expected_file_hash 版本基线：基线不匹配返回 409（ASSET_VERSION_CONFLICT），
+    不能按客户端旧视图覆盖新文件；Idempotency-Key 必填，同键同输入重放返回首次结果。
+    """
+
+    # 流式分块计算上传文件 SHA256，纳入幂等指纹，避免大文件全量读入内存。
+    file_hasher = hashlib.sha256()
+    while chunk := await file.read(65536):
+        file_hasher.update(chunk)
+    await file.seek(0)
+
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST",
+        path=request.url.path,
+        json_data={
+            "file_hash": file_hasher.hexdigest(),
+            "filename": file.filename,
+            "expected_file_hash": str(expected_file_hash).strip().lower(),
+        },
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, AssetResponse]:
+        updated = await AssetService(session).replace_asset_file(
+            x_workspace_id,
+            asset_id,
+            file,
+            expected_file_hash=expected_file_hash,
+            commit=False,
+        )
+        resp = await _build_asset_response(session, x_workspace_id, updated)
+        return 200, resp
+
+    status_code, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=x_workspace_id,
+        idempotency_key=idempotency_key,
+        operation="asset.file.replace",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    response.status_code = status_code
+    return result if isinstance(result, AssetResponse) else AssetResponse.model_validate(result)
+
+
 @router.put("/{asset_id}/content", response_model=AssetResponse)
 async def update_asset_content(
     request: Request,

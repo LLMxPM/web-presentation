@@ -5957,6 +5957,102 @@
         }
       }
     },
+    "/api/v1/assets/{asset_id}/replace": {
+      "post": {
+        "tags": [
+          "External Assets"
+        ],
+        "summary": "Replace Asset File",
+        "description": "按资源 ID 替换二进制文件，不改变 asset_type、id 与 name。\n\n必须携带 expected_file_hash 版本基线：基线不匹配返回 409（ASSET_VERSION_CONFLICT），\n不能按客户端旧视图覆盖新文件；Idempotency-Key 必填，同键同输入重放返回首次结果。",
+        "operationId": "replace_asset_file_api_v1_assets__asset_id__replace_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_replace_asset_file_api_v1_assets__asset_id__replace_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/assets/{asset_id}/content/preview": {
       "post": {
         "tags": [
@@ -19402,7 +19498,7 @@
           "assets"
         ],
         "summary": "Replace Workspace Asset File",
-        "description": "使用新文件替换指定资源，保留逻辑名和引用关系，并生成历史副本。",
+        "description": "使用新文件替换指定资源，保留逻辑名和引用关系，并生成历史副本。\n\n三维资源必须携带 expected_file_hash 版本基线；基线不匹配返回 409，缺失返回 422。",
         "operationId": "replace_workspace_asset_file_api_workspaces__workspace_id__assets__asset_id__replace_post",
         "parameters": [
           {
@@ -28774,12 +28870,42 @@
         ],
         "title": "Body_import_workspace_style_package_api_workspaces__workspace_id__styles_import_package_post"
       },
+      "Body_replace_asset_file_api_v1_assets__asset_id__replace_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "expected_file_hash": {
+            "type": "string",
+            "title": "Expected File Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "expected_file_hash"
+        ],
+        "title": "Body_replace_asset_file_api_v1_assets__asset_id__replace_post"
+      },
       "Body_replace_workspace_asset_file_api_workspaces__workspace_id__assets__asset_id__replace_post": {
         "properties": {
           "file": {
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File"
+          },
+          "expected_file_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected File Hash"
           }
         },
         "type": "object",

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import json
+import struct
 
 import pytest
 from httpx import AsyncClient
@@ -19,6 +21,7 @@ from app.ai.platform_tools import AgentToolContext
 from app.ai.tools.resource.resource_library import (
     build_create_resource_asset_tool,
     build_get_resource_asset_content_tool,
+    build_get_resource_asset_detail_tool,
     build_list_resource_assets_tool,
     build_save_uploaded_image_as_resource_tool,
     build_update_resource_asset_metadata_tool,
@@ -159,6 +162,60 @@ async def test_list_resource_assets_tool_scope_all_should_query_workspace_assets
     assert result["source"] == "workspace_all"
     assert result["fallback_reason"] is None
     assert [item["id"] for item in result["items"]] == [library_asset["id"]]
+
+
+async def test_list_resource_assets_tool_should_include_model3d_summary(
+    authenticated_client: AsyncClient,
+) -> None:
+    """三维资源在资源列表摘要中应返回场景、相机与动画数量，文本资源不带该字段。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 三维资源工作空间")
+    await _create_text_asset(authenticated_client, workspace_id, "flat_asset")
+    upload_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": ("product.glb", _valid_glb(), "model/gltf-binary")},
+        data={"asset_type": "model3d", "name": "product", "tags": "[]"},
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    tool = build_list_resource_assets_tool(get_session_factory())
+    run_context = _build_tool_run_context(workspace_id=workspace_id)
+
+    result = await tool.entrypoint(run_context)
+
+    items = {item["name"]: item for item in result["items"]}
+    assert items["product"]["asset_type"] == "model3d"
+    assert items["product"]["model3d"] == {
+        "format": "glb",
+        "scene_count": 1,
+        "camera_count": 0,
+        "animation_count": 0,
+    }
+    assert "model3d" not in items["flat_asset"]
+
+
+async def test_get_resource_asset_detail_tool_should_return_model3d_analysis(
+    authenticated_client: AsyncClient,
+) -> None:
+    """三维资源详情应返回完整 model3d 分析摘要（场景/扩展/校验策略）。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 三维详情工作空间")
+    upload_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": ("detail-model.glb", _valid_glb(), "model/gltf-binary")},
+        data={"asset_type": "model3d", "name": "detail_model", "tags": "[]"},
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    asset = upload_response.json()
+    tool = build_get_resource_asset_detail_tool(get_session_factory())
+    run_context = _build_tool_run_context(workspace_id=workspace_id)
+
+    result = await tool.entrypoint(run_context, asset_id=asset["id"])
+
+    analysis = result["analysis_metadata"]
+    assert analysis["kind"] == "model3d"
+    assert analysis["model3d"]["format"] == "glb"
+    assert analysis["model3d"]["scene_count"] == 1
+    assert analysis["model3d"]["validation_profile"] == "model3d-glb-v1"
 
 
 async def test_list_resource_assets_tool_should_reject_invalid_scope(
@@ -369,6 +426,35 @@ async def _create_workspace(authenticated_client: AsyncClient, name: str) -> int
     response = await authenticated_client.post("/api/workspaces", json={"name": name, "status": "active"})
     assert response.status_code == 200
     return int(response.json()["id"])
+
+
+def _pad4(data: bytes, pad: bytes = b"\x00") -> bytes:
+    """按 4 字节对齐填充。"""
+
+    if len(data) % 4:
+        data = data + pad * (4 - len(data) % 4)
+    return data
+
+
+def _valid_glb() -> bytes:
+    """构造最小合法 GLB，用于三维资源上传与摘要断言。"""
+
+    positions = struct.pack("<9f", 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+    gltf = {
+        "asset": {"version": "2.0", "generator": "ai-resource-tools-test"},
+        "buffers": [{"byteLength": len(positions)}],
+        "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": len(positions)}],
+        "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+        "nodes": [{"mesh": 0}],
+        "scenes": [{"nodes": [0]}],
+        "scene": 0,
+    }
+    json_bytes = _pad4(json.dumps(gltf).encode("utf-8"), b" ")
+    chunks = struct.pack("<II", len(json_bytes), 0x4E4F534A) + json_bytes
+    bin_bytes = _pad4(positions)
+    chunks += struct.pack("<II", len(bin_bytes), 0x004E4942) + bin_bytes
+    return b"glTF" + struct.pack("<II", 2, 12 + len(chunks)) + chunks
 
 
 async def _create_project(authenticated_client: AsyncClient, workspace_id: int, name: str) -> int:
