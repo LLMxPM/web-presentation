@@ -481,13 +481,90 @@ def test_page_render_deadline_marks_artifact_cleanup_deferred() -> None:
     service = PageRenderDiagnosticsService(facade=_DeadlineFacade())
     result = asyncio.run(
         service.diagnose_preview(
-            "http://runtime.local/preview?token=t",
+            "http://runtime.local/preview",
             CaptureViewport(width=320, height=240),
             workspace_id=1,
         )
     )
 
     assert result["_render_artifact_cleanup_deferred"] is True
+
+
+def test_page_render_diagnostics_should_convert_public_preview_to_runtime_target() -> None:
+    """公开预览地址必须还原为 Runtime 直连导航目标，否则 Renderer 顶层拿不到 render-ready 协议。"""
+
+    import asyncio
+
+    from app.core.config import get_settings
+    from app.services.capture_viewport_resolver import CaptureViewport
+    from app.services.page_render_diagnostics_service import PageRenderDiagnosticsService
+    from app.services.rendering.target_resolver import RenderTargetResolver
+    from app.services.token_service import TokenService
+
+    token = TokenService.generate_preview_context_token(
+        artifact_id="rt_nav_convert",
+        preview_kind="project",
+        scope_type="project",
+        workspace_id=1,
+        entry_descriptor={"entry_type": "route", "route": "/"},
+        asset_base_url="http://127.0.0.1:8000/preview/artifacts/rt_nav_convert/assets",
+        trace_id="req-nav-convert",
+        tenant_id="tenant_1",
+        expires_in_seconds=60,
+    )
+
+    class _CapturingFacade:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, object] = {}
+
+        async def diagnose_page_preview(self, **kwargs):
+            self.kwargs = kwargs
+            return {"status": "ok", "diagnostics": [], "layout_analysis": {}}
+
+    facade = _CapturingFacade()
+    service = PageRenderDiagnosticsService(facade=facade)
+    asyncio.run(
+        service.diagnose_preview(
+            f"http://127.0.0.1:8000/preview/artifacts/rt_nav_convert?token={token}",
+            CaptureViewport(width=320, height=240),
+            workspace_id=1,
+            artifact_id="rt_nav_convert",
+            preview_token=token,
+        )
+    )
+
+    navigation_base = RenderTargetResolver(get_settings()).navigation_base_url()
+    assert facade.kwargs["preview_url"] == f"{navigation_base}/__preview"
+    headers = facade.kwargs["extra_http_headers"]
+    assert isinstance(headers, dict)
+    assert headers["x-runtime-preview-context"] == token
+    assert headers["x-runtime-service-token"]
+    assert headers["x-runtime-public-base-url"]
+
+
+def test_page_render_diagnostics_should_degrade_invalid_preview_token() -> None:
+    """非法预览票据不得导航到宿主页空等硬期限，必须降级为执行不可用结论。"""
+
+    import asyncio
+
+    from app.services.capture_viewport_resolver import CaptureViewport
+    from app.services.page_render_diagnostics_service import PageRenderDiagnosticsService
+
+    class _FailOnCallFacade:
+        async def diagnose_page_preview(self, **_kwargs):
+            raise AssertionError("非法票据不应发起渲染请求。")
+
+    service = PageRenderDiagnosticsService(facade=_FailOnCallFacade())
+    result = asyncio.run(
+        service.diagnose_preview(
+            "http://127.0.0.1:8000/preview/artifacts/rt_bad?token=not-a-jwt",
+            CaptureViewport(width=320, height=240),
+            workspace_id=1,
+        )
+    )
+
+    assert result["status"] == "unavailable"
+    assert result.get("retryable") is True
 
 
 def test_code_check_does_not_delete_artifact_while_render_attempt_may_be_in_flight(monkeypatch) -> None:

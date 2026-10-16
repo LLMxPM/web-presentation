@@ -123,6 +123,7 @@ class RenderDomainFacade:
         preview_token: str | None = None,
         source_override: str | None = None,
         timeout_seconds: float | None = None,
+        extra_http_headers: Mapping[str, str] | None = None,
     ) -> dict[str, object]:
         """执行 page.diagnose 并返回布局分析与 warning。"""
 
@@ -142,6 +143,7 @@ class RenderDomainFacade:
                 source_override=source_override,
                 operation_options={},
                 timeout_seconds=timeout_seconds,
+                extra_http_headers=extra_http_headers,
             )
         except AppException as exc:
             if _is_infrastructure_error(exc.code):
