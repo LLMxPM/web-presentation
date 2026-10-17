@@ -11,6 +11,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.slideshow_defaults import default_slideshow_payload
+
 # 放映配置结构版本，随能力自省与模板包 schema 一起演进。
 SLIDESHOW_SCHEMA_VERSION = 1
 
@@ -89,18 +91,7 @@ class SlideshowSettings(BaseModel):
 def default_slideshow_settings() -> SlideshowSettings:
     """返回契约规定的项目默认完整放映配置。"""
 
-    return SlideshowSettings(
-        transition=SlideshowTransition(effect=DEFAULT_TRANSITION_EFFECT, duration_ms=DEFAULT_TRANSITION_DURATION_MS),
-        advance=SlideshowAdvance(mode=DEFAULT_ADVANCE_MODE, delay_ms=DEFAULT_ADVANCE_DELAY_MS),
-        loop=False,
-        auto_start=False,
-    )
-
-
-def default_slideshow_payload() -> dict[str, Any]:
-    """返回 API/数据库使用的默认规范化 JSON 对象。"""
-
-    return default_slideshow_settings().model_dump(mode="json")
+    return SlideshowSettings.model_validate(default_slideshow_payload())
 
 
 def normalize_slideshow_settings(value: object) -> SlideshowSettings:

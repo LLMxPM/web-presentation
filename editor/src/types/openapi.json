@@ -37724,6 +37724,10 @@
           },
           "build_extra_assets_json": {
             "$ref": "#/components/schemas/ProjectBuildExtraAssetsConfig"
+          },
+          "slideshow": {
+            "$ref": "#/components/schemas/SlideshowSettings",
+            "description": "项目默认放映配置，省略时使用平台默认值；提供时必须为完整对象。"
           }
         },
         "additionalProperties": false,
@@ -37875,6 +37879,9 @@
           "build_extra_assets_json": {
             "$ref": "#/components/schemas/ProjectBuildExtraAssetsConfig"
           },
+          "slideshow": {
+            "$ref": "#/components/schemas/SlideshowSettings"
+          },
           "routed_page_count": {
             "type": "integer",
             "title": "Routed Page Count",
@@ -37959,6 +37966,7 @@
           "theme_key",
           "style_spec_markdown",
           "build_extra_assets_json",
+          "slideshow",
           "created_at",
           "updated_at",
           "created_by",
@@ -39126,6 +39134,17 @@
                 "type": "null"
               }
             ]
+          },
+          "slideshow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "项目默认放映配置；省略表示保留，提供完整对象表示替换，显式 null 拒绝。"
           }
         },
         "additionalProperties": false,
@@ -39502,6 +39521,95 @@
         ],
         "title": "S3TestConnectionResponse",
         "description": "S3 连通性测试响应模型。"
+      },
+      "SlideshowAdvance": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "timer"
+            ],
+            "title": "Mode",
+            "description": "翻页模式：manual 或 timer。"
+          },
+          "delay_ms": {
+            "type": "integer",
+            "maximum": 3600000,
+            "minimum": 1000,
+            "title": "Delay Ms",
+            "description": "当前页就绪且过渡结束后的停留时间（毫秒）。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode",
+          "delay_ms"
+        ],
+        "title": "SlideshowAdvance",
+        "description": "翻页推进设置，手动模式保留延迟值但不运行计时。"
+      },
+      "SlideshowSettings": {
+        "properties": {
+          "transition": {
+            "$ref": "#/components/schemas/SlideshowTransition",
+            "description": "项目默认翻页动画。"
+          },
+          "advance": {
+            "$ref": "#/components/schemas/SlideshowAdvance",
+            "description": "项目默认翻页推进设置。"
+          },
+          "loop": {
+            "type": "boolean",
+            "title": "Loop",
+            "description": "自动到达末页后是否回到第一个可放映叶子页。"
+          },
+          "auto_start": {
+            "type": "boolean",
+            "title": "Auto Start",
+            "description": "正常放映宿主就绪后是否尝试自动开始。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "transition",
+          "advance",
+          "loop",
+          "auto_start"
+        ],
+        "title": "SlideshowSettings",
+        "description": "项目完整放映配置，所有字段必须显式提供，避免客户端猜测补全。"
+      },
+      "SlideshowTransition": {
+        "properties": {
+          "effect": {
+            "type": "string",
+            "enum": [
+              "none",
+              "fade",
+              "push"
+            ],
+            "title": "Effect",
+            "description": "整页动画效果：none、fade 或 push。"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "maximum": 2000,
+            "minimum": 0,
+            "title": "Duration Ms",
+            "description": "动画时长（毫秒）；none 必须为 0，其它效果为 100–2000。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "effect",
+          "duration_ms"
+        ],
+        "title": "SlideshowTransition",
+        "description": "整页翻页动画设置，none 时长必须为 0。"
       },
       "StyleConfiguration": {
         "properties": {

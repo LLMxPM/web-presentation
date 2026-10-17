@@ -21,6 +21,7 @@ from app.schemas.project import (
     ProjectUpdateRequest,
     normalize_project_build_extra_assets_config,
 )
+from app.schemas.slideshow import load_slideshow_settings
 from app.services.project_config_service import ProjectConfigService
 from app.services.page_screenshot_url import build_page_screenshot_url
 from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
@@ -79,6 +80,7 @@ class ProjectService:
                 "build_extra_assets_json": normalize_project_build_extra_assets_config(
                     project.build_extra_assets_json
                 ).model_dump(mode="python"),
+                "slideshow": load_slideshow_settings(project.slideshow_config_json),
                 "routed_page_count": page_counts[0],
                 "total_page_count": page_counts[1],
                 "first_page_title": first_page.title if first_page is not None else None,
@@ -192,6 +194,7 @@ class ProjectService:
                 theme_config_yaml=config_values["theme_config_yaml"],
                 style_spec_markdown=presentation.style_spec_markdown,
                 build_extra_assets_json=payload.build_extra_assets_json.model_dump(mode="python"),
+                slideshow_config_json=payload.slideshow.model_dump(mode="json"),
                 created_by=operator_id,
                 updated_by=operator_id,
             )
@@ -311,6 +314,9 @@ class ProjectService:
                     )
         if payload.build_extra_assets_json is not None:
             project.build_extra_assets_json = payload.build_extra_assets_json.model_dump(mode="python")
+        if payload.slideshow is not None:
+            # 只有显式提供完整对象时才替换；应用样式分支不触碰放映配置。
+            project.slideshow_config_json = payload.slideshow.model_dump(mode="json")
         project.updated_by = operator_id
         if commit:
             await self.session.commit()

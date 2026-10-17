@@ -2111,6 +2111,7 @@ export type ProjectCreateRequest = {
   "status"?: RecordStatus
   "configuration"?: (ProjectDefaultConfiguration) | (ProjectStyleConfiguration) | (ProjectCustomConfiguration)
   "build_extra_assets_json"?: ProjectBuildExtraAssetsConfig
+  "slideshow"?: SlideshowSettings
 }
 
 export type ProjectCustomConfiguration = {
@@ -2142,6 +2143,7 @@ export type ProjectItem = {
   "theme_key": (string) | (null)
   "style_spec_markdown": string
   "build_extra_assets_json": ProjectBuildExtraAssetsConfig
+  "slideshow": SlideshowSettings
   "routed_page_count"?: number
   "total_page_count"?: number
   "first_page_title"?: (string) | (null)
@@ -2346,6 +2348,7 @@ export type ProjectUpdateRequest = {
   "status"?: (RecordStatus) | (null)
   "configuration"?: ((ProjectPatchConfiguration) | (ProjectStyleConfiguration)) | (null)
   "build_extra_assets_json"?: (ProjectBuildExtraAssetsConfig) | (null)
+  "slideshow"?: (SlideshowSettings) | (null)
 }
 
 export type ReasoningPolicy = {
@@ -2408,6 +2411,23 @@ export type S3TestConnectionRequest = {
 export type S3TestConnectionResponse = {
   "success": boolean
   "message": string
+}
+
+export type SlideshowAdvance = {
+  "mode": "manual" | "timer"
+  "delay_ms": number
+}
+
+export type SlideshowSettings = {
+  "transition": SlideshowTransition
+  "advance": SlideshowAdvance
+  "loop": boolean
+  "auto_start": boolean
+}
+
+export type SlideshowTransition = {
+  "effect": "none" | "fade" | "push"
+  "duration_ms": number
 }
 
 export type StyleConfiguration = {

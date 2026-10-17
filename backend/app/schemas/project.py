@@ -10,6 +10,7 @@ from app.models.enums import AssetType
 from app.schemas.common import SchemaBase
 from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration, ProjectUpdateConfiguration
 from app.schemas.project_app_config import ProjectMenuMode
+from app.schemas.slideshow import SlideshowSettings, default_slideshow_settings
 
 
 _HTTP_URL_PATTERN = re.compile(r"^https?://", flags=re.IGNORECASE)
@@ -86,6 +87,10 @@ class ProjectCreateRequest(BaseModel):
     status: RecordStatus = RecordStatus.ACTIVE
     configuration: ProjectCreateConfiguration = Field(default_factory=ProjectDefaultConfiguration)
     build_extra_assets_json: ProjectBuildExtraAssetsConfig = Field(default_factory=ProjectBuildExtraAssetsConfig)
+    slideshow: SlideshowSettings = Field(
+        default_factory=default_slideshow_settings,
+        description="项目默认放映配置，省略时使用平台默认值；提供时必须为完整对象。",
+    )
 
     @model_validator(mode="after")
     def normalize_build_extra_assets_json(self) -> "ProjectCreateRequest":
@@ -106,6 +111,18 @@ class ProjectUpdateRequest(BaseModel):
     status: RecordStatus | None = None
     configuration: ProjectUpdateConfiguration | None = None
     build_extra_assets_json: ProjectBuildExtraAssetsConfig | None = None
+    slideshow: SlideshowSettings | None = Field(
+        default=None,
+        description="项目默认放映配置；省略表示保留，提供完整对象表示替换，显式 null 拒绝。",
+    )
+
+    @model_validator(mode="after")
+    def reject_null_slideshow(self) -> "ProjectUpdateRequest":
+        """放映配置只支持“省略保留/完整替换”，不接受顶层 null 清空。"""
+
+        if "slideshow" in self.model_fields_set and self.slideshow is None:
+            raise ValueError("更新项目放映配置时必须提供完整对象，不能使用 null。")
+        return self
 
     @model_validator(mode="after")
     def normalize_build_extra_assets_json(self) -> "ProjectUpdateRequest":
@@ -137,6 +154,7 @@ class ProjectItem(SchemaBase):
     theme_key: str | None
     style_spec_markdown: str
     build_extra_assets_json: ProjectBuildExtraAssetsConfig
+    slideshow: SlideshowSettings
     routed_page_count: int = 0
     total_page_count: int = 0
     first_page_title: str | None = None
