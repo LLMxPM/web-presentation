@@ -22,6 +22,8 @@ function createSession(router: Router) {
     bottomCollapsed: ref(false),
     suppressTransition: ref(false),
     transitionSettled: ref<TransitionSettledEvent | null>(null),
+    // 自动开始每次宿主初始化只尝试一次；卡片模式等禁用上下文同样占用该次机会。
+    autoStartAttempted: ref(false),
   }
 }
 

@@ -6,6 +6,7 @@
   <div
     class="responsive-layout" v-bind="executionAttrs"
     :class="{ 'responsive-layout--fullscreen': isFullscreen }" :style="layoutStyles">
+    <PlaybackHostBridge />
     <!-- 响应式侧边栏 -->
     <div
 v-if="isSidebarMenuVisible" class="sidebar-wrapper" :class="{
@@ -214,6 +215,7 @@ import BottomPreviewStrip from '@/runtime-shell/layouts/BottomPreviewStrip.vue'
 import CardModePanel from '@/runtime-shell/layouts/CardModePanel.vue'
 import ScaledCanvasViewport from '@runtime-kit/internal/components/viewport/ScaledCanvasViewport.vue'
 import ExportDialog from '@/runtime-shell/export/ExportDialog.vue'
+import PlaybackHostBridge from '@/runtime-shell/playback/PlaybackHostBridge.vue'
 import RuntimePageStage from '@/runtime-shell/transitions/RuntimePageStage.vue'
 import ErrorBoundary from '@/runtime-shell/feedback/ErrorBoundary.vue'
 import { useMenu } from '@/core/composables/useMenu'

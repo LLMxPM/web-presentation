@@ -6,6 +6,7 @@
 
 import type { RouteRecordRaw } from 'vue-router'
 import type { RouteConfig, NavigationItem, BaseRouteConfig } from '@/core/types'
+import type { PageAdvanceConfig } from '@/core/types/page-transition'
 import type { MenuItem, MenuConfig } from '@/core/types/menu'
 import { routeConfigs } from '@/core/utils/config'
 import { buildFullPath } from './path'
@@ -69,6 +70,7 @@ export interface RouteInfo {
   hidden?: boolean      // 是否隐藏
   component?: string    // 组件路径
   speakerNotes?: string | null // 演讲者备注
+  advance?: PageAdvanceConfig  // 叶子页生效的停留/翻页配置
 }
 
 
@@ -400,7 +402,8 @@ export function getAllRouteInfos(): RouteInfo[] {
         pageNumber: parentConfig.pageNumber || parentConfig.meta?.pageNumber,
         hidden: parentConfig.meta?.hidden || false,
         component: parentConfig.component ? 'parent-component' : undefined,
-        speakerNotes: typeof parentConfig.meta?.speakerNotes === 'string' ? parentConfig.meta.speakerNotes : null
+        speakerNotes: typeof parentConfig.meta?.speakerNotes === 'string' ? parentConfig.meta.speakerNotes : null,
+        advance: readPageAdvance(parentConfig.meta)
       })
     }
     // 有子路由的父路由只是分组，不作为独立页面加入路由信息
@@ -420,12 +423,20 @@ export function getAllRouteInfos(): RouteInfo[] {
           parentPath: `/${parentConfig.path}`,
           hidden: childConfig.meta?.hidden || false,
           component: childConfig.component ? 'child-component' : 'unknown',
-          speakerNotes: typeof childConfig.meta?.speakerNotes === 'string' ? childConfig.meta.speakerNotes : null
+          speakerNotes: typeof childConfig.meta?.speakerNotes === 'string' ? childConfig.meta.speakerNotes : null,
+          advance: readPageAdvance(childConfig.meta)
         })
       })
     }
   })
   return routeInfos
+}
+
+/** 读取路由 meta 中已解析的翻页配置；旧路由没有该字段时保持缺省。 */
+function readPageAdvance(meta: unknown): PageAdvanceConfig | undefined {
+  if (!meta || typeof meta !== 'object') return undefined
+  const value = (meta as { advance?: unknown }).advance
+  return value && typeof value === 'object' ? value as PageAdvanceConfig : undefined
 }
 
 // ... 文件中其他的函数 (getRouteInfoByPath, getRouteInfoByName 等) 保持不变 ...

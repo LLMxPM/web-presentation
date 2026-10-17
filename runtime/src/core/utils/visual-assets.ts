@@ -5,6 +5,10 @@
 export interface EditorVisualAssetWaitOptions {
   /** 最长等待时间，单位毫秒。 */
   timeoutMs?: number
+  /** 限定检查根节点；默认整个 document，供整页截图使用。 */
+  root?: ParentNode
+  /** 是否等待有限动画结束；放映页就绪由过渡信号负责时可关闭。 */
+  includeAnimations?: boolean
 }
 
 export interface EditorVisualAssetIssue {
@@ -115,12 +119,13 @@ export async function waitForEditorVisualAssets(
 ): Promise<EditorVisualAssetWaitResult> {
   const startedAt = Date.now()
   const timeoutMs = normalizeTimeout(options.timeoutMs)
+  const root = options.root ?? document
   const deadlineAt = startedAt + timeoutMs
   const failed: EditorVisualAssetIssue[] = []
   const pending: EditorVisualAssetIssue[] = []
   let timedOut = false
 
-  const viewPreviewResult = await waitForViewPreviewReady(deadlineAt)
+  const viewPreviewResult = await waitForViewPreviewReady(deadlineAt, root)
   failed.push(...viewPreviewResult.failed)
   pending.push(...viewPreviewResult.pending)
   timedOut = timedOut || viewPreviewResult.timedOut
@@ -128,7 +133,7 @@ export async function waitForEditorVisualAssets(
   let diagramTotal = 0
   let diagramLoaded = 0
   for (const probe of RUNTIME_DIAGRAM_PROBES) {
-    const diagramResult = await waitForRuntimeDiagramReady(deadlineAt, probe)
+    const diagramResult = await waitForRuntimeDiagramReady(deadlineAt, probe, root)
     diagramTotal += diagramResult.total
     diagramLoaded += diagramResult.loaded
     failed.push(...diagramResult.failed)
@@ -136,7 +141,7 @@ export async function waitForEditorVisualAssets(
     timedOut = timedOut || diagramResult.timedOut
   }
 
-  const tasks = collectVisualAssetTasks(document)
+  const tasks = collectVisualAssetTasks(root)
   const taskResult = await waitForTasks(tasks, deadlineAt)
   failed.push(...taskResult.failed)
   pending.push(...taskResult.pending)
@@ -147,7 +152,9 @@ export async function waitForEditorVisualAssets(
   pending.push(...fontResult.pending)
   timedOut = timedOut || fontResult.timedOut
 
-  await waitForFiniteAnimationsSettled(deadlineAt)
+  if (options.includeAnimations !== false) {
+    await waitForFiniteAnimationsSettled(deadlineAt)
+  }
 
   await waitForAnimationFrame()
   await waitForAnimationFrame()
@@ -181,13 +188,13 @@ function normalizeTimeout(timeoutMs: number | undefined): number {
  * @param deadlineAt 截止时间戳
  * @returns 等待结果
  */
-async function waitForViewPreviewReady(deadlineAt: number): Promise<{
+async function waitForViewPreviewReady(deadlineAt: number, root: ParentNode): Promise<{
   failed: EditorVisualAssetIssue[]
   pending: EditorVisualAssetIssue[]
   timedOut: boolean
 }> {
   while (Date.now() <= deadlineAt) {
-    const elements = Array.from(document.querySelectorAll<HTMLElement>(VIEW_PREVIEW_STATE_SELECTOR))
+    const elements = Array.from(root.querySelectorAll<HTMLElement>(VIEW_PREVIEW_STATE_SELECTOR))
     if (elements.length === 0) {
       return { failed: [], pending: [], timedOut: false }
     }
@@ -227,7 +234,7 @@ async function waitForViewPreviewReady(deadlineAt: number): Promise<{
  * @param probe 图表探针配置
  * @returns 等待结果
  */
-async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiagramProbe): Promise<{
+async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiagramProbe, root: ParentNode): Promise<{
   total: number
   loaded: number
   failed: EditorVisualAssetIssue[]
@@ -236,7 +243,7 @@ async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiag
 }> {
   let latestElements: HTMLElement[] = []
   while (Date.now() <= deadlineAt) {
-    latestElements = Array.from(document.querySelectorAll<HTMLElement>(probe.stateSelector))
+    latestElements = Array.from(root.querySelectorAll<HTMLElement>(probe.stateSelector))
     if (latestElements.length === 0) {
       return { total: 0, loaded: 0, failed: [], pending: [], timedOut: false }
     }
@@ -270,7 +277,7 @@ async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiag
 
   const elements = latestElements.length > 0
     ? latestElements
-    : Array.from(document.querySelectorAll<HTMLElement>(probe.stateSelector))
+    : Array.from(root.querySelectorAll<HTMLElement>(probe.stateSelector))
   return {
     total: elements.length,
     loaded: elements.filter(element => element.dataset[probe.stateDatasetKey] === 'ready').length,
@@ -290,7 +297,7 @@ async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiag
  * @param root 查询根节点
  * @returns 视觉资源任务
  */
-function collectVisualAssetTasks(root: Document): VisualAssetTask[] {
+function collectVisualAssetTasks(root: ParentNode): VisualAssetTask[] {
   return [
     ...collectImageTasks(root),
     ...collectBackgroundImageTasks(root),
@@ -302,7 +309,7 @@ function collectVisualAssetTasks(root: Document): VisualAssetTask[] {
  * @param root 查询根节点
  * @returns 图片任务列表
  */
-function collectImageTasks(root: Document): VisualAssetTask[] {
+function collectImageTasks(root: ParentNode): VisualAssetTask[] {
   return Array.from(root.querySelectorAll<HTMLImageElement>('img'))
     .map((image): VisualAssetTask | null => {
       const url = image.currentSrc || image.src
@@ -324,14 +331,13 @@ function collectImageTasks(root: Document): VisualAssetTask[] {
  * @param root 查询根节点
  * @returns 背景图任务列表
  */
-function collectBackgroundImageTasks(root: Document): VisualAssetTask[] {
+function collectBackgroundImageTasks(root: ParentNode): VisualAssetTask[] {
   const seenUrls = new Set<string>()
   const tasks: VisualAssetTask[] = []
   const elements = [
-    root.documentElement,
-    root.body,
+    ...(root instanceof Document ? [root.documentElement, root.body] : [root]),
     ...Array.from(root.querySelectorAll<HTMLElement>('*')),
-  ].filter((element): element is HTMLElement => Boolean(element))
+  ].filter((element): element is HTMLElement => element instanceof HTMLElement)
 
   for (const element of elements) {
     const backgroundImage = window.getComputedStyle(element).backgroundImage

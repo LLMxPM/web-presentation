@@ -565,6 +565,12 @@ export const appPageConfig = computed(() => resolveAppPageConfig(appConfig.value
  */
 export const routeConfigs = computed(() => getCurrentRouteConfigs())
 
+/** 项目级播放入口设置；旧产物缺少 playback 时保持关闭。 */
+export const playbackConfig = computed(() => ({
+  autoStart: Boolean(configState.routeConfig?.playback?.autoStart),
+  loop: Boolean(configState.routeConfig?.playback?.loop),
+}))
+
 /**
  * 响应式默认路由配置。
  */
