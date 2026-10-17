@@ -34,5 +34,6 @@
 - 验证：`pnpm --dir runtime exec ... vitest run src/core/media/page-media-session.test.ts src/runtime-kit/internal/renderers/VideoViewer.events.test.ts` → 10 passed；`pnpm --dir runtime test` → 140 files/1059 passed/3 skipped；`pnpm --dir runtime check` 通过。
 - 未运行：真实 Chromium 的媒体播放、`media_end` 等待与跳页行为（WP24/WP30）。
 - 产物：`.tmp/wp23/`。
+- 提交：`22bec93`。
 
 测试环境与命令选择遵循 [dev-start-test](../../../../../.agents/skills/dev-start-test/SKILL.md)，不因执行本卡重复启动服务或重置开发数据。
