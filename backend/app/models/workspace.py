@@ -92,7 +92,7 @@ class Project(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
         JSON,
         nullable=False,
         default=default_slideshow_payload,
-        server_default='{"transition":{"effect":"fade","duration_ms":400},"advance":{"mode":"manual","delay_ms":5000},"loop":false,"auto_start":false}',
+        server_default='{"transition":{"effect":"fade","duration_ms":400},"advance":{"mode":"manual","delay_ms":5000,"media_timeout_ms":300000},"loop":false,"auto_start":false}',
     )
 
     workspace: Mapped[Workspace] = relationship(back_populates="projects")

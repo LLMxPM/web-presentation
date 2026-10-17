@@ -136,6 +136,7 @@
                   :src="previewFrameUrl"
                   :title="iframeTitle"
                   class="block h-full w-full bg-[rgb(var(--ui-surface-muted))]"
+                  allow="autoplay; fullscreen"
                   referrerpolicy="origin"
                 />
               </div>

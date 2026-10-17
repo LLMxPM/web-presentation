@@ -12,6 +12,9 @@ from app.schemas.project_app_config import ProjectMenuMode
 from app.schemas.slideshow import (
     ADVANCE_DELAY_MAX_MS,
     ADVANCE_DELAY_MIN_MS,
+    MEDIA_TIMEOUT_MAX_MS,
+    MEDIA_TIMEOUT_MIN_MS,
+    SLIDESHOW_EXECUTABLE_ADVANCE_MODES,
     SLIDESHOW_SCHEMA_VERSION,
     SLIDESHOW_TRANSITION_EFFECTS,
     TRANSITION_DURATION_MAX_MS,
@@ -75,15 +78,16 @@ class ExternalSlideshowCapabilities(BaseModel):
     capture_auto_play: bool
     transition_duration_ms: ExternalTransitionDurationRange
     delay_ms: ExternalAdvanceDelayRange
+    media_timeout_ms: ExternalAdvanceDelayRange
 
 
 def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
-    """构造 M1 能力声明：单窗口 timer 自动放映可用，媒体与演讲者自动放映保持关闭。"""
+    """构造当前能力声明：结构升级为 schema 2，媒体与演讲者自动放映仍保持关闭。"""
 
     return ExternalSlideshowCapabilities(
         schema_version=SLIDESHOW_SCHEMA_VERSION,
         transition_effects=list(SLIDESHOW_TRANSITION_EFFECTS),
-        advance_modes=["manual", "timer"],
+        advance_modes=list(SLIDESHOW_EXECUTABLE_ADVANCE_MODES),
         single_window_auto_play=True,
         presenter_auto_play=False,
         capture_auto_play=False,
@@ -93,6 +97,7 @@ def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
             none=0,
         ),
         delay_ms=ExternalAdvanceDelayRange(min=ADVANCE_DELAY_MIN_MS, max=ADVANCE_DELAY_MAX_MS),
+        media_timeout_ms=ExternalAdvanceDelayRange(min=MEDIA_TIMEOUT_MIN_MS, max=MEDIA_TIMEOUT_MAX_MS),
     )
 
 

@@ -19,14 +19,14 @@ from app.services.workspace_style_service import WorkspaceStyleService
 
 DEFAULT_SLIDESHOW = {
     "transition": {"effect": "fade", "duration_ms": 400},
-    "advance": {"mode": "manual", "delay_ms": 5000},
+    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
     "loop": False,
     "auto_start": False,
 }
 
 TIMER_SLIDESHOW = {
     "transition": {"effect": "push", "duration_ms": 700},
-    "advance": {"mode": "timer", "delay_ms": 8000},
+    "advance": {"mode": "timer", "delay_ms": 8000, "media_timeout_ms": 450000},
     "loop": True,
     "auto_start": False,
 }
@@ -221,7 +221,7 @@ async def test_external_route_tree_should_roundtrip_route_overrides(client: Asyn
                     "order": 0,
                     "page_id": page_id,
                     "transition": {"effect": "none", "duration_ms": 0},
-                    "advance": {"mode": "manual", "delay_ms": 1500},
+                    "advance": {"mode": "manual", "delay_ms": 1500, "media_timeout_ms": 300000},
                 }
             ]
         },
@@ -230,10 +230,10 @@ async def test_external_route_tree_should_roundtrip_route_overrides(client: Asyn
     assert put_response.status_code == 200, put_response.text
     route = put_response.json()["routes"][0]
     assert route["transition"] == {"effect": "none", "duration_ms": 0}
-    assert route["advance"] == {"mode": "manual", "delay_ms": 1500}
+    assert route["advance"] == {"mode": "manual", "delay_ms": 1500, "media_timeout_ms": 300000}
     assert route["effective_slideshow"] == {
         "transition": {"effect": "none", "duration_ms": 0},
-        "advance": {"mode": "manual", "delay_ms": 1500},
+        "advance": {"mode": "manual", "delay_ms": 1500, "media_timeout_ms": 300000},
     }
 
     get_response = await client.get(
@@ -295,8 +295,8 @@ async def test_external_idempotency_should_distinguish_slideshow_and_omitted_fie
 
 
 @pytest.mark.asyncio
-async def test_external_capabilities_should_declare_m1_single_window_timer(client: AsyncClient) -> None:
-    """M1 能力声明 manual/timer 与单窗口自动放映，媒体和演讲者模式保持不可用。"""
+async def test_external_capabilities_should_declare_schema2_but_keep_media_closed(client: AsyncClient) -> None:
+    """schema 2 披露媒体超时结构，但 advance_modes 仍不包含 media_end，演讲者保持不可用。"""
 
     token, workspace_id, _ = await _create_external_identity()
     response = await client.get(
@@ -305,7 +305,7 @@ async def test_external_capabilities_should_declare_m1_single_window_timer(clien
     )
     assert response.status_code == 200, response.text
     slideshow = response.json()["slideshow"]
-    assert slideshow["schema_version"] == 1
+    assert slideshow["schema_version"] == 2
     assert slideshow["transition_effects"] == ["none", "fade", "push"]
     assert slideshow["advance_modes"] == ["manual", "timer"]
     assert slideshow["single_window_auto_play"] is True
@@ -313,3 +313,4 @@ async def test_external_capabilities_should_declare_m1_single_window_timer(clien
     assert slideshow["capture_auto_play"] is False
     assert slideshow["transition_duration_ms"] == {"min": 100, "max": 2000, "none": 0}
     assert slideshow["delay_ms"] == {"min": 1000, "max": 3600000}
+    assert slideshow["media_timeout_ms"] == {"min": 1000, "max": 3600000}

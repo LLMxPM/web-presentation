@@ -153,6 +153,7 @@ def test_preview_shell_isolates_user_code_and_rejects_remote_cookie_host(monkeyp
     assert isolated_preview_base_url() == "http://preview.localhost:7373"
     response = preview_shell(artifact_id="rt_1", token="ticket", workbench_url="http://localhost:5173/")
     assert b'http://preview.localhost:7373/__preview?token=ticket' in response.body
+    assert b'allow="clipboard-write; autoplay; fullscreen"' in response.body
     assert b'event.source === frame.contentWindow' in response.body
     assert "default-src 'none'" in response.headers["Content-Security-Policy"]
     cfg.backend_public_base_url = "https://app.example"

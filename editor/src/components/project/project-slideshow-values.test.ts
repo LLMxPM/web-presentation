@@ -22,6 +22,7 @@ describe('project slideshow values', () => {
       durationSeconds: '0.65',
       advanceMode: 'timer',
       delaySeconds: '8',
+      mediaTimeoutSeconds: '300',
       loop: true,
       autoStart: false,
     })
@@ -78,5 +79,21 @@ describe('project slideshow values', () => {
     expect(normalizeSlideshowDraft({ ...base, delaySeconds: '9999' }).advance.delay_ms).toBe(3600000)
     expect(normalizeSlideshowDraft({ ...base, delaySeconds: 'oops' }).advance.delay_ms).toBe(5000)
     expect(normalizeSlideshowDraft({ ...base, delaySeconds: '' }).advance.delay_ms).toBe(5000)
+  })
+
+  it('媒体结束超时应保留合法值并收敛到 1000–3600000ms', () => {
+    const base = {
+      effect: 'fade' as const,
+      durationSeconds: '0.4',
+      advanceMode: 'timer' as const,
+      delaySeconds: '5',
+      loop: false,
+      autoStart: false,
+    }
+
+    expect(normalizeSlideshowDraft({ ...base, mediaTimeoutSeconds: '120' }).advance.media_timeout_ms).toBe(120000)
+    expect(normalizeSlideshowDraft({ ...base, mediaTimeoutSeconds: '0.2' }).advance.media_timeout_ms).toBe(1000)
+    expect(normalizeSlideshowDraft({ ...base, mediaTimeoutSeconds: '9999' }).advance.media_timeout_ms).toBe(3600000)
+    expect(normalizeSlideshowDraft({ ...base, mediaTimeoutSeconds: 'oops' }).advance.media_timeout_ms).toBe(300000)
   })
 })

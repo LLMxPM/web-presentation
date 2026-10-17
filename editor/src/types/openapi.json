@@ -32273,6 +32273,9 @@
           },
           "delay_ms": {
             "$ref": "#/components/schemas/ExternalAdvanceDelayRange"
+          },
+          "media_timeout_ms": {
+            "$ref": "#/components/schemas/ExternalAdvanceDelayRange"
           }
         },
         "additionalProperties": false,
@@ -32285,7 +32288,8 @@
           "presenter_auto_play",
           "capture_auto_play",
           "transition_duration_ms",
-          "delay_ms"
+          "delay_ms",
+          "media_timeout_ms"
         ],
         "title": "ExternalSlideshowCapabilities",
         "description": "External API 放映能力基线；按当前已验收的 Backend/Runtime 组合声明。"
@@ -39782,17 +39786,26 @@
             "type": "string",
             "enum": [
               "manual",
-              "timer"
+              "timer",
+              "media_end"
             ],
             "title": "Mode",
-            "description": "翻页模式：manual 或 timer。"
+            "description": "翻页模式：手动、定时或媒体结束。"
           },
           "delay_ms": {
             "type": "integer",
             "maximum": 3600000,
             "minimum": 1000,
             "title": "Delay Ms",
-            "description": "当前页就绪且过渡结束后的停留时间（毫秒）。"
+            "description": "当前页就绪且过渡结束后的停留时间（毫秒）；媒体结束模式无媒体时回退使用。"
+          },
+          "media_timeout_ms": {
+            "type": "integer",
+            "maximum": 3600000,
+            "minimum": 1000,
+            "title": "Media Timeout Ms",
+            "description": "媒体结束模式等待媒体结束的最长时间（毫秒），默认 300000。",
+            "default": 300000
           }
         },
         "additionalProperties": false,
@@ -39802,7 +39815,7 @@
           "delay_ms"
         ],
         "title": "SlideshowAdvance",
-        "description": "翻页推进设置，手动模式保留延迟值但不运行计时。"
+        "description": "翻页推进设置；三种模式都保留完整结构，手动模式不运行计时。"
       },
       "SlideshowSettings": {
         "properties": {

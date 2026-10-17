@@ -189,6 +189,9 @@ function handleSave(): void {
     ? {
         mode: advanceMode.value,
         delay_ms: clamp(parseSecondsToMilliseconds(delaySeconds.value), 1000, 3_600_000, props.defaults.advance.delay_ms),
+        media_timeout_ms: props.advance?.media_timeout_ms
+          ?? props.defaults.advance.media_timeout_ms
+          ?? 300000,
       }
     : null
   emit('save', { transition, advance })

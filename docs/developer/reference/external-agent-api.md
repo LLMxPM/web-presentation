@@ -104,7 +104,7 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 
 `capabilities` 返回当前 Token 在指定空间可用的 Scope 和 operation。CLI 可以用它决定命令提示，MCP 可以用它决定工具是否披露；两者都不能把客户端判断当作最终授权。
 
-响应中的可选 `slideshow` 字段声明服务端当前实际支持的放映范围。M1 声明 `advance_modes` 为 `manual`/`timer`、`single_window_auto_play` 为 true，`presenter_auto_play` 与 `capture_auto_play` 保持 false；字段缺失或为 null 表示未声明该功能，客户端不能仅凭配置字段可写就推断可执行。
+响应中的可选 `slideshow` 字段声明服务端当前实际支持的放映范围。当前结构版本为 schema 2，`advance_modes` 仍为 `manual`/`timer`、`single_window_auto_play` 为 true，`presenter_auto_play` 与 `capture_auto_play` 保持 false；schema 2 同时披露 `media_timeout_ms` 范围，但 `media_end` 在 M2 出口前不可写、不可执行。字段缺失或为 null 表示未声明该功能，客户端不能仅凭配置字段可写就推断可执行。
 
 ### 4.2 规范和 OpenAPI
 

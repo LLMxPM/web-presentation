@@ -8,6 +8,7 @@
       :src="effectiveFrameUrl"
       :title="props.title"
       :class="props.iframeClass"
+      allow="autoplay; fullscreen"
       referrerpolicy="origin"
     />
     <div v-else-if="props.status === 'idle'" :class="props.emptyContentClass">

@@ -5,20 +5,21 @@
 import type { SlideshowSettings } from '@/types/api'
 
 export type SlideshowEffect = 'none' | 'fade' | 'push'
-export type SlideshowAdvanceMode = 'manual' | 'timer'
+export type SlideshowAdvanceMode = 'manual' | 'timer' | 'media_end'
 
 export interface SlideshowDraft {
   effect: SlideshowEffect
   durationSeconds: string
   advanceMode: SlideshowAdvanceMode
   delaySeconds: string
+  mediaTimeoutSeconds?: string
   loop: boolean
   autoStart: boolean
 }
 
 export const DEFAULT_SLIDESHOW_SETTINGS: SlideshowSettings = {
   transition: { effect: 'fade', duration_ms: 400 },
-  advance: { mode: 'manual', delay_ms: 5000 },
+  advance: { mode: 'manual', delay_ms: 5000, media_timeout_ms: 300000 },
   loop: false,
   auto_start: false,
 }
@@ -27,6 +28,8 @@ const TRANSITION_DURATION_MIN_MS = 100
 const TRANSITION_DURATION_MAX_MS = 2000
 const ADVANCE_DELAY_MIN_MS = 1000
 const ADVANCE_DELAY_MAX_MS = 3_600_000
+const MEDIA_TIMEOUT_MIN_MS = 1000
+const MEDIA_TIMEOUT_MAX_MS = 3_600_000
 
 /**
  * 把毫秒值转换为无冗余小数的秒字符串。
@@ -59,6 +62,7 @@ export function createSlideshowDraft(settings?: SlideshowSettings | null): Slide
     durationSeconds: formatMillisecondsAsSeconds(resolved.transition.duration_ms),
     advanceMode: resolved.advance.mode,
     delaySeconds: formatMillisecondsAsSeconds(resolved.advance.delay_ms),
+    mediaTimeoutSeconds: formatMillisecondsAsSeconds(resolved.advance.media_timeout_ms ?? 300000),
     loop: resolved.loop,
     autoStart: resolved.auto_start,
   }
@@ -83,9 +87,15 @@ export function normalizeSlideshowDraft(draft: SlideshowDraft): SlideshowSetting
     ADVANCE_DELAY_MAX_MS,
     DEFAULT_SLIDESHOW_SETTINGS.advance.delay_ms,
   )
+  const mediaTimeoutMs = clampMilliseconds(
+    draft.mediaTimeoutSeconds === undefined ? null : parseSecondsToMilliseconds(draft.mediaTimeoutSeconds),
+    MEDIA_TIMEOUT_MIN_MS,
+    MEDIA_TIMEOUT_MAX_MS,
+    DEFAULT_SLIDESHOW_SETTINGS.advance.media_timeout_ms ?? 300000,
+  )
   return {
     transition: { effect: draft.effect, duration_ms: durationMs },
-    advance: { mode: draft.advanceMode, delay_ms: delayMs },
+    advance: { mode: draft.advanceMode, delay_ms: delayMs, media_timeout_ms: mediaTimeoutMs },
     loop: draft.loop,
     auto_start: draft.autoStart,
   }

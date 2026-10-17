@@ -113,6 +113,7 @@ describe('ComponentPreviewWorkbench', () => {
     })
     expect(createRuntimeKitComponentPreviewArtifactMock).not.toHaveBeenCalled()
     expect(await findByTitle('component-preview')).toHaveAttribute('referrerpolicy', 'origin')
+    expect(await findByTitle('component-preview')).toHaveAttribute('allow', 'autoplay; fullscreen')
   })
 
   it('runtime-kit 来源应调用 Runtime Kit 预览 artifact API', async () => {

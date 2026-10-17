@@ -13,25 +13,30 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.slideshow_defaults import default_slideshow_payload
 
-# 放映配置结构版本，随能力自省与模板包 schema 一起演进。
-SLIDESHOW_SCHEMA_VERSION = 1
+# 放映配置结构版本，随能力自省与模板包 schema 一起演进；M2 结构为 2。
+SLIDESHOW_SCHEMA_VERSION = 2
 
 TransitionEffect = Literal["none", "fade", "push"]
-AdvanceMode = Literal["manual", "timer"]
+AdvanceMode = Literal["manual", "timer", "media_end"]
 
 SLIDESHOW_TRANSITION_EFFECTS: tuple[TransitionEffect, ...] = ("none", "fade", "push")
-SLIDESHOW_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer")
+SLIDESHOW_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "media_end")
+# 能力与写入门禁共用：media_end 在 WP30 完成执行器和真实验收前不可写、不可声明。
+SLIDESHOW_EXECUTABLE_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer")
 
 # 与契约一致的数值边界；none 效果必须为 0，由模型校验器强制。
 TRANSITION_DURATION_MIN_MS = 100
 TRANSITION_DURATION_MAX_MS = 2000
 ADVANCE_DELAY_MIN_MS = 1000
 ADVANCE_DELAY_MAX_MS = 3600000
+MEDIA_TIMEOUT_MIN_MS = 1000
+MEDIA_TIMEOUT_MAX_MS = 3600000
 
 DEFAULT_TRANSITION_EFFECT: TransitionEffect = "fade"
 DEFAULT_TRANSITION_DURATION_MS = 400
 DEFAULT_ADVANCE_MODE: AdvanceMode = "manual"
 DEFAULT_ADVANCE_DELAY_MS = 5000
+DEFAULT_MEDIA_TIMEOUT_MS = 300000
 
 StrictInt = Annotated[int, Field(strict=True)]
 StrictBool = Annotated[bool, Field(strict=True)]
@@ -65,16 +70,30 @@ class SlideshowTransition(BaseModel):
 
 
 class SlideshowAdvance(BaseModel):
-    """翻页推进设置，手动模式保留延迟值但不运行计时。"""
+    """翻页推进设置；三种模式都保留完整结构，手动模式不运行计时。"""
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: AdvanceMode = Field(description="翻页模式：manual 或 timer。")
+    mode: AdvanceMode = Field(description="翻页模式：手动、定时或媒体结束。")
     delay_ms: StrictInt = Field(
         ge=ADVANCE_DELAY_MIN_MS,
         le=ADVANCE_DELAY_MAX_MS,
-        description="当前页就绪且过渡结束后的停留时间（毫秒）。",
+        description="当前页就绪且过渡结束后的停留时间（毫秒）；媒体结束模式无媒体时回退使用。",
     )
+    media_timeout_ms: StrictInt = Field(
+        default=DEFAULT_MEDIA_TIMEOUT_MS,
+        ge=MEDIA_TIMEOUT_MIN_MS,
+        le=MEDIA_TIMEOUT_MAX_MS,
+        description="媒体结束模式等待媒体结束的最长时间（毫秒），默认 300000。",
+    )
+
+    @model_validator(mode="after")
+    def validate_executable_mode(self) -> SlideshowAdvance:
+        """能力开放前拒绝 media_end，避免保存后被执行器静默降级。"""
+
+        if self.mode not in SLIDESHOW_EXECUTABLE_ADVANCE_MODES:
+            raise ValueError("media_end 翻页模式尚未开放。")
+        return self
 
 
 class SlideshowSettings(BaseModel):
@@ -181,9 +200,13 @@ def build_runtime_transition(transition: SlideshowTransition) -> dict[str, Any]:
 
 
 def build_runtime_advance(advance: SlideshowAdvance) -> dict[str, Any]:
-    """将推进设置转换为 Runtime camelCase 结构。"""
+    """将推进设置转换为 Runtime camelCase 结构，三种模式保持完整字段。"""
 
-    return {"mode": advance.mode, "delayMs": advance.delay_ms}
+    return {
+        "mode": advance.mode,
+        "delayMs": advance.delay_ms,
+        "mediaTimeoutMs": advance.media_timeout_ms,
+    }
 
 
 def build_runtime_slideshow_defaults(settings: SlideshowSettings) -> dict[str, Any]:

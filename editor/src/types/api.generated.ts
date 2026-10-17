@@ -1283,6 +1283,7 @@ export type ExternalSlideshowCapabilities = {
   "capture_auto_play": boolean
   "transition_duration_ms": ExternalTransitionDurationRange
   "delay_ms": ExternalAdvanceDelayRange
+  "media_timeout_ms": ExternalAdvanceDelayRange
 }
 
 export type ExternalStandardResponse = {
@@ -2456,8 +2457,9 @@ export type S3TestConnectionResponse = {
 }
 
 export type SlideshowAdvance = {
-  "mode": "manual" | "timer"
+  "mode": "manual" | "timer" | "media_end"
   "delay_ms": number
+  "media_timeout_ms"?: number
 }
 
 export type SlideshowSettings = {

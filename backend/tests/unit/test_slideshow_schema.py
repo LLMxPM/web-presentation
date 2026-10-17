@@ -141,3 +141,37 @@ def test_project_settings_should_reject_non_object_values() -> None:
     for value in ([], "fade", 400, True):
         with pytest.raises(TypeError, match="完整 JSON 对象"):
             normalize_slideshow_settings(value)
+
+
+def test_media_end_should_parse_and_map_after_capability_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """能力开放后 media_end 可按完整结构解析，并下发超时与停留时间。"""
+
+    from app.schemas import slideshow as slideshow_module
+
+    monkeypatch.setattr(
+        slideshow_module,
+        "SLIDESHOW_EXECUTABLE_ADVANCE_MODES",
+        ("manual", "timer", "media_end"),
+    )
+    settings = normalize_slideshow_settings(
+        {
+            "transition": {"effect": "fade", "duration_ms": 400},
+            "advance": {"mode": "media_end", "delay_ms": 6000, "media_timeout_ms": 120000},
+            "loop": False,
+            "auto_start": True,
+        }
+    )
+    assert build_runtime_advance(settings.advance) == {
+        "mode": "media_end",
+        "delayMs": 6000,
+        "mediaTimeoutMs": 120000,
+    }
+    with pytest.raises(ValidationError):
+        normalize_slideshow_settings(
+            {
+                "transition": {"effect": "fade", "duration_ms": 400},
+                "advance": {"mode": "media_end", "delay_ms": 6000, "media_timeout_ms": 999},
+                "loop": False,
+                "auto_start": False,
+            }
+        )

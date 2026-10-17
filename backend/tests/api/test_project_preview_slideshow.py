@@ -6,14 +6,14 @@ from httpx import AsyncClient
 
 INITIAL_SLIDESHOW = {
     "transition": {"effect": "fade", "duration_ms": 400},
-    "advance": {"mode": "timer", "delay_ms": 5000},
+    "advance": {"mode": "timer", "delay_ms": 5000, "media_timeout_ms": 300000},
     "loop": True,
     "auto_start": False,
 }
 
 UPDATED_SLIDESHOW = {
     "transition": {"effect": "none", "duration_ms": 0},
-    "advance": {"mode": "manual", "delay_ms": 9000},
+    "advance": {"mode": "manual", "delay_ms": 9000, "media_timeout_ms": 300000},
     "loop": False,
     "auto_start": True,
 }
@@ -115,14 +115,14 @@ async def test_preview_artifact_should_freeze_slideshow_defaults_and_effective_r
     assert routes_bundle["playback"] == {
         "autoStart": False,
         "loop": True,
-        "advanceDefaults": {"mode": "timer", "delayMs": 5000},
+        "advanceDefaults": {"mode": "timer", "delayMs": 5000, "mediaTimeoutMs": 300000},
     }
 
     routes = {item["route"]: item for item in routes_bundle["routes"]}
     assert routes["home"]["meta"]["transition"] == {"effect": "push", "durationMs": 700}
-    assert routes["home"]["meta"]["advance"] == {"mode": "timer", "delayMs": 5000}
+    assert routes["home"]["meta"]["advance"] == {"mode": "timer", "delayMs": 5000, "mediaTimeoutMs": 300000}
     assert routes["second"]["meta"]["transition"] == {"effect": "fade", "durationMs": 400}
-    assert routes["second"]["meta"]["advance"] == {"mode": "timer", "delayMs": 5000}
+    assert routes["second"]["meta"]["advance"] == {"mode": "timer", "delayMs": 5000, "mediaTimeoutMs": 300000}
 
 
 async def test_existing_preview_artifact_should_not_hot_read_updated_slideshow(
@@ -142,7 +142,7 @@ async def test_existing_preview_artifact_should_not_hot_read_updated_slideshow(
 
     old_bundle = await _read_config_bundle(authenticated_client, old_artifact_id, runtime_service_headers)
     assert old_bundle["routes"]["transitionDefaults"] == {"effect": "fade", "durationMs": 400}
-    assert old_bundle["routes"]["playback"]["advanceDefaults"] == {"mode": "timer", "delayMs": 5000}
+    assert old_bundle["routes"]["playback"]["advanceDefaults"] == {"mode": "timer", "delayMs": 5000, "mediaTimeoutMs": 300000}
     old_home = next(item for item in old_bundle["routes"]["routes"] if item["route"] == "home")
     assert old_home["meta"]["transition"] == {"effect": "push", "durationMs": 700}
 
@@ -152,9 +152,9 @@ async def test_existing_preview_artifact_should_not_hot_read_updated_slideshow(
     assert new_bundle["routes"]["playback"] == {
         "autoStart": True,
         "loop": False,
-        "advanceDefaults": {"mode": "manual", "delayMs": 9000},
+        "advanceDefaults": {"mode": "manual", "delayMs": 9000, "mediaTimeoutMs": 300000},
     }
     new_home = next(item for item in new_bundle["routes"]["routes"] if item["route"] == "home")
     # 路由原始覆盖不因项目默认值变化而重写。
     assert new_home["meta"]["transition"] == {"effect": "push", "durationMs": 700}
-    assert new_home["meta"]["advance"] == {"mode": "manual", "delayMs": 9000}
+    assert new_home["meta"]["advance"] == {"mode": "manual", "delayMs": 9000, "mediaTimeoutMs": 300000}

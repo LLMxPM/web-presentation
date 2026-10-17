@@ -115,6 +115,7 @@
             :src="session.artifact.value.preview_url"
             :title="`${props.pageTitle} 可视化编辑画布`"
             class="h-full w-full border-0 bg-surface"
+            allow="autoplay; fullscreen"
             referrerpolicy="origin"
             @load="session.syncPreviewSelection"
           />

@@ -1,10 +1,10 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "自动放映配置共享正反例：Backend 解析器与 Runtime 契约测试共用；字段语义以 docs/developer/runtime-integration/slideshow/contract.md 为准。",
   "defaults": {
     "api": {
       "transition": { "effect": "fade", "duration_ms": 400 },
-      "advance": { "mode": "manual", "delay_ms": 5000 },
+      "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
       "loop": false,
       "auto_start": false
     },
@@ -13,7 +13,7 @@
       "playback": {
         "autoStart": false,
         "loop": false,
-        "advanceDefaults": { "mode": "manual", "delayMs": 5000 }
+        "advanceDefaults": { "mode": "manual", "delayMs": 5000, "mediaTimeoutMs": 300000 }
       }
     }
   },
@@ -23,7 +23,7 @@
       "valid": true,
       "input": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -33,7 +33,7 @@
       "valid": true,
       "input": {
         "transition": { "effect": "push", "duration_ms": 2000 },
-        "advance": { "mode": "timer", "delay_ms": 3600000 },
+        "advance": { "mode": "timer", "delay_ms": 3600000, "media_timeout_ms": 300000 },
         "loop": true,
         "auto_start": true
       }
@@ -43,7 +43,7 @@
       "valid": true,
       "input": {
         "transition": { "effect": "none", "duration_ms": 0 },
-        "advance": { "mode": "manual", "delay_ms": 1000 },
+        "advance": { "mode": "manual", "delay_ms": 1000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -54,7 +54,7 @@
       "error": "extra_forbidden",
       "input": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false,
         "media_end": true
@@ -66,7 +66,7 @@
       "error": "missing",
       "input": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false
       }
     },
@@ -76,7 +76,7 @@
       "error": "model_type",
       "input": {
         "transition": null,
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -87,7 +87,7 @@
       "error": "int_type",
       "input": {
         "transition": { "effect": "fade", "duration_ms": null },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -98,7 +98,7 @@
       "error": "int_type",
       "input": {
         "transition": { "effect": "fade", "duration_ms": "400" },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -109,7 +109,7 @@
       "error": "int_type",
       "input": {
         "transition": { "effect": "fade", "duration_ms": 400.0 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -120,7 +120,7 @@
       "error": "bool_type",
       "input": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": 0,
         "auto_start": false
       }
@@ -131,7 +131,7 @@
       "error": "bool_type",
       "input": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": "false",
         "auto_start": false
       }
@@ -142,7 +142,7 @@
       "error": "literal_error",
       "input": {
         "transition": { "effect": "wipe", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -151,6 +151,17 @@
       "name": "unknown-advance-mode",
       "valid": false,
       "error": "literal_error",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "media", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "media-mode-not-open",
+      "valid": false,
+      "error": "value_error",
       "input": {
         "transition": { "effect": "fade", "duration_ms": 400 },
         "advance": { "mode": "media_end", "delay_ms": 5000 },
@@ -164,7 +175,7 @@
       "error": "value_error",
       "input": {
         "transition": { "effect": "none", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -175,7 +186,7 @@
       "error": "value_error",
       "input": {
         "transition": { "effect": "fade", "duration_ms": 50 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -186,7 +197,7 @@
       "error": "less_than_equal",
       "input": {
         "transition": { "effect": "fade", "duration_ms": 2001 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -262,8 +273,8 @@
     {
       "name": "complete-timer",
       "valid": true,
-      "input": { "mode": "timer", "delay_ms": 8000 },
-      "expected": { "mode": "timer", "delay_ms": 8000 }
+      "input": { "mode": "timer", "delay_ms": 8000, "media_timeout_ms": 300000 },
+      "expected": { "mode": "timer", "delay_ms": 8000, "media_timeout_ms": 300000 }
     },
     {
       "name": "partial-group-rejected",
@@ -280,7 +291,7 @@
     {
       "name": "media-mode-not-open",
       "valid": false,
-      "error": "literal_error",
+      "error": "value_error",
       "input": { "mode": "media_end", "delay_ms": 5000 }
     }
   ],
@@ -289,7 +300,7 @@
       "name": "both-inherit",
       "slideshow": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       },
@@ -297,14 +308,14 @@
       "advance": null,
       "expected": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 }
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 }
       }
     },
     {
       "name": "transition-override-only",
       "slideshow": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "timer", "delay_ms": 5000 },
+        "advance": { "mode": "timer", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": true,
         "auto_start": false
       },
@@ -312,22 +323,22 @@
       "advance": null,
       "expected": {
         "transition": { "effect": "push", "duration_ms": 600 },
-        "advance": { "mode": "timer", "delay_ms": 5000 }
+        "advance": { "mode": "timer", "delay_ms": 5000, "media_timeout_ms": 300000 }
       }
     },
     {
       "name": "advance-override-only",
       "slideshow": {
         "transition": { "effect": "none", "duration_ms": 0 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       },
       "transition": null,
-      "advance": { "mode": "timer", "delay_ms": 12000 },
+      "advance": { "mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000 },
       "expected": {
         "transition": { "effect": "none", "duration_ms": 0 },
-        "advance": { "mode": "timer", "delay_ms": 12000 }
+        "advance": { "mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000 }
       }
     }
   ],
@@ -336,7 +347,7 @@
       "name": "defaults",
       "slideshow": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       },
@@ -347,19 +358,19 @@
         "playback": {
           "autoStart": false,
           "loop": false,
-          "advanceDefaults": { "mode": "manual", "delayMs": 5000 }
+          "advanceDefaults": { "mode": "manual", "delayMs": 5000, "mediaTimeoutMs": 300000 }
         }
       },
       "expected_route": {
         "transition": { "effect": "fade", "durationMs": 400 },
-        "advance": { "mode": "manual", "delayMs": 5000 }
+        "advance": { "mode": "manual", "delayMs": 5000, "mediaTimeoutMs": 300000 }
       }
     },
     {
       "name": "project-timer-loop-autostart",
       "slideshow": {
         "transition": { "effect": "push", "duration_ms": 800 },
-        "advance": { "mode": "timer", "delay_ms": 9000 },
+        "advance": { "mode": "timer", "delay_ms": 9000, "media_timeout_ms": 300000 },
         "loop": true,
         "auto_start": true
       },
@@ -370,35 +381,35 @@
         "playback": {
           "autoStart": true,
           "loop": true,
-          "advanceDefaults": { "mode": "timer", "delayMs": 9000 }
+          "advanceDefaults": { "mode": "timer", "delayMs": 9000, "mediaTimeoutMs": 300000 }
         }
       },
       "expected_route": {
         "transition": { "effect": "push", "durationMs": 800 },
-        "advance": { "mode": "timer", "delayMs": 9000 }
+        "advance": { "mode": "timer", "delayMs": 9000, "mediaTimeoutMs": 300000 }
       }
     },
     {
       "name": "leaf-overrides-both-groups",
       "slideshow": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "timer", "delay_ms": 5000 },
+        "advance": { "mode": "timer", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": true,
         "auto_start": false
       },
       "transition": { "effect": "none", "duration_ms": 0 },
-      "advance": { "mode": "manual", "delay_ms": 3000 },
+      "advance": { "mode": "manual", "delay_ms": 3000, "media_timeout_ms": 300000 },
       "expected_defaults": {
         "transitionDefaults": { "effect": "fade", "durationMs": 400 },
         "playback": {
           "autoStart": false,
           "loop": true,
-          "advanceDefaults": { "mode": "timer", "delayMs": 5000 }
+          "advanceDefaults": { "mode": "timer", "delayMs": 5000, "mediaTimeoutMs": 300000 }
         }
       },
       "expected_route": {
         "transition": { "effect": "none", "durationMs": 0 },
-        "advance": { "mode": "manual", "delayMs": 3000 }
+        "advance": { "mode": "manual", "delayMs": 3000, "mediaTimeoutMs": 300000 }
       }
     }
   ]

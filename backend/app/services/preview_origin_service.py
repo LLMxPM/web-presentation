@@ -53,7 +53,7 @@ def preview_shell(*, artifact_id: str, token: str, workbench_url: str, parameter
 
     html = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">
 <style nonce="{nonce}">html,body,iframe{{margin:0;border:0;width:100%;height:100%;overflow:hidden}}iframe{{display:block}}#back{{position:fixed;right:16px;top:16px;padding:8px 12px;background:white;color:#0f172a;border:1px solid #cbd5e1;border-radius:6px;font:14px system-ui;text-decoration:none}}</style>
-</head><body><iframe id="preview" src="{escape(target, quote=True)}" title="内容预览" referrerpolicy="origin" allow="clipboard-write; fullscreen"></iframe><a id="back" href="{escape(workbench_url, quote=True)}" target="_top" hidden>返回工作台重新授权</a>
+</head><body><iframe id="preview" src="{escape(target, quote=True)}" title="内容预览" referrerpolicy="origin" allow="clipboard-write; autoplay; fullscreen"></iframe><a id="back" href="{escape(workbench_url, quote=True)}" target="_top" hidden>返回工作台重新授权</a>
 <script nonce="{nonce}">
 const frame=document.getElementById('preview');
 const runtimeOrigin={js(target_origin)}, editorOrigin={js(editor_origin)};

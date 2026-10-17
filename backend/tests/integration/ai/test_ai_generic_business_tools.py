@@ -614,7 +614,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_reject_unopened_
 
     slideshow = {
         "transition": {"effect": "push", "duration_ms": 900},
-        "advance": {"mode": "timer", "delay_ms": 7000},
+        "advance": {"mode": "timer", "delay_ms": 7000, "media_timeout_ms": 300000},
         "loop": True,
         "auto_start": False,
     }
@@ -660,7 +660,7 @@ async def test_project_create_should_accept_slideshow_payload(authenticated_clie
     context = _build_tool_run_context(workspace_id, approved=True)
     slideshow = {
         "transition": {"effect": "none", "duration_ms": 0},
-        "advance": {"mode": "manual", "delay_ms": 6000},
+        "advance": {"mode": "manual", "delay_ms": 6000, "media_timeout_ms": 300000},
         "loop": False,
         "auto_start": True,
     }

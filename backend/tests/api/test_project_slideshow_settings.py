@@ -6,14 +6,14 @@ from httpx import AsyncClient
 
 DEFAULT_SLIDESHOW = {
     "transition": {"effect": "fade", "duration_ms": 400},
-    "advance": {"mode": "manual", "delay_ms": 5000},
+    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
     "loop": False,
     "auto_start": False,
 }
 
 TIMER_SLIDESHOW = {
     "transition": {"effect": "push", "duration_ms": 800},
-    "advance": {"mode": "timer", "delay_ms": 9000},
+    "advance": {"mode": "timer", "delay_ms": 9000, "media_timeout_ms": 450000},
     "loop": True,
     "auto_start": True,
 }
@@ -135,6 +135,12 @@ async def test_project_slideshow_should_reject_invalid_numbers_on_create(authent
         {
             "transition": {"effect": "fade", "duration_ms": 400},
             "advance": {"mode": "media_end", "delay_ms": 5000},
+            "loop": False,
+            "auto_start": False,
+        },
+        {
+            "transition": {"effect": "fade", "duration_ms": 400},
+            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 999},
             "loop": False,
             "auto_start": False,
         },

@@ -27,6 +27,7 @@ describe('RuntimePreviewFrame', () => {
     })
     const iframe = document.querySelector('iframe') as HTMLIFrameElement
     expect(iframe).toHaveAttribute('referrerpolicy', 'origin')
+    expect(iframe).toHaveAttribute('allow', 'autoplay; fullscreen')
     const validMessage = {
       type: PAGE_PREVIEW_READY_EVENT,
       payload: { version: 1, artifactId: 'artifact-page-1' },

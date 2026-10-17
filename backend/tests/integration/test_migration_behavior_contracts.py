@@ -208,7 +208,7 @@ def test_slideshow_migration_backfills_defaults_and_keeps_route_overrides_empty(
         payload = json.loads(row[0])
         assert payload == {
             "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "manual", "delay_ms": 5000},
+            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
             "loop": False,
             "auto_start": False,
         }
