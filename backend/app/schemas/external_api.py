@@ -9,6 +9,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration, StyleConfiguration
 from app.schemas.project_app_config import ProjectMenuMode
+from app.schemas.slideshow import (
+    ADVANCE_DELAY_MAX_MS,
+    ADVANCE_DELAY_MIN_MS,
+    SLIDESHOW_SCHEMA_VERSION,
+    SLIDESHOW_TRANSITION_EFFECTS,
+    TRANSITION_DURATION_MAX_MS,
+    TRANSITION_DURATION_MIN_MS,
+    SlideshowSettings,
+    default_slideshow_settings,
+)
 
 T = TypeVar("T")
 
@@ -33,6 +43,59 @@ class ExternalEnvelope(BaseModel, Generic[T]):
     request_id: str | None = None
 
 
+class ExternalTransitionDurationRange(BaseModel):
+    """翻页动画时长范围，none 单独固定为 0。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    min: int
+    max: int
+    none: int
+
+
+class ExternalAdvanceDelayRange(BaseModel):
+    """自动翻页停留时间范围。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    min: int
+    max: int
+
+
+class ExternalSlideshowCapabilities(BaseModel):
+    """External API 放映能力基线；M0 只声明已贯通的动画与手动翻页。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: int
+    transition_effects: list[str]
+    advance_modes: list[str]
+    single_window_auto_play: bool
+    presenter_auto_play: bool
+    capture_auto_play: bool
+    transition_duration_ms: ExternalTransitionDurationRange
+    delay_ms: ExternalAdvanceDelayRange
+
+
+def build_m0_slideshow_capabilities() -> ExternalSlideshowCapabilities:
+    """构造 M0 能力声明：动画和手动翻页可用，自动放映能力保持关闭。"""
+
+    return ExternalSlideshowCapabilities(
+        schema_version=SLIDESHOW_SCHEMA_VERSION,
+        transition_effects=list(SLIDESHOW_TRANSITION_EFFECTS),
+        advance_modes=["manual"],
+        single_window_auto_play=False,
+        presenter_auto_play=False,
+        capture_auto_play=False,
+        transition_duration_ms=ExternalTransitionDurationRange(
+            min=TRANSITION_DURATION_MIN_MS,
+            max=TRANSITION_DURATION_MAX_MS,
+            none=0,
+        ),
+        delay_ms=ExternalAdvanceDelayRange(min=ADVANCE_DELAY_MIN_MS, max=ADVANCE_DELAY_MAX_MS),
+    )
+
+
 class ExternalCapabilitiesResponse(BaseModel):
     """能力发现响应模型。"""
 
@@ -42,6 +105,10 @@ class ExternalCapabilitiesResponse(BaseModel):
     workspace_id: int = Field(..., description="当前工作空间 ID")
     scopes: list[str] = Field(..., description="当前 Token 拥有的权限 Scopes")
     operations: list[str] = Field(..., description="当前 Token 在当前工作空间允许执行的操作列表")
+    slideshow: ExternalSlideshowCapabilities | None = Field(
+        default=None,
+        description="放映能力声明；null 表示服务端未声明该功能。",
+    )
 
 
 class ExternalPreviewArtifactCreateRequest(BaseModel):
@@ -98,6 +165,18 @@ class ExternalProjectConfigurationUpdateRequest(BaseModel):
 
     configuration: dict[str, Any] = Field(default_factory=dict, description="项目展示与运行时配置")
     build_extra_assets_json: dict[str, Any] | None = Field(default=None, description="构建额外资源配置")
+    slideshow: SlideshowSettings | None = Field(
+        default=None,
+        description="项目默认放映配置；省略保留，完整对象替换，显式 null 拒绝。不与 configuration.presentation 混放。",
+    )
+
+    @model_validator(mode="after")
+    def reject_null_slideshow(self) -> "ExternalProjectConfigurationUpdateRequest":
+        """放映配置只支持省略或完整替换，禁止用 null 清空。"""
+
+        if "slideshow" in self.model_fields_set and self.slideshow is None:
+            raise ValueError("更新项目放映配置时必须提供完整对象，不能使用 null。")
+        return self
 
 
 class ExternalProjectApplyStyleRequest(BaseModel):
@@ -126,6 +205,7 @@ class ExternalProjectConfigurationResponse(BaseModel):
     presentation: dict[str, Any]
     suggested_components: list[dict[str, Any]] = Field(default_factory=list)
     build_extra_assets_json: dict[str, Any] = Field(default_factory=dict)
+    slideshow: SlideshowSettings = Field(description="项目默认放映配置，与 presentation 并列。")
 
 
 class ExternalPageCopyRequest(BaseModel):
@@ -379,6 +459,10 @@ class ExternalProjectCreateRequest(BaseModel):
         description="项目展示配置；缺省时使用工作空间 default 样式。",
     )
     build_extra_assets_json: dict[str, Any] | None = Field(default=None, description="构建额外打包资源配置")
+    slideshow: SlideshowSettings = Field(
+        default_factory=default_slideshow_settings,
+        description="项目默认放映配置；省略时使用平台默认完整值。",
+    )
 
 
 class ExternalThemeCreateRequest(BaseModel):

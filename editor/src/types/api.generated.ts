@@ -1075,6 +1075,11 @@ export type EffectiveSlideshowSettings = {
   "advance": SlideshowAdvance
 }
 
+export type ExternalAdvanceDelayRange = {
+  "min": number
+  "max": number
+}
+
 export type ExternalAssetContentCreateRequest = {
   "asset_type": string
   "name": string
@@ -1117,6 +1122,7 @@ export type ExternalCapabilitiesResponse = {
   "workspace_id": number
   "scopes": (string)[]
   "operations": (string)[]
+  "slideshow"?: (ExternalSlideshowCapabilities) | (null)
 }
 
 export type ExternalComponentApplyEditsMutationRequest = {
@@ -1250,11 +1256,13 @@ export type ExternalProjectConfigurationResponse = {
   "presentation": Record<string, unknown>
   "suggested_components"?: (Record<string, unknown>)[]
   "build_extra_assets_json"?: Record<string, unknown>
+  "slideshow": SlideshowSettings
 }
 
 export type ExternalProjectConfigurationUpdateRequest = {
   "configuration"?: Record<string, unknown>
   "build_extra_assets_json"?: (Record<string, unknown>) | (null)
+  "slideshow"?: (SlideshowSettings) | (null)
 }
 
 export type ExternalProjectCreateRequest = {
@@ -1263,6 +1271,18 @@ export type ExternalProjectCreateRequest = {
   "status"?: string
   "configuration"?: (ProjectDefaultConfiguration) | (ProjectStyleConfiguration) | (ProjectCustomConfiguration)
   "build_extra_assets_json"?: (Record<string, unknown>) | (null)
+  "slideshow"?: SlideshowSettings
+}
+
+export type ExternalSlideshowCapabilities = {
+  "schema_version": number
+  "transition_effects": (string)[]
+  "advance_modes": (string)[]
+  "single_window_auto_play": boolean
+  "presenter_auto_play": boolean
+  "capture_auto_play": boolean
+  "transition_duration_ms": ExternalTransitionDurationRange
+  "delay_ms": ExternalAdvanceDelayRange
 }
 
 export type ExternalStandardResponse = {
@@ -1302,6 +1322,12 @@ export type ExternalThemeCreateRequest = {
   "name": string
   "description"?: (string) | (null)
   "palette"?: (Record<string, unknown>) | (null)
+}
+
+export type ExternalTransitionDurationRange = {
+  "min": number
+  "max": number
+  "none": number
 }
 
 export type ExternalWhoAmIResponse = {

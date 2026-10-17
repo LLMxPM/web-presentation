@@ -30863,6 +30863,26 @@
         "title": "EffectiveSlideshowSettings",
         "description": "路由响应中的只读生效值，不接受写请求回写。"
       },
+      "ExternalAdvanceDelayRange": {
+        "properties": {
+          "min": {
+            "type": "integer",
+            "title": "Min"
+          },
+          "max": {
+            "type": "integer",
+            "title": "Max"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "ExternalAdvanceDelayRange",
+        "description": "自动翻页停留时间范围。"
+      },
       "ExternalAssetContentCreateRequest": {
         "properties": {
           "asset_type": {
@@ -31119,6 +31139,17 @@
             "type": "array",
             "title": "Operations",
             "description": "当前 Token 在当前工作空间允许执行的操作列表"
+          },
+          "slideshow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalSlideshowCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "放映能力声明；null 表示服务端未声明该功能。"
           }
         },
         "additionalProperties": false,
@@ -32073,6 +32104,10 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Build Extra Assets Json"
+          },
+          "slideshow": {
+            "$ref": "#/components/schemas/SlideshowSettings",
+            "description": "项目默认放映配置，与 presentation 并列。"
           }
         },
         "additionalProperties": false,
@@ -32080,7 +32115,8 @@
         "required": [
           "project_id",
           "workspace_id",
-          "presentation"
+          "presentation",
+          "slideshow"
         ],
         "title": "ExternalProjectConfigurationResponse",
         "description": "External API 项目配置读取响应。"
@@ -32105,6 +32141,17 @@
             ],
             "title": "Build Extra Assets Json",
             "description": "构建额外资源配置"
+          },
+          "slideshow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "项目默认放映配置；省略保留，完整对象替换，显式 null 拒绝。不与 configuration.presentation 混放。"
           }
         },
         "additionalProperties": false,
@@ -32175,6 +32222,10 @@
             ],
             "title": "Build Extra Assets Json",
             "description": "构建额外打包资源配置"
+          },
+          "slideshow": {
+            "$ref": "#/components/schemas/SlideshowSettings",
+            "description": "项目默认放映配置；省略时使用平台默认完整值。"
           }
         },
         "additionalProperties": false,
@@ -32184,6 +32235,60 @@
         ],
         "title": "ExternalProjectCreateRequest",
         "description": "External API 项目创建请求（workspace_id 优先使用 Header 中的 X-Workspace-ID）。"
+      },
+      "ExternalSlideshowCapabilities": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "transition_effects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Transition Effects"
+          },
+          "advance_modes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Advance Modes"
+          },
+          "single_window_auto_play": {
+            "type": "boolean",
+            "title": "Single Window Auto Play"
+          },
+          "presenter_auto_play": {
+            "type": "boolean",
+            "title": "Presenter Auto Play"
+          },
+          "capture_auto_play": {
+            "type": "boolean",
+            "title": "Capture Auto Play"
+          },
+          "transition_duration_ms": {
+            "$ref": "#/components/schemas/ExternalTransitionDurationRange"
+          },
+          "delay_ms": {
+            "$ref": "#/components/schemas/ExternalAdvanceDelayRange"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "transition_effects",
+          "advance_modes",
+          "single_window_auto_play",
+          "presenter_auto_play",
+          "capture_auto_play",
+          "transition_duration_ms",
+          "delay_ms"
+        ],
+        "title": "ExternalSlideshowCapabilities",
+        "description": "External API 放映能力基线；M0 只声明已贯通的动画与手动翻页。"
       },
       "ExternalStandardResponse": {
         "properties": {
@@ -32471,6 +32576,31 @@
         ],
         "title": "ExternalThemeCreateRequest",
         "description": "External API 主题创建请求（palette 缺省时自动填充默认调色板）。"
+      },
+      "ExternalTransitionDurationRange": {
+        "properties": {
+          "min": {
+            "type": "integer",
+            "title": "Min"
+          },
+          "max": {
+            "type": "integer",
+            "title": "Max"
+          },
+          "none": {
+            "type": "integer",
+            "title": "None"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "min",
+          "max",
+          "none"
+        ],
+        "title": "ExternalTransitionDurationRange",
+        "description": "翻页动画时长范围，none 单独固定为 0。"
       },
       "ExternalWhoAmIResponse": {
         "properties": {

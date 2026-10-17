@@ -67,12 +67,23 @@ def _build_external_project_update_payload(
 ) -> ProjectUpdateRequest:
     """归一化 External 配置并将内部模型校验错误转换为标准请求 422。"""
 
-    configuration = _normalize_external_project_configuration(payload.configuration)
-    configuration.setdefault("mode", "patch")
     try:
+        # 只在请求显式携带 slideshow 时透传，避免“省略”被内部 DTO 误判为显式 null。
+        slideshow_kwargs = (
+            {"slideshow": payload.slideshow} if "slideshow" in payload.model_fields_set else {}
+        )
+        # 仅更新放映或额外资源时不构造空 configuration，避免触发展示配置的空补丁校验。
+        if not payload.configuration:
+            return ProjectUpdateRequest(
+                build_extra_assets_json=payload.build_extra_assets_json,
+                **slideshow_kwargs,
+            )
+        configuration = _normalize_external_project_configuration(payload.configuration)
+        configuration.setdefault("mode", "patch")
         return ProjectUpdateRequest(
             configuration=configuration,
             build_extra_assets_json=payload.build_extra_assets_json,
+            **slideshow_kwargs,
         )
     except ValidationError as exc:
         raise RequestValidationError(exc.errors()) from exc
@@ -123,7 +134,7 @@ async def create_project(
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="POST",
         path=request.url.path,
-        json_data=payload.model_dump(mode="json"),
+        json_data=payload.model_dump(mode="json", exclude_unset=True),
     )
 
     internal_payload = ProjectCreateRequest(
@@ -133,6 +144,7 @@ async def create_project(
         status=payload.status,
         configuration=payload.configuration,
         build_extra_assets_json=payload.build_extra_assets_json or {},
+        slideshow=payload.slideshow,
     )
 
     async def _operation(record_id: int | None) -> tuple[int, ProjectItem]:
@@ -179,7 +191,7 @@ async def update_project(
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="PATCH",
         path=request.url.path,
-        json_data=payload.model_dump(mode="json"),
+        json_data=payload.model_dump(mode="json", exclude_unset=True),
     )
 
     async def _operation(record_id: int | None) -> tuple[int, ProjectItem]:
@@ -269,6 +281,7 @@ async def get_project_configuration(
         },
         suggested_components=[item.model_dump(mode="json") for item in suggested],
         build_extra_assets_json=project.build_extra_assets_json.model_dump(mode="json"),
+        slideshow=project.slideshow,
     )
 
 
@@ -289,7 +302,7 @@ async def update_project_configuration(
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="PUT",
         path=request.url.path,
-        json_data=payload.model_dump(mode="json"),
+        json_data=payload.model_dump(mode="json", exclude_unset=True),
     )
 
     async def _operation(record_id: int | None) -> tuple[int, ProjectItem]:
@@ -336,7 +349,7 @@ async def replace_project_route_tree(
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="PUT",
         path=request.url.path,
-        json_data=payload.model_dump(mode="json"),
+        json_data=payload.model_dump(mode="json", exclude_unset=True),
     )
 
     async def _operation(record_id: int | None) -> tuple[int, ProjectRouteTreeResponse]:
