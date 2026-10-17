@@ -61,13 +61,13 @@
 | [WP29 MCP 媒体模式扩展](./wp29-mcp-media-mode.md) | web-presentation-mcp | WP20、WP22 |
 | [WP30 M2 媒体、双屏与捕获回归](./wp30-m2-integration-release.md) | 跨模块验证 / Renderer / 发布 | WP21、WP22、WP24、WP26、WP27、WP28、WP29 |
 
-### M3：长期无人值守增强（3 包）
+### M3：本地构建产物长稳验证（3 包）
 
 | 工作包 | 主责 | 前置 |
 | :--- | :--- | :--- |
-| [WP31 长期放映入口与到期策略](./wp31-unattended-entry.md) | Backend / Runtime / 运维 | WP30 |
-| [WP32 断网、防休眠与恢复清理](./wp32-unattended-recovery.md) | Runtime / 运维 | WP31 |
-| [WP33 长稳演练与无人值守发布门槛](./wp33-unattended-soak-release.md) | 跨模块验证 / 运维 | WP31、WP32 |
+| [WP31 本地构建产物放映入口与边界](./wp31-unattended-entry.md) | 跨模块验证 / 运维 | WP30 |
+| [WP32 防休眠、唤醒恢复与清理](./wp32-unattended-recovery.md) | Runtime / 运维 | WP31 |
+| [WP33 本地放映长稳演练与证据门槛](./wp33-unattended-soak-release.md) | 跨模块验证 / 运维 | WP31、WP32 |
 
 ## 3. 原模块计划对应关系
 
@@ -115,6 +115,6 @@ Backend 数据列/DTO、API 生成物、Runtime 配置结构、窗口同步协�
 - WP12 对照[验收 A01–A08](../acceptance.md)：配置、迁移、旧客户端保护、模板、历史/构建与动画。
 - WP21 对照[验收 A09–A17](../acceptance.md)：计时、手动介入、静态产物、客户端及单窗口能力开放。
 - WP30 对照[验收 A18–A24](../acceptance.md)：媒体、权限、双屏唯一调度和 Renderer 生命周期。
-- WP33 对照[长期运行专项](../acceptance.md)：目标部署的票据/网络/设备恢复和至少 60 分钟长稳。
+- WP33 对照[长期运行专项](../acceptance.md)：本地构建产物的 60 分钟多页循环、防休眠/唤醒与恢复证据；远端构建访问入口和票据不在 M3 范围。
 
 每包必须记录实际测试命令、结果及未运行原因；UI、音视频、真实 PNG 和导出文件需要对应实机/产物证据。测试范围按 [dev-start-test 测试矩阵](../../../../../.agents/skills/dev-start-test/references/testing-matrix.md)选择，不为拆包新增一套测试命令。所有能力开放和部署动作在实施、验收阶段另行执行。
