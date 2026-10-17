@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, text
+from collections.abc import Mapping
+from typing import Any
+
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -28,13 +31,15 @@ class ProjectRoute(TimestampMixin, AuditMixin, Base):
     page_id: Mapped[int | None] = mapped_column(ForeignKey("pages.id", ondelete="CASCADE"), nullable=True, index=True)
     route_type: Mapped[ProjectRouteType] = mapped_column(String(32), nullable=False)
     group_title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    transition_json: Mapped[Mapping[str, Any] | None] = mapped_column(JSON, nullable=True)
+    advance_json: Mapped[Mapping[str, Any] | None] = mapped_column(JSON, nullable=True)
 
-    parent: Mapped["ProjectRoute | None"] = relationship(
+    parent: Mapped[ProjectRoute | None] = relationship(
         "ProjectRoute",
         remote_side="ProjectRoute.id",
         back_populates="children",
     )
-    children: Mapped[list["ProjectRoute"]] = relationship(
+    children: Mapped[list[ProjectRoute]] = relationship(
         "ProjectRoute",
         back_populates="parent",
         cascade="all, delete-orphan",

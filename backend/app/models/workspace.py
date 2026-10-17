@@ -1,11 +1,22 @@
 """文件功能：定义工作空间与项目的层级数据模型。"""
 
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, Mapping
+from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.slideshow_defaults import default_slideshow_payload
 from app.db.base import Base
 from app.db.types import UTCDateTime
 from app.models.enums import RecordStatus, WorkspaceMemberRole
@@ -77,5 +88,11 @@ class Project(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
     theme_config_yaml: Mapped[str] = mapped_column(Text, nullable=False)
     style_spec_markdown: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default=text("''"))
     build_extra_assets_json: Mapped[Mapping[str, Any] | None] = mapped_column(JSON, nullable=True)
+    slideshow_config_json: Mapped[Mapping[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=default_slideshow_payload,
+        server_default='{"transition":{"effect":"fade","duration_ms":400},"advance":{"mode":"manual","delay_ms":5000},"loop":false,"auto_start":false}',
+    )
 
     workspace: Mapped[Workspace] = relationship(back_populates="projects")

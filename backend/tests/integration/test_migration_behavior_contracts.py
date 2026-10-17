@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import subprocess
@@ -161,6 +162,71 @@ def test_remote_render_migration_behavior_clears_screenshot_pointers(tmp_path: P
         assert row is not None
         assert row[0] is None
         assert row[1] is None
+
+
+def test_slideshow_migration_backfills_defaults_and_keeps_route_overrides_empty(tmp_path: Path) -> None:
+    """升级放映配置迁移：旧项目获得完整默认值，旧叶子路由保持继承，新项目仍可用库默认值。"""
+
+    backend_root = _backend_root()
+    database_path = tmp_path / "p4-slideshow.db"
+    env = _sqlite_env(database_path)
+    _run_alembic(backend_root, env, "20261016_0100")
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "INSERT INTO users (username, password_hash, display_name, role, status, "
+            "preview_size_presets, created_at, updated_at) "
+            "VALUES ('p4ss', 'h', 'p4', 'admin', 'active', '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO workspaces (code, name, created_by, updated_by, status, created_at, updated_at) "
+            "VALUES ('p4ss', 'p4', 1, 1, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO projects (workspace_id, code, name, status, theme_config_yaml, created_at, updated_at) "
+            "VALUES (1, 'p4ss', 'p4', 'active', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO pages (code, page_content, file_type, title, status, workspace_id, project_id, "
+            "created_at, updated_at) "
+            "VALUES ('p4ss', '<template/>', 'vue', 'p4', 'active', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO project_routes (project_id, route, \"order\", hidden, page_id, route_type, "
+            "created_at, updated_at) "
+            "VALUES (1, 'home', 0, 0, 1, 'page', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.commit()
+
+    _run_alembic(backend_root, env, "head")
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            "SELECT slideshow_config_json FROM projects WHERE code='p4ss'"
+        ).fetchone()
+        assert row is not None
+        payload = json.loads(row[0])
+        assert payload == {
+            "transition": {"effect": "fade", "duration_ms": 400},
+            "advance": {"mode": "manual", "delay_ms": 5000},
+            "loop": False,
+            "auto_start": False,
+        }
+
+        route_row = connection.execute(
+            "SELECT transition_json, advance_json FROM project_routes WHERE project_id=1"
+        ).fetchone()
+        assert route_row == (None, None)
+
+        # 新项目未显式写入放映配置时，数据库默认值必须仍是完整对象。
+        connection.execute(
+            "INSERT INTO projects (workspace_id, code, name, status, theme_config_yaml, created_at, updated_at) "
+            "VALUES (1, 'p4ss-new', 'p4', 'active', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        default_row = connection.execute(
+            "SELECT slideshow_config_json FROM projects WHERE code='p4ss-new'"
+        ).fetchone()
+        assert json.loads(default_row[0]) == payload
 
 
 def test_migration_versions_have_no_bare_dialect_name() -> None:
