@@ -1,0 +1,405 @@
+{
+  "schema_version": 1,
+  "description": "自动放映配置共享正反例：Backend 解析器与 Runtime 契约测试共用；字段语义以 docs/developer/runtime-integration/slideshow/contract.md 为准。",
+  "defaults": {
+    "api": {
+      "transition": { "effect": "fade", "duration_ms": 400 },
+      "advance": { "mode": "manual", "delay_ms": 5000 },
+      "loop": false,
+      "auto_start": false
+    },
+    "runtime": {
+      "transitionDefaults": { "effect": "fade", "durationMs": 400 },
+      "playback": {
+        "autoStart": false,
+        "loop": false,
+        "advanceDefaults": { "mode": "manual", "delayMs": 5000 }
+      }
+    }
+  },
+  "project_cases": [
+    {
+      "name": "default-complete",
+      "valid": true,
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "timer-push-valid",
+      "valid": true,
+      "input": {
+        "transition": { "effect": "push", "duration_ms": 2000 },
+        "advance": { "mode": "timer", "delay_ms": 3600000 },
+        "loop": true,
+        "auto_start": true
+      }
+    },
+    {
+      "name": "none-zero-valid",
+      "valid": true,
+      "input": {
+        "transition": { "effect": "none", "duration_ms": 0 },
+        "advance": { "mode": "manual", "delay_ms": 1000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "unknown-top-level-field",
+      "valid": false,
+      "error": "extra_forbidden",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false,
+        "media_end": true
+      }
+    },
+    {
+      "name": "missing-auto-start",
+      "valid": false,
+      "error": "missing",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false
+      }
+    },
+    {
+      "name": "null-transition-group",
+      "valid": false,
+      "error": "model_type",
+      "input": {
+        "transition": null,
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "null-duration-subfield",
+      "valid": false,
+      "error": "int_type",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": null },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "string-duration",
+      "valid": false,
+      "error": "int_type",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": "400" },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "float-duration",
+      "valid": false,
+      "error": "int_type",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400.0 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "bool-as-int-loop",
+      "valid": false,
+      "error": "bool_type",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": 0,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "string-bool-loop",
+      "valid": false,
+      "error": "bool_type",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": "false",
+        "auto_start": false
+      }
+    },
+    {
+      "name": "unknown-effect",
+      "valid": false,
+      "error": "literal_error",
+      "input": {
+        "transition": { "effect": "wipe", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "unknown-advance-mode",
+      "valid": false,
+      "error": "literal_error",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "media_end", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "none-with-positive-duration",
+      "valid": false,
+      "error": "value_error",
+      "input": {
+        "transition": { "effect": "none", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "fade-duration-too-short",
+      "valid": false,
+      "error": "value_error",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 50 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "fade-duration-too-long",
+      "valid": false,
+      "error": "less_than_equal",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 2001 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "delay-too-small",
+      "valid": false,
+      "error": "greater_than_equal",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "timer", "delay_ms": 999 },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "delay-too-large",
+      "valid": false,
+      "error": "less_than_equal",
+      "input": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "timer", "delay_ms": 3600001 },
+        "loop": false,
+        "auto_start": false
+      }
+    }
+  ],
+  "route_transition_cases": [
+    {
+      "name": "null-inherits",
+      "valid": true,
+      "input": null,
+      "expected": null
+    },
+    {
+      "name": "complete-push",
+      "valid": true,
+      "input": { "effect": "push", "duration_ms": 600 },
+      "expected": { "effect": "push", "duration_ms": 600 }
+    },
+    {
+      "name": "partial-group-rejected",
+      "valid": false,
+      "error": "missing",
+      "input": { "effect": "push" }
+    },
+    {
+      "name": "explicit-null-subfield-rejected",
+      "valid": false,
+      "error": "int_type",
+      "input": { "effect": "push", "duration_ms": null }
+    },
+    {
+      "name": "unknown-field-rejected",
+      "valid": false,
+      "error": "extra_forbidden",
+      "input": { "effect": "push", "duration_ms": 600, "easing": "linear" }
+    },
+    {
+      "name": "none-with-duration-rejected",
+      "valid": false,
+      "error": "value_error",
+      "input": { "effect": "none", "duration_ms": 600 }
+    }
+  ],
+  "route_advance_cases": [
+    {
+      "name": "null-inherits",
+      "valid": true,
+      "input": null,
+      "expected": null
+    },
+    {
+      "name": "complete-timer",
+      "valid": true,
+      "input": { "mode": "timer", "delay_ms": 8000 },
+      "expected": { "mode": "timer", "delay_ms": 8000 }
+    },
+    {
+      "name": "partial-group-rejected",
+      "valid": false,
+      "error": "missing",
+      "input": { "mode": "timer" }
+    },
+    {
+      "name": "string-delay-rejected",
+      "valid": false,
+      "error": "int_type",
+      "input": { "mode": "timer", "delay_ms": "8000" }
+    },
+    {
+      "name": "media-mode-not-open",
+      "valid": false,
+      "error": "literal_error",
+      "input": { "mode": "media_end", "delay_ms": 5000 }
+    }
+  ],
+  "resolution_cases": [
+    {
+      "name": "both-inherit",
+      "slideshow": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      },
+      "transition": null,
+      "advance": null,
+      "expected": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 }
+      }
+    },
+    {
+      "name": "transition-override-only",
+      "slideshow": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "timer", "delay_ms": 5000 },
+        "loop": true,
+        "auto_start": false
+      },
+      "transition": { "effect": "push", "duration_ms": 600 },
+      "advance": null,
+      "expected": {
+        "transition": { "effect": "push", "duration_ms": 600 },
+        "advance": { "mode": "timer", "delay_ms": 5000 }
+      }
+    },
+    {
+      "name": "advance-override-only",
+      "slideshow": {
+        "transition": { "effect": "none", "duration_ms": 0 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      },
+      "transition": null,
+      "advance": { "mode": "timer", "delay_ms": 12000 },
+      "expected": {
+        "transition": { "effect": "none", "duration_ms": 0 },
+        "advance": { "mode": "timer", "delay_ms": 12000 }
+      }
+    }
+  ],
+  "runtime_cases": [
+    {
+      "name": "defaults",
+      "slideshow": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "manual", "delay_ms": 5000 },
+        "loop": false,
+        "auto_start": false
+      },
+      "transition": null,
+      "advance": null,
+      "expected_defaults": {
+        "transitionDefaults": { "effect": "fade", "durationMs": 400 },
+        "playback": {
+          "autoStart": false,
+          "loop": false,
+          "advanceDefaults": { "mode": "manual", "delayMs": 5000 }
+        }
+      },
+      "expected_route": {
+        "transition": { "effect": "fade", "durationMs": 400 },
+        "advance": { "mode": "manual", "delayMs": 5000 }
+      }
+    },
+    {
+      "name": "project-timer-loop-autostart",
+      "slideshow": {
+        "transition": { "effect": "push", "duration_ms": 800 },
+        "advance": { "mode": "timer", "delay_ms": 9000 },
+        "loop": true,
+        "auto_start": true
+      },
+      "transition": null,
+      "advance": null,
+      "expected_defaults": {
+        "transitionDefaults": { "effect": "push", "durationMs": 800 },
+        "playback": {
+          "autoStart": true,
+          "loop": true,
+          "advanceDefaults": { "mode": "timer", "delayMs": 9000 }
+        }
+      },
+      "expected_route": {
+        "transition": { "effect": "push", "durationMs": 800 },
+        "advance": { "mode": "timer", "delayMs": 9000 }
+      }
+    },
+    {
+      "name": "leaf-overrides-both-groups",
+      "slideshow": {
+        "transition": { "effect": "fade", "duration_ms": 400 },
+        "advance": { "mode": "timer", "delay_ms": 5000 },
+        "loop": true,
+        "auto_start": false
+      },
+      "transition": { "effect": "none", "duration_ms": 0 },
+      "advance": { "mode": "manual", "delay_ms": 3000 },
+      "expected_defaults": {
+        "transitionDefaults": { "effect": "fade", "durationMs": 400 },
+        "playback": {
+          "autoStart": false,
+          "loop": true,
+          "advanceDefaults": { "mode": "timer", "delayMs": 5000 }
+        }
+      },
+      "expected_route": {
+        "transition": { "effect": "none", "durationMs": 0 },
+        "advance": { "mode": "manual", "delayMs": 3000 }
+      }
+    }
+  ]
+}
