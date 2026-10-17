@@ -63,7 +63,7 @@ class ExternalAdvanceDelayRange(BaseModel):
 
 
 class ExternalSlideshowCapabilities(BaseModel):
-    """External API 放映能力基线；M0 只声明已贯通的动画与手动翻页。"""
+    """External API 放映能力基线；按当前已验收的 Backend/Runtime 组合声明。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -77,14 +77,14 @@ class ExternalSlideshowCapabilities(BaseModel):
     delay_ms: ExternalAdvanceDelayRange
 
 
-def build_m0_slideshow_capabilities() -> ExternalSlideshowCapabilities:
-    """构造 M0 能力声明：动画和手动翻页可用，自动放映能力保持关闭。"""
+def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
+    """构造 M1 能力声明：单窗口 timer 自动放映可用，媒体与演讲者自动放映保持关闭。"""
 
     return ExternalSlideshowCapabilities(
         schema_version=SLIDESHOW_SCHEMA_VERSION,
         transition_effects=list(SLIDESHOW_TRANSITION_EFFECTS),
-        advance_modes=["manual"],
-        single_window_auto_play=False,
+        advance_modes=["manual", "timer"],
+        single_window_auto_play=True,
         presenter_auto_play=False,
         capture_auto_play=False,
         transition_duration_ms=ExternalTransitionDurationRange(

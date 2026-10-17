@@ -13,7 +13,7 @@ from app.core.external_operations import OPERATION_REGISTRY
 from app.db.session import get_db_session
 from app.models.enums import RecordStatus
 from app.models.workspace import Workspace, WorkspaceMember
-from app.schemas.external_api import ExternalCapabilitiesResponse, build_m0_slideshow_capabilities
+from app.schemas.external_api import ExternalCapabilitiesResponse, build_slideshow_capabilities
 from app.schemas.workspace import WorkspaceItem
 from app.services.workspace_service import WorkspaceService
 
@@ -76,5 +76,5 @@ async def get_workspace_capabilities(
         workspace_id=workspace_id,
         scopes=sorted(list(auth.scopes)),
         operations=sorted(available_ops),
-        slideshow=build_m0_slideshow_capabilities(),
+        slideshow=build_slideshow_capabilities(),
     )

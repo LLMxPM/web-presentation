@@ -107,7 +107,7 @@ Backend 拟新增独立 `schemas/slideshow.py`，定义严格 DTO 和统一解�
 }
 ```
 
-M0 只声明已贯通的动画和 `manual`，两个 auto_play 能力为 false；M1 验收后才声明 timer 与单窗口自动放映。M2 升为 schema 2，追加媒体结束模式、超时范围并在双窗口验收后打开对应能力。能力必须对应实际发布的 Backend/Runtime 组合，不能仅因数据库已接受字段就声明可执行。现有 `/standards/page`、`/standards/component` 仍维护源码规范，不把项目放映 Schema 复制到其中。
+M0 只声明已贯通的动画和 `manual`，两个 auto_play 能力为 false；M1 出口完成真实计时与跨仓验收后，已按上述基线声明 timer 与单窗口自动放映（2026-10-17），媒体与演讲者能力仍为 false。M2 升为 schema 2，追加媒体结束模式、超时范围并在双窗口验收后打开对应能力。能力必须对应实际发布的 Backend/Runtime 组合，不能仅因数据库已接受字段就声明可执行。现有 `/standards/page`、`/standards/component` 仍维护源码规范，不把项目放映 Schema 复制到其中。
 
 ## 5. Runtime 下发契约
 

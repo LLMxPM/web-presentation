@@ -14,6 +14,7 @@
 | [AI 协作创作](./ai-assisted-creation.md) | 推荐协作流程、适合交给 AI 的任务和风险边界 |
 | [命令行与外部 Agent (CLI)](./cli-agent.md) | 使用 `wp` CLI 在本地终端或配合桌面 Agent（如 Cursor、Claude 等）创作 |
 | [预览、演示与构建交付](./preview-build-export.md) | 全屏演示播放、批量截图导出、构建任务与在线直链交付 |
+| [自动放映与翻页配置](./slideshow.md) | 项目默认动画、定时翻页、逐页覆盖、放映控制与当前能力边界 |
 
 ## 推荐顺序
 
@@ -27,3 +28,4 @@
 6. [AI 协作创作](./ai-assisted-creation.md)
 7. [命令行与外部 Agent (CLI)](./cli-agent.md)
 8. [预览、演示与构建交付](./preview-build-export.md)
+9. [自动放映与翻页配置](./slideshow.md)

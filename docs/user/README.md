@@ -44,6 +44,7 @@
 | [AI 协作创作](./workflows/ai-assisted-creation.md) | 把创作任务拆给 AI，并理解确认、上下文和边界 |
 | [命令行与外部 Agent (CLI)](./workflows/cli-agent.md) | 使用 `wp` CLI 在本地终端或配合桌面 Agent（如 Cursor、Claude 等）创作 |
 | [预览、演示与构建交付](./workflows/preview-build-export.md) | 全屏演示播放、批量截图导出、构建任务与在线直链交付 |
+| [自动放映与翻页配置](./workflows/slideshow.md) | 项目默认动画、定时翻页、逐页覆盖、放映控制与当前能力边界 |
 
 推荐的实际创作顺序是：
 

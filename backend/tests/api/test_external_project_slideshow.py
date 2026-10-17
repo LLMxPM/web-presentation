@@ -295,8 +295,8 @@ async def test_external_idempotency_should_distinguish_slideshow_and_omitted_fie
 
 
 @pytest.mark.asyncio
-async def test_external_capabilities_should_declare_m0_slideshow_only(client: AsyncClient) -> None:
-    """M0 能力声明动画与 manual，自动放映和媒体模式保持不可用。"""
+async def test_external_capabilities_should_declare_m1_single_window_timer(client: AsyncClient) -> None:
+    """M1 能力声明 manual/timer 与单窗口自动放映，媒体和演讲者模式保持不可用。"""
 
     token, workspace_id, _ = await _create_external_identity()
     response = await client.get(
@@ -307,8 +307,8 @@ async def test_external_capabilities_should_declare_m0_slideshow_only(client: As
     slideshow = response.json()["slideshow"]
     assert slideshow["schema_version"] == 1
     assert slideshow["transition_effects"] == ["none", "fade", "push"]
-    assert slideshow["advance_modes"] == ["manual"]
-    assert slideshow["single_window_auto_play"] is False
+    assert slideshow["advance_modes"] == ["manual", "timer"]
+    assert slideshow["single_window_auto_play"] is True
     assert slideshow["presenter_auto_play"] is False
     assert slideshow["capture_auto_play"] is False
     assert slideshow["transition_duration_ms"] == {"min": 100, "max": 2000, "none": 0}

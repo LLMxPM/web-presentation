@@ -32288,7 +32288,7 @@
           "delay_ms"
         ],
         "title": "ExternalSlideshowCapabilities",
-        "description": "External API 放映能力基线；M0 只声明已贯通的动画与手动翻页。"
+        "description": "External API 放映能力基线；按当前已验收的 Backend/Runtime 组合声明。"
       },
       "ExternalStandardResponse": {
         "properties": {

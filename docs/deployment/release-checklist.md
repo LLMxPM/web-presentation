@@ -61,6 +61,22 @@ Lite Dockerfile 采用双 venv 独立依赖隔离（D-Dep3），生产流水线�
 
 ---
 
+## 5. M1 自动放映能力与 Runtime 配套
+
+**状态**：源码能力已开放（2026-10-17），同版部署验证待执行。
+
+Backend `capabilities.slideshow` 已声明 `advance_modes` 为 `manual`/`timer`、`single_window_auto_play` 为 true；`presenter_auto_play` 与 `capture_auto_play` 仍为 false。该声明只对应当前包含 WP13–WP18 播放控制的 Runtime。
+
+**发布要求**：
+
+- Backend 与 Runtime 使用同版部署；不得把声明 timer/单窗口能力的 Backend 与旧 Runtime 执行池组合后对外宣布支持。
+- 已打开的放映窗口保持创建时的不可变快照；回滚应用不重写历史 artifact，也不保证旧版本可以完整编辑新配置。
+- 部署后执行真实浏览器计时、暂停/循环和 CLI/MCP 读改写抽查；证据记入 [WP21](../developer/runtime-integration/slideshow/work-packages/wp21-m1-integration-release.md)。
+
+**下一步**：在目标部署拓扑执行同版升级与回滚演练，并记录版本矩阵和实际证据。
+
+---
+
 ## 使用说明
 
 - 以上事项的完整历史记录保留在 [`docs/archive/architecture-2026-09/`](../archive/architecture-2026-09/README.md)。

@@ -1,6 +1,6 @@
 # CLI、MCP 与 External API 对接计划
 
-状态：主仓 External API M0 已实现并通过 WP12 验收；CLI WP19 与 MCP WP20 已实施，真实 Gateway 与阶段能力开放由 WP21 收口。本文件维护主仓交付边界与跨仓工作包；CLI 和 MCP 的具体命令、工具及客户端实现分别在独立仓维护，不假定其当前已支持放映参数。
+状态：主仓 External API M0 已通过 WP12 验收；CLI WP19、MCP WP20 与 WP21 阶段出口已完成，capabilities 已声明 timer 与单窗口自动放映；真实部署 Gateway/OAuth 与同版升级由发布检查清单跟踪。本文件维护主仓交付边界与跨仓工作包；CLI 和 MCP 的具体命令、工具及客户端实现分别在独立仓维护，不假定其当前已支持放映参数。
 
 实施拆分见[工作包执行清单](./work-packages/README.md)：WP07 主仓接口、WP19 CLI、WP20 MCP、WP28/WP29 两仓媒体扩展。各客户端包在对应仓内独立提交，以下 C 编号保留为上层职责。
 
