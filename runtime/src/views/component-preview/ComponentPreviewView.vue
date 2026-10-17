@@ -2,7 +2,7 @@
   文件用途：提供工作空间组件的纯沙箱预览宿主页，负责读取后端下发的 previewSchema、接收父窗口状态更新并按单层页面舞台渲染目标组件。
 -->
 <template>
-  <main class="component-preview-view">
+  <main class="component-preview-view" v-bind="executionAttrs">
     <section class="component-preview-page" :style="previewContentStyles">
       <div v-if="loading" class="component-preview-state component-preview-state--loading">
         正在加载组件预览...
@@ -46,6 +46,7 @@ import {
   type ComponentPreviewUpdateStateMessage,
 } from '@/core/shared/component-preview'
 import type { ComponentPreviewSchema, RuntimeComponentPreviewPlacementOptions } from '@/core/shared/runtime-preview'
+import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
 import { buildPageContentScaleStyles } from '@/core/utils/page-scale'
 import { getRuntimePreloadedConfig, getRuntimePreviewContext } from '@/core/utils/path'
 import { importPreviewModule } from '@/core/utils/preview-module'
@@ -71,6 +72,9 @@ const mockStateRef = computed(() => previewState.value.mocks)
 
 provide(COMPONENT_PREVIEW_MOCKS_KEY, readonly(mockStateRef))
 
+// 组件沙箱允许用户手势播放，但禁止自动开始、自动翻页与自动媒体播放。
+const execution = provideRuntimeExecutionScope('interactive-preview')
+const executionAttrs = computed(() => executionAttributes(execution.value))
 const previewContext = computed(() => getRuntimePreviewContext())
 const componentPreviewConfig = computed(() => getRuntimePreloadedConfig()?.component_preview)
 const parentOrigin = resolveParentOrigin()

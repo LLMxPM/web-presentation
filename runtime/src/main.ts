@@ -11,7 +11,10 @@ import { initializeStaticIcons } from './core/utils/static-icons'
 import { initializeConfig } from './core/utils/config'
 import { initializeRuntimeFaviconSync } from './core/utils/favicon'
 import { initializeRuntimeFontRegistry, waitForRequiredPlatformFonts } from './core/utils/font-registry'
-import { getPreviewEntryNavigationPath, shouldNavigateToPreviewEntryPath } from './core/utils/path'
+import { getPreviewEntryNavigationPath, getRuntimePreviewContext, shouldNavigateToPreviewEntryPath } from './core/utils/path'
+import { initializeRuntimeExecution } from './core/execution/execution-scope'
+import { installMediaPlaybackGuard } from './core/execution/media-playback-guard'
+import { mediaPlaybackMode } from './core/execution/execution-policy'
 import { notifyParentPagePreviewError } from './core/utils/page-preview-parent'
 import { registerEditorVisualAssetProbe } from './core/utils/visual-assets'
 import {
@@ -60,6 +63,9 @@ async function waitForPreviewStabilized(): Promise<void> {
  */
 async function initializeApp(): Promise<void> {
   setEditorRuntimePreviewReady(false)
+  // 执行策略必须先于配置、路由和组件挂载确定，避免页面先自动播放再被暂停。
+  const executionPolicy = initializeRuntimeExecution(window.location.search, getRuntimePreviewContext())
+  installMediaPlaybackGuard({ fallbackMode: mediaPlaybackMode(executionPolicy) })
   initializeRenderReadyHost({
     artifactId: new URLSearchParams(window.location.search).get('artifact'),
     inputDigest: new URLSearchParams(window.location.search).get('input_digest'),

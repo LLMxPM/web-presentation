@@ -10,6 +10,7 @@
   <div
     :ref="setContainerRef"
     class="w-full h-full flex items-center justify-center overflow-hidden"
+    v-bind="executionAttrs"
     :data-runtime-view-preview-state="previewState"
     :data-runtime-view-preview-message="previewStateMessage"
   >
@@ -43,6 +44,8 @@
 import { computed, nextTick, onUnmounted, ref, shallowRef, watch, type Component } from 'vue'
 
 import ScaledCanvasViewport from '@runtime-kit/internal/components/viewport/ScaledCanvasViewport.vue'
+import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
+import type { ExecutionContextKind } from '@/core/execution/execution-policy'
 import { appPageConfig } from '@/core/utils/config'
 import { buildPageContentScaleStyles } from '@/core/utils/page-scale'
 import { createRafResizeObserver } from '@/core/utils/resize-observer'
@@ -56,6 +59,8 @@ interface Props {
   refreshToken?: number
   /** 是否将预览内容设为 inert。缩略图默认拦截交互；Editor 主预览需关闭以允许文字选中。 */
   inert?: boolean
+  /** 预览内容的执行上下文；缩略图、演讲小窗和卡片默认按静态禁播处理。 */
+  executionContext?: ExecutionContextKind
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -63,8 +68,12 @@ const props = withDefaults(defineProps<Props>(), {
   designHeight: undefined,
   scaleLimit: 3,
   refreshToken: 0,
-  inert: true
+  inert: true,
+  executionContext: 'thumbnail'
 })
+
+const execution = provideRuntimeExecutionScope(computed(() => props.executionContext))
+const executionAttrs = computed(() => executionAttributes(execution.value))
 
 const emit = defineEmits<{
   'state-change': [payload: { state: 'loading' | 'ready' | 'error' | 'empty'; message: string }]

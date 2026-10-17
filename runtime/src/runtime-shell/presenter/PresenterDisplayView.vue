@@ -3,7 +3,7 @@
 -->
 
 <template>
-  <div class="presenter-display-screen">
+  <div class="presenter-display-screen" v-bind="executionAttrs">
     <div v-if="currentPage" class="presenter-display-screen__content">
       <PresenterPageStage />
     </div>
@@ -76,6 +76,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
 
 import PresenterPageStage from './PresenterPageStage.vue'
 import { usePresenterController } from '@/runtime-shell/presenter/usePresenterController'
@@ -115,6 +116,9 @@ interface PresenterScreenOption {
 }
 
 const route = useRoute()
+// 观众窗口是普通放映主画布；调度权与入口由后续工作包接入。
+const execution = provideRuntimeExecutionScope('presentation')
+const executionAttrs = computed(() => executionAttributes(execution.value))
 const channelId = computed(() => String(route.query.channel || ''))
 const initialPath = computed(() => String(route.query.route || route.path))
 const isInFullscreen = ref(false)

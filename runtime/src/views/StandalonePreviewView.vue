@@ -3,12 +3,13 @@
 -->
 
 <template>
-  <main class="standalone-preview-view">
+  <main class="standalone-preview-view" v-bind="executionAttrs">
     <ViewPreview
       :file-path="filePath"
       :design-width="designWidth"
       :design-height="designHeight"
       :inert="false"
+      execution-context="interactive-preview"
       @state-change="handlePreviewStateChange"
     />
   </main>
@@ -19,6 +20,7 @@
  * 文件用途：承接 runtime 单页预览路由，避免直接渲染页面组件导致 iframe 中只显示局部区域。
  */
 
+import { computed } from 'vue'
 import ViewPreview from '@/runtime-shell/preview/ViewPreview.vue'
 import {
   PAGE_PREVIEW_ERROR_EVENT,
@@ -26,7 +28,12 @@ import {
   type PagePreviewErrorMessage,
   type PagePreviewReadyMessage,
 } from '@/core/shared/page-preview'
+import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
 import { getRuntimePreviewContext } from '@/core/utils/path'
+
+// 编辑器单页预览允许用户手势播放，但禁止自动开始、自动翻页与自动媒体播放。
+const execution = provideRuntimeExecutionScope('interactive-preview')
+const executionAttrs = computed(() => executionAttributes(execution.value))
 
 defineProps<{
   /** 页面逻辑路径，例如 src/views/foo/bar.vue */

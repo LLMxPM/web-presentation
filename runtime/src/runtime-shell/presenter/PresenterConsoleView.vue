@@ -3,7 +3,7 @@
 -->
 
 <template>
-  <div class="presenter-console">
+  <div class="presenter-console" v-bind="executionAttrs">
     <header class="presenter-console__header">
       <div class="presenter-console__title">
         <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">演讲者控制台</p>
@@ -138,6 +138,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
 import { switchRuntimeMode } from '@/core/router/runtime-session'
 import { ChevronLeft, ChevronRight, LogOut, Monitor } from '@lucide/vue'
 
@@ -149,6 +150,9 @@ import { openPresenterDisplayWindow } from '@/runtime-shell/presenter/presenter-
 
 const route = useRoute()
 const router = useRouter()
+// 控制台不是主放映画布；其中的当前/下一页小窗由 ViewPreview 进一步收紧为 thumbnail。
+const execution = provideRuntimeExecutionScope('interactive-preview')
+const executionAttrs = computed(() => executionAttributes(execution.value))
 const channelId = computed(() => String(route.query.channel || ''))
 const initialPath = computed(() => String(route.query.route || route.path))
 const displayWindowMessage = ref(route.query.displayBlocked === '1'

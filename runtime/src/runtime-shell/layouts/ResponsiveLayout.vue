@@ -3,7 +3,9 @@
 -->
 
 <template>
-  <div class="responsive-layout" :class="{ 'responsive-layout--fullscreen': isFullscreen }" :style="layoutStyles">
+  <div
+    class="responsive-layout" v-bind="executionAttrs"
+    :class="{ 'responsive-layout--fullscreen': isFullscreen }" :style="layoutStyles">
     <!-- 响应式侧边栏 -->
     <div
 v-if="isSidebarMenuVisible" class="sidebar-wrapper" :class="{
@@ -193,6 +195,7 @@ v-if="isBottomPreviewMode" class="bottom-preview-wrapper" :class="{
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getRuntimeSession, switchRuntimeMode } from '@/core/router/runtime-session'
+import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
 import { readRuntimePreference, writeRuntimePreference } from '@/core/utils/runtime-preferences'
 import {
   Maximize2,
@@ -242,6 +245,9 @@ const isCardModeVisible = computed({
   get: () => session.mode.value === 'cards',
   set: value => { void switchRuntimeMode(router, value ? 'cards' : 'normal') },
 })
+// 卡片模式的主画布被卡片面板覆盖，收紧为交互预览，禁止自动推进与自动播放。
+const execution = provideRuntimeExecutionScope(computed(() => isCardModeVisible.value ? 'interactive-preview' : 'presentation'))
+const executionAttrs = computed(() => executionAttributes(execution.value))
 const pageBoundaryMessage = ref('')
 let pageBoundaryMessageTimer: number | undefined
 

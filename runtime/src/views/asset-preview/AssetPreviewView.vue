@@ -5,6 +5,7 @@
   <main
     class="asset-preview-view"
     :class="`asset-preview-view--${previewBackground}`"
+    v-bind="executionAttrs"
     :data-preview-background="previewBackground"
   >
     <div v-if="!assetConfig" class="asset-preview-view__state">
@@ -86,6 +87,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
 import { getRuntimePreloadedConfig } from '@/core/utils/path'
 import AssetChart from '@runtime-kit/public/components/assets/AssetChart.v1.vue'
 import AssetDrawio from '@runtime-kit/public/components/assets/AssetDrawio.v1.vue'
@@ -99,6 +101,9 @@ import {
   resolveAssetPreviewRendererBackground,
 } from './asset-preview-background'
 
+// 资源预览允许用户手势播放，但禁止自动开始、自动翻页与自动媒体播放。
+const execution = provideRuntimeExecutionScope('interactive-preview')
+const executionAttrs = computed(() => executionAttributes(execution.value))
 const assetConfig = computed(() => getRuntimePreloadedConfig()?.asset_preview ?? null)
 const previewBackground = computed(() => normalizeAssetPreviewBackground(
   new URLSearchParams(window.location.search).get('preview_background'),
