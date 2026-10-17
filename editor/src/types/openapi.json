@@ -30843,6 +30843,26 @@
         "title": "CreateAgentSessionRequest",
         "description": "创建 Agent 会话的请求体。"
       },
+      "EffectiveSlideshowSettings": {
+        "properties": {
+          "transition": {
+            "$ref": "#/components/schemas/SlideshowTransition",
+            "description": "实际生效的整页动画。"
+          },
+          "advance": {
+            "$ref": "#/components/schemas/SlideshowAdvance",
+            "description": "实际生效的翻页推进设置。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "transition",
+          "advance"
+        ],
+        "title": "EffectiveSlideshowSettings",
+        "description": "路由响应中的只读生效值，不接受写请求回写。"
+      },
       "ExternalAssetContentCreateRequest": {
         "properties": {
           "asset_type": {
@@ -38054,6 +38074,30 @@
           "display_title": {
             "type": "string",
             "title": "Display Title"
+          },
+          "transition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowTransition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "advance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowAdvance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effective_slideshow": {
+            "$ref": "#/components/schemas/EffectiveSlideshowSettings",
+            "description": "只读生效值，由项目默认值与路由覆盖派生。"
           }
         },
         "type": "object",
@@ -38064,7 +38108,8 @@
           "page_id",
           "page_code",
           "page_title",
-          "display_title"
+          "display_title",
+          "effective_slideshow"
         ],
         "title": "ProjectRouteChildItem",
         "description": "项目路由子页面响应模型。"
@@ -38093,6 +38138,28 @@
             "minimum": 1,
             "title": "Page Id",
             "description": "绑定页面 ID，必须来自当前项目页面列表。"
+          },
+          "transition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowTransition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "整页动画覆盖；省略表示旧客户端保留原值或新节点继承，null 表示清除覆盖。"
+          },
+          "advance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowAdvance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "翻页推进覆盖；省略表示旧客户端保留原值或新节点继承，null 表示清除覆盖。"
           }
         },
         "additionalProperties": false,
@@ -38167,6 +38234,28 @@
             "type": "array",
             "title": "Children",
             "description": "分组下的子页面节点，仅 group 节点允许。"
+          },
+          "transition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowTransition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "整页动画覆盖，仅 page 节点允许；省略表示旧客户端保留原值或新节点继承，null 表示清除覆盖。"
+          },
+          "advance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowAdvance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "翻页推进覆盖，仅 page 节点允许；省略表示旧客户端保留原值或新节点继承，null 表示清除覆盖。"
           }
         },
         "additionalProperties": false,
@@ -38311,6 +38400,37 @@
             },
             "type": "array",
             "title": "Children"
+          },
+          "transition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowTransition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "advance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlideshowAdvance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effective_slideshow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectiveSlideshowSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "只读生效值；分组节点为 null。"
           }
         },
         "type": "object",

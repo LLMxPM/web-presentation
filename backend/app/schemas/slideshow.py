@@ -152,6 +152,15 @@ class EffectiveSlideshow:
         }
 
 
+class EffectiveSlideshowSettings(BaseModel):
+    """路由响应中的只读生效值，不接受写请求回写。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    transition: SlideshowTransition = Field(description="实际生效的整页动画。")
+    advance: SlideshowAdvance = Field(description="实际生效的翻页推进设置。")
+
+
 def resolve_effective_slideshow(
     project_settings: SlideshowSettings,
     transition_override: SlideshowTransition | None,

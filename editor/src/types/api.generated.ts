@@ -1070,6 +1070,11 @@ export type CreateAgentSessionRequest = {
   "llm_config_id"?: (number) | (null)
 }
 
+export type EffectiveSlideshowSettings = {
+  "transition": SlideshowTransition
+  "advance": SlideshowAdvance
+}
+
 export type ExternalAssetContentCreateRequest = {
   "asset_type": string
   "name": string
@@ -2170,6 +2175,9 @@ export type ProjectRouteChildItem = {
   "page_code": string
   "page_title": string
   "display_title": string
+  "transition"?: (SlideshowTransition) | (null)
+  "advance"?: (SlideshowAdvance) | (null)
+  "effective_slideshow": EffectiveSlideshowSettings
 }
 
 export type ProjectRouteChildWrite = {
@@ -2177,6 +2185,8 @@ export type ProjectRouteChildWrite = {
   "order": number
   "hidden"?: boolean
   "page_id": number
+  "transition"?: (SlideshowTransition) | (null)
+  "advance"?: (SlideshowAdvance) | (null)
 }
 
 export type ProjectRouteItemWrite = {
@@ -2187,6 +2197,8 @@ export type ProjectRouteItemWrite = {
   "group_title"?: (string) | (null)
   "page_id"?: (number) | (null)
   "children"?: (ProjectRouteChildWrite)[]
+  "transition"?: (SlideshowTransition) | (null)
+  "advance"?: (SlideshowAdvance) | (null)
 }
 
 export type ProjectRoutePageBinding = {
@@ -2210,6 +2222,9 @@ export type ProjectRouteTreeItem = {
   "page_title"?: (string) | (null)
   "display_title": string
   "children"?: (ProjectRouteChildItem)[]
+  "transition"?: (SlideshowTransition) | (null)
+  "advance"?: (SlideshowAdvance) | (null)
+  "effective_slideshow"?: (EffectiveSlideshowSettings) | (null)
 }
 
 export type ProjectRouteTreeResponse = {

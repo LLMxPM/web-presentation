@@ -7,6 +7,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.common import SchemaBase
+from app.schemas.slideshow import (
+    EffectiveSlideshowSettings,
+    SlideshowAdvance,
+    SlideshowTransition,
+)
 
 
 class ProjectRoutePageBinding(SchemaBase):
@@ -32,6 +37,14 @@ class ProjectRouteChildWrite(BaseModel):
     order: int = Field(description="同级排序值。")
     hidden: bool = Field(default=False, description="是否在导航中隐藏。")
     page_id: int = Field(ge=1, description="绑定页面 ID，必须来自当前项目页面列表。")
+    transition: SlideshowTransition | None = Field(
+        default=None,
+        description="整页动画覆盖；省略表示旧客户端保留原值或新节点继承，null 表示清除覆盖。",
+    )
+    advance: SlideshowAdvance | None = Field(
+        default=None,
+        description="翻页推进覆盖；省略表示旧客户端保留原值或新节点继承，null 表示清除覆盖。",
+    )
 
 
 class ProjectRouteItemWrite(BaseModel):
@@ -49,10 +62,18 @@ class ProjectRouteItemWrite(BaseModel):
     group_title: str | None = Field(default=None, min_length=1, max_length=128, description="分组标题，仅 group 节点允许。")
     page_id: int | None = Field(default=None, ge=1, description="绑定页面 ID，仅 page 节点允许，必须来自当前项目页面列表。")
     children: list[ProjectRouteChildWrite] = Field(default_factory=list, description="分组下的子页面节点，仅 group 节点允许。")
+    transition: SlideshowTransition | None = Field(
+        default=None,
+        description="整页动画覆盖，仅 page 节点允许；省略表示旧客户端保留原值或新节点继承，null 表示清除覆盖。",
+    )
+    advance: SlideshowAdvance | None = Field(
+        default=None,
+        description="翻页推进覆盖，仅 page 节点允许；省略表示旧客户端保留原值或新节点继承，null 表示清除覆盖。",
+    )
 
     @model_validator(mode="after")
-    def validate_route_shape(self) -> "ProjectRouteItemWrite":
-        """约束顶层节点只能是独立页面或分组。"""
+    def validate_route_shape(self) -> ProjectRouteItemWrite:
+        """约束顶层节点只能是独立页面或分组，分组不得承载放映覆盖。"""
 
         if self.route_type == "group":
             if self.page_id is not None:
@@ -61,6 +82,8 @@ class ProjectRouteItemWrite(BaseModel):
                 raise ValueError("分组节点必须提供 group_title。")
             if not self.children:
                 raise ValueError("分组节点至少需要一个子页面。")
+            if self.transition is not None or self.advance is not None:
+                raise ValueError("分组节点不接受 transition 或 advance 覆盖。")
             return self
 
         if self.page_id is None:
@@ -92,6 +115,9 @@ class ProjectRouteChildItem(SchemaBase):
     page_code: str
     page_title: str
     display_title: str
+    transition: SlideshowTransition | None = None
+    advance: SlideshowAdvance | None = None
+    effective_slideshow: EffectiveSlideshowSettings = Field(description="只读生效值，由项目默认值与路由覆盖派生。")
 
 
 class ProjectRouteTreeItem(SchemaBase):
@@ -108,6 +134,12 @@ class ProjectRouteTreeItem(SchemaBase):
     page_title: str | None = None
     display_title: str
     children: list[ProjectRouteChildItem] = Field(default_factory=list)
+    transition: SlideshowTransition | None = None
+    advance: SlideshowAdvance | None = None
+    effective_slideshow: EffectiveSlideshowSettings | None = Field(
+        default=None,
+        description="只读生效值；分组节点为 null。",
+    )
 
 
 class ProjectRouteTreeResponse(SchemaBase):

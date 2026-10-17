@@ -24,6 +24,17 @@ from app.schemas.project_route import (
     ProjectRouteTreeResponse,
     ProjectRouteTreeWriteRequest,
 )
+from app.schemas.slideshow import (
+    EffectiveSlideshow,
+    EffectiveSlideshowSettings,
+    SlideshowAdvance,
+    SlideshowSettings,
+    SlideshowTransition,
+    load_slideshow_settings,
+    parse_route_advance_override,
+    parse_route_transition_override,
+    resolve_effective_slideshow,
+)
 
 
 class ProjectRouteService:
@@ -38,11 +49,11 @@ class ProjectRouteService:
         self.route_repository = ProjectRouteRepository(session)
 
     async def get_tree(self, project_id: int) -> ProjectRouteTreeResponse:
-        """读取项目路由树，并补齐页面展示字段。"""
+        """读取项目路由树，并补齐页面展示字段与只读生效放映值。"""
 
         project = await self._get_project_or_raise(project_id)
         routes = await self.route_repository.list_by_project(project.id)
-        return await self._build_tree_response(routes)
+        return await self._build_tree_response(project, routes)
 
     async def replace_tree(
         self,
@@ -52,10 +63,12 @@ class ProjectRouteService:
         *,
         commit: bool = True,
     ) -> ProjectRouteTreeResponse:
-        """按整树覆盖方式保存项目路由配置。"""
+        """按整树覆盖方式保存项目路由配置与逐页放映覆盖。"""
 
         project = await self._get_project_or_raise(project_id)
         page_map = await self._validate_write_payload(project, payload)
+        # 重建前按“完整路径＋页面绑定”快照旧覆盖，不能依赖会被删除的旧路由 ID。
+        legacy_overrides = await self._load_legacy_override_map(project.id)
 
         await self.route_repository.delete_by_project(project.id)
         for route_item in payload.routes:
@@ -75,19 +88,34 @@ class ProjectRouteService:
                     )
                 )
                 for child in route_item.children:
+                    transition, advance = self._resolve_write_overrides(
+                        child,
+                        legacy_overrides.get(
+                            (self._build_full_path(route_item.route.strip(), child.route.strip()), child.page_id),
+                            (None, None),
+                        ),
+                    )
                     await self._create_page_route_node(
                         project_id=project.id,
                         parent_id=root.id,
                         route_item=child,
                         operator_id=operator_id,
+                        transition=transition,
+                        advance=advance,
                     )
                 continue
 
+            transition, advance = self._resolve_write_overrides(
+                route_item,
+                legacy_overrides.get((self._build_full_path(None, route_item.route.strip()), route_item.page_id), (None, None)),
+            )
             await self._create_page_route_node(
                 project_id=project.id,
                 parent_id=None,
                 route_item=route_item,
                 operator_id=operator_id,
+                transition=transition,
+                advance=advance,
             )
 
         if commit:
@@ -95,7 +123,7 @@ class ProjectRouteService:
         else:
             await self.session.flush()
         routes = await self.route_repository.list_by_project(project.id)
-        return await self._build_tree_response(routes, page_map=page_map)
+        return await self._build_tree_response(project, routes, page_map=page_map)
 
     async def remove_page_bindings(self, project_id: int, page_id: int) -> None:
         """移除页面在项目路由中的所有绑定，并由调用方统一提交事务。"""
@@ -174,14 +202,16 @@ class ProjectRouteService:
 
     async def _build_tree_response(
         self,
+        project: Project,
         routes: list[ProjectRoute],
         *,
         page_map: dict[int, Page] | None = None,
     ) -> ProjectRouteTreeResponse:
-        """将数据库节点转为编辑器使用的两级路由树结构。"""
+        """将数据库节点转为编辑器使用的两级路由树结构，并附带只读生效值。"""
 
         resolved_page_map = page_map or await self._load_pages_for_routes(routes)
         children_by_parent = self._group_children(routes)
+        project_settings = load_slideshow_settings(project.slideshow_config_json)
         response_items: list[ProjectRouteTreeItem] = []
 
         for route in self._sort_routes(children_by_parent.get(None, [])):
@@ -196,7 +226,7 @@ class ProjectRouteService:
                         group_title=route.group_title,
                         display_title=str(route.group_title or "").strip(),
                         children=[
-                            self._build_child_item(child, resolved_page_map[child.page_id])
+                            self._build_child_item(child, resolved_page_map[child.page_id], project_settings)
                             for child in self._sort_routes(children_by_parent.get(route.id, []))
                         ],
                     )
@@ -204,6 +234,7 @@ class ProjectRouteService:
                 continue
 
             page = resolved_page_map[route.page_id]
+            transition, advance, effective = self._resolve_route_slideshow(route, project_settings)
             response_items.append(
                 ProjectRouteTreeItem(
                     id=route.id,
@@ -215,6 +246,9 @@ class ProjectRouteService:
                     page_code=page.code,
                     page_title=page.title,
                     display_title=page.title,
+                    transition=transition,
+                    advance=advance,
+                    effective_slideshow=effective,
                 )
             )
 
@@ -227,8 +261,10 @@ class ProjectRouteService:
         parent_id: int | None,
         route_item: ProjectRouteItemWrite | ProjectRouteChildWrite,
         operator_id: int,
+        transition: dict[str, object] | None = None,
+        advance: dict[str, object] | None = None,
     ) -> None:
-        """创建绑定页面的路由节点。"""
+        """创建绑定页面的路由节点及其放映覆盖。"""
 
         await self.route_repository.create(
             ProjectRoute(
@@ -240,10 +276,63 @@ class ProjectRouteService:
                 page_id=route_item.page_id,
                 route_type=ProjectRouteType.PAGE.value,
                 group_title=None,
+                transition_json=transition,
+                advance_json=advance,
                 created_by=operator_id,
                 updated_by=operator_id,
             )
         )
+
+    async def _load_legacy_override_map(
+        self,
+        project_id: int,
+    ) -> dict[tuple[str, int], tuple[dict[str, object] | None, dict[str, object] | None]]:
+        """重建前快照旧叶子覆盖，键为完整路径与页面绑定。"""
+
+        routes = await self.route_repository.list_by_project(project_id)
+        route_map = {route.id: route for route in routes}
+        overrides: dict[tuple[str, int], tuple[dict[str, object] | None, dict[str, object] | None]] = {}
+        for route in routes:
+            if route.page_id is None:
+                continue
+            parent = route_map.get(route.parent_id) if route.parent_id else None
+            key = (self._build_full_path(parent.route if parent is not None else None, route.route), route.page_id)
+            overrides[key] = (route.transition_json, route.advance_json)
+        return overrides
+
+    @staticmethod
+    def _resolve_write_overrides(
+        route_item: ProjectRouteItemWrite | ProjectRouteChildWrite,
+        legacy: tuple[dict[str, object] | None, dict[str, object] | None],
+    ) -> tuple[dict[str, object] | None, dict[str, object] | None]:
+        """按字段是否出现解析写入覆盖：省略保留旧值，null 清除，对象整组替换。"""
+
+        resolved: list[dict[str, object] | None] = []
+        for field_name, legacy_value in (("transition", legacy[0]), ("advance", legacy[1])):
+            if field_name in route_item.model_fields_set:
+                value = getattr(route_item, field_name)
+                resolved.append(None if value is None else value.model_dump(mode="json"))
+            else:
+                resolved.append(legacy_value)
+        return resolved[0], resolved[1]
+
+    @staticmethod
+    def _resolve_route_slideshow(
+        route: ProjectRoute,
+        project_settings: SlideshowSettings,
+    ) -> tuple[SlideshowTransition | None, SlideshowAdvance | None, EffectiveSlideshowSettings]:
+        """解析单个叶子路由的原始覆盖与只读生效值。"""
+
+        transition = parse_route_transition_override(route.transition_json)
+        advance = parse_route_advance_override(route.advance_json)
+        effective = resolve_effective_slideshow(project_settings, transition, advance)
+        return transition, advance, ProjectRouteService._build_effective_item(effective)
+
+    @staticmethod
+    def _build_effective_item(effective: EffectiveSlideshow) -> EffectiveSlideshowSettings:
+        """将生效值转为 API 响应模型。"""
+
+        return EffectiveSlideshowSettings(**effective.to_api_dict())
 
     async def _validate_write_payload(
         self,
@@ -374,9 +463,14 @@ class ProjectRouteService:
         return sorted(routes, key=lambda item: (item.order, item.id))
 
     @staticmethod
-    def _build_child_item(route: ProjectRoute, page: Page) -> ProjectRouteChildItem:
-        """将子页面节点转为响应模型。"""
+    def _build_child_item(
+        route: ProjectRoute,
+        page: Page,
+        project_settings: SlideshowSettings,
+    ) -> ProjectRouteChildItem:
+        """将子页面节点转为响应模型，并附带只读生效放映值。"""
 
+        transition, advance, effective = ProjectRouteService._resolve_route_slideshow(route, project_settings)
         return ProjectRouteChildItem(
             id=route.id,
             route=route.route,
@@ -386,6 +480,9 @@ class ProjectRouteService:
             page_code=page.code,
             page_title=page.title,
             display_title=page.title,
+            transition=transition,
+            advance=advance,
+            effective_slideshow=effective,
         )
 
     def _build_runtime_page_route(self, route: ProjectRoute, page: Page) -> dict[str, object]:
