@@ -73,6 +73,9 @@
           预览时自动开始
         </label>
       </div>
+      <p class="mt-2 text-xs text-text-disabled">
+        自动开始需放映入口支持，部分浏览器会要求先点击页面后才允许播放或翻页。
+      </p>
     </fieldset>
   </div>
 </template>
