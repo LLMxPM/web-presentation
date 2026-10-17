@@ -30,6 +30,9 @@ from app.schemas.slideshow import (
     SlideshowAdvance,
     SlideshowSettings,
     SlideshowTransition,
+    build_runtime_advance,
+    build_runtime_slideshow_defaults,
+    build_runtime_transition,
     load_slideshow_settings,
     parse_route_advance_override,
     parse_route_transition_override,
@@ -139,10 +142,11 @@ class ProjectRouteService:
         ]
         await self.route_repository.delete_by_ids(empty_group_ids)
 
-    async def build_runtime_route_config(self, project_id: int) -> dict[str, list[dict[str, object]]]:
-        """生成 Runtime 可直接消费的项目路由结构。"""
+    async def build_runtime_route_config(self, project_id: int) -> dict[str, object]:
+        """生成 Runtime 可直接消费的项目路由结构，包含项目默认与逐页生效放映参数。"""
 
         project = await self._get_project_or_raise(project_id)
+        project_settings = load_slideshow_settings(project.slideshow_config_json)
         routes = await self.route_repository.list_by_project(project.id)
         page_map = await self._load_pages_for_routes(routes)
         self._ensure_pages_are_runtime_ready(project, page_map)
@@ -160,16 +164,18 @@ class ProjectRouteService:
                             hidden=route.hidden,
                         ),
                         "children": [
-                            self._build_runtime_page_route(child, page_map[child.page_id])
+                            self._build_runtime_page_route(child, page_map[child.page_id], project_settings)
                             for child in self._sort_routes(children_by_parent.get(route.id, []))
                         ],
                     }
                 )
                 continue
 
-            runtime_routes.append(self._build_runtime_page_route(route, page_map[route.page_id]))
+            runtime_routes.append(self._build_runtime_page_route(route, page_map[route.page_id], project_settings))
 
-        return {"routes": runtime_routes}
+        runtime_config: dict[str, object] = build_runtime_slideshow_defaults(project_settings)
+        runtime_config["routes"] = runtime_routes
+        return runtime_config
 
     async def build_page_bindings_map(
         self,
@@ -485,18 +491,27 @@ class ProjectRouteService:
             effective_slideshow=effective,
         )
 
-    def _build_runtime_page_route(self, route: ProjectRoute, page: Page) -> dict[str, object]:
-        """生成 Runtime 使用的页面路由节点。"""
+    def _build_runtime_page_route(
+        self,
+        route: ProjectRoute,
+        page: Page,
+        project_settings: SlideshowSettings,
+    ) -> dict[str, object]:
+        """生成 Runtime 使用的页面路由节点，并下发生效放映参数。"""
 
+        _, _, effective = self._resolve_route_slideshow(route, project_settings)
+        meta = self._build_runtime_meta(
+            title=page.title,
+            order=route.order,
+            hidden=route.hidden,
+            speaker_notes=page.speaker_notes,
+        )
+        meta["transition"] = build_runtime_transition(effective.transition)
+        meta["advance"] = build_runtime_advance(effective.advance)
         return {
             "route": route.route,
             "component": f"@/views/{page.code}.{page.file_type}",
-            "meta": self._build_runtime_meta(
-                title=page.title,
-                order=route.order,
-                hidden=route.hidden,
-                speaker_notes=page.speaker_notes,
-            ),
+            "meta": meta,
         }
 
     @staticmethod

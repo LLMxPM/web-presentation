@@ -715,7 +715,7 @@ class ProjectArtifactBuilder:
         return f"src/workspace-components/{component_code}/v/{version_no}.vue"
 
     @staticmethod
-    def collect_runtime_route_component_paths(runtime_route_config: dict[str, list[dict[str, object]]]) -> set[str]:
+    def collect_runtime_route_component_paths(runtime_route_config: dict[str, object]) -> set[str]:
         """收集运行时路由配置中实际引用的页面组件别名路径。"""
 
         component_paths: set[str] = set()
@@ -732,7 +732,7 @@ class ProjectArtifactBuilder:
     @classmethod
     def apply_page_meta_overrides(
         cls,
-        runtime_route_config: dict[str, list[dict[str, object]]],
+        runtime_route_config: dict[str, object],
         page_module_overrides: dict[str, ProjectPageModuleOverride],
     ) -> None:
         """按临时页面模块覆盖路由备注，主要用于历史版本预览保留版本备注。"""
@@ -837,7 +837,7 @@ class ProjectArtifactBuilder:
         }
 
     @classmethod
-    def validate_entry_route(cls, runtime_route_config: dict[str, list[dict[str, object]]], route: str) -> str:
+    def validate_entry_route(cls, runtime_route_config: dict[str, object], route: str) -> str:
         """校验整项目预览入口路由存在，并统一输出 Runtime 使用的绝对路径。"""
 
         normalized_route = cls.normalize_entry_route(route)
@@ -866,7 +866,7 @@ class ProjectArtifactBuilder:
         return re.sub(r"/{2,}", "/", normalized_route)
 
     @classmethod
-    def collect_runtime_route_paths(cls, runtime_route_config: dict[str, list[dict[str, object]]]) -> set[str]:
+    def collect_runtime_route_paths(cls, runtime_route_config: dict[str, object]) -> set[str]:
         """从 Runtime 路由配置中收集全部可作为项目预览入口的路径。"""
 
         result: set[str] = set()
@@ -926,7 +926,7 @@ class ProjectArtifactBuilder:
         return re.sub(r"/{2,}", "/", f"{parent_path.rstrip('/')}/{normalized_segment}")
 
     @staticmethod
-    def resolve_default_entry_route(runtime_route_config: dict[str, list[dict[str, object]]]) -> str:
+    def resolve_default_entry_route(runtime_route_config: dict[str, object]) -> str:
         """解析整项目默认入口路由。"""
 
         for route_item in runtime_route_config.get("routes", []):

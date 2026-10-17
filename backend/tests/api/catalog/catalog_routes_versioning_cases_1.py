@@ -177,6 +177,9 @@ async def test_archiving_page_should_remove_project_route_bindings(authenticated
             "page_code": None,
             "page_title": None,
             "display_title": "章节",
+            "transition": None,
+            "advance": None,
+            "effective_slideshow": None,
             "children": [
                 {
                     "id": routes_after_archive.json()["routes"][0]["children"][0]["id"],
@@ -188,6 +191,12 @@ async def test_archiving_page_should_remove_project_route_bindings(authenticated
                     "page_code": remaining_page.json()["code"],
                     "page_title": "保留页面",
                     "display_title": "保留页面",
+                    "transition": None,
+                    "advance": None,
+                    "effective_slideshow": {
+                        "transition": {"effect": "fade", "duration_ms": 400},
+                        "advance": {"mode": "manual", "delay_ms": 5000},
+                    },
                 }
             ],
         }
