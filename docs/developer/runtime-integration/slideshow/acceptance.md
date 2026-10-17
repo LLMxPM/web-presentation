@@ -1,6 +1,6 @@
 # 自动放映联调与验收计划
 
-状态：M0 已验收（2026-10-17），M1–M3 待实施。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；其余场景仍为待执行验证计划，不代表已运行功能验收。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
+状态：M0 已验收（2026-10-17）；M1 进行中，WP13 纯调度状态机已完成，其余 M1 场景待实施。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；其余场景仍为待执行验证计划，不代表已运行功能验收。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
 
 执行分工见[工作包清单](./work-packages/README.md)。阶段出口分别为 [WP12](./work-packages/wp12-m0-integration.md)、[WP21](./work-packages/wp21-m1-integration-release.md)、[WP30](./work-packages/wp30-m2-integration-release.md)、[WP33](./work-packages/wp33-unattended-soak-release.md)，负责汇总本阶段场景与真实产物证据。
 
@@ -38,6 +38,8 @@
 | A15 | 缩略图、控制台小窗、单页/组件/资源预览 | 自动开始不生效，预览不抢播，不创建后台推进器 |
 | A16 | 自动放映配置下截图、PDF/PPTX/打印 | 真实产物路由、顺序、尺寸正确，无离场层；取消不污染主放映 |
 | A17 | CLI/MCP 读改写和旧服务兼容 | 显式覆盖/null 不丢失；只读字段不回写；旧服务明确不支持 |
+
+WP13 的虚拟时钟用例已覆盖 A09、A11、A12、A13 的纯调度层（就绪前后计时、暂停剩余时间、旧回调失效、末页/循环/单页循环）；上述场景的真实 Router、DOM 就绪和浏览器证据仍以 WP21 阶段出口为准。
 
 虚拟时钟对业务剩余毫秒进行确定性断言。真实浏览器测试记录导航提交、过渡结束和下一次导航时间，运行前声明前台计时容差及设备环境，不能用宽泛 sleep 代替行为判定。
 
