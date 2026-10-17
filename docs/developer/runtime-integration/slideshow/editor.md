@@ -1,6 +1,6 @@
 # Editor 翻页动画与自动放映实施计划
 
-状态：待实施；字段与写入语义以[统一契约](./contract.md)为准，UI 遵循根目录 [DESIGN.md](../../../../DESIGN.md)。
+状态：M0 已实现（WP09、WP10、WP12）；自动放映入口与媒体配置待实施。字段与写入语义以[统一契约](./contract.md)为准，UI 遵循根目录 [DESIGN.md](../../../../DESIGN.md)。
 
 实施拆分见[工作包执行清单](./work-packages/README.md)：WP09 项目表单、WP10 路由覆盖、WP16 单窗口入口、WP22 权限链、WP26 双屏入口、WP27 媒体配置。以下 E 编号保留为上层职责。
 

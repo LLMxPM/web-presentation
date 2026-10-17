@@ -1,6 +1,6 @@
 # 自动放映配置与接口契约
 
-状态：拟定开发基线，尚未实现。实施前以本文对齐 Backend、Editor、Runtime 和外部客户端；已发布事实仍以实际 DTO、OpenAPI 和契约测试为准。阶段定义见[总计划](./README.md)。
+状态：M0 字段与行为已实现并通过 [WP12 联调验收](./work-packages/wp12-m0-integration.md)；M1/M2 的 `timer`、自动开始、媒体与双屏字段仍按阶段门禁逐步开放。已发布事实以实际 DTO、OpenAPI 和契约测试为准，阶段定义见[总计划](./README.md)。
 
 ## 1. 配置归属与名称
 

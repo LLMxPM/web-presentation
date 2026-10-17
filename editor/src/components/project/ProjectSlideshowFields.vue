@@ -149,11 +149,11 @@ function updateDelay(value: string | number): void {
   patchDraft({ delaySeconds: String(value) })
 }
 
-function updateLoop(value: boolean): void {
+function updateLoop(value: boolean | 'indeterminate'): void {
   patchDraft({ loop: value === true })
 }
 
-function updateAutoStart(value: boolean): void {
+function updateAutoStart(value: boolean | 'indeterminate'): void {
   patchDraft({ autoStart: value === true })
 }
 </script>

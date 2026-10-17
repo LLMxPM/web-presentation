@@ -137,7 +137,7 @@ watch(
 )
 
 /** 切换动画覆盖状态；关闭时回填项目默认值便于再次打开。 */
-function toggleTransition(value: boolean): void {
+function toggleTransition(value: boolean | 'indeterminate'): void {
   overrideTransition.value = value === true
   if (!overrideTransition.value) {
     effect.value = props.defaults.transition.effect
@@ -146,7 +146,7 @@ function toggleTransition(value: boolean): void {
 }
 
 /** 切换翻页覆盖状态。 */
-function toggleAdvance(value: boolean): void {
+function toggleAdvance(value: boolean | 'indeterminate'): void {
   overrideAdvance.value = value === true
   if (!overrideAdvance.value) {
     advanceMode.value = props.defaults.advance.mode

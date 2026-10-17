@@ -80,6 +80,7 @@ export type ProjectItem = GeneratedApi.ProjectItem
 export type SlideshowSettings = GeneratedApi.SlideshowSettings
 export type SlideshowTransition = GeneratedApi.SlideshowTransition
 export type SlideshowAdvance = GeneratedApi.SlideshowAdvance
+export type EffectiveSlideshowSettings = GeneratedApi.EffectiveSlideshowSettings
 
 export type ProjectBuildStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
@@ -296,6 +297,9 @@ export interface ProjectRouteChildItem {
   page_code: string
   page_title: string
   display_title: string
+  transition?: SlideshowTransition | null
+  advance?: SlideshowAdvance | null
+  effective_slideshow?: EffectiveSlideshowSettings | null
 }
 
 export interface ProjectRouteTreeItem {
@@ -310,6 +314,9 @@ export interface ProjectRouteTreeItem {
   page_title: string | null
   display_title: string
   children: ProjectRouteChildItem[]
+  transition?: SlideshowTransition | null
+  advance?: SlideshowAdvance | null
+  effective_slideshow?: EffectiveSlideshowSettings | null
 }
 
 export interface ProjectRouteTreeResponse {
@@ -321,6 +328,8 @@ export interface ProjectRouteChildWrite {
   order: number
   hidden: boolean
   page_id: number
+  transition?: SlideshowTransition | null
+  advance?: SlideshowAdvance | null
 }
 
 export interface ProjectRouteItemWrite {
@@ -331,6 +340,8 @@ export interface ProjectRouteItemWrite {
   group_title?: string | null
   page_id?: number | null
   children?: ProjectRouteChildWrite[]
+  transition?: SlideshowTransition | null
+  advance?: SlideshowAdvance | null
 }
 
 export interface PageVersionListItem {
