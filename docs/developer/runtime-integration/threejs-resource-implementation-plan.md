@@ -1,6 +1,6 @@
 # 三维资源复用与渲染实施计划
 
-计划日期：2026-10-16；实施状态更新：2026-10-17（替换即全局更新修订落在 C04）。W01–W09 已实现并合入 `feature/threejs-model3d`，W10 主体验证完成；包级状态、T01–T12 证据与 G1 退出项见「实施状态与证据」。
+计划日期：2026-10-16；实施状态更新：2026-10-17（替换即全局更新修订落在 C04，CLI 外部能力已对接）。W01–W09 已实现并合入 `feature/threejs-model3d`，W10 主体验证完成；包级状态、T01–T12 证据与 G1 退出项见「实施状态与证据」。
 
 方向依据：[三维资源复用与 Three.js 渲染接入分析](./threejs-rendering-and-management-analysis.md)。本计划细化交付顺序、接口、数据增量、测试和发布门槛；后续实施状态与实际证据在本计划中维护。
 
@@ -19,7 +19,7 @@
 | W06 | 已完成 | 静态帧准备/整块导出/清理、`data-runtime-kit-media-kind=model3d` 媒体词汇；`model-static-frames.test.ts`、`PPTXRuntimeKitExportDom.test.ts` |
 | W07 | 已完成 | Editor 三维上传、详情摘要、按 ID 替换（expected hash）、真实预览与 AssetPicker；`test:editor:gate` |
 | W08 | 已完成 | 构建期资源持有与物化、资源包/组件包/样式包/模板包含三维文件往返、离线产物；`test_project_build.py`、`test_model3d_asset_package.py`、`test_project_template_package_model3d.py` |
-| W09 | Backend 外部件已完成；CLI/MCP 未对接 | External `asset.file.replace`、AI 三维摘要与披露、OpenAPI/参考文档；`test_external_asset_replace.py`；CLI/MCP 见退出项 |
+| W09 | Backend 外部件与 CLI 已完成；MCP 未对接 | External `asset.file.replace`、AI 三维摘要与披露、OpenAPI/参考文档；`test_external_asset_replace.py`；CLI 0.3.2 支持 `model3d` 上传/替换/下载与列表摘要，Skill 1.3.4 同步工作流（CLI 全量 94 通过，wheel/sdist Skill 校验通过）；MCP 见退出项 |
 | W10 | 本次收尾 | 全量 E2E（auth/smoke/visual-edit/ai/runtime-heavy 共 18 例）、Docker 架构演练（专属 PG/Redis/卷/回环端口）、迁移对拍、兼容矩阵与文档更新 |
 
 集成门禁（2026-10-16/17，分支 `feature/threejs-model3d`）：Backend 全量 1430 通过（14 skip）、Editor gate、Runtime gate、根仓 contracts 59、repository 16、真实 Nginx Gateway 契约、CLI Skill 契约、`pg-claim` 9（专用库）、Renderer 27、`render-e2e` 2/2、`codegen` 无漂移、E2E 全量 18 例（17 通过，1 例跨项目并发 flake 隔离重跑 4/4 通过）、Docker 架构演练 `wp-arch-drill-ab16336a` 与故障注入演练 `wp-arch-drill-d1e9b1a2` 全部阶段通过（证据在 `test-results/docker-architecture/`）：setup/seed/pipeline（经 Gateway 的真实 PNG+ZIP）/jobs/browser-same（双副本 58 条响应、单一版本身份）/browser-cross（三条 `PREVIEW_VERSION_SKEW` 409）/browser-build/credentials/owner/owner-pause/owner-hostname/legacy（旧 schema 前滚）/render-cancel/render-cancel-result/render-timeout/render-kill/render-late/cleanup；三个交付镜像（lite/runtime/renderer）均由本分支代码构建。
@@ -31,7 +31,7 @@
 
 ### G1 退出项（未关闭）
 
-- 独立 `web-presentation-cli` 与 `web-presentation-mcp` 尚未对接 model3d（上传、按 ID 替换、查询、原始文件获取）；M1 发布面限制为平台内与 External API 契约，不能标注「完整外部 Agent 支持」。
+- 独立 `web-presentation-mcp` 尚未对接 model3d（上传、按 ID 替换、查询、原始文件获取）；CLI 已在 0.3.2 完成对接。M1 发布面仍受 MCP 缺口限制，不能标注「完整外部 Agent 支持」。
 - Docker 架构演练已完成主体阶段（见集成门禁）；依赖 N-1 旧镜像的 `m05-*` 组合矩阵属于 M05 里程碑自身门禁，本轮未构建旧镜像、未执行。
 - W00 首帧时间/峰值内存实测记录未单独留存；T08 真实 PDF/PPTX 双视角目检与 T10「50 次切换无持续增长」测量未执行。
 - 渲染诊断导航回归（`page.diagnose` 曾以桥接宿主页为导航目标导致空等硬期限）已修复，演练探测脚本同步适配桥接宿主页（`test(drill)` 提交），两项均随 W10 验证。
@@ -314,7 +314,8 @@ flowchart LR
 - [ ] 在 external_operations 注册 asset.file.replace、路径、scope、幂等和返回示例；路由只调用统一领域服务。
 - [ ] API/OpenAPI/Editor 生成类型及参考文档同步，Gateway 路径可达且错误语义一致。
 - [ ] AI 资源查询返回三维摘要，提示优先复用现有资源；更新 tool_specs 后派生目录与披露，不给 GLB 增加 EditableAssetType。
-- [ ] 在独立 web-presentation-cli 仓对接 model3d 上传、按 ID 替换、查询、原始文件获取及使用说明；在独立 MCP 仓对接相应异步客户端和工具 Schema。（未完成，G1 退出项；两仓当前无 model3d 命令与工具）
+- [x] 在独立 web-presentation-cli 仓对接 model3d 上传、按 ID 替换、查询、原始文件获取及使用说明。（CLI 0.3.2：`--type model3d`、`asset replace`、`asset download`、列表三维摘要；Skill 1.3.4；`pytest packages/api-client/tests packages/cli/tests` 94 通过，构建与 Skill 分发校验通过）
+- [ ] 在独立 MCP 仓对接相应异步客户端和工具 Schema。（未完成，G1 退出项；MCP 当前无 model3d 命令与工具）
 - [ ] 做真实外部流程：查找资源→上传→多页面引用→替换→旧基线冲突→历史/构建验证；区分 Backend 契约通过和两个消费者各自验收通过。
 
 验收：同幂等键回放不重复生成历史；无 scope、跨工作空间、并发基线均按契约拒绝；真实 Nginx 契约回归和外部消费者各有证据。
@@ -327,7 +328,7 @@ flowchart LR
 - [x] 在专属数据库、Redis、卷和回环端口执行 lite/分服务镜像演练，遵循 [本地 Docker 架构演练](../testing/docker-architecture-drill.md)，不复用开发数据。（`wp-arch-drill-ab16336a` 与 `wp-arch-drill-d1e9b1a2` 全部阶段通过，证据在 `test-results/docker-architecture/`；三个交付镜像均由本分支代码构建；依赖 N-1 旧镜像的 `m05-*` 见 G1 退出项）
 - [x] 验证新增迁移、升级顺序、旧 Runtime 不承接新组件、任务取消/超时、清理和恢复。（`pg-claim` 双库迁移对拍；旧 Runtime 由 manifest 能力位拒绝；取消/超时/清理由 Renderer 与检查持有释放测试覆盖）
 - [x] 更新 Runtime 构建身份及兼容矩阵；只有代码、协议、资源服务与交付镜像均就绪后才开放 manifest 能力与 Editor 入口。（`model3d_engine` 清单块与三端指纹；兼容矩阵声明拒绝语义）
-- [x] 更新用户资源管理、Runtime Kit、页面资源引用、PPTX DOM、部署与 External/CLI 文档；产品正式支持时更新顶层 README。（`resources.md`、`asset-reuse.md`、`runtime-kit-capabilities.md`、`pptx-export-dom-contract.md`、`external-agent-api.md`、`troubleshooting.md`、`compatibility-matrix.md`；CLI/MCP 文档随消费者对接补齐）
+- [x] 更新用户资源管理、Runtime Kit、页面资源引用、PPTX DOM、部署与 External/CLI 文档；产品正式支持时更新顶层 README。（`resources.md`、`asset-reuse.md`、`runtime-kit-capabilities.md`、`pptx-export-dom-contract.md`、`external-agent-api.md`、`troubleshooting.md`、`compatibility-matrix.md`；CLI 文档与 Skill 已补齐，MCP 文档随其对接补齐）
 
 验收：G1 无未关闭的阻断项；若 CLI 或 MCP 尚未完成，明确限制发布面并记录退出项，不能标注“完整外部 Agent 支持”。
 

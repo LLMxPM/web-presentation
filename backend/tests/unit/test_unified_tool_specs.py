@@ -11,6 +11,7 @@ from app.ai.code_standards import get_default_code_standard
 from app.ai.tool_specs import (
     AGENT_COORDINATOR_AGENT_ID,
     build_agent_tools_from_group_specs,
+    get_operation_guide_spec,
     list_agent_tool_specs,
     list_operation_guide_specs,
 )
@@ -64,6 +65,9 @@ def test_unified_prompt_should_keep_runtime_baseline_and_query_guidance() -> Non
         "页面和组件源码应使用 Runtime、主题、字体、资源和 Icon 的公开契约",
         "页面或组件源码创建、写入、修改前，必须先调用 `get_code_standards`",
         "固定画布、页面布局、组件契约以及页面或组件专属的主题、字体、资源和 Icon 细则",
+        "查询模型 → 读取渲染契约 → 配置视角",
+        "AssetModel",
+        "动画数据不代表支持动画播放",
     ):
         assert phrase in catalog.default_prompt
     assert "固定演示画布与网页流式布局" not in catalog.default_prompt
@@ -93,5 +97,24 @@ def test_unified_prompt_should_describe_platform_assets_and_relations() -> None:
         "项目样式、建议组件、建议资源、路由树、页面源码和组件源码默认不会完整注入",
         "页面和组件创建、源码更新，以及组件 `preview_schema` 或 `component_type` 修改，都会由平台自动执行编译、渲染和布局校验",
         "项目、页面、组件、资源、主题和样式归档后退出查询与操作边界",
+        "三维模型（自包含 GLB）",
+        "内容助手不能通过文本工具写入 GLB",
     ):
         assert phrase in catalog.default_prompt
+
+
+def test_model3d_guides_should_link_resource_selection_to_runtime_contract() -> None:
+    """三维操作手册应把资源选择、渲染契约和相机配置串成同一条可执行路径。"""
+
+    asset_list = get_operation_guide_spec("asset.query.list")
+    asset_detail = get_operation_guide_spec("asset.query.detail")
+    runtime_detail = get_operation_guide_spec("runtime_kit.query.detail")
+
+    assert asset_list is not None
+    assert asset_detail is not None
+    assert runtime_detail is not None
+    assert any("查询模型 → 读取渲染契约 → 配置视角" in item for item in asset_list.constraints)
+    assert any("AssetModel.v1" in item for item in asset_list.constraints)
+    assert any("不得把 url" in item.lower() or "不允许把 url" in item.lower() for item in asset_detail.constraints)
+    assert any("cameraIndex" in item for item in runtime_detail.constraints)
+    assert any("cameraPosition/cameraTarget" in item for item in runtime_detail.constraints)

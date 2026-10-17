@@ -44,11 +44,14 @@ PAGE_CODE_STANDARD = """
 - 字体语义类包括 font-heading、font-body 和 font-code；需要非主题字体时，先查询工作空间字体并使用 Runtime Kit 的 useAssetFontFamily。直接写 CSS 时优先使用 Runtime 桥接变量和 useTheme 提供的公开变量，不要猜测未公开的 CSS 变量。主题 Logo 优先使用 Runtime Kit 的 ThemeLogo，不要硬编码资源路径。
 - 直接写 CSS 时优先使用公开的 Runtime 桥接变量，例如 `--tw-color-text-primary`、`--tw-color-bg-default`、`--tw-color-bg-subtle`、`--tw-color-bg-invert`、`--tw-color-border-default`、`--tw-color-link-default`、`--tw-color-accent1` 和 `--tw-font-body`；不要猜测 `--color-*` 或其它未公开变量。`ThemeLogo` 优先只通过 `size` 控制等比高度，不传 `width`、`height` 或 `fit`；只有高级场景才直接读取 `useTheme` 的 `themeLogo`、`themeInvertLogo` 或 `themeStyles`。
 - 页面颜色、字体、Logo 和强调状态优先使用 Runtime 主题语义类、主题 CSS 变量和 useTheme；不要硬编码品牌色、字体文件或 Logo 路径。
-- 需要素材时先查询当前工作空间的 active 资源，读取 render_type、content_editable 和近似宽高比后选择 AssetImage、AssetVideo、AssetDrawio、AssetMermaid、AssetChart、AssetFormula 或 Icon。
+- 需要素材时先查询当前工作空间的 active 资源，读取 render_type、content_editable 和近似宽高比后选择 AssetImage、AssetVideo、AssetModel、AssetDrawio、AssetMermaid、AssetChart、AssetFormula 或 Icon。
 - 资源槽位应匹配资源近似宽高比；完整展示优先 contain，只有用户明确要求时才使用 cover，避免裁切关键信息。
-- AssetImage、AssetVideo、AssetDrawio、AssetMermaid、AssetChart 和 AssetFormula 的资源容器必须通过完整静态 class 声明明确宽高；不要给 Asset* 传 style，也不要只依赖内容自由撑高、min-h、max-height 或外层 overflow-hidden。AssetImage 的 class 作用于外层图片框，图片内容使用 `fit="contain"`/`fit="cover"` 和 `position` 控制；纵向长图必须在 AssetImage 自身 class 上提供确定高度，例如 `h-[500px]` 或 `h-full` 且父级高度明确。
-- Icon 和 Asset* 的 name 使用字符串字面量，或来自同一 Vue 文件顶层可静态枚举的对象/数组；不要使用 computed、函数返回、字符串拼接或条件表达式动态生成资源名。
-- 普通资源 URL 使用 `useAssetSrc`，背景资源使用 `useAssetBackground`；资源名来自 props 时传入 getter，例如 `useAssetSrc(() => props.imageName)`。`resolveResourcePath` 只用于非响应式工具代码或 Runtime public 静态路径，不要在 SFC 中直接解析动态 props。
+- AssetImage、AssetVideo、AssetModel、AssetDrawio、AssetMermaid、AssetChart 和 AssetFormula 的资源容器必须通过完整静态 class 声明明确宽高；不要给 Asset* 传 style，也不要只依赖内容自由撑高、min-h、max-height 或外层 overflow-hidden。AssetImage 的 class 作用于外层图片框，图片内容使用 `fit="contain"`/`fit="cover"` 和 `position` 控制；纵向长图必须在 AssetImage 自身 class 上提供确定高度，例如 `h-[500px]` 或 `h-full` 且父级高度明确。
+- 三维模型只使用 active asset_type=model3d 资源，并通过 Runtime Kit 的 AssetModel 传入真实资源 name；不得向 name 传 URL、本地路径、GLB 文本或 base64。首期只支持自包含 GLB；资源含动画数据不代表支持动画播放，页面展示的是静态姿态。
+- 使用 AssetModel 前读取当前版本化契约，按“查询模型 → 读取渲染契约 → 配置视角”的顺序确认场景与相机参数：cameraIndex 与显式 cameraPosition/cameraTarget 互斥，后两者必须成对且不重合；显式无效选择会报错，留空时使用源相机或自动取景。容器仍需用完整静态 class 声明明确宽高；截图复核模型、材质、光照和视角是否真实呈现。
+- 替换三维资源文件会同步影响当前和历史页面预览；独立构建保留当次构建的资源快照。替换模型不需要修改页面源码中的资源 name，但需要重新截图确认视觉结果。
+- Icon、AssetImage、AssetVideo、AssetModel 等组件的 name 优先使用字符串字面量，或来自同一 Vue 文件顶层可静态枚举的对象/数组，便于构建精确收集资源依赖。确需动态资源名时，必须保证候选名称都是当前工作空间 active 资源，并在项目 build_extra_assets_json 中补齐所有可能引用的资源；仅保存或预览成功不代表独立构建包含这些资源。不得引用其他工作空间或构建时不属于当前工作空间的名称。
+- 普通资源 URL 使用 `useAssetSrc`，背景资源使用 `useAssetBackground`；资源名来自 props 时传入 getter，例如 `useAssetSrc(() => props.imageName)`。该写法是 props 资源名的正确方式，但不免除动态资源名对应的构建额外资源要求。`resolveResourcePath` 只用于非响应式工具代码或 Runtime public 静态路径，不要在 SFC 中直接解析动态 props。
 - 背景图和蒙版应作为画布内独立视觉层：背景层使用 `absolute inset-0 h-full w-full`，正文放在 `relative z-10 h-full w-full` 等更高层级；蒙版、渐变和暗角单独实现并设置 `pointer-events-none`，颜色优先使用主题语义色或 Runtime CSS 变量。
 - 资源库没有合适素材时，才根据当前可用能力生成或创建资源；需要跨页面复用或后续编辑的素材应保存为工作空间资源。
 
@@ -85,11 +88,13 @@ COMPONENT_CODE_STANDARD = """
 - 字体语义类包括 font-heading、font-body 和 font-code；需要非主题字体时，先查询工作空间字体并使用 Runtime Kit 的 useAssetFontFamily。直接写 CSS 时优先使用 Runtime 桥接变量和 useTheme 提供的公开变量，不要猜测未公开的 CSS 变量。主题 Logo 优先使用 Runtime Kit 的 ThemeLogo，不要硬编码资源路径。
 - 直接写 CSS 时优先使用公开的 Runtime 桥接变量，例如 `--tw-color-text-primary`、`--tw-color-bg-default`、`--tw-color-bg-subtle`、`--tw-color-bg-invert`、`--tw-color-border-default`、`--tw-color-link-default`、`--tw-color-accent1` 和 `--tw-font-body`；不要猜测未公开变量。`ThemeLogo` 优先只通过 `size` 控制等比高度，不传 `width`、`height` 或 `fit`。
 - 组件应保持主题中立，颜色、字体、Logo 和强调状态优先使用 Runtime 主题语义类、主题 CSS 变量和 useTheme，不绑定当前项目的具体 palette。
-- 组件使用工作空间资源和 Icon 时，先查询真实资源名称、render_type、版本和使用契约；不要猜测资源 ID、名称或渲染方式。
-- 组件内部的图片、图表、公式和图标应有明确尺寸上下文与 overflow 策略，资源比例和显示方式应符合资源元数据。
-- AssetImage、AssetVideo、AssetDrawio、AssetMermaid、AssetChart 和 AssetFormula 的资源容器必须通过完整静态 class 声明明确宽高；不要给 Asset* 传 style，也不要只依赖内容自由撑高、min-h、max-height 或外层 overflow-hidden。AssetImage 的 class 作用于外层图片框，图片内容使用 `fit="contain"`/`fit="cover"` 和 `position` 控制；纵向长图必须在 AssetImage 自身 class 上提供确定高度。
-- Icon 和 Asset* 的 name 使用字符串字面量，或来自同一 Vue 文件顶层可静态枚举的对象/数组；不要使用 computed、函数返回、字符串拼接或条件表达式动态生成资源名。
-- 普通资源 URL 使用 `useAssetSrc`，背景资源使用 `useAssetBackground`；资源名来自 props 时传入 getter。`resolveResourcePath` 只用于非响应式工具代码或 Runtime public 静态路径，不要在 SFC 中直接解析动态 props。
+- 组件使用工作空间资源、三维模型和 Icon 时，先查询真实资源名称、render_type、版本和使用契约；不要猜测资源 ID、名称或渲染方式。
+- 组件内部的图片、三维模型、图表、公式和图标应有明确尺寸上下文与 overflow 策略，资源比例和显示方式应符合资源元数据。
+- AssetImage、AssetVideo、AssetModel、AssetDrawio、AssetMermaid、AssetChart 和 AssetFormula 的资源容器必须通过完整静态 class 声明明确宽高；不要给 Asset* 传 style，也不要只依赖内容自由撑高、min-h、max-height 或外层 overflow-hidden。AssetImage 的 class 作用于外层图片框，图片内容使用 `fit="contain"`/`fit="cover"` 和 `position` 控制；纵向长图必须在 AssetImage 自身 class 上提供确定高度。
+- 三维模型只使用 active asset_type=model3d 资源，并通过 Runtime Kit 的 AssetModel 传入真实资源 name；不得向 name 传 URL、本地路径、GLB 文本或 base64。首期只支持自包含 GLB；资源含动画数据不代表支持动画播放，组件展示的是静态姿态。preview_schema 的 presets 若设置模型 name，必须使用真实 model3d 资源。
+- 使用 AssetModel 前读取当前版本化契约，必要时通过 props 暴露 sceneIndex、cameraIndex 或成对的 cameraPosition/cameraTarget；cameraIndex 与显式相机位置/目标互斥，位置和目标必须成对且不重合，显式无效选择会报错。组件应保持主题中立并明确容器宽高；截图复核模型、材质、光照和视角是否真实呈现。
+- Icon、AssetImage、AssetVideo、AssetModel 等组件的 name 优先使用字符串字面量，或来自同一 Vue 文件顶层可静态枚举的对象/数组，便于构建精确收集资源依赖。确需动态资源名时，必须保证候选名称都是当前工作空间 active 资源，并在项目 build_extra_assets_json 中补齐所有可能引用的资源；仅保存或预览成功不代表独立构建包含这些资源。不得引用其他工作空间或构建时不属于当前工作空间的名称。
+- 普通资源 URL 使用 `useAssetSrc`，背景资源使用 `useAssetBackground`；资源名来自 props 时传入 getter。该写法是 props 资源名的正确方式，但不免除动态资源名对应的构建额外资源要求。`resolveResourcePath` 只用于非响应式工具代码或 Runtime public 静态路径，不要在 SFC 中直接解析动态 props。
 - 背景图和蒙版应作为画布内独立视觉层，背景使用 `absolute inset-0 h-full w-full`，正文置于更高层级；蒙版、渐变和暗角单独实现并设置 `pointer-events-none`，颜色优先使用主题语义色或 Runtime CSS 变量。
 - 组件需要跨页面复用的视觉资源应优先引用工作空间资源；仅当前页面使用且不需要后续编辑的简单表达才直接写在页面源码中。
 

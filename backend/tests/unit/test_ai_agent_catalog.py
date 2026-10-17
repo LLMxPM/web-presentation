@@ -20,7 +20,7 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "保持 Tailwind class 为源码中的静态完整字符串" in prompt
     assert "空态、加载态和错误态" in prompt
     assert "事实、数字、引用和来源不得凭空补全" in prompt
-    assert "处理视觉内容时，先判断当前信息最适合用文字、表格、图表、示意图还是图片表达" in prompt
+    assert "处理视觉内容时，先判断当前信息最适合用文字、表格、图表、示意图、图片还是三维模型表达" in prompt
     assert "需要素材时优先查询工作空间资源，不满足再按可用能力创建或生成" in prompt
     assert "主体内容区、内容面板和稀疏卡片默认应在自身可用高度内上下平衡" in prompt
     assert "sparse_top_aligned" in prompt
@@ -33,6 +33,10 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "只能使用工具返回的版本化 Runtime Kit 能力" in prompt
     assert "页面和组件源码应使用 Runtime、主题、字体、资源和 Icon 的公开契约" in prompt
     assert "页面布局、组件契约以及页面或组件专属的主题、字体、资源和 Icon 细则" in prompt
+    assert "三维模型（自包含 GLB）" in prompt
+    assert "查询模型 → 读取渲染契约 → 配置视角" in prompt
+    assert "不得把 URL、本地路径、GLB 文本或 base64 当作资源名" in prompt
+    assert "动画数据不代表支持动画播放" in prompt
     assert "`scope_type`：本轮默认焦点类型" in prompt
     assert "`work_scope_mode`：项目工作集模式" in prompt
     assert "`allowed_project_ids`：项目工作集的真实 ID 列表" in prompt
@@ -69,9 +73,15 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "base_font_size / 16" in page_standard
     assert "useAssetSrc(() => props.imageName)" in page_standard
     assert "ThemeLogo" in page_standard
+    assert "AssetModel" in page_standard
+    assert "build_extra_assets_json" in page_standard
+    assert "cameraIndex 与显式 cameraPosition/cameraTarget 互斥" in page_standard
+    assert "动画数据不代表支持动画播放" in page_standard
     assert "preview_schema" in component_standard
     assert "Runtime 主题语义颜色键包括" in component_standard
-    assert "Icon 和 Asset* 的 name" in component_standard
+    assert "Icon、AssetImage、AssetVideo、AssetModel 等组件的 name" in component_standard
+    assert "build_extra_assets_json" in component_standard
+    assert "AssetModel" in component_standard
     assert "defineProps`/`defineEmits" in component_standard
     assert "2～3 个高质量 presets" in component_standard
     assert "开始创建页面时，先查询并复用已有的页面组件" in catalog.default_prompt
