@@ -52,3 +52,68 @@ describe('PageTransitionHost', () => {
     expect(vi.getTimerCount()).toBeLessThanOrEqual(1)
   })
 })
+
+describe('PageTransitionHost settled 信号', () => {
+  it('初次挂载在 DOM 提交后报告一次路径与 generation，动画结束只报告一次', async () => {
+    vi.useFakeTimers()
+    const settled: Array<{ path: string; generation: number }> = []
+    const state = reactive({ page: 'a', number: 1 })
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({ render: () => h(PageTransitionHost, {
+      node: h('p', state.page), pageKey: state.page, pageNumber: state.number,
+      config: { effect: 'fade', durationMs: 400 }, onSettled: (event: { path: string; generation: number }) => settled.push(event),
+    }) })
+    app.mount(root)
+
+    await nextTick(); await nextTick()
+    expect(settled).toHaveLength(1)
+    expect(settled[0].path).toBe('a')
+    expect(settled[0].generation).toBeGreaterThan(0)
+
+    state.page = 'b'; state.number = 2
+    await nextTick(); await nextTick()
+    expect(root.querySelectorAll('p')).toHaveLength(2)
+    const entering = root.querySelector<HTMLElement>('.page-transition-layer.entering')
+    expect(entering).not.toBeNull()
+
+    // 子元素冒泡的 transitionend 不得收尾。
+    const childEvent = new Event('transitionend', { bubbles: true })
+    Object.defineProperty(childEvent, 'propertyName', { value: 'opacity' })
+    entering?.querySelector('p')?.dispatchEvent(childEvent)
+    expect(settled).toHaveLength(1)
+
+    const enterEvent = new Event('transitionend', { bubbles: false })
+    Object.defineProperty(enterEvent, 'propertyName', { value: 'opacity' })
+    entering?.dispatchEvent(enterEvent)
+    await nextTick()
+    expect(settled).toHaveLength(2)
+    expect(settled[1].path).toBe('b')
+    expect(settled[1].generation).toBeGreaterThan(settled[0].generation)
+
+    // 兜底计时器不得重复报告。
+    await vi.advanceTimersByTimeAsync(600)
+    expect(settled).toHaveLength(2)
+    app.unmount()
+  })
+
+  it('无动画导航在目标页提交后立即报告，且旧 generation 被过滤', async () => {
+    const settled: Array<{ path: string; generation: number }> = []
+    const state = reactive({ page: 'a', number: 1, effect: 'none' as const })
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({ render: () => h(PageTransitionHost, {
+      node: h('p', state.page), pageKey: state.page, pageNumber: state.number,
+      config: { effect: state.effect, durationMs: 0 }, onSettled: (event: { path: string; generation: number }) => settled.push(event),
+    }) })
+    app.mount(root)
+    await nextTick(); await nextTick()
+
+    state.page = 'b'; state.number = 2
+    await nextTick(); await nextTick()
+    expect(root.querySelectorAll('p')).toHaveLength(1)
+    expect(settled.at(-1)?.path).toBe('b')
+    expect(new Set(settled.map(item => item.generation)).size).toBe(settled.length)
+    app.unmount()
+  })
+})

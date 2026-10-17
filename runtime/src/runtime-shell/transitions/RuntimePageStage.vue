@@ -5,7 +5,7 @@
       :node="wrapPage(Component, route.path, route.query.runtimeCaptureTicket)" :page-key="route.path"
       :page-number="Number(route.meta.pageNumber) || undefined"
       :config="resolvePageTransition(route.meta.transition)" :disabled="disabled || session.suppressTransition.value"
-      @error="handleError" />
+      @settled="handleSettled" @error="handleError" />
   </router-view>
 </template>
 
@@ -15,11 +15,19 @@ import { useRouter } from 'vue-router'
 import { getRuntimeSession } from '@/core/router/runtime-session'
 import { resolvePageTransition } from '@/core/utils/page-transition'
 import { buildPageContentScaleStyles } from '@/core/utils/page-scale'
+import type { TransitionSettledEvent } from '@/core/types/page-transition'
 import PageTransitionHost from './PageTransitionHost.vue'
 
 defineProps<{ disabled?: boolean }>()
+const emit = defineEmits<{ settled: [event: TransitionSettledEvent] }>()
 const router = useRouter()
 const session = getRuntimeSession(router)
+
+/** 把整页过渡完成信号写入会话并向上转发；只代表过渡完成，不代表资源就绪。 */
+function handleSettled(event: TransitionSettledEvent): void {
+  session.transitionSettled.value = event
+  emit('settled', event)
+}
 
 /** 为页面创建独立内容根节点，保持导出选择器和设计字号兼容。 */
 function wrapPage(component: VNode | undefined, path: string, captureTicket: unknown): VNode | undefined {

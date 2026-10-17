@@ -1,6 +1,7 @@
 /** 文件功能：规范项目页面导航与展示模式，保留页内链接的 Runtime 上下文。 */
 import { computed, ref } from 'vue'
 import type { Router, RouteLocationNormalized, LocationQueryRaw } from 'vue-router'
+import type { TransitionSettledEvent } from '@/core/types/page-transition'
 
 export type RuntimeMode = 'normal' | 'cards' | 'presenter' | 'display'
 const modes: RuntimeMode[] = ['normal', 'cards', 'presenter', 'display']
@@ -20,6 +21,7 @@ function createSession(router: Router) {
     collapsed: ref(false),
     bottomCollapsed: ref(false),
     suppressTransition: ref(false),
+    transitionSettled: ref<TransitionSettledEvent | null>(null),
   }
 }
 

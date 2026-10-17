@@ -14,7 +14,7 @@
 
 <script setup lang="ts">
 import { cloneVNode, computed, defineComponent, nextTick, onBeforeUnmount, onErrorCaptured, ref, shallowRef, watch, type PropType, type VNode } from 'vue'
-import type { PageTransitionConfig } from '@/core/types/page-transition'
+import type { PageTransitionConfig, TransitionSettledEvent } from '@/core/types/page-transition'
 
 interface Frame { path: string; node: VNode; pageNumber?: number }
 const props = defineProps<{
@@ -24,7 +24,7 @@ const props = defineProps<{
   config: PageTransitionConfig
   disabled?: boolean
 }>()
-const emit = defineEmits<{ error: [path: string, error: unknown]; settled: [path: string] }>()
+const emit = defineEmits<{ error: [path: string, error: unknown]; settled: [event: TransitionSettledEvent] }>()
 const root = ref<HTMLElement>()
 const frames = shallowRef<Frame[]>([])
 const phase = ref<'idle' | 'preparing' | 'running'>('idle')
@@ -34,6 +34,7 @@ let pending: Frame | undefined
 let timer: ReturnType<typeof setTimeout> | undefined
 let generation = 0
 let disposed = false
+let enteringElement: HTMLElement | undefined
 const media = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : undefined
 const reducedMotion = ref(media?.matches ?? false)
 
@@ -50,43 +51,62 @@ function layerClass(index: number): string[] {
   return [index === 0 ? 'leaving' : 'entering', activeConfig.value.effect, phase.value]
 }
 
-/** 完成本次过渡，确保仅保留目标层，再处理最新待切换页。 */
-function finish(): void {
+/**
+ * 完成本次过渡，确保仅保留目标层，再处理最新待切换页。
+ * 同一 generation 的 transitionend 与兜底计时只会生效一次，旧页迟到事件被丢弃。
+ */
+function finish(token: number): void {
+  if (token !== generation) return
   clearTimeout(timer)
+  enteringElement?.removeEventListener('transitionend', onTransitionEnd)
+  enteringElement = undefined
   generation += 1
+  const stable = frames.value.at(-1)
   frames.value = frames.value.slice(-1)
   phase.value = 'idle'
-  if (frames.value[0]) emit('settled', frames.value[0].path)
+  if (stable) emit('settled', { path: stable.path, generation: token })
   const target = pending
   pending = undefined
-  if (target && target.path !== frames.value[0]?.path) void show(target)
+  if (target && target.path !== stable?.path) void show(target)
+}
+
+/** 只接受目标层本身的 transform/opacity 结束事件，忽略子元素冒泡。 */
+function onTransitionEnd(event: TransitionEvent): void {
+  if (event.target !== event.currentTarget) return
+  if (event.propertyName !== 'transform' && event.propertyName !== 'opacity') return
+  finish(generation)
 }
 
 /** 准备新页并在下一绘制帧启动 CSS；离场媒体在此处暂停。 */
 async function show(target: Frame): Promise<void> {
   if (disposed) return
   if (phase.value !== 'idle') { pending = target; return }
+  const token = ++generation
   const previous = frames.value[0]
   if (previous && previous.path === target.path) {
     previous.node = target.node
-    emit('settled', target.path)
+    await nextTick()
+    emit('settled', { path: target.path, generation: token })
     return
   }
   if (!previous || props.disabled || reducedMotion.value || props.config.effect === 'none') {
     frames.value = [target]
-    emit('settled', target.path)
+    // 初次静态挂载也必须等到 DOM 提交后再报告稳定页。
+    await nextTick()
+    emit('settled', { path: target.path, generation: token })
     return
   }
   direction.value = previous.pageNumber != null && target.pageNumber != null && target.pageNumber < previous.pageNumber ? -1 : 1
   activeConfig.value = { ...props.config }
   frames.value = [previous, target]
   phase.value = 'preparing'
-  const token = ++generation
   await nextTick()
   root.value?.querySelectorAll<HTMLMediaElement>('.leaving audio, .leaving video').forEach(element => element.pause())
   // 强制读取布局，确保进入层起始状态已提交；后台窗口也由计时器保证收尾。
   root.value?.getBoundingClientRect()
-  timer = setTimeout(finish, activeConfig.value.durationMs + 100)
+  enteringElement = root.value?.querySelector<HTMLElement>('.page-transition-layer.entering') ?? undefined
+  enteringElement?.addEventListener('transitionend', onTransitionEnd)
+  timer = setTimeout(() => finish(token), activeConfig.value.durationMs + 100)
   requestAnimationFrame(() => {
     if (token === generation && !disposed) phase.value = 'running'
   })
@@ -107,11 +127,11 @@ onErrorCaptured(error => {
 watch(() => [props.pageKey, props.node] as const, () => {
   if (props.node) void show({ path: props.pageKey, node: cloneVNode(props.node, { key: props.pageKey }), pageNumber: props.pageNumber })
 }, { immediate: true })
-watch(() => props.disabled || reducedMotion.value, disabled => { if (disabled && phase.value !== 'idle') finish() })
+watch(() => props.disabled || reducedMotion.value, disabled => { if (disabled && phase.value !== 'idle') finish(generation) })
 /** 用户改变减少动态效果偏好时立即收尾。 */
 function onMotionChange(event: MediaQueryListEvent): void { reducedMotion.value = event.matches }
 media?.addEventListener('change', onMotionChange)
-onBeforeUnmount(() => { disposed = true; generation += 1; clearTimeout(timer); media?.removeEventListener('change', onMotionChange) })
+onBeforeUnmount(() => { disposed = true; generation += 1; clearTimeout(timer); enteringElement?.removeEventListener('transitionend', onTransitionEnd); media?.removeEventListener('change', onMotionChange) })
 </script>
 
 <style scoped>

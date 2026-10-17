@@ -3,8 +3,8 @@
  */
 
 import { reactive, computed } from 'vue'
-import { resolvePageTransition } from './page-transition'
-import type { PageTransitionConfig } from '../types/page-transition'
+import { resolvePageAdvance, resolvePageTransition } from './page-transition'
+import type { PageAdvanceConfig, PageTransitionConfig } from '../types/page-transition'
 import { parse } from 'yaml'
 import type { RouteRecordRaw } from 'vue-router'
 
@@ -50,6 +50,11 @@ export const DEFAULT_PAGE_CONFIG: RuntimePageConfig = {
  */
 export interface RouteConfigYaml {
   transitionDefaults?: PageTransitionConfig | null
+  playback?: {
+    autoStart?: boolean
+    loop?: boolean
+    advanceDefaults?: PageAdvanceConfig | null
+  } | null
   routes: Array<{
     route: string
     component?: string
@@ -61,6 +66,7 @@ export interface RouteConfigYaml {
       hidden?: boolean
       speakerNotes?: string | null
       transition?: PageTransitionConfig | null
+      advance?: PageAdvanceConfig | null
     }
     children?: Array<{
       route: string
@@ -71,7 +77,8 @@ export interface RouteConfigYaml {
         pageNumber?: number
         hidden?: boolean
         speakerNotes?: string | null
-      transition?: PageTransitionConfig | null
+        transition?: PageTransitionConfig | null
+        advance?: PageAdvanceConfig | null
       }
     }>
   }>
@@ -489,6 +496,7 @@ function sortRoutesByOrder<T extends { meta: { order: number } }>(left: T, right
 function convertYamlRoutesToRouteConfig(yamlRoutes: RouteConfigYaml['routes']): RouteConfig[] {
   const routesWithPageNumbers = calculatePageNumbers(yamlRoutes)
   const defaultTransition = resolvePageTransition(configState.routeConfig?.transitionDefaults)
+  const defaultAdvance = resolvePageAdvance(configState.routeConfig?.playback?.advanceDefaults)
 
   return routesWithPageNumbers.map(route => {
     const hasChildren = route.children && route.children.length > 0
@@ -503,6 +511,7 @@ function convertYamlRoutesToRouteConfig(yamlRoutes: RouteConfigYaml['routes']): 
       meta: {
         ...route.meta,
         transition: hasChildren ? undefined : resolvePageTransition(route.meta.transition, defaultTransition),
+        advance: hasChildren ? undefined : resolvePageAdvance(route.meta.advance, defaultAdvance),
         componentPath: route.component
       }
     }
@@ -518,6 +527,7 @@ function convertYamlRoutesToRouteConfig(yamlRoutes: RouteConfigYaml['routes']): 
         meta: {
           ...child.meta,
           transition: resolvePageTransition(child.meta.transition, defaultTransition),
+          advance: resolvePageAdvance(child.meta.advance, defaultAdvance),
           parent: route.route,
           componentPath: child.component
         }
