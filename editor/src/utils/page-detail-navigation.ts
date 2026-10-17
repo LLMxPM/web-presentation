@@ -44,6 +44,17 @@ export function resolvePageDetailNavigation(
 }
 
 /**
+ * 解析页面用于"从当前页放映"的入口路由；同一页面多次绑定时取路由树中最靠前的一条。
+ * @param page 页面资源
+ * @returns 归一化路由路径；未加入路由时为空串
+ */
+export function resolvePagePresentationRoute(page: PageItem | null | undefined): string {
+  if (!page) return ''
+  const binding = getSortedRouteBindings(page)[0]
+  return binding ? normalizeRoutePath(binding.full_path) : ''
+}
+
+/**
  * 生成已加入路由的页面序列，同一页面多次绑定时保留最靠前的绑定。
  * @param pages 当前项目页面列表
  */

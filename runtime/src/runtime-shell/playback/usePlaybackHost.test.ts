@@ -8,6 +8,7 @@ import { reloadAllConfigs } from '@/core/utils/config'
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
 import { getRuntimeSession } from '@/core/router/runtime-session'
 import { initializeRuntimeExecution, resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
+import { mediaPlaybackCoordinator } from '@/core/execution/media-playback-guard'
 import { buildPlaybackPages, usePlaybackHost, type PlaybackHost } from './usePlaybackHost'
 
 const { waitForAssets } = vi.hoisted(() => ({ waitForAssets: vi.fn() }))
@@ -16,6 +17,7 @@ vi.mock('@/core/utils/visual-assets', () => ({ waitForEditorVisualAssets: waitFo
 const READY = { ok: true, timedOut: false, total: 0, loaded: 0, failed: [], pending: [], waitedMs: 0 }
 
 function preloadPlaybackConfig(options: {
+  supported?: boolean
   autoStart?: boolean
   loop?: boolean
   delays?: Record<string, number>
@@ -43,11 +45,13 @@ function preloadPlaybackConfig(options: {
       },
     },
     routes: {
-      playback: {
-        autoStart: options.autoStart ?? false,
-        loop: options.loop ?? false,
-        advanceDefaults: { mode: 'manual', delayMs: 5000 },
-      },
+      ...(options.supported === false ? {} : {
+        playback: {
+          autoStart: options.autoStart ?? false,
+          loop: options.loop ?? false,
+          advanceDefaults: { mode: 'manual', delayMs: 5000 },
+        },
+      }),
       transitionDefaults: { effect: 'none', durationMs: 0 },
       routes: [route('/a', 1), route('/b', 2), route('/hidden', 3, true)],
     },
@@ -102,6 +106,7 @@ beforeEach(async () => {
   waitForAssets.mockReset()
   waitForAssets.mockResolvedValue(READY)
   resetRuntimeExecutionForTests()
+  mediaPlaybackCoordinator.dispose()
   preloadPlaybackConfig()
   await reloadAllConfigs()
   addPageElement('/a')
@@ -112,6 +117,7 @@ afterEach(() => {
   vi.useRealTimers()
   setRuntimePreloadedConfig(undefined)
   resetRuntimeExecutionForTests()
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
   document.body.innerHTML = ''
 })
 
@@ -283,6 +289,139 @@ describe('usePlaybackHost 自动开始与就绪', () => {
     expect(second.host.snapshot.value?.state).toBe('stopped')
     expect(waitForAssets).not.toHaveBeenCalled()
     second.app.unmount()
+  })
+})
+
+describe('usePlaybackHost 可见性与快捷键', () => {
+  it('窗口隐藏时暂停并保留剩余时间，回前台不自动继续', async () => {
+    preloadPlaybackConfig({ autoStart: true })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('playing')
+
+    await vi.advanceTimersByTimeAsync(400)
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('paused')
+    const remaining = host.snapshot.value?.remainingMs ?? 0
+    expect(remaining).toBeGreaterThan(0)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(router.currentRoute.value.path).toBe('/a')
+
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('paused')
+
+    expect(host.resume()).toBe(true)
+    expect(host.snapshot.value?.state).toBe('playing')
+    await vi.advanceTimersByTimeAsync(remaining)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    app.unmount()
+  })
+
+  it('暂停暂停当前页媒体，继续只恢复此前播放的媒体，停止清理记录', async () => {
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('playing')
+
+    const page = document.querySelector<HTMLElement>('[data-runtime-route-path="/a"]')
+    expect(page).not.toBeNull()
+    const playing = document.createElement('video')
+    const idle = document.createElement('audio')
+    page!.append(playing, idle)
+    let playingPaused = false
+    let idlePaused = true
+    Object.defineProperty(playing, 'paused', { configurable: true, get: () => playingPaused })
+    Object.defineProperty(idle, 'paused', { configurable: true, get: () => idlePaused })
+    const pauseSpy = vi.fn(() => { playingPaused = true })
+    const playSpy = vi.fn(() => {
+      playingPaused = false
+      return Promise.resolve()
+    })
+    Object.assign(playing, { pause: pauseSpy, play: playSpy })
+
+    expect(host.pause()).toBe(true)
+    expect(pauseSpy).toHaveBeenCalledTimes(1)
+    expect(playingPaused).toBe(true)
+    expect(idlePaused).toBe(true)
+
+    expect(host.resume()).toBe(true)
+    expect(playSpy).toHaveBeenCalledTimes(1)
+    expect(playingPaused).toBe(false)
+
+    expect(host.stop()).toBe(true)
+    expect(pauseSpy).toHaveBeenCalledTimes(2)
+    expect(host.resume()).toBe(false)
+    app.unmount()
+  })
+
+  it('空格切换开始/暂停/继续并阻止布局层重复翻页', async () => {
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    let layoutShortcuts = 0
+    const layoutListener = () => { layoutShortcuts += 1 }
+    document.addEventListener('keydown', layoutListener)
+    const pressSpace = () => {
+      const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+      document.dispatchEvent(event)
+      return event
+    }
+
+    expect(pressSpace().defaultPrevented).toBe(true)
+    expect(host.snapshot.value?.state).toBe('preparing')
+    expect(layoutShortcuts).toBe(0)
+
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('playing')
+
+    expect(pressSpace().defaultPrevented).toBe(true)
+    expect(host.snapshot.value?.state).toBe('paused')
+    expect(layoutShortcuts).toBe(0)
+
+    expect(pressSpace().defaultPrevented).toBe(true)
+    expect(host.snapshot.value?.state).toBe('playing')
+    expect(layoutShortcuts).toBe(0)
+
+    app.unmount()
+    pressSpace()
+    expect(layoutShortcuts).toBe(1)
+    document.removeEventListener('keydown', layoutListener)
+  })
+
+  it('旧产物缺少 playback 配置时不创建控制器与入口', async () => {
+    preloadPlaybackConfig({ supported: false, autoStart: true })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    await flushAsync()
+
+    expect(host.snapshot.value).toBeNull()
+    expect(host.start()).toBe(false)
+    expect(waitForAssets).not.toHaveBeenCalled()
+    expect(getRuntimeSession(router).autoStartAttempted.value).toBe(true)
+    app.unmount()
   })
 })
 

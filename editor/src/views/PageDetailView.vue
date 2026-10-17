@@ -54,7 +54,15 @@
                   <Code2 class="h-3.5 w-3.5" />
                   编辑
                 </UiButton>
-                
+                <UiDropdownMenu :items="presentationMenuItems" @select="handlePresentationSelect">
+                  <template #trigger>
+                    <UiButton variant="secondary" size="sm" :disabled="isSaveActionPending" :loading="isPresentationPending">
+                      <Play class="h-3.5 w-3.5" />
+                      放映
+                    </UiButton>
+                  </template>
+                </UiDropdownMenu>
+
                 <div class="mx-0.5 h-5 w-px bg-border"></div>
                 <UiButton
                   variant="ghost"
@@ -251,7 +259,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Frown, History, Layers, SquarePen } from '@lucide/vue'
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, Code2, Frown, History, Layers, Play, SquarePen } from '@lucide/vue'
 
 import { getErrorMessage } from '@/api/http'
 import {
@@ -277,7 +285,8 @@ import PageUsageDialog from '@/components/page-detail/PageUsageDialog.vue'
 import PageVersionHistoryDialog from '@/components/page-detail/PageVersionHistoryDialog.vue'
 import { useRuntimePreviewLifecycle } from '@/composables/useRuntimePreviewLifecycle'
 import { previewTokenExpiresAt } from '@/composables/useRuntimePreviewRecovery'
-import { UiButton, UiIconButton } from '@/components/ui'
+import { UiButton, UiDropdownMenu, UiIconButton } from '@/components/ui'
+import type { DropdownMenuEntry } from '@/components/ui'
 import CommandBar from '@/components/patterns/CommandBar.vue'
 import DataState from '@/components/patterns/DataState.vue'
 import type {
@@ -297,7 +306,8 @@ import type {
 } from '@/types/api'
 import type { PageVisualEditApplyResponse } from '@/types/page-visual-edit'
 import { createConfirm, Message } from '@/utils/message'
-import { resolvePageDetailNavigation } from '@/utils/page-detail-navigation'
+import { resolvePageDetailNavigation, resolvePagePresentationRoute } from '@/utils/page-detail-navigation'
+import { openProjectPresentation } from '@/utils/project-presentation'
 import { buildPageDetailPath, buildProjectPagesPath } from '@/utils/workspace-routes'
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
@@ -579,6 +589,33 @@ const projectPages = computed<PageItem[]>(() => projectPagesQuery.data.value ?? 
 const pageNavigation = computed(() => resolvePageDetailNavigation(projectPages.value, pageId.value))
 const previousPageId = computed(() => pageNavigation.value.previousPageId)
 const nextPageId = computed(() => pageNavigation.value.nextPageId)
+const presentationRoute = computed(() => resolvePagePresentationRoute(pageDetails.value))
+const isPresentationPending = ref(false)
+const presentationMenuItems = computed<DropdownMenuEntry[]>(() => [
+  { value: 'home', label: '从首页放映', description: '从第一个可见页面开始；生成新的只读快照' },
+  {
+    value: 'current',
+    label: '从当前页放映',
+    description: presentationRoute.value || '当前页面尚未加入项目路由',
+    disabled: !presentationRoute.value,
+  },
+])
+
+/** 创建新的项目放映快照；当前页入口使用页面在路由树中的第一条绑定。 */
+async function handlePresentationSelect(value: string): Promise<void> {
+  if (!projectId.value || isPresentationPending.value) return
+  isPresentationPending.value = true
+  try {
+    await openProjectPresentation({
+      projectId: projectId.value,
+      entryRoute: value === 'current' ? presentationRoute.value : null,
+    })
+  } catch (error) {
+    Message.error(getErrorMessage(error, '生成项目放映失败。'))
+  } finally {
+    isPresentationPending.value = false
+  }
+}
 const pageComponentIndex = computed<PageCurrentComponentIndex | null>(() => componentIndexQuery.data.value ?? null)
 const pageVersions = computed<PageVersionListItem[]>(() => versionsQuery.data.value ?? [])
 const usedComponentNames = computed(() => pageComponentIndex.value?.components ?? [])

@@ -1199,7 +1199,7 @@ describe('page screenshot views', () => {
     })
   })
 
-  it('PagesView 整项目预览应交由后端选择默认入口路由', async () => {
+  it('PagesView 整项目放映应交由后端选择默认入口路由', async () => {
     listPagesMock.mockResolvedValue({
       items: [
         {
@@ -1243,12 +1243,13 @@ describe('page screenshot views', () => {
     render(PagesView, createTestingRenderOptions())
 
     expect(await screen.findByText('项目首页')).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole('button', { name: /^预览$/ }))
+    await fireEvent.click(screen.getByRole('button', { name: /^放映$/ }))
 
     await waitFor(() => {
-      expect(createProjectPreviewArtifactMock).toHaveBeenCalledWith(21)
+      expect(createProjectPreviewArtifactMock).toHaveBeenCalledWith(21, null)
     })
-    expect(windowOpenMock).toHaveBeenCalledWith('http://runtime.local/__preview?ticket=current', '_blank')
+    expect(windowOpenMock).toHaveBeenNthCalledWith(1, 'about:blank', '_blank')
+    expect(windowOpenMock).toHaveBeenNthCalledWith(2, 'http://runtime.local/__preview?ticket=current', '_blank')
     windowOpenMock.mockRestore()
   })
 

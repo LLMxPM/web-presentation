@@ -47,12 +47,13 @@
                   size="sm"
                   :loading="previewLoading"
                   :disabled="!projectDetails"
+                  title="从首页开始放映；每次生成新的只读快照，旧窗口不会自动更新"
                   @click="handlePreviewProject"
                 >
                   <template #icon>
                     <Play class="h-4 w-4" />
                   </template>
-                  预览
+                  放映
                 </UiButton>
                 <UiButton
                   variant="secondary"
@@ -324,7 +325,7 @@ import {
   updateProject,
   waitForPageScreenshotJobGroup,
 } from '@/api/catalog'
-import { createProjectPreviewArtifact } from '@/api/preview'
+import { openProjectPresentation } from '@/utils/project-presentation'
 import { getErrorCode, getErrorData, getErrorMessage } from '@/api/http'
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
 import CommandBar from '@/components/patterns/CommandBar.vue'
@@ -1321,7 +1322,7 @@ async function handleRouteSave(payload: { routes: ProjectRouteItemWrite[] }): Pr
 }
 
 /**
- * 生成当前项目的整项目预览链接，并在新标签页打开。
+ * 从首页开始项目放映，生成新的只读快照并在新标签页打开。
  */
 async function handlePreviewProject(): Promise<void> {
   if (!projectDetails.value) {
@@ -1330,10 +1331,9 @@ async function handlePreviewProject(): Promise<void> {
 
   previewLoading.value = true
   try {
-    const res = await createProjectPreviewArtifact(projectDetails.value.id)
-    window.open(res.preview_url, '_blank')
+    await openProjectPresentation({ projectId: projectDetails.value.id })
   } catch (error) {
-    Message.error(getErrorMessage(error, '生成整项目预览失败。'))
+    Message.error(getErrorMessage(error, '生成项目放映失败。'))
   } finally {
     previewLoading.value = false
   }

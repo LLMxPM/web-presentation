@@ -72,7 +72,7 @@ describe('ProjectCard', () => {
     expect(screen.getByText('季度发布会').closest('.project-card-identity')).toBeInTheDocument()
 
     await fireEvent.click(screen.getByRole('link', { name: '打开项目：季度发布会' }))
-    await fireEvent.click(screen.getByRole('button', { name: '预览项目' }))
+    await fireEvent.click(screen.getByRole('button', { name: '放映项目' }))
     await fireEvent.click(screen.getByRole('button', { name: '导出项目' }))
     await fireEvent.click(screen.getByRole('button', { name: '归档项目' }))
 

@@ -12,6 +12,7 @@ import { resolvePageAdvance } from '@/core/utils/page-transition'
 import { waitForEditorVisualAssets } from '@/core/utils/visual-assets'
 import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
 import { shouldStartAutomatically } from '@/core/execution/execution-policy'
+import { mediaPlaybackCoordinator } from '@/core/execution/media-playback-guard'
 import { PlaybackController, type PlaybackPage, type PlaybackSnapshot } from './playback-controller'
 
 const PLAYBACK_READY_TIMEOUT_MS = 15000
@@ -33,6 +34,8 @@ export interface PlaybackHost {
   resume: () => boolean
   stop: () => boolean
   retry: () => boolean
+  /** 按控制器单调时钟刷新剩余时间，供控制条定时读取。 */
+  refresh: () => void
 }
 
 /**
@@ -71,7 +74,7 @@ export function usePlaybackHost(): PlaybackHost {
 
   /** 按当前执行策略惰性创建控制器；目录为空时不创建。 */
   function ensureController(): PlaybackController | null {
-    if (disposed || !policy.value.allowAutoAdvance) return null
+    if (disposed || !policy.value.allowAutoAdvance || !playbackConfig.value.supported) return null
     if (controller.value) return controller.value
     const pages = buildPlaybackPages()
     if (pages.length === 0) return null
@@ -90,7 +93,15 @@ export function usePlaybackHost(): PlaybackHost {
     return instance
   }
 
+  /** 只暂停当前放映页内正在播放的媒体，避免影响侧栏缩略图等其他区域。 */
+  function suspendPageMedia(): void {
+    const path = controller.value?.getSnapshot().path
+    const root = path ? findPlaybackPageElement(path) : null
+    if (root) mediaPlaybackCoordinator.suspend(root)
+  }
+
   function disposeController(): void {
+    suspendPageMedia()
     pendingAttempt = null
     attemptSequence += 1
     unsubscribe?.()
@@ -99,6 +110,7 @@ export function usePlaybackHost(): PlaybackHost {
     controller.value = null
     snapshot.value = null
     errorMessage.value = ''
+    mediaPlaybackCoordinator.dispose()
   }
 
   /** 判断探测结果是否仍属于当前页面、generation 与最新一次尝试。 */
@@ -195,7 +207,78 @@ export function usePlaybackHost(): PlaybackHost {
     else disposeController()
   }, { immediate: true })
 
+  /** 开始当前页放映；失败时不创建重复计时。 */
+  function startPlayback(): boolean {
+    const instance = ensureController()
+    if (!instance || !instance.start()) return false
+    beginReadiness(instance.getSnapshot().path, true)
+    return true
+  }
+
+  function pausePlayback(): boolean {
+    if (!controller.value?.pause()) return false
+    suspendPageMedia()
+    return true
+  }
+
+  function resumePlayback(): boolean {
+    const instance = controller.value
+    if (!instance || !instance.resume()) return false
+    mediaPlaybackCoordinator.resume()
+    if (instance.getSnapshot().state === 'preparing') beginReadiness(instance.getSnapshot().path, true)
+    return true
+  }
+
+  function stopPlayback(): boolean {
+    if (!controller.value?.stop()) return false
+    suspendPageMedia()
+    mediaPlaybackCoordinator.dispose()
+    return true
+  }
+
+  function retryPlayback(): boolean {
+    const instance = controller.value
+    if (!instance || !instance.retry()) return false
+    beginReadiness(instance.getSnapshot().path, true)
+    return true
+  }
+
+  /** 窗口隐藏时暂停并保留剩余时间；重新可见后等待用户显式继续，不补课。 */
+  function handleVisibilityChange(): void {
+    if (!document.hidden) return
+    const instance = controller.value
+    if (!instance) return
+    const state = instance.getSnapshot().state
+    if (state === 'playing' || state === 'preparing') pausePlayback()
+  }
+
+  /**
+   * 空格键在放映主画布中切换开始/暂停/继续。
+   * 捕获阶段处理后阻止传播，避免与布局层的空格翻页快捷键重复触发。
+   */
+  function handlePlaybackKeydown(event: KeyboardEvent): void {
+    if (event.repeat || event.key !== ' ' || event.altKey || event.ctrlKey || event.metaKey) return
+    const target = event.target as HTMLElement | null
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+    const instance = controller.value
+    if (!instance) return
+    const state = instance.getSnapshot().state
+    let handled = false
+    if (state === 'stopped' || state === 'ended' || state === 'error' || state === 'blocked') {
+      handled = startPlayback()
+    } else if (state === 'playing' || state === 'preparing') {
+      handled = pausePlayback()
+    } else if (state === 'paused') {
+      handled = resumePlayback()
+    }
+    if (!handled) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+
   onMounted(() => {
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    document.addEventListener('keydown', handlePlaybackKeydown, true)
     if (disposed || session.autoStartAttempted.value) return
     session.autoStartAttempted.value = true
     const instance = ensureController()
@@ -206,6 +289,8 @@ export function usePlaybackHost(): PlaybackHost {
 
   onBeforeUnmount(() => {
     disposed = true
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    document.removeEventListener('keydown', handlePlaybackKeydown, true)
     stopRouteWatch()
     stopSettledWatch()
     stopNavigationErrorWatch()
@@ -216,26 +301,14 @@ export function usePlaybackHost(): PlaybackHost {
   return {
     snapshot,
     errorMessage,
-    /** 供入口/控制条使用；开始或恢复失败时返回 false，不创建重复计时。 */
-    start: () => {
-      const instance = ensureController()
-      if (!instance || !instance.start()) return false
-      beginReadiness(instance.getSnapshot().path, true)
-      return true
-    },
-    pause: () => controller.value?.pause() ?? false,
-    resume: () => {
+    start: startPlayback,
+    pause: pausePlayback,
+    resume: resumePlayback,
+    stop: stopPlayback,
+    retry: retryPlayback,
+    refresh: () => {
       const instance = controller.value
-      if (!instance || !instance.resume()) return false
-      if (instance.getSnapshot().state === 'preparing') beginReadiness(instance.getSnapshot().path, true)
-      return true
-    },
-    stop: () => controller.value?.stop() ?? false,
-    retry: () => {
-      const instance = controller.value
-      if (!instance || !instance.retry()) return false
-      beginReadiness(instance.getSnapshot().path, true)
-      return true
+      if (instance) snapshot.value = instance.getSnapshot()
     },
   }
 }

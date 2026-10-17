@@ -770,6 +770,7 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '截图' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '资源' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '编辑' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '放映' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '编辑器' })).toBeNull()
     expect(screen.queryByRole('button', { name: '可视化' })).toBeNull()
     expect(screen.queryByRole('button', { name: '保存' })).toBeNull()

@@ -61,12 +61,12 @@
 
       <div class="project-card-actions">
         <UiIconButton
-          label="预览项目"
+          label="放映项目"
           size="sm"
           variant="secondary"
           :disabled="previewPending"
           :loading="previewPending"
-          :title="previewPending ? '正在生成项目预览' : '预览项目'"
+          :title="previewPending ? '正在生成项目放映' : '从首页开始放映'"
           @click.stop="emit('preview', project)"
         >
           <Play class="h-3.5 w-3.5" />

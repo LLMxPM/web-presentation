@@ -446,7 +446,7 @@ import { Archive, ArrowRight, Eye, FolderKanban, Layers, Plus, RefreshCw, Square
 import { createProject, getWorkspace, listProjects, updateProject, updateWorkspace } from '@/api/catalog'
 import { listAccessTokens } from '@/api/accessTokens'
 import { getErrorMessage } from '@/api/http'
-import { createProjectPreviewArtifact } from '@/api/preview'
+import { openProjectPresentation } from '@/utils/project-presentation'
 import {
   createProjectTemplatePackagePreviewArtifact,
   exportProjectTemplatePackage,
@@ -782,16 +782,15 @@ function goToProject(id: number) {
 }
 
 /**
- * 生成项目整体预览并在新标签页打开。
- * @param project 需要预览的项目
+ * 从首页开始项目放映，生成新的只读快照并在新标签页打开。
+ * @param project 需要放映的项目
  */
 async function handlePreviewProject(project: ProjectItem): Promise<void> {
   previewProjectId.value = project.id
   try {
-    const preview = await createProjectPreviewArtifact(project.id)
-    window.open(preview.preview_url, '_blank')
+    await openProjectPresentation({ projectId: project.id })
   } catch (error) {
-    Message.error(getErrorMessage(error, '生成整项目预览失败。'))
+    Message.error(getErrorMessage(error, '生成项目放映失败。'))
   } finally {
     previewProjectId.value = null
   }
