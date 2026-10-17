@@ -12,7 +12,9 @@
   >
     <video
       v-if="src"
+      ref="mediaElement"
       class="video-viewer__media"
+      data-runtime-media-target="video"
       :src="src"
       :poster="poster || undefined"
       :controls="controls"
@@ -22,6 +24,11 @@
       :playsinline="playsInline"
       :preload="preload"
       :style="videoStyle"
+      @play="emit('play', $event)"
+      @pause="emit('pause', $event)"
+      @ended="emit('ended', $event)"
+      @error="emit('error', $event)"
+      @loadstart="emit('media-reset')"
     />
     <slot v-else name="fallback">
       <div class="video-viewer__placeholder">视频资源为空</div>
@@ -30,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, type CSSProperties } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue'
 import { useViewerSurfaceStyle, type ViewerSurfaceProps } from '@runtime-kit/internal/utils/viewer-style'
 
 type VideoPreload = 'none' | 'metadata' | 'auto'
@@ -71,11 +78,39 @@ const props = withDefaults(defineProps<Props>(), {
   position: 'center',
 })
 
+const emit = defineEmits<{
+  play: [event: Event]
+  pause: [event: Event]
+  ended: [event: Event]
+  error: [event: Event]
+  /** 实际 video 元素挂载或替换后通知宿主注册。 */
+  'media-ready': [element: HTMLVideoElement]
+  'media-unmounted': []
+  'media-reset': []
+}>()
+
 const surfaceStyle = useViewerSurfaceStyle(props)
 const videoStyle = computed<CSSProperties>(() => ({
   objectFit: props.fit,
   objectPosition: props.position,
 }))
+const mediaElement = ref<HTMLVideoElement | null>(null)
+
+watch(mediaElement, (element, previous) => {
+  if (previous) emit('media-unmounted')
+  if (element) emit('media-ready', element)
+}, { flush: 'post' })
+
+onBeforeUnmount(() => {
+  if (mediaElement.value) emit('media-unmounted')
+})
+
+/** 供放映媒体适配层取得受控实例，避免依赖选择器寻找内部元素。 */
+function getMediaElement(): HTMLVideoElement | null {
+  return mediaElement.value
+}
+
+defineExpose({ getMediaElement })
 </script>
 
 <style scoped>
