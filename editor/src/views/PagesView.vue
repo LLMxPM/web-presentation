@@ -358,6 +358,7 @@ import type {
   ProjectBuildResourceIssueData,
   ProjectMenuMode,
   ProjectRouteItemWrite,
+  SlideshowSettings,
   SuggestedComponentItem,
   ProjectSuggestedReferenceAssetItem,
 } from '@/types/api'
@@ -1271,6 +1272,7 @@ async function handlePresentationConfigSave(payload: {
   menu_mode: ProjectMenuMode
   theme_key: string | null
   style_spec_markdown: string
+  slideshow: SlideshowSettings
   source_style_id?: number | null
 }): Promise<void> {
   if (!projectDetails.value) {

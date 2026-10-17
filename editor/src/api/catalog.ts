@@ -24,6 +24,7 @@ import type {
   ProjectRouteItemWrite,
   ProjectRouteTreeResponse,
   ProjectSuggestedReferenceAssetsResponse,
+  SlideshowSettings,
   SuggestedComponentsResponse,
   WorkspaceComponentType,
   WorkspaceComponentCurrentDependencies,
@@ -176,6 +177,7 @@ export async function updateProject(
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
+    slideshow: SlideshowSettings
     build_extra_assets_json: ProjectBuildExtraAssetsJson
     source_style_id: number | null
   }>,

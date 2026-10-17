@@ -46,6 +46,14 @@
             v-model:menu-mode="draft.menuMode"
           />
         </section>
+
+        <section class="project-config-card bg-surface">
+          <h3 class="text-sm font-semibold text-text-emphasis">自动放映</h3>
+          <p class="mt-0.5 text-xs text-text-disabled">项目默认值；逐页可在路由配置中覆盖。应用样式不会修改这里的设置。</p>
+          <div class="mt-3">
+            <ProjectSlideshowFields :draft="draft.slideshow" @update:draft="updateSlideshowDraft" />
+          </div>
+        </section>
       </section>
 
       <section class="project-config-card project-config-spec-card bg-surface">
@@ -91,12 +99,15 @@ import { computed, reactive, ref, watch } from 'vue'
 import { createWorkspaceStyle, type WorkspaceStylePayload } from '@/api/styles'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
-import type { ProjectItem, ProjectMenuMode, WorkspaceStyleItem } from '@/types/api'
+import type { ProjectItem, ProjectMenuMode, SlideshowSettings, WorkspaceStyleItem } from '@/types/api'
 import { Message } from '@/utils/message'
 import { getErrorMessage } from '@/api/http'
 import WorkspaceStyleApplyField from './WorkspaceStyleApplyField.vue'
 import WorkspaceStyleEditorDialog from './WorkspaceStyleEditorDialog.vue'
 import ProjectPresentationFields from './ProjectPresentationFields.vue'
+import ProjectSlideshowFields from './ProjectSlideshowFields.vue'
+import type { SlideshowDraft } from './project-slideshow-values'
+import { createSlideshowDraft, normalizeSlideshowDraft } from './project-slideshow-values'
 import {
   DEFAULT_PROJECT_BASE_FONT_SIZE,
   DEFAULT_PROJECT_PAGE_HEIGHT,
@@ -128,6 +139,7 @@ const emit = defineEmits<{
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
+    slideshow: SlideshowSettings
     source_style_id?: number | null
   }]
 }>()
@@ -141,6 +153,7 @@ const draft = reactive({
   menuMode: 'preview' as ProjectMenuMode,
   themeKey: null as string | null,
   styleSpecMarkdown: '',
+  slideshow: createSlideshowDraft(null),
 })
 
 const saveAsStyleDialogVisible = ref(false)
@@ -179,7 +192,16 @@ function syncDraftFromProject(project: ProjectItem | null): void {
   draft.menuMode = project?.menu_mode ?? 'preview'
   draft.themeKey = project?.theme_key ?? props.defaultThemeKey ?? null
   draft.styleSpecMarkdown = project?.style_spec_markdown ?? ''
+  draft.slideshow = createSlideshowDraft(project?.slideshow)
   appliedWorkspaceStyleId.value = null
+}
+
+/**
+ * 接收放映表单回传的完整草稿。
+ * @param value 放映草稿
+ */
+function updateSlideshowDraft(value: SlideshowDraft): void {
+  draft.slideshow = value
 }
 
 /**
@@ -236,6 +258,7 @@ function handleSave(): void {
     menu_mode: ProjectMenuMode
     theme_key: string | null
     style_spec_markdown: string
+    slideshow: SlideshowSettings
     source_style_id?: number | null
   } = {
     page_width: normalizedPageWidth.value,
@@ -246,6 +269,7 @@ function handleSave(): void {
     menu_mode: draft.menuMode,
     theme_key: draft.themeKey,
     style_spec_markdown: draft.styleSpecMarkdown,
+    slideshow: normalizeSlideshowDraft(draft.slideshow),
   }
   if (appliedWorkspaceStyleId.value !== null) {
     payload.source_style_id = appliedWorkspaceStyleId.value

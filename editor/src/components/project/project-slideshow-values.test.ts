@@ -1,0 +1,82 @@
+/** 文件功能：验证放映表单草稿与毫秒配置的转换、范围收敛和无动画 0ms 语义。 */
+import { describe, expect, it } from 'vitest'
+
+import {
+  createSlideshowDraft,
+  formatMillisecondsAsSeconds,
+  normalizeSlideshowDraft,
+  parseSecondsToMilliseconds,
+} from './project-slideshow-values'
+
+describe('project slideshow values', () => {
+  it('应把毫秒配置转换为秒草稿并保留合法值', () => {
+    const draft = createSlideshowDraft({
+      transition: { effect: 'push', duration_ms: 650 },
+      advance: { mode: 'timer', delay_ms: 8000 },
+      loop: true,
+      auto_start: false,
+    })
+
+    expect(draft).toEqual({
+      effect: 'push',
+      durationSeconds: '0.65',
+      advanceMode: 'timer',
+      delaySeconds: '8',
+      loop: true,
+      autoStart: false,
+    })
+  })
+
+  it('应把小数秒四舍五入为整数毫秒', () => {
+    expect(parseSecondsToMilliseconds('0.3004')).toBe(300)
+    expect(parseSecondsToMilliseconds(' 12.5 ')).toBe(12500)
+    expect(parseSecondsToMilliseconds('abc')).toBeNull()
+    expect(parseSecondsToMilliseconds('-1')).toBeNull()
+    expect(formatMillisecondsAsSeconds(650)).toBe('0.65')
+    expect(formatMillisecondsAsSeconds(1000)).toBe('1')
+  })
+
+  it('无动画时必须提交 0ms，其它效果收敛到 100–2000ms', () => {
+    expect(normalizeSlideshowDraft({
+      effect: 'none',
+      durationSeconds: '0.8',
+      advanceMode: 'manual',
+      delaySeconds: '5',
+      loop: false,
+      autoStart: false,
+    }).transition).toEqual({ effect: 'none', duration_ms: 0 })
+
+    expect(normalizeSlideshowDraft({
+      effect: 'fade',
+      durationSeconds: '0.01',
+      advanceMode: 'manual',
+      delaySeconds: '5',
+      loop: false,
+      autoStart: false,
+    }).transition.duration_ms).toBe(100)
+
+    expect(normalizeSlideshowDraft({
+      effect: 'push',
+      durationSeconds: '9',
+      advanceMode: 'manual',
+      delaySeconds: '5',
+      loop: false,
+      autoStart: false,
+    }).transition.duration_ms).toBe(2000)
+  })
+
+  it('停留时长应收敛到 1000–3600000ms 并对非法输入使用兜底值', () => {
+    const base = {
+      effect: 'fade' as const,
+      durationSeconds: '0.4',
+      advanceMode: 'timer' as const,
+      loop: false,
+      autoStart: false,
+    }
+
+    expect(normalizeSlideshowDraft({ ...base, delaySeconds: '0.2' }).advance.delay_ms).toBe(1000)
+    expect(normalizeSlideshowDraft({ ...base, delaySeconds: '9999' }).advance.delay_ms).toBe(3600000)
+    expect(normalizeSlideshowDraft({ ...base, delaySeconds: 'oops' }).advance.delay_ms).toBe(5000)
+    expect(normalizeSlideshowDraft({ ...base, delaySeconds: '' }).advance.delay_ms).toBe(5000)
+  })
+})

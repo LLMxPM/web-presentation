@@ -77,6 +77,7 @@ export interface SuggestedComponentsResponse {
 export type WorkspaceItem = GeneratedApi.WorkspaceItem
 
 export type ProjectItem = GeneratedApi.ProjectItem
+export type SlideshowSettings = GeneratedApi.SlideshowSettings
 
 export type ProjectBuildStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
