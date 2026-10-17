@@ -19,8 +19,9 @@ from app.repositories.page_version_repository import PageVersionRepository
 from app.schemas.page import PageVersionContent, PageVersionListItem
 from app.services.asset_binding_service import OWNER_KIND_PAGE_VERSION, AssetBindingService
 from app.services.component_dependency_service import ComponentDependencyService
-from app.services.model3d_acceptance_policy import MODEL3D_ERROR_REFERENCE_UNRESOLVED
+from app.services.model3d_acceptance_policy import MODEL3D_ERROR_REFERENCE_UNRESOLVED, MODEL3D_ERROR_VIEW_OPTIONS_INVALID
 from app.services.model3d_reference_collector import Model3dReferenceCollector
+from app.services.model3d_view_options_gate import collect_model_view_option_errors
 from app.services.page_component_index_service import PageComponentIndexService
 from app.services.resource_reference_parser import ResourceReferenceParser
 
@@ -51,6 +52,7 @@ class PageVersionService:
         """为新页面创建第一个完整快照版本。"""
 
         normalized_page_content = normalize_text_to_lf(page.page_content)
+        self._ensure_model_view_options_valid(normalized_page_content)
         page.page_content = normalized_page_content
         created_at = utc_now()
         version = PageVersion(
@@ -106,6 +108,7 @@ class PageVersionService:
         else:
             normalized_speaker_notes = normalize_text_to_lf(str(speaker_notes))
         normalized_file_type = file_type.value
+        self._ensure_model_view_options_valid(normalized_page_content)
         latest_version = await self.repository.get_latest_by_page_id(page.id)
         if (
             normalized_existing_content == normalized_page_content
@@ -170,6 +173,18 @@ class PageVersionService:
         page.speaker_notes = normalized_speaker_notes
         page.current_version_no = new_version.version_no
         return new_version
+
+    @staticmethod
+    def _ensure_model_view_options_valid(page_content: str) -> None:
+        """静态校验页面源码中 AssetModel 展示参数，非法时以 422 阻断版本落库。"""
+
+        errors = collect_model_view_option_errors(page_content)
+        if errors:
+            raise AppException(
+                status_code=422,
+                code=MODEL3D_ERROR_VIEW_OPTIONS_INVALID,
+                detail="页面源码存在非法的 AssetModel 展示参数：" + "；".join(errors),
+            )
 
     async def _sync_page_version_asset_bindings(self, page: Page, page_version: PageVersion) -> None:
         """按版本资源索引与组件闭包收集三维资源，重建该版本的永久绑定。"""

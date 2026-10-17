@@ -18,6 +18,8 @@ from app.services.asset_binding_service import OWNER_KIND_COMPONENT_VERSION, Ass
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.component_fingerprint_service import ComponentFingerprintService
 from app.services.component_resource_index_service import ComponentResourceIndexService
+from app.services.model3d_acceptance_policy import MODEL3D_ERROR_VIEW_OPTIONS_INVALID
+from app.services.model3d_view_options_gate import collect_model_view_option_errors
 from app.services.model3d_acceptance_policy import MODEL3D_ERROR_REFERENCE_UNRESOLVED
 from app.services.model3d_reference_collector import Model3dReferenceCollector
 
@@ -83,6 +85,13 @@ class WorkspaceComponentVersionService:
         normalized_content = normalize_text_to_lf(component.content)
         component.content = normalized_content
         normalized_file_type = str(component.file_type)
+        view_option_errors = collect_model_view_option_errors(normalized_content)
+        if view_option_errors:
+            raise AppException(
+                status_code=422,
+                code=MODEL3D_ERROR_VIEW_OPTIONS_INVALID,
+                detail="组件源码存在非法的 AssetModel 展示参数：" + "；".join(view_option_errors),
+            )
         await self.validate_draft_dependencies(
             component=component,
             content=normalized_content,

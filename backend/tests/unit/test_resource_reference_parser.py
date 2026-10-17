@@ -137,3 +137,76 @@ def test_build_result_should_split_dynamic_marker_from_static_names() -> None:
 
     assert result.asset_names == ["hero"]
     assert result.has_dynamic is True
+
+
+def test_collect_vue_model_view_option_payloads_should_collect_static_scalars() -> None:
+    """静态字面量展示参数应被收集为运行时同型值。"""
+
+    payloads = ResourceReferenceParser.collect_vue_model_view_option_payloads(
+        """
+<template>
+  <AssetModel name="product" scene-index="1" background="#ff0033" lighting="source" interactive />
+</template>
+        """
+    )
+
+    assert payloads == [
+        {
+            "sceneIndex": 1,
+            "background": "#ff0033",
+            "lighting": "source",
+            "interactive": True,
+        }
+    ]
+
+
+def test_collect_vue_model_view_option_payloads_should_parse_bound_vector_literal() -> None:
+    """绑定的数组字面量与数字 fov 应解析为数值列表。"""
+
+    payloads = ResourceReferenceParser.collect_vue_model_view_option_payloads(
+        """
+<template>
+  <AssetModel :camera-position="[0, 1.5, 4]" :camera-target="[0, 0, 0]" :camera-fov="60" />
+</template>
+        """
+    )
+
+    assert payloads == [
+        {
+            "cameraPosition": [0.0, 1.5, 4.0],
+            "cameraTarget": [0.0, 0.0, 0.0],
+            "cameraFov": 60.0,
+        }
+    ]
+
+
+def test_collect_vue_model_view_option_payloads_should_skip_dynamic_camera_group() -> None:
+    """相机组任一字段为动态表达式时整组跳过，其余静态标量仍收集。"""
+
+    payloads = ResourceReferenceParser.collect_vue_model_view_option_payloads(
+        """
+<template>
+  <AssetModel :camera-position="dynamicPosition" camera-target="[0, 0, 0]" background="transparent" />
+</template>
+        """
+    )
+
+    assert payloads == [{"background": "transparent"}]
+
+
+def test_collect_vue_model_view_option_payloads_should_ignore_non_model_tags_and_comments() -> None:
+    """非 AssetModel 组件与注释中的标签不应产生 payload。"""
+
+    payloads = ResourceReferenceParser.collect_vue_model_view_option_payloads(
+        """
+<template>
+  <!-- <AssetModel scene-index="-1" /> -->
+  <section>
+    <AssetImage name="cover" scene-index="0" />
+    <AssetModel name="product" fallback="模型加载失败" />
+  </section>
+</template>
+        """
+    )
+
+    assert payloads == [{"fallback": "模型加载失败"}]

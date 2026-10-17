@@ -40,6 +40,31 @@ _STATIC_ASSET_CALL_PATTERN = re.compile(
 )
 _RUNTIME_KIT_VERSION_SUFFIX_PATTERN = re.compile(r"\.v\d+$")
 
+# AssetModel 展示参数静态校验：组件标签与 kebab → camel 字段映射。
+_MODEL_COMPONENT_TAG = "assetmodel"
+_VIEW_OPTION_ATTR_ALIASES = {
+    "scene-index": "sceneIndex",
+    "camera-index": "cameraIndex",
+    "camera-position": "cameraPosition",
+    "camera-target": "cameraTarget",
+    "camera-fov": "cameraFov",
+    "background": "background",
+    "lighting": "lighting",
+    "interactive": "interactive",
+    "fallback": "fallback",
+    "class": "class",
+}
+# 相机组字段：任一字段为动态表达式时，整组跳过静态校验（成对/互斥规则无法静态判定）。
+_VIEW_OPTION_CAMERA_FIELDS = frozenset({"cameraPosition", "cameraTarget", "cameraFov"})
+# 模板属性扫描：属性名支持静态/绑定（: 或 v-bind:）前缀，值支持引号、无引号与布尔属性。
+_TEMPLATE_ATTR_PATTERN = re.compile(
+    r"""(?:^|\s)(?P<name>[:@A-Za-z_][\w:.-]*)(?:\s*=\s*(?:(?P<quote>["'])(?P<quoted>.*?)(?P=quote)|(?P<bare>[^\s"'=<>`]+)))?""",
+    flags=re.DOTALL,
+)
+_INT_VALUE_PATTERN = re.compile(r"^\d+$")
+_FLOAT_VALUE_PATTERN = re.compile(r"^[-+]?\d+(?:\.\d+)?$")
+_VECTOR3_VALUE_PATTERN = re.compile(r"^\[\s*[-+0-9.eE]+\s*,\s*[-+0-9.eE]+\s*,\s*[-+0-9.eE]+\s*\]$")
+
 _VUE_NATIVE_TAGS = {
     "template",
     "slot",
@@ -208,6 +233,113 @@ class ResourceReferenceParser:
 
         _, resource_items = cls.collect_vue_component_references(source)
         return resource_items
+
+    @classmethod
+    def collect_vue_model_view_option_payloads(cls, source: str) -> list[dict[str, Any]]:
+        """收集 AssetModel 实例中可静态求值的展示参数 payload。
+
+        只收集静态字面量属性与可解析为 JSON 数组/布尔的绑定字面量；
+        相机组（cameraPosition/cameraTarget/cameraFov）任一字段为动态表达式时
+        整组跳过——成对与互斥规则无法静态判定，交给 Runtime 归一化兑底。
+        不收集 name：资源身份由引用冻结链路负责，与展示参数校验无关。
+        """
+
+        template_content = cls.extract_template_content(source)
+        if not template_content:
+            return []
+        clean_template = _HTML_COMMENT_PATTERN.sub("", template_content)
+        payloads: list[dict[str, Any]] = []
+        for is_closing, raw_tag, attrs_text, _is_self_closing in cls.iter_template_tags(clean_template):
+            if is_closing or raw_tag.lower() != _MODEL_COMPONENT_TAG:
+                continue
+            payload = cls._build_model_view_option_payload(attrs_text)
+            if payload:
+                payloads.append(payload)
+        return payloads
+
+    @classmethod
+    def _build_model_view_option_payload(cls, attrs_text: str) -> dict[str, Any]:
+        """把单个 AssetModel 标签的属性串转换为可校验 payload；无可静态求值字段时返回空。"""
+
+        # field -> (is_bound, raw_value)；同名字段以后出现者为准，与 Vue 覆盖语义一致。
+        collected: dict[str, tuple[bool, str]] = {}
+        for match in _TEMPLATE_ATTR_PATTERN.finditer(attrs_text or ""):
+            raw_name = match.group("name").lower()
+            if raw_name.startswith(":"):
+                field_key, is_bound = raw_name[1:], True
+            elif raw_name.startswith("v-bind:"):
+                field_key, is_bound = raw_name[len("v-bind:"):], True
+            else:
+                field_key, is_bound = raw_name, False
+            aliased = _VIEW_OPTION_ATTR_ALIASES.get(field_key)
+            if not aliased:
+                continue
+            value = match.group("quoted")
+            if value is None:
+                value = match.group("bare")
+            if value is None:
+                # 布尔属性（如裸写 interactive）按 true 处理，与 Vue 行为一致。
+                value = "true" if is_bound is False else ""
+            collected[aliased] = (is_bound, value.strip())
+        if not collected:
+            return {}
+
+        # 相机组不可静态求值时整组丢弃，避免误报成对/互斥错误。
+        camera_unresolvable = any(
+            field in _VIEW_OPTION_CAMERA_FIELDS and not cls._resolve_view_option_value(field, is_bound, raw)[0]
+            for field, (is_bound, raw) in collected.items()
+            if field in _VIEW_OPTION_CAMERA_FIELDS
+        )
+
+        payload: dict[str, Any] = {}
+        for field, (is_bound, raw) in collected.items():
+            if field in _VIEW_OPTION_CAMERA_FIELDS and camera_unresolvable:
+                continue
+            resolved = cls._resolve_view_option_value(field, is_bound, raw)
+            if resolved[0]:
+                payload[field] = resolved[1]
+        return payload
+
+    @classmethod
+    def _resolve_view_option_value(cls, field: str, is_bound: bool, raw: str) -> tuple[bool, Any]:
+        """把展示参数字面量解析为运行时同型值；无法静态求值时返回 (False, None)。
+
+        绑定属性（`:field`）只有可静态求值的字面量才纳入校验，动态表达式一律跳过；
+        普通属性（`field="..."`）传给运行时的是字符串，保留原值交给校验器判断
+        （Vue 的 Number/Boolean cast 行为已在这里对齐）。
+        """
+
+        if field in {"cameraPosition", "cameraTarget"}:
+            # 绑定字面量数组按 JSON 数组解析；普通属性传的是字符串，直接交给校验器报类型错误。
+            if is_bound and _VECTOR3_VALUE_PATTERN.match(raw):
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    return False, None
+                if isinstance(parsed, list) and len(parsed) == 3:
+                    return True, [float(item) for item in parsed]
+                return False, None
+            return not is_bound, raw
+        if field == "cameraFov":
+            if _FLOAT_VALUE_PATTERN.match(raw):
+                return True, float(raw)
+            return not is_bound, raw
+        if field in {"sceneIndex", "cameraIndex"}:
+            # Vue 会把数字型普通属性转换为 Number，这里对齐运行时行为。
+            if _INT_VALUE_PATTERN.match(raw):
+                return True, int(raw)
+            if not is_bound:
+                return True, raw
+            return False, None
+        if field == "interactive":
+            if raw == "" or raw.lower() == "true":
+                return True, True
+            if raw.lower() == "false":
+                return True, False
+            return False, None
+        if not is_bound:
+            return True, raw
+        return False, None
 
     @classmethod
     def collect_vue_component_references(cls, source: str) -> tuple[set[str], list[tuple[str, str]]]:
