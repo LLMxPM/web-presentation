@@ -34,5 +34,6 @@
 - 验证：`uv run --project backend pytest -q backend/tests/unit/test_slideshow_schema.py backend/tests/unit/test_private_delivery_regressions.py backend/tests/api/test_project_slideshow_settings.py backend/tests/api/test_project_route_slideshow.py backend/tests/api/test_project_preview_slideshow.py backend/tests/api/test_project_template_package_slideshow.py backend/tests/api/test_external_project_slideshow.py backend/tests/integration/ai/test_ai_generic_business_tools.py` → 76 passed；`pytest ... catalog_routes_versioning_cases_1.py test_generic_business_tools.py test_slideshow_storage_schema.py` → 39 passed；迁移默认值与路由/模板/权限回归同组定向测试通过；`pnpm --dir editor test` → 153 files/843 passed；`pnpm --dir editor check` 通过；`pnpm run test:contracts` → 104 passed；`pnpm run codegen:editor-api` 后 `pnpm run test:contracts:generated` 通过。
 - 未运行：真实 Chromium 的 autoplay/fullscreen 落播与 A19 受阻/错误恢复（由 WP24/WP30 执行）；本轮未修改构建产物鉴权、票据或代理链路。
 - 产物：测试命令输出与摘要保存在 `.tmp/wp22/`。
+- 提交：`957972f`。
 
 测试环境与命令选择遵循 [dev-start-test](../../../../../.agents/skills/dev-start-test/SKILL.md)，不因执行本卡重复启动服务或重置开发数据。
