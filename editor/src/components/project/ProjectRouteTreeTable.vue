@@ -90,7 +90,15 @@
                   </label>
                 </td>
                 <td class="px-3 py-2">
-                  <div class="flex h-9 items-center justify-start">
+                  <div class="flex h-9 items-center justify-start gap-1.5">
+                    <UiButton
+                      v-if="routeItem.route_type === 'page'"
+                      variant="secondary"
+                      size="sm"
+                      @click="openSlideshowDialog('root', routeIndex)"
+                    >
+                      {{ routeItem.transition || routeItem.advance ? '放映·自定义' : '放映' }}
+                    </UiButton>
                     <UiButton variant="danger" size="sm"
                       @click="removeRoot(routeIndex)">
                       删除
@@ -135,7 +143,14 @@
                     </label>
                   </td>
                   <td class="px-3 py-2">
-                    <div class="flex h-9 items-center justify-start">
+                    <div class="flex h-9 items-center justify-start gap-1.5">
+                      <UiButton
+                        variant="secondary"
+                        size="sm"
+                        @click="openSlideshowDialog('child', routeIndex, childIndex)"
+                      >
+                        {{ childRoute.transition || childRoute.advance ? '放映·自定义' : '放映' }}
+                      </UiButton>
                       <UiButton variant="danger" size="sm"
                         @click="removeChild(routeIndex, childIndex)">
                         删除
@@ -182,6 +197,15 @@
       </div>
     </div>
   </section>
+
+  <ProjectRouteSlideshowDialog
+    v-model:open="slideshowDialogOpen"
+    :title="slideshowDialogTitle"
+    :transition="slideshowNode?.transition ?? null"
+    :advance="slideshowNode?.advance ?? null"
+    :defaults="resolvedSlideshowDefaults"
+    @save="applySlideshowOverrides"
+  />
 </template>
 
 <script setup lang="ts">
@@ -190,7 +214,9 @@ import { CornerDownRight, FileText, FolderTree, GripVertical, Plus } from '@luci
 
 import { UiButton, UiCheckbox, UiCombobox, UiIconButton, UiInput } from '@/components/ui'
 import type { SelectOption, SelectPrimitive } from '@/components/ui/select'
-import type { PageItem, ProjectRouteChildWrite, ProjectRouteItemWrite } from '@/types/api'
+import type { PageItem, ProjectRouteChildWrite, ProjectRouteItemWrite, SlideshowAdvance, SlideshowSettings, SlideshowTransition } from '@/types/api'
+import ProjectRouteSlideshowDialog from './ProjectRouteSlideshowDialog.vue'
+import { DEFAULT_SLIDESHOW_SETTINGS } from './project-slideshow-values'
 import {
   buildPageRouteSlug,
   buildUniqueRoute,
@@ -204,21 +230,52 @@ type DragTarget =
   | { kind: 'child'; routeIndex: number; childIndex: number }
   | null
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: ProjectRouteItemWrite[]
   pages: PageItem[]
-}>()
+  slideshowDefaults?: SlideshowSettings | null
+}>(), {
+  slideshowDefaults: null,
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: ProjectRouteItemWrite[]]
 }>()
 
 const rootSelection = ref<SelectPrimitive | null>(null)
+const slideshowDialogOpen = ref(false)
+const slideshowTarget = ref<{ scope: 'root' | 'child'; routeIndex: number; childIndex?: number } | null>(null)
 const groupSelectionMap = reactive<Record<number, SelectPrimitive | null>>({})
 const dragSource = ref<DragTarget>(null)
 const dragOverTarget = ref<DragTarget>(null)
 
 const routes = computed(() => props.modelValue ?? [])
+const resolvedSlideshowDefaults = computed(() => props.slideshowDefaults ?? DEFAULT_SLIDESHOW_SETTINGS)
+const slideshowNode = computed<ProjectRouteItemWrite | ProjectRouteChildWrite | null>(() => {
+  const target = slideshowTarget.value
+  if (!target) {
+    return null
+  }
+  const routeItem = routes.value[target.routeIndex]
+  if (!routeItem) {
+    return null
+  }
+  if (target.scope === 'root') {
+    return routeItem
+  }
+  return routeItem.children?.[target.childIndex ?? -1] ?? null
+})
+const slideshowDialogTitle = computed(() => {
+  const target = slideshowTarget.value
+  const routeItem = target ? routes.value[target.routeIndex] : null
+  if (!routeItem) {
+    return '路由放映设置'
+  }
+  if (target?.scope === 'child') {
+    return `放映设置 · ${routeItem.route}/${routeItem.children?.[target.childIndex ?? -1]?.route ?? ''}`
+  }
+  return `放映设置 · ${routeItem.route}`
+})
 const activePages = computed(() => props.pages.filter(page => page.status === 'active'))
 const pageMap = computed(() => new Map(activePages.value.map(page => [page.id, page])))
 const pageOptions = computed<SelectOption[]>(() => [...activePages.value]
@@ -554,6 +611,40 @@ function buildRouteKey(routeItem: ProjectRouteItemWrite, routeIndex: number): st
  * 把选择值规范成 number，无法识别时返回 null。
  * @param value 原始选择值
  */
+/**
+ * 打开叶子路由的放映设置面板；分组不提供覆盖入口。
+ */
+function openSlideshowDialog(scope: 'root' | 'child', routeIndex: number, childIndex?: number): void {
+  slideshowTarget.value = { scope, routeIndex, childIndex }
+  slideshowDialogOpen.value = true
+}
+
+/**
+ * 写回叶子路由覆盖；null 表示显式清除并恢复继承。
+ */
+function applySlideshowOverrides(value: { transition: SlideshowTransition | null; advance: SlideshowAdvance | null }): void {
+  const target = slideshowTarget.value
+  if (!target) {
+    return
+  }
+  const nextRoutes = cloneRoutes()
+  const routeItem = nextRoutes[target.routeIndex]
+  if (!routeItem) {
+    return
+  }
+  if (target.scope === 'root') {
+    routeItem.transition = value.transition
+    routeItem.advance = value.advance
+  } else if (routeItem.children?.[target.childIndex ?? -1]) {
+    routeItem.children[target.childIndex as number] = {
+      ...routeItem.children[target.childIndex as number],
+      transition: value.transition,
+      advance: value.advance,
+    }
+  }
+  emitRoutes(nextRoutes)
+}
+
 function normalizeSelectionValue(value: SelectPrimitive | null): number | null {
   if (value == null) {
     return null

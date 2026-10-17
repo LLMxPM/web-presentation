@@ -85,12 +85,16 @@ describe('project-route utils', () => {
         hidden: false,
         group_title: '示例',
         page_id: null,
+        transition: null,
+        advance: null,
         children: [
           {
             route: 'home',
             order: 10,
             hidden: false,
             page_id: 100,
+            transition: null,
+            advance: null,
           },
         ],
       },
@@ -126,9 +130,11 @@ describe('project-route utils', () => {
         hidden: false,
         group_title: 'B',
         page_id: null,
+        transition: null,
+        advance: null,
         children: [
-          { route: 'child-b', order: 10, hidden: false, page_id: 2 },
-          { route: 'child-a', order: 20, hidden: false, page_id: 1 },
+          { route: 'child-b', order: 10, hidden: false, page_id: 2, transition: null, advance: null },
+          { route: 'child-a', order: 20, hidden: false, page_id: 1, transition: null, advance: null },
         ],
       },
       {
@@ -138,6 +144,8 @@ describe('project-route utils', () => {
         hidden: false,
         group_title: null,
         page_id: 3,
+        transition: null,
+        advance: null,
         children: [],
       },
     ])
@@ -181,5 +189,58 @@ describe('project-route utils', () => {
       '第 1 个顶层节点 的 Route 只能使用单段相对片段，例如 home、chapter-1 或 PAGE_01，不能使用 /、/home、home/、a/b 或包含空格。',
       '第 2 个顶层节点 的第 1 个子页 的 Route 只能使用单段相对片段，例如 home、chapter-1 或 PAGE_01，不能使用 /、/home、home/、a/b 或包含空格。',
     ])
+  })
+})
+
+describe('project-route slideshow overrides', () => {
+  it('读入树时应保留叶子路由的原始覆盖且不回填生效值', () => {
+    const routeTree = [{
+      id: 1,
+      route_type: 'page' as const,
+      route: 'home',
+      order: 10,
+      hidden: false,
+      group_title: null,
+      page_id: 3,
+      page_code: 'PAGE_1',
+      page_title: '首页',
+      display_title: '首页',
+      transition: { effect: 'push' as const, duration_ms: 600 },
+      advance: null,
+      effective_slideshow: {
+        transition: { effect: 'push' as const, duration_ms: 600 },
+        advance: { mode: 'timer' as const, delay_ms: 8000 },
+      },
+      children: [],
+    }]
+
+    const draft = mapRouteTreeToWriteItems(routeTree)
+    expect(draft[0].transition).toEqual({ effect: 'push', duration_ms: 600 })
+    expect(draft[0].advance).toBeNull()
+  })
+
+  it('克隆与重排不应丢失顶层和子页覆盖', () => {
+    const cloned = normalizeProjectRouteOrders([{
+      route_type: 'group',
+      route: 'chapter',
+      order: 99,
+      hidden: false,
+      group_title: '章节',
+      page_id: null,
+      transition: null,
+      advance: null,
+      children: [{
+        route: 'intro',
+        order: 99,
+        hidden: false,
+        page_id: 5,
+        transition: { effect: 'none', duration_ms: 0 },
+        advance: { mode: 'manual', delay_ms: 3000 },
+      }],
+    }])
+
+    expect(cloned[0].transition).toBeNull()
+    expect(cloned[0].children?.[0].transition).toEqual({ effect: 'none', duration_ms: 0 })
+    expect(cloned[0].children?.[0].advance).toEqual({ mode: 'manual', delay_ms: 3000 })
   })
 })

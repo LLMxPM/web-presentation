@@ -16,11 +16,15 @@ export function mapRouteTreeToWriteItems(routeItems: ProjectRouteTreeItem[]): Pr
     hidden: routeItem.hidden,
     group_title: routeItem.group_title,
     page_id: routeItem.page_id,
+    transition: routeItem.transition ?? null,
+    advance: routeItem.advance ?? null,
     children: routeItem.children.map(child => ({
       route: child.route,
       order: child.order,
       hidden: child.hidden,
       page_id: child.page_id,
+      transition: child.transition ?? null,
+      advance: child.advance ?? null,
     })),
   }))
 }
@@ -36,11 +40,15 @@ export function cloneProjectRoutes(routeItems: ProjectRouteItemWrite[]): Project
     hidden: Boolean(routeItem.hidden),
     group_title: routeItem.group_title ?? null,
     page_id: routeItem.page_id ?? null,
+    transition: routeItem.transition ?? null,
+    advance: routeItem.advance ?? null,
     children: (routeItem.children ?? []).map(child => ({
       route: child.route,
       order: child.order,
       hidden: Boolean(child.hidden),
       page_id: child.page_id,
+      transition: child.transition ?? null,
+      advance: child.advance ?? null,
     })),
   }))
 }

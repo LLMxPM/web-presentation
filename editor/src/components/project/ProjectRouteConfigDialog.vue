@@ -4,7 +4,7 @@
     @update:open="handleVisibleChange">
     <div v-if="project" class="flex h-full min-h-0 flex-col">
 
-      <ProjectRouteEditor v-model="draftRoutes" :pages="routePages" :loading="routeEditorLoading" />
+      <ProjectRouteEditor v-model="draftRoutes" :pages="routePages" :slideshow-defaults="project?.slideshow ?? null" :loading="routeEditorLoading" />
     </div>
 
     <div v-else class="py-10 text-center text-sm text-text-disabled">
