@@ -17,10 +17,13 @@ from app.schemas.component import (
     ComponentSharePackageFontSummary,
 )
 from app.schemas.project import ProjectBuildExtraAssetsConfig, ProjectMenuMode
+from app.schemas.slideshow import SlideshowSettings, default_slideshow_settings
 from app.schemas.workspace_style import WorkspaceStylePackageThemeSummary
 
 
-PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION = 2
+PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION = 3
+# 导入侧必须同时接受 1/2/3：升级 CURRENT 不能使历史模板包失效。
+SUPPORTED_PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSIONS = frozenset({1, 2, 3})
 PROJECT_TEMPLATE_PACKAGE_TYPE = "web-presentation-project-template"
 
 
@@ -60,6 +63,7 @@ class ProjectTemplatePackageProjectSummary(SchemaBase):
     menu_mode: ProjectMenuMode
     theme_key: str | None = None
     style_spec_markdown: str = ""
+    slideshow: SlideshowSettings = Field(default_factory=default_slideshow_settings, description="项目默认放映配置。")
 
 
 class ProjectTemplatePackagePageSummary(SchemaBase):

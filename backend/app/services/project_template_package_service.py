@@ -48,6 +48,7 @@ from app.schemas.project_app_config import DEFAULT_PROJECT_BASE_FONT_SIZE
 from app.schemas.project_template import (
     PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION,
     PROJECT_TEMPLATE_PACKAGE_TYPE,
+    SUPPORTED_PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSIONS,
     ProjectTemplateExportRequest,
     ProjectTemplateExportValidationResult,
     ProjectTemplateImportResult,
@@ -58,6 +59,18 @@ from app.schemas.project_template import (
     ProjectTemplateScreenshotSummary,
 )
 from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
+from app.schemas.slideshow import (
+    SlideshowSettings,
+    build_runtime_advance,
+    build_runtime_slideshow_defaults,
+    build_runtime_transition,
+    default_slideshow_settings,
+    load_slideshow_settings,
+    normalize_slideshow_settings,
+    parse_route_advance_override,
+    parse_route_transition_override,
+    resolve_effective_slideshow,
+)
 from app.schemas.workspace_style import WorkspaceStylePackageThemeSummary
 from app.services.asset_render_metadata_service import AssetRenderMetadataService
 from app.services.asset_service import AssetService
@@ -564,14 +577,16 @@ class ProjectTemplatePackageService:
         runtime_version = str(parsed.manifest.get("runtime_kit_manifest_version") or "").strip()
         if parsed.manifest.get("package_type") != PROJECT_TEMPLATE_PACKAGE_TYPE:
             errors.append("导入文件 package_type 不受支持。")
-        if schema_version not in {1, PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION}:
+        if schema_version not in SUPPORTED_PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSIONS:
             errors.append(
-                f"导入文件 schema_version 必须是 1 或 {PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION}。"
+                "导入文件 schema_version 必须是 1、2 或 3。"
             )
         if await self.workspace_repository.get_by_id(workspace_id) is None:
             errors.append("目标工作空间不存在。")
 
         self._validate_template_project_payload(parsed.project, errors)
+        self._validate_template_slideshow_payload(parsed.project, schema_version, errors)
+        self._validate_template_route_slideshow(parsed.routes, schema_version, errors)
         page_summaries = self._validate_template_pages(parsed.pages, parsed.routes, errors)
         self._validate_page_component_refs(parsed.pages, parsed.components, errors)
         await self._validate_project_theme_reference(workspace_id, parsed, errors)
@@ -644,6 +659,11 @@ class ProjectTemplatePackageService:
             build_extra_assets_json=normalize_project_build_extra_assets_config(
                 project_payload.get("build_extra_assets_json")
             ).model_dump(mode="python"),
+            slideshow_config_json=(
+                normalize_slideshow_settings(project_payload["slideshow"]).model_dump(mode="json")
+                if project_payload.get("slideshow") is not None
+                else default_slideshow_settings().model_dump(mode="json")
+            ),
             created_by=operator_id,
             updated_by=operator_id,
         )
@@ -767,6 +787,7 @@ class ProjectTemplatePackageService:
             "theme_config_yaml": yaml.safe_dump(runtime_theme_config, allow_unicode=True, sort_keys=False),
             "style_spec_markdown": project.style_spec_markdown,
             "build_extra_assets_json": normalize_project_build_extra_assets_config(project.build_extra_assets_json).model_dump(mode="python"),
+            "slideshow": load_slideshow_settings(project.slideshow_config_json).model_dump(mode="json"),
             "suggested_reference_asset_names": suggested_assets,
             "suggested_components": suggested_components,
         }
@@ -819,6 +840,8 @@ class ProjectTemplatePackageService:
                 "hidden": route.hidden,
                 "group_title": route.group_title,
                 "source_page_code": page_code_by_id.get(route.page_id) if route.page_id is not None else None,
+                "transition": route.transition_json,
+                "advance": route.advance_json,
                 "children": [],
             }
             if route.route_type == ProjectRouteType.GROUP.value:
@@ -1016,6 +1039,8 @@ class ProjectTemplatePackageService:
         page = page_mapping.get(source_page_code)
         if page is None:
             raise AppException(status_code=400, code="PROJECT_TEMPLATE_ROUTE_PAGE_MISSING", detail=f"导入项目路由引用的页面不存在：{source_page_code}。")
+        transition = parse_route_transition_override(route_item.get("transition"))
+        advance = parse_route_advance_override(route_item.get("advance"))
         await self.route_repository.create(
             ProjectRoute(
                 project_id=project_id,
@@ -1025,6 +1050,8 @@ class ProjectTemplatePackageService:
                 hidden=bool(route_item.get("hidden", False)),
                 page_id=page.id,
                 route_type=ProjectRouteType.PAGE.value,
+                transition_json=transition.model_dump(mode="json") if transition is not None else None,
+                advance_json=advance.model_dump(mode="json") if advance is not None else None,
                 created_by=operator_id,
                 updated_by=operator_id,
             )
@@ -1086,7 +1113,7 @@ class ProjectTemplatePackageService:
                     },
                 },
             },
-            "routes": self._build_preview_routes(parsed.routes, parsed.pages),
+            "routes": self._build_preview_routes(parsed.routes, parsed.pages, parsed.project),
             "icons": {"static_icons": []},
             "themes": self._parse_theme_config(parsed.project.get("theme_config_yaml")),
             "fonts": self._build_preview_font_bundle(parsed.font_configs),
@@ -1121,13 +1148,21 @@ class ProjectTemplatePackageService:
         return modules_metadata, list(modules_by_path.values())
 
     @staticmethod
-    def _build_preview_routes(routes_payload: dict[str, Any], pages: list[PackageTemplatePage]) -> dict[str, Any]:
-        """把模板路由载荷转换为 Runtime 路由配置。"""
+    def _build_preview_routes(
+        routes_payload: dict[str, Any],
+        pages: list[PackageTemplatePage],
+        project_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """把模板路由载荷转换为 Runtime 路由配置，并下发模板包内的放映参数。"""
 
         page_title_by_code = {
             page.source_page_code: str(page.metadata.get("title") or page.source_page_code)
             for page in pages
         }
+        raw_slideshow = project_payload.get("slideshow")
+        project_settings: SlideshowSettings = (
+            normalize_slideshow_settings(raw_slideshow) if raw_slideshow is not None else default_slideshow_settings()
+        )
 
         def convert(route_item: dict[str, Any]) -> dict[str, Any]:
             route_type = str(route_item.get("route_type") or ProjectRouteType.PAGE.value)
@@ -1143,6 +1178,11 @@ class ProjectTemplatePackageService:
                     "children": [convert(child) for child in route_item.get("children", []) if isinstance(child, dict)],
                 }
             source_page_code = str(route_item.get("source_page_code") or "").strip()
+            effective = resolve_effective_slideshow(
+                project_settings,
+                parse_route_transition_override(route_item.get("transition")),
+                parse_route_advance_override(route_item.get("advance")),
+            )
             return {
                 "route": route,
                 "component": f"@/views/{source_page_code}.vue",
@@ -1150,10 +1190,16 @@ class ProjectTemplatePackageService:
                     "title": page_title_by_code.get(source_page_code, source_page_code),
                     "order": int(route_item.get("order") or 0),
                     "hidden": bool(route_item.get("hidden", False)),
+                    "transition": build_runtime_transition(effective.transition),
+                    "advance": build_runtime_advance(effective.advance),
                 },
             }
 
-        return {"routes": [convert(item) for item in routes_payload.get("routes", []) if isinstance(item, dict)]}
+        runtime_config: dict[str, Any] = build_runtime_slideshow_defaults(project_settings)
+        runtime_config["routes"] = [
+            convert(item) for item in routes_payload.get("routes", []) if isinstance(item, dict)
+        ]
+        return runtime_config
 
     @staticmethod
     def _resolve_preview_entry(parsed: ParsedProjectTemplatePackage) -> PreviewEntryDescriptor:
@@ -1257,6 +1303,57 @@ class ProjectTemplatePackageService:
                 "font_display": str(item.get("font_display") or "swap").strip(),
             }
         return {"items": items}
+
+    @staticmethod
+    def _validate_template_slideshow_payload(
+        project: dict[str, Any],
+        schema_version: int | None,
+        errors: list[str],
+    ) -> None:
+        """校验模板项目放映配置：schema 3 必须完整，旧包省略时补默认值。"""
+
+        raw = project.get("slideshow")
+        if raw is None:
+            if schema_version == PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION:
+                errors.append("project/project.json 缺少 slideshow 配置。")
+            return
+        try:
+            normalize_slideshow_settings(raw)
+        except (TypeError, ValueError):
+            errors.append("project/project.json 的 slideshow 配置不合法。")
+
+    @classmethod
+    def _validate_template_route_slideshow(
+        cls,
+        routes_payload: dict[str, Any],
+        schema_version: int | None,
+        errors: list[str],
+    ) -> None:
+        """校验模板路由放映覆盖：分组禁止覆盖，叶子按完整组校验。"""
+
+        def visit(items: list[Any]) -> None:
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                route = str(item.get("route") or "").strip()
+                if str(item.get("route_type") or ProjectRouteType.PAGE.value) == ProjectRouteType.GROUP.value:
+                    if item.get("transition") is not None or item.get("advance") is not None:
+                        errors.append(f"导入项目分组路由 {route} 不允许配置放映覆盖。")
+                    visit(item.get("children", []))
+                    continue
+                for field_name, parser in (
+                    ("transition", parse_route_transition_override),
+                    ("advance", parse_route_advance_override),
+                ):
+                    raw = item.get(field_name)
+                    if raw is None:
+                        continue
+                    try:
+                        parser(raw)
+                    except (TypeError, ValueError):
+                        errors.append(f"导入项目路由 {route} 的 {field_name} 覆盖不合法。")
+
+        visit(routes_payload.get("routes", []))
 
     @staticmethod
     def _validate_template_project_payload(project: dict[str, Any], errors: list[str]) -> None:
@@ -1710,6 +1807,11 @@ class ProjectTemplatePackageService:
             menu_mode=str(payload.get("menu_mode") or "preview"),
             theme_key=str(payload.get("theme_key") or "").strip() or None,
             style_spec_markdown=str(payload.get("style_spec_markdown") or ""),
+            slideshow=(
+                normalize_slideshow_settings(payload["slideshow"])
+                if payload.get("slideshow") is not None
+                else default_slideshow_settings()
+            ),
         )
 
     @staticmethod

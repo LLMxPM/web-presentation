@@ -39075,6 +39075,10 @@
             "type": "string",
             "title": "Style Spec Markdown",
             "default": ""
+          },
+          "slideshow": {
+            "$ref": "#/components/schemas/SlideshowSettings",
+            "description": "项目默认放映配置。"
           }
         },
         "type": "object",

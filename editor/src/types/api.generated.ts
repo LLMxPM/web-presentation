@@ -2340,6 +2340,7 @@ export type ProjectTemplatePackageProjectSummary = {
   "menu_mode": "text" | "preview" | "bottom-preview"
   "theme_key"?: (string) | (null)
   "style_spec_markdown"?: string
+  "slideshow"?: SlideshowSettings
 }
 
 export type ProjectTemplateScreenshotItem = {
