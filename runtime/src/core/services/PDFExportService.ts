@@ -37,6 +37,8 @@ export class PDFExportService {
   private readonly taskRunner = new ExportTaskRunner({
     taskIdPrefix: 'task',
     busyErrorMessage: '已有导出任务正在进行中',
+    // 取消后保持占用到 finally 释放离屏舞台，避免新旧任务共用捕获窗口。
+    retainLockOnCancel: true,
   })
 
   // 默认配置
@@ -100,21 +102,30 @@ export class PDFExportService {
       const currentRoute = this.router?.currentRoute.value
       const routePath = currentRoute?.path
       const routeLocation = currentRoute?.fullPath || routePath
+      const signal = this.taskRunner.getSignal(task.id) ?? undefined
       const stage = currentRoute?.meta?.runtimeProject ? createOffscreenPageStage() : undefined
       offscreenStage = stage
       const canvas = stage && routeLocation
-        ? await stage.capture(routeLocation, this.buildCaptureOptions(routePath))
-        : await pageCaptureService.captureCurrentPage(this.buildCaptureOptions(routePath))
+        ? await stage.capture(routeLocation, this.buildCaptureOptions(routePath, signal))
+        : await pageCaptureService.captureCurrentPage(this.buildCaptureOptions(routePath, signal))
+
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw new Error('用户取消导出')
+      }
 
       // 生成PDF
       const pdf = await this.createPDF()
       this.addCanvasToPDF(pdf, canvas, 0)
 
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw new Error('用户取消导出')
+      }
+
       // 下载文件
       pdf.save(filename)
 
       // 更新任务状态
-      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED, undefined, task.id)
 
       const result: ExportResult = {
         success: true,
@@ -127,7 +138,9 @@ export class PDFExportService {
 
       return result
     } catch (error) {
-      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败')
+      if (!this.taskRunner.isTaskCancelled(task.id)) {
+        this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败', task.id)
+      }
       throw error
     } finally {
       offscreenStage?.dispose()
@@ -160,6 +173,7 @@ export class PDFExportService {
     try {
       const stage = createOffscreenPageStage()
       offscreenStage = stage
+      const signal = this.taskRunner.getSignal(task.id) ?? undefined
 
       // 获取所有页面路由
       const pages = await this.getAllPages()
@@ -188,7 +202,11 @@ export class PDFExportService {
           this.taskRunner.reportProgress(i, pages.length, page.title)
 
           // 在独立窗口中捕获，不导航用户当前的演示窗口。
-          const canvas = await stage.capture(page.route, this.buildCaptureOptions(page.route))
+          const canvas = await stage.capture(page.route, this.buildCaptureOptions(page.route, signal))
+
+          if (this.taskRunner.isTaskCancelled(task.id)) {
+            throw new Error('用户取消导出')
+          }
 
           // 添加到PDF（第一页不需要新建页面）
           if (captures.length > 0) {
@@ -216,9 +234,16 @@ export class PDFExportService {
           task.completedPages = i + 1
 
         } catch (error) {
+          if (this.taskRunner.isTaskCancelled(task.id)) {
+            throw error
+          }
           console.error(`页面 ${page.title} 导出失败:`, error)
           // 继续处理下一页，不中断整个导出过程
         }
+      }
+
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw new Error('用户取消导出')
       }
 
       if (captures.length === 0) {
@@ -229,7 +254,7 @@ export class PDFExportService {
       pdf.save(filename)
 
       // 更新任务状态
-      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED, undefined, task.id)
 
       const result: ExportResult = {
         success: true,
@@ -242,7 +267,9 @@ export class PDFExportService {
 
       return result
     } catch (error) {
-      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败')
+      if (!this.taskRunner.isTaskCancelled(task.id)) {
+        this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '导出失败', task.id)
+      }
       throw error
     } finally {
       offscreenStage?.dispose()
@@ -373,8 +400,9 @@ export class PDFExportService {
   /**
    * 构造统一的截图参数。
    * @param routePath 目标路由路径
+   * @param signal 取消信号，离屏准备阶段消费
    */
-  private buildCaptureOptions(routePath?: string): CaptureOptions {
+  private buildCaptureOptions(routePath?: string, signal?: AbortSignal): CaptureOptions {
     return {
       scale: this.defaultConfig.capture.scale,
       useCORS: this.defaultConfig.capture.useCORS,
@@ -383,6 +411,7 @@ export class PDFExportService {
       timeout: this.defaultConfig.capture.timeout,
       proxyUrl: this.resolveSnapdomProxyUrl(),
       routePath,
+      signal,
     }
   }
 

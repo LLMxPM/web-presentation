@@ -207,6 +207,24 @@ describe('PDFExportService', () => {
     expect(service.isCurrentlyExporting()).toBe(false)
   })
 
+  it('导出当前页捕获期间取消时不得创建或下载 PDF', async () => {
+    const service = new PDFExportService()
+    service.setRouter({
+      currentRoute: { value: { fullPath: '/current', path: '/current' } },
+      push: vi.fn(),
+    } as unknown as Router)
+    mockCaptureCurrentPage.mockImplementationOnce(async () => {
+      service.cancelExport()
+      return createCanvas()
+    })
+
+    await expect(service.exportCurrentPage({ mode: 'current', method: 'canvas-pdf' }))
+      .rejects.toThrow('用户取消导出')
+
+    expect(mockPdfRuntime.instances).toHaveLength(0)
+    expect(service.isCurrentlyExporting()).toBe(false)
+  })
+
   it('全部页面缺少页码目录时应回退到可见路由目录', async () => {
     mockRoutes.value = [
       { path: '/page-2', name: '第二页', order: 2, level: 0, hidden: false },
@@ -355,6 +373,7 @@ describe('PDFExportService', () => {
 
     expect(mockCaptureRoute).toHaveBeenCalledWith('/current?period=2026')
     expect(mockCaptureCurrentPage.mock.calls[0][0].routePath).toBe('/current')
+    expect(mockCaptureCurrentPage.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal)
   })
 })
 

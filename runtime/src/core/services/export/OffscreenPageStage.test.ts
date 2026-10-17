@@ -4,12 +4,12 @@
  * 文件用途：验证 Runtime 独立捕获地址保留页面查询参数，并覆盖离屏舞台的静态帧准备与清理。
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { MODEL_STATIC_FRAME_HANDLE_KEY, MODEL_STATIC_FRAME_IMG_ATTR } from '@/core/shared/model-static-frame-contract'
 
 import { clearDefaultModelStaticFrameCache } from './model-static-frames'
-import { createOffscreenPageStage, resolveRuntimeCaptureRoute } from './OffscreenPageStage'
+import { createOffscreenPageStage, pauseOffscreenMedia, resolveRuntimeCaptureRoute } from './OffscreenPageStage'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -32,6 +32,51 @@ describe('resolveRuntimeCaptureRoute', () => {
 })
 
 describe('OffscreenPageStage 静态帧准备', () => {
+  it('capture 应把取消信号传入离屏准备，取消后立即终止', async () => {
+    const stage = createOffscreenPageStage()
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(stage.capture('/page', { signal: controller.signal })).rejects.toThrow('用户取消导出')
+
+    stage.dispose()
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+
+  it('preparePage 应同时把捕获标记写入 search 与 hash 路由', async () => {
+    const stage = createOffscreenPageStage()
+    const iframe = document.querySelector('iframe') as HTMLIFrameElement
+    const controller = new AbortController()
+
+    const pending = stage.preparePage('/cover', { signal: controller.signal })
+    const url = new URL(iframe.src)
+
+    expect(url.searchParams.get('runtimeCapture')).toBe('1')
+    expect(url.searchParams.get('runtimeMode')).toBe('normal')
+    expect(url.hash).toContain('/cover?')
+    expect(url.hash).toContain('runtimeCapture=1')
+    expect(url.hash).toContain('runtimeCaptureTicket=')
+
+    controller.abort()
+    await expect(pending).rejects.toThrow('用户取消导出')
+    stage.dispose()
+  })
+
+  it('pauseOffscreenMedia 应暂停原生媒体且不自动恢复播放', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<video autoplay></video><audio autoplay></audio>'
+    const pause = vi.fn()
+    for (const media of Array.from(root.querySelectorAll('video, audio'))) {
+      Object.defineProperty(media, 'pause', { value: pause, configurable: true })
+    }
+
+    pauseOffscreenMedia(root)
+
+    expect(pause).toHaveBeenCalledTimes(2)
+    expect(root.querySelector('video')?.hasAttribute('autoplay')).toBe(false)
+    expect(root.querySelector('audio')?.hasAttribute('autoplay')).toBe(false)
+  })
+
   it('preparePage 应准备覆盖图，cleanup 后 iframe 页面无残留', async () => {
     const stage = createOffscreenPageStage()
     const iframe = document.querySelector('iframe') as HTMLIFrameElement

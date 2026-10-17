@@ -6,6 +6,11 @@ import { nextTick } from 'vue'
 import type { Router } from 'vue-router'
 import { ExportTaskRunner } from '@/core/services/export/ExportTaskRunner'
 import {
+  createOffscreenPageStage,
+  freezeDocumentAnimationsToFinalState,
+  type OffscreenPageStage,
+} from '@/core/services/export/OffscreenPageStage'
+import {
   ExportStatus,
   type ExportProgress,
   type ExportTask,
@@ -33,6 +38,8 @@ export class BrowserPrintService {
   private readonly taskRunner = new ExportTaskRunner({
     taskIdPrefix: 'browser-print',
     busyErrorMessage: '已有打印任务正在进行中',
+    // 取消后保持占用到 finally 释放离屏舞台，避免新旧任务共用捕获窗口。
+    retainLockOnCancel: true,
   })
 
   /**
@@ -60,23 +67,46 @@ export class BrowserPrintService {
    */
   async printCurrentPage(options?: ExportOptions): Promise<ExportResult> {
     const task = this.taskRunner.beginTask('current', '')
+    let offscreenStage: OffscreenPageStage | undefined
+    let cleanupPreparedPage: (() => void) | undefined
 
     try {
       const startedAt = Date.now()
-      await this.waitForPageReady()
+      const signal = this.taskRunner.getSignal(task.id) ?? undefined
+      const currentRoute = this.router?.currentRoute.value
+      let pageElement: HTMLElement | null = null
 
-      const pageElement = this.getCurrentPageElement()
+      if (currentRoute?.meta?.runtimeProject && currentRoute.fullPath) {
+        // 放映中打印当前页也走离屏静态舞台，避免主画布在采集期间被计时器翻页。
+        const stage = createOffscreenPageStage()
+        offscreenStage = stage
+        const prepared = await stage.preparePage(currentRoute.fullPath, { signal })
+        pageElement = prepared.element
+        cleanupPreparedPage = prepared.cleanup
+      } else {
+        await this.waitForPageReady()
+        pageElement = this.getCurrentPageElement()
+        if (pageElement) await freezeDocumentAnimationsToFinalState(pageElement.ownerDocument)
+      }
+
       if (!pageElement) {
         throw new Error('未找到可打印的页面内容')
+      }
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw new Error('用户取消打印')
       }
 
       const iframe = this.createPrintIframe()
       this.preparePrintDocument(iframe)
       this.appendPrintPage(iframe, pageElement)
       await this.flushPrintDocument(iframe)
+
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw new Error('用户取消打印')
+      }
       this.invokePrint(iframe)
 
-      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED, undefined, task.id)
 
       return {
         success: true,
@@ -88,10 +118,14 @@ export class BrowserPrintService {
         message: '已打开浏览器打印对话框，请选择“保存为 PDF”。',
       }
     } catch (error) {
-      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '打印失败')
+      if (!this.taskRunner.isTaskCancelled(task.id)) {
+        this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '打印失败', task.id)
+      }
       this.cleanupPrintIframe()
       throw error
     } finally {
+      cleanupPreparedPage?.()
+      offscreenStage?.dispose()
       this.taskRunner.finish()
     }
   }
@@ -114,8 +148,8 @@ export class BrowserPrintService {
       throw new Error('未设置路由实例，无法打印所有页面')
     }
 
-    const originalRoute = this.router.currentRoute.value.fullPath
     const task = this.taskRunner.beginTask('all', '', onProgress)
+    let offscreenStage: OffscreenPageStage | undefined
 
     try {
       const startedAt = Date.now()
@@ -126,29 +160,33 @@ export class BrowserPrintService {
       }
 
       task.totalPages = pages.length
+      const stage = createOffscreenPageStage()
+      offscreenStage = stage
+      const signal = this.taskRunner.getSignal(task.id) ?? undefined
       const iframe = this.createPrintIframe()
       this.preparePrintDocument(iframe)
       let printedPages = 0
 
+      // 每页都在独立离屏舞台渲染，不导航正在放映的主画布。
       for (let index = 0; index < pages.length; index += 1) {
-        if (!this.taskRunner.isRunning()) {
+        if (this.taskRunner.isTaskCancelled(task.id)) {
           throw new Error('用户取消打印')
         }
 
         const page = pages[index]
-        this.taskRunner.reportProgress(index, pages.length, page.title, page.route)
-        await this.navigateToPage(page.route)
-        await this.waitForPageReady(page.route)
+        this.taskRunner.reportProgress(index, pages.length, page.title, page.route, task.id)
 
-        const pageElement = this.getCurrentPageElement(page.route)
-        if (!pageElement) {
-          console.warn(`页面 ${page.title} 未找到可打印内容，已跳过`)
-          continue
+        const prepared = await stage.preparePage(page.route, { signal })
+        try {
+          if (this.taskRunner.isTaskCancelled(task.id)) {
+            throw new Error('用户取消打印')
+          }
+          this.appendPrintPage(iframe, prepared.element)
+          printedPages += 1
+          task.completedPages = printedPages
+        } finally {
+          prepared.cleanup()
         }
-
-        this.appendPrintPage(iframe, pageElement)
-        printedPages += 1
-        task.completedPages = printedPages
       }
 
       if (printedPages === 0) {
@@ -156,8 +194,12 @@ export class BrowserPrintService {
       }
 
       await this.flushPrintDocument(iframe)
+
+      if (this.taskRunner.isTaskCancelled(task.id)) {
+        throw new Error('用户取消打印')
+      }
       this.invokePrint(iframe)
-      this.taskRunner.updateStatus(ExportStatus.COMPLETED)
+      this.taskRunner.updateStatus(ExportStatus.COMPLETED, undefined, task.id)
 
       return {
         success: true,
@@ -169,11 +211,13 @@ export class BrowserPrintService {
         message: '已打开浏览器打印对话框，请选择“保存为 PDF”。',
       }
     } catch (error) {
-      this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '打印失败')
+      if (!this.taskRunner.isTaskCancelled(task.id)) {
+        this.taskRunner.updateStatus(ExportStatus.FAILED, error instanceof Error ? error.message : '打印失败', task.id)
+      }
       this.cleanupPrintIframe()
       throw error
     } finally {
-      await this.restoreRoute(originalRoute)
+      offscreenStage?.dispose()
       this.taskRunner.finish()
     }
   }
@@ -206,35 +250,6 @@ export class BrowserPrintService {
    */
   private async getAllPages(): Promise<PageInfo[]> {
     return collectAllExportPages(this.router)
-  }
-
-  /**
-   * 导航到指定页面。
-   * @param route 页面路由
-   */
-  private async navigateToPage(route: string): Promise<void> {
-    if (!this.router) {
-      throw new Error('路由实例未设置')
-    }
-
-    await this.router.push(route)
-  }
-
-  /**
-   * 恢复打印前的路由位置。
-   * @param route 原始路由
-   */
-  private async restoreRoute(route: string): Promise<void> {
-    if (!this.router || !route || this.router.currentRoute.value.fullPath === route) {
-      return
-    }
-
-    try {
-      await this.router.push(route)
-      await this.waitForPageReady(this.router.currentRoute.value.path)
-    } catch (error) {
-      console.warn('恢复打印前路由失败:', error)
-    }
   }
 
   /**
@@ -674,11 +689,13 @@ export class BrowserPrintService {
     clonedCanvas.width = sourceCanvas.width
     clonedCanvas.height = sourceCanvas.height
 
-    const sourceStyle = window.getComputedStyle(sourceCanvas)
-    if (!clonedCanvas.style.width && sourceStyle.width && sourceStyle.width !== 'auto') {
+    // 离屏舞台中的画布属于 iframe 文档，必须使用其自身 window 解析计算样式。
+    const styleWindow = sourceCanvas.ownerDocument.defaultView
+    const sourceStyle = styleWindow?.getComputedStyle(sourceCanvas)
+    if (!clonedCanvas.style.width && sourceStyle?.width && sourceStyle.width !== 'auto') {
       clonedCanvas.style.width = sourceStyle.width
     }
-    if (!clonedCanvas.style.height && sourceStyle.height && sourceStyle.height !== 'auto') {
+    if (!clonedCanvas.style.height && sourceStyle?.height && sourceStyle.height !== 'auto') {
       clonedCanvas.style.height = sourceStyle.height
     }
 

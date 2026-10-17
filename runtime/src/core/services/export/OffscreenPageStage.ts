@@ -52,6 +52,24 @@ export async function freezeDocumentAnimationsToFinalState(doc?: Document | null
 }
 
 
+/**
+ * 暂停离屏页面内的原生媒体，避免隐藏舞台在导出期间继续播放或产生声音。
+ * 只暂停，不改变播放进度，也不重置 poster/首帧。
+ * @param root 离屏页面根节点
+ */
+export function pauseOffscreenMedia(root: HTMLElement): void {
+  for (const element of Array.from(root.querySelectorAll('video, audio'))) {
+    const media = element as HTMLMediaElement
+    try {
+      media.pause()
+      media.removeAttribute('autoplay')
+    } catch {
+      // 忽略未实现播放控制的宿主
+    }
+  }
+}
+
+
 /** 创建可复用捕获舞台，调用方必须在 finally 中释放。 */
 export function createOffscreenPageStage(): OffscreenPageStage {
   const frame = document.createElement('iframe')
@@ -77,6 +95,9 @@ export function createOffscreenPageStage(): OffscreenPageStage {
     const captureRoute = resolveRuntimeCaptureRoute(route)
     const ticket = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     const url = new URL(window.location.href)
+    // 执行策略只读取 location.search；捕获标记必须同时写入 search 与 hash 路由。
+    url.searchParams.set('runtimeMode', 'normal')
+    url.searchParams.set('runtimeCapture', '1')
     const query = new URLSearchParams(captureRoute.hash.slice(captureRoute.hash.indexOf('?') + 1))
     query.set('runtimeCaptureTicket', ticket)
     url.hash = `${captureRoute.path}?${query.toString()}`
@@ -99,6 +120,7 @@ export function createOffscreenPageStage(): OffscreenPageStage {
           }
           throwIfExportAborted(signal)
           await freezeDocumentAnimationsToFinalState(doc)
+          pauseOffscreenMedia(target)
           // 页面就绪后逐实例准备静态帧：克隆与转换阶段看到的是 PNG 覆盖图，而不是空白 WebGL 画布。
           const staticFrames = prepareModelStaticFrames(target, { cache: staticFrameCache })
           cleanupModelStaticFrames(activeStaticFrameHandle)
@@ -113,7 +135,7 @@ export function createOffscreenPageStage(): OffscreenPageStage {
 
   /** 在已就绪页面节点上捕获，截图完成后归还页面句柄。 */
   async function capture(route: string, options?: CaptureOptions): Promise<HTMLCanvasElement> {
-    const prepared = await preparePage(route)
+    const prepared = await preparePage(route, { signal: options?.signal })
     try { return await pageCaptureService.captureElement(prepared.element, options) }
     finally { prepared.cleanup() }
   }

@@ -5,7 +5,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
 import type { Router } from 'vue-router'
 import { BrowserPrintService } from './BrowserPrintService'
 
@@ -14,10 +13,28 @@ interface RouterStub {
     value: {
       fullPath: string
       path: string
+      meta?: { runtimeProject?: boolean }
     }
   }
   push: (route: string) => Promise<void>
 }
+
+const mockStage = vi.hoisted(() => ({
+  preparePage: vi.fn(),
+  dispose: vi.fn(),
+}))
+
+vi.mock('./export/OffscreenPageStage', async importOriginal => {
+  const actual = await importOriginal<typeof import('./export/OffscreenPageStage')>()
+  return {
+    ...actual,
+    createOffscreenPageStage: () => ({
+      preparePage: mockStage.preparePage,
+      capture: vi.fn(),
+      dispose: mockStage.dispose,
+    }),
+  }
+})
 
 const mockRoutes = vi.hoisted(() => ({
   value: [] as Array<{
@@ -97,6 +114,8 @@ function stubIframePrint(): ReturnType<typeof vi.fn> {
 beforeEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
+  mockStage.preparePage.mockReset()
+  mockStage.dispose.mockReset()
   mockRoutes.value = [
     { path: '/page-2', name: '第二页', pageNumber: 2, level: 0, hidden: false, order: 2 },
     { path: '/page-1', name: '第一页', pageNumber: 1, level: 0, hidden: false, order: 1 },
@@ -110,6 +129,15 @@ afterEach(() => {
   vi.restoreAllMocks()
   document.body.innerHTML = ''
 })
+
+/** 构造离屏舞台返回的页面节点，不依赖真实 iframe。 */
+function createPreparedPage(route: string, content: string) {
+  const element = document.createElement('div')
+  element.className = 'runtime-page-print-source'
+  element.dataset.runtimeRoutePath = route
+  element.textContent = content
+  return { element, cleanup: vi.fn() }
+}
 
 describe('BrowserPrintService', () => {
   it('应将当前页面克隆到专用打印 iframe 并触发浏览器打印', async () => {
@@ -158,9 +186,8 @@ describe('BrowserPrintService', () => {
     expect(drawImage).toHaveBeenCalledWith(sourceCanvas, 0, 0)
   })
 
-  it('应按页码顺序收集所有页面并生成分页打印文档', async () => {
+  it('应按页码顺序在离屏舞台收集所有页面，且不导航主画布', async () => {
     stubIframePrint()
-    const pushedRoutes: string[] = []
     const router = {
       currentRoute: {
         value: {
@@ -168,14 +195,13 @@ describe('BrowserPrintService', () => {
           path: '/origin',
         },
       },
-      push: vi.fn(async (route: string) => {
-        pushedRoutes.push(route)
-        router.currentRoute.value.fullPath = route
-        router.currentRoute.value.path = route
-        renderCurrentPage(route === '/page-1' ? '第一页内容' : '第二页内容', route)
-        await nextTick()
-      }),
+      push: vi.fn(async () => undefined),
     } satisfies RouterStub
+    const preparedRoutes: string[] = []
+    mockStage.preparePage.mockImplementation(async (route: string) => {
+      preparedRoutes.push(route)
+      return createPreparedPage(route, route === '/page-1' ? '第一页内容' : '第二页内容')
+    })
     const service = new BrowserPrintService()
     service.setRouter(router as unknown as Router)
 
@@ -185,11 +211,13 @@ describe('BrowserPrintService', () => {
 
     expect(result.success).toBe(true)
     expect(result.pageCount).toBe(2)
-    expect(pushedRoutes.slice(0, 2)).toEqual(['/page-1', '/page-2'])
-    expect(router.push).toHaveBeenLastCalledWith('/origin')
+    expect(preparedRoutes).toEqual(['/page-1', '/page-2'])
     expect(pages).toHaveLength(2)
     expect(pages[0].textContent).toContain('第一页内容')
     expect(pages[1].textContent).toContain('第二页内容')
+    expect(router.push).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.fullPath).toBe('/origin')
+    expect(mockStage.dispose).toHaveBeenCalled()
   })
 
   it('缺少页码目录时应回退到可见路由目录继续收集页面', async () => {
@@ -198,8 +226,11 @@ describe('BrowserPrintService', () => {
       { path: '/page-2', name: '第二页', level: 0, hidden: false, order: 2 },
       { path: '/page-1', name: '第一页', level: 0, hidden: false, order: 1 },
     ]
-
-    const pushedRoutes: string[] = []
+    const preparedRoutes: string[] = []
+    mockStage.preparePage.mockImplementation(async (route: string) => {
+      preparedRoutes.push(route)
+      return createPreparedPage(route, route)
+    })
     const router = {
       currentRoute: {
         value: {
@@ -207,13 +238,7 @@ describe('BrowserPrintService', () => {
           path: '/origin',
         },
       },
-      push: vi.fn(async (route: string) => {
-        pushedRoutes.push(route)
-        router.currentRoute.value.fullPath = route
-        router.currentRoute.value.path = route
-        renderCurrentPage(route === '/page-1' ? '第一页内容' : '第二页内容', route)
-        await nextTick()
-      }),
+      push: vi.fn(async () => undefined),
     } satisfies RouterStub
 
     const service = new BrowserPrintService()
@@ -223,10 +248,11 @@ describe('BrowserPrintService', () => {
 
     expect(result.success).toBe(true)
     expect(result.pageCount).toBe(2)
-    expect(pushedRoutes.slice(0, 2)).toEqual(['/page-1', '/page-2'])
+    expect(preparedRoutes).toEqual(['/page-1', '/page-2'])
+    expect(router.push).not.toHaveBeenCalled()
   })
 
-  it('应等待目标路由 DOM 渲染完成后再克隆页面', async () => {
+  it('取消打印后应停止后续离屏准备并清理舞台与临时 iframe', async () => {
     stubIframePrint()
     const router = {
       currentRoute: {
@@ -235,52 +261,78 @@ describe('BrowserPrintService', () => {
           path: '/origin',
         },
       },
-      push: vi.fn(async (route: string) => {
-        router.currentRoute.value.fullPath = route
-        router.currentRoute.value.path = route
-
-        if (route === '/page-1') {
-          renderCurrentPage('第一页内容', route)
-          return
-        }
-
-        window.setTimeout(() => {
-          renderCurrentPage('第二页延迟内容', route)
-        }, 120)
-      }),
+      push: vi.fn(async () => undefined),
     } satisfies RouterStub
     const service = new BrowserPrintService()
     service.setRouter(router as unknown as Router)
 
-    const result = await service.printAllPages({ mode: 'all', method: 'browser-print' })
-    const iframe = document.getElementById('runtime-browser-print-frame') as HTMLIFrameElement | null
-    const pages = Array.from(iframe?.contentDocument?.querySelectorAll('.print-page') ?? [])
+    let preparedCount = 0
+    mockStage.preparePage.mockImplementation(async (route: string) => {
+      preparedCount += 1
+      if (preparedCount === 2) {
+        service.cancelPrint()
+        throw new Error('用户取消导出')
+      }
+      return createPreparedPage(route, '第一页内容')
+    })
 
-    expect(result.pageCount).toBe(2)
-    expect(pages[0].textContent).toContain('第一页内容')
-    expect(pages[1].textContent).toContain('第二页延迟内容')
-  })
+    await expect(service.printAllPages({ mode: 'all', method: 'browser-print' }))
+      .rejects.toThrow('用户取消导出')
 
-  it('所有页面均无法收集时应清理临时 iframe', async () => {
-    stubIframePrint()
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const router = {
-      currentRoute: {
-        value: {
-          fullPath: '/origin',
-          path: '/origin',
-        },
-      },
-      push: vi.fn(async (route: string) => {
-        router.currentRoute.value.fullPath = route
-        router.currentRoute.value.path = route
-        document.body.innerHTML = '<main></main>'
-      }),
-    } satisfies RouterStub
-    const service = new BrowserPrintService()
-    service.setRouter(router as unknown as Router)
-
-    await expect(service.printAllPages({ mode: 'all', method: 'browser-print' })).rejects.toThrow('没有成功收集任何可打印页面')
+    expect(preparedCount).toBe(2)
+    expect(mockStage.dispose).toHaveBeenCalled()
     expect(document.getElementById('runtime-browser-print-frame')).toBeNull()
+    expect(service.isCurrentlyPrinting()).toBe(false)
+  })
+
+  it('离屏页面准备失败时应清理临时 iframe 与舞台且不触发打印', async () => {
+    const printSpy = stubIframePrint()
+    const router = {
+      currentRoute: {
+        value: {
+          fullPath: '/origin',
+          path: '/origin',
+        },
+      },
+      push: vi.fn(async () => undefined),
+    } satisfies RouterStub
+    mockStage.preparePage.mockRejectedValue(new Error('导出页面视觉资源未就绪'))
+    const service = new BrowserPrintService()
+    service.setRouter(router as unknown as Router)
+
+    await expect(service.printAllPages({ mode: 'all', method: 'browser-print' }))
+      .rejects.toThrow('导出页面视觉资源未就绪')
+
+    expect(printSpy).not.toHaveBeenCalled()
+    expect(document.getElementById('runtime-browser-print-frame')).toBeNull()
+    expect(mockStage.dispose).toHaveBeenCalled()
+  })
+
+  it('项目路由打印当前页时使用离屏舞台并保留 fullPath', async () => {
+    stubIframePrint()
+    mockStage.preparePage.mockResolvedValue(createPreparedPage('/current', '离屏当前页'))
+    const router = {
+      currentRoute: {
+        value: {
+          fullPath: '/current?period=2026',
+          path: '/current',
+          meta: { runtimeProject: true },
+        },
+      },
+      push: vi.fn(async () => undefined),
+    } satisfies RouterStub
+    const service = new BrowserPrintService()
+    service.setRouter(router as unknown as Router)
+
+    const result = await service.printCurrentPage({ mode: 'current', method: 'browser-print' })
+    const iframe = document.getElementById('runtime-browser-print-frame') as HTMLIFrameElement | null
+
+    expect(result.success).toBe(true)
+    expect(mockStage.preparePage).toHaveBeenCalledWith('/current?period=2026', expect.objectContaining({
+      signal: expect.any(AbortSignal),
+    }))
+    expect(iframe?.contentDocument?.body.textContent).toContain('离屏当前页')
+    expect(router.push).not.toHaveBeenCalled()
+    expect(mockStage.dispose).toHaveBeenCalled()
   })
 })

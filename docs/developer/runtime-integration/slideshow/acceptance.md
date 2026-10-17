@@ -1,6 +1,6 @@
 # 自动放映联调与验收计划
 
-状态：M0 已验收（2026-10-17）；M1 进行中，WP13–WP17 的调度、执行上下文、Router/就绪桥接、单窗口入口/控制条与 Renderer 静态捕获已完成（2026-10-17），导出隔离待实施。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；A09/A11/A14/A15 的 M1 真实浏览器证据见 [WP16 实施记录](./work-packages/wp16-playback-entry-controls.md)；A15/A16 的静态捕获真实 PNG 证据见 [WP17 实施记录](./work-packages/wp17-renderer-static-media.md)；其余场景仍为待执行验证计划，不代表已运行功能验收。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
+状态：M0 已验收（2026-10-17）；M1 进行中，WP13–WP18 的调度、执行上下文、Router/就绪桥接、单窗口入口/控制条、Renderer 静态捕获与导出隔离已完成（2026-10-17），剩余 WP19/WP20 客户端与 WP21 阶段出口。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；A09/A11/A14/A15 的 M1 真实浏览器证据见 [WP16 实施记录](./work-packages/wp16-playback-entry-controls.md)；A15/A16 的静态捕获真实 PNG 证据见 [WP17 实施记录](./work-packages/wp17-renderer-static-media.md)；A16 的 PDF/PPTX/打印真实产物与取消隔离证据见 [WP18 实施记录](./work-packages/wp18-export-isolation.md)；其余场景仍为待执行验证计划，不代表已运行功能验收。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
 
 执行分工见[工作包清单](./work-packages/README.md)。阶段出口分别为 [WP12](./work-packages/wp12-m0-integration.md)、[WP21](./work-packages/wp21-m1-integration-release.md)、[WP30](./work-packages/wp30-m2-integration-release.md)、[WP33](./work-packages/wp33-unattended-soak-release.md)，负责汇总本阶段场景与真实产物证据。
 
@@ -39,7 +39,7 @@
 | A16 | 自动放映配置下截图、PDF/PPTX/打印 | 真实产物路由、顺序、尺寸正确，无离场层；取消不污染主放映 |
 | A17 | CLI/MCP 读改写和旧服务兼容 | 显式覆盖/null 不丢失；只读字段不回写；旧服务明确不支持 |
 
-WP13 的虚拟时钟用例已覆盖 A09、A11、A12、A13 的纯调度层（就绪前后计时、暂停剩余时间、旧回调失效、末页/循环/单页循环）；WP14 的宿主与媒体守卫用例已覆盖 A14–A16 的执行上下文优先级、缩略图/预览禁自动播放和暂停媒体记录；WP15 的宿主集成用例覆盖 A09/A10/A12/A13 的 Router 绑定、延迟就绪、旧 settled、导航错误和捕获禁推进。WP16 已在真实 Chromium 中验证 A09/A11/A14/A15：1200ms/3000ms 不可变快照自动计时、暂停/继续、后台隐藏不补跳、全屏空格不双触发、卡片模式清理、停止保留当前页，以及 Editor 三档宽度入口。A12 的真实手动连跳、Renderer/导出产物证据仍以 WP17/WP18/WP21 为准。
+WP13 的虚拟时钟用例已覆盖 A09、A11、A12、A13 的纯调度层（就绪前后计时、暂停剩余时间、旧回调失效、末页/循环/单页循环）；WP14 的宿主与媒体守卫用例已覆盖 A14–A16 的执行上下文优先级、缩略图/预览禁自动播放和暂停媒体记录；WP15 的宿主集成用例覆盖 A09/A10/A12/A13 的 Router 绑定、延迟就绪、旧 settled、导航错误和捕获禁推进。WP16 已在真实 Chromium 中验证 A09/A11/A14/A15：1200ms/3000ms 不可变快照自动计时、暂停/继续、后台隐藏不补跳、全屏空格不双触发、卡片模式清理、停止保留当前页，以及 Editor 三档宽度入口。WP17 验证 A15 的远程截图真实 PNG；WP18 验证 A16：暂停状态下 PDF/PPTX/打印顺序与内容正确，导出取消不下载且不改变主画布页码、剩余时间与路由。A12 的真实手动连跳仍以 WP21 为准。
 
 虚拟时钟对业务剩余毫秒进行确定性断言。真实浏览器测试记录导航提交、过渡结束和下一次导航时间，运行前声明前台计时容差及设备环境，不能用宽泛 sleep 代替行为判定。
 
