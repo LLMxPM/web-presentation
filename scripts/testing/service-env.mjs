@@ -8,12 +8,13 @@ export const DEFAULT_SERVICE_URLS = {
   renderer: 'http://127.0.0.1:7400',
 }
 
-export function resolveServiceUrls() {
+/** 按 E2E 覆盖、通用覆盖和默认值解析服务地址；允许传入隔离环境用于预检与测试。 */
+export function resolveServiceUrls(env = process.env) {
   return {
-    backend: process.env.E2E_API_BASE_URL || process.env.BACKEND_BASE_URL || DEFAULT_SERVICE_URLS.backend,
-    editor: process.env.E2E_BASE_URL || process.env.EDITOR_BASE_URL || DEFAULT_SERVICE_URLS.editor,
-    runtime: process.env.E2E_RUNTIME_BASE_URL || process.env.RUNTIME_BASE_URL || DEFAULT_SERVICE_URLS.runtime,
-    renderer: process.env.E2E_RENDERER_BASE_URL || DEFAULT_SERVICE_URLS.renderer,
+    backend: env.E2E_API_BASE_URL || env.BACKEND_BASE_URL || DEFAULT_SERVICE_URLS.backend,
+    editor: env.E2E_BASE_URL || env.EDITOR_BASE_URL || DEFAULT_SERVICE_URLS.editor,
+    runtime: env.E2E_RUNTIME_BASE_URL || env.RUNTIME_BASE_URL || DEFAULT_SERVICE_URLS.runtime,
+    renderer: env.E2E_RENDERER_BASE_URL || DEFAULT_SERVICE_URLS.renderer,
   }
 }
 

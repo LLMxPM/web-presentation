@@ -36,13 +36,14 @@ export function buildE2eBackendEnv(extraEnv = {}) {
   }
 }
 
-export function resolveE2eDatabaseUrl() {
-  const explicitDatabaseUrl = normalizeEnvValue(process.env.E2E_DATABASE_URL)
+/** 解析隔离测试库；可传入显式环境，规则与真实 E2E 入口保持一致。 */
+export function resolveE2eDatabaseUrl(env = process.env) {
+  const explicitDatabaseUrl = normalizeEnvValue(env.E2E_DATABASE_URL)
   if (explicitDatabaseUrl) {
     return requireE2eDatabaseUrl(explicitDatabaseUrl, 'E2E_DATABASE_URL')
   }
 
-  const inheritedDatabaseUrl = normalizeEnvValue(process.env.DATABASE_URL)
+  const inheritedDatabaseUrl = normalizeEnvValue(env.DATABASE_URL)
   if (inheritedDatabaseUrl && databaseNameContainsE2eMarker(inheritedDatabaseUrl)) {
     return inheritedDatabaseUrl
   }

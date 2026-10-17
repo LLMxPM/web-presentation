@@ -124,17 +124,17 @@ pnpm run test:e2e
 - `pnpm run test:e2e:run`：只执行 Playwright。
 - `pnpm run test:e2e`：先重置/播种 smoke 数据并确认服务，再执行 Playwright smoke。
 
-E2E 入口（`test:e2e`、`test:e2e:prepare`、`test:e2e:all`）默认由脚本自启服务：未显式设置 `TESTING_START_*` 时会先校验 8000/5173/7373/7400 端口与本地 PostgreSQL/Redis 依赖，端口被占用时报错并给出提示。如果想复用已在运行的服务，可显式设置：
+E2E 准备会重置并播种独立测试库。每次重新 prepare 前应先停止 Backend，避免运行中的后台执行器因进程 owner 数据被重置而停止。本地建议通过仓库技能的包装器准备，流程与排障入口见 [dev-start-test](../../.agents/skills/dev-start-test/SKILL.md)：
 
 ```powershell
-$env:TESTING_REUSE_BACKEND='true'   # 复用 Backend（必须满足 E2E 测试指纹）
-$env:TESTING_START_EDITOR='true'    # 未在运行时由脚本启动
-$env:TESTING_START_RUNTIME='true'
-$env:TESTING_START_RENDERER='true'
-pnpm run test:e2e
+node .agents/skills/dev-start-test/scripts/prepare-e2e.mjs --dry-run
+node .agents/skills/dev-start-test/scripts/prepare-e2e.mjs --stop-services
+pnpm run test:e2e:run
 ```
 
-`TESTING_REUSE_BACKEND=true` 会跳过端口校验；Backend 指纹不匹配时 prepare 会明确报错。
+包装器预演并停止可确认归属的本仓服务，再重置数据、启动并校验 E2E 指纹；未知占用默认拒绝。`--dry-run` 只检查，端口占用时会报错。继承的非 mock 模式、禁用自启或 `TESTING_REUSE_BACKEND=true` 会在停服/重置前被拒绝。
+
+复用已准备好的服务与数据时直接运行 `test:e2e:run`；全部 project 使用 `pnpm exec playwright test --config tests/config/playwright.config.ts`，按需追加 `--project=ai` 等参数。`test:e2e`、`test:e2e:all`、`test:e2e:regression` 会重新 prepare，仅在服务已停止后使用，不要设置 Backend 复用变量绕过端口检查。
 
 E2E 报告与失败产物统一写入 `test-results/e2e/`：
 

@@ -11,7 +11,7 @@
 - 为函数补充中文注释，优先解释职责、输入输出和关键约束，避免重复代码字面含义。
 - 前端使用根目录 `pnpm` workspace（唯一 `pnpm-lock.yaml`）管理根工具链、`editor` 与 `runtime`；Python 侧使用根目录 `uv` workspace（唯一 `uv.lock`）管理 `backend`、`renderer`、`packages/render-contracts`，虚拟环境默认在仓库根 `.venv`。
 - Python workspace 成员使用独立顶层包名：Backend 为 `app`，Renderer 为 `wp_renderer`，契约为 `render_contracts`；新增成员不得依赖启动目录或 `sys.path` 注入消除重名。
-- 项目通常已经启动，不要反复启动服务；需要确认运行态时先查看现有进程、端口或文档说明。
+- 项目通常已经启动。启动/重启/停止服务、确认运行态、准备 E2E 环境、选择测试或运行全量门禁时，优先调用 `dev-start-test` skill（[SKILL.md](./.agents/skills/dev-start-test/SKILL.md)），按技能中的脚本与测试矩阵执行；不要重复启动服务，也不要在本文件复制操作细节。
 - 可能存在用户未提交改动；不要回滚、覆盖或格式化无关文件。
 - ORM 时间列统一使用 `app.db.types.UTCDateTime`，显式取时使用 `utc_now()`；历史无时区值直接补 UTC。Editor 时间解析复用 `parseApiDate()`，展示时区以 Backend `APP_TIMEZONE` 为准，详细规则见 [`docs/developer/backend/time-handling.md`](./docs/developer/backend/time-handling.md)。
 - 视频、无损音频和设计源文件按根目录 `.gitattributes` 使用 Git LFS 管理；新增未覆盖且大于 10 MiB 的二进制文件时，先判断是否应入库，再补充精确 LFS 规则。不要提交依赖包、构建产物、缓存或可重新生成的大文件。
@@ -37,6 +37,7 @@
 
 - `README.md`：面向最终用户，说明产品定位、核心能力、典型流程、部署入口和文档导航。
 - `AGENTS.md`：面向开发者与智能代理，说明仓库内修改边界、编码规范、测试要求和文档维护规则。
+- `.agents/skills/`：仓库级智能体技能；`dev-start-test/` 维护本地启动、停服、测试选择、E2E/全量准备与排障经验，入口为 `SKILL.md`。
 - `docs/`：承载平台文档中心，按 `user/` 用户文档、`developer/` 开发文档和 `assets/` 图片资源拆分。
 - `deploy/`：交付部署配置中心；`deploy/compose/` 为 compose 模板，`deploy/docker/` 为平台/lite Dockerfile、nginx 与 entrypoints，`deploy/scripts/` 为备份恢复脚本。
 - `tests/`：承载根仓跨模块契约测试和 E2E smoke。
@@ -162,59 +163,7 @@ Runtime Kit 约束：
 
 ## 4. 测试与验证
 
-优先运行与改动范围匹配的最小测试集，并在最终说明中写清楚已运行和未运行的测试。
-
-本地多副本架构演练使用 `scripts/testing/docker-architecture.py`；必须创建专属数据库、Redis、卷和回环端口，不能复用开发数据。阶段操作按依赖串行执行，结束后仅清理本项目；命令与证据边界见[本地 Docker 架构演练](./docs/developer/testing/docker-architecture-drill.md)。
-
-常用入口：
-
-```powershell
-pnpm run test:backend
-pnpm run test:backend:unit
-pnpm run test:backend:api
-pnpm run test:backend:integration
-pnpm run test:backend:pg-claim
-pnpm run test:backend:runtime-state-parity
-pnpm run test:editor
-pnpm run test:editor:check
-pnpm run test:editor:build
-pnpm run test:editor:gate
-pnpm run test:runtime
-pnpm run test:runtime:gate
-pnpm run test:contracts
-pnpm run test:repository
-pnpm run test:python-workspace
-pnpm run test:contracts:docker-context
-pnpm run test:contracts:gateway
-pnpm run test:contracts:cli-skill
-pnpm run test:render-contracts
-pnpm run test:renderer
-pnpm run test:render-e2e
-pnpm run test:e2e:run
-pnpm run test:e2e
-pnpm run test:e2e:regression
-pnpm run test:e2e:all
-```
-
-测试入口语义：
-
-- `test:editor` 只执行 Editor Vitest；`test:editor:check` 执行类型检查；`test:editor:build` 执行生产构建；需要完整 Editor 质量门禁时使用 `test:editor:gate`。
-- `test:runtime` 只执行 Runtime Vitest；需要 Runtime 完整门禁时使用 `test:runtime:gate`。
-- `test:backend:pg-claim` 执行 PostgreSQL 认领形态与双库迁移对拍；提供 `P4_POSTGRES_DATABASE_URL` 时跑真实 PG，CI 以 `P4_POSTGRES_REQUIRED=1` 强制缺配置失败。
-- `test:contracts` 是根仓跨模块契约测试，不等同于 Backend 自身的 `backend/tests/contracts`；`test:contracts:gateway` 执行真实 Nginx 网关契约回归，`test:contracts:cli-skill` 执行 CLI Skill 示例契约测试。
-- `test:repository` 检查文档链接、部署边界和环境覆盖；`test:python-workspace` 在全成员共装环境验证包解析与根目录 CLI；`test:contracts:docker-context` 用合成配置验证 Docker 排除规则。
-- `test:render-contracts` 运行 `packages/render-contracts` 契约单测；`test:renderer` 运行 Renderer 单测；`test:render-e2e` 准备 E2E 环境并运行真实页面截图 smoke，覆盖 Backend→Renderer→Runtime 和 PNG 下载，必须安装 Node/Python 两套 Playwright Chromium。
-- `test:e2e:run` 只执行 Playwright；`test:e2e` 会先重置并播种 smoke 数据、确认服务，再执行 Playwright。
-- `test:e2e:run` / `test:e2e` 默认只运行 `auth + smoke`；扩展回归使用 `test:e2e:regression`，全部 project 使用 `test:e2e:all`。
-- E2E 报告和失败产物统一写入 `test-results/e2e/`。
-- E2E 服务拓扑包含 Backend、Editor、Runtime、Renderer；测试必须覆盖远程截图实际产物，不以按钮可见或占位断言代替。交付 Dockerfile 必须纳入镜像构建、实际启动与发布矩阵。
-
-涉及以下范围时应特别补充验证：
-
-- AI 工具规格、披露组或前端工具说明变化：补充防漂移测试，确保工具 key、运行时 Tool、披露工具组和 `agent_guide` 一致。
-- Runtime Kit manifest 或公开 import path 变化：补充 Backend 契约测试和 Runtime manifest 测试。
-- 预览、截图、构建、资源引用或 Runtime 回源变化：补充相关 integration、contract 或 E2E smoke。
-- 认证、权限、工作空间隔离变化：补充多用户访问或 API 权限测试。
+测试命令、入口语义、按改动范围选择测试、E2E 数据与端口纪律、全量门禁、专项验证矩阵和交付前验证统一维护在 `dev-start-test` skill（[SKILL.md](./.agents/skills/dev-start-test/SKILL.md) 与 [testing-matrix](./.agents/skills/dev-start-test/references/testing-matrix.md)）。完成改动后必须按该技能选择最小充分测试集，并在最终说明中写清楚已运行和未运行的测试。
 
 ## 5. 文档维护规则
 
@@ -230,9 +179,15 @@ pnpm run test:e2e:all
 - 开发协作规范、编码约束、测试要求或文档约束发生变化。
 - Backend、Editor、Runtime、Renderer 或 AI 工具体系修改策略发生变化。
 
+出现以下情况时，优先更新 `.agents/skills/dev-start-test/`：
+
+- 本地启动、停服、端口、测试选择、E2E 数据重置、全量/专项测试流程或交付前验证发生变化。
+- 新增或修改开发测试脚本，或沉淀出可复用的排障经验。
+- `AGENTS.md` 不重复维护这些命令细节，只保留触发条件与原则。
+
 出现以下情况时，优先更新 `docs/developer/` 下专题文档：
 
-- 本地开发、测试数据、部署、CI/CD 或测试策略发生变化。
+- 部署、CI/CD、测试设计文档、接口契约或跨模块联调发生变化。
 - 接口契约尚未稳定但需要跨模块联调，应先在文档中声明请求路径、入参、出参和错误语义。
 
 出现以下情况时，优先更新 `docs/user/` 下用户文档：
@@ -255,8 +210,3 @@ pnpm run test:e2e:all
 - `Renderer`：执行截图与渲染诊断的单槽 Chromium 服务。
 - `Editor`：面向用户的创作工作台。
 - `Backend`：平台控制面服务。
-
-
-## CLI 契约部署验证
-
-修改 Gateway 或 External API 契约时，运行真实 Nginx 回归 `pnpm run test:contracts:gateway`（或 `python scripts/contracts/test-gateway-openapi.py`）；发布后从外部 Gateway 使用 `scripts/contracts/check-gateway-openapi.py` 验证契约 JSON，不能以 HTTP 200 或 Backend 直连替代。CLI 请求契约失败直接报错，不引入离线契约或缓存降级。

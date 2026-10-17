@@ -2,6 +2,9 @@
   "entries": [
     {
       "path": "../web-presentation-cli/skills"
+    },
+    {
+      "path": "skills"
     }
   ]
 }

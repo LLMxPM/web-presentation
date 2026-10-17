@@ -121,6 +121,8 @@ pnpm run test:all
 | `test:e2e:all` | 准备环境后运行全部 Playwright project。 |
 | `test:all` | 本地全量入口：Backend 全部 marker + Editor gate + Runtime gate + 根仓 contracts + 渲染契约/Renderer + Python workspace 共装验证 + 全部 E2E project。脚本先校验端口与 E2E 依赖，再自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock` 并自启服务，无需手动设置环境变量；端口被占用或依赖未启动时立即报错并给出提示。 |
 
+本地服务探测、安全停服、E2E/全量准备与详细命令矩阵统一见 [dev-start-test](../../../.agents/skills/dev-start-test/SKILL.md)。每次重置测试数据前先停止 Backend，不将 `TESTING_REUSE_BACKEND=true` 与 prepare 混用。环境已准备好时用 `test:e2e:run`，或直接运行 `pnpm exec playwright test --config tests/config/playwright.config.ts` 执行全部 project；不要再次调用会 prepare 的一体化入口。技能包装器会在副作用前拒绝配置冲突，并按 E2E 覆盖地址校验状态。
+
 辅助测试数据命令：
 
 ```bash
