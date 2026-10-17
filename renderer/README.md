@@ -20,6 +20,8 @@ Backend 的 `RENDER_WORKERS_CONFIG` 必须包含本服务的 `RENDER_WORKER_ID` 
 
 ## 测试与交付
 
+自动放映对捕获上下文、媒体静态帧和导出的配套工作见 [Renderer、渲染契约与导出实施计划](../docs/developer/runtime-integration/slideshow/renderer.md)（待实施）。
+
 ```powershell
 pnpm run test:renderer
 pnpm run test:python-workspace

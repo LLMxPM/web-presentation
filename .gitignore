@@ -19,6 +19,7 @@ yarn-error.log*
 
 # Tool caches
 .codex/
+.qoder/
 .cache/
 
 # Environment files

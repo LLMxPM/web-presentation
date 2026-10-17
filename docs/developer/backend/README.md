@@ -7,6 +7,7 @@ Backend 是平台控制面，负责 API、权限、数据持久化、AI Agent、
 | 文档 | 内容 |
 | :--- | :--- |
 | [API 分层与契约](./api-overview.md) | 路由、schema、service、repository 分层和接口变更规则 |
+| [翻页动画与自动放映 Backend 计划](../runtime-integration/slideshow/backend.md) | 项目/逐页参数、迁移、权限、快照、模板包和对外契约；待实施 |
 | [AI Agent 运行态](./ai-agent.md) | 会话、run、HITL、诊断 CLI 和模型 trace |
 | [AI 模型配置与目录](./ai-model-configuration.md) | 聊天模型、图片模型、Models.dev 目录和协议白名单 |
 | [AI 模型能力与推理策略](./ai-model-capabilities.md) | 模型能力档案、三态四档、上下文预算和兼容快照 |

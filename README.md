@@ -96,6 +96,7 @@ After the container starts, open `http://127.0.0.1:8080` and log in with usernam
 | [User Guide](https://wp.llmxpm.com/docs/user/) | Getting started, AI co-creation, workspace asset management, and export |
 | [Deployment Guide](https://wp.llmxpm.com/docs/developer/deployment/) | Architecture options, environment setup, backup/recovery, upgrades, and troubleshooting |
 | [Developer Guide](https://wp.llmxpm.com/docs/developer/) | Local development, system architecture, API specifications, and testing |
+| [翻页动画与自动放映实施计划](./docs/developer/runtime-integration/slideshow/README.md) | Backend 配置契约、各模块实施计划和分阶段验收；待实施 |
 
 ## Repository Structure
 
