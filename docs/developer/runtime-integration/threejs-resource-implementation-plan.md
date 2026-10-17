@@ -1,6 +1,6 @@
 # 三维资源复用与渲染实施计划
 
-计划日期：2026-10-16；实施状态更新：2026-10-17。W01–W09 已实现并合入 `feature/threejs-model3d`，W10 主体验证完成；包级状态、T01–T12 证据与 G1 退出项见「实施状态与证据」。
+计划日期：2026-10-16；实施状态更新：2026-10-17（替换即全局更新修订落在 C04）。W01–W09 已实现并合入 `feature/threejs-model3d`，W10 主体验证完成；包级状态、T01–T12 证据与 G1 退出项见「实施状态与证据」。
 
 方向依据：[三维资源复用与 Three.js 渲染接入分析](./threejs-rendering-and-management-analysis.md)。本计划细化交付顺序、接口、数据增量、测试和发布门槛；后续实施状态与实际证据在本计划中维护。
 
@@ -13,12 +13,12 @@
 | W00 | 并入后续包执行 | 格式矩阵、接受预算与引擎策略已固定进 Backend 策略对象、Runtime 引擎与支持矩阵；未单独留存首帧时间/峰值内存实测记录（见退出项） |
 | W01 | 已完成 | model3d 契约、展示参数 JSON Schema、共享正反例、统一错误码、Runtime Kit manifest 能力位与用后披露；`codegen:editor-api` / `codegen:preview-types` 无漂移 |
 | W02 | 已完成 | GLB 容器/JSON/bufferView/扩展校验与预算、模型上限、按 ID 替换与提交前基线复核、匿名入口关闭；`backend/tests/unit/test_model3d_glb_service.py`、`backend/tests/api/test_workspace_model3d_assets.py` |
-| W03 | 已完成 | 资源绑定/持有表与迁移、页面/组件版本冻结与动态名 409 拒绝、历史预览冻结映射、截图/检查/渲染指纹纳入资源与引擎身份、持有释放与 TTL 对账；`test_asset_binding_service.py`、`test_model3d_reference_collector.py`、`test_model3d_version_bindings.py` |
+| W03 | 已完成 | 资源占用持有表与迁移（在途任务/Release 持有 + TTL 对账）、替换即全局更新与动态名解禁、截图/检查/渲染指纹纳入全资源实时身份（含三维引擎）；`test_asset_binding_service.py`、`test_owner_resource_token_resolver.py`、`test_model3d_resource_replacement.py`（2026-10-17 修订，见 C04） |
 | W04 | 已完成 | `AssetModel.v1` Viewer、多实例隔离、缓存引用计数、错误/零尺寸/销毁处理；`runtime` gate 与 `ModelViewer.test.ts`、`model3d/*.test.ts` |
 | W05 | 已完成 | 模型首帧探针汇入 render-ready.v1、Renderer 无登录态鉴权读取、真实截图；`test:renderer`、`test:render-e2e`（含三维真实像素） |
 | W06 | 已完成 | 静态帧准备/整块导出/清理、`data-runtime-kit-media-kind=model3d` 媒体词汇；`model-static-frames.test.ts`、`PPTXRuntimeKitExportDom.test.ts` |
 | W07 | 已完成 | Editor 三维上传、详情摘要、按 ID 替换（expected hash）、真实预览与 AssetPicker；`test:editor:gate` |
-| W08 | 已完成 | 构建冻结与物化、资源包/组件包/样式包/模板包含三维文件往返、离线产物；`test_project_build.py`、`test_model3d_asset_package.py`、`test_project_template_package_model3d.py` |
+| W08 | 已完成 | 构建期资源持有与物化、资源包/组件包/样式包/模板包含三维文件往返、离线产物；`test_project_build.py`、`test_model3d_asset_package.py`、`test_project_template_package_model3d.py` |
 | W09 | Backend 外部件已完成；CLI/MCP 未对接 | External `asset.file.replace`、AI 三维摘要与披露、OpenAPI/参考文档；`test_external_asset_replace.py`；CLI/MCP 见退出项 |
 | W10 | 本次收尾 | 全量 E2E（auth/smoke/visual-edit/ai/runtime-heavy 共 18 例）、Docker 架构演练（专属 PG/Redis/卷/回环端口）、迁移对拍、兼容矩阵与文档更新 |
 
@@ -38,7 +38,7 @@
 
 ## 交付目标与范围
 
-第一批可发布能力以一条完整流程验收：上传标准 GLB → 在资源库预览 → 两张页面及同一页面的多个实例引用同一资源 → 分别设置视角 → 替换资源并刷新当前引用 → 还原历史视图 → 生成 PNG、PDF、PPTX 与独立网页构建。
+第一批可发布能力以一条完整流程验收：上传标准 GLB → 在资源库预览 → 两张页面及同一页面的多个实例引用同一资源 → 分别设置视角 → 替换资源并刷新当前引用（历史版本预览同步显示新资源）→ 生成 PNG、PDF、PPTX 与独立网页构建。
 
 资源类型采用 `model3d`，公开组件采用 `AssetModel.v1`。GLB 原始字节保留，Three.js 仅作为 Runtime 内部引擎。资源展示参数不定义物体和材质，不增加场景 DSL。GLB 不进入文本内容工具；程序化效果继续使用工作空间组件。
 
@@ -56,10 +56,10 @@ M1 不依赖完整建模器、对象树编辑器、时间轴和 GPU 硬件集群
 | 已有基础或缺口 | 代码依据 | 计划处理 |
 | :--- | :--- | :--- |
 | 资源上传、覆盖和按 ID 替换均可复用；通用上传当前会全量读取文件 | [AssetService](../../../backend/app/services/asset_service.py)、[资源路由](../../../backend/app/api/routes/assets.py) | 增加三维类型和有界读入；替换加入版本基线 |
-| 页版本资源索引保存组件名与资源名，没有固定文件身份 | [PageVersionComponentResource](../../../backend/app/models/page_component_resource.py)、[PageVersionService](../../../backend/app/services/page_version_service.py) | W03 增加三维引用的不可变绑定与文件保留 |
-| 发布组件保存源码、previewSchema 和资源名索引 | [组件版本](../../../backend/app/models/workspace_component_version.py)、[组件资源索引](../../../backend/app/services/component_resource_index_service.py) | 递归收集组件资源，按宿主预览模式选择实时或冻结映射 |
-| 构建 Release 保存 name→hash manifest，不能单凭映射保证文件未被清理 | [ProjectBuildService](../../../backend/app/services/project_build_service.py)、[Release](../../../backend/app/models/release.py) | W03/W08 增加版本持有，物化后产物独立可用 |
-| 截图配置指纹覆盖画布、主题等展示配置，资源更新需要另补身份 | [截图指纹](../../../backend/app/services/page_screenshot_fingerprint_service.py)、[截图任务](../../../backend/app/services/page_screenshot_job_service.py) | W03 纳入三维引用摘要，并在当前截图指针提升时复核 |
+| 页版本资源索引保存组件名与资源名，没有固定文件身份 | [PageVersionComponentResource](../../../backend/app/models/page_component_resource.py)、[PageVersionService](../../../backend/app/services/page_version_service.py) | 历史预览与当前视图统一按当前资源解析；在途引用由持有保护文件 |
+| 发布组件保存源码、previewSchema 和资源名索引 | [组件版本](../../../backend/app/models/workspace_component_version.py)、[组件资源索引](../../../backend/app/services/component_resource_index_service.py) | 递归收集组件资源，组件预览统一按当前资源实时解析 |
+| 构建 Release 保存 name→hash manifest，不能单凭映射保证文件未被清理 | [ProjectBuildService](../../../backend/app/services/project_build_service.py)、[Release](../../../backend/app/models/release.py) | W03/W08 增加构建期持有，快照与物化产物独立可用 |
+| 截图配置指纹覆盖画布、主题等展示配置，资源更新需要另补身份 | [截图指纹](../../../backend/app/services/page_screenshot_fingerprint_service.py)、[截图任务](../../../backend/app/services/page_screenshot_job_service.py) | W03 纳入全资源（含三维）引用摘要，并在当前截图指针提升时复核 |
 | 检查指纹已有资源名与 hash 处理 | [CodeCheckFingerprintBuilder](../../../backend/app/services/code_check_fingerprint.py) | 复用解析服务，补三维规则、执行引擎与版本模式 |
 | asset_host、Runtime Kit、visual-assets 和 render-ready 已存在 | [AssetPreviewService](../../../backend/app/services/asset_preview_service.py)、[就绪协议](../../../runtime/src/core/utils/render-ready.ts) | W04/W05 接入模型 Viewer 和首帧状态 |
 | External 上传支持 overwrite，但按原文件名或资源名匹配，尚无按 ID 的文件替换路由 | [External assets](../../../backend/app/api/routes/external/assets.py)、[operation 目录](../../../backend/app/core/external_operations.py) | W09 新增明确的二进制替换契约 |
@@ -120,33 +120,31 @@ M0 使用以下候选上限做压力验证，W01 在开工前固定最终值：�
 
 External 新增 `POST /api/v1/assets/{asset_id}/replace`，operation 为 `asset.file.replace`，scope 为现有 `asset:write`。请求包含 `X-Workspace-ID`、必填 `Idempotency-Key`，multipart file 与 `expected_file_hash`；不允许借文件替换改变 asset_type、id 和 name。成功返回 200 AssetResponse；同幂等键同输入回放结果，不同输入冲突，重放不生成第二份历史。
 
-内部和 External 路由调用同一领域服务，领域服务在提交前复核 expected hash，并以条件更新或已有事务互斥保证只成功一次。上传原始文件、旧内容历史、摘要、当前引用失效身份与幂等记录一起协调；校验或冲突失败时不改变当前记录。写文件先于数据库提交的孤立 blob 可按现有存储规则清理，绝不能删除仍被其他资源或快照引用的同 hash 文件。
+内部和 External 路由调用同一领域服务，领域服务在提交前复核 expected hash，并以条件更新或已有事务互斥保证只成功一次。上传原始文件、旧内容历史、摘要、当前引用失效身份与幂等记录一起协调；校验或冲突失败时不改变当前记录。写文件先于数据库提交的孤立 blob 可按现有存储规则清理，绝不能删除仍被其他资源或归档历史引用的同 hash 文件。
 
 M1 暂不让通用 overwrite 承担并发安全的模型替换。对已有 model3d 名称的覆盖请求返回明确冲突并指向按 ID 替换；其他资源保留既有行为。这样避免原文件名优先匹配选中另一条资源。
 
-### C04 当前引用与历史绑定
+### C04 当前引用与资源身份
+
+> 2026-10-17 修订：本节原方案为“保存版本时冻结资源映射（含 `reference_snapshot` 归档副本）”，产品决策改为**替换即全局更新**：三维与图片等资源一致，替换后当前与历史视图同步显示新文件。冻结快照机制已删除，绑定表退化为短期在途持有；相应代码与迁移已按本节重写。
 
 | 使用位置 | 资源解析规则 |
 | :--- | :--- |
-| 当前页面、组件草稿、当前资源详情 | 按 name 读取当前资源版本，替换后刷新 artifact 才切换文件 |
+| 当前页面、组件草稿、当前资源详情 | 按 name 读取当前资源，替换后刷新即切换文件 |
 | 当前页面中的已发布组件 | `/v/N` 固定组件代码；三维资源由宿主页的当前映射解析，多实例仍复用当前资源 |
-| 页面版本历史、组件版本独立历史预览 | 使用版本保存时固定的资源映射，包含递归组件依赖 |
-| 正在截图的请求、正在构建的 Release | 创建请求时冻结输入；执行期间替换不修改该次输入 |
+| 页面版本历史、组件版本独立历史预览 | 按版本保存的引用集合递归解析**当前**资源；资源替换后历史预览同步显示新文件 |
+| 正在截图/检查/构建的在途任务 | 任务开始时解析并持有当时的文件（短期持有，TTL 覆盖任务预算）；执行期间替换不影响该次输入 |
 | 已发布网页产物 | 使用已物化的文件，与 Backend 当前资源脱离 |
 
-这一策略避免首期引入“不同组件模块对同名资源分别解析不同版本”的作用域系统。若未来要求发布组件在所有宿主中始终固定资源，需要增加模块级资源作用域并单独评估；不能静默改变当前实例的解析语义。
+这一策略避免引入“不同组件模块对同名资源分别解析不同版本”的作用域系统，也避免版本对文件的长期绑定与回收复杂度。若未来要求历史版本固定资源，需要重新评估模块级资源作用域；不能静默改变当前解析语义。
 
-历史保存的最小增量方案为复用 WorkspaceAsset 的归档历史副本：保存版本时按 name→hash 建立不可写快照记录，文件内容可复用同一 blob；新增统一的资源绑定/持有表记录 `workspace_id`、`owner_kind`、`owner_key`、`resource_name`、`snapshot_asset_id`、`file_hash` 和可选 `expires_at`。owner 支持 page_version、component_version、release、render_request 和 preview_artifact，避免另造资源文件版本体系。
+在途持有由统一绑定表 `asset_reference_bindings` 记录 `workspace_id`、`owner_kind`、`owner_key`、`resource_name`、`asset_id`、`file_hash` 和必填 `expires_at`。owner 只支持 release、render_request 和 preview_artifact 三种短期占用方：Release 持有按构建总预算加宽限；render_request 与 preview_artifact 按任务 TTL 或终态释放，超时由清理循环对账。持有只保护 `asset_id` 指向的资源文件记录不被删除，不冻结内容——绑定始终指向根资源记录，替换后无需重绑。
 
-`snapshot_asset_id` 必须有真实 FK 和删除保护；owner 的关联与生命周期由统一服务校验。永久版本持有不设置过期时间；临时 artifact/request 持有按实际 TTL 或任务终态释放，并与清理器对账。时间列使用 UTCDateTime。新增 `history_kind=reference_snapshot` 时，写保护、历史展示与历史文件读取需明确覆盖该种类。
+绑定建立、根资源读取和替换复核由同一适配层事务协调，禁止只在业务代码里先读 hash 再无条件提交。删除资源时先检查所有未过期持有者，仍被在途任务或未过期产物引用的文件不可删除。时间列使用 UTCDateTime。
 
-相同源文件快照复用必须避免并发重复持有或错误删除。版本绑定、根资源读取和替换复核由同一适配层事务协调，禁止只在业务代码里先读 hash 再无条件提交。删除根资源时现有“连带删除历史副本”路径须先检查所有持有者。
+页面源码未变时保存不产生新版本；历史版本的引用集合保存在既有版本数据（页面组件索引与依赖关系）中，不复制资源记录。历史预览、检查与渲染按引用集合递归解析当前资源。页面版本恢复只恢复源码和展示参数，资源解析仍取当前文件；若需回到旧文件，通过资源库的明确替换操作完成。
 
-首次上线只为新三维引用建立绑定，不扫描重构所有旧资源历史。旧版本若缺绑定则标记无法精确还原，不用当前文件冒充历史版本。首次引入 model3d 前的数据库无需伪造三维历史。
-
-页面源码未变而资源版本改变时，保存逻辑还应比较绑定摘要；摘要变化可以创建注明“资源版本更新”的新版本，不能被当前 PageVersionService 的源码无变化短路忽略。历史预览始终使用冻结绑定。执行页面版本恢复时，恢复源码和展示参数，新保存版本按当前资源重新绑定并明确显示差异；需要把旧模型恢复为当前资源时，应通过资源库的明确文件替换操作完成，因为该操作会影响所有实时引用，页面恢复不自动回滚工作空间资源。
-
-静态 name、可解析的有限数组、previewSchema 与组件资源索引作为首期可精确冻结的引用来源。无法解析的动态模型名不得默认为已覆盖：项目构建可沿用现有额外资源清单；版本冻结须能取得完整有限集合，否则返回 `MODEL3D_REFERENCE_UNRESOLVED` 并提示补充声明或使用静态资源名。AI 默认生成静态引用。
+静态 name、可解析的有限数组、previewSchema 与组件资源索引是资源身份解析的来源；动态拼接的模型名允许保存，但不能进入截图/渲染指纹的精确身份集合，届时无法提前换缓存，按运行时实际请求处理。AI 默认生成静态引用。
 
 ### C05 文件读取与鉴权
 
@@ -154,7 +152,7 @@ M1 暂不让通用 overwrite 承担并发安全的模型替换。对已有 model
 
 | 读取方 | 入口与凭证 | 实施要求 |
 | :--- | :--- | :--- |
-| Editor 用户 | `GET /api/workspaces/{workspace_id}/assets/{asset_id}/file?hash={hash}`，用户会话 | 检查当前工作空间权限及当前文件版本；历史版本通过冻结快照读取，资源响应中的下载 URL 不能视为匿名公开链接 |
+| Editor 用户 | `GET /api/workspaces/{workspace_id}/assets/{asset_id}/file?hash={hash}`，用户会话 | 检查当前工作空间权限及当前文件版本；历史版本与当前版本解析同一根资源，资源响应中的下载 URL 不能视为匿名公开链接 |
 | Runtime 预览 / Renderer 浏览器 | `GET /preview/artifacts/{artifact_id}/assets/{file_hash}?token=P`，短期预览票据 | P 只读该 artifact manifest 中的资源；Runtime 按 `asset_base_url_auth=preview_token` 显式附加，不向浏览器交付 S 或业务 Cookie |
 | Runtime / Build Worker | `GET /internal/runtime/preview-artifacts/{artifact_id}/assets/{file_hash}`，服务票据 S 或任务授权 | 仅允许配置的 Backend 内部源站；校验 artifact 和 manifest 成员，不跟随重定向、不向外站发送凭证 |
 | 已生成网页 | 构建工作区内物化的静态文件 | 发布文件不包含 P、S 或 Backend 文件 URL；加载时不依赖在线授权服务 |
@@ -209,7 +207,7 @@ flowchart LR
 - [ ] 固定 C01/C02 的 v1 行为，新增 model3d 枚举和分析摘要分支；保持 icon/null 的序列化兼容。
 - [ ] 建立展示参数 JSON Schema、生成类型和共享正反例；明确 cameraIndex 与显式相机的互斥、颜色规则和无效索引行为。
 - [ ] 在 Runtime Kit manifest 增加候选 AssetModel.v1 的字段、示例、约束、能力标签与 previewSchema；实现可用前保持能力不披露。
-- [ ] 确定统一错误码：格式非法、必需扩展不支持、外部 URI、预算超限、版本冲突、引用无法冻结、相机选择失效。
+- [ ] 确定统一错误码：格式非法、必需扩展不支持、外部 URI、预算超限、版本冲突、相机选择失效。
 - [ ] 运行 DTO 与 previewSchema 生成和对拍；将正式 API 契约写入 External 参考文档，实例 props 写入 Runtime Kit 使用文档。
 
 验收：三端对同一正反例一致；旧资源 DTO 兼容；清单中不存在可披露但尚无执行实现的能力。
@@ -229,21 +227,21 @@ flowchart LR
 
 验收：所有写入入口校验一致；同一 expected hash 的两个并发替换只成功一个；历史和原始下载正确，存储失败或事务回滚不破坏旧文件。
 
-### W03 版本绑定 文件保留与缓存身份
+### W03 资源占用持有与资源身份缓存
 
-前置：W02。重点入口：PageVersionService、PageComponentIndexService、ComponentResourceIndexService、PreviewService、ProjectArtifactBuilder、RenderSnapshotService、截图和检查指纹。
+前置：W02。重点入口：AssetBindingService、PageScreenshotFingerprintService、RenderSnapshotService、PreviewService、ProjectBuildService；资源身份解析统一由 OwnerResourceTokenResolver 提供。按 2026-10-17 修订的 C04 实施，替换即全局更新，无版本冻结与参考快照。
 
-- [ ] 按 C04 实施资源绑定/持有表与仓储，复用历史副本和 blob；补充迁移、唯一约束、到期时间及 SQLite/PostgreSQL 事务验证。
-- [ ] 在页面保存、组件发布与历史预览中收集递归三维资源，并绑定 name、hash 和不可写快照；对无变化源码但绑定变化的保存新增测试。
-- [ ] 当前预览使用实时映射，历史预览使用绑定覆盖；相同资源名在宿主范围只解析成一个版本，并验证组件封装与嵌套引用。
-- [ ] 预览 artifact、render request、Release 创建时建立持有，按 owner 生命周期释放；清理器仅删除无任何有效持有且符合原历史保留规则的内容。
-- [ ] 检查指纹、截图 config hash 和渲染 input digest 纳入资源绑定摘要、展示参数所在源码/previewSchema、三维校验规则与引擎配置身份。
-- [ ] 截图最终提升当前指针、构建物化与历史删除前重新复核输入；旧任务可完成自己的冻结产物，但不得把旧截图提升为当前页面结果。
-- [ ] 资源删除、根记录历史级联删除、复制、跨空间导入与版本恢复同步绑定规则。失败时错误明确，不能悄悄读取最新模型替代旧模型。
+- [x] 实施资源占用持有表 `asset_reference_bindings`（`asset_id` 指向根资源、必填 `expires_at`）与仓储；补充迁移与 SQLite/PostgreSQL 验证。（2026-10-17 落地，迁移 `20261016_0100` 按新语义重写）
+- [x] preview artifact、render request、Release 创建时建立短期持有；Release 持有按构建总预算加宽限，其余按 TTL/终态释放，清理循环对账过期持有。（2026-10-17 落地）
+- [x] 删除参考快照机制：历史版本预览、检查与渲染按版本引用集合递归解析当前资源；页面/组件保存不再因资源变化产生新版本。（2026-10-17 落地）
+- [x] 截图指纹、检查指纹和渲染 input digest 纳入全资源实时身份（name:hash，覆盖图片等所有类型）与三维引擎配置身份；替换后旧缓存失效重算。（2026-10-17 落地，截图指纹由仅三维补齐为全资源）
+- [x] 动态模型名允许保存；不可解析的动态名不进入截图/渲染指纹身份集合，按运行时实际请求处理。（2026-10-17 落地）
+- [ ] 截图最终提升当前指针、构建物化前重新复核输入；旧任务可完成自己的产物，但不得把旧截图提升为当前页面结果。
+- [ ] 资源删除、复制、跨空间导入与版本恢复同步持有清理规则；复制/导入后按名称重新绑定当前工作空间资源。
 
-测试：新增版本绑定与生命周期单测/集成测试，扩展现有资源引用解析、检查指纹、截图指纹和迁移测试。
+测试：`backend/tests/unit/test_asset_binding_service.py`、`backend/tests/unit/test_owner_resource_token_resolver.py`、`backend/tests/integration/test_model3d_resource_replacement.py`、`backend/tests/unit/test_page_screenshot_fingerprint_service.py`，并扩展检查/渲染指纹与迁移测试。
 
-验收：A→B 替换期间，当前页面使用 B；历史页面与已入队截图使用 A；删除 A 的根资源受持有保护；持有释放后可按规则清理；任务完成前再次替换不能污染当前结果。
+验收：A→B 替换后当前与历史预览均为 B；已入队任务使用 A 完成并可下载；替换后旧截图/检查缓存重算；仍被在途任务或未过期产物持有的 A 不可删除；持有过期后可清理。
 
 ### W04 Runtime 标准 Viewer 与多实例
 
@@ -301,9 +299,9 @@ flowchart LR
 
 前置：W03/W06。重点入口：ProjectArtifactBuilder、ProjectBuildService、runtime-build-worker、资源/组件/样式/项目模板包服务。
 
-- [ ] 静态引用、组件递归与项目额外资源规则收集 model3d，构建 Release 使用已经冻结的 hash 和文件持有。
-- [ ] Build Worker 通过 S/任务授权从 artifact-scoped 内部入口读取冻结文件并物化到工作区；三维引擎和 GLTFLoader 在生产裁剪后可用，构建与最终产物不依赖预览 token、Backend 地址或外部 CDN。
-- [ ] 资源包、组件包、样式包、项目模板包导出包含所有实际三维文件与对应历史身份；导入后保持标准字节并重新绑定工作空间资源名。
+- [ ] 静态引用、组件递归与项目额外资源规则收集 model3d，构建 Release 在启动时解析当前资源、固化当次 name→hash 并按 release owner 持有对应文件。
+- [ ] Build Worker 通过 S/任务授权从 artifact-scoped 内部入口读取快照 hash 对应文件并物化到工作区；三维引擎和 GLTFLoader 在生产裁剪后可用，构建与最终产物不依赖预览 token、Backend 地址或外部 CDN。
+- [ ] 资源包、组件包、样式包、项目模板包导出包含所有实际三维文件与对应文件 hash 身份；导入后保持标准字节并重新绑定工作空间资源名。
 - [ ] 包导入复用 W02 校验，名称冲突、同 hash 复用、整个事务失败和部分文件清理遵循现有包语义并补测。
 - [ ] 构建期间替换资源，验证新文件不混进旧 Release；attempt 过期或迟到上传不得提升旧产物。
 
@@ -343,17 +341,17 @@ flowchart LR
 - [ ] 静态解析全部 URI 并校验依赖闭包：相对路径解码与规范化、大小写歧义、重复路径、ZIP 路径穿越、压缩炸弹、外部 URI 和缺失文件；大包有单文件与总解压预算。
 - [ ] 整套文件集校验后一次提交当前 revision、历史与持有，失败不能留下可访问的半套资源。
 
-验收：完整 glTF/bin/多纹理导入与替换成功；任一成员缺失或冲突导致整套失败；M1 GLB 的旧接口和快照保持兼容。
+验收：完整 glTF/bin/多纹理导入与替换成功；任一成员缺失或冲突导致整套失败；M1 GLB 的旧接口保持兼容。
 
 ### W12 成员加载 构建与导出
 
 前置：W11。负责范围：Runtime、Backend manifest 与包服务、外部消费者。
 
 - [ ] 为 manifest 增加版本化的 model3d 文件集描述：逻辑入口、成员映射、内容摘要；不改变旧 GLB 的 name→hash 入口兼容。
-- [ ] 为成员提供版本绑定的受保护读取映射；所有成员必须属于 artifact manifest 中冻结的 workspace+resource revision，不能将后端 hash URL 的目录直接当成模型相对目录，也不能把预签名地址写入 Runtime 页面。
+- [ ] 为成员提供 revision 绑定的受保护读取映射；所有成员必须属于 artifact manifest 中固定的 workspace+resource revision，不能将后端 hash URL 的目录直接当成模型相对目录，也不能把预签名地址写入 Runtime 页面。
 - [ ] 使用 LoadingManager 将标准相对 URI 解析到验证过的成员；创建的 Blob URL、缓存和实例释放遵循 W04 的所有权规则。
 - [ ] 构建物化保留目录并使用稳定 base；原始资源下载和各类包导出提供完整标准文件集，外部工具无须平台 SDK 即可读取。
-- [ ] 将文件集完整摘要接入历史绑定、截图/检查指纹、替换 CAS、存储清理及 CLI/MCP。
+- [ ] 将文件集完整摘要接入在途持有、截图/检查指纹、替换 CAS、存储清理及 CLI/MCP。
 
 验收：资源预览、历史、Renderer、独立网页和跨空间包迁移使用同一 revision；没有请求包外文件，没有新旧纹理混用。
 
@@ -374,8 +372,8 @@ flowchart LR
 | T02 | 非法容器、引用和预算 | 每个写入口拒绝，旧数据不变 | W02 |
 | T03 | 同文件多实例与骨骼静态姿态 | 相机/节点独立，卸载一个不影响另一个 | W04 |
 | T04 | A→B 并发替换 | 仅一个基线更新成功，幂等重放无重复历史 | W02/W09 |
-| T05 | 当前、历史、截图、Release 混合替换 | 当前刷新后 B；冻结输入仍 A；旧任务不覆盖当前指针 | W03/W05/W08 |
-| T06 | 静态名、有限数组、组件与 previewSchema | 收集闭包完整；无法冻结的动态名有明确处理 | W03/W08 |
+| T05 | 当前、历史、截图、Release 混合替换 | 当前刷新后 B；已入队任务输入仍 A；旧任务不覆盖当前指针 | W03/W05/W08 |
+| T06 | 静态名、有限数组、组件与 previewSchema | 收集闭包完整；动态名可保存但不进入精确指纹身份 | W03/W08 |
 | T07 | 慢纹理、WebGL 失败和零尺寸恢复 | 不提前 ready；失败可诊断；恢复后正确渲染 | W04/W05 |
 | T08 | 相同模型不同视角 PDF/PPTX | 实际产物中视角不同，无空白或缺纹理 | W06 |
 | T09 | 离线构建与跨空间导入 | 无 Backend/CDN 依赖，资源重新绑定正确 | W08 |
@@ -395,8 +393,8 @@ flowchart LR
 | T02 | `backend/tests/unit/test_model3d_glb_service.py` 与 api 反例（非法容器/引用/预算/外部 URI 拒绝且旧记录不变） | — |
 | T03 | `runtime/src/runtime-kit/internal/renderers/ModelViewer.test.ts`、`model3d/model-cache.test.ts`（实例独立、共享缓存引用计数、卸载隔离） | — |
 | T04 | W02 并发替换测试与 `backend/tests/integration/test_external_asset_replace.py`（仅一个基线成功、重放无重复历史） | — |
-| T05 | `backend/tests/integration/test_model3d_version_bindings.py`（历史冻结仍 A、当前刷新 B）；截图过期复核 `test_page_screenshot.py`；构建快照 `test_project_build.py` | — |
-| T06 | `test_model3d_reference_collector.py`（组件闭包递归）；动态名保存即 409 拒绝（integration 与构建测试） | — |
+| T05 | `backend/tests/integration/test_model3d_resource_replacement.py`（替换后当前与历史预览均 B、在途任务文件受持有保护）；截图指纹重算 `test_page_screenshot_fingerprint_service.py`；构建快照与持有 `test_project_build.py` | — |
+| T06 | `test_owner_resource_token_resolver.py`（组件闭包递归、动态名排除）；动态名保存 200（integration 与构建测试） | — |
 | T07 | Viewer 状态机与相机/零尺寸边界（`ModelViewer.test.ts`、`camera-fit.test.ts`）；首帧探针汇入 render-ready | — |
 | T08 | `model-static-frames.test.ts`（实例视角分区不共用帧）、`PPTXRuntimeKitExportDom.test.ts`（整块导出与回退报告） | 真实 PDF/PPTX 双视角目检未执行 |
 | T09 | `test_model3d_asset_package.py`、`test_project_template_package_model3d.py`（往返字节保持与重新绑定）；离线物化由构建测试覆盖 | — |
@@ -456,11 +454,11 @@ pnpm run test:e2e:regression
 | W12 | 3–5 | W11 |
 | W13 | 2–3 | W12 |
 
-详细拆分后，M0+M1 约 22–34 人日，M2 追加 8–12 人日，总计 30–46 人日。相较分析阶段的粗估，本计划显式纳入资源持有与历史还原、相同源码的资源版本保存、并发替换、两个外部消费者和真实镜像验收；后续排期以本计划为准。若缩减发布面，必须在 G1 中明确移除的承诺与退出项，不以跳过验证压缩估算。
+详细拆分后，M0+M1 约 22–34 人日，M2 追加 8–12 人日，总计 30–46 人日。相较分析阶段的粗估，本计划显式纳入资源在途持有与替换语义、并发替换、两个外部消费者和真实镜像验收；后续排期以本计划为准。若缩减发布面，必须在 G1 中明确移除的承诺与退出项，不以跳过验证压缩估算。
 
 上述估算假设 C05 复用已落地的用户文件入口、artifact-scoped P、内部 S/任务授权和统一文件响应，不另建鉴权系统；本次链路调整本身不增加新的鉴权子系统工期。若实现前发现三维资源所需的 manifest 引用范围收敛尚未满足，或必须改造通用 artifact 授权范围，则先复核 W02/W03 依赖和人日，再承诺排期。
 
-主要工期变量是 W03 的历史保留与清理接入、W00 的容器渲染能力，以及两个独立消费者的接口适配。遇到预算或兼容问题，先缩减格式扩展、自动缩略图和交互能力；资源身份、并发正确性、首帧与静态导出属于已承诺核心能力。
+主要工期变量是 W03 的在途持有与清理接入、W00 的容器渲染能力，以及两个独立消费者的接口适配。遇到预算或兼容问题，先缩减格式扩展、自动缩略图和交互能力；资源身份、并发正确性、首帧与静态导出属于已承诺核心能力。
 
 ## 升级 回退与状态维护
 

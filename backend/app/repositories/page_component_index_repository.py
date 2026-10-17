@@ -89,3 +89,27 @@ class PageComponentIndexRepository:
             )
         )
         return list(result.all())
+
+    async def list_component_resources_by_versions(
+        self,
+        page_version_ids: Iterable[int],
+    ) -> dict[int, list[PageVersionComponentResource]]:
+        """按页面版本集合批量读取组件资源参数统计，供批量指纹场景避免 N+1。"""
+
+        normalized = sorted({int(item) for item in page_version_ids})
+        if not normalized:
+            return {}
+        rows = (
+            await self.session.scalars(
+                select(PageVersionComponentResource)
+                .where(PageVersionComponentResource.page_version_id.in_(normalized))
+                .order_by(
+                    PageVersionComponentResource.component_name.asc(),
+                    PageVersionComponentResource.resource_name.asc(),
+                )
+            )
+        ).all()
+        grouped: dict[int, list[PageVersionComponentResource]] = {item: [] for item in normalized}
+        for row in rows:
+            grouped[int(row.page_version_id)].append(row)
+        return grouped

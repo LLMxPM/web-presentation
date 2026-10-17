@@ -1,4 +1,4 @@
-"""文件功能：定义资源引用绑定模型，冻结版本与产物对资源文件版本的引用，支撑历史还原与删除保护。"""
+"""文件功能：定义资源占用绑定模型，保护在途任务与短生命周期产物引用的资源文件不被删除。"""
 
 from datetime import datetime
 
@@ -11,11 +11,11 @@ from app.models.mixins import TimestampMixin
 
 
 class AssetReferenceBinding(TimestampMixin, Base):
-    """owner（页面/组件版本、Release、渲染请求、预览 artifact）对资源名与文件哈希的冻结引用。
+    """owner（Release、渲染请求、预览 artifact）对当前资源文件的短期占用。
 
-    永久版本持有 expires_at 为空；临时持有（预览 artifact、渲染请求）按 TTL 写入到期时间，
-    由清理对账释放。snapshot_asset_id 指向不可写的参考快照记录：删除保护依赖真实外键与
-    持有查询，禁止绕过绑定直接删除仍被历史版本引用的文件。
+    持有只保护文件记录不被删除，不冻结内容：指向当前根资源记录，替换资源不改变绑定目标，
+    旧内容由替换时的归档副本兜底，历史版本按当前资源解析。expires_at 为必填到期时间，
+    由清理对账释放；禁止绕过绑定直接删除仍被在途任务或产物引用的文件。
     """
 
     __tablename__ = "asset_reference_bindings"
@@ -34,6 +34,6 @@ class AssetReferenceBinding(TimestampMixin, Base):
     owner_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     owner_key: Mapped[str] = mapped_column(String(128), nullable=False)
     resource_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    snapshot_asset_id: Mapped[int] = mapped_column(ForeignKey("workspace_assets.id"), nullable=False, index=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("workspace_assets.id"), nullable=False, index=True)
     file_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)

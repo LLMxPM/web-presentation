@@ -18,8 +18,7 @@ from app.models.page import Page
 from app.models.page_version import PageVersion
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
-from app.services.asset_binding_service import OWNER_KIND_COMPONENT_VERSION, OWNER_KIND_PAGE_VERSION
-from app.services.model3d_reference_collector import Model3dReferenceCollector
+from app.services.owner_resource_token_resolver import OwnerResourceTokenResolver, OwnerResourceTokens
 from app.services.rendering.credentials import RenderCredentialService
 from app.services.rendering.target_resolver import RenderTargetResolver
 from app.services.token_service import TokenService
@@ -76,13 +75,12 @@ class RenderSnapshotService:
             "operation_options": operation_options,
             "runtime_build_id": artifact_id,
         }
-        model3d_identity = await self._resolve_model3d_identity(
+        resource_identity = await self._resolve_page_resource_identity(
             workspace_id=page.workspace_id,
-            owner_kind=OWNER_KIND_PAGE_VERSION,
-            owner_key=str(version.id) if version is not None and version.id is not None else None,
+            page_version_id=version.id if version is not None else None,
         )
-        if model3d_identity:
-            input_material["model3d_identity"] = model3d_identity
+        if resource_identity:
+            input_material["resource_identity"] = resource_identity
         input_digest = sha256_hex(canonical_json(input_material))
         now = utc_now()
         credentials = RenderCredentialService(self.settings).encrypt_sensitive_payload(
@@ -143,13 +141,12 @@ class RenderSnapshotService:
             "operation_options": operation_options,
             "runtime_build_id": artifact_id,
         }
-        model3d_identity = await self._resolve_model3d_identity(
+        resource_identity = await self._resolve_component_resource_identity(
             workspace_id=getattr(component, "workspace_id", None),
-            owner_kind=OWNER_KIND_COMPONENT_VERSION,
-            owner_key=str(version.id) if version is not None and version.id is not None else None,
+            component_version_id=version.id if version is not None else None,
         )
-        if model3d_identity:
-            input_material["model3d_identity"] = model3d_identity
+        if resource_identity:
+            input_material["resource_identity"] = resource_identity
         input_digest = sha256_hex(canonical_json(input_material))
         now = utc_now()
         credentials = RenderCredentialService(self.settings).encrypt_sensitive_payload(
@@ -173,31 +170,51 @@ class RenderSnapshotService:
             "storage_kind": "runtime_artifact",
         }
 
-    async def _resolve_model3d_identity(
+    async def _resolve_page_resource_identity(
         self,
         *,
         workspace_id: int | None,
-        owner_kind: str,
-        owner_key: str | None,
+        page_version_id: int | None,
     ) -> dict[str, Any]:
-        """解析渲染输入关联的三维资源实时身份与引擎身份；无三维引用时返回空字典。
+        """解析页面渲染输入关联资源的实时身份；无资源引用时返回空字典。"""
+
+        if workspace_id is None or page_version_id is None:
+            return {}
+        resolved = await OwnerResourceTokenResolver(self.session).resolve_page_version_tokens(
+            workspace_id=int(workspace_id),
+            page_version_id=int(page_version_id),
+        )
+        return self._build_resource_identity(resolved)
+
+    async def _resolve_component_resource_identity(
+        self,
+        *,
+        workspace_id: int | None,
+        component_version_id: int | None,
+    ) -> dict[str, Any]:
+        """解析组件渲染输入关联资源的实时身份；无资源引用时返回空字典。"""
+
+        if workspace_id is None or component_version_id is None:
+            return {}
+        resolved = await OwnerResourceTokenResolver(self.session).resolve_component_version_tokens(
+            workspace_id=int(workspace_id),
+            component_version_id=int(component_version_id),
+        )
+        return self._build_resource_identity(resolved)
+
+    @staticmethod
+    def _build_resource_identity(resolved: OwnerResourceTokens) -> dict[str, Any]:
+        """把资源身份结果组装为渲染输入摘要片段；三维引用附带引擎身份。
 
         资源替换后同一源码版本的渲染输入摘要随之变化，旧 digest 不会冒充当前输入。
         """
 
-        if workspace_id is None or owner_key is None:
+        if not resolved.tokens:
             return {}
-        tokens = await Model3dReferenceCollector(self.session).list_owner_live_asset_tokens(
-            workspace_id=int(workspace_id),
-            owner_kind=owner_kind,
-            owner_key=owner_key,
-        )
-        if not tokens:
-            return {}
-        return {
-            "references": tokens,
-            "engine": load_runtime_kit_manifest().get("model3d_engine") or {},
-        }
+        identity: dict[str, Any] = {"references": resolved.tokens}
+        if resolved.has_model3d:
+            identity["engine"] = load_runtime_kit_manifest().get("model3d_engine") or {}
+        return identity
 
     def build_preview_access(self, snapshot: dict[str, Any]) -> PreviewAccess:
         """从快照生成 Renderer 使用的短期预览访问授权。"""

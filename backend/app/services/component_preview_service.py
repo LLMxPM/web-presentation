@@ -37,11 +37,7 @@ from app.schemas.project_app_config import (
     build_project_app_config_document,
 )
 from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
-from app.services.asset_binding_service import (
-    OWNER_KIND_COMPONENT_VERSION,
-    AssetBindingService,
-)
-from app.services.asset_manifest_metadata_service import build_asset_manifest_metadata
+from app.services.asset_binding_service import AssetBindingService
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.component_preview_options_service import ComponentPreviewOptionsService
 from app.services.preview_service import PreviewService
@@ -132,12 +128,6 @@ class ComponentPreviewService:
         await self._commit_metadata_backfills()
         artifact_id = f"rt_{uuid.uuid4().hex}"
         asset_mapping, asset_metadata = await self.preview_service._build_workspace_asset_mapping(component.workspace_id)
-        await self._apply_component_version_frozen_assets(
-            workspace_id=component.workspace_id,
-            component_version_id=component_version.id,
-            asset_mapping=asset_mapping,
-            asset_metadata=asset_metadata,
-        )
         await AssetBindingService(self.session).bind_preview_artifact_model3d_assets(
             workspace_id=component.workspace_id,
             artifact_id=artifact_id,
@@ -209,28 +199,6 @@ class ComponentPreviewService:
             component_code=component.code,
             component_version_no=component_version.version_no,
         )
-
-    async def _apply_component_version_frozen_assets(
-        self,
-        *,
-        workspace_id: int,
-        component_version_id: int,
-        asset_mapping: dict[str, str],
-        asset_metadata: dict[str, dict[str, object]],
-    ) -> None:
-        """把组件版本绑定的三维资源快照覆盖进 manifest 映射；无绑定的旧版本保持现状解析。"""
-
-        binding_service = AssetBindingService(self.session)
-        bindings = await binding_service.list_owner_bindings(OWNER_KIND_COMPONENT_VERSION, str(component_version_id))
-        if not bindings:
-            return
-        frozen_assets = await binding_service.resolve_binding_assets(bindings)
-        for name, asset in frozen_assets.items():
-            file_hash = str(asset.file_hash or "").strip()
-            if not name or not file_hash:
-                continue
-            asset_mapping[name] = file_hash
-            asset_metadata[name] = build_asset_manifest_metadata(asset)
 
     async def create_source_preview_artifact(
         self,

@@ -41,6 +41,8 @@ from app.ai.job_invariants import assert_inv5_attempt_fence
 ACTIVE_BUILD_STATUSES = ("pending", "running")
 # 单次领取扫描的候选行数：与 max_claims=1 配合，多扫候选只为提高命中率。
 _BUILD_CLAIM_CANDIDATE_LIMIT = 10
+# 构建期资源持有在总期限外追加的上传宽限，避免收尾阶段文件提前释放。
+_BUILD_HOLD_GRACE_SECONDS = 600
 logger = logging.getLogger(__name__)
 
 
@@ -193,18 +195,20 @@ class ProjectBuildService:
         workspace_id: int,
         asset_metadata: dict[str, dict[str, object]],
     ) -> None:
-        """为构建快照中的三维资源建立 Release 持有，构建执行期按冻结 hash 回源不受替换影响。
+        """为构建快照中的三维资源建立构建期持有，执行期间替换不影响本次输入。
 
-        TODO: 当前 Release 绑定为永久持有（expires_at=None），仓库尚无 Release 删除/
-        版本修剪路径；未来引入 Release 生命周期管理时，必须同步接线 release_owner
-        释放，否则删除保护 `_ensure_no_asset_binding_holds` 会永久阻止三维资源清理。
+        持有覆盖构建总期限加收尾宽限，构建结束后由过期对账释放，不长期占用资源。
         """
 
+        expires_at = utc_now() + timedelta(
+            seconds=self.settings.project_build_total_deadline_seconds + _BUILD_HOLD_GRACE_SECONDS
+        )
         await AssetBindingService(self.session).bind_owner_model3d_assets(
             workspace_id=workspace_id,
             owner_kind=OWNER_KIND_RELEASE,
             owner_key=str(release_id),
             asset_metadata=asset_metadata,
+            expires_at=expires_at,
         )
 
     async def get_asset_summary(self, project_id: int) -> ProjectBuildAssetSummary:

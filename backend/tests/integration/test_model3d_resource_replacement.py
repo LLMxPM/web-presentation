@@ -1,4 +1,4 @@
-"""文件功能：验证三维资源版本绑定：页面/组件版本冻结、资源版本更新版本与历史预览还原。"""
+"""文件功能：验证三维资源替换语义：历史/组件预览与渲染摘要跟随当前文件，动态引用不再阻断保存发布。"""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.db.session import get_session_factory
-from app.models.asset import WorkspaceAsset
 from app.models.asset_binding import AssetReferenceBinding
+from app.models.page import Page
 from app.models.page_version import PageVersion
 
 _JSON_CHUNK_TYPE = 0x4E4F534A
@@ -73,6 +73,18 @@ async def _upload_model3d(client: AsyncClient, workspace_id: int, *, name: str =
     return response.json()
 
 
+async def _upload_image(client: AsyncClient, workspace_id: int, *, name: str = "hero", payload: bytes = b"fake-png-1") -> dict:
+    """上传图片资源并返回接口载荷。"""
+
+    response = await client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": (f"{name}.png", payload, "image/png")},
+        data={"asset_type": "image", "tags": "[]", "name": name},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 async def _replace_model3d(client: AsyncClient, workspace_id: int, asset: dict, *, marker: float) -> dict:
     """按 ID 替换三维资源并返回新载荷。"""
 
@@ -80,6 +92,17 @@ async def _replace_model3d(client: AsyncClient, workspace_id: int, asset: dict, 
         f"/api/workspaces/{workspace_id}/assets/{asset['id']}/replace",
         files={"file": ("product.glb", _valid_glb(marker), "model/gltf-binary")},
         data={"expected_file_hash": asset["file_hash"]},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def _replace_image(client: AsyncClient, workspace_id: int, asset: dict, *, name: str, payload: bytes) -> dict:
+    """按 ID 替换图片资源并返回新载荷。"""
+
+    response = await client.post(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}/replace",
+        files={"file": (f"{name}.png", payload, "image/png")},
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -127,11 +150,23 @@ async def _load_manifest(client: AsyncClient, artifact_id: str, runtime_service_
     return response.json()
 
 
-async def test_page_version_binding_freezes_and_refreshes_on_asset_replace(
+async def _build_screenshot_config_hash(page_id: int) -> str:
+    """按页面当前版本构建截图配置指纹。"""
+
+    from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
+
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        assert page is not None
+        snapshot = await PageScreenshotFingerprintService(session).build_page_snapshot(page)
+        return str(snapshot.config_hash)
+
+
+async def test_page_version_preview_should_follow_replaced_model(
     authenticated_client: AsyncClient,
     runtime_service_headers,
 ) -> None:
-    """页面保存冻结三维资源身份；资源替换后相同源码保存生成“资源版本更新”版本；历史预览还原旧文件。"""
+    """页面预览跟随当前模型：替换后历史版本预览显示新文件，相同源码保存不再产生资源版本更新版本。"""
 
     workspace_id = await _create_workspace(authenticated_client, "三维绑定页面空间")
     project_id = await _create_project(authenticated_client, workspace_id, "三维绑定页面项目")
@@ -152,63 +187,42 @@ async def test_page_version_binding_freezes_and_refreshes_on_asset_replace(
     assert page_response.status_code == 200, page_response.text
     page_id = int(page_response.json()["id"])
 
-    first_version_id = await _load_page_version_id(page_id, 1)
-    first_bindings = await _binding_rows("page_version", str(first_version_id))
-    assert len(first_bindings) == 1
-    assert first_bindings[0].resource_name == "product"
-    assert first_bindings[0].file_hash == asset["file_hash"]
-    assert first_bindings[0].expires_at is None
-
-    async with get_session_factory()() as session:
-        snapshot = await session.get(WorkspaceAsset, first_bindings[0].snapshot_asset_id)
-    assert snapshot is not None
-    assert snapshot.history_kind == "reference_snapshot"
-    assert snapshot.status == "archived"
-    assert snapshot.file_name.startswith(asset["file_hash"])
-
-    # 源码与备注均未变化：保存应短路，不生成新版本。
+    # 源码与备注均未变化：保存短路，不生成新版本。
     same_response = await authenticated_client.patch(f"/api/pages/{page_id}", json={"page_content": page_content})
     assert same_response.status_code == 200
     versions_response = await authenticated_client.get(f"/api/pages/{page_id}/versions")
     assert versions_response.status_code == 200
     assert len(versions_response.json()) == 1
 
-    # 替换资源后，相同源码保存必须生成注明“资源版本更新”的新版本并重新绑定。
+    # 替换资源后，相同源码保存同样不生成新版本：资源内容由当前解析负责，不冻结进版本。
     replaced = await _replace_model3d(authenticated_client, workspace_id, asset, marker=2.0)
     assert replaced["file_hash"] != asset["file_hash"]
     refresh_response = await authenticated_client.patch(f"/api/pages/{page_id}", json={"page_content": page_content})
     assert refresh_response.status_code == 200
     versions_response = await authenticated_client.get(f"/api/pages/{page_id}/versions")
-    versions = versions_response.json()
-    assert len(versions) == 2
-    assert versions[0]["version_no"] == 2
-    assert versions[0]["change_note"] == "资源版本更新"
+    assert len(versions_response.json()) == 1
 
-    second_version_id = await _load_page_version_id(page_id, 2)
-    second_bindings = await _binding_rows("page_version", str(second_version_id))
-    assert len(second_bindings) == 1
-    assert second_bindings[0].file_hash == replaced["file_hash"]
-
-    # 历史版本预览必须使用冻结的旧文件；替换后的新哈希不得混入。
+    # 历史版本预览按当前资源解析：manifest 使用替换后的哈希，且不再携带冻结扩展。
     history_preview = await authenticated_client.post(f"/api/pages/{page_id}/versions/1/preview-artifact")
     assert history_preview.status_code == 200, history_preview.text
-    history_manifest = await _load_manifest(authenticated_client, history_preview.json()["artifact_id"], runtime_service_headers)
-    assert history_manifest["assets"]["product"] == asset["file_hash"]
-    assert history_manifest["asset_binding"]["mode"] == "frozen"
-    assert history_manifest["asset_binding"]["frozen_names"] == ["product"]
+    artifact_id = history_preview.json()["artifact_id"]
+    history_manifest = await _load_manifest(authenticated_client, artifact_id, runtime_service_headers)
+    assert history_manifest["assets"]["product"] == replaced["file_hash"]
+    assert "asset_binding" not in history_manifest
 
-    # 最新版本的绑定已更新为替换后的文件。
-    latest_preview = await authenticated_client.post(f"/api/pages/{page_id}/versions/2/preview-artifact")
-    assert latest_preview.status_code == 200
-    latest_manifest = await _load_manifest(authenticated_client, latest_preview.json()["artifact_id"], runtime_service_headers)
-    assert latest_manifest["assets"]["product"] == replaced["file_hash"]
+    # 预览 artifact 的临时持有指向当前根资源并带到期时间，artifact 到期后由对账释放。
+    bindings = await _binding_rows("preview_artifact", artifact_id)
+    assert len(bindings) == 1
+    assert bindings[0].resource_name == "product"
+    assert bindings[0].asset_id == asset["id"]
+    assert bindings[0].expires_at is not None
 
 
-async def test_component_version_binding_freezes_history_preview(
+async def test_component_version_preview_should_follow_replaced_model(
     authenticated_client: AsyncClient,
     runtime_service_headers,
 ) -> None:
-    """组件发布冻结三维资源身份，组件版本预览使用冻结文件而非替换后的当前文件。"""
+    """组件发布版本预览跟随当前模型，不再使用发布时冻结的文件。"""
 
     workspace_id = await _create_workspace(authenticated_client, "三维绑定组件空间")
     asset = await _upload_model3d(authenticated_client, workspace_id, name="gear")
@@ -235,47 +249,23 @@ async def test_component_version_binding_freezes_history_preview(
     )
     assert publish_response.status_code == 200, publish_response.text
 
-    from app.models.workspace_component_version import WorkspaceComponentVersion
-
-    async with get_session_factory()() as session:
-        component_version_id = await session.scalar(
-            select(WorkspaceComponentVersion.id)
-            .where(WorkspaceComponentVersion.component_id == component_id)
-            .where(WorkspaceComponentVersion.version_no == 1)
-        )
-        assert component_version_id is not None
-        version_bindings = list(
-            (
-                await session.execute(
-                    select(AssetReferenceBinding)
-                    .where(AssetReferenceBinding.owner_kind == "component_version")
-                    .where(AssetReferenceBinding.owner_key == str(component_version_id))
-                )
-            )
-            .scalars()
-            .all()
-        )
-    assert len(version_bindings) == 1
-    assert version_bindings[0].resource_name == "gear"
-    assert version_bindings[0].file_hash == asset["file_hash"]
-
     replaced = await _replace_model3d(authenticated_client, workspace_id, asset, marker=3.0)
     assert replaced["file_hash"] != asset["file_hash"]
 
     preview_response = await authenticated_client.post(f"/api/components/{component_id}/versions/1/preview-artifact")
     assert preview_response.status_code == 200, preview_response.text
     manifest = await _load_manifest(authenticated_client, preview_response.json()["artifact_id"], runtime_service_headers)
-    assert manifest["assets"]["gear"] == asset["file_hash"]
-    assert manifest["asset_metadata"]["gear"]["file_hash"] == asset["file_hash"]
+    assert manifest["assets"]["gear"] == replaced["file_hash"]
+    assert manifest["asset_metadata"]["gear"]["file_hash"] == replaced["file_hash"]
 
 
-async def test_page_should_reject_dynamic_model_reference_at_save(
+async def test_dynamic_model_reference_should_save_and_publish(
     authenticated_client: AsyncClient,
 ) -> None:
-    """动态 AssetModel 资源名无法冻结：页面保存必须返回 MODEL3D_REFERENCE_UNRESOLVED。"""
+    """动态 AssetModel 引用不再阻断保存与发布：资源身份在指纹层缺省，不冻结进版本。"""
 
-    workspace_id = await _create_workspace(authenticated_client, "动态引用页面空间")
-    project_id = await _create_project(authenticated_client, workspace_id, "动态引用页面项目")
+    workspace_id = await _create_workspace(authenticated_client, "动态引用空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "动态引用项目")
     await _upload_model3d(authenticated_client, workspace_id)
 
     dynamic_response = await authenticated_client.post(
@@ -289,31 +279,7 @@ async def test_page_should_reject_dynamic_model_reference_at_save(
             "project_id": project_id,
         },
     )
-    assert dynamic_response.status_code == 409, dynamic_response.text
-    assert dynamic_response.json()["code"] == "MODEL3D_REFERENCE_UNRESOLVED"
-
-    # 同一页面改用静态资源名后可以正常保存。
-    static_response = await authenticated_client.post(
-        "/api/pages",
-        json={
-            "page_content": '<template><div class="p-8"><AssetModel name="product" class="w-full h-80" /></div></template>',
-            "file_type": "vue",
-            "title": "静态引用页面",
-            "status": "active",
-            "workspace_id": workspace_id,
-            "project_id": project_id,
-        },
-    )
-    assert static_response.status_code == 200, static_response.text
-
-
-async def test_component_publish_should_reject_dynamic_model_reference(
-    authenticated_client: AsyncClient,
-) -> None:
-    """动态 AssetModel 资源名无法冻结：组件发布必须返回 MODEL3D_REFERENCE_UNRESOLVED。"""
-
-    workspace_id = await _create_workspace(authenticated_client, "动态引用组件空间")
-    await _upload_model3d(authenticated_client, workspace_id, name="gear")
+    assert dynamic_response.status_code == 200, dynamic_response.text
 
     component_response = await authenticated_client.post(
         "/api/components",
@@ -328,13 +294,11 @@ async def test_component_publish_should_reject_dynamic_model_reference(
         },
     )
     assert component_response.status_code == 200, component_response.text
-
     publish_response = await authenticated_client.post(
         f"/api/components/{component_response.json()['id']}/publish",
         json={"change_note": "动态引用发布"},
     )
-    assert publish_response.status_code == 409, publish_response.text
-    assert publish_response.json()["code"] == "MODEL3D_REFERENCE_UNRESOLVED"
+    assert publish_response.status_code == 200, publish_response.text
 
 
 async def test_render_snapshot_digest_should_follow_model3d_file_identity(
@@ -379,3 +343,39 @@ async def test_render_snapshot_digest_should_follow_model3d_file_identity(
     replaced = await _replace_model3d(authenticated_client, workspace_id, asset, marker=2.0)
     assert replaced["file_hash"] != asset["file_hash"]
     assert await build_digest() != first_digest
+
+
+async def test_screenshot_fingerprint_should_follow_image_replace(
+    authenticated_client: AsyncClient,
+) -> None:
+    """截图指纹纳入所有引用资源身份：替换图片后 config hash 变化，旧截图不再被判为当前。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "截图指纹空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "截图指纹项目")
+    hero = await _upload_image(authenticated_client, workspace_id)
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": '<template><div class="p-8"><AssetImage name="hero" class="w-full" /></div></template>',
+            "file_type": "vue",
+            "title": "截图指纹页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert page_response.status_code == 200, page_response.text
+    page_id = int(page_response.json()["id"])
+
+    first_hash = await _build_screenshot_config_hash(page_id)
+    assert first_hash == await _build_screenshot_config_hash(page_id)
+
+    replaced = await _replace_image(
+        authenticated_client,
+        workspace_id,
+        hero,
+        name="hero",
+        payload=b"fake-png-2",
+    )
+    assert replaced["file_hash"] != hero["file_hash"]
+    assert await _build_screenshot_config_hash(page_id) != first_hash

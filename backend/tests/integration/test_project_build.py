@@ -561,11 +561,11 @@ async def test_project_build_snapshot_should_include_model3d_static_reference(
 async def test_project_build_should_return_structured_model3d_reference_errors(
     authenticated_client: AsyncClient,
 ) -> None:
-    """三维动态引用在版本冻结即被拒绝，缺失静态引用在构建时返回结构化错误。"""
+    """动态三维引用允许保存；缺失静态引用在构建时返回结构化错误。"""
 
     workspace_id, project_id = await create_active_project(authenticated_client)
 
-    # 动态模型名无法冻结资源版本：页面保存直接返回结构化错误，不进入构建。
+    # 动态模型名可以保存：资源身份在指纹层缺省，不冻结进版本。
     dynamic_response = await authenticated_client.post(
         "/api/pages",
         json={
@@ -577,8 +577,7 @@ async def test_project_build_should_return_structured_model3d_reference_errors(
             "status": "active",
         },
     )
-    assert dynamic_response.status_code == 409
-    assert dynamic_response.json()["code"] == "MODEL3D_REFERENCE_UNRESOLVED"
+    assert dynamic_response.status_code == 200, dynamic_response.text
 
     # 缺失的静态引用可以通过保存，但构建时必须返回可展示的结构化错误。
     await create_routed_build_page(

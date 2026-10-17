@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import urlencode
@@ -14,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
-from app.models.asset import WorkspaceAsset
 from app.models.page import Page
 from app.services.project_artifact_builder import (
     ArtifactSnapshotProfile,
@@ -69,13 +67,11 @@ class PreviewService:
         artifact_kind: PreviewArtifactKind = "preview_artifact",
         manifest_extensions: dict[str, object] | None = None,
         snapshot_profile: ArtifactSnapshotProfile = "full",
-        frozen_assets: Mapping[str, WorkspaceAsset] | None = None,
     ) -> PreviewArtifactResponse:
         """基于项目当前状态创建无状态预览 artifact，并返回带签名的预览入口。
 
         ``manifest_extensions`` 仅供 Backend 内部的专用预览能力附加版本化元数据，
-        不允许覆盖标准 manifest 字段。``frozen_assets`` 为历史版本的资源冻结映射，
-        覆盖 manifest 中的当前根资源身份，替换后的新文件不会混入历史预览。
+        不允许覆盖标准 manifest 字段。
         """
 
         settings = get_settings()
@@ -91,7 +87,6 @@ class PreviewService:
             snapshot_profile=snapshot_profile,
             asset_base_url_override=asset_base_url_override,
             artifact_id=artifact_id,
-            frozen_assets=frozen_assets,
         )
         snapshot_duration_ms = round((time.perf_counter() - snapshot_started_at) * 1000, 2)
         entry_descriptor_payload = snapshot.entry_descriptor.model_dump(mode="python", exclude_none=True)
@@ -112,11 +107,6 @@ class PreviewService:
             "asset_metadata": snapshot.asset_metadata,
         }
         merged_extensions: dict[str, object] = dict(manifest_extensions or {})
-        if frozen_assets:
-            merged_extensions["asset_binding"] = {
-                "mode": "frozen",
-                "frozen_names": sorted(str(name) for name in frozen_assets if str(name or "").strip()),
-            }
         self._append_manifest_extensions(manifest, merged_extensions)
         artifact_store_started_at = time.perf_counter()
         await RuntimeArtifactStore().put_artifact(

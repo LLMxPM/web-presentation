@@ -1166,15 +1166,15 @@ class AssetService:
         asset: WorkspaceAsset,
         history_assets: list[WorkspaceAsset],
     ) -> None:
-        """拒绝删除仍被版本或产物绑定持有的资源及历史副本，避免历史还原与冻结产物失效。"""
+        """拒绝删除仍被在途任务或产物持有的资源及历史副本，避免正在执行的任务失去输入文件。"""
 
         candidate_ids = [int(asset.id), *(int(item.id) for item in history_assets)]
-        protected_ids = await AssetBindingService(self.session).protected_snapshot_asset_ids(candidate_ids)
+        protected_ids = await AssetBindingService(self.session).protected_asset_ids(candidate_ids)
         if protected_ids:
             raise AppException(
                 status_code=409,
                 code="ASSET_DELETE_FORBIDDEN",
-                detail="资源文件仍被版本或产物持有，历史还原依赖这些文件，请先处理相关版本后再删除。",
+                detail="资源文件仍被在途任务或产物引用，请等待相关任务结束或产物到期后再删除。",
             )
 
     async def _delete_asset_records_and_unused_files(self, workspace_id: int, asset: WorkspaceAsset) -> None:

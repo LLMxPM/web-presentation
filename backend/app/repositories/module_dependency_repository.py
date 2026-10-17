@@ -205,6 +205,56 @@ class ModuleDependencyRepository:
         )
         return [int(item) for item in result.all()]
 
+    async def list_page_version_dependency_component_version_ids_bulk(
+        self,
+        page_version_ids: Iterable[int],
+    ) -> dict[int, list[int]]:
+        """按页面版本集合批量读取依赖的组件版本主键，供闭包遍历按层批量查询。"""
+
+        normalized = sorted({int(item) for item in page_version_ids})
+        if not normalized:
+            return {}
+        rows = (
+            await self.session.execute(
+                select(
+                    PageVersionComponentDependency.page_version_id,
+                    PageVersionComponentDependency.component_version_id,
+                )
+                .where(PageVersionComponentDependency.page_version_id.in_(normalized))
+                .where(PageVersionComponentDependency.dependency_kind == DEPENDENCY_KIND_COMPONENT)
+                .where(PageVersionComponentDependency.component_version_id.is_not(None))
+            )
+        ).all()
+        grouped: dict[int, list[int]] = {item: [] for item in normalized}
+        for page_version_id, component_version_id in rows:
+            grouped[int(page_version_id)].append(int(component_version_id))
+        return grouped
+
+    async def list_component_version_dependency_version_ids_bulk(
+        self,
+        component_version_ids: Iterable[int],
+    ) -> dict[int, list[int]]:
+        """按组件版本集合批量读取其依赖的组件版本主键，供闭包遍历按层批量查询。"""
+
+        normalized = sorted({int(item) for item in component_version_ids})
+        if not normalized:
+            return {}
+        rows = (
+            await self.session.execute(
+                select(
+                    ComponentVersionComponentDependency.component_version_id,
+                    ComponentVersionComponentDependency.dependency_component_version_id,
+                )
+                .where(ComponentVersionComponentDependency.component_version_id.in_(normalized))
+                .where(ComponentVersionComponentDependency.dependency_kind == DEPENDENCY_KIND_COMPONENT)
+                .where(ComponentVersionComponentDependency.dependency_component_version_id.is_not(None))
+            )
+        ).all()
+        grouped: dict[int, list[int]] = {item: [] for item in normalized}
+        for component_version_id, dependency_version_id in rows:
+            grouped[int(component_version_id)].append(int(dependency_version_id))
+        return grouped
+
     async def list_current_page_references_to_component(self, component_id: int) -> list[PageComponentReferenceRow]:
         """读取当前页面版本中直接引用指定组件的依赖索引。"""
 

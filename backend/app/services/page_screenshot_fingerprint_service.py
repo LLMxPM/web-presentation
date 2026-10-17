@@ -1,4 +1,4 @@
-"""文件功能：生成页面截图配置指纹，统一判断截图是否匹配当前项目展示配置。"""
+"""文件功能：生成页面截图配置指纹，统一判断截图是否匹配当前项目展示配置与资源身份。"""
 
 from __future__ import annotations
 
@@ -17,8 +17,7 @@ from app.models.page import Page
 from app.models.page_version import PageVersion
 from app.models.workspace import Project
 from app.schemas.project_app_config import ProjectAppPageConfig
-from app.services.asset_binding_service import OWNER_KIND_PAGE_VERSION
-from app.services.model3d_reference_collector import Model3dReferenceCollector
+from app.services.owner_resource_token_resolver import OwnerResourceTokenResolver, OwnerResourceTokens
 from app.services.project_config_service import ProjectConfigService
 
 
@@ -33,7 +32,7 @@ class PageScreenshotConfigSnapshot:
 
 
 class PageScreenshotFingerprintService:
-    """截图指纹服务，负责把影响截图渲染的项目配置压缩成稳定 hash。"""
+    """截图指纹服务，负责把影响截图渲染的项目配置与引用资源身份压缩成稳定 hash。"""
 
     SCHEMA_VERSION = 1
 
@@ -46,7 +45,7 @@ class PageScreenshotFingerprintService:
         self.project_config_service = project_config_service or ProjectConfigService(session)
 
     async def build_page_snapshot(self, page: Page) -> PageScreenshotConfigSnapshot:
-        """为指定页面生成当前项目展示配置快照，并叠加页面级三维引用身份。"""
+        """为指定页面生成当前项目展示配置快照，并叠加页面级资源实时身份。"""
 
         if page.project_id is None:
             base = PageScreenshotConfigSnapshot(
@@ -59,9 +58,9 @@ class PageScreenshotFingerprintService:
                 theme_key=None,
                 theme_config={},
             )
-            return await self._with_page_model3d_identity(page, base)
+            return await self._with_page_resource_identity(page, base)
         project = await self.project_config_service.get_active_project_or_raise(page.project_id)
-        return await self._with_page_model3d_identity(page, await self.build_project_snapshot(project))
+        return await self._with_page_resource_identity(page, await self.build_project_snapshot(project))
 
     async def build_project_snapshot(self, project: Project) -> PageScreenshotConfigSnapshot:
         """为项目生成当前展示配置快照。"""
@@ -84,16 +83,16 @@ class PageScreenshotFingerprintService:
         page: Page,
         project_snapshot: PageScreenshotConfigSnapshot,
     ) -> PageScreenshotConfigSnapshot:
-        """在已解析的项目配置快照上附加页面级三维引用身份，供批量刷新逐页复用。"""
+        """在已解析的项目配置快照上附加页面级资源身份，供批量刷新逐页复用。"""
 
-        return await self._with_page_model3d_identity(page, project_snapshot)
+        return await self._with_page_resource_identity(page, project_snapshot)
 
     async def build_page_snapshots_from_project(
         self,
         pages: Sequence[Page],
         project_snapshot: PageScreenshotConfigSnapshot,
     ) -> dict[int, PageScreenshotConfigSnapshot]:
-        """批量附加页面级三维引用身份；绑定与资源各一次批量查询，避免逐页 N+1。"""
+        """批量附加页面级资源实时身份；版本与资源各按层批量查询，避免逐页 N+1。"""
 
         if not pages:
             return {}
@@ -111,45 +110,44 @@ class PageScreenshotFingerprintService:
         workspace_id = int(pages[0].workspace_id) if pages[0].workspace_id is not None else None
         if workspace_id is None:
             return {int(page.id): project_snapshot for page in pages}
-        owner_keys = [
-            str(version_id)
+        owner_version_ids = [
+            version_id
             for page in pages
             if (version_id := version_id_by_page_key.get((int(page.id), int(page.current_version_no)))) is not None
         ]
-        tokens_map = await Model3dReferenceCollector(self.session).list_owner_live_asset_tokens_bulk(
+        resolved_map = await OwnerResourceTokenResolver(self.session).resolve_page_version_tokens_bulk(
             workspace_id=workspace_id,
-            owner_kind=OWNER_KIND_PAGE_VERSION,
-            owner_keys=owner_keys,
+            page_version_ids=owner_version_ids,
         )
-        return {
-            int(page.id): self._apply_model3d_tokens(
-                project_snapshot,
-                tokens_map.get(
-                    str(version_id_by_page_key.get((int(page.id), int(page.current_version_no)))),
-                    [],
-                ),
+        snapshots: dict[int, PageScreenshotConfigSnapshot] = {}
+        for page in pages:
+            version_id = version_id_by_page_key.get((int(page.id), int(page.current_version_no)))
+            resource_tokens = (
+                resolved_map.get(version_id, OwnerResourceTokens())
+                if version_id is not None
+                else OwnerResourceTokens()
             )
-            for page in pages
-        }
+            snapshots[int(page.id)] = self._apply_resource_tokens(project_snapshot, resource_tokens)
+        return snapshots
 
-    async def _with_page_model3d_identity(
+    async def _with_page_resource_identity(
         self,
         page: Page,
         base: PageScreenshotConfigSnapshot,
     ) -> PageScreenshotConfigSnapshot:
-        """把页面绑定的三维资源实时身份并入 config hash；无三维引用时保持基础快照。"""
+        """把页面引用资源的实时身份并入 config hash；无资源引用时保持基础快照。"""
 
-        model3d_tokens = await self._collect_page_model3d_tokens(page)
-        return self._apply_model3d_tokens(base, model3d_tokens)
+        resource_tokens = await self._collect_page_resource_tokens(page)
+        return self._apply_resource_tokens(base, resource_tokens)
 
-    def _apply_model3d_tokens(
+    def _apply_resource_tokens(
         self,
         base: PageScreenshotConfigSnapshot,
-        model3d_tokens: list[str],
+        resource_tokens: OwnerResourceTokens,
     ) -> PageScreenshotConfigSnapshot:
-        """把已解析的三维身份 token 并入基础快照；空 token 直接返回基础快照。"""
+        """把已解析的资源身份 token 并入基础快照；空 token 直接返回基础快照。"""
 
-        if not model3d_tokens:
+        if not resource_tokens.tokens:
             return base
         return PageScreenshotConfigSnapshot(
             page_config=base.page_config,
@@ -157,28 +155,28 @@ class PageScreenshotFingerprintService:
                 page_config=base.page_config,
                 theme_key=base.theme_key,
                 theme_config=base.theme_config,
-                model3d_tokens=model3d_tokens,
+                resource_tokens=resource_tokens.tokens,
+                has_model3d=resource_tokens.has_model3d,
             ),
             theme_key=base.theme_key,
             theme_config=base.theme_config,
         )
 
-    async def _collect_page_model3d_tokens(self, page: Page) -> list[str]:
-        """解析页面当前版本的绑定名集合到实时文件身份；旧版本无绑定时返回空。"""
+    async def _collect_page_resource_tokens(self, page: Page) -> OwnerResourceTokens:
+        """解析页面当前版本闭包的资源实时身份；无版本或无引用时返回空。"""
 
         if page.workspace_id is None:
-            return []
+            return OwnerResourceTokens()
         version_id = await self.session.scalar(
             select(PageVersion.id)
             .where(PageVersion.page_id == page.id)
             .where(PageVersion.version_no == page.current_version_no)
         )
         if version_id is None:
-            return []
-        return await Model3dReferenceCollector(self.session).list_owner_live_asset_tokens(
+            return OwnerResourceTokens()
+        return await OwnerResourceTokenResolver(self.session).resolve_page_version_tokens(
             workspace_id=int(page.workspace_id),
-            owner_kind=OWNER_KIND_PAGE_VERSION,
-            owner_key=str(int(version_id)),
+            page_version_id=int(version_id),
         )
 
     @classmethod
@@ -188,12 +186,13 @@ class PageScreenshotFingerprintService:
         page_config: ProjectAppPageConfig,
         theme_key: str | None,
         theme_config: dict[str, object] | None,
-        model3d_tokens: list[str] | None = None,
+        resource_tokens: list[str] | None = None,
+        has_model3d: bool = False,
     ) -> str:
         """把截图相关配置序列化为稳定 SHA-256 指纹。
 
-        ``model3d_tokens`` 为页面引用的三维资源实时身份；“三维引用身份 + 引擎身份”
-        一并入指纹：资源替换或引擎策略变化后旧截图必须重新捕获。
+        ``resource_tokens`` 为页面引用资源的实时身份（含三维）：资源替换后旧截图必须重新捕获；
+        三维引擎身份随三维引用一并入指纹，引擎策略变化同样要求重截。
         """
 
         payload = {
@@ -208,10 +207,11 @@ class PageScreenshotFingerprintService:
             "theme_key": str(theme_key or "").strip() or None,
             "theme_config": cls._normalize_for_json(theme_config or {}),
         }
-        normalized_tokens = sorted(str(token) for token in (model3d_tokens or []) if str(token or "").strip())
+        normalized_tokens = sorted(str(token) for token in (resource_tokens or []) if str(token or "").strip())
         if normalized_tokens:
+            payload["resources"] = normalized_tokens
+        if has_model3d:
             payload["model3d"] = {
-                "references": normalized_tokens,
                 "engine": cls._normalize_for_json(load_runtime_kit_manifest().get("model3d_engine") or {}),
             }
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")

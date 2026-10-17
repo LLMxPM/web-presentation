@@ -75,3 +75,27 @@ class ComponentResourceIndexRepository:
             .where(ComponentVersionComponentResource.resource_name == resource_name)
         )
         return list(dict.fromkeys(int(item) for item in result.all()))
+
+    async def list_component_resources_by_versions(
+        self,
+        component_version_ids: Iterable[int],
+    ) -> dict[int, list[ComponentVersionComponentResource]]:
+        """按组件版本集合批量读取资源索引，供闭包遍历按层批量查询。"""
+
+        normalized = sorted({int(item) for item in component_version_ids})
+        if not normalized:
+            return {}
+        rows = (
+            await self.session.scalars(
+                select(ComponentVersionComponentResource)
+                .where(ComponentVersionComponentResource.component_version_id.in_(normalized))
+                .order_by(
+                    ComponentVersionComponentResource.component_name.asc(),
+                    ComponentVersionComponentResource.resource_name.asc(),
+                )
+            )
+        ).all()
+        grouped: dict[int, list[ComponentVersionComponentResource]] = {item: [] for item in normalized}
+        for row in rows:
+            grouped[int(row.component_version_id)].append(row)
+        return grouped
