@@ -72,10 +72,10 @@ function createController(options: {
 }
 
 /** 开始并完成当前页就绪，返回当前 generation。 */
-function startReady(controller: PlaybackController, path?: string): number {
+function startReady(controller: PlaybackController, path?: string, mediaTargets = 0): number {
   controller.start(path)
   const generation = controller.getSnapshot().generation
-  expect(controller.reportReady(controller.getSnapshot().path, generation)).toBe(true)
+  expect(controller.reportReady(controller.getSnapshot().path, generation, mediaTargets)).toBe(true)
   return generation
 }
 
@@ -332,8 +332,128 @@ describe('PlaybackController 手动介入与 generation', () => {
   })
 })
 
-describe('PlaybackController 失败恢复与清理', () => {
-  it('资源失败进入错误态并停止计时，重试后等待新就绪', () => {
+describe('PlaybackController 媒体结束翻页', () => {
+  const MEDIA_PAGES: PlaybackPage[] = [
+    { path: '/media', advance: { mode: 'media_end', delayMs: 2000, mediaTimeoutMs: 5000 } },
+    { path: '/next', advance: { mode: 'manual', delayMs: 5000 } },
+  ]
+
+  it('等待全部媒体结束后只推进一次，旧 generation 的结束信号被丢弃', () => {
+    const { clock, navigations, controller } = createController({ pages: MEDIA_PAGES })
+    const generation = startReady(controller, '/media', 2)
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'playing',
+      waitingForMedia: true,
+      advanceMode: 'media_end',
+      delayMs: null,
+    })
+    expect(clock.pending).toBe(1)
+
+    clock.advance(1_000)
+    expect(controller.reportMediaEnded('/media', generation)).toBe(true)
+    expect(navigations).toEqual(['/next'])
+    expect(controller.getSnapshot()).toMatchObject({ state: 'preparing', waitingForMedia: false })
+    expect(clock.pending).toBe(0)
+
+    expect(controller.reportMediaEnded('/media', generation)).toBe(false)
+    expect(navigations).toEqual(['/next'])
+  })
+
+  it('没有参与媒体时按停留时间翻页，动态新增媒体后改为等待结束', () => {
+    const { clock, navigations, controller } = createController({ pages: MEDIA_PAGES })
+    const generation = startReady(controller, '/media', 0)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'playing', waitingForMedia: false, delayMs: 2000 })
+
+    expect(controller.reportMediaTargets('/media', generation, 1)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ waitingForMedia: true, delayMs: null })
+    clock.advance(4_999)
+    expect(navigations).toEqual([])
+    clock.advance(1)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'error', message: expect.stringContaining('超时') })
+    expect(navigations).toEqual([])
+  })
+
+  it('媒体超时进入错误暂停态，可跳到下一页或重试当前页', () => {
+    const { clock, navigations, controller } = createController({ pages: MEDIA_PAGES })
+    startReady(controller, '/media', 1)
+    clock.advance(5_000)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'error', waitingForMedia: false })
+    expect(controller.getSnapshot().message).toContain('超时')
+    expect(navigations).toEqual([])
+
+    expect(controller.next()).toBe(true)
+    expect(navigations).toEqual(['/next'])
+    expect(controller.getSnapshot().state).toBe('preparing')
+    expect(controller.next()).toBe(false)
+  })
+
+  it('播放受阻后提供下一页恢复，末页不循环时没有下一页', () => {
+    const { navigations, controller } = createController({ pages: MEDIA_PAGES })
+    const generation = startReady(controller, '/media', 1)
+    expect(controller.reportMediaBlocked('/media', generation, '浏览器阻止了媒体播放')).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'blocked', waitingForMedia: false })
+    expect(controller.next()).toBe(true)
+    expect(navigations).toEqual(['/next'])
+
+    const lastPage = createController({ pages: [MEDIA_PAGES[0]] }).controller
+    const lastGeneration = startReady(lastPage, '/media', 1)
+    lastPage.reportMediaBlocked('/media', lastGeneration)
+    expect(lastPage.next()).toBe(false)
+    expect(lastPage.getSnapshot().state).toBe('blocked')
+  })
+
+  it('暂停保留媒体时限，恢复后补足剩余时间再判超时', () => {
+    const { clock, controller } = createController({ pages: MEDIA_PAGES })
+    startReady(controller, '/media', 1)
+    clock.advance(2_000)
+
+    expect(controller.pause()).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'paused', waitingForMedia: true, remainingMs: 3_000 })
+    expect(clock.pending).toBe(0)
+    clock.advance(60_000)
+    expect(controller.getSnapshot().state).toBe('paused')
+
+    expect(controller.resume()).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'playing', waitingForMedia: true })
+    clock.advance(2_999)
+    expect(controller.getSnapshot().state).toBe('playing')
+    clock.advance(1)
+    expect(controller.getSnapshot().state).toBe('error')
+  })
+
+  it('动态移除全部媒体后退回停留时间，不把空集合当作完成', () => {
+    const { clock, navigations, controller } = createController({ pages: MEDIA_PAGES })
+    const generation = startReady(controller, '/media', 1)
+    expect(controller.reportMediaEmpty('/media', generation)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ waitingForMedia: false, delayMs: 2000 })
+    clock.advance(2_000)
+    expect(navigations).toEqual(['/next'])
+  })
+
+  it('末页媒体结束后停止；单页循环重新等待媒体并通知新一代', () => {
+    const single: PlaybackPage[] = [
+      { path: '/only', advance: { mode: 'media_end', delayMs: 2000, mediaTimeoutMs: 5000 } },
+    ]
+    const ended = createController({ pages: single })
+    const endedGeneration = startReady(ended.controller, '/only', 1)
+    ended.controller.reportMediaEnded('/only', endedGeneration)
+    expect(ended.controller.getSnapshot()).toMatchObject({ state: 'ended', waitingForMedia: false })
+    expect(ended.clock.pending).toBe(0)
+
+    const looped = createController({ pages: single, loop: true })
+    const generation = startReady(looped.controller, '/only', 1)
+    looped.controller.reportMediaEnded('/only', generation)
+    expect(looped.controller.getSnapshot()).toMatchObject({
+      state: 'playing',
+      waitingForMedia: true,
+      generation: generation + 1,
+    })
+    expect(looped.clock.pending).toBe(1)
+    expect(looped.navigations).toEqual([])
+  })
+})
+
+describe('PlaybackController 失败恢复与清理', () => {  it('资源失败进入错误态并停止计时，重试后等待新就绪', () => {
     const { clock, navigations, controller } = createController()
     const generation = startReady(controller)
     clock.advance(1_000)

@@ -21,7 +21,7 @@ function preloadPlaybackConfig(options: {
   autoStart?: boolean
   loop?: boolean
   delays?: Record<string, number>
-  advances?: Record<string, { mode: 'manual' | 'timer'; delayMs: number }>
+  advances?: Record<string, { mode: 'manual' | 'timer' | 'media_end'; delayMs: number; mediaTimeoutMs?: number }>
 } = {}) {
   const delays = options.delays ?? { '/a': 1000, '/b': 2000 }
   const route = (name: string, order: number, hidden = false) => ({
@@ -75,6 +75,37 @@ function addPageElement(path: string): HTMLElement {
   return element
 }
 
+/** 在指定放映页内放置可控视频，供 media_end 宿主链路测试。 */
+function addTestVideo(path: string, options: { blocked?: boolean } = {}) {
+  const element = document.createElement('video')
+  let paused = true
+  let ended = false
+  Object.defineProperty(element, 'paused', { configurable: true, get: () => paused })
+  Object.defineProperty(element, 'ended', { configurable: true, get: () => ended })
+  const play = vi.fn(() => {
+    if (options.blocked) return Promise.reject(new DOMException('blocked', 'NotAllowedError'))
+    paused = false
+    ended = false
+    return Promise.resolve()
+  })
+  const pause = vi.fn(() => { paused = true })
+  Object.assign(element, { play, pause })
+  const page = document.querySelector(`[data-runtime-route-path="${path}"]`)
+  if (!page) throw new Error(`页面 ${path} 不存在`)
+  page.append(element)
+  return {
+    element,
+    play,
+    pause,
+    /** 派发实际元素 ended，模拟播放自然结束。 */
+    end: () => {
+      ended = true
+      paused = true
+      element.dispatchEvent(new Event('ended'))
+    },
+  }
+}
+
 /** 挂载放映宿主组合式函数并暴露其接口。 */
 function mountPlaybackHost(router: ReturnType<typeof makeRouter>) {
   let host: PlaybackHost | undefined
@@ -125,7 +156,7 @@ describe('buildPlaybackPages', () => {
   it('复用可见叶子目录并携带生效翻页配置', () => {
     const pages = buildPlaybackPages()
     expect(pages.map(page => page.path)).toEqual(['/a', '/b'])
-    expect(pages[1].advance).toEqual({ mode: 'timer', delayMs: 2000 })
+    expect(pages[1].advance).toEqual({ mode: 'timer', delayMs: 2000, mediaTimeoutMs: 300000 })
   })
 })
 
@@ -292,6 +323,127 @@ describe('usePlaybackHost 自动开始与就绪', () => {
   })
 })
 
+describe('usePlaybackHost media_end 媒体调度', () => {
+  it('等待实际媒体结束后翻页，超时前不提前推进', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 5000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const video = addTestVideo('/a')
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', waitingForMedia: true, advanceMode: 'media_end' })
+    expect(video.play).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(router.currentRoute.value.path).toBe('/a')
+
+    video.end()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    expect(host.snapshot.value).toMatchObject({ state: 'preparing', path: '/b' })
+    app.unmount()
+  })
+
+  it('页面没有参与媒体时按停留时间翻页', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 5000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', waitingForMedia: false, delayMs: 1000 })
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    app.unmount()
+  })
+
+  it('媒体播放受阻进入受阻态，下一页可继续放映', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 5000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    addTestVideo('/a', { blocked: true })
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.snapshot.value?.state).toBe('blocked')
+    expect(host.errorMessage.value).toContain('阻止')
+    expect(host.next()).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    expect(host.snapshot.value).toMatchObject({ state: 'preparing', path: '/b' })
+    app.unmount()
+  })
+
+  it('媒体未结束超时进入错误暂停态', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 5000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    addTestVideo('/a')
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('error')
+    expect(host.errorMessage.value).toContain('超时')
+    expect(router.currentRoute.value.path).toBe('/a')
+    app.unmount()
+  })
+
+  it('暂停停播并保留媒体时限，恢复后继续播放再按结束翻页', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 5000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const video = addTestVideo('/a')
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(host.pause()).toBe(true)
+    expect(video.pause).toHaveBeenCalled()
+    expect(host.snapshot.value).toMatchObject({ state: 'paused', waitingForMedia: true })
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(host.snapshot.value?.state).toBe('paused')
+
+    expect(host.resume()).toBe(true)
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', waitingForMedia: true })
+    expect(video.play).toHaveBeenCalledTimes(2)
+    video.end()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    app.unmount()
+  })
+})
+
 describe('usePlaybackHost 可见性与快捷键', () => {
   it('窗口隐藏时暂停并保留剩余时间，回前台不自动继续', async () => {
     preloadPlaybackConfig({ autoStart: true })
@@ -346,7 +498,7 @@ describe('usePlaybackHost 可见性与快捷键', () => {
     const idle = document.createElement('audio')
     page!.append(playing, idle)
     let playingPaused = false
-    let idlePaused = true
+    const idlePaused = true
     Object.defineProperty(playing, 'paused', { configurable: true, get: () => playingPaused })
     Object.defineProperty(idle, 'paused', { configurable: true, get: () => idlePaused })
     const pauseSpy = vi.fn(() => { playingPaused = true })

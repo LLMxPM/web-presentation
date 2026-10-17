@@ -4,6 +4,7 @@
  * 以及末页结束/循环；就绪、错误和页面切换由外部适配层上报。
  */
 import type { PageAdvanceConfig } from '@/core/types/page-transition'
+import { DEFAULT_MEDIA_TIMEOUT_MS } from '@/core/utils/page-transition'
 
 export type PlaybackState =
   | 'stopped'
@@ -34,6 +35,9 @@ export interface PlaybackSnapshot {
   generation: number
   remainingMs: number
   delayMs: number | null
+  advanceMode: PageAdvanceConfig['mode']
+  /** 当前页正在等待媒体结束；暂停时保留，供恢复与界面提示。 */
+  waitingForMedia: boolean
   index: number
   total: number
   loop: boolean
@@ -60,6 +64,8 @@ const defaultClock: PlaybackClock = {
 const NAVIGATION_ERROR_MESSAGE = '页面切换失败，请重试或手动翻页。'
 const READY_ERROR_MESSAGE = '页面加载或资源准备失败，请重试。'
 const BLOCKED_MESSAGE = '播放被浏览器阻止，请手动开始。'
+const MEDIA_TIMEOUT_MESSAGE = '媒体播放超时，请重试、跳到下一页或停止放映。'
+const MEDIA_ERROR_MESSAGE = '媒体播放失败，请重试、跳到下一页或停止放映。'
 
 /**
  * 单窗口放映控制器。
@@ -83,6 +89,9 @@ export class PlaybackController {
   private remaining = 0
   private message = ''
   private disposed = false
+  private mediaWait = false
+  private mediaTargetCount = 0
+  private timerKind: 'stay' | 'media-timeout' | null = null
 
   constructor(options: PlaybackOptions) {
     this.clock = options.clock ?? defaultClock
@@ -109,7 +118,11 @@ export class PlaybackController {
       path: this.path,
       generation: this.generation,
       remainingMs: this.currentRemaining(),
-      delayMs: page?.advance.mode === 'timer' ? page.advance.delayMs : null,
+      delayMs: page?.advance.mode === 'timer' || (page?.advance.mode === 'media_end' && !this.mediaWait)
+        ? page.advance.delayMs
+        : null,
+      advanceMode: page?.advance.mode ?? 'manual',
+      waitingForMedia: this.mediaWait,
       index: this.indexOf(this.path),
       total: this.pages.length,
       loop: this.loop,
@@ -133,6 +146,8 @@ export class PlaybackController {
     }
     this.generation += 1
     this.message = ''
+    this.mediaWait = false
+    this.mediaTargetCount = 0
     this.remaining = this.pageDelay(this.currentPage())
     if (this.pageReady && this.readyPath === this.path) {
       // 停止/结束后当前页仍在画布中，重新开始只重置停留时钟。
@@ -152,7 +167,7 @@ export class PlaybackController {
       this.remaining = this.currentRemaining()
       this.clearTimer()
     } else {
-      this.remaining = this.pageDelay(this.currentPage())
+      this.remaining = this.mediaWait ? this.remaining : this.pageDelay(this.currentPage())
     }
     this.state = 'paused'
     this.emit()
@@ -171,7 +186,7 @@ export class PlaybackController {
       this.emit()
       return true
     }
-    this.enterPlaying(Math.max(0, this.remaining))
+    this.enterPlaying(Math.max(0, this.remaining), this.mediaTargetCount)
     return true
   }
 
@@ -183,6 +198,8 @@ export class PlaybackController {
     this.state = 'stopped'
     this.message = ''
     this.remaining = 0
+    this.mediaWait = false
+    this.mediaTargetCount = 0
     // 页面仍在画布中，保留 pageReady，重新开始时无需等待新的过渡信号。
     this.emit()
     return true
@@ -197,24 +214,109 @@ export class PlaybackController {
     this.message = ''
     this.pageReady = false
     this.readyPath = ''
+    this.mediaWait = false
+    this.mediaTargetCount = 0
     this.remaining = this.pageDelay(this.currentPage())
     this.emit()
     return true
   }
 
+  /**
+   * 失败态跳到下一页：清除旧媒体等待并重新走就绪流程；循环时从末页回到首页。
+   * 末页且不循环时没有下一页，返回 false 由界面保持当前错误提示。
+   */
+  next(): boolean {
+    if (this.disposed || (this.state !== 'error' && this.state !== 'blocked')) return false
+    const currentIndex = this.indexOf(this.path)
+    if (currentIndex < 0) return false
+    const isLast = currentIndex === this.pages.length - 1
+    if (isLast && !this.loop) return false
+    const next = this.pages[isLast ? 0 : currentIndex + 1]
+    this.clearTimer()
+    this.generation += 1
+    this.path = next.path
+    this.state = 'preparing'
+    this.message = ''
+    this.pageReady = false
+    this.readyPath = ''
+    this.mediaWait = false
+    this.mediaTargetCount = 0
+    this.remaining = this.pageDelay(next)
+    this.emit()
+    this.navigateTo(next.path)
+    return true
+  }
+
   /** 外部适配层确认当前页已完成路由提交、DOM/资源就绪与过渡；旧 generation 被丢弃。 */
-  reportReady(path: string, generation: number): boolean {
+  reportReady(path: string, generation: number, mediaTargets = 0): boolean {
     if (this.disposed || path !== this.path || generation !== this.generation) return false
     if (this.pageReady) return false
     if (this.state !== 'preparing' && this.state !== 'paused') return false
     this.pageReady = true
     this.readyPath = path
+    this.mediaTargetCount = mediaTargets
     if (this.state === 'preparing') {
-      this.enterPlaying(this.pageDelay(this.currentPage()))
+      const page = this.currentPage()
+      const waitingForMedia = page?.advance.mode === 'media_end' && mediaTargets > 0
+      this.enterPlaying(
+        waitingForMedia ? this.mediaTimeout(page) : this.pageDelay(page),
+        mediaTargets,
+      )
     } else {
       this.emit()
     }
     return true
+  }
+
+  /** 媒体会话重建或目标增减后同步完成集合；已处于相同等待状态时只更新数量。 */
+  reportMediaTargets(path: string, generation: number, targetCount: number): boolean {
+    if (this.disposed || path !== this.path || generation !== this.generation) return false
+    if (this.state !== 'playing') return false
+    const page = this.currentPage()
+    if (!page || page.advance.mode !== 'media_end') return false
+    const waiting = targetCount > 0
+    this.mediaTargetCount = targetCount
+    if (this.mediaWait === waiting) return true
+    this.clearTimer()
+    this.enterPlaying(
+      waiting ? this.mediaTimeout(page) : this.pageDelay(page),
+      targetCount,
+    )
+    return true
+  }
+
+  /** 当前页全部参与媒体已结束；仅在仍有媒体等待时推进一次。 */
+  reportMediaEnded(path: string, generation: number): boolean {
+    if (this.disposed || path !== this.path || generation !== this.generation) return false
+    if (this.state !== 'playing' || !this.mediaWait) return false
+    this.clearTimer()
+    this.mediaWait = false
+    this.advanceAfterStay(true)
+    return true
+  }
+
+  /** 动态移除后已无参与媒体：退回停留时间，不把空集合当作完成。 */
+  reportMediaEmpty(path: string, generation: number): boolean {
+    if (this.disposed || path !== this.path || generation !== this.generation) return false
+    if (!this.mediaWait || (this.state !== 'playing' && this.state !== 'paused')) return false
+    const page = this.currentPage()
+    this.mediaWait = false
+    this.mediaTargetCount = 0
+    this.clearTimer()
+    this.remaining = this.pageDelay(page)
+    if (this.state === 'playing') this.enterPlaying(this.remaining, 0)
+    else this.emit()
+    return true
+  }
+
+  /** 媒体被浏览器策略阻止：进入受阻态，等待重试、下一页或停止。 */
+  reportMediaBlocked(path: string, generation: number, message = BLOCKED_MESSAGE): boolean {
+    return this.enterFailure('blocked', path, generation, message)
+  }
+
+  /** 媒体加载/解码失败：进入错误暂停态，等待重试、下一页或停止。 */
+  reportMediaError(path: string, generation: number, message = MEDIA_ERROR_MESSAGE): boolean {
+    return this.enterFailure('error', path, generation, message)
   }
 
   /** 页面加载或必要资源失败：清除计时并进入可见错误态，不无限等待就绪。 */
@@ -239,6 +341,8 @@ export class PlaybackController {
     this.pageReady = false
     this.readyPath = ''
     this.message = ''
+    this.mediaWait = false
+    this.mediaTargetCount = 0
     const delay = this.pageDelay(this.currentPage())
     if (this.state === 'playing' || this.state === 'preparing') {
       this.state = 'preparing'
@@ -265,15 +369,33 @@ export class PlaybackController {
     this.pageReady = false
     this.readyPath = ''
     this.remaining = 0
+    this.mediaWait = false
+    this.mediaTargetCount = 0
     this.listeners.clear()
   }
 
-  /** 计时到期：按末页/循环规则推进，或为单页循环开启完整的新周期。 */
+  /** 停留或媒体等待到期：按末页/循环规则推进，或为单页循环开启新周期。 */
   private handleTimer(token: number): void {
     if (this.disposed || token !== this.generation || this.state !== 'playing' || !this.pageReady) return
+    const kind = this.timerKind
     this.timer = undefined
+    this.timerKind = null
+    if (kind === 'media-timeout') {
+      this.enterFailure('error', this.path, token, MEDIA_TIMEOUT_MESSAGE)
+      return
+    }
     const page = this.currentPage()
-    if (!page || page.advance.mode !== 'timer') return
+    if (!page || page.advance.mode === 'manual') return
+    this.advanceAfterStay(false)
+  }
+
+  /**
+   * 当前页停留完成后的统一推进。
+   * replayMedia 表示这次完成来自媒体结束；单页循环需要重置媒体时限并通知宿主重播。
+   */
+  private advanceAfterStay(replayMedia: boolean): void {
+    const page = this.currentPage()
+    if (!page) return
     const currentIndex = this.indexOf(this.path)
     if (currentIndex < 0) return
     const isLast = currentIndex === this.pages.length - 1
@@ -282,28 +404,45 @@ export class PlaybackController {
       this.generation += 1
       this.state = 'ended'
       this.remaining = 0
+      this.mediaWait = false
+      this.mediaTargetCount = 0
       this.emit()
       return
     }
     if (isLast && this.pages.length === 1) {
-      // 单页循环不产生路由切换，但每轮都必须有完整停留周期。
+      // 单页循环不产生路由切换，但每轮都必须有完整停留或媒体周期。
       this.generation += 1
-      this.remaining = page.advance.delayMs
-      this.armTimer(page.advance.delayMs)
+      if (replayMedia && page.advance.mode === 'media_end' && this.mediaTargetCount > 0) {
+        this.mediaWait = true
+        this.remaining = this.mediaTimeout(page)
+        this.armTimer(this.remaining, 'media-timeout')
+      } else {
+        this.mediaWait = false
+        this.remaining = this.pageDelay(page)
+        this.armTimer(this.remaining, 'stay')
+      }
       this.emit()
       return
     }
 
     const next = this.pages[isLast ? 0 : currentIndex + 1]
-    const attempt = ++this.generation
+    this.generation += 1
     this.state = 'preparing'
     this.pageReady = false
     this.readyPath = ''
+    this.mediaWait = false
+    this.mediaTargetCount = 0
     this.remaining = this.pageDelay(next)
     this.emit()
+    this.navigateTo(next.path)
+  }
+
+  /** 发起导航并把当前尝试的迟到失败收敛到错误态；用户跳页后旧尝试自动失效。 */
+  private navigateTo(path: string): void {
+    const attempt = this.generation
     let result: void | Promise<void>
     try {
-      result = this.navigate(next.path)
+      result = this.navigate(path)
     } catch (error) {
       this.failNavigation(attempt, error)
       return
@@ -322,6 +461,8 @@ export class PlaybackController {
     this.pageReady = false
     this.readyPath = ''
     this.remaining = 0
+    this.mediaWait = false
+    this.mediaTargetCount = 0
     this.emit()
   }
 
@@ -335,36 +476,50 @@ export class PlaybackController {
     this.pageReady = false
     this.readyPath = ''
     this.remaining = 0
+    this.mediaWait = false
+    this.mediaTargetCount = 0
     this.emit()
     return true
   }
 
-  /** 从就绪状态进入播放；手动页保持 playing 但不再创建推进计时。 */
-  private enterPlaying(delayMs: number): void {
+  /** 从就绪状态进入播放；手动页无计时，media_end 有目标时等待媒体否则退回停留时间。 */
+  private enterPlaying(delayMs: number, mediaTargets = this.mediaTargetCount): void {
     this.state = 'playing'
     const page = this.currentPage()
-    if (!page || page.advance.mode !== 'timer') {
+    this.mediaTargetCount = mediaTargets
+    if (!page || page.advance.mode === 'manual') {
+      this.mediaWait = false
       this.remaining = 0
       this.emit()
       return
     }
-    this.remaining = delayMs
-    this.armTimer(delayMs)
+    if (page.advance.mode === 'media_end' && mediaTargets > 0) {
+      this.mediaWait = true
+      this.remaining = delayMs
+      this.armTimer(delayMs, 'media-timeout')
+    } else {
+      this.mediaWait = false
+      this.remaining = delayMs
+      this.armTimer(delayMs, 'stay')
+    }
     this.emit()
   }
 
   /** 建立唯一推进句柄；覆盖前始终清理旧句柄。 */
-  private armTimer(delayMs: number): void {
+  private armTimer(delayMs: number, kind: 'stay' | 'media-timeout'): void {
     this.clearTimer()
+    this.timerKind = kind
     const token = this.generation
     this.deadline = this.clock.now() + delayMs
     this.timer = this.clock.setTimeout(() => this.handleTimer(token), delayMs)
   }
 
   private clearTimer(): void {
-    if (this.timer === undefined) return
-    this.clock.clearTimeout(this.timer)
-    this.timer = undefined
+    if (this.timer !== undefined) {
+      this.clock.clearTimeout(this.timer)
+      this.timer = undefined
+    }
+    this.timerKind = null
   }
 
   /** 播放中按单调时钟计算剩余毫秒，其余状态返回保存值。 */
@@ -375,8 +530,15 @@ export class PlaybackController {
     return this.remaining
   }
 
+  /** 页面的推进时长：timer 为停留时间，media_end 为无媒体时的兜底停留。 */
   private pageDelay(page: PlaybackPage | undefined): number {
-    return page?.advance.mode === 'timer' ? page.advance.delayMs : 0
+    return page && (page.advance.mode === 'timer' || page.advance.mode === 'media_end')
+      ? page.advance.delayMs
+      : 0
+  }
+
+  private mediaTimeout(page: PlaybackPage | undefined): number {
+    return page?.advance.mediaTimeoutMs ?? DEFAULT_MEDIA_TIMEOUT_MS
   }
 
   private currentPage(): PlaybackPage | undefined {

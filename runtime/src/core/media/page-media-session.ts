@@ -61,6 +61,8 @@ export interface PageMediaSession {
   refresh(): void
   /** 播放当前页全部未结束目标；返回真实 Promise 结果。 */
   play(): Promise<PageMediaPlayResult>
+  /** 单页循环重播：已结束目标归零后重新播放全部目标。 */
+  restart(): Promise<PageMediaPlayResult>
   /** 暂停当前页目标，返回实际暂停数量。 */
   pause(): number
   /** 记录本会话正在播放的目标并全部暂停。 */
@@ -71,12 +73,14 @@ export interface PageMediaSession {
   dispose(): void
 }
 
-interface TargetState {
+interface MediaState {
   element: HTMLMediaElement
   id: string
   playing: boolean
   ended: boolean
   error: string | null
+  /** 非循环媒体参与完成判定；循环背景只参与暂停、恢复与清理。 */
+  participating: boolean
 }
 
 const MEDIA_SELECTOR = 'audio, video'
@@ -88,7 +92,7 @@ const MEDIA_SELECTOR = 'audio, video'
 export function createPageMediaSession(options: PageMediaSessionOptions): PageMediaSession {
   const { root, generation, onEvent } = options
   const allowPlayback = options.allowPlayback ?? true
-  const targets = new Map<string, TargetState>()
+  const media = new Map<string, MediaState>()
   const ids = new WeakMap<HTMLMediaElement, string>()
   const listeners = new Map<HTMLMediaElement, Record<string, EventListener>>()
   let sequence = 0
@@ -112,7 +116,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
   }
 
   function snapshot(): PageMediaSnapshot {
-    const states = [...targets.values()]
+    const states = [...media.values()].filter(state => state.participating)
     return {
       generation,
       targets: states.map(state => ({
@@ -126,7 +130,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
     }
   }
 
-  function bind(state: TargetState): void {
+  function bind(state: MediaState): void {
     const element = state.element
     if (listeners.has(element)) return
     const handler = (event: Event): void => {
@@ -144,6 +148,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
           break
         case 'ended':
           state.playing = false
+          if (!state.participating) break
           state.ended = true
           emit({ type: 'ended', targetId: state.id })
           break
@@ -157,7 +162,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
           state.playing = false
           state.ended = false
           state.error = null
-          emit({ type: 'reset', targetId: state.id })
+          if (state.participating) emit({ type: 'reset', targetId: state.id })
           break
       }
     }
@@ -181,41 +186,51 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
 
   function refresh(): void {
     if (disposed) return
-    const found = new Set(
-      [...root.querySelectorAll<HTMLMediaElement>(MEDIA_SELECTOR)].filter(element => !element.loop),
-    )
+    const found = new Set([...root.querySelectorAll<HTMLMediaElement>(MEDIA_SELECTOR)])
     let changed = false
 
-    for (const [id, state] of targets) {
-      if (found.has(state.element)) continue
-      unbind(state.element)
-      if (!state.element.paused) state.element.pause()
-      targets.delete(id)
-      changed = true
+    for (const [id, state] of media) {
+      if (!found.has(state.element)) {
+        unbind(state.element)
+        if (!state.element.paused) state.element.pause()
+        media.delete(id)
+        changed = true
+        continue
+      }
+      const participating = !state.element.loop
+      if (state.participating !== participating) {
+        state.participating = participating
+        if (!participating) state.ended = false
+        changed = true
+      }
     }
 
     for (const element of found) {
-      if (targets.has(targetId(element))) continue
-      const state: TargetState = {
+      if ([...media.values()].some(state => state.element === element)) continue
+      const state: MediaState = {
         element,
         id: targetId(element),
         playing: !element.paused,
         ended: element.ended,
         error: null,
+        participating: !element.loop,
       }
-      targets.set(state.id, state)
+      media.set(state.id, state)
       bind(state)
       changed = true
     }
 
     if (changed) {
-      emit({ type: 'targets', targetIds: [...targets.keys()] })
+      emit({
+        type: 'targets',
+        targetIds: [...media.values()].filter(state => state.participating).map(state => state.id),
+      })
     }
   }
 
   function pauseTargets(): number {
     let paused = 0
-    for (const state of targets.values()) {
+    for (const state of media.values()) {
       if (!state.element.paused) {
         state.element.pause()
         state.playing = false
@@ -227,7 +242,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
 
   function suspend(): number {
     if (suspended) return recorded.length
-    recorded = [...targets.values()]
+    recorded = [...media.values()]
       .map(state => state.element)
       .filter(element => !element.paused && !element.ended)
     for (const element of recorded) element.pause()
@@ -260,7 +275,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
     refresh()
     blocked = false
     const attempts: PageMediaPlayAttempt[] = []
-    const pending = [...targets.values()].filter(state => !state.ended)
+    const pending = [...media.values()].filter(state => state.participating && !state.ended)
     const results = await Promise.allSettled(
       pending.map(async state => {
         state.error = null
@@ -297,16 +312,33 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
     }
   }
 
+  async function restart(): Promise<PageMediaPlayResult> {
+    for (const state of media.values()) {
+      if (!state.participating) continue
+      const wasEnded = state.ended || state.element.ended
+      state.ended = false
+      state.error = null
+      if (wasEnded) {
+        try {
+          state.element.currentTime = 0
+        } catch {
+          // 元数据尚未就绪时无法归零，保留 play() 的真实结果。
+        }
+      }
+    }
+    return play()
+  }
+
   function dispose(): void {
     if (disposed) return
     disposed = true
     observer?.disconnect()
     observer = null
-    for (const state of targets.values()) {
+    for (const state of media.values()) {
       unbind(state.element)
       if (!state.element.paused) state.element.pause()
     }
-    targets.clear()
+    media.clear()
     recorded = []
     suspended = false
     blocked = false
@@ -328,6 +360,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
     getSnapshot: snapshot,
     refresh,
     play,
+    restart,
     pause: pauseTargets,
     suspend,
     resume,

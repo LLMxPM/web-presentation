@@ -13,11 +13,13 @@ import { waitForEditorVisualAssets } from '@/core/utils/visual-assets'
 import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
 import { shouldStartAutomatically } from '@/core/execution/execution-policy'
 import { mediaPlaybackCoordinator } from '@/core/execution/media-playback-guard'
+import { createPageMediaSession, type PageMediaEvent, type PageMediaSession } from '@/core/media/page-media-session'
 import { PlaybackController, type PlaybackPage, type PlaybackSnapshot } from './playback-controller'
 
 const PLAYBACK_READY_TIMEOUT_MS = 15000
 const PAGE_MISSING_MESSAGE = '页面节点未就绪，自动放映已暂停。'
 const PAGE_ASSET_MESSAGE = '页面资源未就绪，自动放映已暂停。'
+const MEDIA_BLOCKED_MESSAGE = '浏览器阻止了媒体播放，请重试、跳到下一页或停止放映。'
 
 interface ReadinessAttempt {
   id: number
@@ -34,6 +36,8 @@ export interface PlaybackHost {
   resume: () => boolean
   stop: () => boolean
   retry: () => boolean
+  /** 失败态跳到下一页；没有下一页时返回 false。 */
+  next: () => boolean
   /** 按控制器单调时钟刷新剩余时间，供控制条定时读取。 */
   refresh: () => void
 }
@@ -71,6 +75,9 @@ export function usePlaybackHost(): PlaybackHost {
   let pendingAttempt: ReadinessAttempt | null = null
   let attemptSequence = 0
   let disposed = false
+  let mediaSession: PageMediaSession | null = null
+  let mediaPath = ''
+  let mediaSessionGeneration = -1
 
   /** 按当前执行策略惰性创建控制器；目录为空时不创建。 */
   function ensureController(): PlaybackController | null {
@@ -87,6 +94,7 @@ export function usePlaybackHost(): PlaybackHost {
     unsubscribe = instance.subscribe(next => {
       snapshot.value = next
       errorMessage.value = next.state === 'error' || next.state === 'blocked' ? next.message : ''
+      syncMediaWithSnapshot(instance, next)
     })
     snapshot.value = instance.getSnapshot()
     controller.value = instance
@@ -100,8 +108,127 @@ export function usePlaybackHost(): PlaybackHost {
     if (root) mediaPlaybackCoordinator.suspend(root)
   }
 
+  /** 释放当前页媒体会话；离场、失败与控制器销毁都必须先停播。 */
+  function disposePageMedia(): void {
+    mediaSession?.dispose()
+    mediaSession = null
+    mediaPath = ''
+    mediaSessionGeneration = -1
+  }
+
+  /**
+   * 媒体会话事件进入控制器；路径与 generation 必须同时匹配当前页，
+   * 旧页、已销毁会话和迟到事件直接丢弃。
+   */
+  function handleMediaEvent(event: PageMediaEvent): void {
+    const session = mediaSession
+    const instance = controller.value
+    if (!session || !instance) return
+    const current = instance.getSnapshot()
+    if (current.path !== mediaPath || current.generation !== event.generation) return
+    if (event.type === 'error') {
+      session.pause()
+      instance.reportMediaError(mediaPath, event.generation, event.message)
+      return
+    }
+    if (event.type === 'blocked') {
+      session.pause()
+      instance.reportMediaBlocked(mediaPath, event.generation, MEDIA_BLOCKED_MESSAGE)
+      return
+    }
+    if (current.state !== 'playing') return
+    if (event.type !== 'ended' && event.type !== 'targets') return
+    const media = session.getSnapshot()
+    if (media.targets.length === 0) {
+      instance.reportMediaEmpty(mediaPath, event.generation)
+      return
+    }
+    if (media.allEnded) {
+      instance.reportMediaEnded(mediaPath, event.generation)
+      return
+    }
+    if (event.type === 'targets') {
+      if (!current.waitingForMedia) {
+        instance.reportMediaTargets(mediaPath, event.generation, media.targets.length)
+      }
+      void playPageMedia(session)
+    }
+  }
+
+  /** 主动播放当前页媒体；Promise 结果区分阻止、失败与真实成功，不推断 autoplay。 */
+  async function playPageMedia(session: PageMediaSession, restart = false): Promise<void> {
+    const instance = controller.value
+    if (!instance || mediaSession !== session) return
+    const path = mediaPath
+    if (instance.getSnapshot().state !== 'playing') return
+    const result = restart ? await session.restart() : await session.play()
+    if (mediaSession !== session || controller.value !== instance) return
+    const current = instance.getSnapshot()
+    if (current.path !== path || current.generation !== session.generation) return
+    if (result.blocked) {
+      session.pause()
+      instance.reportMediaBlocked(path, session.generation, MEDIA_BLOCKED_MESSAGE)
+      return
+    }
+    const failed = result.attempts.find(attempt => attempt.outcome === 'error')
+    if (failed) {
+      session.pause()
+      instance.reportMediaError(path, session.generation, failed.message)
+      return
+    }
+    if (session.getSnapshot().allEnded) {
+      instance.reportMediaEnded(path, session.generation)
+    }
+  }
+
+  /** 为当前页创建媒体会话；构造期间的上报由显式 play 调用补足。 */
+  function createSessionForPage(root: HTMLElement, path: string, generation: number): PageMediaSession {
+    disposePageMedia()
+    mediaPath = path
+    mediaSessionGeneration = generation
+    mediaSession = createPageMediaSession({
+      root,
+      generation,
+      allowPlayback: policy.value.allowAutoplay,
+      onEvent: handleMediaEvent,
+    })
+    return mediaSession
+  }
+
+  /** 单页循环或停止后重新开始时重建会话；已结束媒体先归零再播放。 */
+  function restartPageMedia(instance: PlaybackController, next: PlaybackSnapshot): void {
+    const root = findPlaybackPageElement(next.path)
+    if (!root) return
+    const session = createSessionForPage(root, next.path, next.generation)
+    const media = session.getSnapshot()
+    instance.reportMediaTargets(next.path, next.generation, media.targets.length)
+    const shouldRestart = media.targets.length > 0 && media.targets.every(target => target.ended)
+    void playPageMedia(session, shouldRestart)
+  }
+
+  /** 控制器状态变化时同步媒体：失败先停播，离场销毁，同页新一代播放重建会话。 */
+  function syncMediaWithSnapshot(instance: PlaybackController, next: PlaybackSnapshot): void {
+    if (next.state === 'blocked' || next.state === 'error') {
+      mediaSession?.pause()
+      return
+    }
+    if (next.state === 'stopped' || next.state === 'ended') {
+      disposePageMedia()
+      return
+    }
+    if (next.state !== 'playing' || next.advanceMode !== 'media_end') return
+    if (next.generation === mediaSessionGeneration) return
+    const generation = next.generation
+    queueMicrotask(() => {
+      const current = controller.value?.getSnapshot()
+      if (!current || current.state !== 'playing' || current.generation !== generation) return
+      restartPageMedia(instance, current)
+    })
+  }
+
   function disposeController(): void {
     suspendPageMedia()
+    disposePageMedia()
     pendingAttempt = null
     attemptSequence += 1
     unsubscribe?.()
@@ -141,7 +268,16 @@ export function usePlaybackHost(): PlaybackHost {
     if (!isAttemptCurrent(attempt, instance)) return
     pendingAttempt = null
     if (result.ok) {
-      instance?.reportReady(attempt.path, attempt.generation)
+      const current = instance?.getSnapshot()
+      if (instance && current?.advanceMode === 'media_end') {
+        const session = createSessionForPage(root, attempt.path, attempt.generation)
+        const targetCount = session.getSnapshot().targets.length
+        instance.reportReady(attempt.path, attempt.generation, targetCount)
+        if (targetCount > 0) void playPageMedia(session)
+      } else {
+        disposePageMedia()
+        instance?.reportReady(attempt.path, attempt.generation)
+      }
       return
     }
     const issue = result.failed[0] || result.pending[0]
@@ -179,6 +315,7 @@ export function usePlaybackHost(): PlaybackHost {
   const stopRouteWatch = watch(() => router.currentRoute.value.path, path => {
     const instance = controller.value
     if (!instance) return
+    disposePageMedia()
     if (!instance.notifyPageChange(path)) return
     const state = instance.getSnapshot().state
     if (state === 'preparing' || state === 'paused') beginReadiness(path, false)
@@ -217,21 +354,30 @@ export function usePlaybackHost(): PlaybackHost {
 
   function pausePlayback(): boolean {
     if (!controller.value?.pause()) return false
-    suspendPageMedia()
+    if (mediaSession) mediaSession.suspend()
+    else suspendPageMedia()
     return true
   }
 
   function resumePlayback(): boolean {
     const instance = controller.value
     if (!instance || !instance.resume()) return false
-    mediaPlaybackCoordinator.resume()
-    if (instance.getSnapshot().state === 'preparing') beginReadiness(instance.getSnapshot().path, true)
+    const current = instance.getSnapshot()
+    if (current.state === 'playing' && current.advanceMode === 'media_end') {
+      if (mediaSession?.isSuspended()) mediaSession.resume()
+      else if (mediaSession) void playPageMedia(mediaSession)
+      else restartPageMedia(instance, current)
+    } else {
+      mediaPlaybackCoordinator.resume()
+    }
+    if (current.state === 'preparing') beginReadiness(instance.getSnapshot().path, true)
     return true
   }
 
   function stopPlayback(): boolean {
     if (!controller.value?.stop()) return false
-    suspendPageMedia()
+    if (mediaSession) disposePageMedia()
+    else suspendPageMedia()
     mediaPlaybackCoordinator.dispose()
     return true
   }
@@ -239,7 +385,18 @@ export function usePlaybackHost(): PlaybackHost {
   function retryPlayback(): boolean {
     const instance = controller.value
     if (!instance || !instance.retry()) return false
+    disposePageMedia()
     beginReadiness(instance.getSnapshot().path, true)
+    return true
+  }
+
+  /** 失败态跳到下一页；清掉旧媒体后重新等待目标页就绪。 */
+  function nextPlayback(): boolean {
+    const instance = controller.value
+    if (!instance || !instance.next()) return false
+    disposePageMedia()
+    mediaPlaybackCoordinator.dispose()
+    beginReadiness(instance.getSnapshot().path, false)
     return true
   }
 
@@ -306,6 +463,7 @@ export function usePlaybackHost(): PlaybackHost {
     resume: resumePlayback,
     stop: stopPlayback,
     retry: retryPlayback,
+    next: nextPlayback,
     refresh: () => {
       const instance = controller.value
       if (instance) snapshot.value = instance.getSnapshot()

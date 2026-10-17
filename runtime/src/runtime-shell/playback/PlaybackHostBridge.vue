@@ -10,6 +10,12 @@
       <span>{{ primaryAction.label }}</span>
     </button>
     <button
+      v-if="canNextPage" type="button" class="runtime-playback-controls__button"
+      title="跳到下一页并继续放映" aria-label="跳到下一页" @click="next">
+      <ChevronRight :size="14" />
+      <span>下一页</span>
+    </button>
+    <button
       v-if="canStop" type="button" class="runtime-playback-controls__button"
       title="停止放映，保留当前页" aria-label="停止放映" @click="stop">
       <Square :size="14" />
@@ -22,11 +28,11 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, watch } from 'vue'
-import { Pause, Play, Square } from '@lucide/vue'
+import { ChevronRight, Pause, Play, Square } from '@lucide/vue'
 import { usePlaybackHost } from './usePlaybackHost'
 import type { PlaybackState } from './playback-controller'
 
-const { snapshot, errorMessage, start, pause, resume, stop, retry, refresh } = usePlaybackHost()
+const { snapshot, errorMessage, start, pause, resume, stop, retry, next, refresh } = usePlaybackHost()
 
 const STATE_LABELS: Record<PlaybackState, string> = {
   stopped: '已停止',
@@ -38,7 +44,12 @@ const STATE_LABELS: Record<PlaybackState, string> = {
   error: '错误',
 }
 
-const stateLabel = computed(() => snapshot.value ? STATE_LABELS[snapshot.value.state] : '')
+const stateLabel = computed(() => {
+  const current = snapshot.value
+  if (!current) return ''
+  if (current.waitingForMedia) return current.state === 'paused' ? '媒体已暂停' : '媒体播放中'
+  return STATE_LABELS[current.state]
+})
 const pageLabel = computed(() => {
   const current = snapshot.value
   if (!current || current.index < 0 || current.total === 0) return '— / —'
@@ -58,16 +69,21 @@ const canStop = computed(() => {
   return state === 'preparing' || state === 'playing' || state === 'paused' || state === 'blocked' || state === 'error'
 })
 
+/** 失败态允许直接跳过当前页；末页不循环时没有下一页。 */
+const canNextPage = computed(() => {
+  const current = snapshot.value
+  if (!current || (current.state !== 'blocked' && current.state !== 'error')) return false
+  if (current.index < 0) return false
+  return current.index < current.total - 1 || current.loop
+})
+
 const remainingLabel = computed(() => {
   const current = snapshot.value
   if (!current) return ''
-  if (current.state === 'preparing') {
-    return current.delayMs == null ? '手动' : formatDuration(current.remainingMs)
+  if (current.state === 'preparing' || current.state === 'playing' || current.state === 'paused') {
+    if (current.delayMs != null) return formatDuration(current.remainingMs)
+    return current.advanceMode === 'media_end' ? '媒体' : '手动'
   }
-  if (current.state === 'playing') {
-    return current.delayMs == null ? '手动' : formatDuration(current.remainingMs)
-  }
-  if (current.state === 'paused') return current.delayMs == null ? '手动' : formatDuration(current.remainingMs)
   return '—'
 })
 

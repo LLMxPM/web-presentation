@@ -160,7 +160,7 @@ describe('createPageMediaSession', () => {
 
   it('play() 区分真实播放、策略阻止和媒体错误，并支持错误目标重试', async () => {
     const root = createRoot()
-    const normal = createMedia(root)
+    createMedia(root)
     const blocked = createMedia(root)
     const failed = createMedia(root)
     blocked.play.mockRejectedValue(new DOMException('blocked', 'NotAllowedError'))
@@ -184,6 +184,23 @@ describe('createPageMediaSession', () => {
     session.dispose()
   })
 
+  it('循环背景不参与完成集合，但暂停、恢复与销毁同样生效', () => {
+    const root = createRoot()
+    const target = createMedia(root, { playing: true })
+    const background = createMedia(root, { playing: true, loop: true })
+    const session = createPageMediaSession({ root, generation: 1 })
+    expect(session.getSnapshot().targets).toHaveLength(1)
+
+    expect(session.suspend()).toBe(2)
+    expect(target.isPaused()).toBe(true)
+    expect(background.isPaused()).toBe(true)
+    expect(session.resume()).toBe(2)
+    expect(background.play).toHaveBeenCalledTimes(1)
+
+    session.dispose()
+    expect(background.pause).toHaveBeenCalled()
+  })
+
   it('执行上下文不允许播放时不触碰媒体元素', async () => {
     const root = createRoot()
     const media = createMedia(root)
@@ -192,6 +209,28 @@ describe('createPageMediaSession', () => {
     const result = await session.play()
     expect(result.attempts).toEqual([])
     expect(media.play).not.toHaveBeenCalled()
+    session.dispose()
+  })
+
+  it('restart 将已结束目标归零并重新播放，供单页循环重播', async () => {
+    const root = createRoot()
+    const media = createMedia(root)
+    let currentTime = 42
+    Object.defineProperty(media.element, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => { currentTime = value },
+    })
+    const session = createPageMediaSession({ root, generation: 6 })
+
+    media.element.dispatchEvent(new Event('ended'))
+    expect(session.getSnapshot().allEnded).toBe(true)
+
+    const result = await session.restart()
+    expect(currentTime).toBe(0)
+    expect(result.attempts).toHaveLength(1)
+    expect(result.attempts[0].outcome).toBe('played')
+    expect(session.getSnapshot().allEnded).toBe(false)
     session.dispose()
   })
 })

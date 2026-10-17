@@ -10,8 +10,12 @@ export interface TransitionSettledEvent {
   generation: number
 }
 
-/** 页面停留与翻页推进配置。 */
+/** 页面停留与翻页推进配置；旧产物可能缺少 mediaTimeoutMs。 */
+export type PageAdvanceMode = 'manual' | 'timer' | 'media_end'
+
 export interface PageAdvanceConfig {
-  mode: 'manual' | 'timer'
+  mode: PageAdvanceMode
   delayMs: number
+  /** media_end 等待上限；其它模式保留同一结构供往返与显示。 */
+  mediaTimeoutMs?: number
 }

@@ -2,7 +2,12 @@
 import type { PageAdvanceConfig, PageTransitionConfig } from '../types/page-transition'
 
 export const DEFAULT_PAGE_TRANSITION: PageTransitionConfig = { effect: 'fade', durationMs: 400 }
-export const DEFAULT_PAGE_ADVANCE: PageAdvanceConfig = { mode: 'manual', delayMs: 5000 }
+export const DEFAULT_MEDIA_TIMEOUT_MS = 300000
+export const DEFAULT_PAGE_ADVANCE: PageAdvanceConfig = {
+  mode: 'manual',
+  delayMs: 5000,
+  mediaTimeoutMs: DEFAULT_MEDIA_TIMEOUT_MS,
+}
 const warned = new Set<string>()
 
 /** 将外部配置归一化；错误有界告警并使用指定默认值。 */
@@ -26,12 +31,19 @@ export function resolvePageTransition(value: unknown, fallback = DEFAULT_PAGE_TR
 
 /** 校验并归一化翻页推进配置；旧产物缺省时保持手动翻页。 */
 export function resolvePageAdvance(value: unknown, fallback: PageAdvanceConfig = DEFAULT_PAGE_ADVANCE): PageAdvanceConfig {
-  if (value == null) return { ...fallback }
+  if (value == null) return { ...fallback, mediaTimeoutMs: fallback.mediaTimeoutMs ?? DEFAULT_MEDIA_TIMEOUT_MS }
   if (typeof value === 'object' && !Array.isArray(value)) {
     const input = value as Partial<PageAdvanceConfig>
     const delay = input.delayMs ?? DEFAULT_PAGE_ADVANCE.delayMs
-    if ((input.mode === 'manual' || input.mode === 'timer') && Number.isInteger(delay) && delay >= 1000 && delay <= 3600000) {
-      return { mode: input.mode, delayMs: delay }
+    if (
+      (input.mode === 'manual' || input.mode === 'timer' || input.mode === 'media_end')
+      && Number.isInteger(delay) && delay >= 1000 && delay <= 3600000
+    ) {
+      return {
+        mode: input.mode,
+        delayMs: delay,
+        mediaTimeoutMs: resolveMediaTimeout(input.mediaTimeoutMs),
+      }
     }
   }
   const key = JSON.stringify(value)
@@ -39,5 +51,12 @@ export function resolvePageAdvance(value: unknown, fallback: PageAdvanceConfig =
     warned.add(key)
     console.warn('[runtime-transition] 非法翻页配置，已采用默认值', value)
   }
-  return { ...fallback }
+  return { ...fallback, mediaTimeoutMs: fallback.mediaTimeoutMs ?? DEFAULT_MEDIA_TIMEOUT_MS }
+}
+
+/** 媒体等待上限与 Backend 保持同一范围，非法值回退默认时长。 */
+function resolveMediaTimeout(value: number | undefined): number {
+  return Number.isInteger(value) && (value as number) >= 1000 && (value as number) <= 3600000
+    ? value as number
+    : DEFAULT_MEDIA_TIMEOUT_MS
 }
