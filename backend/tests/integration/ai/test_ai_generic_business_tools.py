@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
+import json
+
 import pytest
 from httpx import AsyncClient
 from pydantic_ai import ApprovalRequired
@@ -588,3 +592,87 @@ async def test_cross_user_ai_tool_write_should_be_denied(authenticated_client: A
         assert style is not None
         assert style.deleted_at is None
         assert style.name == "属主样式"
+
+
+async def test_project_slideshow_action_should_use_http_dto_and_reject_unopened_modes(
+    authenticated_client: AsyncClient,
+) -> None:
+    """项目放映 action 与 HTTP 同源校验：完整对象写入、媒体模式不披露、失败不部分落库。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 放映工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "AI 放映项目")
+    tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
+    context = _build_tool_run_context(workspace_id, approved=True, focus_project_id=project_id)
+
+    guide_index = await tools["get_operation_guide"].entrypoint(context)
+    assert any(item["operation_key"] == "project.update.slideshow" for item in guide_index["operations"])
+    guide = await tools["get_operation_guide"].entrypoint(context, "project.update.slideshow")
+    guide_schema = json.dumps(guide["parameters"], ensure_ascii=False)
+    for field_name in ("slideshow", "transition", "advance", "loop", "auto_start", "duration_ms", "delay_ms"):
+        assert f'"{field_name}"' in guide_schema
+    assert "media_end" not in guide_schema
+
+    slideshow = {
+        "transition": {"effect": "push", "duration_ms": 900},
+        "advance": {"mode": "timer", "delay_ms": 7000},
+        "loop": True,
+        "auto_start": False,
+    }
+    updated = await tools["update_entity"].entrypoint(
+        context,
+        "project",
+        project_id,
+        {"slideshow": slideshow},
+        "slideshow",
+    )
+    assert updated["effect"] == "update"
+
+    detail = await authenticated_client.get(f"/api/projects/{project_id}")
+    assert detail.status_code == 200
+    assert detail.json()["slideshow"] == slideshow
+
+    with pytest.raises(AppException) as error:
+        await tools["update_entity"].entrypoint(
+            context,
+            "project",
+            project_id,
+            {
+                "slideshow": {
+                    "transition": {"effect": "fade", "duration_ms": 400},
+                    "advance": {"mode": "media_end", "delay_ms": 5000},
+                    "loop": False,
+                    "auto_start": False,
+                }
+            },
+            "slideshow",
+        )
+    assert error.value.code == "AI_OPERATION_ARGUMENTS_INVALID"
+
+    unchanged = await authenticated_client.get(f"/api/projects/{project_id}")
+    assert unchanged.json()["slideshow"] == slideshow
+
+
+async def test_project_create_should_accept_slideshow_payload(authenticated_client: AsyncClient) -> None:
+    """项目创建工具应把放映配置透传给 Backend DTO，而不是直接写数据库。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "AI 放映创建空间")
+    tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
+    context = _build_tool_run_context(workspace_id, approved=True)
+    slideshow = {
+        "transition": {"effect": "none", "duration_ms": 0},
+        "advance": {"mode": "manual", "delay_ms": 6000},
+        "loop": False,
+        "auto_start": True,
+    }
+
+    created = await tools["create_entity"].entrypoint(
+        context,
+        "project",
+        "new",
+        {"name": "AI 创建放映项目", "slideshow": slideshow},
+    )
+    project_id = int(created["target"]["id"])
+
+    detail = await authenticated_client.get(f"/api/projects/{project_id}")
+    assert detail.status_code == 200
+    assert detail.json()["slideshow"] == slideshow

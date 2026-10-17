@@ -217,7 +217,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         resource_type: Annotated[Literal["project", "page", "component", "asset", "theme", "style"], Field(description="要修改的业务对象类型。")],
         target_id: Annotated[int, Field(gt=0, description="真实查询得到的目标对象 ID。")],
         payload: Annotated[dict[str, Any], Field(description="修改参数；只提交需要修改的字段，并严格符合操作手册。")],
-        action: Annotated[Literal["metadata", "content", "configuration", "apply_style", "route_tree", "build_assets"], Field(description="修改动作；必须与 resource_type 组成操作手册支持的组合。")] = "metadata",
+        action: Annotated[Literal["metadata", "content", "configuration", "slideshow", "apply_style", "route_tree", "build_assets"], Field(description="修改动作；必须与 resource_type 组成操作手册支持的组合。")] = "metadata",
     ) -> dict[str, Any]:
         """统一修改业务对象；源码更新等复杂参数应按对应 action 的操作手册提交。"""
 
@@ -645,6 +645,8 @@ async def _update_entity(
             }
         elif action == "build_assets":
             request_payload = {"build_extra_assets_json": payload}
+        elif action == "slideshow":
+            request_payload = {"slideshow": payload["slideshow"]}
         else:
             raise AppException(status_code=400, code="AI_ENTITY_UPDATE_UNSUPPORTED", detail="项目不支持指定更新 action。")
         async with session_factory() as session:

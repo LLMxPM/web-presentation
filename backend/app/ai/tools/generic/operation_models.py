@@ -16,6 +16,7 @@ from app.schemas.presentation_style import (
     StyleConfigurationPatch,
 )
 from app.schemas.project_route import ProjectRouteItemWrite
+from app.schemas.slideshow import SlideshowSettings
 from app.schemas.theme import ThemePalette
 
 
@@ -124,6 +125,7 @@ class ProjectCreatePayload(OperationArgumentsModel):
     description: str | None = Field(default=None, max_length=2000, description="项目用途或内容范围说明。")
     configuration: ProjectCreateConfiguration = Field(default_factory=ProjectDefaultConfiguration, description="default/style/custom 三种初始化来源。")
     build_assets: ProjectBuildExtraAssetsConfig | None = Field(default=None, description="构建时需要额外打包的工作空间资源名称。")
+    slideshow: SlideshowSettings | None = Field(default=None, description="项目默认放映配置；省略时使用平台默认值，提供时必须完整。")
 
 
 class ProjectMetadataPayload(NonEmptyPatchModel):
@@ -145,6 +147,12 @@ class ProjectApplyStylePayload(OperationArgumentsModel):
 
 class ProjectBuildAssetsPayload(ProjectBuildExtraAssetsConfig):
     """修改项目构建时额外打包的资源名。"""
+
+
+class ProjectSlideshowPayload(OperationArgumentsModel):
+    """完整替换项目默认放映配置；不做字段级补全。"""
+
+    slideshow: SlideshowSettings = Field(description="完整放映配置：transition、advance、loop、auto_start。")
 
 
 class PageCreatePayload(OperationArgumentsModel):
@@ -520,6 +528,7 @@ PAYLOAD_MODELS: dict[tuple[str, str, str | None], type[OperationArgumentsModel]]
     ("project", "update", "apply_style"): ProjectApplyStylePayload,
     ("project", "update", "route_tree"): ReplaceRoutesPayload,
     ("project", "update", "build_assets"): ProjectBuildAssetsPayload,
+    ("project", "update", "slideshow"): ProjectSlideshowPayload,
     ("page", "update", "metadata"): PageMetadataPayload,
     ("page", "update", "content"): PageContentPayload,
     ("component", "update", "metadata"): ComponentMetadataPayload,

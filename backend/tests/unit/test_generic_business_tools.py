@@ -376,7 +376,7 @@ def test_generic_tools_should_expose_flat_top_level_schemas() -> None:
         assert "detail" in validate_payload_properties["properties"]
     update_schema = tools["update_entity"].parameters
     assert set(_schema_values(update_schema["properties"]["action"])) == {
-        "metadata", "configuration", "apply_style", "route_tree", "build_assets", "content",
+        "metadata", "configuration", "slideshow", "apply_style", "route_tree", "build_assets", "content",
     }
     execute_validator = Draft202012Validator(tools["execute_action"].parameters)
     assert not execute_validator.is_valid({

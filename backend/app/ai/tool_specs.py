@@ -53,6 +53,7 @@ from app.ai.tools.generic.operation_models import (
     ProjectApplyStylePayload,
     ProjectBuildAssetsPayload,
     ProjectConfigurationPayload,
+    ProjectSlideshowPayload,
     ProjectMetadataPayload,
     ReplaceRoutesPayload,
     RuntimeKitDetailFilters,
@@ -786,7 +787,7 @@ _COORDINATOR_OPERATION_GUIDES = (
                      constraints=("字体只读；主题写工具不开放字体配置。",)),
 
     _operation_guide("project", "create", "创建当前工作空间中的项目。", _write_parameters("project", "create", ProjectCreatePayload, action="new"), action="new",
-                     constraints=("workspace_id 和 active 状态由运行上下文注入。",), risk_level="write",
+                     constraints=("workspace_id 和 active 状态由运行上下文注入。", "可选 slideshow 必须是完整对象；省略时使用平台默认（fade 400ms、manual 5000ms、不循环、不自动开始）。"), risk_level="write",
                      call_example={"resource_type": "project", "mode": "new", "payload": {"name": "季度汇报", "description": "2026 Q3"}}),
     _operation_guide("page", "create", "在指定项目创建并校验 Vue 页面，可原子写入路由。", _write_parameters("page", "create", PageCreatePayload, action="new"), action="new",
                       prerequisites=(
@@ -1012,6 +1013,9 @@ _COORDINATOR_OPERATION_GUIDES = (
     _operation_guide("project", "update", "用完整新树替换项目现有路由树。", _write_parameters("project", "update", ReplaceRoutesPayload, action="route_tree", target_mode="single"), action="route_tree",
                      prerequisites=("先查询项目 pages 和 route_tree；routes 中所有 page_id 必须属于目标项目。",), constraints=("这是全量覆盖，不是增量追加；未包含的现有路由节点会被移除。",),
                      side_effects=("影响项目导航结构和页面访问路径。",), error_recovery=("校验失败时重新读取最新 route_tree 后重新构造完整 routes。",), risk_level="write"),
+    _operation_guide("project", "update", "整体替换项目默认放映配置（翻页动画、停留时间、循环与自动开始）。", _write_parameters("project", "update", ProjectSlideshowPayload, action="slideshow", target_mode="single"), action="slideshow", risk_level="write",
+                     constraints=("必须提交完整 slideshow 对象，平台不为部分字段补全。", "effect 只支持 none/fade/push；none 的 duration_ms 必须为 0，其它效果 100–2000ms。", "当前只支持 manual 与 timer 两种 advance 模式，delay_ms 范围 1000–3600000；media_end 尚未开放。", "该 action 只改项目默认值，不影响已显式覆盖的叶子路由。"),
+                     call_example={"resource_type": "project", "action": "slideshow", "target_id": 8, "payload": {"slideshow": {"transition": {"effect": "fade", "duration_ms": 400}, "advance": {"mode": "timer", "delay_ms": 8000}, "loop": False, "auto_start": False}}}),
     _operation_guide("project", "update", "替换项目构建时额外打包的工作空间资源名。", _write_parameters("project", "update", ProjectBuildAssetsPayload, action="build_assets", target_mode="single"), action="build_assets", risk_level="write"),
     _operation_guide("page", "update", "修改页面标题、摘要或演讲者备注。", _write_parameters("page", "update", PageMetadataPayload, action="metadata", target_mode="single"), action="metadata", risk_level="write",
                      call_example={"resource_type": "page", "target_id": 31, "action": "metadata", "payload": {"title": "概览"}}),
