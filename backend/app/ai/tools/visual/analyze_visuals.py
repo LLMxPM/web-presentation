@@ -155,7 +155,7 @@ async def _resolve_asset_input(
 ) -> ImageUnderstandingInput:
     """校验并读取工作空间图片资源，登记会话预览附件后生成视觉输入。"""
 
-    asset = await asset_service._get_asset_or_raise(workspace_id, item.asset_id)
+    asset = await asset_service.get_asset_or_raise(workspace_id, item.asset_id)
     if (
         asset.status != RecordStatus.ACTIVE.value
         or asset.source_asset_id is not None

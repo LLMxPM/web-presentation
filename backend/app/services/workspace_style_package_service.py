@@ -282,7 +282,7 @@ class WorkspaceStylePackageService:
             for asset_id in [theme.logo_asset_id, theme.invert_logo_asset_id, theme.project_icon_asset_id]:
                 if asset_id is None or asset_id in assets_by_id:
                     continue
-                asset = await self._get_asset_or_raise(workspace_id, asset_id, theme.name)
+                asset = await self.get_asset_or_raise(workspace_id, asset_id, theme.name)
                 assets_by_id[asset.id] = asset
 
             for family_id in [theme.heading_font_family_id, theme.body_font_family_id, theme.code_font_family_id]:
@@ -292,7 +292,7 @@ class WorkspaceStylePackageService:
 
         # 主题绑定字体族后，导出需携带该族全部字体文件，保证多字重往返不丢失。
         for font_config in await self.font_service.list_font_configs_for_family_ids(workspace_id, family_ids):
-            font_asset = await self._get_asset_or_raise(workspace_id, font_config.asset_id, font_config.asset_name)
+            font_asset = await self.get_asset_or_raise(workspace_id, font_config.asset_id, font_config.asset_name)
             assets_by_id[font_asset.id] = font_asset
             fonts_by_id[font_config.id] = font_config
         return list(assets_by_id.values()), list(fonts_by_id.values())
@@ -375,7 +375,7 @@ class WorkspaceStylePackageService:
             source=source,
         )
 
-    async def _get_asset_or_raise(self, workspace_id: int, asset_id: int, theme_name: str) -> WorkspaceAsset:
+    async def get_asset_or_raise(self, workspace_id: int, asset_id: int, theme_name: str) -> WorkspaceAsset:
         """读取主题依赖资源，不存在时阻断导出。"""
 
         asset = await self.session.scalar(

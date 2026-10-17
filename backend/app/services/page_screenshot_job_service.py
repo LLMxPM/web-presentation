@@ -126,11 +126,8 @@ class PageScreenshotJobService:
         fingerprint_service = self.screenshot_service.screenshot_fingerprint_service
         snapshot = await fingerprint_service.build_project_snapshot(project)
         pages = await self._list_project_pages_for_batch_screenshot_refresh(project_id)
-        # 逐页叠加三维引用身份：资源替换只让引用该资源的页面重新截图。
-        page_snapshots = {
-            page.id: await fingerprint_service.build_page_snapshot_from_project(page, snapshot)
-            for page in pages
-        }
+        # 批量叠加三维引用身份：绑定与资源各一次批量查询，资源替换只让引用该资源的页面重新截图。
+        page_snapshots = await fingerprint_service.build_page_snapshots_from_project(pages, snapshot)
         target_pages = [
             page for page in pages
             if not self.screenshot_service._is_page_screenshot_current_for_hash(

@@ -99,7 +99,7 @@ async def _read_asset_metadata(workspace_id: int, asset_id: int) -> dict[str, An
     """在独立会话中读取资源当前的 render_metadata。"""
 
     async with get_session_factory()() as session:
-        asset = await AssetRenderHintBackfillJobService(session).asset_service._get_asset_or_raise(
+        asset = await AssetRenderHintBackfillJobService(session).asset_service.get_asset_or_raise(
             workspace_id, asset_id
         )
         return asset.render_metadata

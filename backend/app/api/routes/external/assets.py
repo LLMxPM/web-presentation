@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, Request, Response, U
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies_external import ExternalAuthContext, require_external_operation
-from app.api.routes.assets import _build_asset_response, _build_asset_responses
+from app.api.routes.assets import build_asset_response, build_asset_responses
 from app.db.session import get_db_session
 from app.models.enums import AssetType
 from app.schemas.asset import (
@@ -56,7 +56,7 @@ async def list_assets(
         page=page,
         page_size=page_size,
     )
-    responses = await _build_asset_responses(session, x_workspace_id, assets)
+    responses = await build_asset_responses(session, x_workspace_id, assets)
     return PagedResponse[AssetResponse](
         items=responses,
         total=total,
@@ -86,8 +86,8 @@ async def get_asset(
 ) -> AssetResponse:
     """获取单个资源详情。"""
 
-    asset = await AssetService(session)._get_asset_or_raise(x_workspace_id, asset_id)
-    return await _build_asset_response(session, x_workspace_id, asset)
+    asset = await AssetService(session).get_asset_or_raise(x_workspace_id, asset_id)
+    return await build_asset_response(session, x_workspace_id, asset)
 
 
 @router.get("/{asset_id}/content", response_model=AssetContentResponse)
@@ -100,10 +100,10 @@ async def get_asset_content(
     """读取可编辑资源的 UTF-8 文本内容。"""
 
     asset_service = AssetService(session)
-    asset = await asset_service._get_asset_or_raise(x_workspace_id, asset_id)
+    asset = await asset_service.get_asset_or_raise(x_workspace_id, asset_id)
     content = await asset_service.get_asset_content(x_workspace_id, asset_id)
     return AssetContentResponse(
-        asset=await _build_asset_response(session, x_workspace_id, asset),
+        asset=await build_asset_response(session, x_workspace_id, asset),
         content=content,
     )
 
@@ -138,7 +138,7 @@ async def create_asset_content(
             aspect_ratio_source="manual",
             commit=False,
         )
-        return 201, await _build_asset_response(session, x_workspace_id, asset)
+        return 201, await build_asset_response(session, x_workspace_id, asset)
 
     status_code, result = await IdempotencyService(session).execute_idempotent_operation(
         user_id=auth.user.id,
@@ -203,7 +203,7 @@ async def upload_asset(
             overwrite=overwrite,
             commit=False,
         )
-        resp = await _build_asset_response(session, x_workspace_id, created)
+        resp = await build_asset_response(session, x_workspace_id, created)
         return 201, resp
 
     status_code, result = await IdempotencyService(session).execute_idempotent_operation(
@@ -260,7 +260,7 @@ async def replace_asset_file(
             expected_file_hash=expected_file_hash,
             commit=False,
         )
-        resp = await _build_asset_response(session, x_workspace_id, updated)
+        resp = await build_asset_response(session, x_workspace_id, updated)
         return 200, resp
 
     status_code, result = await IdempotencyService(session).execute_idempotent_operation(
@@ -301,7 +301,7 @@ async def update_asset_content(
             change_note=payload.change_note,
             commit=False,
         )
-        resp = await _build_asset_response(session, x_workspace_id, updated)
+        resp = await build_asset_response(session, x_workspace_id, updated)
         return 200, resp
 
     status_code, result = await IdempotencyService(session).execute_idempotent_operation(
@@ -355,7 +355,7 @@ async def copy_asset(
             description=payload.description,
             tags=payload.tags,
         )
-        return 201, await _build_asset_response(session, x_workspace_id, asset)
+        return 201, await build_asset_response(session, x_workspace_id, asset)
 
     status_code, result = await IdempotencyService(session).execute_idempotent_operation(
         user_id=auth.user.id,
@@ -399,7 +399,7 @@ async def update_asset_metadata(
             approx_aspect_ratio_provided="approx_aspect_ratio" in payload.model_fields_set,
             commit=False,
         )
-        resp = await _build_asset_response(session, x_workspace_id, updated)
+        resp = await build_asset_response(session, x_workspace_id, updated)
         return 200, resp
 
     status_code, result = await IdempotencyService(session).execute_idempotent_operation(
@@ -502,11 +502,11 @@ async def get_external_asset_file(
 ):
     """External API 读取指定资产版本的二进制内容，支持 ETag 304 与 Range。"""
 
-    from app.api.routes.assets import _serve_workspace_asset_binary
+    from app.api.routes.assets import serve_workspace_asset_binary
 
     asset_service = AssetService(session)
-    asset = await asset_service._get_asset_or_raise(x_workspace_id, asset_id)
-    return await _serve_workspace_asset_binary(
+    asset = await asset_service.get_asset_or_raise(x_workspace_id, asset_id)
+    return await serve_workspace_asset_binary(
         request=request,
         workspace_id=x_workspace_id,
         asset=asset,

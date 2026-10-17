@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -82,10 +82,25 @@ class AssetBindingService:
             async with self.session.begin_nested():
                 self.session.add(snapshot)
                 await self.session.flush()
-        except IntegrityError:
+        except IntegrityError as error:
             existing = await self._find_reference_snapshot(workspace_id, asset)
             if existing is None:
-                raise
+                # 回查不到同内容快照说明撞上了用户自建的同名资源（快照名空间共享）
+                # 或其他唯一约束冲突；翻译为可读错误而非裸抛 500。
+                logger.warning(
+                    "三维参考快照创建冲突且回查无同内容记录。",
+                    extra={
+                        "event": "asset.binding.snapshot.conflict",
+                        "workspace_id": workspace_id,
+                        "asset_id": asset.id,
+                        "snapshot_name": snapshot.name,
+                    },
+                )
+                raise AppException(
+                    status_code=409,
+                    code="ASSET_SNAPSHOT_NAME_CONFLICT",
+                    detail=f"无法创建资源版本参考快照：工作空间内已存在同名记录 {snapshot.name}，请重命名该资源后重试。",
+                ) from error
             return existing
         return snapshot
 
@@ -222,6 +237,58 @@ class AssetBindingService:
             .order_by(AssetReferenceBinding.resource_name.asc())
         )
         return list(result.scalars().all())
+
+    async def list_owner_bindings_bulk(
+        self,
+        owner_kind: str,
+        owner_keys: Sequence[str],
+    ) -> dict[str, list[AssetReferenceBinding]]:
+        """按 owner_key 批量读取绑定，供批量指纹等逐 owner 消费场景避免 N+1 查询。
+
+        返回映射包含每个传入 key（无绑定时为空列表），排序语义与 list_owner_bindings 一致。
+        """
+
+        self._ensure_owner_kind(owner_kind)
+        normalized_keys = list(dict.fromkeys(str(key) for key in owner_keys if str(key)))
+        if not normalized_keys:
+            return {}
+        result = await self.session.execute(
+            select(AssetReferenceBinding)
+            .where(AssetReferenceBinding.owner_kind == owner_kind)
+            .where(AssetReferenceBinding.owner_key.in_(normalized_keys))
+            .order_by(AssetReferenceBinding.resource_name.asc())
+        )
+        grouped: dict[str, list[AssetReferenceBinding]] = {key: [] for key in normalized_keys}
+        for binding in result.scalars().all():
+            grouped.setdefault(str(binding.owner_key), []).append(binding)
+        return grouped
+
+    async def bind_preview_artifact_model3d_assets(
+        self,
+        *,
+        workspace_id: int,
+        artifact_id: str,
+        asset_metadata: Mapping[str, Mapping[str, object]],
+        expires_at: datetime | None = None,
+    ) -> None:
+        """为预览类 artifact 中的三维资源建立临时持有并立即提交，artifact 到期后由对账释放。
+
+        页面/组件/资源三类预览 artifact 共用本入口：expires_at 缺省时按预览 artifact TTL 推导。
+        提交在本方法内完成；调用方须保证传入会话上没有未提交的中间写入，
+        否则会被顺带提交（与既有行为一致，绑定失败不会回滚已提交的 artifact）。
+        """
+
+        if expires_at is None:
+            expires_at = utc_now() + timedelta(seconds=get_settings().runtime_preview_artifact_ttl_seconds)
+        bindings = await self.bind_owner_model3d_assets(
+            workspace_id=workspace_id,
+            owner_kind=OWNER_KIND_PREVIEW_ARTIFACT,
+            owner_key=artifact_id,
+            asset_metadata=asset_metadata,
+            expires_at=expires_at,
+        )
+        if bindings:
+            await self.session.commit()
 
     async def owner_binding_hash_map(self, owner_kind: str, owner_key: str) -> dict[str, str]:
         """返回 owner 的 resource_name→file_hash 冻结映射，供历史预览与指纹复用。"""

@@ -193,7 +193,12 @@ class ProjectBuildService:
         workspace_id: int,
         asset_metadata: dict[str, dict[str, object]],
     ) -> None:
-        """为构建快照中的三维资源建立 Release 持有，构建执行期按冻结 hash 回源不受替换影响。"""
+        """为构建快照中的三维资源建立 Release 持有，构建执行期按冻结 hash 回源不受替换影响。
+
+        TODO: 当前 Release 绑定为永久持有（expires_at=None），仓库尚无 Release 删除/
+        版本修剪路径；未来引入 Release 生命周期管理时，必须同步接线 release_owner
+        释放，否则删除保护 `_ensure_no_asset_binding_holds` 会永久阻止三维资源清理。
+        """
 
         await AssetBindingService(self.session).bind_owner_model3d_assets(
             workspace_id=workspace_id,

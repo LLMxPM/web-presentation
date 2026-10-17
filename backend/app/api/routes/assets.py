@@ -43,7 +43,7 @@ from app.services.workspace_font_service import WorkspaceFontService
 router = APIRouter(dependencies=[Depends(require_workspace_access)])
 
 
-async def _build_asset_response(session: AsyncSession, workspace_id: int, asset: WorkspaceAsset) -> AssetResponse:
+async def build_asset_response(session: AsyncSession, workspace_id: int, asset: WorkspaceAsset) -> AssetResponse:
     """把资源 ORM 模型转换为带受保护访问 URL 与字体摘要的接口响应 (W10)。"""
 
     settings = get_settings()
@@ -57,7 +57,7 @@ async def _build_asset_response(session: AsyncSession, workspace_id: int, asset:
     return AssetResponse.model_validate(enriched_payload[0])
 
 
-async def _build_asset_responses(
+async def build_asset_responses(
     session: AsyncSession,
     workspace_id: int,
     assets: list[WorkspaceAsset],
@@ -103,7 +103,7 @@ async def upload_asset_file(
         description,
         overwrite=overwrite,
     )
-    return await _build_asset_response(session, workspace_id, asset)
+    return await build_asset_response(session, workspace_id, asset)
 
 
 @router.get("/workspaces/{workspace_id}/assets", response_model=PagedResponse[AssetResponse])
@@ -138,7 +138,7 @@ async def list_workspace_assets(
         sort_by=query.sort_by,
         sort_order=query.sort_order,
     )
-    items = await _build_asset_responses(session, workspace_id, assets)
+    items = await build_asset_responses(session, workspace_id, assets)
     return PagedResponse[AssetResponse](
         items=items,
         total=total,
@@ -190,7 +190,7 @@ async def create_workspace_asset_content(
         approx_aspect_ratio=request.approx_aspect_ratio,
         aspect_ratio_source="manual",
     )
-    return await _build_asset_response(session, workspace_id, asset)
+    return await build_asset_response(session, workspace_id, asset)
 
 
 @router.get("/workspaces/{workspace_id}/assets/{asset_id}/content")
@@ -207,14 +207,14 @@ async def get_workspace_asset_content(
     """读取可编辑资源的文本内容或二进制文件流。缺省返回 JSON，raw=1 或指定 hash 时返回受保护文件流。"""
 
     service = AssetService(session)
-    asset = await service._get_asset_or_raise(workspace_id, asset_id)
+    asset = await service.get_asset_or_raise(workspace_id, asset_id)
 
     # 默认未指定 raw 且未指定 hash 时，返回原结构化 JSON 响应
     if raw == 0 and not hash and download == 0 and request.method != "HEAD":
         content = await service.get_asset_content(workspace_id, asset_id)
-        return AssetContentResponse(asset=await _build_asset_response(session, workspace_id, asset), content=content)
+        return AssetContentResponse(asset=await build_asset_response(session, workspace_id, asset), content=content)
 
-    return await _serve_workspace_asset_binary(
+    return await serve_workspace_asset_binary(
         request=request,
         workspace_id=workspace_id,
         asset=asset,
@@ -245,8 +245,8 @@ async def get_workspace_asset_file(
     """受保护的工作空间资产二进制读取入口，支持版本 hash、ETag 304 与 Range。"""
 
     service = AssetService(session)
-    asset = await service._get_asset_or_raise(workspace_id, asset_id)
-    return await _serve_workspace_asset_binary(
+    asset = await service.get_asset_or_raise(workspace_id, asset_id)
+    return await serve_workspace_asset_binary(
         request=request,
         workspace_id=workspace_id,
         asset=asset,
@@ -277,7 +277,7 @@ async def get_workspace_asset_by_hash(
 
     service = AssetService(session)
     asset, _ = await service.get_asset_by_hash(workspace_id, file_hash)
-    return await _serve_workspace_asset_binary(
+    return await serve_workspace_asset_binary(
         request=request,
         workspace_id=workspace_id,
         asset=asset,
@@ -289,7 +289,7 @@ async def get_workspace_asset_by_hash(
 
 
 
-async def _serve_workspace_asset_binary(
+async def serve_workspace_asset_binary(
     *,
     request: Request,
     workspace_id: int,
@@ -378,7 +378,7 @@ async def update_workspace_asset_content(
         request.content,
         change_note=request.change_note,
     )
-    return await _build_asset_response(session, workspace_id, asset)
+    return await build_asset_response(session, workspace_id, asset)
 
 
 @router.put("/workspaces/{workspace_id}/assets/{asset_id}", response_model=AssetResponse)
@@ -402,7 +402,7 @@ async def update_workspace_asset(
         approx_aspect_ratio_provided="approx_aspect_ratio" in request.model_fields_set,
         aspect_ratio_source="manual",
     )
-    return await _build_asset_response(session, workspace_id, asset)
+    return await build_asset_response(session, workspace_id, asset)
 
 
 @router.post("/workspaces/{workspace_id}/assets/{asset_id}/replace", response_model=AssetResponse)
@@ -425,7 +425,7 @@ async def replace_workspace_asset_file(
         file,
         expected_file_hash=expected_file_hash,
     )
-    return await _build_asset_response(session, workspace_id, asset)
+    return await build_asset_response(session, workspace_id, asset)
 
 
 @router.post("/workspaces/{workspace_id}/assets/{asset_id}/copy", response_model=AssetResponse)
@@ -448,7 +448,7 @@ async def copy_workspace_asset(
         status=request.status,
         archive_reason=request.archive_reason,
     )
-    return await _build_asset_response(session, workspace_id, asset)
+    return await build_asset_response(session, workspace_id, asset)
 
 
 @router.post("/workspaces/{workspace_id}/assets/{asset_id}/archive", response_model=AssetResponse)
@@ -462,7 +462,7 @@ async def archive_workspace_asset(
     """归档资源；归档资源仍保持公开访问和引用解析能力。"""
 
     asset = await AssetService(session).archive_asset(workspace_id, asset_id, archive_reason=request.archive_reason)
-    return await _build_asset_response(session, workspace_id, asset)
+    return await build_asset_response(session, workspace_id, asset)
 
 
 @router.post("/workspaces/{workspace_id}/assets/batch-archive", response_model=AssetBatchOperationResponse)
@@ -529,7 +529,7 @@ async def restore_workspace_asset(
     """恢复普通归档资源；历史副本不可直接恢复。"""
 
     asset = await AssetService(session).restore_asset(workspace_id, asset_id, restore_reason=request.restore_reason)
-    return await _build_asset_response(session, workspace_id, asset)
+    return await build_asset_response(session, workspace_id, asset)
 
 
 @router.post("/workspaces/{workspace_id}/assets/batch-restore", response_model=AssetBatchOperationResponse)

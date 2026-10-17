@@ -315,7 +315,8 @@ class Model3dGlbService:
             raise _format_invalid(f"{field} 的 data URI 格式非法。")
         try:
             if header.endswith(";base64"):
-                return base64.b64decode(payload, validate=False)
+                # validate=True：非法字符显式失败，不让畸形 data URI 静默通过长度对拍。
+                return base64.b64decode(payload, validate=True)
             return unquote_to_bytes(payload)
         except (binascii.Error, ValueError) as error:
             raise _format_invalid(f"{field} 的 data URI 载荷无法解码。") from error

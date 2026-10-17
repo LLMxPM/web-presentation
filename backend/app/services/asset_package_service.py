@@ -140,7 +140,7 @@ class AssetPackageService:
 
         assets: list[WorkspaceAsset] = []
         for asset_id in AssetService._normalize_batch_asset_ids(asset_ids):
-            assets.append(await self.asset_service._get_asset_or_raise(workspace_id, asset_id))
+            assets.append(await self.asset_service.get_asset_or_raise(workspace_id, asset_id))
         return assets
 
     async def _import_package_asset(self, workspace_id: int, package_asset: PackageAsset) -> AssetPackageImportItem:

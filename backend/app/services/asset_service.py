@@ -338,7 +338,7 @@ class AssetService:
     async def get_asset_content(self, workspace_id: int, asset_id: int) -> str:
         """读取可编辑资源的 UTF-8 文本内容。"""
 
-        asset = await self._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, asset_id)
         self._ensure_content_readable(asset)
         raw_content = await self.driver.read_content(workspace_id, asset.file_name)
         try:
@@ -349,7 +349,7 @@ class AssetService:
     async def preview_content_update(self, workspace_id: int, asset_id: int, content: str) -> dict[str, object]:
         """预览资源内容写入 diff，不产生历史副本或实际写入。"""
 
-        asset = await self._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, asset_id)
         self._ensure_asset_content_writable(asset)
         asset_type = AssetType(asset.asset_type)
         new_content, _ = self._validate_editable_content(asset_type, asset.original_name, content)
@@ -372,7 +372,7 @@ class AssetService:
     ) -> WorkspaceAsset:
         """替换可编辑资源内容，并在写入前自动创建 archived 历史副本。"""
 
-        asset = await self._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, asset_id)
         self._ensure_asset_content_writable(asset)
         asset_type = AssetType(asset.asset_type)
         normalized_content, content_type = self._validate_editable_content(asset_type, asset.original_name, content)
@@ -411,7 +411,7 @@ class AssetService:
         `commit=False` 供 External 幂等事务复用，由调用方统一提交。
         """
 
-        asset = await self._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, asset_id)
         self._ensure_can_write_current_asset(asset)
         asset_type = AssetType(asset.asset_type)
         normalized_expected = str(expected_file_hash or "").strip() or None
@@ -492,8 +492,10 @@ class AssetService:
 
         历史快照与指针切换处于同一事务；基线在提交前被并发替换更新时整体回滚，
         返回 409 版本冲突，不改变当前记录，也不删除仍被历史引用的旧文件。
-        commit=False 时由调用方统一提交；历史快照始终复用旧文件名，
-        提交后的旧文件清理与 commit=True 路径一致地不会误删。
+        commit=False（External 路径）时由调用方统一提交，且不做旧文件清理：
+        历史快照始终复用旧 file_name，旧文件本就不会因替换而失去引用。
+        409 冲突路径不删除本次已上传的新 blob：存储按 {file_hash}{ext} 内容寻址，
+        同内容 blob 与其他资源共享，删除可能破坏共享；无主 blob 依赖未来统一 GC。
         """
 
         old_file_name = asset.file_name
@@ -557,7 +559,7 @@ class AssetService:
     ) -> WorkspaceAsset:
         """复制资源记录并复用物理文件指针；不会复制为历史副本。"""
 
-        source = await self._get_asset_or_raise(workspace_id, asset_id)
+        source = await self.get_asset_or_raise(workspace_id, asset_id)
         normalized_name = self._normalize_asset_name(name) if name else await self._build_available_asset_name(workspace_id, f"{source.name}_copy")
         await self._ensure_asset_name_available(workspace_id, normalized_name)
         normalized_original_name = self._normalize_original_name(original_name) if original_name else source.original_name
@@ -598,7 +600,7 @@ class AssetService:
     ) -> WorkspaceAsset:
         """归档资源；归档后保留 name、hash 与公开访问能力。"""
 
-        asset = await self._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, asset_id)
         if asset.source_asset_id is not None or asset.history_kind:
             raise AppException(status_code=409, code="ASSET_HISTORY_ARCHIVE_FORBIDDEN", detail="历史副本已是归档记录，不允许再次归档。")
         if asset.status == RecordStatus.ARCHIVED.value:
@@ -619,7 +621,7 @@ class AssetService:
         failures: list[dict[str, object]] = []
         for asset_id in self._normalize_batch_asset_ids(asset_ids):
             try:
-                asset = await self._get_asset_or_raise(workspace_id, asset_id)
+                asset = await self.get_asset_or_raise(workspace_id, asset_id)
                 self._ensure_normal_asset_for_archive(asset)
                 await self._archive_asset_model(asset, archive_reason=archive_reason, commit=True)
                 succeeded_ids.append(asset_id)
@@ -639,7 +641,7 @@ class AssetService:
     ) -> WorkspaceAsset:
         """恢复普通归档资源；写入历史副本保持 archived，不允许直接恢复为 active。"""
 
-        asset = await self._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, asset_id)
         if asset.history_kind or asset.source_asset_id is not None:
             raise AppException(status_code=409, code="ASSET_HISTORY_RESTORE_FORBIDDEN", detail="历史副本不可直接恢复为 active，请复制为新资源或写回当前资源。")
         asset.status = RecordStatus.ACTIVE.value
@@ -696,7 +698,7 @@ class AssetService:
         ordered_ids.extend(item for item in normalized_ids if item not in history_ids)
         for asset_id in ordered_ids:
             try:
-                await self._get_asset_or_raise(workspace_id, asset_id)
+                await self.get_asset_or_raise(workspace_id, asset_id)
                 await self.delete_asset(workspace_id, asset_id)
                 succeeded_ids.append(asset_id)
             except AppException as error:
@@ -724,7 +726,7 @@ class AssetService:
     ) -> WorkspaceAsset:
         """更新资源元数据；不改变物理文件指针，也不生成历史副本。"""
 
-        asset = await self._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, asset_id)
         normalized_name = self._normalize_asset_name(name) if name is not None else asset.name
         normalized_original_name = self._normalize_original_name(original_name) if original_name is not None else asset.original_name
         normalized_description = self._normalize_description(description) if description is not None else asset.description
@@ -864,7 +866,7 @@ class AssetService:
         if await font_service._is_font_config_referenced(workspace_id, font_config):
             raise conflict_error
 
-        asset = await self._get_asset_or_raise(workspace_id, font_config.asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, font_config.asset_id)
         if asset.asset_type != AssetType.FONT.value:
             raise AppException(status_code=409, code="FONT_ASSET_INVALID", detail="字体注册关联的资源不是字体文件，无法一并删除。")
 
@@ -882,7 +884,7 @@ class AssetService:
     async def delete_unregistered_font_asset(self, workspace_id: int, asset_id: int) -> None:
         """硬删除未注册字体资产；若存在字体注册或源码引用则拒绝。"""
 
-        asset = await self._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, asset_id)
         if asset.asset_type != AssetType.FONT.value:
             raise AppException(status_code=400, code="FONT_ASSET_REQUIRED", detail="仅允许通过该接口删除字体文件。")
 
@@ -900,7 +902,7 @@ class AssetService:
     async def preview_asset_references(self, workspace_id: int, asset_id: int) -> AssetReferenceSummary:
         """统计资源在主题、字体、页面与组件中的引用，供删除阻断和前端提示使用。"""
 
-        asset = await self._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.get_asset_or_raise(workspace_id, asset_id)
         references: list[dict[str, object]] = []
 
         themes = await self._list_theme_references(workspace_id, asset)
@@ -1080,7 +1082,7 @@ class AssetService:
         await self.session.flush()
         return history
 
-    async def _get_asset_or_raise(self, workspace_id: int, asset_id: int) -> WorkspaceAsset:
+    async def get_asset_or_raise(self, workspace_id: int, asset_id: int) -> WorkspaceAsset:
         """按工作空间和资源 ID 查询资源，不存在时抛出统一业务异常。"""
 
         asset = await self.session.scalar(

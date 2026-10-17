@@ -523,7 +523,7 @@ async def _create_entity(
         )
     if mode == "copy" and resource_type == "asset":
         async with session_factory() as session:
-            source_asset = await AssetService(session)._get_asset_or_raise(
+            source_asset = await AssetService(session).get_asset_or_raise(
                 workspace_id,
                 _required_target_id(source_id, "复制资源时必须提供 source_id。"),
             )

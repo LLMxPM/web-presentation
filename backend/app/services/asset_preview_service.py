@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
 from urllib.parse import urlencode
 
 import yaml
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.time_utils import utc_now
 from app.models.asset import WorkspaceAsset
 from app.schemas.asset import resolve_asset_content_editable
 from app.schemas.project_app_config import (
@@ -20,7 +18,7 @@ from app.schemas.project_app_config import (
     build_project_app_config_document,
 )
 from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
-from app.services.asset_binding_service import OWNER_KIND_PREVIEW_ARTIFACT, AssetBindingService
+from app.services.asset_binding_service import AssetBindingService
 from app.services.asset_service import AssetService
 from app.services.asset_manifest_metadata_service import build_asset_manifest_metadata
 from app.services.component_preview_service import ComponentPreviewService
@@ -53,7 +51,7 @@ class AssetPreviewService:
         """为指定资源创建短生命周期预览 artifact。"""
 
         settings = get_settings()
-        asset = await self.asset_service._get_asset_or_raise(workspace_id, asset_id)
+        asset = await self.asset_service.get_asset_or_raise(workspace_id, asset_id)
         sandbox_project = await self.component_preview_service._ensure_workspace_preview_project(workspace_id)
         artifact_id = f"rt_{uuid.uuid4().hex}"
         asset_base_url = f"{settings.backend_public_base_url.rstrip('/')}/preview/artifacts/{artifact_id}/assets"
@@ -93,7 +91,7 @@ class AssetPreviewService:
             config_bundle=config_bundle,
             modules_data=[],
         )
-        await self._bind_preview_artifact_model3d_assets(
+        await AssetBindingService(self.session).bind_preview_artifact_model3d_assets(
             workspace_id=workspace_id,
             artifact_id=artifact_id,
             asset_metadata=asset_metadata,
@@ -125,27 +123,6 @@ class AssetPreviewService:
             asset_id=asset.id,
             asset_name=asset.name,
         )
-
-    async def _bind_preview_artifact_model3d_assets(
-        self,
-        *,
-        workspace_id: int,
-        artifact_id: str,
-        asset_metadata: dict[str, dict[str, object]],
-    ) -> None:
-        """为资源预览 artifact 中的三维资源建立临时持有并提交，artifact 到期后由对账释放。"""
-
-        settings = get_settings()
-        expires_at = utc_now() + timedelta(seconds=settings.runtime_preview_artifact_ttl_seconds)
-        bindings = await AssetBindingService(self.session).bind_owner_model3d_assets(
-            workspace_id=workspace_id,
-            owner_kind=OWNER_KIND_PREVIEW_ARTIFACT,
-            owner_key=artifact_id,
-            asset_metadata=asset_metadata,
-            expires_at=expires_at,
-        )
-        if bindings:
-            await self.session.commit()
 
     async def _build_config_bundle(
         self,

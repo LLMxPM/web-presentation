@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -15,7 +14,6 @@ from app.core.component_preview_schema import parse_component_preview_schema_tex
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.runtime_module_policy import build_runtime_module_resolver_config
-from app.core.time_utils import utc_now
 from app.models.enums import PageFileType, RecordStatus
 from app.models.workspace import Project, Workspace
 from app.models.workspace_component import WorkspaceComponent
@@ -41,7 +39,6 @@ from app.schemas.project_app_config import (
 from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
 from app.services.asset_binding_service import (
     OWNER_KIND_COMPONENT_VERSION,
-    OWNER_KIND_PREVIEW_ARTIFACT,
     AssetBindingService,
 )
 from app.services.asset_manifest_metadata_service import build_asset_manifest_metadata
@@ -141,7 +138,7 @@ class ComponentPreviewService:
             asset_mapping=asset_mapping,
             asset_metadata=asset_metadata,
         )
-        await self._bind_preview_artifact_model3d_assets(
+        await AssetBindingService(self.session).bind_preview_artifact_model3d_assets(
             workspace_id=component.workspace_id,
             artifact_id=artifact_id,
             asset_metadata=asset_metadata,
@@ -235,27 +232,6 @@ class ComponentPreviewService:
             asset_mapping[name] = file_hash
             asset_metadata[name] = build_asset_manifest_metadata(asset)
 
-    async def _bind_preview_artifact_model3d_assets(
-        self,
-        *,
-        workspace_id: int,
-        artifact_id: str,
-        asset_metadata: dict[str, dict[str, object]],
-    ) -> None:
-        """为组件预览 artifact 中的三维资源建立临时持有并提交，artifact 到期后由对账释放。"""
-
-        settings = get_settings()
-        expires_at = utc_now() + timedelta(seconds=settings.runtime_preview_artifact_ttl_seconds)
-        bindings = await AssetBindingService(self.session).bind_owner_model3d_assets(
-            workspace_id=workspace_id,
-            owner_kind=OWNER_KIND_PREVIEW_ARTIFACT,
-            owner_key=artifact_id,
-            asset_metadata=asset_metadata,
-            expires_at=expires_at,
-        )
-        if bindings:
-            await self.session.commit()
-
     async def create_source_preview_artifact(
         self,
         *,
@@ -313,7 +289,7 @@ class ComponentPreviewService:
         await self._commit_metadata_backfills()
         artifact_id = f"rt_{uuid.uuid4().hex}"
         asset_mapping, asset_metadata = await self.preview_service._build_workspace_asset_mapping(workspace_id)
-        await self._bind_preview_artifact_model3d_assets(
+        await AssetBindingService(self.session).bind_preview_artifact_model3d_assets(
             workspace_id=workspace_id,
             artifact_id=artifact_id,
             asset_metadata=asset_metadata,

@@ -95,7 +95,7 @@ async def test_analyze_visuals_combines_attachment_asset_and_page_screenshot(mon
         def __init__(self, session):  # noqa: ANN001
             self.driver = SimpleNamespace(read_content=self.read_content)
 
-        async def _get_asset_or_raise(self, workspace_id: int, asset_id: int):
+        async def get_asset_or_raise(self, workspace_id: int, asset_id: int):
             assert (workspace_id, asset_id) == (2, 8)
             return asset
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -87,6 +88,50 @@ class PageScreenshotFingerprintService:
 
         return await self._with_page_model3d_identity(page, project_snapshot)
 
+    async def build_page_snapshots_from_project(
+        self,
+        pages: Sequence[Page],
+        project_snapshot: PageScreenshotConfigSnapshot,
+    ) -> dict[int, PageScreenshotConfigSnapshot]:
+        """批量附加页面级三维引用身份；绑定与资源各一次批量查询，避免逐页 N+1。"""
+
+        if not pages:
+            return {}
+        page_ids = [int(page.id) for page in pages]
+        version_rows = (
+            await self.session.execute(
+                select(PageVersion.page_id, PageVersion.id, PageVersion.version_no)
+                .where(PageVersion.page_id.in_(page_ids))
+            )
+        ).all()
+        version_id_by_page_key = {
+            (int(row.page_id), int(row.version_no)): int(row.id)
+            for row in version_rows
+        }
+        workspace_id = int(pages[0].workspace_id) if pages[0].workspace_id is not None else None
+        if workspace_id is None:
+            return {int(page.id): project_snapshot for page in pages}
+        owner_keys = [
+            str(version_id)
+            for page in pages
+            if (version_id := version_id_by_page_key.get((int(page.id), int(page.current_version_no)))) is not None
+        ]
+        tokens_map = await Model3dReferenceCollector(self.session).list_owner_live_asset_tokens_bulk(
+            workspace_id=workspace_id,
+            owner_kind=OWNER_KIND_PAGE_VERSION,
+            owner_keys=owner_keys,
+        )
+        return {
+            int(page.id): self._apply_model3d_tokens(
+                project_snapshot,
+                tokens_map.get(
+                    str(version_id_by_page_key.get((int(page.id), int(page.current_version_no)))),
+                    [],
+                ),
+            )
+            for page in pages
+        }
+
     async def _with_page_model3d_identity(
         self,
         page: Page,
@@ -95,6 +140,15 @@ class PageScreenshotFingerprintService:
         """把页面绑定的三维资源实时身份并入 config hash；无三维引用时保持基础快照。"""
 
         model3d_tokens = await self._collect_page_model3d_tokens(page)
+        return self._apply_model3d_tokens(base, model3d_tokens)
+
+    def _apply_model3d_tokens(
+        self,
+        base: PageScreenshotConfigSnapshot,
+        model3d_tokens: list[str],
+    ) -> PageScreenshotConfigSnapshot:
+        """把已解析的三维身份 token 并入基础快照；空 token 直接返回基础快照。"""
+
         if not model3d_tokens:
             return base
         return PageScreenshotConfigSnapshot(

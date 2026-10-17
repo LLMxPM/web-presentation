@@ -161,7 +161,7 @@ class AssetRenderHintBackfillJobService:
         if job.status != "running" or not owner or job.worker_id != owner:
             return
         try:
-            asset = await self.asset_service._get_asset_or_raise(job.workspace_id, job.asset_id)
+            asset = await self.asset_service.get_asset_or_raise(job.workspace_id, job.asset_id)
             self._ensure_job_still_targets_asset(job, asset)
             current_metadata = asset.render_metadata
             if AssetRenderMetadataService.is_manual_metadata(current_metadata) and not job.overwrite_manual:
@@ -306,7 +306,7 @@ class AssetRenderHintBackfillJobService:
             await self.session.rollback()
             return False
         if apply_render_metadata is not None and apply_asset_id is not None and apply_workspace_id is not None:
-            asset = await self.asset_service._get_asset_or_raise(apply_workspace_id, apply_asset_id)
+            asset = await self.asset_service.get_asset_or_raise(apply_workspace_id, apply_asset_id)
             asset.render_metadata = apply_render_metadata
         await self.session.commit()
         return True

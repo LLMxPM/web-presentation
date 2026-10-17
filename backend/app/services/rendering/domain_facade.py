@@ -267,7 +267,12 @@ class RenderDomainFacade:
                 await write_session.commit()
             except Exception:
                 await write_session.rollback()
-                logger.warning("渲染请求三维资源持有写入失败。", exc_info=True)
+                # fail-open 设计：持有失败不回滚渲染请求，但必须留结构化信号便于发现系统性失败。
+                logger.warning(
+                    "渲染请求三维资源持有写入失败。",
+                    extra={"event": "render.binding.failed", "request_id": request_id},
+                    exc_info=True,
+                )
         except Exception:
             if owns_write and write_session is not None:
                 await write_session.close()

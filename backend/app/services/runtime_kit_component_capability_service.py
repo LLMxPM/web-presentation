@@ -17,6 +17,7 @@ from app.repositories.workspace_repository import WorkspaceRepository
 from app.schemas.component_preview_options import ComponentPreviewOptions
 from app.schemas.release import PreviewArtifactResponse
 from app.schemas.runtime_kit import RuntimeKitCapabilityItem, RuntimeKitCapabilityKind, RuntimeKitCapabilityListResponse
+from app.services.asset_binding_service import AssetBindingService
 from app.services.component_preview_service import ComponentPreviewService
 from app.services.preview_service import PreviewService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
@@ -125,7 +126,7 @@ class RuntimeKitComponentCapabilityService:
         await self.component_preview_service._commit_metadata_backfills()
         artifact_id = f"rt_{uuid.uuid4().hex}"
         asset_mapping, asset_metadata = await self.preview_service._build_workspace_asset_mapping(workspace_id)
-        await self.component_preview_service._bind_preview_artifact_model3d_assets(
+        await AssetBindingService(self.session).bind_preview_artifact_model3d_assets(
             workspace_id=workspace_id,
             artifact_id=artifact_id,
             asset_metadata=asset_metadata,

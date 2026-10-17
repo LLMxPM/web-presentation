@@ -27,7 +27,7 @@ from app.schemas.release import (
     PreviewArtifactResponse,
     PreviewEntryDescriptor,
 )
-from app.services.asset_binding_service import OWNER_KIND_PREVIEW_ARTIFACT, AssetBindingService
+from app.services.asset_binding_service import AssetBindingService
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
 
@@ -148,7 +148,7 @@ class PreviewService:
         token_expires_at = datetime.fromtimestamp(now_ts + token_ttl_seconds, tz=UTC).isoformat()
         artifact_expires_at_dt = datetime.fromtimestamp(now_ts + settings.runtime_preview_artifact_ttl_seconds, tz=UTC)
         artifact_expires_at = artifact_expires_at_dt.isoformat()
-        await self._bind_preview_artifact_model3d_assets(
+        await AssetBindingService(self.session).bind_preview_artifact_model3d_assets(
             workspace_id=snapshot.project.workspace_id,
             artifact_id=artifact_id,
             asset_metadata=snapshot.asset_metadata,
@@ -276,27 +276,6 @@ class PreviewService:
             artifact_id=artifact_id,
             artifact_expires_at=str(artifact_expires_at) if artifact_expires_at else None,
         )
-
-
-    async def _bind_preview_artifact_model3d_assets(
-        self,
-        *,
-        workspace_id: int,
-        artifact_id: str,
-        asset_metadata: dict[str, dict[str, object]],
-        expires_at: datetime,
-    ) -> None:
-        """为预览 artifact 中的三维资源建立临时持有并提交，artifact 到期后由对账释放。"""
-
-        bindings = await AssetBindingService(self.session).bind_owner_model3d_assets(
-            workspace_id=workspace_id,
-            owner_kind=OWNER_KIND_PREVIEW_ARTIFACT,
-            owner_key=artifact_id,
-            asset_metadata=asset_metadata,
-            expires_at=expires_at,
-        )
-        if bindings:
-            await self.session.commit()
 
     @staticmethod
     def _append_manifest_extensions(

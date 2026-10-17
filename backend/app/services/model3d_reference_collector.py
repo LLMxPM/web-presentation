@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
@@ -99,6 +100,41 @@ class Model3dReferenceCollector:
             for name in names
         ]
 
+    async def list_owner_live_asset_tokens_bulk(
+        self,
+        *,
+        workspace_id: int,
+        owner_kind: str,
+        owner_keys: Iterable[str],
+    ) -> dict[str, list[str]]:
+        """批量解析多个 owner 的实时文件身份 token；语义与单 owner 版本一致。
+
+        绑定与资源各做一次批量查询，供批量截图刷新等逐 owner 场景避免 N+1。
+        """
+
+        normalized_keys = [str(key) for key in owner_keys if str(key)]
+        if not normalized_keys:
+            return {}
+        bindings_map = await AssetBindingService(self.session).list_owner_bindings_bulk(owner_kind, normalized_keys)
+        names_by_owner: dict[str, list[str]] = {}
+        all_names: set[str] = set()
+        for owner_key, bindings in bindings_map.items():
+            names = sorted(
+                {str(item.resource_name or "").strip() for item in bindings if str(item.resource_name or "").strip()}
+            )
+            names_by_owner[owner_key] = names
+            all_names.update(names)
+        if not all_names:
+            return {key: [] for key in normalized_keys}
+        assets = await self._load_active_model3d_assets(workspace_id=workspace_id, names=all_names)
+        return {
+            owner_key: [
+                f"{name}:{assets[name].file_hash}" if name in assets else f"{name}:missing"
+                for name in names
+            ]
+            for owner_key, names in names_by_owner.items()
+        }
+
     async def _load_active_model3d_assets(
         self,
         *,
@@ -140,10 +176,10 @@ class Model3dReferenceCollector:
         """展开组件版本闭包并解析静态资源名对应的三维根资源。"""
 
         pairs: list[tuple[str, str]] = [(str(component), str(resource)) for component, resource in static_resource_items]
-        queued = [int(item) for item in root_component_version_ids]
+        queued: deque[int] = deque(int(item) for item in root_component_version_ids)
         visited: set[int] = set()
         while queued:
-            version_id = queued.pop(0)
+            version_id = queued.popleft()
             if version_id in visited:
                 continue
             visited.add(version_id)

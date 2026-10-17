@@ -85,7 +85,7 @@ async def test_external_asset_file_download_and_304(mock_auth, monkeypatch):
             from app.services import asset_service as asset_service_module
             from app.services import asset_storage_drivers
 
-            monkeypatch.setattr(AssetService, "_get_asset_or_raise", AsyncMock(return_value=mock_asset))
+            monkeypatch.setattr(AssetService, "get_asset_or_raise", AsyncMock(return_value=mock_asset))
             monkeypatch.setattr(asset_storage_drivers, "get_driver", lambda: MockDriver())
             monkeypatch.setattr(asset_service_module, "get_driver", lambda: MockDriver())
 

@@ -1,6 +1,7 @@
 """文件功能：单元测试 W11 公开面收口，验证匿名构建与旧公开端点的阻断、404 与 no-store 策略。"""
 
 from pathlib import Path
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -127,7 +128,8 @@ async def test_build_artifacts_protected_access_flow(monkeypatch):
 def test_gateway_nginx_conf_blocks_public_and_build_artifacts():
     """验证 Gateway Nginx 配置已收口 /public 与 /build-artifacts，禁止代理到上游或回退到 Editor SPA。"""
 
-    conf_path = Path("deploy/docker/nginx/web-presentation.conf")
+    # 锚定仓库根：测试从 backend/ 或仓库根运行时都能找到 deploy 下的真实文件。
+    conf_path = Path(__file__).resolve().parents[3] / "deploy/docker/nginx/web-presentation.conf"
     assert conf_path.is_file(), "web-presentation.conf 不存在"
     content = conf_path.read_text(encoding="utf-8")
 
