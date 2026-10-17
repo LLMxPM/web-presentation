@@ -483,7 +483,8 @@ class ProjectBuildService:
             # 成功必须已有产物：禁止「succeeded 但无产物」的对外可见状态。
             extra_conditions.append(ProjectBuildJob.artifact_storage_key.is_not(None))
 
-        return await transition_owned_running_job(
+        job = await self.session.get(ProjectBuildJob, job_id)
+        transitioned = await transition_owned_running_job(
             self.session,
             ProjectBuildJob,
             job_id=job_id,
@@ -493,6 +494,14 @@ class ProjectBuildService:
             values=values,
             extra_conditions=extra_conditions,
         )
+        if transitioned and job is not None and job.snapshot_release_id is not None:
+            # 任务终态后构建期持有立即失效，不必等 TTL 对账；重复释放保持幂等。
+            await AssetBindingService(self.session).release_owner(
+                OWNER_KIND_RELEASE,
+                str(job.snapshot_release_id),
+            )
+            await self.session.commit()
+        return transitioned
 
     def is_retry_allowed(self, job: ProjectBuildJob) -> bool:
         """判断失败后是否仍可重试：未超重试预算且未超过总 deadline。"""
@@ -792,13 +801,14 @@ async def fail_overdue_pending_build_jobs(session: AsyncSession) -> int:
     """
 
     now = utc_now()
+    overdue_conditions = (
+        ProjectBuildJob.status == "pending",
+        ProjectBuildJob.deadline_at.is_not(None),
+        ProjectBuildJob.deadline_at <= now,
+    )
     result = await session.execute(
         update(ProjectBuildJob)
-        .where(
-            ProjectBuildJob.status == "pending",
-            ProjectBuildJob.deadline_at.is_not(None),
-            ProjectBuildJob.deadline_at <= now,
-        )
+        .where(*overdue_conditions)
         .values(
             status="failed",
             error_message="构建任务超过总执行期限仍未被领取。",
@@ -809,10 +819,19 @@ async def fail_overdue_pending_build_jobs(session: AsyncSession) -> int:
             attempt_id=None,
             **_clear_artifact_fields(),
         )
+        .returning(ProjectBuildJob.id, ProjectBuildJob.snapshot_release_id)
         .execution_options(synchronize_session=False)
     )
+    # RETURNING 只包含本次真正迁移的行，避免与并发领取竞争时误释放仍在途的持有。
+    updated_rows = result.all()
+    release_ids = [row[1] for row in updated_rows if row[1] is not None]
+    if release_ids:
+        await AssetBindingService(session).release_owners(
+            OWNER_KIND_RELEASE,
+            [str(release_id) for release_id in release_ids],
+        )
     await session.commit()
-    recovered = int(result.rowcount or 0)
+    recovered = len(updated_rows)
     if recovered:
         logger.warning(
             "已收敛超过总期限的待执行构建任务。",
@@ -850,19 +869,38 @@ async def recover_expired_build_jobs(
         ProjectBuildJob.max_attempts,
         ProjectBuildJob.deadline_at,
         ProjectBuildJob.artifact_storage_key,
+        ProjectBuildJob.snapshot_release_id,
     ]
+    recovery_kinds: dict[int, str] = {}
+    release_id_by_job: dict[int, int] = {}
 
     def _classify(row: Row[Any], attempt_limit_fallback: int) -> str:
+        job_id = int(row[0])
+        if row[5] is not None:
+            release_id_by_job[job_id] = int(row[5])
         # 产物已提升：按成功收敛，不得清空产物后再重派。
         if row[4]:
+            recovery_kinds[job_id] = "succeeded"
             return "succeeded"
         attempt_limit = int(row[2] or 3)
         attempt_count = int(row[1] or 0)
         deadline_at: datetime | None = row[3]
         past_deadline = deadline_at is not None and now >= deadline_at
         if attempt_count < attempt_limit and not past_deadline:
+            recovery_kinds[job_id] = "requeued"
             return "requeued"
+        recovery_kinds[job_id] = "failed"
         return "failed"
+
+    async def _release_terminal_holds(job_id: int) -> None:
+        """恢复成功迁移到终态时释放构建期持有；回到 pending 的任务仍保留。"""
+
+        if recovery_kinds.get(job_id) not in {"succeeded", "failed"}:
+            return
+        release_id = release_id_by_job.get(job_id)
+        if release_id is None:
+            return
+        await AssetBindingService(session).release_owners(OWNER_KIND_RELEASE, [str(release_id)])
 
     def _recover_values(kind: str, row: Row[Any], recovered_at: datetime) -> dict[str, Any]:
         clear_fields = _clear_artifact_fields()
@@ -916,6 +954,7 @@ async def recover_expired_build_jobs(
         recoverable_or_conditions=recoverable_or,
         candidate_columns=candidate_columns,
         kind_extra_where=_kind_extra_where,
+        on_recovered=_release_terminal_holds,
     )
     # 历史返回值语义：本次发生状态迁移的行数（含产物已提升的 succeeded）。
     return summary.total_count

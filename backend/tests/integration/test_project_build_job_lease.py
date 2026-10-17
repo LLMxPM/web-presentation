@@ -8,10 +8,16 @@ from datetime import timedelta
 import pytest
 from httpx import AsyncClient
 
+from sqlalchemy import select
+
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
+from app.models.asset import WorkspaceAsset
+from app.models.asset_binding import AssetReferenceBinding
+from app.models.enums import RecordStatus
 from app.models.project_build_job import ProjectBuildJob
+from app.services.asset_binding_service import OWNER_KIND_RELEASE
 from app.services.project_artifact_builder import ProjectArtifactSnapshot
 from app.services.project_build_service import (
     ProjectBuildService,
@@ -65,6 +71,38 @@ async def _create_build_job(
             job.max_attempts = max_attempts
             await session.commit()
     return job_payload
+
+
+async def _create_release_asset_binding(*, workspace_id: int, release_id: int, name: str) -> None:
+    """为构建快照手工建立一条三维资源持有，验证终态释放。"""
+
+    async with get_session_factory()() as session:
+        asset = WorkspaceAsset(
+            workspace_id=workspace_id,
+            name=name,
+            file_name=f"{name}.glb",
+            original_name=f"{name}.glb",
+            file_size=64,
+            file_hash="b" * 64,
+            content_type="model/gltf-binary",
+            asset_type="model3d",
+            tags=[],
+            status=RecordStatus.ACTIVE.value,
+        )
+        session.add(asset)
+        await session.flush()
+        session.add(
+            AssetReferenceBinding(
+                workspace_id=workspace_id,
+                owner_kind=OWNER_KIND_RELEASE,
+                owner_key=str(release_id),
+                resource_name=name,
+                asset_id=asset.id,
+                file_hash="b" * 64,
+                expires_at=utc_now() + timedelta(hours=2),
+            )
+        )
+        await session.commit()
 
 
 @pytest.mark.asyncio
@@ -190,6 +228,85 @@ async def test_run_project_build_job_should_requeue_then_fail_on_budget(
         assert job.status == "failed"
         assert job.attempt_count == 2
         assert job.finished_at is not None
+
+
+@pytest.mark.asyncio
+async def test_complete_job_should_release_release_asset_bindings(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """构建任务进入失败终态后应立即释放构建期资源持有，不必等待 TTL。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(authenticated_client, workspace_id, project_id, monkeypatch)
+    job_id = job_payload["id"]
+    release_id = job_payload["snapshot_release_id"]
+
+    await _create_release_asset_binding(workspace_id=workspace_id, release_id=release_id, name="build-model")
+
+    async with get_session_factory()() as session:
+        claimed = await ProjectBuildService(session, lease_owner="worker-a").claim_job(job_id=job_id)
+        assert claimed is not None
+
+    async with get_session_factory()() as session:
+        completed = await ProjectBuildService(session, lease_owner="worker-a").complete_job(
+            job_id=job_id,
+            lease_owner="worker-a",
+            success=False,
+            error_message="构建失败。",
+        )
+        assert completed
+
+    async with get_session_factory()() as session:
+        remaining = (
+            await session.execute(
+                select(AssetReferenceBinding).where(AssetReferenceBinding.owner_key == str(release_id))
+            )
+        ).scalars().all()
+        assert remaining == []
+
+
+@pytest.mark.asyncio
+async def test_recover_expired_build_job_should_release_hold_when_terminal(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """过期恢复把任务收敛为 failed 时同样立即释放构建期资源持有。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    job_payload = await _create_build_job(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        monkeypatch,
+        max_attempts=1,
+    )
+    job_id = job_payload["id"]
+    release_id = job_payload["snapshot_release_id"]
+    await _create_release_asset_binding(workspace_id=workspace_id, release_id=release_id, name="recover-model")
+
+    async with get_session_factory()() as session:
+        claimed = await ProjectBuildService(session, lease_owner="worker-a").claim_job(
+            job_id=job_id,
+            lease_owner="worker-a",
+        )
+        assert claimed is not None
+        claimed.lease_expires_at = utc_now() - timedelta(seconds=1)
+        await session.commit()
+
+    async with get_session_factory()() as session:
+        assert await recover_expired_build_jobs(session) == 1
+
+    async with get_session_factory()() as session:
+        job = await session.get(ProjectBuildJob, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        remaining = (
+            await session.execute(
+                select(AssetReferenceBinding).where(AssetReferenceBinding.owner_key == str(release_id))
+            )
+        ).scalars().all()
+        assert remaining == []
 
 
 @pytest.mark.asyncio

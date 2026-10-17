@@ -11,7 +11,7 @@ from app.models.project_build_job import ProjectBuildJob
 from app.services.project_build_service import ProjectBuildService
 from app.services.token_service import TokenService
 from httpx import AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from tests.integration.test_project_build import (
     aiter_chunks,
@@ -327,6 +327,10 @@ async def test_overdue_pending_build_job_should_fail(
     from datetime import timedelta
 
     from app.core.time_utils import utc_now
+    from app.models.asset import WorkspaceAsset
+    from app.models.asset_binding import AssetReferenceBinding
+    from app.models.enums import RecordStatus
+    from app.services.asset_binding_service import OWNER_KIND_RELEASE
     from app.services.project_build_service import fail_overdue_pending_build_jobs
 
     workspace_id, project_id = await create_active_project(authenticated_client)
@@ -352,8 +356,34 @@ async def test_overdue_pending_build_job_should_fail(
     )
     assert create_response.status_code == 200
     job_id = create_response.json()["id"]
+    release_id = create_response.json()["snapshot_release_id"]
 
     async with get_session_factory()() as session:
+        asset = WorkspaceAsset(
+            workspace_id=workspace_id,
+            name="overdue-model",
+            file_name="overdue-model.glb",
+            original_name="overdue-model.glb",
+            file_size=64,
+            file_hash="a" * 64,
+            content_type="model/gltf-binary",
+            asset_type="model3d",
+            tags=[],
+            status=RecordStatus.ACTIVE.value,
+        )
+        session.add(asset)
+        await session.flush()
+        session.add(
+            AssetReferenceBinding(
+                workspace_id=workspace_id,
+                owner_kind=OWNER_KIND_RELEASE,
+                owner_key=str(release_id),
+                resource_name="overdue-model",
+                asset_id=asset.id,
+                file_hash="a" * 64,
+                expires_at=utc_now() + timedelta(hours=2),
+            )
+        )
         job = await session.get(ProjectBuildJob, job_id)
         assert job is not None
         job.deadline_at = utc_now() - timedelta(seconds=1)
@@ -368,6 +398,12 @@ async def test_overdue_pending_build_job_should_fail(
         assert job is not None
         assert job.status == "failed"
         assert "总执行期限" in (job.error_message or "")
+        remaining_bindings = (
+            await session.execute(
+                select(AssetReferenceBinding).where(AssetReferenceBinding.owner_key == str(release_id))
+            )
+        ).scalars().all()
+        assert remaining_bindings == []
 
 
 @pytest.mark.asyncio

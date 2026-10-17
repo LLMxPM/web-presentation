@@ -177,6 +177,19 @@ async def test_protected_asset_ids_and_invalid_owner_kind(app_session: AsyncSess
     assert await service.protected_asset_ids([int(asset.id), 99999]) == {int(asset.id)}
     assert await service.protected_asset_ids([]) == set()
 
+    # 已过期但尚未被对账清理的持有不得继续提供删除保护。
+    expired_asset = _build_root_asset(workspace.id, name="expired-product", file_hash="0" * 64)
+    app_session.add(expired_asset)
+    await app_session.flush()
+    await service.bind_owner_model3d_assets(
+        workspace_id=workspace.id,
+        owner_kind=OWNER_KIND_PREVIEW_ARTIFACT,
+        owner_key="502",
+        asset_metadata=_model3d_metadata("expired-product"),
+        expires_at=utc_now() - timedelta(minutes=5),
+    )
+    assert await service.protected_asset_ids([int(expired_asset.id)]) == set()
+
     with pytest.raises(AppException) as error:
         await service.bind_owner_model3d_assets(
             workspace_id=workspace.id,

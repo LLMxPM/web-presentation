@@ -224,6 +224,104 @@ async def test_page_version_tokens_should_walk_component_closure(app_session: As
     assert bulk[int(page_version.id)].tokens == resolved.tokens
 
 
+async def test_page_version_tokens_bulk_should_expand_shared_component_closure_per_owner(
+    app_session: AsyncSession,
+) -> None:
+    """多个页面共享同一组件版本时，每个页面都展开其下游闭包，不因其他页面先行展开而漏 token。"""
+
+    workspace = await _create_workspace(app_session, "shared-closure")
+    downstream_model = _build_asset(
+        workspace.id, name="downstream_model", asset_type="model3d", file_hash="2" * 64
+    )
+    host_icon = _build_asset(workspace.id, name="host_icon", asset_type="icon", file_hash="3" * 64)
+    app_session.add_all([downstream_model, host_icon])
+    await app_session.flush()
+
+    downstream_version = await _create_component_version(
+        app_session, workspace.id, code="P_Downstream", name="下游组件"
+    )
+    app_session.add(
+        ComponentVersionComponentResource(
+            workspace_id=workspace.id,
+            component_id=downstream_version.component_id,
+            component_version_id=downstream_version.id,
+            component_name="AssetModel",
+            resource_name="downstream_model",
+        )
+    )
+    host_version = await _create_component_version(app_session, workspace.id, code="P_HostShared", name="共享宿主")
+    app_session.add_all(
+        [
+            ComponentVersionComponentResource(
+                workspace_id=workspace.id,
+                component_id=host_version.component_id,
+                component_version_id=host_version.id,
+                component_name="Icon",
+                resource_name="host_icon",
+            ),
+            ComponentVersionComponentDependency(
+                component_id=host_version.component_id,
+                component_version_id=host_version.id,
+                dependency_kind="workspace_component",
+                dependency_component_id=downstream_version.component_id,
+                dependency_component_version_id=downstream_version.id,
+                dependency_component_code="p_downstream",
+                dependency_component_version_no=1,
+            ),
+        ]
+    )
+    await app_session.flush()
+
+    page_a = await _create_page_version(app_session, workspace.id, code_suffix="shared-a")
+    page_b = await _create_page_version(app_session, workspace.id, code_suffix="shared-b")
+    # 页面 A 同时直接依赖宿主和下游组件；页面 B 只依赖宿主，必须仍能沿宿主闭包触达下游资源。
+    app_session.add_all(
+        [
+            PageVersionComponentDependency(
+                page_id=page_a.page_id,
+                page_version_id=page_a.id,
+                dependency_kind="workspace_component",
+                component_id=host_version.component_id,
+                component_version_id=host_version.id,
+                component_code="p_host_shared",
+                component_version_no=1,
+            ),
+            PageVersionComponentDependency(
+                page_id=page_a.page_id,
+                page_version_id=page_a.id,
+                dependency_kind="workspace_component",
+                component_id=downstream_version.component_id,
+                component_version_id=downstream_version.id,
+                component_code="p_downstream",
+                component_version_no=1,
+            ),
+            PageVersionComponentDependency(
+                page_id=page_b.page_id,
+                page_version_id=page_b.id,
+                dependency_kind="workspace_component",
+                component_id=host_version.component_id,
+                component_version_id=host_version.id,
+                component_code="p_host_shared",
+                component_version_no=1,
+            ),
+        ]
+    )
+    await app_session.flush()
+
+    resolver = OwnerResourceTokenResolver(app_session)
+    resolved = await resolver.resolve_page_version_tokens_bulk(
+        workspace_id=workspace.id,
+        page_version_ids=[page_a.id, page_b.id],
+    )
+    expected_tokens = [
+        f"asset:downstream_model:{'2' * 64}",
+        f"asset:host_icon:{'3' * 64}",
+    ]
+    assert resolved[int(page_a.id)].tokens == expected_tokens
+    assert resolved[int(page_b.id)].tokens == expected_tokens
+    assert resolved[int(page_b.id)].has_model3d is True
+
+
 async def test_component_version_tokens_should_follow_replacement(app_session: AsyncSession) -> None:
     """组件版本 token 随资源替换与归档变化；无三维引用时不带三维标记。"""
 

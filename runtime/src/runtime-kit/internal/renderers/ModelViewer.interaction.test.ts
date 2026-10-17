@@ -1,4 +1,5 @@
 /** 文件功能：用真实 Three.js 相机和模拟 WebGL 回归 Viewer 尺寸更新、双实例及交互后的静态帧导出。 */
+import * as THREE from 'three'
 import type { Camera } from 'three'
 import { createApp, type App } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,8 +9,12 @@ import ModelViewer from './ModelViewer.vue'
 
 const probes = vi.hoisted(() => ({
   renderers: [] as Array<{ camera: Camera | null }>,
-  controls: [] as Array<{ object: Camera }>,
+  controls: [] as Array<{ object: Camera; target?: { x: number; y: number; z: number } }>,
   resizes: [] as Array<() => void>,
+  clearColors: [] as Array<{ color: { getHexString: () => string }; alpha: number }>,
+  useOrthoCamera: false,
+  useSourceCamera: false,
+  sourceCameraRoll: false,
 }))
 
 vi.mock('./model3d/engine', async (importOriginal) => {
@@ -25,7 +30,9 @@ vi.mock('./model3d/engine', async (importOriginal) => {
       probes.renderers.push(this)
     }
     setPixelRatio() {}
-    setClearColor() {}
+    setClearColor(color: unknown, alpha: number) {
+      probes.clearColors.push({ color: color as { getHexString: () => string }, alpha })
+    }
     setSize(width: number, height: number) {
       this.domElement.width = width
       this.domElement.height = height
@@ -38,10 +45,14 @@ vi.mock('./model3d/engine', async (importOriginal) => {
     forceContextLoss() {}
   }
 
-  /** 保留控制器绑定相机的语义，测试直接模拟旋转后的相机姿态。 */
+  /** 保留真实控制器语义：构造时立即 update 到默认 target，之后 update 按当前 target 修正朝向。 */
   class Controls {
-    constructor(public object: Camera) { probes.controls.push(this) }
-    update() {}
+    target = new THREE.Vector3()
+    constructor(public object: Camera) {
+      probes.controls.push(this)
+      this.update()
+    }
+    update() { this.object.lookAt(this.target) }
     dispose() {}
     addEventListener() {}
   }
@@ -56,7 +67,24 @@ vi.mock('./model3d/engine', async (importOriginal) => {
     parseGlbToResource: async () => {
       const scene = new THREE.Group()
       scene.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial()))
-      return { gltf: { scene }, scenes: [scene], cameras: [], animations: [], dispose() {} }
+      const cameras: import('three').Camera[] = []
+      if (probes.useOrthoCamera) {
+        const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100)
+        scene.add(orthoCamera)
+        cameras.push(orthoCamera)
+      }
+      if (probes.useSourceCamera) {
+        const sourceCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
+        sourceCamera.position.set(4, 5, 6)
+        sourceCamera.lookAt(1, 2, 3)
+        if (probes.sourceCameraRoll) {
+          sourceCamera.rotateZ(Math.PI / 2)
+        }
+        sourceCamera.updateMatrixWorld(true)
+        scene.add(sourceCamera)
+        cameras.push(sourceCamera)
+      }
+      return { gltf: { scene }, scenes: [scene], cameras, animations: [], dispose() {} }
     },
   }
 })
@@ -69,6 +97,10 @@ beforeEach(() => {
   probes.renderers.length = 0
   probes.controls.length = 0
   probes.resizes.length = 0
+  probes.clearColors.length = 0
+  probes.useOrthoCamera = false
+  probes.useSourceCamera = false
+  probes.sourceCameraRoll = false
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width)
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(200)
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(function () {
@@ -90,10 +122,10 @@ afterEach(() => {
 })
 
 /** 挂载真实 Viewer 并等待首帧就绪，返回模型根以驱动正式静态帧准备流程。 */
-async function mountViewer(): Promise<HTMLElement> {
+async function mountViewer(extraProps: Record<string, unknown> = {}): Promise<HTMLElement> {
   const host = document.createElement('div')
   document.body.appendChild(host)
-  const viewerProps = { name: 'product', src: './interaction.glb', interactive: true }
+  const viewerProps = { name: 'product', src: './interaction.glb', interactive: true, ...extraProps }
   const app = createApp(ModelViewer, viewerProps)
   mounted.push(app)
   app.mount(host)
@@ -113,6 +145,67 @@ describe('ModelViewer 交互与静态帧', () => {
     expect(probes.renderers[0].camera).toBe(originalCamera)
     expect((originalCamera as import('three').PerspectiveCamera).aspect).toBe(3.2)
     expect(originalCamera.position.toArray()).toEqual([3, 4, 5])
+  })
+
+  it('启用交互时以显式相机目标为轨道中心，不得回落到原点', async () => {
+    await mountViewer({ cameraPosition: [4, 5, 6], cameraTarget: [1, 2, 3] })
+    const camera = probes.controls[0].object
+    const expected = new THREE.PerspectiveCamera()
+    expected.position.set(4, 5, 6)
+    expected.lookAt(1, 2, 3)
+    expect(camera.quaternion.angleTo(expected.quaternion)).toBeLessThan(1e-6)
+    expect(probes.controls[0].target).toMatchObject({ x: 1, y: 2, z: 3 })
+  })
+
+  it('源相机开启交互后保持原始朝向，不因控制器构造期默认 target 偏转', async () => {
+    probes.useSourceCamera = true
+    await mountViewer({ src: './source-camera.glb' })
+    const camera = probes.controls[0].object
+    const expected = new THREE.PerspectiveCamera()
+    expected.position.set(4, 5, 6)
+    expected.lookAt(1, 2, 3)
+    expect(camera.quaternion.angleTo(expected.quaternion)).toBeLessThan(1e-6)
+  })
+
+  it('带滚转的源相机开启交互后保留滚转角，不被默认上方向扶正', async () => {
+    probes.useSourceCamera = true
+    probes.sourceCameraRoll = true
+    await mountViewer({ src: './rolled-source-camera.glb' })
+    const camera = probes.controls[0].object
+    const expected = new THREE.PerspectiveCamera()
+    expected.position.set(4, 5, 6)
+    expected.lookAt(1, 2, 3)
+    expected.rotateZ(Math.PI / 2)
+    expected.updateMatrixWorld(true)
+    expect(camera.quaternion.angleTo(expected.quaternion)).toBeLessThan(1e-6)
+  })
+
+  it('正交源相机多次改变容器比例后按源视锥重算，不累计放大', async () => {
+    probes.useOrthoCamera = true
+    width = 640
+    // 使用独立地址避开共享模型缓存，确保命中带正交相机的解析结果。
+    await mountViewer({ src: './ortho.glb' })
+    const camera = probes.controls[0].object as THREE.OrthographicCamera
+    expect(camera.type).toBe('OrthographicCamera')
+    expect(camera.right - camera.left).toBeCloseTo(6.4)
+    expect(camera.top - camera.bottom).toBeCloseTo(2)
+
+    width = 320
+    probes.resizes.forEach(resize => resize())
+    expect(camera.right - camera.left).toBeCloseTo(3.2)
+    expect(camera.top - camera.bottom).toBeCloseTo(2)
+
+    width = 640
+    probes.resizes.forEach(resize => resize())
+    expect(camera.right - camera.left).toBeCloseTo(6.4)
+    expect(camera.top - camera.bottom).toBeCloseTo(2)
+  })
+
+  it('背景色按 sRGB 声明转换清屏色，不得按线性工作空间解释', async () => {
+    await mountViewer({ background: '#0f0f10' })
+    const clear = probes.clearColors.at(-1)
+    expect(clear?.alpha).toBe(1)
+    expect(clear?.color.getHexString()).toBe('0f0f10')
   })
 
   it('相同 props 的两个实例旋转后分别采集各自的当前帧', async () => {

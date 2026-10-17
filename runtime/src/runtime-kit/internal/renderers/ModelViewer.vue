@@ -5,6 +5,7 @@
 
 <template>
   <div
+    v-bind="$attrs"
     ref="viewerRoot"
     class="model-viewer"
     :class="{
@@ -16,7 +17,6 @@
     :data-runtime-model-message="stateMessage"
     data-runtime-kit-media="v1"
     data-runtime-kit-media-kind="model3d"
-    v-bind="$attrs"
   >
     <div v-if="state === 'loading'" class="model-viewer__loading">
       <span class="model-viewer__loading-text">正在加载三维模型...</span>
@@ -79,6 +79,8 @@ type CameraMode = 'auto' | 'source'
 
 interface OrbitControlsLike {
   enableDamping?: boolean
+  /** 轨道中心；默认值在原点，必须在首次 update 前显式对齐当前相机姿态。 */
+  target?: { copy: (target: { x: number; y: number; z: number }) => void }
   update: () => void
   dispose: () => void
   addEventListener?: (type: 'change', listener: () => void) => void
@@ -485,7 +487,8 @@ function adaptSourceCamera(camera: ThreeNamespace.Camera, aspect: number): void 
   }
   const orthographic = camera as ThreeNamespace.OrthographicCamera
   if (orthographic.isOrthographicCamera) {
-    const sourceFrustum = resolveOrthographicSourceFrustum({
+    // 首次适配时记录源视锥，后续 resize 必须基于该基线重算，避免逐次放大累积。
+    const sourceFrustum = orthoSourceFrustum ?? resolveOrthographicSourceFrustum({
       left: orthographic.left,
       right: orthographic.right,
       top: orthographic.top,
@@ -708,7 +711,9 @@ function applyBackground(
     targetRenderer.setClearColor(0x000000, 0)
     return
   }
-  targetRenderer.setClearColor(new THREE.Color(color.r, color.g, color.b), color.a)
+  // 组件色值按 sRGB 声明；直接传分量会被 Three.js 当作线性工作空间，导致背景明显偏亮。
+  const clearColor = new THREE.Color().setRGB(color.r, color.g, color.b, THREE.SRGBColorSpace)
+  targetRenderer.setClearColor(clearColor, color.a)
 }
 
 /**
@@ -791,6 +796,53 @@ function handleContextRestored(): void {
 }
 
 /**
+ * 解析交互控制器的初始轨道中心。
+ *
+ * OrbitControls 默认 target 为原点，首次 update 会把相机强行转向原点；
+ * 这里按当前相机类型给出与既有姿态一致的目标点，保证启用交互不改变初始视角。
+ * @param camera 当前相机
+ * @param options 规范化后的展示参数
+ * @param engineRef 已加载引擎
+ * @returns 轨道中心
+ */
+function resolveControlsTarget(
+  camera: ThreeNamespace.Camera,
+  options: ReturnType<typeof normalizeModelViewOptions>['options'],
+  engineRef: Model3dEngine,
+): ThreeNamespace.Vector3 {
+  const { THREE } = engineRef
+  if (options.cameraTarget) {
+    return new THREE.Vector3(options.cameraTarget[0], options.cameraTarget[1], options.cameraTarget[2])
+  }
+  if (cameraMode === 'auto' && autoFitSphere) {
+    return new THREE.Vector3(autoFitSphere.center.x, autoFitSphere.center.y, autoFitSphere.center.z)
+  }
+  // 源相机没有可用的目标点：沿当前视线取场景包围球半径处，保持朝向不变且轨道半径合理。
+  const forward = new THREE.Vector3()
+  camera.getWorldDirection(forward)
+  const radius = activeScene ? computeSceneBoundingSphere(activeScene, engineRef).radius : 0
+  const distance = Number.isFinite(radius) && radius > 0 ? radius : Math.max(camera.position.length(), 1)
+  return camera.position.clone().add(forward.multiplyScalar(distance))
+}
+
+/**
+ * 把相机上方向同步为当前世界姿态的上方向。
+ *
+ * OrbitControls 与 lookAt 都按 `camera.up` 扶正画面；源相机可能带滚转，
+ * 只恢复视线仍会被默认 +Y 上方向扶正，因此构造控制器前必须从世界矩阵取上方向。
+ * @param camera 当前相机
+ * @param engineRef 已加载引擎
+ */
+function alignCameraUpToWorldPose(camera: ThreeNamespace.Camera, engineRef: Model3dEngine): void {
+  const { THREE } = engineRef
+  const elements = camera.matrixWorld.elements
+  const up = new THREE.Vector3(elements[4], elements[5], elements[6])
+  if (up.lengthSq() > 0) {
+    camera.up.copy(up.normalize())
+  }
+}
+
+/**
  * 绑定 canvas 事件与控制器。
  * @param options 规范化后的展示参数
  * @param engineRef 已加载引擎
@@ -807,8 +859,13 @@ function bindCanvasRuntime(
   canvas.addEventListener('webglcontextrestored', contextRestoredHandler, false)
 
   if (options.interactive && engineRef.OrbitControls && renderer && activeCamera) {
+    // OrbitControls 构造函数会立即 update 并把相机转向默认 target（原点），
+    // 因此必须在构造前保存原始视线与上方向；构造后再写回 target 并 update 恢复完整姿态。
+    const controlsTarget = resolveControlsTarget(activeCamera, options, engineRef)
+    alignCameraUpToWorldPose(activeCamera, engineRef)
     const instance = new engineRef.OrbitControls(activeCamera, canvas) as unknown as OrbitControlsLike
     instance.enableDamping = false
+    instance.target?.copy(controlsTarget)
     instance.addEventListener?.('change', () => requestRender())
     instance.update()
     controls = instance

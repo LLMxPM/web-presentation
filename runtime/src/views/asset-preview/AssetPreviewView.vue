@@ -76,7 +76,6 @@
     <AssetModel
       v-else-if="renderType === 'model3d'"
       :name="assetConfig.name"
-      :fallback="assetConfig.url || ''"
       class="w-full h-full"
     />
     <div v-else class="asset-preview-view__state">

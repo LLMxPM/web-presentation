@@ -121,11 +121,19 @@ class AssetBindingService:
     async def release_owner(self, owner_kind: str, owner_key: str) -> int:
         """释放 owner 的全部绑定，返回删除条数；重复释放保持幂等。"""
 
+        return await self.release_owners(owner_kind, [owner_key])
+
+    async def release_owners(self, owner_kind: str, owner_keys: Sequence[str]) -> int:
+        """批量释放多个 owner 的绑定，返回删除条数；已释放或不存在的 owner 直接跳过。"""
+
         self._ensure_owner_kind(owner_kind)
+        normalized = {str(key).strip() for key in owner_keys if str(key).strip()}
+        if not normalized:
+            return 0
         result = await self.session.execute(
             delete(AssetReferenceBinding)
             .where(AssetReferenceBinding.owner_kind == owner_kind)
-            .where(AssetReferenceBinding.owner_key == str(owner_key))
+            .where(AssetReferenceBinding.owner_key.in_(normalized))
         )
         return int(result.rowcount or 0)
 
@@ -155,9 +163,11 @@ class AssetBindingService:
         normalized = {int(item) for item in asset_ids}
         if not normalized:
             return set()
+        # 已过期但尚未被对账循环清理的行不再提供保护，避免到期持有继续阻塞删除。
         result = await self.session.execute(
             select(AssetReferenceBinding.asset_id)
             .where(AssetReferenceBinding.asset_id.in_(normalized))
+            .where(AssetReferenceBinding.expires_at >= utc_now())
             .distinct()
         )
         return {int(item) for item in result.scalars().all()}

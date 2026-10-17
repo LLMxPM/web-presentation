@@ -363,6 +363,70 @@ def test_rejects_triangle_over_budget() -> None:
     _assert_rejected(_build_glb(gltf, payload), "MODEL3D_LIMIT_EXCEEDED", policy=policy)
 
 
+@pytest.mark.parametrize(
+    "case",
+    ["accessor_component_type", "accessor_type", "camera_type", "animation_target_path"],
+)
+def test_rejects_unhashable_values_before_membership_checks(case: str) -> None:
+    """数组等不可哈希取值必须返回 400，而不是在字典/集合成员判断时抛 TypeError。"""
+
+    payload = _triangle_position_bytes()
+    gltf = _minimal_gltf(len(payload))
+    if case == "accessor_component_type":
+        gltf["accessors"][0]["componentType"] = []
+    elif case == "accessor_type":
+        gltf["accessors"][0]["type"] = []
+    elif case == "camera_type":
+        gltf["cameras"] = [{"type": []}]
+    else:
+        gltf["animations"] = [
+            {
+                "samplers": [{"input": 0, "output": 0}],
+                "channels": [{"sampler": 0, "target": {"node": 0, "path": []}}],
+            }
+        ]
+    _assert_rejected(_build_glb(gltf, payload), "MODEL3D_FORMAT_INVALID")
+
+
+@pytest.mark.parametrize("case", ["camera_yfov", "accessor_min", "node_translation"])
+def test_rejects_oversized_json_integers(case: str) -> None:
+    """超出 float 范围的整数不得触发 OverflowError，必须返回 400。"""
+
+    payload = _triangle_position_bytes()
+    gltf = _minimal_gltf(len(payload))
+    huge = 10 ** 400
+    if case == "camera_yfov":
+        gltf["cameras"] = [{"type": "perspective", "perspective": {"yfov": huge, "znear": 0.1}}]
+    elif case == "accessor_min":
+        gltf["accessors"][0]["min"] = [huge, 0, 0]
+    else:
+        gltf["nodes"][0]["translation"] = [huge, 0, 0]
+    _assert_rejected(_build_glb(gltf, payload), "MODEL3D_FORMAT_INVALID")
+
+
+def test_triangle_budget_counts_mesh_instances_per_node() -> None:
+    """同一 mesh 被多个节点实例化时，三角形预算必须按实例数累计。"""
+
+    payload = _triangle_position_bytes()
+    gltf = _minimal_gltf(len(payload))
+    gltf["nodes"] = [{"mesh": 0}, {"mesh": 0}, {"mesh": 0}, {"mesh": 0}]
+    gltf["scenes"] = [{"nodes": [0, 1, 2, 3]}]
+    gltf["scene"] = 0
+    # 单实例 1 个三角形；四个节点实例化后总数 4，必须超过 max_triangles=1。
+    _assert_rejected(
+        _build_glb(gltf, payload),
+        "MODEL3D_LIMIT_EXCEEDED",
+        policy=Model3dAcceptancePolicy(max_triangles=1),
+    )
+
+    # 未超过预算的实例数仍然通过。
+    summary = Model3dGlbService.analyze(
+        _build_glb(gltf, payload),
+        policy=Model3dAcceptancePolicy(max_triangles=4),
+    )
+    assert summary["format"] == "glb"
+
+
 def test_rejects_external_image_uri() -> None:
     """图片引用外部文件被拒绝。"""
 
@@ -459,6 +523,66 @@ def test_rejects_higher_min_version() -> None:
     """minVersion 高于 2.0 被拒绝。"""
 
     _assert_rejected(_build_glb({"asset": {"version": "2.0", "minVersion": "3.0"}}), "MODEL3D_FORMAT_INVALID")
+
+
+@pytest.mark.parametrize("version", ["2", "2.0.0", "02.0", "2.x", " 2.0"])
+def test_rejects_non_schema_asset_version(version: str) -> None:
+    """asset.version 必须严格符合 glTF 官方 <major>.<minor> 格式。"""
+
+    _assert_rejected(_build_glb({"asset": {"version": version}}), "MODEL3D_FORMAT_INVALID")
+
+
+@pytest.mark.parametrize("min_version", ["2", "2.0.0", "02.0", "3.0.0"])
+def test_rejects_non_schema_min_version(min_version: str) -> None:
+    """asset.minVersion 同样必须是 <major>.<minor> 格式。"""
+
+    _assert_rejected(
+        _build_glb({"asset": {"version": "2.0", "minVersion": min_version}}),
+        "MODEL3D_FORMAT_INVALID",
+    )
+
+
+def test_accepts_schema_min_version() -> None:
+    """合法的 minVersion=2.0 不触发格式错误。"""
+
+    summary = Model3dGlbService.analyze(_build_glb({"asset": {"version": "2.0", "minVersion": "2.0"}}))
+    assert summary["gltf_version"] == "2.0"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("meshes", 5),
+        ("cameras", 5),
+        ("skins", 5),
+        ("materials", 5),
+    ],
+)
+def test_rejects_non_array_top_level_collections(field: str, value: int) -> None:
+    """顶级集合声明为标量时必须返回 400，而不是 TypeError。"""
+
+    payload = _triangle_position_bytes()
+    gltf = _minimal_gltf(len(payload))
+    gltf[field] = value
+    _assert_rejected(_build_glb(gltf, payload), "MODEL3D_FORMAT_INVALID")
+
+
+@pytest.mark.parametrize(
+    ("camera", "projection_key"),
+    [
+        ({"type": "perspective", "perspective": "bad"}, "perspective"),
+        ({"type": "orthographic", "orthographic": ["bad"]}, "orthographic"),
+        ({"type": "perspective", "perspective": 1}, "perspective"),
+    ],
+)
+def test_rejects_non_object_camera_projection(camera: dict, projection_key: str) -> None:
+    """相机投影声明不是对象时必须返回 400，而不是 AttributeError。"""
+
+    payload = _triangle_position_bytes()
+    gltf = _minimal_gltf(len(payload))
+    gltf["cameras"] = [camera]
+    error = _assert_rejected(_build_glb(gltf, payload), "MODEL3D_FORMAT_INVALID")
+    assert projection_key in error.detail
 
 
 def test_rejects_primitive_without_position() -> None:

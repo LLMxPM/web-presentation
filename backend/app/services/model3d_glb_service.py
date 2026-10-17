@@ -6,6 +6,7 @@ import base64
 import binascii
 import json
 import math
+import re
 import struct
 from dataclasses import dataclass
 from typing import Any
@@ -40,6 +41,8 @@ _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _JPEG_SOF_MARKERS = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
 
 _MAX_DETAIL_LENGTH = 220
+# glTF 官方 schema 要求 version/minVersion 为 <major>.<minor>，例如 "2.0"；"2" 与 "2.0.0" 均非法。
+_GLTF_VERSION_PATTERN = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$")
 
 
 def _is_int(value: Any) -> bool:
@@ -49,11 +52,18 @@ def _is_int(value: Any) -> bool:
 
 
 def _is_finite_number(value: Any) -> bool:
-    """判断值是否为有限数值（排除布尔与 NaN/Infinity）。"""
+    """判断值是否为有限数值（排除布尔与 NaN/Infinity）。
+
+    JSON 允许任意精度整数；超出 float 范围的值在 math.isfinite 转换时会抛
+    OverflowError，必须同样视为非法数值而不是让异常穿透校验边界。
+    """
 
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
-    return math.isfinite(value)
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def _format_invalid(detail: str) -> AppException:
@@ -78,6 +88,17 @@ def _external_uri_forbidden(detail: str) -> AppException:
     """构造外部依赖拒绝错误。"""
 
     return AppException(status_code=400, code=MODEL3D_ERROR_EXTERNAL_URI_FORBIDDEN, detail=detail[:_MAX_DETAIL_LENGTH])
+
+
+def _array_length(root: dict[str, Any], key: str) -> int:
+    """读取可选顶级数组的长度；缺失或 null 视为空数组，非数组明确按格式非法拒绝。"""
+
+    value = root.get(key)
+    if value is None:
+        return 0
+    if not isinstance(value, list):
+        raise _format_invalid(f"{key} 必须是数组。")
+    return len(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,16 +257,15 @@ class Model3dGlbService:
         if not isinstance(asset, dict):
             raise _format_invalid("glTF 缺少 asset 对象。")
         version = asset.get("version")
-        if not isinstance(version, str) or not version.split(".")[0].strip() == "2":
+        if not isinstance(version, str) or not _GLTF_VERSION_PATTERN.fullmatch(version):
+            raise _format_invalid("asset.version 必须是 <major>.<minor> 格式的 glTF 版本，如 2.0。")
+        if int(version.split(".", 1)[0]) != 2:
             raise _format_invalid("asset.version 必须为 glTF 2.x。")
         min_version = asset.get("minVersion")
         if min_version is not None:
-            if not isinstance(min_version, str):
-                raise _format_invalid("asset.minVersion 必须是字符串。")
-            try:
-                parts = tuple(int(part) for part in min_version.split("."))
-            except ValueError as error:
-                raise _format_invalid("asset.minVersion 格式非法。") from error
+            if not isinstance(min_version, str) or not _GLTF_VERSION_PATTERN.fullmatch(min_version):
+                raise _format_invalid("asset.minVersion 必须是 <major>.<minor> 格式的字符串。")
+            parts = tuple(int(part) for part in min_version.split("."))
             if parts > (2, 0):
                 raise _format_invalid(f"文件要求 glTF {min_version}，超出首期支持范围。")
 
@@ -385,10 +405,10 @@ class Model3dGlbService:
             if not _is_int(count) or count < 1:
                 raise _format_invalid(f"accessors[{index}].count 必须是正整数。")
             component_type = accessor.get("componentType")
-            if component_type not in _COMPONENT_TYPE_BYTES:
+            if not _is_int(component_type) or component_type not in _COMPONENT_TYPE_BYTES:
                 raise _format_invalid(f"accessors[{index}].componentType 取值非法。")
             accessor_type = accessor.get("type")
-            if accessor_type not in _ACCESSOR_TYPE_COMPONENTS:
+            if not isinstance(accessor_type, str) or accessor_type not in _ACCESSOR_TYPE_COMPONENTS:
                 raise _format_invalid(f"accessors[{index}].type 取值非法。")
 
             min_values = accessor.get("min")
@@ -460,9 +480,9 @@ class Model3dGlbService:
         if len(nodes) > policy.max_nodes:
             raise _limit_exceeded(f"节点数量超过上限 {policy.max_nodes}。")
 
-        mesh_count = len(root.get("meshes", []) or [])
-        camera_count = len(root.get("cameras", []) or [])
-        skin_count = len(root.get("skins", []) or [])
+        mesh_count = _array_length(root, "meshes")
+        camera_count = _array_length(root, "cameras")
+        skin_count = _array_length(root, "skins")
 
         for index, node in enumerate(nodes):
             if not isinstance(node, dict):
@@ -523,11 +543,20 @@ class Model3dGlbService:
         meshes = root.get("meshes", [])
         if not isinstance(meshes, list):
             raise _format_invalid("meshes 必须是数组。")
-        material_count = len(root.get("materials", []) or [])
+        material_count = _array_length(root, "materials")
+        # 同一 mesh 可被多个节点实例化，渲染三角形数是 mesh 三角形数乘以节点引用数。
+        instance_counts = [0] * len(meshes)
+        for node in root.get("nodes") or []:
+            if not isinstance(node, dict):
+                continue
+            mesh_index = node.get("mesh")
+            if _is_int(mesh_index) and 0 <= mesh_index < len(meshes):
+                instance_counts[mesh_index] += 1
         triangles = 0
         for mesh_index, mesh in enumerate(meshes):
             if not isinstance(mesh, dict):
                 raise _format_invalid(f"meshes[{mesh_index}] 必须是对象。")
+            instance_count = max(1, instance_counts[mesh_index])
             primitives = mesh.get("primitives")
             if not isinstance(primitives, list) or not primitives:
                 raise _format_invalid(f"meshes[{mesh_index}].primitives 必须是非空数组。")
@@ -562,9 +591,9 @@ class Model3dGlbService:
                 else:
                     element_count = accessors[attributes["POSITION"]]["count"]
                 if mode == 4:
-                    triangles += element_count // 3
+                    triangles += (element_count // 3) * instance_count
                 elif mode in (5, 6):
-                    triangles += max(0, element_count - 2)
+                    triangles += max(0, element_count - 2) * instance_count
                 if triangles > policy.max_triangles:
                     raise _limit_exceeded(f"三角形数量超过上限 {policy.max_triangles}。")
 
@@ -658,13 +687,16 @@ class Model3dGlbService:
             if not isinstance(camera, dict):
                 raise _format_invalid(f"cameras[{index}] 必须是对象。")
             camera_type = camera.get("type")
-            if camera_type not in {"perspective", "orthographic"}:
+            if not isinstance(camera_type, str) or camera_type not in {"perspective", "orthographic"}:
                 raise _format_invalid(f"cameras[{index}].type 必须是 perspective 或 orthographic。")
             if camera_type == "perspective":
-                yfov = (camera.get("perspective") or {}).get("yfov")
-                znear = (camera.get("perspective") or {}).get("znear")
-                zfar = (camera.get("perspective") or {}).get("zfar")
-                aspect = (camera.get("perspective") or {}).get("aspectRatio")
+                projection = camera.get("perspective")
+                if not isinstance(projection, dict):
+                    raise _format_invalid(f"cameras[{index}].perspective 必须是对象。")
+                yfov = projection.get("yfov")
+                znear = projection.get("znear")
+                zfar = projection.get("zfar")
+                aspect = projection.get("aspectRatio")
                 if not _is_finite_number(yfov) or not 0 < yfov < math.pi:
                     raise _format_invalid(f"cameras[{index}] 透视 yfov 非法。")
                 if not _is_finite_number(znear) or znear <= 0:
@@ -674,7 +706,9 @@ class Model3dGlbService:
                 if aspect is not None and (not _is_finite_number(aspect) or aspect <= 0):
                     raise _format_invalid(f"cameras[{index}] 透视 aspectRatio 非法。")
             else:
-                projection = camera.get("orthographic") or {}
+                projection = camera.get("orthographic")
+                if not isinstance(projection, dict):
+                    raise _format_invalid(f"cameras[{index}].orthographic 必须是对象。")
                 xmag, ymag = projection.get("xmag"), projection.get("ymag")
                 znear, zfar = projection.get("znear"), projection.get("zfar")
                 if not _is_finite_number(xmag) or xmag == 0:
@@ -721,7 +755,8 @@ class Model3dGlbService:
                     not _is_int(node_reference) or not 0 <= node_reference < node_count
                 ):
                     raise _format_invalid(f"animations[{index}].channels[{channel_index}].target.node 索引越界。")
-                if target.get("path") not in _ANIMATION_TARGET_PATHS:
+                target_path = target.get("path")
+                if not isinstance(target_path, str) or target_path not in _ANIMATION_TARGET_PATHS:
                     raise _format_invalid(f"animations[{index}].channels[{channel_index}].target.path 取值非法。")
 
     @classmethod

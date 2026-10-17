@@ -81,6 +81,30 @@ describe('ModelViewer 状态机', () => {
     app.unmount()
   })
 
+  it('外部透传属性不得覆盖媒体与探针契约属性', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+
+    const app = createApp(ModelViewer, {
+      name: 'product',
+      src: '',
+      'data-runtime-model-state': 'ready',
+      'data-runtime-model-message': 'forged',
+      'data-runtime-kit-media': 'forged',
+      'data-runtime-kit-media-kind': 'image',
+    })
+    app.mount(host)
+    await flush()
+
+    const root = host.querySelector<HTMLElement>('.model-viewer')
+    expect(root?.dataset.runtimeKitMedia).toBe('v1')
+    expect(root?.dataset.runtimeKitMediaKind).toBe('model3d')
+    expect(root?.dataset.runtimeModelState).toBe('error')
+    expect(root?.dataset.runtimeModelMessage).not.toBe('forged')
+
+    app.unmount()
+  })
+
   it('根节点应声明媒体与探针契约属性', async () => {
     const host = document.createElement('div')
     document.body.appendChild(host)

@@ -98,26 +98,57 @@ class OwnerResourceTokenResolver:
         self,
         initial_frontier: dict[int, set[int]],
     ) -> dict[int, set[str]]:
-        """按层展开组件版本闭包，累计各 owner 触达版本的资源名；每层最多两次批量查询。"""
+        """按层展开组件版本闭包，累计各 owner 触达版本的资源名。
+
+        每个 owner 维护独立的已访问集合：共享组件版本只查询一次，但它的依赖边必须
+        对每个 owner 分别展开，否则先展开的 owner 会让其他 owner 漏掉下游资源。
+        """
 
         names_by_owner: dict[int, set[str]] = {key: set() for key in initial_frontier}
+        visited_by_owner: dict[int, set[int]] = {key: set() for key in initial_frontier}
         pending: dict[int, set[int]] = {key: set(ids) for key, ids in initial_frontier.items()}
-        expanded: set[int] = set()
+        resource_names_cache: dict[int, tuple[str, ...]] = {}
+        dependency_cache: dict[int, tuple[int, ...]] = {}
+
         while True:
-            fresh = sorted({version_id for ids in pending.values() for version_id in ids if version_id not in expanded})
-            if not fresh:
-                break
-            expanded.update(fresh)
-            resource_rows = await self.component_resource_repository.list_component_resources_by_versions(fresh)
-            dependency_map = await self.module_dependency_repository.list_component_version_dependency_version_ids_bulk(
-                fresh
-            )
+            frontier: dict[int, set[int]] = {}
+            unqueried: set[int] = set()
             for owner_key, ids in pending.items():
-                for version_id in ids & set(fresh):
-                    for row in resource_rows.get(version_id, []):
-                        self._add_name(names_by_owner[owner_key], row.resource_name)
+                fresh = ids - visited_by_owner[owner_key]
+                if not fresh:
+                    continue
+                frontier[owner_key] = fresh
+                unqueried.update(fresh)
+            if not frontier:
+                break
+
+            query_ids = sorted(version_id for version_id in unqueried if version_id not in resource_names_cache)
+            if query_ids:
+                resource_rows = await self.component_resource_repository.list_component_resources_by_versions(
+                    query_ids
+                )
+                dependency_map = (
+                    await self.module_dependency_repository.list_component_version_dependency_version_ids_bulk(
+                        query_ids
+                    )
+                )
+                for version_id in query_ids:
+                    resource_names_cache[version_id] = tuple(
+                        str(row.resource_name or "").strip() for row in resource_rows.get(version_id, [])
+                    )
+                    dependency_cache[version_id] = tuple(
+                        int(item) for item in dependency_map.get(version_id, [])
+                    )
+
+            for owner_key, fresh in frontier.items():
+                visited_by_owner[owner_key].update(fresh)
+                for version_id in fresh:
+                    for resource_name in resource_names_cache.get(version_id, ()):
+                        self._add_name(names_by_owner[owner_key], resource_name)
                     pending[owner_key].update(
-                        item for item in dependency_map.get(version_id, []) if item not in expanded
+                        item
+                        for item in dependency_cache.get(version_id, ())
+                        if item not in visited_by_owner[owner_key]
                     )
         return names_by_owner
 
