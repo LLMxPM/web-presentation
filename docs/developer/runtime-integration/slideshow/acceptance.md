@@ -1,6 +1,6 @@
 # 自动放映联调与验收计划
 
-状态：M0 已验收（2026-10-17）；M1 进行中，WP13–WP16 的调度、执行上下文、Router/就绪桥接与单窗口入口/控制条已完成（2026-10-17），导出隔离待实施。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；A09/A11/A14/A15 的 M1 真实浏览器证据见 [WP16 实施记录](./work-packages/wp16-playback-entry-controls.md)；其余场景仍为待执行验证计划，不代表已运行功能验收。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
+状态：M0 已验收（2026-10-17）；M1 进行中，WP13–WP17 的调度、执行上下文、Router/就绪桥接、单窗口入口/控制条与 Renderer 静态捕获已完成（2026-10-17），导出隔离待实施。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；A09/A11/A14/A15 的 M1 真实浏览器证据见 [WP16 实施记录](./work-packages/wp16-playback-entry-controls.md)；A15/A16 的静态捕获真实 PNG 证据见 [WP17 实施记录](./work-packages/wp17-renderer-static-media.md)；其余场景仍为待执行验证计划，不代表已运行功能验收。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
 
 执行分工见[工作包清单](./work-packages/README.md)。阶段出口分别为 [WP12](./work-packages/wp12-m0-integration.md)、[WP21](./work-packages/wp21-m1-integration-release.md)、[WP30](./work-packages/wp30-m2-integration-release.md)、[WP33](./work-packages/wp33-unattended-soak-release.md)，负责汇总本阶段场景与真实产物证据。
 

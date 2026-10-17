@@ -9,6 +9,9 @@ export interface RenderReadyBridge {
   artifactId: string | null
   inputDigest: string | null
   runtimeBuildId: string | null
+  executionContext: string | null
+  entryPath: string | null
+  routePath: string | null
   mounted: boolean
   initFailed: boolean
   message: string | null
@@ -51,6 +54,8 @@ export function initializeRenderReadyHost(meta?: {
   artifactId?: string | null
   inputDigest?: string | null
   runtimeBuildId?: string | null
+  executionContext?: string | null
+  entryPath?: string | null
 }): void {
   if (typeof window === 'undefined') {
     return
@@ -60,6 +65,9 @@ export function initializeRenderReadyHost(meta?: {
     artifactId: meta?.artifactId ?? null,
     inputDigest: meta?.inputDigest ?? null,
     runtimeBuildId: meta?.runtimeBuildId ?? null,
+    executionContext: meta?.executionContext ?? null,
+    entryPath: meta?.entryPath ?? null,
+    routePath: null,
     mounted: false,
     initFailed: false,
     message: null,
@@ -96,6 +104,9 @@ export async function markRenderPreviewMounted(options?: {
   artifactId?: string | null
   inputDigest?: string | null
   visualTimeoutMs?: number
+  executionContext?: string | null
+  entryPath?: string | null
+  routePath?: string | null
 }): Promise<void> {
   if (typeof window === 'undefined') {
     return
@@ -104,6 +115,8 @@ export async function markRenderPreviewMounted(options?: {
     initializeRenderReadyHost({
       artifactId: options?.artifactId ?? null,
       inputDigest: options?.inputDigest ?? null,
+      executionContext: options?.executionContext ?? null,
+      entryPath: options?.entryPath ?? null,
     })
   }
   const fontsReady = typeof document !== 'undefined' && document.fonts?.ready
@@ -135,6 +148,9 @@ export async function markRenderPreviewMounted(options?: {
     initFailed: false,
     artifactId: options?.artifactId ?? window.__RENDER_READY__?.artifactId ?? null,
     inputDigest: options?.inputDigest ?? window.__RENDER_READY__?.inputDigest ?? null,
+    executionContext: options?.executionContext ?? window.__RENDER_READY__?.executionContext ?? null,
+    entryPath: options?.entryPath ?? window.__RENDER_READY__?.entryPath ?? null,
+    routePath: options?.routePath ?? window.__RENDER_READY__?.routePath ?? null,
     fonts: { ready: Boolean(fontsReady), loaded: document.fonts?.size ?? 0, failed: 0 },
     visualAssets,
     message: visualAssets.ready ? null : '视觉资源未在限定时间内就绪',

@@ -22,6 +22,8 @@ from app.services.rendering.repository import RenderRepository
 from app.services.rendering.snapshot_service import RenderSnapshotService
 from app.services.rendering.target_resolver import RenderTargetResolver
 from render_contracts.constants import (
+    OPERATION_PAGE_CAPTURE,
+    OPERATION_PAGE_DIAGNOSE,
     PROTOCOL_VERSION,
     RUNTIME_RENDER_PROTOCOL_VERSION,
     SCHEDULE_CATEGORY_BACKGROUND,
@@ -713,11 +715,13 @@ class RenderCoordinator:
             if isinstance(credentials.get("extra_http_headers"), dict)
             else None
         )
+        static_capture = is_static_capture_operation(request.operation)
         if preview_url:
             navigation_url = _ensure_render_identity_query(
                 preview_url,
                 input_digest=request.input_digest,
                 artifact_id=str(snap.get("artifact_id") or ""),
+                static_capture=static_capture,
             )
         else:
             navigation_url = RenderSnapshotService.build_preview_navigation_url(
@@ -725,6 +729,7 @@ class RenderCoordinator:
                 artifact_id=str(snap.get("artifact_id") or ""),
                 preview_token=preview_token,
                 input_digest=request.input_digest,
+                static_capture=static_capture,
             )
         preview_access = PreviewAccessType(
             navigation_base_url=navigation_url,
@@ -798,14 +803,27 @@ class RenderCoordinator:
         return await repository.session.scalar(stmt) is not None
 
 
-def _ensure_render_identity_query(preview_url: str, *, input_digest: str, artifact_id: str) -> str:
-    """在已有预览 URL 上补齐 input_digest 与 artifact 查询参数，供 render-ready.v1 硬核对。
+def is_static_capture_operation(operation: str) -> bool:
+    """页面截图/诊断必须固定 capture 上下文；组件诊断保留交互预览语义。"""
+
+    return operation in {OPERATION_PAGE_CAPTURE, OPERATION_PAGE_DIAGNOSE}
+
+
+def _ensure_render_identity_query(
+    preview_url: str,
+    *,
+    input_digest: str,
+    artifact_id: str,
+    static_capture: bool = False,
+) -> str:
+    """在已有预览 URL 上补齐 input_digest、artifact 与捕获标记，供 render-ready.v1 硬核对。
 
     Runtime 从 location.search 读取 artifact/input_digest 写入协议桥；仅放请求头
-    会导致 bridge.artifactId 为空，Renderer 校验失败。
+    会导致 bridge.artifactId 为空，Renderer 校验失败。页面捕获/诊断必须显式固定
+    capture 执行上下文，避免自动放映配置在截图期间推进页面。
     """
 
-    if not input_digest and not artifact_id:
+    if not input_digest and not artifact_id and not static_capture:
         return preview_url
     from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -818,6 +836,9 @@ def _ensure_render_identity_query(preview_url: str, *, input_digest: str, artifa
             changed = True
         if artifact_id and query.get("artifact") != artifact_id:
             query["artifact"] = artifact_id
+            changed = True
+        if static_capture and query.get("runtimeCapture") != "1":
+            query["runtimeCapture"] = "1"
             changed = True
         if not changed:
             return preview_url

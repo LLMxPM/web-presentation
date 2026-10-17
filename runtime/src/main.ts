@@ -66,9 +66,12 @@ async function initializeApp(): Promise<void> {
   // 执行策略必须先于配置、路由和组件挂载确定，避免页面先自动播放再被暂停。
   const executionPolicy = initializeRuntimeExecution(window.location.search, getRuntimePreviewContext())
   installMediaPlaybackGuard({ fallbackMode: mediaPlaybackMode(executionPolicy) })
+  const previewEntryPath = getPreviewEntryNavigationPath()
   initializeRenderReadyHost({
     artifactId: new URLSearchParams(window.location.search).get('artifact'),
     inputDigest: new URLSearchParams(window.location.search).get('input_digest'),
+    executionContext: executionPolicy.kind,
+    entryPath: previewEntryPath,
   })
   registerEditorVisualAssetProbe()
 
@@ -85,10 +88,13 @@ async function initializeApp(): Promise<void> {
     installRuntimeClientLogger(app)
     app.use(router)
 
-    const previewEntryPath = getPreviewEntryNavigationPath()
     if (shouldNavigateToPreviewEntryPath(previewEntryPath)) {
       const targetPath = previewEntryPath.startsWith('/') ? previewEntryPath : `/${previewEntryPath}`
-      await router.replace(targetPath)
+      // 捕获标记在初始查询串中；进入 hash 路由时必须保留，项目壳据此切换到静态画布。
+      const query = new URLSearchParams(window.location.search).get('runtimeCapture') === '1'
+        ? { runtimeCapture: '1' }
+        : undefined
+      await router.replace(query ? { path: targetPath, query } : targetPath)
     }
 
     await router.isReady()
@@ -101,6 +107,9 @@ async function initializeApp(): Promise<void> {
     await markRenderPreviewMounted({
       artifactId: new URLSearchParams(window.location.search).get('artifact'),
       inputDigest: new URLSearchParams(window.location.search).get('input_digest'),
+      executionContext: executionPolicy.kind,
+      entryPath: previewEntryPath,
+      routePath: router.currentRoute.value.path,
     })
     // 以协议状态为准：视觉资源失败时 markRenderPreviewMounted 会写 false，不得无条件覆盖。
     setEditorRuntimePreviewReady(window.__EDITOR_RUNTIME_PREVIEW_READY__ !== false)

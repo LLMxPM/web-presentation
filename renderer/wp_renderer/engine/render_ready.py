@@ -88,3 +88,33 @@ async def wait_for_render_ready(
             "inputDigest": expected_input_digest,
         },
     )
+
+
+def normalize_runtime_route(value: str) -> str:
+    """把 Runtime 路由归一化为可比较的路径，忽略查询串、哈希和末尾斜杠。"""
+
+    path = str(value or "").split("?", 1)[0].split("#", 1)[0].strip()
+    if not path:
+        return ""
+    if not path.startswith("/"):
+        path = f"/{path}"
+    if len(path) > 1:
+        path = path.rstrip("/")
+    return path
+
+
+def validate_static_render_bridge(bridge: Any) -> str | None:
+    """校验捕获页面已固定为静态执行上下文且目标路由一致；返回错误文本或 None。"""
+
+    if not isinstance(bridge, dict):
+        return "render-ready 缺少可核对的桥状态。"
+    context = str(bridge.get("executionContext") or "").strip()
+    if context != "capture":
+        return f"Runtime 未进入捕获执行上下文（actual={context or 'missing'}）。"
+    route_path = normalize_runtime_route(str(bridge.get("routePath") or ""))
+    entry_path = normalize_runtime_route(str(bridge.get("entryPath") or ""))
+    if not route_path:
+        return "render-ready 缺少 routePath，无法确认捕获目标路由。"
+    if entry_path and route_path != entry_path:
+        return f"捕获目标路由不一致（routePath={route_path}, entryPath={entry_path}）。"
+    return None

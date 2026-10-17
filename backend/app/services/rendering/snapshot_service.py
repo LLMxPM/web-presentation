@@ -258,13 +258,16 @@ class RenderSnapshotService:
         artifact_id: str,
         preview_token: str,
         input_digest: str | None = None,
+        static_capture: bool = False,
     ) -> str:
-        """拼接受保护预览导航地址，并携带 input_digest 供 render-ready 核对。"""
+        """拼接受保护预览导航地址，并携带捕获标记供 Runtime 固定静态执行上下文。"""
 
         base = navigation_base_url.rstrip("/")
         params: dict[str, str] = {"artifact": artifact_id, "token": preview_token}
         if input_digest:
             params["input_digest"] = input_digest
+        if static_capture:
+            params["runtimeCapture"] = "1"
         query = urlencode(params)
         parts = urlsplit(f"{base}/preview")
         return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))

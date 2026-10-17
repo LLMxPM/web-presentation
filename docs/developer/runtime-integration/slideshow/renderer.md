@@ -1,6 +1,6 @@
 # Renderer、渲染契约与导出实施计划
 
-状态：WP14 已定义 Runtime 执行上下文与基础媒体守卫（2026-10-17）；Renderer 截图、静态媒体和导出接入待 WP17/WP18 实施。本模块配合[自动放映总计划](./README.md)，保证自动放映不会改变截图、诊断、PDF 或 PPTX 静态采集目标。
+状态：WP14 已定义 Runtime 执行上下文与基础媒体守卫（2026-10-17）；WP17 已接入 Renderer 捕获上下文、目标路由核对与视频静态帧（2026-10-17）；导出隔离仍待 WP18 实施。本模块配合[自动放映总计划](./README.md)，保证自动放映不会改变截图、诊断、PDF 或 PPTX 静态采集目标。
 
 实施拆分见[工作包执行清单](./work-packages/README.md)：WP14 定义静态执行策略，WP15 接入稳定页，WP17 完成 Renderer 与静态媒体，WP18 隔离导出，WP30 复核媒体/双屏下的生命周期。以下 G 编号保留为上层职责。
 
@@ -16,20 +16,23 @@ Renderer 继续只执行受信渲染请求，不管理项目配置、不连接�
 
 - [x] 与 Runtime 定义捕获和导出上下文优先级：禁止自动开始、自动翻页、演讲同步和媒体播放，即使项目 `auto_start=true`。
 - [ ] 同时检查 Renderer 截图入口、单页/历史版本预览、组件/资源预览、浏览器打印、离屏 PDF/PPTX 采集入口，不只覆盖整项目捕获布局。
-- [ ] render-ready 前确认目标路由已稳定、只保留目标内容层、放映调度已禁用；先固定上下文再加载页面，避免先播放再暂停的竞态。
-- [ ] 捕获页面只呈现本次请求的路径和 artifact 身份；不从 BroadcastChannel/localStorage 恢复普通放映状态。
+  Renderer 截图与 Runtime 预览入口已由 WP17 覆盖；浏览器打印、离屏 PDF/PPTX 采集在 WP18 继续核查。
+- [x] render-ready 前确认目标路由已稳定、只保留目标内容层、放映调度已禁用；先固定上下文再加载页面，避免先播放再暂停的竞态。
+- [x] 捕获页面只呈现本次请求的路径和 artifact 身份；不从 BroadcastChannel/localStorage 恢复普通放映状态。
 
-WP14 已交付 Runtime 侧策略、宿主传播与媒体守卫；Renderer 截图入口、离线导出入口和真实静态媒体的接入检查仍由 WP17/WP18 完成。
+WP14 已交付 Runtime 侧策略、宿主传播与媒体守卫；WP17 已把捕获标记写入 Renderer 导航地址，Runtime 将其带入 hash 路由并上报执行上下文/入口/目标路由，Renderer 在 render-ready 后硬核对。真实 PNG 证据见 [WP17 实施记录](./work-packages/wp17-renderer-static-media.md)。
 
 验收：极短停留时间、循环和自动开始都不能使截图翻页或触发窗口同步。
 
 ### G02：媒体静态策略与协议核查（M1，依赖 G01）
 
-- [ ] 视频优先使用有效 poster；无 poster 时在有界等待后采集可用首帧，全程不依赖实际有声播放。
-- [ ] 冻结 CSS 动画、视频和播放器定时器分别处理；动态可视资源沿用现有就绪与静态采集能力。
-- [ ] 缺失媒体或首帧超时按现有错误契约返回可诊断结果，不无限等待播放结束。
-- [ ] 首先复用现有 render-ready、入场票据和错误结构；只有确实需要新增请求/回执字段时才修改 `packages/render-contracts`。
-- [ ] 若协议变化，同步 Python DTO、JSON Schema、Backend 协调器和 Renderer 往返测试；保持纯契约包无 Backend/Runtime/Playwright 依赖。
+- [x] 视频优先使用有效 poster；无 poster 时在有界等待后采集可用首帧，全程不依赖实际有声播放。
+- [x] 冻结 CSS 动画、视频和播放器定时器分别处理；动态可视资源沿用现有就绪与静态采集能力。
+- [x] 缺失媒体或首帧超时按现有错误契约返回可诊断结果，不无限等待播放结束。
+- [x] 首先复用现有 render-ready、入场票据和错误结构；只有确实需要新增请求/回执字段时才修改 `packages/render-contracts`。
+- [x] 若协议变化，同步 Python DTO、JSON Schema、Backend 协调器和 Renderer 往返测试；保持纯契约包无 Backend/Runtime/Playwright 依赖。
+
+WP17 未修改 `packages/render-contracts`；render-ready 桥以增量字段暴露执行上下文与路由，Renderer 在既有 `RENDER_ASSET_NOT_READY` 错误结构内返回静态失败。
 
 验收：请求与回执身份一致，静态页面与视频页均能得到实际 PNG，未授权素材仍按既有鉴权失败。
 

@@ -36,7 +36,13 @@ from wp_renderer.engine.layout_scripts import (
     build_component_render_layout_script,
     build_page_render_layout_script,
 )
-from wp_renderer.engine.render_ready import wait_for_render_ready
+from wp_renderer.engine.render_ready import validate_static_render_bridge, wait_for_render_ready
+from wp_renderer.engine.static_media import (
+    MIN_STATIC_MEDIA_TIMEOUT_MS,
+    STATIC_MEDIA_TIMEOUT_MS,
+    prepare_static_capture,
+    static_capture_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +217,7 @@ class RenderExecutor:
                 )
             self._check_cancel(stage="ready")
             await self._wait_visual_assets(request)
+            await self._prepare_static_capture(request, ready)
             self._check_cancel(stage="capture")
             if request.operation == OPERATION_PAGE_CAPTURE:
                 return await self._await_bounded(self._capture_page(artifact_dir), stage="capture")
@@ -338,6 +345,43 @@ class RenderExecutor:
             await _route_preview_headers(route, preview_access)
 
         await self._page.route("**/*", _handle_route)
+
+    async def _prepare_static_capture(self, request: Any, ready: Any) -> None:
+        """页面操作先确认捕获上下文与目标路由，再固定单层画布和视频静态帧。"""
+
+        if request.operation not in {OPERATION_PAGE_CAPTURE, OPERATION_PAGE_DIAGNOSE}:
+            return
+        bridge = ready.get("bridge") if isinstance(ready, dict) else None
+        bridge_error = validate_static_render_bridge(bridge)
+        if bridge_error:
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_ASSET_NOT_READY,
+                    message=bridge_error,
+                    stage="ready",
+                )
+            )
+        if request.operation != OPERATION_PAGE_CAPTURE:
+            return
+        remaining_ms = self._deadline.remaining_ms() if self._deadline else STATIC_MEDIA_TIMEOUT_MS
+        timeout_ms = min(STATIC_MEDIA_TIMEOUT_MS, max(MIN_STATIC_MEDIA_TIMEOUT_MS, remaining_ms - 500))
+        result = await self._await_bounded(
+            prepare_static_capture(
+                self._page,
+                expected_route=str(bridge.get("entryPath") or ""),
+                timeout_ms=timeout_ms,
+            ),
+            stage="ready",
+        )
+        error = static_capture_error(result)
+        if error:
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_ASSET_NOT_READY,
+                    message=error,
+                    stage="ready",
+                )
+            )
 
     async def _wait_visual_assets(self, request: Any) -> None:
         """等待图片/背景图等视觉资源就绪；等待上限不得超过剩余硬期限。"""
