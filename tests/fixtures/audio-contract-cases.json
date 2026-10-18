@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "description": "音频资源、AssetAudio、项目音量与 cue 的共享正反例；字段语义以 docs/developer/runtime-integration/audio/contract.md 为准。",
+  "resource": {
+    "extensions": {
+      ".mp3": ["audio/mpeg"],
+      ".m4a": ["audio/mp4", "audio/x-m4a"],
+      ".aac": ["audio/aac"],
+      ".ogg": ["audio/ogg"],
+      ".wav": ["audio/wav", "audio/x-wav"]
+    }
+  },
+  "capabilities": {
+    "m0": ["audio_assets"],
+    "m1": ["audio_assets", "page_narration"],
+    "m2": ["audio_assets", "page_narration", "audio_cues"]
+  },
+  "defaults": {
+    "api": {
+      "master_volume_percent": 100,
+      "narration_volume_percent": 100,
+      "effects_volume_percent": 30,
+      "cue_bindings": []
+    },
+    "runtime": {
+      "volume": { "master": 1.0, "narration": 1.0, "effects": 0.3 },
+      "cues": {}
+    }
+  },
+  "settings_cases": [
+    {
+      "name": "default-complete",
+      "valid": true,
+      "input": {
+        "master_volume_percent": 100,
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30,
+        "cue_bindings": []
+      }
+    },
+    {
+      "name": "custom-volumes-and-cues",
+      "valid": true,
+      "input": {
+        "master_volume_percent": 80,
+        "narration_volume_percent": 90,
+        "effects_volume_percent": 25,
+        "cue_bindings": [
+          { "key": "transition.forward", "asset_id": 51, "gain_percent": 100 },
+          { "key": "interaction.quiz-correct", "asset_id": 52, "gain_percent": 75 }
+        ]
+      }
+    },
+    {
+      "name": "missing-master-volume",
+      "valid": false,
+      "error": "missing",
+      "input": {
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30,
+        "cue_bindings": []
+      }
+    },
+    {
+      "name": "string-volume",
+      "valid": false,
+      "error": "int_type",
+      "input": {
+        "master_volume_percent": "100",
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30,
+        "cue_bindings": []
+      }
+    },
+    {
+      "name": "float-volume",
+      "valid": false,
+      "error": "int_type",
+      "input": {
+        "master_volume_percent": 100.0,
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30,
+        "cue_bindings": []
+      }
+    },
+    {
+      "name": "bool-volume",
+      "valid": false,
+      "error": "int_type",
+      "input": {
+        "master_volume_percent": true,
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30,
+        "cue_bindings": []
+      }
+    },
+    {
+      "name": "volume-below-minimum",
+      "valid": false,
+      "error": "greater_than_equal",
+      "input": {
+        "master_volume_percent": -1,
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30,
+        "cue_bindings": []
+      }
+    },
+    {
+      "name": "volume-above-maximum",
+      "valid": false,
+      "error": "less_than_equal",
+      "input": {
+        "master_volume_percent": 101,
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30,
+        "cue_bindings": []
+      }
+    },
+    {
+      "name": "duplicate-cue-key",
+      "valid": false,
+      "error": "value_error",
+      "input": {
+        "master_volume_percent": 100,
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30,
+        "cue_bindings": [
+          { "key": "interaction.confirm", "asset_id": 51, "gain_percent": 100 },
+          { "key": "interaction.confirm", "asset_id": 52, "gain_percent": 80 }
+        ]
+      }
+    },
+    {
+      "name": "unknown-field",
+      "valid": false,
+      "error": "extra_forbidden",
+      "input": {
+        "master_volume_percent": 100,
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30,
+        "cue_bindings": [],
+        "background_music": true
+      }
+    }
+  ],
+  "cue_cases": [
+    {
+      "name": "transition-forward",
+      "valid": true,
+      "input": { "key": "transition.forward", "asset_id": 1, "gain_percent": 100 }
+    },
+    {
+      "name": "custom-interaction",
+      "valid": true,
+      "input": { "key": "interaction.answer-correct", "asset_id": 2, "gain_percent": 0 }
+    },
+    {
+      "name": "unknown-transition-key",
+      "valid": false,
+      "error": "value_error",
+      "input": { "key": "transition.sideways", "asset_id": 1, "gain_percent": 100 }
+    },
+    {
+      "name": "unknown-namespace",
+      "valid": false,
+      "error": "value_error",
+      "input": { "key": "quiz.correct", "asset_id": 1, "gain_percent": 100 }
+    },
+    {
+      "name": "uppercase-key",
+      "valid": false,
+      "error": "string_pattern_mismatch",
+      "input": { "key": "interaction.Confirm", "asset_id": 1, "gain_percent": 100 }
+    },
+    {
+      "name": "string-asset-id",
+      "valid": false,
+      "error": "int_type",
+      "input": { "key": "interaction.confirm", "asset_id": "1", "gain_percent": 100 }
+    },
+    {
+      "name": "bool-gain",
+      "valid": false,
+      "error": "int_type",
+      "input": { "key": "interaction.confirm", "asset_id": 1, "gain_percent": true }
+    }
+  ],
+  "asset_audio_cases": [
+    {
+      "name": "content-defaults",
+      "valid": true,
+      "input": { "name": "customer-interview" },
+      "expected_controls": true
+    },
+    {
+      "name": "narration-valid",
+      "valid": true,
+      "input": {
+        "name": "chapter-01-narration",
+        "purpose": "narration",
+        "volume": 0.9,
+        "playback_rate": 1,
+        "preload": "metadata",
+        "loop": false
+      },
+      "expected_controls": false
+    },
+    {
+      "name": "narration-loop",
+      "valid": false,
+      "error": "value_error",
+      "input": { "name": "bad-loop", "purpose": "narration", "loop": true }
+    },
+    {
+      "name": "string-volume",
+      "valid": false,
+      "error": "float_type",
+      "input": { "name": "bad-volume", "volume": "0.8" }
+    },
+    {
+      "name": "bool-volume",
+      "valid": false,
+      "error": "float_type",
+      "input": { "name": "bad-volume", "volume": true }
+    },
+    {
+      "name": "rate-above-maximum",
+      "valid": false,
+      "error": "less_than_equal",
+      "input": { "name": "bad-rate", "playback_rate": 2.1 }
+    },
+    {
+      "name": "unknown-purpose",
+      "valid": false,
+      "error": "literal_error",
+      "input": { "name": "bad-purpose", "purpose": "background" }
+    },
+    {
+      "name": "empty-name",
+      "valid": false,
+      "error": "string_too_short",
+      "input": { "name": "" }
+    },
+    {
+      "name": "autoplay-forbidden",
+      "valid": false,
+      "error": "extra_forbidden",
+      "input": { "name": "bad-autoplay", "autoplay": true }
+    }
+  ],
+  "runtime_cases": [
+    {
+      "name": "defaults-no-cues",
+      "volume": {
+        "master_volume_percent": 100,
+        "narration_volume_percent": 100,
+        "effects_volume_percent": 30
+      },
+      "cues": [],
+      "expected": {
+        "volume": { "master": 1.0, "narration": 1.0, "effects": 0.3 },
+        "cues": {}
+      }
+    },
+    {
+      "name": "sorted-custom-cues",
+      "volume": {
+        "master_volume_percent": 80,
+        "narration_volume_percent": 90,
+        "effects_volume_percent": 25
+      },
+      "cues": [
+        { "key": "transition.forward", "asset_name": "page-whoosh", "gain_percent": 100 },
+        { "key": "interaction.confirm", "asset_name": "confirm-soft", "gain_percent": 80 }
+      ],
+      "expected": {
+        "volume": { "master": 0.8, "narration": 0.9, "effects": 0.25 },
+        "cues": {
+          "interaction.confirm": { "assetName": "confirm-soft", "gain": 0.8 },
+          "transition.forward": { "assetName": "page-whoosh", "gain": 1.0 }
+        }
+      }
+    }
+  ]
+}
