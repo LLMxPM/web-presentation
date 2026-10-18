@@ -106,16 +106,32 @@ class WorkspaceStylePackagePayloads:
             if len(description) > 2000:
                 raise ValueError("主题描述不能超过 2000 字。")
 
+        # 资源引用以 *_asset_name 为准；存在资源名时忽略 legacy 路径字段，
+        # 与数据库回读载荷保持同一语义，避免项目模板包重复导入误报内容不同。
+        logo_asset_name = WorkspaceStylePackageFormat.normalize_optional_name(payload.get("logo_asset_name"))
+        invert_logo_asset_name = WorkspaceStylePackageFormat.normalize_optional_name(payload.get("invert_logo_asset_name"))
+        project_icon_asset_name = WorkspaceStylePackageFormat.normalize_optional_name(payload.get("project_icon_asset_name"))
+
         return {
             "key": key,
             "name": name,
             "description": description,
-            "logo_asset_name": WorkspaceStylePackageFormat.normalize_optional_name(payload.get("logo_asset_name")),
-            "invert_logo_asset_name": WorkspaceStylePackageFormat.normalize_optional_name(payload.get("invert_logo_asset_name")),
-            "project_icon_asset_name": WorkspaceStylePackageFormat.normalize_optional_name(payload.get("project_icon_asset_name")),
-            "logo_path": WorkspaceStylePackageFormat.normalize_optional_name(payload.get("logo_path")),
-            "invert_logo_path": WorkspaceStylePackageFormat.normalize_optional_name(payload.get("invert_logo_path")),
-            "project_icon_name": WorkspaceStylePackageFormat.normalize_optional_name(payload.get("project_icon_name")),
+            "logo_asset_name": logo_asset_name,
+            "invert_logo_asset_name": invert_logo_asset_name,
+            "project_icon_asset_name": project_icon_asset_name,
+            "logo_path": (
+                None if logo_asset_name else WorkspaceStylePackageFormat.normalize_optional_name(payload.get("logo_path"))
+            ),
+            "invert_logo_path": (
+                None
+                if invert_logo_asset_name
+                else WorkspaceStylePackageFormat.normalize_optional_name(payload.get("invert_logo_path"))
+            ),
+            "project_icon_name": (
+                None
+                if project_icon_asset_name
+                else WorkspaceStylePackageFormat.normalize_optional_name(payload.get("project_icon_name"))
+            ),
             "heading_font_asset_name": WorkspaceStylePackageFormat.normalize_optional_name(payload.get("heading_font_asset_name")),
             "body_font_asset_name": WorkspaceStylePackageFormat.normalize_optional_name(payload.get("body_font_asset_name")),
             "code_font_asset_name": WorkspaceStylePackageFormat.normalize_optional_name(payload.get("code_font_asset_name")),

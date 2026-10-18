@@ -1701,9 +1701,11 @@ class ProjectTemplatePackageService:
             "logo_asset_name": logo_asset.name if logo_asset is not None else None,
             "invert_logo_asset_name": invert_logo_asset.name if invert_logo_asset is not None else None,
             "project_icon_asset_name": project_icon_asset.name if project_icon_asset is not None else None,
-            "logo_path": logo_asset.name if logo_asset is not None else theme.logo_path,
-            "invert_logo_path": invert_logo_asset.name if invert_logo_asset is not None else theme.invert_logo_path,
-            "project_icon_name": project_icon_asset.name if project_icon_asset is not None else theme.project_icon_name,
+            # 资源引用以 *_asset_name 为准；存在资源时不再重复写入 legacy 路径，
+            # 与样式包导出及数据库回读载荷保持一致，保证重复导入可幂等预检。
+            "logo_path": None if logo_asset is not None else theme.logo_path,
+            "invert_logo_path": None if invert_logo_asset is not None else theme.invert_logo_path,
+            "project_icon_name": None if project_icon_asset is not None else theme.project_icon_name,
             "heading_font_asset_name": heading_font.asset_name if heading_font is not None else None,
             "body_font_asset_name": body_font.asset_name if body_font is not None else None,
             "code_font_asset_name": code_font.asset_name if code_font is not None else None,
