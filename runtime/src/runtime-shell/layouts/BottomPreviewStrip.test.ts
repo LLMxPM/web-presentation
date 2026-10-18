@@ -215,6 +215,59 @@ describe('BottomPreviewStrip', () => {
     app.unmount()
   })
 
+  it('顶部操作区提供切换侧边缩略图与卡片模式入口', async () => {
+    const onToggleMenuMode = vi.fn()
+    const onOpenCardMode = vi.fn()
+    const { app, host } = mountBottomPreviewStrip({
+      navigationItems: [],
+      modeToggleAvailable: true,
+      cardModeAvailable: true,
+      onToggleMenuMode,
+      onOpenCardMode,
+    })
+
+    await nextTick()
+
+    const switchButton = host.querySelector<HTMLButtonElement>('[data-testid="bottom-preview-switch-mode"]')
+    const cardButton = host.querySelector<HTMLButtonElement>('[data-testid="bottom-preview-card-mode"]')
+    expect(switchButton).not.toBeNull()
+    expect(cardButton).not.toBeNull()
+    expect(switchButton?.textContent).toContain('侧边缩略图')
+    expect(cardButton?.textContent).toContain('卡片模式')
+
+    switchButton?.click()
+    cardButton?.click()
+    expect(onToggleMenuMode).toHaveBeenCalledTimes(1)
+    expect(onOpenCardMode).toHaveBeenCalledTimes(1)
+
+    app.unmount()
+  })
+
+  it('底栏收起或入口未开放时不渲染顶部操作按钮', async () => {
+    const collapsed = mountBottomPreviewStrip({
+      navigationItems: [],
+      modeToggleAvailable: true,
+      cardModeAvailable: true,
+      collapsed: true,
+    })
+    await nextTick()
+
+    expect(collapsed.host.querySelector('[data-testid="bottom-preview-switch-mode"]')).toBeNull()
+    expect(collapsed.host.querySelector('[data-testid="bottom-preview-card-mode"]')).toBeNull()
+    collapsed.app.unmount()
+
+    const unavailable = mountBottomPreviewStrip({
+      navigationItems: [],
+      modeToggleAvailable: false,
+      cardModeAvailable: false,
+    })
+    await nextTick()
+
+    expect(unavailable.host.querySelector('[data-testid="bottom-preview-switch-mode"]')).toBeNull()
+    expect(unavailable.host.querySelector('[data-testid="bottom-preview-card-mode"]')).toBeNull()
+    unavailable.app.unmount()
+  })
+
   it('翻页按钮层级应高于缩略图遮罩并提供无障碍标签', async () => {
     const { app, host } = mountBottomPreviewStrip({
       navigationItems: [
@@ -256,6 +309,11 @@ function mountBottomPreviewStrip(props: {
     width?: number
     height?: number
   }
+  collapsed?: boolean
+  modeToggleAvailable?: boolean
+  cardModeAvailable?: boolean
+  onToggleMenuMode?: () => void
+  onOpenCardMode?: () => void
 }) {
   const host = document.createElement('div')
   document.body.appendChild(host)

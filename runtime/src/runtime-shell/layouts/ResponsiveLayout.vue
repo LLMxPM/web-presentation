@@ -20,7 +20,9 @@ v-if="effectiveMenuMode === 'text'" :navigation-items="processedNavigationItems"
         :app-config="sidebarAppConfig" @collapse-change="handleCollapseChange" />
       <SidePreviewStrip
 v-else-if="effectiveMenuMode === 'preview'" :navigation-items="processedNavigationItems"
-        :app-config="sidebarAppConfig" @collapse-change="handleCollapseChange" />
+        :app-config="sidebarAppConfig" :mode-toggle-available="canTogglePreviewMenuMode"
+        :card-mode-available="shouldShowCardModeButton" @collapse-change="handleCollapseChange"
+        @toggle-menu-mode="toggleMenuMode" @open-card-mode="openCardMode" />
     </div>
 
     <!-- 主内容区域 -->
@@ -37,18 +39,8 @@ class="main-content" :class="{
         </button>
       </div>
 
-      <!-- 页面导航按钮（仅预览态） -->
-      <div
-v-if="!isFullscreen && (shouldShowTopRightPageControls || canTogglePreviewMenuMode)"
-        class="page-navigation-buttons">
-        <!-- 预览模式切换按钮 -->
-        <button
-v-if="canTogglePreviewMenuMode" class="nav-button nav-button--mode"
-          :title="menuModeToggleTitle" @click.stop="toggleMenuMode">
-          <PanelLeft v-if="currentMenuMode === 'bottom-preview'" :size="16" />
-          <PanelBottom v-else :size="16" />
-        </button>
-
+      <!-- 页面导航按钮（仅预览态；视图切换与卡片入口在缩略图栏内） -->
+      <div v-if="!isFullscreen && shouldShowTopRightPageControls" class="page-navigation-buttons">
         <!-- PDF导出按钮 -->
         <button
 v-if="shouldShowPdfExportButton" class="nav-button nav-button--export"
@@ -61,13 +53,6 @@ v-if="shouldShowPdfExportButton" class="nav-button nav-button--export"
 v-if="shouldShowPresenterButton" class="nav-button nav-button--presenter"
           title="演讲模式 (Shift+P)" @click.stop="openPresenterMode">
           <Monitor :size="16" />
-        </button>
-
-        <!-- 卡片模式按钮 -->
-        <button
-v-if="shouldShowCardModeButton" class="nav-button nav-button--cards"
-          title="卡片模式" @click.stop="openCardMode">
-          <LayoutGrid :size="16" />
         </button>
 
         <template v-if="!isBottomPreviewMode">
@@ -136,7 +121,10 @@ v-if="isBottomPreviewMode && !isFullscreen" class="bottom-preview-wrapper" :clas
     }">
       <BottomPreviewStrip
 :collapsed="isBottomStripCollapsed" :navigation-items="processedNavigationItems"
-        :page-config="pageViewport" :app-config="layoutAppConfig" @collapsed-change="handleBottomStripCollapsedChange" />
+        :page-config="pageViewport" :app-config="layoutAppConfig"
+        :mode-toggle-available="canTogglePreviewMenuMode" :card-mode-available="shouldShowCardModeButton"
+        @collapsed-change="handleBottomStripCollapsedChange"
+        @toggle-menu-mode="toggleMenuMode" @open-card-mode="openCardMode" />
     </div>
 
     <!-- 导出对话框 -->
@@ -165,10 +153,7 @@ import {
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
   FileDown,
-  LayoutGrid,
-  Monitor,
-  PanelLeft,
-  PanelBottom
+  Monitor
 } from '@lucide/vue'
 import ResponsiveSidebar from '@/runtime-shell/layouts/ResponsiveSidebar.vue'
 import SidePreviewStrip from '@/runtime-shell/layouts/SidePreviewStrip.vue'
@@ -400,11 +385,11 @@ const cardModePages = computed(() => buildPresenterPages(routeConfigs.value))
 
 /**
  * 是否显示右上角的二级操作区。
+ * 关键约束：视图切换与卡片入口已移入缩略图栏，这里只保留导出、演讲和翻页。
  */
 const shouldShowTopRightPageControls = computed(() => {
   return shouldShowPdfExportButton.value
     || shouldShowPresenterButton.value
-    || shouldShowCardModeButton.value
     || !isBottomPreviewMode.value
 })
 
@@ -546,16 +531,6 @@ const handleNextPageAction = async (): Promise<void> => {
 
   await goToNextPage()
 }
-
-/**
- * 预览模式切换按钮提示。
- * @returns 目标模式的完整标题
- */
-const menuModeToggleTitle = computed(() => {
-  return currentMenuMode.value === 'bottom-preview'
-    ? '切换到侧边预览模式'
-    : '切换到底部缩略图模式'
-})
 
 /**
  * 进入全屏放映。
@@ -795,7 +770,9 @@ const scaleRatio = computed(() => {
   const reservedBottomHeight = isBottomPreviewMode.value
     ? (isFullscreen.value ? 0 : effectiveBottomPreviewRailHeight.value + BOTTOM_PREVIEW_BOTTOM_OFFSET + BOTTOM_PREVIEW_PAGE_GAP)
     : 0
-  const reservedSideWidth = isBottomPreviewMode.value ? BOTTOM_PREVIEW_SIDE_CONTROL_SPACE * 2 : 0
+  const reservedSideWidth = isBottomPreviewMode.value && !isFullscreen.value
+    ? BOTTOM_PREVIEW_SIDE_CONTROL_SPACE * 2
+    : 0
   let availableWidth: number
   let availableHeight: number
 

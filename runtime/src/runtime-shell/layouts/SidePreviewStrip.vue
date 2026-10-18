@@ -85,6 +85,31 @@ v-else key="icon"
           </ul>
         </div>
       </nav>
+
+      <!-- 缩略图栏视图操作：切到底部缩略图、打开卡片模式 -->
+      <div
+v-if="modeToggleAvailable || cardModeAvailable"
+        class="shrink-0 border-t border-gray-200 bg-gray-50/80 p-3"
+        :class="isCollapsed ? 'flex flex-col items-center gap-2' : 'flex items-center gap-2'">
+        <button
+v-if="modeToggleAvailable" type="button"
+          class="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-800"
+          :class="isCollapsed ? 'h-10 w-10' : 'h-9 flex-1 px-2'"
+          title="切换到底部缩略图" aria-label="切换到底部缩略图" data-testid="side-preview-switch-mode"
+          @click="requestMenuModeToggle">
+          <PanelBottom :size="16" />
+          <span v-if="!isCollapsed">底部缩略图</span>
+        </button>
+        <button
+v-if="cardModeAvailable" type="button"
+          class="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-800"
+          :class="isCollapsed ? 'h-10 w-10' : 'h-9 flex-1 px-2'"
+          title="卡片模式" aria-label="卡片模式" data-testid="side-preview-card-mode"
+          @click="requestCardMode">
+          <LayoutGrid :size="16" />
+          <span v-if="!isCollapsed">卡片模式</span>
+        </button>
+      </div>
     </aside>
 
     <Teleport to="body">
@@ -98,7 +123,7 @@ v-else key="icon"
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronLeft, ChevronDown } from '@lucide/vue'
+import { ChevronLeft, ChevronDown, LayoutGrid, PanelBottom } from '@lucide/vue'
 import type { MenuItem } from '@/core/types/menu'
 import { isRouteActive, hasActiveChild } from '@/core/utils/route-generator'
 import { DEFAULT_PAGE_CONFIG, type RuntimeMenuMode } from '@/core/utils/config'
@@ -120,10 +145,21 @@ interface Props {
       menuMode?: RuntimeMenuMode
     }
   }
+  /** 是否允许切换到底部缩略图。 */
+  modeToggleAvailable?: boolean
+  /** 是否显示卡片模式入口。 */
+  cardModeAvailable?: boolean
 }
 
-const props = defineProps<Props>()
-const emit = defineEmits<{ (e: 'collapseChange', collapsed: boolean): void }>()
+const props = withDefaults(defineProps<Props>(), {
+  modeToggleAvailable: false,
+  cardModeAvailable: false,
+})
+const emit = defineEmits<{
+  (e: 'collapseChange', collapsed: boolean): void
+  (e: 'toggle-menu-mode'): void
+  (e: 'open-card-mode'): void
+}>()
 
 const route = useRoute()
 const router = useRouter()
@@ -147,6 +183,20 @@ const previewPageConfig = computed(() => {
 const toggleCollapse = (): void => {
   isCollapsed.value = !isCollapsed.value
   emit('collapseChange', isCollapsed.value)
+}
+
+/**
+ * 请求切换到底部缩略图模式。
+ */
+const requestMenuModeToggle = (): void => {
+  emit('toggle-menu-mode')
+}
+
+/**
+ * 请求打开卡片模式。
+ */
+const requestCardMode = (): void => {
+  emit('open-card-mode')
 }
 
 const toggleMenuExpansion = (menuPath: string): void => {

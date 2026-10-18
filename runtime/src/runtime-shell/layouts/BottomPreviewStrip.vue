@@ -4,7 +4,7 @@
 
 <template>
   <div class="h-full flex flex-col gap-2 min-h-0 relative" :class="{ 'justify-center items-center': collapsed }">
-    <div class="relative h-6 w-full flex items-center justify-center shrink-0 px-14">
+    <div class="relative h-9 w-full flex items-center justify-center shrink-0 px-14">
       <span
 v-if="!collapsed && appTitle" class="absolute left-2 flex max-w-[calc(50%_-_3.5rem)] items-center gap-1.5 overflow-hidden text-xl font-bold text-slate-700"
         :title="appTitle">
@@ -19,6 +19,28 @@ type="button"
 :size="16" class="text-slate-500 transition-transform duration-300"
           :class="{ 'rotate-180': !collapsed }" />
       </button>
+
+      <!-- 缩略图栏视图操作：切到侧边缩略图、打开卡片模式 -->
+      <div
+v-if="!collapsed && (modeToggleAvailable || cardModeAvailable)"
+        class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+        <button
+v-if="modeToggleAvailable" type="button"
+          class="flex h-9 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white/90 px-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 hover:text-slate-800 sm:px-3"
+          title="切换到侧边缩略图" aria-label="切换到侧边缩略图" data-testid="bottom-preview-switch-mode"
+          @click.stop="requestMenuModeToggle">
+          <PanelLeft :size="16" />
+          <span class="hidden sm:inline">侧边缩略图</span>
+        </button>
+        <button
+v-if="cardModeAvailable" type="button"
+          class="flex h-9 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white/90 px-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 hover:text-slate-800 sm:px-3"
+          title="卡片模式" aria-label="卡片模式" data-testid="bottom-preview-card-mode"
+          @click.stop="requestCardMode">
+          <LayoutGrid :size="16" />
+          <span class="hidden sm:inline">卡片模式</span>
+        </button>
+      </div>
     </div>
 
     <div v-if="!collapsed" class="flex-1 min-h-0 relative flex items-center w-full">
@@ -91,7 +113,7 @@ v-if="canScrollRight"
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { ChevronDown, ChevronLeft, ChevronRight } from '@lucide/vue'
+import { ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, PanelLeft } from '@lucide/vue'
 import { useRoute } from 'vue-router'
 
 import PreviewThumbnail from '@/runtime-shell/layouts/PreviewThumbnail.vue'
@@ -130,16 +152,24 @@ interface Props {
     title?: string
   }
   collapsed?: boolean
+  /** 是否允许切换到侧边缩略图。 */
+  modeToggleAvailable?: boolean
+  /** 是否显示卡片模式入口。 */
+  cardModeAvailable?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   pageConfig: () => ({}),
   appConfig: () => ({}),
   collapsed: false,
+  modeToggleAvailable: false,
+  cardModeAvailable: false,
 })
 
 const emit = defineEmits<{
   (e: 'collapsed-change', collapsed: boolean): void
+  (e: 'toggle-menu-mode'): void
+  (e: 'open-card-mode'): void
 }>()
 
 const route = useRoute()
@@ -298,6 +328,20 @@ const isGroupCollapsed = (groupId: string): boolean => {
  */
 const toggleStripCollapsed = (): void => {
   emit('collapsed-change', !props.collapsed)
+}
+
+/**
+ * 请求切换到侧边缩略图模式。
+ */
+const requestMenuModeToggle = (): void => {
+  emit('toggle-menu-mode')
+}
+
+/**
+ * 请求打开卡片模式。
+ */
+const requestCardMode = (): void => {
+  emit('open-card-mode')
 }
 
 /**

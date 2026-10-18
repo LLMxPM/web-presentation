@@ -52,6 +52,7 @@ const {
   mockNavigableRoutes,
   mockNavigationState,
   nextPageSpy,
+  mockRouteConfigs,
 } = vi.hoisted(() => ({
   sidebarPropSpy: vi.fn(),
   sidePreviewPropSpy: vi.fn(),
@@ -74,12 +75,14 @@ const {
     value: { canGoNext: false, canGoPrevious: false },
   },
   nextPageSpy: vi.fn(),
+  mockRouteConfigs: {
+    value: [] as Array<Record<string, unknown>>,
+  },
 }))
 
 vi.mock('@/core/utils/config', async () => {
   const appConfigRef = {}
   const appPageConfigRef = {}
-  const routeConfigsRef = { value: [] }
 
   Object.defineProperty(appConfigRef, 'value', {
     get() {
@@ -123,7 +126,7 @@ vi.mock('@/core/utils/config', async () => {
     },
     appConfig: appConfigRef,
     appPageConfig: appPageConfigRef,
-    routeConfigs: routeConfigsRef,
+    routeConfigs: mockRouteConfigs,
     playbackConfig: { value: { supported: false, autoStart: false, loop: false } },
     loadIconConfig: vi.fn().mockResolvedValue({ icons: [] }),
   }
@@ -148,14 +151,37 @@ vi.mock('@/runtime-shell/layouts/BottomPreviewStrip.vue', async () => {
           type: Object,
           default: () => ({}),
         },
+        modeToggleAvailable: {
+          type: Boolean,
+          default: false,
+        },
+        cardModeAvailable: {
+          type: Boolean,
+          default: false,
+        },
       },
-      setup(props) {
+      emits: ['collapsed-change', 'toggle-menu-mode', 'open-card-mode'],
+      setup(props, { emit }) {
         bottomStripPropSpy(props.pageConfig)
 
         return () => h(
           'div',
           { 'data-testid': 'bottom-preview-strip-stub' },
-          `bottom:${getMockPageWidth(props.pageConfig)}`,
+          [
+            `bottom:${getMockPageWidth(props.pageConfig)}`,
+            props.modeToggleAvailable
+              ? h('button', {
+                'data-testid': 'bottom-stub-toggle-menu-mode',
+                onClick: () => emit('toggle-menu-mode'),
+              })
+              : null,
+            props.cardModeAvailable
+              ? h('button', {
+                'data-testid': 'bottom-stub-open-card-mode',
+                onClick: () => emit('open-card-mode'),
+              })
+              : null,
+          ],
         )
       },
     }),
@@ -206,14 +232,37 @@ vi.mock('@/runtime-shell/layouts/SidePreviewStrip.vue', async () => {
           type: Object,
           required: true,
         },
+        modeToggleAvailable: {
+          type: Boolean,
+          default: false,
+        },
+        cardModeAvailable: {
+          type: Boolean,
+          default: false,
+        },
       },
-      setup(props) {
+      emits: ['collapse-change', 'toggle-menu-mode', 'open-card-mode'],
+      setup(props, { emit }) {
         sidePreviewPropSpy(props.appConfig)
 
         return () => h(
           'div',
           { 'data-testid': 'side-preview-strip-stub' },
-          formatMockAppConfig(props.appConfig),
+          [
+            formatMockAppConfig(props.appConfig),
+            props.modeToggleAvailable
+              ? h('button', {
+                'data-testid': 'side-stub-toggle-menu-mode',
+                onClick: () => emit('toggle-menu-mode'),
+              })
+              : null,
+            props.cardModeAvailable
+              ? h('button', {
+                'data-testid': 'side-stub-open-card-mode',
+                onClick: () => emit('open-card-mode'),
+              })
+              : null,
+          ],
         )
       },
     }),
@@ -228,6 +277,30 @@ vi.mock('@runtime-kit/internal/components/viewport/ScaledCanvasViewport.vue', as
       name: 'ScaledCanvasViewportStub',
       setup(_, { slots }) {
         return () => h('div', { 'data-testid': 'fixed-ratio-container-stub' }, slots.default?.())
+      },
+    }),
+  }
+})
+
+vi.mock('@/runtime-shell/layouts/CardModePanel.vue', async () => {
+  const { defineComponent, h } = await import('vue')
+
+  return {
+    default: defineComponent({
+      name: 'CardModePanelStub',
+      props: {
+        pages: {
+          type: Array,
+          default: () => [],
+        },
+        currentPath: {
+          type: String,
+          default: '',
+        },
+      },
+      emits: ['close', 'select'],
+      setup() {
+        return () => h('div', { 'data-testid': 'card-mode' })
       },
     }),
   }
@@ -361,6 +434,7 @@ afterEach(() => {
   sidePreviewPropSpy.mockReset()
   bottomStripPropSpy.mockReset()
   mockNavigableRoutes.value = []
+  mockRouteConfigs.value = []
   mockNavigationState.value = { canGoNext: false, canGoPrevious: false }
   nextPageSpy.mockReset()
   localStorage.clear()
@@ -412,6 +486,7 @@ describe('ResponsiveLayout', () => {
 
   it('应支持以底部缩略图模式启动并切回侧边预览', async () => {
     mockMenuMode.value = 'bottom-preview'
+    mockRouteConfigs.value = [{ path: '/', title: '首页', pageNumber: 1, meta: {} }]
 
     const router = createRouter({
       history: createMemoryHistory(),
@@ -446,8 +521,10 @@ describe('ResponsiveLayout', () => {
       width: 1920,
       height: 1080,
     }))
+    expect(host.querySelector('.page-navigation-buttons .nav-button--mode')).toBeNull()
+    expect(host.querySelector('.page-navigation-buttons .nav-button--cards')).toBeNull()
 
-    const toggleButton = host.querySelector('button[title="切换到侧边预览模式"]') as HTMLButtonElement | null
+    const toggleButton = host.querySelector('[data-testid="bottom-stub-toggle-menu-mode"]') as HTMLButtonElement | null
     expect(toggleButton).not.toBeNull()
 
     toggleButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -455,6 +532,14 @@ describe('ResponsiveLayout', () => {
 
     expect(host.querySelector('[data-testid="bottom-preview-strip-stub"]')).toBeNull()
     expect(host.querySelector('[data-testid="side-preview-strip-stub"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="side-stub-toggle-menu-mode"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="side-stub-open-card-mode"]')).not.toBeNull()
+
+    host.querySelector<HTMLButtonElement>('[data-testid="side-stub-open-card-mode"]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await new Promise(resolve => window.setTimeout(resolve, 0))
+    await nextTick()
+    expect(host.querySelector('[data-testid="card-mode"]')).not.toBeNull()
     expect(sidePreviewPropSpy).toHaveBeenCalledWith(expect.objectContaining({
       title: '测试标题',
       features: expect.objectContaining({
@@ -501,12 +586,24 @@ describe('ResponsiveLayout', () => {
     expect(host.querySelector('button[title="进入放映"]')).not.toBeNull()
     expect(host.querySelector('[aria-label="退出放映"]')).toBeNull()
 
+    const previewCanvas = host.querySelector('[data-testid="fixed-ratio-container-stub"]')!
+    const previewScale = Number(previewCanvas.getAttribute('scale'))
+
     Object.defineProperty(document, 'fullscreenElement', {
       configurable: true,
       value: document.documentElement,
     })
     document.dispatchEvent(new Event('fullscreenchange'))
     await nextTick()
+
+    // 全屏后画布两侧的预览翻页按钮不再渲染，缩放不应继续为它们预留空间。
+    const fullscreenCanvas = host.querySelector('[data-testid="fixed-ratio-container-stub"]')!
+    const fullscreenScale = Number(fullscreenCanvas.getAttribute('scale'))
+    expect(fullscreenScale).toBeGreaterThan(previewScale)
+    expect(fullscreenScale).toBeCloseTo(
+      Math.min(window.innerWidth / 1920, window.innerHeight / 1080, 3),
+      5,
+    )
 
     expect(host.querySelector('[data-testid="bottom-preview-strip-stub"]')).toBeNull()
     expect(host.querySelector('[data-testid="responsive-sidebar-stub"]')).toBeNull()
