@@ -16,7 +16,7 @@ from app.schemas.slideshow import (
 
 
 async def test_system_slideshow_capabilities_should_publish_executable_baseline(client: AsyncClient) -> None:
-    """Editor 读取的能力声明与后端可写模式、范围一致，未验收模式不得提前出现。"""
+    """Editor 读取的能力声明与后端可写模式、范围一致，已验收媒体与演讲者能力开放。"""
 
     response = await client.get("/api/system/slideshow-capabilities")
 
@@ -25,9 +25,9 @@ async def test_system_slideshow_capabilities_should_publish_executable_baseline(
     assert data["schema_version"] == SLIDESHOW_SCHEMA_VERSION
     assert data["transition_effects"] == list(SLIDESHOW_TRANSITION_EFFECTS)
     assert data["advance_modes"] == list(SLIDESHOW_EXECUTABLE_ADVANCE_MODES)
-    assert "media_end" not in data["advance_modes"]
+    assert "media_end" in data["advance_modes"]
     assert data["single_window_auto_play"] is True
-    assert data["presenter_auto_play"] is False
+    assert data["presenter_auto_play"] is True
     assert data["capture_auto_play"] is False
     assert data["transition_duration_ms"] == {
         "min": TRANSITION_DURATION_MIN_MS,

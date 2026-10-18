@@ -21,8 +21,8 @@ AdvanceMode = Literal["manual", "timer", "media_end"]
 
 SLIDESHOW_TRANSITION_EFFECTS: tuple[TransitionEffect, ...] = ("none", "fade", "push")
 SLIDESHOW_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "media_end")
-# 能力与写入门禁共用：media_end 在 WP30 完成执行器和真实验收前不可写、不可声明。
-SLIDESHOW_EXECUTABLE_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer")
+# 能力声明与写入门禁共用；WP30 完成 M2 验收后与结构枚举一致。
+SLIDESHOW_EXECUTABLE_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "media_end")
 
 # 与契约一致的数值边界；none 效果必须为 0，由模型校验器强制。
 TRANSITION_DURATION_MIN_MS = 100
@@ -86,14 +86,6 @@ class SlideshowAdvance(BaseModel):
         le=MEDIA_TIMEOUT_MAX_MS,
         description="媒体结束模式等待媒体结束的最长时间（毫秒），默认 300000。",
     )
-
-    @model_validator(mode="after")
-    def validate_executable_mode(self) -> SlideshowAdvance:
-        """能力开放前拒绝 media_end，避免保存后被执行器静默降级。"""
-
-        if self.mode not in SLIDESHOW_EXECUTABLE_ADVANCE_MODES:
-            raise ValueError("media_end 翻页模式尚未开放。")
-        return self
 
 
 class SlideshowSettings(BaseModel):

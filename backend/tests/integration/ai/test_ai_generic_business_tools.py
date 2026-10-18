@@ -594,10 +594,10 @@ async def test_cross_user_ai_tool_write_should_be_denied(authenticated_client: A
         assert style.name == "属主样式"
 
 
-async def test_project_slideshow_action_should_use_http_dto_and_reject_unopened_modes(
+async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
     authenticated_client: AsyncClient,
 ) -> None:
-    """项目放映 action 与 HTTP 同源校验：完整对象写入、媒体模式不披露、失败不部分落库。"""
+    """项目放映 action 与 HTTP 同源校验：完整对象写入、三种模式披露、失败不部分落库。"""
 
     workspace_id = await _create_workspace(authenticated_client, "AI 放映工作空间")
     project_id = await _create_project(authenticated_client, workspace_id, "AI 放映项目")
@@ -610,7 +610,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_reject_unopened_
     guide_schema = json.dumps(guide["parameters"], ensure_ascii=False)
     for field_name in ("slideshow", "transition", "advance", "loop", "auto_start", "duration_ms", "delay_ms"):
         assert f'"{field_name}"' in guide_schema
-    assert "media_end" not in guide_schema
+    assert "media_end" in guide_schema
 
     slideshow = {
         "transition": {"effect": "push", "duration_ms": 900},
@@ -631,6 +631,23 @@ async def test_project_slideshow_action_should_use_http_dto_and_reject_unopened_
     assert detail.status_code == 200
     assert detail.json()["slideshow"] == slideshow
 
+    media_end = {
+        "transition": {"effect": "fade", "duration_ms": 400},
+        "advance": {"mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 120000},
+        "loop": False,
+        "auto_start": False,
+    }
+    media_updated = await tools["update_entity"].entrypoint(
+        context,
+        "project",
+        project_id,
+        {"slideshow": media_end},
+        "slideshow",
+    )
+    assert media_updated["effect"] == "update"
+    media_detail = await authenticated_client.get(f"/api/projects/{project_id}")
+    assert media_detail.json()["slideshow"] == media_end
+
     with pytest.raises(AppException) as error:
         await tools["update_entity"].entrypoint(
             context,
@@ -639,7 +656,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_reject_unopened_
             {
                 "slideshow": {
                     "transition": {"effect": "fade", "duration_ms": 400},
-                    "advance": {"mode": "media_end", "delay_ms": 5000},
+                    "advance": {"mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 999},
                     "loop": False,
                     "auto_start": False,
                 }
@@ -649,7 +666,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_reject_unopened_
     assert error.value.code == "AI_OPERATION_ARGUMENTS_INVALID"
 
     unchanged = await authenticated_client.get(f"/api/projects/{project_id}")
-    assert unchanged.json()["slideshow"] == slideshow
+    assert unchanged.json()["slideshow"] == media_end
 
 
 async def test_project_create_should_accept_slideshow_payload(authenticated_client: AsyncClient) -> None:

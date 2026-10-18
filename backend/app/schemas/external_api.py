@@ -82,14 +82,14 @@ class ExternalSlideshowCapabilities(BaseModel):
 
 
 def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
-    """构造当前能力声明：结构升级为 schema 2，媒体与演讲者自动放映仍保持关闭。"""
+    """构造当前能力声明：schema 2 的媒体结束、单窗口/双屏自动放映均已开放。"""
 
     return ExternalSlideshowCapabilities(
         schema_version=SLIDESHOW_SCHEMA_VERSION,
         transition_effects=list(SLIDESHOW_TRANSITION_EFFECTS),
         advance_modes=list(SLIDESHOW_EXECUTABLE_ADVANCE_MODES),
         single_window_auto_play=True,
-        presenter_auto_play=False,
+        presenter_auto_play=True,
         capture_auto_play=False,
         transition_duration_ms=ExternalTransitionDurationRange(
             min=TRANSITION_DURATION_MIN_MS,

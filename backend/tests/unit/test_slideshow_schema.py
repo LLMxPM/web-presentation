@@ -143,16 +143,9 @@ def test_project_settings_should_reject_non_object_values() -> None:
             normalize_slideshow_settings(value)
 
 
-def test_media_end_should_parse_and_map_after_capability_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_media_end_should_parse_and_map() -> None:
     """能力开放后 media_end 可按完整结构解析，并下发超时与停留时间。"""
 
-    from app.schemas import slideshow as slideshow_module
-
-    monkeypatch.setattr(
-        slideshow_module,
-        "SLIDESHOW_EXECUTABLE_ADVANCE_MODES",
-        ("manual", "timer", "media_end"),
-    )
     settings = normalize_slideshow_settings(
         {
             "transition": {"effect": "fade", "duration_ms": 400},

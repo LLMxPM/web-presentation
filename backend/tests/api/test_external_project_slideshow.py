@@ -295,8 +295,8 @@ async def test_external_idempotency_should_distinguish_slideshow_and_omitted_fie
 
 
 @pytest.mark.asyncio
-async def test_external_capabilities_should_declare_schema2_but_keep_media_closed(client: AsyncClient) -> None:
-    """schema 2 披露媒体超时结构，但 advance_modes 仍不包含 media_end，演讲者保持不可用。"""
+async def test_external_capabilities_should_declare_schema2_media_and_presenter(client: AsyncClient) -> None:
+    """schema 2 能力开放 media_end 与演讲者自动放映，捕获仍保持禁播。"""
 
     token, workspace_id, _ = await _create_external_identity()
     response = await client.get(
@@ -307,9 +307,9 @@ async def test_external_capabilities_should_declare_schema2_but_keep_media_close
     slideshow = response.json()["slideshow"]
     assert slideshow["schema_version"] == 2
     assert slideshow["transition_effects"] == ["none", "fade", "push"]
-    assert slideshow["advance_modes"] == ["manual", "timer"]
+    assert slideshow["advance_modes"] == ["manual", "timer", "media_end"]
     assert slideshow["single_window_auto_play"] is True
-    assert slideshow["presenter_auto_play"] is False
+    assert slideshow["presenter_auto_play"] is True
     assert slideshow["capture_auto_play"] is False
     assert slideshow["transition_duration_ms"] == {"min": 100, "max": 2000, "none": 0}
     assert slideshow["delay_ms"] == {"min": 1000, "max": 3600000}

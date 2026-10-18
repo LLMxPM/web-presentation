@@ -66,7 +66,6 @@ from app.ai.tools.generic.operation_models import (
     VersionContentOptions,
 )
 from app.ai.tools.visual import build_analyze_visuals_tool
-from app.schemas.slideshow import SLIDESHOW_EXECUTABLE_ADVANCE_MODES
 
 
 _COMPACT_PAGE_VALIDATION_EXAMPLE = (
@@ -580,25 +579,11 @@ def _operation_guide(
     )
 
 
-def _restrict_unopened_advance_modes(definitions: dict[str, Any]) -> None:
-    """能力开放前从工具手册移除不可写的翻页模式，实际写入仍由 DTO 校验。"""
-
-    advance = definitions.get("SlideshowAdvance")
-    if not isinstance(advance, dict):
-        return
-    mode = advance.get("properties", {}).get("mode")
-    if isinstance(mode, dict) and isinstance(mode.get("enum"), list):
-        mode["enum"] = [
-            value for value in mode["enum"] if value in SLIDESHOW_EXECUTABLE_ADVANCE_MODES
-        ]
-
-
 def _model_schema(model: type[BaseModel]) -> tuple[dict[str, Any], dict[str, Any]]:
     """生成可嵌套的模型 Schema，并把引用定义提升到工具参数根节点。"""
 
     schema = model.model_json_schema()
     definitions = dict(schema.pop("$defs", {}))
-    _restrict_unopened_advance_modes(definitions)
     schema.pop("title", None)
     return schema, definitions
 
@@ -1029,7 +1014,7 @@ _COORDINATOR_OPERATION_GUIDES = (
                      prerequisites=("先查询项目 pages 和 route_tree；routes 中所有 page_id 必须属于目标项目。",), constraints=("这是全量覆盖，不是增量追加；未包含的现有路由节点会被移除。",),
                      side_effects=("影响项目导航结构和页面访问路径。",), error_recovery=("校验失败时重新读取最新 route_tree 后重新构造完整 routes。",), risk_level="write"),
     _operation_guide("project", "update", "整体替换项目默认放映配置（翻页动画、停留时间、循环与自动开始）。", _write_parameters("project", "update", ProjectSlideshowPayload, action="slideshow", target_mode="single"), action="slideshow", risk_level="write",
-                     constraints=("必须提交完整 slideshow 对象，平台不为部分字段补全。", "effect 只支持 none/fade/push；none 的 duration_ms 必须为 0，其它效果 100–2000ms。", "当前只支持 manual 与 timer 两种 advance 模式，delay_ms 范围 1000–3600000；media_timeout_ms 默认 300000、范围 1000–3600000，media_end 尚未开放。", "该 action 只改项目默认值，不影响已显式覆盖的叶子路由。"),
+                     constraints=("必须提交完整 slideshow 对象，平台不为部分字段补全。", "effect 只支持 none/fade/push；none 的 duration_ms 必须为 0，其它效果 100–2000ms。", "advance 支持 manual、timer 与 media_end；delay_ms 范围 1000–3600000，media_timeout_ms 默认 300000、范围 1000–3600000。", "该 action 只改项目默认值，不影响已显式覆盖的叶子路由。"),
                      call_example={"resource_type": "project", "action": "slideshow", "target_id": 8, "payload": {"slideshow": {"transition": {"effect": "fade", "duration_ms": 400}, "advance": {"mode": "timer", "delay_ms": 8000, "media_timeout_ms": 300000}, "loop": False, "auto_start": False}}}),
     _operation_guide("project", "update", "替换项目构建时额外打包的工作空间资源名。", _write_parameters("project", "update", ProjectBuildAssetsPayload, action="build_assets", target_mode="single"), action="build_assets", risk_level="write"),
     _operation_guide("page", "update", "修改页面标题、摘要或演讲者备注。", _write_parameters("page", "update", PageMetadataPayload, action="metadata", target_mode="single"), action="metadata", risk_level="write",

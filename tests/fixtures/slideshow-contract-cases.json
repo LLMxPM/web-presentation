@@ -159,12 +159,11 @@
       }
     },
     {
-      "name": "media-mode-not-open",
-      "valid": false,
-      "error": "value_error",
+      "name": "media-mode-valid",
+      "valid": true,
       "input": {
         "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "media_end", "delay_ms": 5000 },
+        "advance": { "mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 300000 },
         "loop": false,
         "auto_start": false
       }
@@ -289,10 +288,10 @@
       "input": { "mode": "timer", "delay_ms": "8000" }
     },
     {
-      "name": "media-mode-not-open",
-      "valid": false,
-      "error": "value_error",
-      "input": { "mode": "media_end", "delay_ms": 5000 }
+      "name": "complete-media-end",
+      "valid": true,
+      "input": { "mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 300000 },
+      "expected": { "mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 300000 }
     }
   ],
   "resolution_cases": [

@@ -65,6 +65,45 @@ async def test_project_create_should_accept_complete_slideshow(authenticated_cli
     assert project["slideshow"] == TIMER_SLIDESHOW
 
 
+async def test_project_create_should_accept_media_end_advance(authenticated_client: AsyncClient) -> None:
+    """能力开放后 media_end 可写入，省略超时补默认值，显式超时按提交值保存。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "媒体放映空间")
+    default_timeout = await _create_project(
+        authenticated_client,
+        workspace_id,
+        "媒体默认超时",
+        slideshow={
+            "transition": {"effect": "none", "duration_ms": 0},
+            "advance": {"mode": "media_end", "delay_ms": 5000},
+            "loop": False,
+            "auto_start": False,
+        },
+    )
+    assert default_timeout["slideshow"]["advance"] == {
+        "mode": "media_end",
+        "delay_ms": 5000,
+        "media_timeout_ms": 300000,
+    }
+
+    explicit_timeout = await _create_project(
+        authenticated_client,
+        workspace_id,
+        "媒体显式超时",
+        slideshow={
+            "transition": {"effect": "fade", "duration_ms": 400},
+            "advance": {"mode": "media_end", "delay_ms": 6000, "media_timeout_ms": 120000},
+            "loop": True,
+            "auto_start": True,
+        },
+    )
+    assert explicit_timeout["slideshow"]["advance"] == {
+        "mode": "media_end",
+        "delay_ms": 6000,
+        "media_timeout_ms": 120000,
+    }
+
+
 async def test_project_patch_should_preserve_or_replace_slideshow(authenticated_client: AsyncClient) -> None:
     """PATCH 省略放映配置时保留原值，提供完整对象时整体替换。"""
 
@@ -129,12 +168,6 @@ async def test_project_slideshow_should_reject_invalid_numbers_on_create(authent
         {
             "transition": {"effect": "wipe", "duration_ms": 400},
             "advance": {"mode": "manual", "delay_ms": 5000},
-            "loop": False,
-            "auto_start": False,
-        },
-        {
-            "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "media_end", "delay_ms": 5000},
             "loop": False,
             "auto_start": False,
         },
