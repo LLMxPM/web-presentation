@@ -315,6 +315,148 @@
     },
     {
       "kind": "component",
+      "base_name": "AssetAudio",
+      "version_no": 1,
+      "name": "AssetAudio.v1",
+      "import_path": "@runtime-kit/public/components/assets/AssetAudio.v1.vue",
+      "category": "asset",
+      "description": "按资源逻辑名渲染内容音频或页面旁白目标。",
+      "capability": {
+        "enabled": true,
+        "previewable": true,
+        "recommendation_level": "default",
+        "display_name": "音频资源渲染",
+        "summary": "渲染 render_type=audio 的工作空间音频资源；M0 支持内容音频手动播放，旁白自动播放由后续放映会话能力控制。",
+        "tags": ["audio", "narration"],
+        "usage": [
+          "import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'",
+          "布局提示：实际页面中的 AssetAudio 应通过 class 声明明确宽度和高度（如 Tailwind w-full h-16），避免使用 min-h 或内容自由高度作为尺寸来源。",
+          "<AssetAudio name=\"customer-interview\" purpose=\"content\" controls class=\"w-full h-16\" />",
+          "<AssetAudio name=\"chapter-01-narration\" purpose=\"narration\" :volume=\"0.9\" class=\"w-full h-16\" />"
+        ],
+        "returns": "Vue 组件；渲染带稳定媒体标记的原生 audio 播放区域。",
+        "return_example": ["<AssetAudio name=\"customer-interview\" purpose=\"content\" controls class=\"w-full h-16\" />"],
+        "constraints": [
+          "适用于 asset_metadata.render_type=audio 的资源。",
+          "组件不暴露 autoplay；自动播放资格只能由 purpose、执行策略和放映宿主决定。",
+          "purpose 只允许 content 或 narration；narration 禁止 loop=true。",
+          "volume 范围为 0–1，playbackRate 范围为 0.5–2，且都必须是有限数字。",
+          "静态执行上下文强制 preload=none 且禁止播放。",
+          "实际页面使用时应为资源容器设置明确 width 和 height；避免用 min-h 或内容自由高度作为尺寸来源。"
+        ],
+        "audiences": ["backend", "agent"],
+        "preview_schema": {
+          "props": {
+            "name": {
+              "type": "string",
+              "label": "音频资源名",
+              "description": "工作空间音频资源的逻辑名 asset.name。",
+              "required": true,
+              "default": "",
+              "placeholder": "customer-interview"
+            },
+            "purpose": {
+              "type": "select",
+              "label": "媒体用途",
+              "description": "content 为手动内容音频；narration 为页面旁白目标，自动播放由放映宿主控制。",
+              "default": "content",
+              "options": [
+                { "label": "内容音频", "value": "content" },
+                { "label": "页面旁白", "value": "narration" }
+              ]
+            },
+            "controls": {
+              "type": "boolean",
+              "label": "播放控件",
+              "description": "显式控制原生控件；未指定时 content 默认显示、narration 默认隐藏。",
+              "default": true
+            },
+            "volume": {
+              "type": "number",
+              "label": "组件音量",
+              "description": "有限数字，范围 0–1。",
+              "default": 1
+            },
+            "playbackRate": {
+              "type": "number",
+              "label": "播放速率",
+              "description": "有限数字，范围 0.5–2。",
+              "default": 1
+            },
+            "preload": {
+              "type": "select",
+              "label": "预加载策略",
+              "description": "静态执行上下文会强制降为 none。",
+              "default": "metadata",
+              "options": [
+                { "label": "none", "value": "none" },
+                { "label": "metadata", "value": "metadata" },
+                { "label": "auto", "value": "auto" }
+              ]
+            },
+            "loop": {
+              "type": "boolean",
+              "label": "循环播放",
+              "description": "仅内容音频可循环；页面旁白禁止循环。",
+              "default": false
+            },
+            "fallback": {
+              "type": "string",
+              "label": "音频兜底文案",
+              "description": "音频资源无法渲染时展示的兜底文案；该字段不向 Agent 暴露。",
+              "default": "音频资源无法渲染，请检查资源名称或资源内容。",
+              "agent_visible": false
+            },
+            "class": {
+              "type": "string",
+              "label": "Tailwind 类",
+              "description": "容器样式入口。使用完整静态 Tailwind 类声明明确宽度和高度，避免用 min-h 或内容自由高度作为尺寸来源。例如：w-full h-16。",
+              "default": "w-full h-16"
+            }
+          },
+          "presets": [
+            {
+              "key": "content-player",
+              "label": "内容播放器",
+              "props": {
+                "purpose": "content",
+                "controls": true,
+                "preload": "metadata",
+                "class": "w-full h-16"
+              }
+            },
+            {
+              "key": "page-narration",
+              "label": "页面旁白目标",
+              "props": {
+                "purpose": "narration",
+                "controls": false,
+                "preload": "metadata",
+                "loop": false,
+                "class": "w-full h-16"
+              }
+            }
+          ]
+        },
+        "preview_options": {
+          "page": {
+            "width": 960,
+            "height": 540
+          },
+          "placement": {
+            "width_mode": "percent",
+            "width_value": 72,
+            "height_mode": "fixed",
+            "height_value": 96,
+            "horizontal_align": "center",
+            "vertical_align": "center",
+            "padding": 56
+          }
+        }
+      }
+    },
+    {
+      "kind": "component",
       "base_name": "AssetDrawio",
       "version_no": 1,
       "name": "AssetDrawio.v1",

@@ -17,6 +17,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAssetMetadata } from '@/core/composables/useAsset'
+import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
 import AssetChart from '@runtime-kit/public/components/assets/AssetChart.v1.vue'
 import AssetDrawio from '@runtime-kit/public/components/assets/AssetDrawio.v1.vue'
 import AssetFormula from '@runtime-kit/public/components/assets/AssetFormula.v1.vue'
@@ -25,7 +26,7 @@ import AssetMermaid from '@runtime-kit/public/components/assets/AssetMermaid.v1.
 import AssetVideo from '@runtime-kit/public/components/assets/AssetVideo.v1.vue'
 import { buildViewerSurfaceStyle, type ViewerSurfaceProps } from '@runtime-kit/internal/utils/viewer-style'
 
-type AssetRenderType = 'image' | 'drawio' | 'mermaid' | 'chart' | 'formula' | 'video'
+type AssetRenderType = 'image' | 'drawio' | 'mermaid' | 'chart' | 'formula' | 'video' | 'audio'
 
 interface Props extends ViewerSurfaceProps {
   /** 资源逻辑名 `asset.name` */
@@ -54,6 +55,8 @@ const rendererComponent = computed(() => {
       return AssetFormula
     case 'video':
       return AssetVideo
+    case 'audio':
+      return AssetAudio
     default:
       return null
   }

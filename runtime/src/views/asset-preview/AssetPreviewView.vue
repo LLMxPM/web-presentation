@@ -74,6 +74,15 @@
       :show-border="false"
       controls
     />
+    <AssetAudio
+      v-else-if="renderType === 'audio'"
+      :name="assetConfig.name"
+      :fallback="assetConfig.url || ''"
+      class="asset-preview-view__audio"
+      purpose="content"
+      controls
+      preload="metadata"
+    />
     <AssetModel
       v-else-if="renderType === 'model3d'"
       :name="assetConfig.name"
@@ -89,6 +98,7 @@
 import { computed } from 'vue'
 import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
 import { getRuntimePreloadedConfig } from '@/core/utils/path'
+import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
 import AssetChart from '@runtime-kit/public/components/assets/AssetChart.v1.vue'
 import AssetDrawio from '@runtime-kit/public/components/assets/AssetDrawio.v1.vue'
 import AssetFormula from '@runtime-kit/public/components/assets/AssetFormula.v1.vue'
@@ -157,5 +167,10 @@ const isImageLike = computed(() => (
   color: #64748b;
   font-size: 14px;
   text-align: center;
+}
+
+.asset-preview-view__audio {
+  width: min(720px, calc(100vw - 48px));
+  margin: auto;
 }
 </style>

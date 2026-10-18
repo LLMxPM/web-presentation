@@ -146,6 +146,7 @@ describe('runtime kit manifest', () => {
       expect.arrayContaining([
         'AssetImage',
         'AssetVideo',
+        'AssetAudio',
         'AssetDrawio',
         'AssetMermaid',
         'AssetChart',
@@ -177,6 +178,7 @@ describe('runtime kit manifest', () => {
   it('可预览组件 schema 应覆盖真实可调字段和首屏示例输入', () => {
     const assetImageClass = 'w-full h-64 rounded-lg border border-border p-0 bg-transparent overflow-hidden'
     const assetVideoClass = 'w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden'
+    const assetAudioClass = 'w-full h-16'
     const assetDiagramClass = 'w-full h-96 rounded-lg border border-border p-0 bg-transparent overflow-hidden'
     const assetChartClass = 'w-full h-96 rounded-lg border border-border p-0 bg-transparent overflow-hidden'
     const assetFormulaClass = 'w-full h-20 rounded-lg border border-border p-0 bg-transparent text-primary overflow-hidden'
@@ -231,6 +233,28 @@ describe('runtime kit manifest', () => {
     expect(assetVideoProps.fallback.agent_visible).toBe(false)
     expect(assetVideoProps.posterFallback.agent_visible).toBe(false)
     expect(assetVideoProps.class.default).toBe(assetVideoClass)
+
+    const assetAudioProps = getPreviewProps('AssetAudio')
+    expect(Object.keys(assetAudioProps)).toEqual(expect.arrayContaining([
+      'name',
+      'purpose',
+      'controls',
+      'volume',
+      'playbackRate',
+      'preload',
+      'loop',
+      'fallback',
+      'class',
+    ]))
+    expect(assetAudioProps).not.toHaveProperty('autoplay')
+    expect(assetAudioProps.purpose.options?.map(option => option.value)).toEqual(['content', 'narration'])
+    expect(assetAudioProps.volume.description).toContain('0–1')
+    expect(assetAudioProps.playbackRate.description).toContain('0.5–2')
+    expect(assetAudioProps.preload.description).toContain('静态执行上下文')
+    expect(assetAudioProps.fallback.default).toBe('音频资源无法渲染，请检查资源名称或资源内容。')
+    expect(assetAudioProps.fallback.agent_visible).toBe(false)
+    expect(assetAudioProps.class.default).toBe(assetAudioClass)
+    expect(getPresetKeys('AssetAudio')).toEqual(expect.arrayContaining(['content-player', 'page-narration']))
 
     const assetDrawioProps = getPreviewProps('AssetDrawio')
     expect(Object.keys(assetDrawioProps)).toEqual(expect.arrayContaining([
@@ -292,6 +316,7 @@ describe('runtime kit manifest', () => {
     ;[
       assetImageProps,
       assetVideoProps,
+      assetAudioProps,
       assetDrawioProps,
       assetMermaidProps,
       assetChartProps,
@@ -391,6 +416,7 @@ describe('runtime kit manifest', () => {
     const renderAssetNames = [
       'AssetImage',
       'AssetVideo',
+      'AssetAudio',
       'AssetDrawio',
       'AssetMermaid',
       'AssetChart',
