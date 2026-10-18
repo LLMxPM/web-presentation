@@ -138,6 +138,32 @@ describe('AssetManagerPanel', () => {
     expect(document.querySelector('[data-preview-background]')).toHaveAttribute('data-preview-background', 'dark')
     expect(screen.getByLabelText('关闭资源预览')).toBeInTheDocument()
   })
+
+  it('音频资源应使用原生控件试听且不打开 Runtime 预览', async () => {
+    const pauseMock = vi.fn()
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value: pauseMock })
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [createAudioAsset()],
+      total: 1,
+      page: 1,
+      page_size: 24,
+    })
+
+    renderPanel()
+
+    await waitFor(() => {
+      expect(screen.getByText('page_voice')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByText('page_voice'))
+
+    const audio = document.querySelector('audio')
+    expect(audio).toHaveAttribute('controls')
+    expect(audio).not.toHaveAttribute('autoplay')
+    expect(screen.queryByTestId('asset-preview-frame')).toBeNull()
+
+    await fireEvent.click(screen.getByLabelText('关闭资源预览'))
+    expect(pauseMock).toHaveBeenCalled()
+  })
 })
 
 function renderPanel() {
@@ -229,5 +255,24 @@ function createRasterAsset(): AssetResponse {
     asset_type: 'image',
     render_type: 'image',
     url: 'https://backend.example.com/public/assets/7/hash-png',
+  }
+}
+
+/** 创建音频资源测试数据。 */
+function createAudioAsset(): AssetResponse {
+  return {
+    ...createSvgAsset(),
+    id: 21,
+    name: 'page_voice',
+    original_name: 'page_voice.mp3',
+    file_name: 'voice-hash.mp3',
+    file_hash: 'voice-hash',
+    file_size: 1024,
+    content_type: 'audio/mpeg',
+    asset_type: 'audio',
+    asset_role: 'content',
+    render_type: 'audio',
+    content_editable: false,
+    url: 'https://backend.example.com/public/assets/7/voice-hash',
   }
 }

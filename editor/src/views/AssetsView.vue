@@ -160,6 +160,7 @@
                 <BarChart3 v-else-if="asset.asset_type === 'chart'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-success" />
                 <Sigma v-else-if="asset.asset_type === 'formula'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-ai" />
                 <Video v-else-if="asset.asset_type === 'video'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-danger" />
+                <Music v-else-if="asset.asset_type === 'audio'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-accent" />
                 <Box v-else-if="asset.asset_type === 'model3d'" class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-ai-strong" />
                 <FileText v-else class="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-text-disabled" />
 
@@ -419,6 +420,7 @@ import {
   FileText,
   Image,
   ListChecks,
+  Music,
   PenTool,
   RefreshCw,
   RotateCcw,

@@ -18,6 +18,7 @@ export const ASSET_GROUPS: { key: string; label: string; types: { label: string;
     types: [
       { label: '图片', value: 'image' },
       { label: '视频', value: 'video' },
+      { label: '音频', value: 'audio' },
       { label: 'DrawIO', value: 'drawio' },
       { label: 'Mermaid', value: 'mermaid' },
       { label: '图表', value: 'chart' },

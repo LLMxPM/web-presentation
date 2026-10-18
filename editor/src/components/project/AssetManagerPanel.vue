@@ -78,6 +78,7 @@
             <BarChart3 v-else-if="asset.asset_type === 'chart'" class="h-5 w-5 text-success" />
             <Sigma v-else-if="asset.asset_type === 'formula'" class="h-5 w-5 text-ai" />
             <Video v-else-if="asset.asset_type === 'video'" class="h-5 w-5 text-danger" />
+            <Music v-else-if="asset.asset_type === 'audio'" class="h-5 w-5 text-accent" />
             <Box v-else-if="asset.asset_type === 'model3d'" class="h-5 w-5 text-ai-strong" />
             <FileText v-else class="h-5 w-5 text-text-disabled" />
           </div>
@@ -174,8 +175,14 @@
     @update:open="handleQuickPreviewDialogVisibleChange"
   >
     <div v-if="previewAsset" class="pointer-events-none relative flex h-full min-h-0 items-center justify-center p-4 sm:p-6">
+      <AssetAudioPreview
+        v-if="previewAsset.asset_type === 'audio'"
+        :key="`${previewAsset.id}:${previewAsset.file_hash}`"
+        :asset="previewAsset"
+        class="pointer-events-auto h-full max-h-[640px] w-full max-w-4xl"
+      />
       <AssetPreviewSurface
-        v-if="previewAsset.asset_type !== 'font' && isImage(previewAsset.original_name)"
+        v-else-if="previewAsset.asset_type !== 'font' && isImage(previewAsset.original_name)"
         :background="quickPreviewBackground"
         class="pointer-events-auto relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-2xl border border-surface/20 shadow-2xl"
       >
@@ -225,6 +232,7 @@ import {
   Download,
   FileText,
   Image,
+  Music,
   PenTool,
   Sigma,
   Video,
@@ -241,6 +249,7 @@ import type { AssetResponse, AssetType } from '@/types/api'
 import { Message } from '@/utils/message'
 import { buildWorkspaceAssetsPath } from '@/utils/workspace-routes'
 import { ASSET_GROUPS } from './asset-manager'
+import AssetAudioPreview from '@/components/project/AssetAudioPreview.vue'
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
 import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
@@ -481,6 +490,7 @@ function handleQuickPreviewDialogVisibleChange(value: boolean): void {
 }
 
 function shouldUseEditorNativePreview(asset: AssetResponse): boolean {
+  if (asset.asset_type === 'audio') return true
   if (asset.asset_type === 'font') return true
   if (asset.asset_type === 'image' && isImage(asset.original_name)) return true
   if (asset.asset_type === 'icon' && isImage(asset.original_name) && !isSvg(asset.original_name)) return true

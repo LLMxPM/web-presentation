@@ -19,7 +19,14 @@
           <BaseCloseButton label="关闭资源详情" @click="detail.closeAssetDetail()" />
         </header>
         <div class="min-h-0 flex-1 p-5">
+          <AssetAudioPreview
+            v-if="detail.detailAsset.value.asset_type === 'audio'"
+            :key="`${detail.detailAsset.value.id}:${detail.detailAsset.value.file_hash}`"
+            class="h-full"
+            :asset="detail.detailAsset.value"
+          />
           <AssetPreviewFrame
+            v-else
             :key="`${detail.detailAsset.value.id}:${detail.detailAsset.value.file_hash}`"
             class="h-full"
             :workspace-id="workspaceId"
@@ -178,6 +185,7 @@
                 <FileText class="mx-auto mb-3 h-10 w-10 text-text-faint" />
                 <p class="text-sm font-bold text-text-secondary">该资源不支持文本内容编辑</p>
                 <p v-if="detail.detailAsset.value.asset_type === 'model3d'" class="mt-2 text-xs leading-6 text-text-disabled">三维模型是标准二进制资源：请通过「替换」上传新的 GLB 文件更新内容；页面通过资源名引用并各自设置视角。</p>
+                <p v-else-if="detail.detailAsset.value.asset_type === 'audio'" class="mt-2 text-xs leading-6 text-text-disabled">音频是二进制资源：请通过「替换」上传新的音频文件更新内容；页面通过资源名引用并配置旁白或交互音效。</p>
                 <p v-else class="mt-2 text-xs leading-6 text-text-disabled">位图图标和位图图片只能复制、归档、删除或维护元数据。</p>
               </div>
             </div>
@@ -236,6 +244,7 @@
 <script setup lang="ts">
 import { Archive, ArrowUpRight, FileText, RefreshCw, Replace, RotateCcw, Save, Trash2 } from '@lucide/vue'
 
+import AssetAudioPreview from '@/components/project/AssetAudioPreview.vue'
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import { UiButton, UiDialog, UiInput } from '@/components/ui'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'

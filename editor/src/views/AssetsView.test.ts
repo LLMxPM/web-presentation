@@ -233,10 +233,51 @@ describe('AssetsView', () => {
 
     await fireEvent.click(screen.getByText('上传资源'))
     expect(screen.queryByRole('option', { name: '字体' })).toBeNull()
+    await fireEvent.pointerDown(screen.getByRole('combobox'), { button: 0, pointerType: 'mouse' })
+    expect(screen.getByRole('option', { name: '音频' })).toBeInTheDocument()
     await fireEvent.click(screen.getByText('取消'))
 
     await fireEvent.click(screen.getByText('新建内容资源'))
     expect(screen.queryByRole('option', { name: '字体' })).toBeNull()
+    await fireEvent.pointerDown(screen.getByRole('combobox'), { button: 0, pointerType: 'mouse' })
+    expect(screen.queryByRole('option', { name: '音频' })).toBeNull()
+  })
+
+  it('音频资源详情应提供原生试听且不开放文本编辑', async () => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value: vi.fn() })
+    listWorkspaceAssetsMock.mockResolvedValue({
+      items: [createImageAsset({
+        id: 21,
+        name: 'page_voice',
+        file_name: 'voice-hash.mp3',
+        original_name: 'page_voice.mp3',
+        content_type: 'audio/mpeg',
+        asset_type: 'audio',
+        asset_role: 'content',
+        render_type: 'audio',
+        content_editable: false,
+        file_hash: 'voice-hash',
+        url: 'https://backend.example.com/public/assets/7/voice-hash',
+      })],
+      total: 1,
+      page: 1,
+      page_size: 24,
+    })
+
+    renderAssetsView()
+
+    await waitFor(() => {
+      expect(screen.getByText('page_voice')).toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByText('page_voice'))
+
+    const audio = document.querySelector('audio')
+    expect(audio).toHaveAttribute('controls')
+    expect(audio).not.toHaveAttribute('autoplay')
+    expect(screen.queryByText('资源预览：page_voice')).toBeNull()
+
+    await fireEvent.click(screen.getByText('内容编辑'))
+    expect(screen.getByText('音频是二进制资源：请通过「替换」上传新的音频文件更新内容；页面通过资源名引用并配置旁白或交互音效。')).toBeInTheDocument()
   })
 
   it('应使用统一页面标题、筛选栏和工具面板承载资源列表', async () => {

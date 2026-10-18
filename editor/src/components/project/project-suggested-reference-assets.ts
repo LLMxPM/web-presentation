@@ -8,6 +8,7 @@ export type ProjectSuggestedReferenceAssetTabKey = 'all' | AssetType
 export const PROJECT_SUGGESTED_REFERENCE_ASSET_TYPES: AssetType[] = [
   'image',
   'video',
+  'audio',
   'drawio',
   'mermaid',
   'chart',

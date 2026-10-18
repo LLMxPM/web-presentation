@@ -1,5 +1,5 @@
 /**
- * 文件功能：验证资源类型配置中三维模型（model3d）的扩展名、MIME 与文本创建边界。
+ * 文件功能：验证三维模型与音频资源的扩展名、MIME、分组和文本创建边界。
  */
 import { describe, expect, it } from 'vitest'
 
@@ -38,5 +38,24 @@ describe('asset-manager model3d 配置', () => {
 
   it('三维模型不开放文本内容创建入口', () => {
     expect(TEXT_CREATABLE_ASSET_TYPES).not.toContain('model3d')
+  })
+})
+
+describe('asset-manager audio 配置', () => {
+  it('内容资源分组与上传 accept 应包含音频白名单', () => {
+    const contentGroup = ASSET_GROUPS.find(group => group.key === 'content')
+    expect(contentGroup?.types.map(item => item.value)).toContain('audio')
+    expect(ASSET_ALLOWED_EXTENSIONS.audio).toEqual(['.mp3', '.m4a', '.aac', '.ogg', '.wav'])
+    expect(ASSET_UPLOAD_ACCEPT.audio).toContain('audio/mpeg')
+  })
+
+  it('允许的音频扩展名可选择，其他媒体扩展名应被前端拒绝', () => {
+    expect(isAcceptedAssetFile(buildFile('narration.MP3'), 'audio')).toBe(true)
+    expect(isAcceptedAssetFile(buildFile('transition.ogg'), 'audio')).toBe(true)
+    expect(isAcceptedAssetFile(buildFile('background.mp4'), 'audio')).toBe(false)
+  })
+
+  it('音频不开放文本内容创建入口', () => {
+    expect(TEXT_CREATABLE_ASSET_TYPES).not.toContain('audio')
   })
 })

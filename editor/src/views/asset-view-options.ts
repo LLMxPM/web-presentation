@@ -44,6 +44,7 @@ export const ASSET_TYPE_OPTIONS: Array<{ value: AssetType; label: string }> = [
   { value: 'icon', label: '图标' },
   { value: 'image', label: '图片' },
   { value: 'video', label: '视频' },
+  { value: 'audio', label: '音频' },
   { value: 'drawio', label: 'Draw.io' },
   { value: 'mermaid', label: 'Mermaid' },
   { value: 'chart', label: 'Chart' },
