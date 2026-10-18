@@ -42,6 +42,11 @@ export interface PlaybackHost {
   refresh: () => void
 }
 
+export interface PlaybackHostOptions {
+  /** 观众窗口由控制台命令启动，不执行项目 auto_start。 */
+  autoStart?: boolean
+}
+
 /**
  * 从现有可见叶子目录构建放映序列，不创建第二套路由目录。
  * pageNumber 由现有配置转换器只分配给可见叶子页，隐藏页与分组自然排除。
@@ -64,7 +69,7 @@ export function findPlaybackPageElement(path: string): HTMLElement | null {
  * 在放映主画布宿主中创建调度链路。
  * 非 presentation 上下文（卡片、缩略图、捕获等）不会创建控制器或计时句柄。
  */
-export function usePlaybackHost(): PlaybackHost {
+export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost {
   const router = useRouter()
   const session = getRuntimeSession(router)
   const policy = useRuntimeExecutionPolicy()
@@ -438,6 +443,7 @@ export function usePlaybackHost(): PlaybackHost {
     document.addEventListener('keydown', handlePlaybackKeydown, true)
     if (disposed || session.autoStartAttempted.value) return
     session.autoStartAttempted.value = true
+    if (options.autoStart === false) return
     const instance = ensureController()
     if (!instance) return
     if (!shouldStartAutomatically(policy.value, playbackConfig.value.autoStart)) return

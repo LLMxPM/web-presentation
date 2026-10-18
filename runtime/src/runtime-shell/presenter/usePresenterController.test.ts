@@ -1,11 +1,14 @@
+/* eslint-disable vue/one-component-per-file */
 // @vitest-environment jsdom
 /**
  * 文件用途：验证 Runtime 演讲模式页面列表转换、平铺默认尺寸与本地同步消息。
  */
 
 import { createApp, defineComponent } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { reloadAllConfigs } from '@/core/utils/config'
+import { setRuntimePreloadedConfig } from '@/core/utils/path'
 import type { RouteConfig } from '@/core/types/navigation'
 import {
   buildPresenterPages,
@@ -16,8 +19,11 @@ import {
 } from '@/runtime-shell/presenter/usePresenterController'
 
 afterEach(() => {
+  setRuntimePreloadedConfig(undefined)
   localStorage.clear()
   document.body.innerHTML = ''
+  vi.unstubAllGlobals()
+  FakeBroadcastChannel.reset()
 })
 
 describe('buildPresenterPages', () => {
@@ -105,6 +111,7 @@ describe('buildPresenterPages', () => {
       channelId: 'channel-a',
       artifactIdentity: 'artifact-1',
       sourceId: 'console-a',
+      role: 'console',
       ownerEpoch: 5,
       revision: 1,
       eventId: 'console-a:1',
@@ -182,6 +189,7 @@ describe('buildPresenterPages', () => {
       channelId: 'channel-entry',
       artifactIdentity: 'artifact-1',
       sourceId: 'presenter-entry',
+      role: 'console',
       ownerEpoch: 0,
       revision: 0,
       type: 'navigate',
@@ -211,6 +219,335 @@ describe('buildPresenterPages', () => {
     app.unmount()
   })
 })
+
+describe('presenter playback commands', () => {
+  it('控制台只向已就绪观众 owner 发送带目标 epoch 的命令', async () => {
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
+    let controller!: ReturnType<typeof usePresenterController>
+    const app = createApp(defineComponent({
+      setup() {
+        controller = usePresenterController({
+          role: 'console',
+          channelId: 'channel-command',
+          initialPath: '/first',
+          ownerEpoch: 10,
+        })
+        return () => null
+      },
+    }))
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    app.mount(host)
+    const channel = FakeBroadcastChannel.active()
+
+    expect(controller.sendPlaybackCommand('pause')).toBe(false)
+
+    channel.dispatch(displayMessage({
+      type: 'ready',
+      revision: 1,
+      eventId: 'display-1:1',
+    }))
+    channel.dispatch(displayMessage({
+      type: 'display-status',
+      revision: 2,
+      eventId: 'display-1:2',
+      status: { state: 'connected', isFullscreen: false, updatedAt: 1 },
+    }))
+    expect(controller.displayAvailable.value).toBe(true)
+
+    expect(controller.sendPlaybackCommand('pause')).toBe(true)
+    expect(channel.posted.at(-1)).toMatchObject({
+      type: 'playback-command',
+      action: 'pause',
+      targetOwnerEpoch: 77,
+    })
+
+    app.unmount()
+  })
+
+  it('观众窗口忽略目标为其它 owner 的放映命令', async () => {
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
+    const received: string[] = []
+    const app = createApp(defineComponent({
+      setup() {
+        usePresenterController({
+          role: 'display',
+          channelId: 'channel-command',
+          initialPath: '/first',
+          ownerEpoch: 77,
+          onPlaybackCommand: action => received.push(action),
+        })
+        return () => null
+      },
+    }))
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    app.mount(host)
+    const channel = FakeBroadcastChannel.active()
+
+    channel.dispatch(commandMessage('start', 1, 'console-1:1', 76))
+    channel.dispatch(commandMessage('start', 2, 'console-1:2', 77))
+    await Promise.resolve()
+
+    expect(received).toEqual(['start'])
+    app.unmount()
+  })
+  it('观众窗口先加载时，收到控制台状态后补发身份与播放回执且只补一次', async () => {
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
+    const app = createApp(defineComponent({
+      setup() {
+        usePresenterController({
+          role: 'display',
+          channelId: 'channel-command',
+          initialPath: '/first',
+          ownerEpoch: 77,
+        })
+        return () => null
+      },
+    }))
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    app.mount(host)
+    const channel = FakeBroadcastChannel.active()
+    const before = channel.posted.length
+
+    channel.dispatch(displayMessage({
+      type: 'state-sync',
+      sourceId: 'console-late',
+      role: 'console',
+      ownerEpoch: 10,
+      revision: 1,
+      eventId: 'console-late:1',
+      currentPath: '/first',
+      viewMode: 'focus',
+      tileSize: 300,
+      playback: {
+        state: 'stopped',
+        currentPath: '/first',
+        remainingMs: 0,
+        delayMs: null,
+        waitingForMedia: false,
+        index: 0,
+        total: 2,
+      },
+    }))
+    await Promise.resolve()
+
+    const acknowledgement = channel.posted.slice(before)
+    expect(acknowledgement.map(message => (message as { type: string }).type))
+      .toEqual(['display-status', 'playback-state'])
+    expect(acknowledgement[0]).toMatchObject({ status: { state: 'connected' } })
+
+    const afterFirstAcknowledgement = channel.posted.length
+    channel.dispatch(displayMessage({
+      type: 'state-sync',
+      sourceId: 'console-late',
+      role: 'console',
+      ownerEpoch: 10,
+      revision: 2,
+      eventId: 'console-late:2',
+      currentPath: '/first',
+      viewMode: 'focus',
+      tileSize: 300,
+      playback: {
+        state: 'stopped',
+        currentPath: '/first',
+        remainingMs: 0,
+        delayMs: null,
+        waitingForMedia: false,
+        index: 0,
+        total: 2,
+      },
+    }))
+    await Promise.resolve()
+    expect(channel.posted.length).toBe(afterFirstAcknowledgement)
+
+    app.unmount()
+  })
+
+  it('控制台忽略旧观众 owner 的非权威状态', async () => {
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
+    let controller!: ReturnType<typeof usePresenterController>
+    const app = createApp(defineComponent({
+      setup() {
+        controller = usePresenterController({
+          role: 'console',
+          channelId: 'channel-command',
+          initialPath: '/first',
+          ownerEpoch: 10,
+        })
+        return () => null
+      },
+    }))
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    app.mount(host)
+    const channel = FakeBroadcastChannel.active()
+
+    channel.dispatch(displayMessage({ type: 'ready', revision: 1, eventId: 'display-1:1' }))
+    channel.dispatch(displayMessage({
+      type: 'display-status',
+      revision: 2,
+      eventId: 'display-1:2',
+      status: { state: 'connected', isFullscreen: false, updatedAt: 1 },
+    }))
+    expect(controller.displayAvailable.value).toBe(true)
+
+    channel.dispatch(displayMessage({
+      type: 'display-status',
+      sourceId: 'display-old',
+      ownerEpoch: 70,
+      revision: 1,
+      eventId: 'display-old:1',
+      status: { state: 'closed', isFullscreen: false, updatedAt: 2 },
+    }))
+    expect(controller.displayAvailable.value).toBe(true)
+    expect(controller.displayStatus.value.state).toBe('connected')
+
+    app.unmount()
+  })
+
+  it('观众窗口忽略其它观众窗口的导航，只接受控制台来源', async () => {
+    setRuntimePreloadedConfig({
+      routes: {
+        playback: { autoStart: false, loop: false, advanceDefaults: { mode: 'manual', delayMs: 0 } },
+        transitionDefaults: { effect: 'none', durationMs: 0 },
+        routes: [
+          { route: 'first', component: '@/views/first.vue', meta: { title: '第一页', order: 0 } },
+          { route: 'second', component: '@/views/second.vue', meta: { title: '第二页', order: 1 } },
+        ],
+      },
+      icons: { static_icons: [] },
+    } as never)
+    await reloadAllConfigs()
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
+    let controller!: ReturnType<typeof usePresenterController>
+    const app = createApp(defineComponent({
+      setup() {
+        controller = usePresenterController({
+          role: 'display',
+          channelId: 'channel-command',
+          initialPath: '/first',
+          ownerEpoch: 77,
+        })
+        return () => null
+      },
+    }))
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    app.mount(host)
+    const channel = FakeBroadcastChannel.active()
+    const playback = {
+      state: 'stopped',
+      currentPath: '/second',
+      remainingMs: 0,
+      delayMs: null,
+      waitingForMedia: false,
+      index: 1,
+      total: 2,
+    }
+
+    channel.dispatch(displayMessage({
+      type: 'navigate',
+      sourceId: 'display-old',
+      ownerEpoch: 50,
+      revision: 1,
+      eventId: 'display-old:1',
+      currentPath: '/second',
+      playback,
+    }))
+    await Promise.resolve()
+    expect(controller.currentPath.value).toBe('/first')
+
+    channel.dispatch(displayMessage({
+      type: 'navigate',
+      sourceId: 'console-1',
+      role: 'console',
+      ownerEpoch: 10,
+      revision: 1,
+      eventId: 'console-1:1',
+      currentPath: '/second',
+      playback,
+    }))
+    await Promise.resolve()
+    expect(controller.currentPath.value).toBe('/second')
+
+    app.unmount()
+  })
+})
+
+/** 构造观众窗口来源的协议消息。 */
+function displayMessage(overrides: Record<string, unknown>) {
+  return {
+    protocol: 2,
+    channelId: 'channel-command',
+    artifactIdentity: '',
+    sourceId: 'display-1',
+    role: 'display',
+    ownerEpoch: 77,
+    ...overrides,
+  }
+}
+
+/** 构造控制台放映命令消息。 */
+function commandMessage(action: string, revision: number, eventId: string, targetOwnerEpoch: number) {
+  return {
+    protocol: 2,
+    channelId: 'channel-command',
+    artifactIdentity: '',
+    sourceId: 'console-1',
+    role: 'console',
+    ownerEpoch: 10,
+    revision,
+    eventId,
+    type: 'playback-command',
+    action,
+    targetOwnerEpoch,
+  }
+}
+
+class FakeBroadcastChannel {
+  static instances: FakeBroadcastChannel[] = []
+  static posted: unknown[] = []
+  readonly listeners = new Set<(event: MessageEvent) => void>()
+  readonly name: string
+  readonly posted: unknown[] = []
+
+  constructor(name: string) {
+    this.name = name
+    FakeBroadcastChannel.instances.push(this)
+  }
+
+  addEventListener(_type: string, listener: EventListener): void {
+    this.listeners.add(listener as (event: MessageEvent) => void)
+  }
+
+  removeEventListener(_type: string, listener: EventListener): void {
+    this.listeners.delete(listener as (event: MessageEvent) => void)
+  }
+
+  postMessage(data: unknown): void {
+    this.posted.push(data)
+    FakeBroadcastChannel.posted.push(data)
+  }
+
+  close(): void {}
+
+  dispatch(data: unknown): void {
+    for (const listener of this.listeners) {
+      listener({ data } as MessageEvent)
+    }
+  }
+
+  static active(): FakeBroadcastChannel {
+    return FakeBroadcastChannel.instances[0]
+  }
+
+  static reset(): void {
+    FakeBroadcastChannel.instances = []
+    FakeBroadcastChannel.posted = []
+  }
+}
 
 interface RouteFixture {
   path: string

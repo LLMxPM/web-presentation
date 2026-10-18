@@ -9,7 +9,12 @@ import { setRuntimePreloadedConfig } from '@/core/utils/path'
 import { getRuntimeSession } from '@/core/router/runtime-session'
 import { initializeRuntimeExecution, resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
 import { mediaPlaybackCoordinator } from '@/core/execution/media-playback-guard'
-import { buildPlaybackPages, usePlaybackHost, type PlaybackHost } from './usePlaybackHost'
+import {
+  buildPlaybackPages,
+  usePlaybackHost,
+  type PlaybackHost,
+  type PlaybackHostOptions,
+} from './usePlaybackHost'
 
 const { waitForAssets } = vi.hoisted(() => ({ waitForAssets: vi.fn() }))
 vi.mock('@/core/utils/visual-assets', () => ({ waitForEditorVisualAssets: waitForAssets }))
@@ -107,11 +112,11 @@ function addTestVideo(path: string, options: { blocked?: boolean } = {}) {
 }
 
 /** 挂载放映宿主组合式函数并暴露其接口。 */
-function mountPlaybackHost(router: ReturnType<typeof makeRouter>) {
+function mountPlaybackHost(router: ReturnType<typeof makeRouter>, options?: PlaybackHostOptions) {
   let host: PlaybackHost | undefined
   const Root = defineComponent({
     setup() {
-      host = usePlaybackHost()
+      host = usePlaybackHost(options)
       return () => h('div')
     },
   })
@@ -190,6 +195,28 @@ describe('usePlaybackHost 自动开始与就绪', () => {
     await flushAsync()
     expect(host.snapshot.value?.state).toBe('playing')
 
+    app.unmount()
+  })
+
+  it('autoStart:false 时不自动放映，只在显式开始后进入准备', async () => {
+    preloadPlaybackConfig({ autoStart: true })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router, { autoStart: false })
+    const session = getRuntimeSession(router)
+
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('stopped')
+    expect(waitForAssets).not.toHaveBeenCalled()
+
+    expect(host.start()).toBe(true)
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('preparing')
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('playing')
     app.unmount()
   })
 

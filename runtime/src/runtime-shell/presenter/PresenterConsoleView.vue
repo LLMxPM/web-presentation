@@ -83,6 +83,11 @@
               {{ currentPage.speakerNotes || '当前页面没有填写演讲者备注。' }}
             </div>
             <div class="presenter-console__notes-footer">
+              <PresenterPlaybackPanel
+                :playback="remotePlayback"
+                :display-available="displayAvailable"
+                @command="handlePlaybackCommand"
+              />
               <PresenterTimerPanel :current-path="currentPath" />
               <nav class="presenter-console__page-controls" aria-label="演讲翻页">
                 <button
@@ -139,13 +144,15 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
-import { switchRuntimeMode } from '@/core/router/runtime-session'
+import { getRuntimeSession, switchRuntimeMode } from '@/core/router/runtime-session'
 import { ChevronLeft, ChevronRight, LogOut, Monitor } from '@lucide/vue'
 
 import ViewPreview from '@/runtime-shell/preview/ViewPreview.vue'
 import PresenterPageGrid from '@/runtime-shell/presenter/PresenterPageGrid.vue'
+import PresenterPlaybackPanel from '@/runtime-shell/presenter/PresenterPlaybackPanel.vue'
 import PresenterTimerPanel from '@/runtime-shell/presenter/PresenterTimerPanel.vue'
 import { usePresenterController } from '@/runtime-shell/presenter/usePresenterController'
+import type { PresenterSyncPlaybackCommandAction } from '@/runtime-shell/presenter/presenter-sync-protocol'
 import { openPresenterDisplayWindow } from '@/runtime-shell/presenter/presenter-window'
 
 const route = useRoute()
@@ -167,15 +174,18 @@ const {
   canGoPrevious,
   canGoNext,
   displayStatus,
+  displayAvailable,
   viewMode,
   tileSize,
   channelSupported,
+  remotePlayback,
   navigateTo,
   goPrevious,
   goNext,
   setTileSize,
   postClose,
   postState,
+  sendPlaybackCommand,
 } = usePresenterController({
   role: 'console',
   channelId: channelId.value,
@@ -230,7 +240,17 @@ function openDisplayWindow(): void {
  */
 function exitPresenterMode(): void {
   postClose()
+  // 退出演讲回到普通窗口时保持暂停，避免 auto_start 立即重新推进。
+  getRuntimeSession(router).autoStartAttempted.value = true
   void switchRuntimeMode(router, 'normal')
+}
+
+/**
+ * 把控制台操作转成观众窗口命令；未连接时面板已禁用按钮。
+ * @param action 放映命令动作
+ */
+function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction): void {
+  sendPlaybackCommand(action)
 }
 
 /**

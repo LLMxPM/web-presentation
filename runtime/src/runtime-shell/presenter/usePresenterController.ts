@@ -15,10 +15,12 @@ import {
   PresenterSyncSender,
   resolvePresenterArtifactIdentity,
   parsePresenterSyncMessage,
+  isPresenterMessageForOwner,
   type PresenterSyncDisplayStatusMessage,
   type PresenterSyncIdentity,
   type PresenterSyncMessageBody,
   type PresenterSyncMessage,
+  type PresenterSyncPlaybackCommandAction,
   type PresenterSyncPlaybackSnapshot,
   type PresenterSyncStateMessage,
   type PresenterSyncViewMode,
@@ -59,6 +61,8 @@ interface PresenterControllerOptions {
   ownerEpoch?: number
   /** 本地时钟注入点，跨窗口只比较本地到达时间。 */
   now?: () => number
+  /** 观众窗口处理控制台命令；控制台不提供该回调。 */
+  onPlaybackCommand?: (action: PresenterSyncPlaybackCommandAction) => void
 }
 
 const TILE_SIZE_STORAGE_KEY = 'web-presentation.presenter.tileSize'
@@ -88,12 +92,14 @@ export function usePresenterController(options: PresenterControllerOptions) {
     isFullscreen: false,
     updatedAt: 0,
   })
+  const activeDisplayOwnerEpoch = ref<number | null>(null)
   const controllerId = createControllerId()
   const now = options.now ?? (() => Date.now())
   const identity: PresenterSyncIdentity = {
     channelId: options.channelId,
     artifactIdentity: options.artifactIdentity ?? resolvePresenterArtifactIdentity(),
     sourceId: controllerId,
+    role: options.role,
     ownerEpoch: options.ownerEpoch ?? createOwnerEpoch(),
   }
   const sender = new PresenterSyncSender(identity)
@@ -105,6 +111,8 @@ export function usePresenterController(options: PresenterControllerOptions) {
     delayMs: number | null
     waitingForMedia: boolean
   }>({ state: 'stopped', remainingMs: 0, delayMs: null, waitingForMedia: false })
+  // 观众窗口先于控制台加载时，ready 已错过；收到控制台状态后补一次身份与状态回执。
+  const acknowledgedConsoleSources = new Set<string>()
   let channel: BroadcastChannel | null = null
 
   const pages = computed<PresenterPage[]>(() => buildPresenterPages(routeConfigs.value))
@@ -123,6 +131,12 @@ export function usePresenterController(options: PresenterControllerOptions) {
     index: currentIndex.value,
     total: pages.value.length,
   }))
+  /** 观众窗口已连接才允许发送放映命令；关闭后保持暂停并等待重新打开。 */
+  const displayAvailable = computed(() => {
+    return displayStatus.value.state === 'connected'
+      || displayStatus.value.state === 'windowed'
+      || displayStatus.value.state === 'fullscreen'
+  })
 
   /**
    * 更新本窗口的放映状态，供下一次 state-sync 携带；不在协议层启动调度。
@@ -152,7 +166,12 @@ export function usePresenterController(options: PresenterControllerOptions) {
     if (router) {
       void router.push({ path: normalizedPath, query: router.currentRoute.value.query })
     } else {
-      postMessage({ type: 'navigate', currentPath: normalizedPath, playback: playbackSnapshot.value }, nextCommandId())
+      postMessage({
+        type: 'navigate',
+        currentPath: normalizedPath,
+        playback: playbackSnapshot.value,
+        ...buildTargetOwnerField(),
+      }, nextCommandId())
     }
   }
 
@@ -187,14 +206,37 @@ export function usePresenterController(options: PresenterControllerOptions) {
   /**
    * 向同频道窗口发送当前完整状态。
    */
-  function postState(): void {
+  function postState(targetOwnerEpoch?: number): void {
     postMessage({
       type: 'state-sync',
       currentPath: currentPath.value,
       viewMode: viewMode.value,
       tileSize: tileSize.value,
       playback: playbackSnapshot.value,
+      ...(targetOwnerEpoch === undefined ? {} : { targetOwnerEpoch }),
     })
+  }
+
+  /**
+   * 观众窗口上报自身播放快照；控制台只回显，不据此启动本地计时。
+   */
+  function postPlaybackState(): void {
+    if (options.role !== 'display') return
+    postMessage({ type: 'playback-state', playback: playbackSnapshot.value })
+  }
+
+  /**
+   * 控制台向当前观众 owner 发送放映命令；没有已连接观众时拒绝发送。
+   * @param action 命令动作
+   */
+  function sendPlaybackCommand(action: PresenterSyncPlaybackCommandAction): boolean {
+    if (options.role !== 'console' || activeDisplayOwnerEpoch.value === null) return false
+    postMessage({
+      type: 'playback-command',
+      action,
+      targetOwnerEpoch: activeDisplayOwnerEpoch.value,
+    }, nextCommandId())
+    return true
   }
 
   /**
@@ -239,20 +281,37 @@ export function usePresenterController(options: PresenterControllerOptions) {
     const result = receiver.receive(event.data)
     if (!result.accepted || !result.received) return
     const { message } = result.received
-    if (message.type === 'state-sync' || message.type === 'navigate') {
+    if (options.role === 'console' && isDisplayOriginMessage(message)) {
+      // 新观众 owner 接管后，旧观众后续的非权威状态与导航一律失效。
+      if (activeDisplayOwnerEpoch.value !== null && message.ownerEpoch < activeDisplayOwnerEpoch.value) return
+      activeDisplayOwnerEpoch.value = message.ownerEpoch
+    }
+    if ((message.type === 'state-sync' || message.type === 'navigate')) {
+      if (options.role === 'display' && message.role !== 'console') return
+      if (!isPresenterMessageForOwner(message, identity.ownerEpoch)) return
+      if (options.role === 'display') acknowledgeConsole(message.sourceId)
       remotePlayback.value = result.received
       applyIncomingState(message)
       return
     }
-    if (message.type === 'ready' && options.role === 'console') {
-      postState()
+    if (message.type === 'playback-state' && options.role === 'console' && message.role === 'display') {
+      remotePlayback.value = result.received
       return
     }
-    if (message.type === 'display-status') {
+    if (message.type === 'playback-command' && options.role === 'display' && message.role === 'console') {
+      if (!isPresenterMessageForOwner(message, identity.ownerEpoch)) return
+      options.onPlaybackCommand?.(message.action)
+      return
+    }
+    if (message.type === 'ready' && options.role === 'console' && message.role === 'display') {
+      postState(message.ownerEpoch)
+      return
+    }
+    if (message.type === 'display-status' && options.role === 'console' && message.role === 'display') {
       applyDisplayStatus(message.status)
       return
     }
-    if (message.type === 'close' && options.role === 'display') {
+    if (message.type === 'close' && options.role === 'display' && message.role === 'console') {
       window.close()
     }
   }
@@ -318,6 +377,29 @@ export function usePresenterController(options: PresenterControllerOptions) {
     return `${controllerId}:command:${commandSequence}`
   }
 
+  /** 只有观众窗口发送的消息能更新控制台的命令目标 owner。 */
+  function isDisplayOriginMessage(message: PresenterSyncMessage): boolean {
+    return message.role === 'display'
+  }
+
+  /**
+   * 观众窗口为每个控制台补发一次身份与播放回执，避免控制台晚于观众窗口加载时丢失 ready。
+   * @param sourceId 控制台控制器标识
+   */
+  function acknowledgeConsole(sourceId: string): void {
+    if (acknowledgedConsoleSources.has(sourceId)) return
+    acknowledgedConsoleSources.add(sourceId)
+    const fullscreen = typeof document !== 'undefined' && Boolean(document.fullscreenElement)
+    postDisplayStatus(fullscreen ? 'fullscreen' : 'connected', fullscreen)
+    postPlaybackState()
+  }
+
+  /** 控制台只向已连接的观众 owner 发送路径命令；观众自身导航不限定目标。 */
+  function buildTargetOwnerField(): { targetOwnerEpoch?: number } {
+    if (options.role !== 'console' || activeDisplayOwnerEpoch.value === null) return {}
+    return { targetOwnerEpoch: activeDisplayOwnerEpoch.value }
+  }
+
   onMounted(() => {
     const initialPage = pages.value.find(page => page.path === currentPath.value) ?? pages.value[0]
     if (initialPage && !router) {
@@ -359,7 +441,12 @@ export function usePresenterController(options: PresenterControllerOptions) {
       if (!pages.value.some(page => page.path === path)) return
       currentPath.value = path
       if (path === remotePath) { remotePath = ''; return }
-      postMessage({ type: 'navigate', currentPath: path, playback: playbackSnapshot.value }, nextCommandId())
+      postMessage({
+        type: 'navigate',
+        currentPath: path,
+        playback: playbackSnapshot.value,
+        ...buildTargetOwnerField(),
+      }, nextCommandId())
     })
   }
 
@@ -385,6 +472,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
     canGoPrevious,
     canGoNext,
     displayStatus,
+    displayAvailable,
     viewMode,
     tileSize,
     channelSupported,
@@ -396,6 +484,8 @@ export function usePresenterController(options: PresenterControllerOptions) {
     goNext,
     setTileSize,
     postState,
+    postPlaybackState,
+    sendPlaybackCommand,
     postClose,
     postDisplayStatus,
   }
@@ -558,6 +648,7 @@ export function writePresenterInitialNavigateMessage(
       channelId,
       artifactIdentity,
       sourceId: 'presenter-entry',
+      role: 'console',
       ownerEpoch: 0,
       revision: 0,
       eventId: 'presenter-entry:1',

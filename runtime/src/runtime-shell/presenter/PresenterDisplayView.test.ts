@@ -9,6 +9,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import PresenterDisplayView from './PresenterDisplayView.vue'
 
+const presenterFixture = vi.hoisted(() => ({
+  commandHandler: null as null | ((action: string) => void),
+  postPlaybackState: vi.fn(),
+  updatePlayback: vi.fn(),
+}))
+
+const playbackFixture = vi.hoisted(() => ({
+  options: null as null | { autoStart?: boolean },
+  start: vi.fn(),
+  pause: vi.fn(),
+  resume: vi.fn(),
+  stop: vi.fn(),
+  retry: vi.fn(),
+  next: vi.fn(),
+}))
+
 vi.mock('./PresenterPageStage.vue', () => ({ default: { template: '<div />' } }))
 
 vi.mock('vue-router', () => ({
@@ -21,19 +37,44 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/runtime-shell/presenter/usePresenterController', () => ({
-  usePresenterController: () => ({
-    currentPage: {
-      path: '/intro',
-      title: '第一页',
-      pageNumber: 1,
-      componentPath: '@/views/intro.vue',
-      speakerNotes: '',
-    },
-    goPrevious: vi.fn(),
-    goNext: vi.fn(),
-    postDisplayStatus: vi.fn(),
-  }),
+  usePresenterController: (options: { onPlaybackCommand?: (action: string) => void }) => {
+    presenterFixture.commandHandler = options.onPlaybackCommand ?? null
+    return {
+      currentPage: {
+        path: '/intro',
+        title: '第一页',
+        pageNumber: 1,
+        componentPath: '@/views/intro.vue',
+        speakerNotes: '',
+      },
+      goPrevious: vi.fn(),
+      goNext: vi.fn(),
+      postDisplayStatus: vi.fn(),
+      postPlaybackState: presenterFixture.postPlaybackState,
+      updatePlayback: presenterFixture.updatePlayback,
+    }
+  },
 }))
+
+vi.mock('@/runtime-shell/playback/usePlaybackHost', async () => {
+  const { ref } = await import('vue')
+  return {
+    usePlaybackHost: (options: { autoStart?: boolean }) => {
+      playbackFixture.options = options
+      return {
+        snapshot: ref(null),
+        errorMessage: ref(''),
+        start: playbackFixture.start,
+        pause: playbackFixture.pause,
+        resume: playbackFixture.resume,
+        stop: playbackFixture.stop,
+        retry: playbackFixture.retry,
+        next: playbackFixture.next,
+        refresh: vi.fn(),
+      }
+    },
+  }
+})
 
 vi.mock('@/runtime-shell/preview/ViewPreview.vue', async () => {
   const { defineComponent, h } = await import('vue')
@@ -59,6 +100,8 @@ vi.mock('@/runtime-shell/preview/ViewPreview.vue', async () => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.clearAllMocks()
+  presenterFixture.commandHandler = null
   Reflect.deleteProperty(window, 'getScreenDetails')
   Reflect.deleteProperty(document.documentElement, 'requestFullscreen')
   Object.defineProperty(document, 'fullscreenElement', {
@@ -110,12 +153,68 @@ describe('PresenterDisplayView', () => {
     expect(host.textContent).toContain('内置屏幕')
     expect(host.textContent).toContain('投影屏幕')
 
+    const fallbackButton = host.querySelector<HTMLButtonElement>('.presenter-display-screen__fallback-action')
+    expect(fallbackButton).not.toBeNull()
+    fallbackButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushVueUpdates()
+    expect(requestFullscreen).toHaveBeenCalledWith()
+
     const projectorButton = host.querySelector<HTMLButtonElement>('button[data-screen-index="1"]')
     expect(projectorButton).not.toBeNull()
     projectorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flushVueUpdates()
 
     expect(requestFullscreen).toHaveBeenCalledWith({ screen: projectorScreen })
+
+    app.unmount()
+  })
+
+  it('屏幕检测未授权时提供当前窗口全屏回退', async () => {
+    const getScreenDetails = vi.fn().mockRejectedValue(new Error('denied'))
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(window, 'getScreenDetails', {
+      configurable: true,
+      value: getScreenDetails,
+    })
+    Object.defineProperty(document.documentElement, 'requestFullscreen', {
+      configurable: true,
+      value: requestFullscreen,
+    })
+
+    const { app, host } = mountPresenterDisplayView()
+    host.querySelector<HTMLButtonElement>('[data-testid="presenter-display-detect-screens"]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushVueUpdates()
+
+    expect(host.textContent).toContain('未获得屏幕检测授权')
+    const fallbackButton = host.querySelector<HTMLButtonElement>('.presenter-display-screen__fallback-action')
+    expect(fallbackButton).not.toBeNull()
+    fallbackButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushVueUpdates()
+    expect(requestFullscreen).toHaveBeenCalledWith()
+
+    app.unmount()
+  })
+
+  it('观众窗口应由控制台命令驱动播放宿主并上报状态', async () => {
+    const { app } = mountPresenterDisplayView()
+    await flushVueUpdates()
+
+    expect(playbackFixture.options).toEqual({ autoStart: false })
+    expect(presenterFixture.postPlaybackState).toHaveBeenCalled()
+    expect(presenterFixture.updatePlayback).toHaveBeenCalledWith(expect.objectContaining({ state: 'stopped' }))
+
+    presenterFixture.commandHandler?.('start')
+    presenterFixture.commandHandler?.('pause')
+    presenterFixture.commandHandler?.('resume')
+    presenterFixture.commandHandler?.('next')
+    presenterFixture.commandHandler?.('stop')
+
+    expect(playbackFixture.start).toHaveBeenCalledTimes(1)
+    expect(playbackFixture.pause).toHaveBeenCalledTimes(1)
+    expect(playbackFixture.resume).toHaveBeenCalledTimes(1)
+    expect(playbackFixture.next).toHaveBeenCalledTimes(1)
+    expect(playbackFixture.stop).toHaveBeenCalledTimes(1)
 
     app.unmount()
   })

@@ -65,7 +65,20 @@
       >
         当前窗口全屏
       </button>
+
+      <button
+        v-if="isScreenDetectionSupported && screenOptions.length === 0"
+        class="presenter-display-screen__fallback-action"
+        type="button"
+        @click="enterCurrentWindowFullscreen"
+      >
+        当前窗口全屏
+      </button>
     </section>
+
+    <p v-if="playbackErrorMessage" class="presenter-display-screen__playback-warning" role="alert">
+      {{ playbackErrorMessage }}
+    </p>
 
     <p v-if="fullscreenMessage" class="presenter-display-screen__warning">
       {{ fullscreenMessage }}
@@ -74,12 +87,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
 
+import { usePlaybackHost } from '@/runtime-shell/playback/usePlaybackHost'
 import PresenterPageStage from './PresenterPageStage.vue'
 import { usePresenterController } from '@/runtime-shell/presenter/usePresenterController'
+import type { PresenterSyncPlaybackCommandAction } from './presenter-sync-protocol'
 
 interface PresenterDetailedScreen {
   availLeft: number
@@ -134,11 +149,66 @@ const {
   goPrevious,
   goNext,
   postDisplayStatus,
+  updatePlayback,
+  postPlaybackState,
 } = usePresenterController({
   role: 'display',
   channelId: channelId.value,
   initialPath: initialPath.value,
+  onPlaybackCommand: handlePlaybackCommand,
 })
+
+const {
+  snapshot: playbackSnapshot,
+  errorMessage: playbackErrorMessage,
+  start: startPlayback,
+  pause: pausePlayback,
+  resume: resumePlayback,
+  stop: stopPlayback,
+  retry: retryPlayback,
+  next: nextPlayback,
+} = usePlaybackHost({ autoStart: false })
+
+watch(playbackSnapshot, snapshot => {
+  if (!snapshot) {
+    updatePlayback({ state: 'stopped', remainingMs: 0, delayMs: null, waitingForMedia: false })
+  } else {
+    updatePlayback({
+      state: snapshot.state,
+      remainingMs: snapshot.remainingMs,
+      delayMs: snapshot.delayMs,
+      waitingForMedia: snapshot.waitingForMedia,
+    })
+  }
+  postPlaybackState()
+}, { immediate: true })
+
+/**
+ * 执行控制台命令；观众窗口是双窗口中的唯一调度者。
+ * @param action 控制台命令动作
+ */
+function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction): void {
+  switch (action) {
+    case 'start':
+      startPlayback()
+      break
+    case 'pause':
+      pausePlayback()
+      break
+    case 'resume':
+      resumePlayback()
+      break
+    case 'stop':
+      stopPlayback()
+      break
+    case 'retry':
+      retryPlayback()
+      break
+    case 'next':
+      nextPlayback()
+      break
+  }
+}
 
 /**
  * 请求观众窗口授权检测屏幕，并把可选屏幕展示给用户。
@@ -342,6 +412,8 @@ function isKeyboardTargetInteractive(target: EventTarget | null): boolean {
 
 onMounted(() => {
   updateFullscreenState()
+  // 通道在控制器 onMounted 中建立；此后再上报初始停止状态。
+  postPlaybackState()
   document.addEventListener('keydown', handleKeydown)
   document.addEventListener('fullscreenchange', updateFullscreenState)
   window.addEventListener('beforeunload', handleBeforeUnload)
@@ -507,5 +579,21 @@ function handleBeforeUnload(): void {
   text-align: center;
   color: rgba(255, 255, 255, 0.75);
   font-size: 12px;
+}
+
+.presenter-display-screen__playback-warning {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  z-index: 10002;
+  max-width: min(640px, calc(100vw - 2rem));
+  padding: 0.625rem 1rem;
+  transform: translateX(-50%);
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  border-radius: 8px;
+  color: #fecaca;
+  background: rgba(69, 10, 10, 0.88);
+  font-size: 13px;
+  text-align: center;
 }
 </style>

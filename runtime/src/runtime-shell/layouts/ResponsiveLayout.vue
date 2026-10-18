@@ -791,6 +791,8 @@ const openPresenterMode = (): void => {
     return
   }
 
+  // 先停住普通窗口的推进和媒体，再把当前页交给观众窗口。
+  session.pausePlayback?.()
   const currentPath = normalizePresenterRoutePath(router.currentRoute.value.path)
   const channelId = createPresenterChannelId()
   const displayWindow = openPresenterDisplayWindow(channelId, currentPath)

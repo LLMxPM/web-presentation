@@ -11,6 +11,7 @@ export const PRESENTER_SYNC_PROTOCOL_VERSION = 2
 const MAX_SEEN_EVENTS = 256
 
 export type PresenterSyncViewMode = 'focus' | 'grid'
+export type PresenterSyncRole = 'console' | 'display'
 export type PresenterSyncPlaybackState =
   | 'stopped'
   | 'preparing'
@@ -19,6 +20,14 @@ export type PresenterSyncPlaybackState =
   | 'ended'
   | 'blocked'
   | 'error'
+
+export type PresenterSyncPlaybackCommandAction =
+  | 'start'
+  | 'pause'
+  | 'resume'
+  | 'stop'
+  | 'retry'
+  | 'next'
 
 export interface PresenterSyncPlaybackSnapshot {
   state: PresenterSyncPlaybackState
@@ -36,6 +45,8 @@ export interface PresenterSyncEnvelope {
   channelId: string
   artifactIdentity: string
   sourceId: string
+  /** 消息来源角色；观众窗口只接受控制台来源的导航与状态。 */
+  role: PresenterSyncRole
   ownerEpoch: number
   revision: number
   eventId: string
@@ -48,11 +59,27 @@ export interface PresenterSyncStateMessage extends PresenterSyncEnvelope {
   viewMode: PresenterSyncViewMode
   tileSize: number
   playback: PresenterSyncPlaybackSnapshot
+  /** 只允许该 owner epoch 的观众窗口应用；缺省表示不限定。 */
+  targetOwnerEpoch?: number
 }
 
 export interface PresenterSyncNavigateMessage extends PresenterSyncEnvelope {
   type: 'navigate'
   currentPath: string
+  playback: PresenterSyncPlaybackSnapshot
+  /** 控制台命令只针对当前观众 owner；观众自身导航不设置。 */
+  targetOwnerEpoch?: number
+}
+
+export interface PresenterSyncPlaybackCommandMessage extends PresenterSyncEnvelope {
+  type: 'playback-command'
+  action: PresenterSyncPlaybackCommandAction
+  /** 控制台命令只针对当前观众 owner，旧观众窗口必须忽略。 */
+  targetOwnerEpoch?: number
+}
+
+export interface PresenterSyncPlaybackStateMessage extends PresenterSyncEnvelope {
+  type: 'playback-state'
   playback: PresenterSyncPlaybackSnapshot
 }
 
@@ -76,6 +103,8 @@ export interface PresenterSyncDisplayStatusMessage extends PresenterSyncEnvelope
 export type PresenterSyncMessage =
   | PresenterSyncStateMessage
   | PresenterSyncNavigateMessage
+  | PresenterSyncPlaybackCommandMessage
+  | PresenterSyncPlaybackStateMessage
   | PresenterSyncReadyMessage
   | PresenterSyncCloseMessage
   | PresenterSyncDisplayStatusMessage
@@ -84,6 +113,8 @@ export type PresenterSyncMessage =
 export type PresenterSyncMessageBody =
   | Omit<PresenterSyncStateMessage, keyof PresenterSyncEnvelope>
   | Omit<PresenterSyncNavigateMessage, keyof PresenterSyncEnvelope>
+  | Omit<PresenterSyncPlaybackCommandMessage, keyof PresenterSyncEnvelope>
+  | Omit<PresenterSyncPlaybackStateMessage, keyof PresenterSyncEnvelope>
   | Omit<PresenterSyncReadyMessage, keyof PresenterSyncEnvelope>
   | Omit<PresenterSyncCloseMessage, keyof PresenterSyncEnvelope>
   | Omit<PresenterSyncDisplayStatusMessage, keyof PresenterSyncEnvelope>
@@ -102,6 +133,7 @@ export interface PresenterSyncIdentity {
   channelId: string
   artifactIdentity: string
   sourceId: string
+  role: PresenterSyncRole
   ownerEpoch: number
 }
 
@@ -139,6 +171,7 @@ export class PresenterSyncSender {
       channelId: this.identity.channelId,
       artifactIdentity: this.identity.artifactIdentity,
       sourceId: this.identity.sourceId,
+      role: this.identity.role,
       ownerEpoch: this.identity.ownerEpoch,
       revision: this.revision,
       eventId: `${this.identity.sourceId}:${this.sequence}`,
@@ -156,7 +189,11 @@ export class PresenterSyncReceiver {
   private readonly seenEvents = new Set<string>()
   private readonly seenCommands = new Set<string>()
   private readonly revisions = new Map<string, number>()
-  private ownerWatermark = -1
+  /** owner epoch 只在同角色窗口之间比较，避免观众 owner 的数字高于控制台时互相阻塞。 */
+  private readonly ownerWatermarks: Record<PresenterSyncRole, number> = {
+    console: -1,
+    display: -1,
+  }
   private latest: ReceivedPresenterSync | null = null
   private readonly now: () => number
 
@@ -184,9 +221,10 @@ export class PresenterSyncReceiver {
       return { accepted: false, reason: 'duplicate-command' }
     }
     if (isAuthoritative(message)) {
-      if (message.ownerEpoch < this.ownerWatermark) return { accepted: false, reason: 'stale-owner' }
-      if (message.ownerEpoch > this.ownerWatermark) {
-        this.ownerWatermark = message.ownerEpoch
+      const watermark = this.ownerWatermarks[message.role]
+      if (message.ownerEpoch < watermark) return { accepted: false, reason: 'stale-owner' }
+      if (message.ownerEpoch > watermark) {
+        this.ownerWatermarks[message.role] = message.ownerEpoch
         this.revisions.clear()
       }
       const lastRevision = this.revisions.get(message.sourceId) ?? -1
@@ -224,6 +262,7 @@ export function parsePresenterSyncMessage(value: unknown): PresenterSyncMessage 
   if (value.protocol !== PRESENTER_SYNC_PROTOCOL_VERSION) return null
   if (!isNonEmptyString(value.channelId) || typeof value.artifactIdentity !== 'string') return null
   if (!isNonEmptyString(value.sourceId) || !isNonNegativeInteger(value.ownerEpoch)) return null
+  if (!isPresenterRole(value.role)) return null
   if (!isNonNegativeInteger(value.revision) || !isNonEmptyString(value.eventId)) return null
   if (value.commandId !== undefined && !isNonEmptyString(value.commandId)) return null
 
@@ -231,7 +270,7 @@ export function parsePresenterSyncMessage(value: unknown): PresenterSyncMessage 
     case 'state-sync': {
       const playback = parsePlayback(value.playback)
       if (!isNonEmptyString(value.currentPath) || !isViewMode(value.viewMode) || !playback) return null
-      if (!Number.isFinite(value.tileSize)) return null
+      if (!Number.isFinite(value.tileSize) || !isValidTargetOwnerEpoch(value.targetOwnerEpoch)) return null
       return {
         ...baseEnvelope(value),
         type: 'state-sync',
@@ -239,12 +278,34 @@ export function parsePresenterSyncMessage(value: unknown): PresenterSyncMessage 
         viewMode: value.viewMode,
         tileSize: Number(value.tileSize),
         playback,
+        ...targetOwnerField(value.targetOwnerEpoch),
       }
     }
     case 'navigate': {
       const playback = parsePlayback(value.playback)
       if (!isNonEmptyString(value.currentPath) || !playback) return null
-      return { ...baseEnvelope(value), type: 'navigate', currentPath: value.currentPath, playback }
+      if (!isValidTargetOwnerEpoch(value.targetOwnerEpoch)) return null
+      return {
+        ...baseEnvelope(value),
+        type: 'navigate',
+        currentPath: value.currentPath,
+        playback,
+        ...targetOwnerField(value.targetOwnerEpoch),
+      }
+    }
+    case 'playback-command': {
+      if (!isPlaybackCommandAction(value.action) || !isValidTargetOwnerEpoch(value.targetOwnerEpoch)) return null
+      return {
+        ...baseEnvelope(value),
+        type: 'playback-command',
+        action: value.action,
+        ...targetOwnerField(value.targetOwnerEpoch),
+      }
+    }
+    case 'playback-state': {
+      const playback = parsePlayback(value.playback)
+      if (!playback) return null
+      return { ...baseEnvelope(value), type: 'playback-state', playback }
     }
     case 'ready':
       return { ...baseEnvelope(value), type: 'ready' }
@@ -282,6 +343,7 @@ function baseEnvelope(value: Record<string, unknown>): PresenterSyncEnvelope {
     channelId: value.channelId as string,
     artifactIdentity: value.artifactIdentity as string,
     sourceId: value.sourceId as string,
+    role: value.role as PresenterSyncRole,
     ownerEpoch: value.ownerEpoch as number,
     revision: value.revision as number,
     eventId: value.eventId as string,
@@ -307,13 +369,42 @@ function parsePlayback(value: unknown): PresenterSyncPlaybackSnapshot | null {
 }
 
 function isAuthoritative(message: PresenterSyncMessage): boolean {
-  return message.type === 'state-sync' || message.type === 'navigate' || message.type === 'close'
+  return message.type === 'state-sync'
+    || message.type === 'navigate'
+    || message.type === 'playback-command'
+    || message.type === 'playback-state'
+    || message.type === 'close'
 }
 
 function isPlaybackMessage(
   message: PresenterSyncMessage,
-): message is PresenterSyncStateMessage | PresenterSyncNavigateMessage {
-  return message.type === 'state-sync' || message.type === 'navigate'
+): message is PresenterSyncStateMessage | PresenterSyncNavigateMessage | PresenterSyncPlaybackStateMessage {
+  return message.type === 'state-sync' || message.type === 'navigate' || message.type === 'playback-state'
+}
+
+/** 目标 owner 缺省时兼容旧消息；存在时必须等于当前窗口 owner。 */
+export function isPresenterMessageForOwner(
+  message: { targetOwnerEpoch?: number },
+  ownerEpoch: number,
+): boolean {
+  return message.targetOwnerEpoch === undefined || message.targetOwnerEpoch === ownerEpoch
+}
+
+function isValidTargetOwnerEpoch(value: unknown): value is number | undefined {
+  return value === undefined || isNonNegativeInteger(value)
+}
+
+function targetOwnerField(value: unknown): { targetOwnerEpoch?: number } {
+  return value === undefined ? {} : { targetOwnerEpoch: value as number }
+}
+
+function isPlaybackCommandAction(value: unknown): value is PresenterSyncPlaybackCommandAction {
+  return value === 'start'
+    || value === 'pause'
+    || value === 'resume'
+    || value === 'stop'
+    || value === 'retry'
+    || value === 'next'
 }
 
 function isViewMode(value: unknown): value is PresenterSyncViewMode {
@@ -340,6 +431,10 @@ function isDisplayStatusState(value: unknown): value is PresenterSyncDisplayStat
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isPresenterRole(value: unknown): value is PresenterSyncRole {
+  return value === 'console' || value === 'display'
 }
 
 function isNonEmptyString(value: unknown): value is string {

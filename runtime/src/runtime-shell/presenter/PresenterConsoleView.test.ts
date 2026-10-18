@@ -12,6 +12,9 @@ import PresenterConsoleView from './PresenterConsoleView.vue'
 const presenterFixture = vi.hoisted(() => ({
   viewMode: 'focus' as 'focus' | 'grid',
   navigateTo: vi.fn(),
+  sendPlaybackCommand: vi.fn(),
+  displayAvailable: true,
+  remotePlayback: null as unknown,
 }))
 
 vi.mock('vue-router', () => ({
@@ -62,15 +65,18 @@ vi.mock('@/runtime-shell/presenter/usePresenterController', async () => {
         isFullscreen: false,
         updatedAt: 1,
       }),
+      displayAvailable: computed(() => presenterFixture.displayAvailable),
       viewMode: ref(presenterFixture.viewMode),
       tileSize: ref(300),
       channelSupported: ref(true),
+      remotePlayback: computed(() => presenterFixture.remotePlayback),
       navigateTo: presenterFixture.navigateTo,
       goPrevious: vi.fn(),
       goNext: vi.fn(),
       setTileSize: vi.fn(),
       postClose: vi.fn(),
       postState: vi.fn(),
+      sendPlaybackCommand: presenterFixture.sendPlaybackCommand,
     }),
   }
 })
@@ -101,6 +107,9 @@ vi.mock('@/runtime-shell/preview/ViewPreview.vue', async () => {
 beforeEach(() => {
   presenterFixture.viewMode = 'focus'
   presenterFixture.navigateTo.mockReset()
+  presenterFixture.sendPlaybackCommand.mockReset()
+  presenterFixture.displayAvailable = true
+  presenterFixture.remotePlayback = null
 })
 
 afterEach(() => {
@@ -130,6 +139,51 @@ describe('PresenterConsoleView', () => {
       .toBe('repeat(auto-fill, minmax(300px, 1fr))')
     expect(host.querySelectorAll('.presenter-console__preview-shield')).toHaveLength(2)
     expect(host.querySelectorAll('.presenter-console__preview-content[inert][aria-hidden="true"]')).toHaveLength(2)
+
+    app.unmount()
+  })
+
+  it('应从观众快照显示放映状态并发送控制台命令', async () => {
+    presenterFixture.remotePlayback = {
+      receivedAt: 1000,
+      deadline: 6000,
+      message: {
+        type: 'playback-state',
+        playback: {
+          state: 'stopped',
+          currentPath: '/intro',
+          remainingMs: 0,
+          delayMs: null,
+          waitingForMedia: false,
+          index: 0,
+          total: 2,
+        },
+      },
+    }
+
+    const { app, host } = mountPresenterConsoleView()
+    await nextTick()
+
+    expect(host.querySelector('[data-testid="presenter-playback-state"]')?.textContent?.trim()).toBe('未开始')
+    const primary = host.querySelector<HTMLButtonElement>('[data-testid="presenter-playback-primary"]')
+    expect(primary?.textContent?.trim()).toBe('开始放映')
+    primary?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+
+    expect(presenterFixture.sendPlaybackCommand).toHaveBeenCalledWith('start')
+
+    app.unmount()
+  })
+
+  it('观众窗口关闭时应显示暂停且不提供开始按钮', async () => {
+    presenterFixture.displayAvailable = false
+
+    const { app, host } = mountPresenterConsoleView()
+    await nextTick()
+
+    expect(host.querySelector('[data-testid="presenter-playback-state"]')?.textContent?.trim())
+      .toBe('已暂停（观众窗口未连接）')
+    expect(host.querySelector('[data-testid="presenter-playback-primary"]')).toBeNull()
 
     app.unmount()
   })

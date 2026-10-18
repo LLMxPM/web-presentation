@@ -27,12 +27,30 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ChevronRight, Pause, Play, Square } from '@lucide/vue'
+import { getRuntimeSession } from '@/core/router/runtime-session'
 import { usePlaybackHost } from './usePlaybackHost'
 import type { PlaybackState } from './playback-controller'
 
 const { snapshot, errorMessage, start, pause, resume, stop, retry, next, refresh } = usePlaybackHost()
+const session = getRuntimeSession(useRouter())
+
+/** 进入演讲模式前由会话调用，先停住普通窗口推进和媒体。 */
+function pauseForPresenterHandoff(): void {
+  pause()
+}
+
+onMounted(() => {
+  session.pausePlayback = pauseForPresenterHandoff
+})
+
+onBeforeUnmount(() => {
+  if (session.pausePlayback === pauseForPresenterHandoff) {
+    session.pausePlayback = null
+  }
+})
 
 const STATE_LABELS: Record<PlaybackState, string> = {
   stopped: '已停止',

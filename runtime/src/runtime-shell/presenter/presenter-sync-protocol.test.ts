@@ -7,6 +7,7 @@ import {
   PRESENTER_SYNC_PROTOCOL_VERSION,
   PresenterSyncReceiver,
   PresenterSyncSender,
+  isPresenterMessageForOwner,
   parsePresenterSyncMessage,
   type PresenterSyncIdentity,
   type PresenterSyncPlaybackSnapshot,
@@ -16,6 +17,7 @@ const IDENTITY: PresenterSyncIdentity = {
   channelId: 'channel-1',
   artifactIdentity: 'artifact-1',
   sourceId: 'display-1',
+  role: 'display',
   ownerEpoch: 100,
 }
 
@@ -36,6 +38,7 @@ function buildMessage(overrides: Record<string, unknown> = {}) {
     channelId: 'channel-1',
     artifactIdentity: 'artifact-1',
     sourceId: 'console-1',
+    role: 'console',
     ownerEpoch: 10,
     revision: 1,
     eventId: 'console-1:1',
@@ -74,6 +77,8 @@ describe('parsePresenterSyncMessage', () => {
     expect(parsePresenterSyncMessage(buildMessage({ protocol: 1 }))).toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({ channelId: '' }))).toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({ artifactIdentity: undefined }))).toBeNull()
+    expect(parsePresenterSyncMessage(buildMessage({ role: undefined }))).toBeNull()
+    expect(parsePresenterSyncMessage(buildMessage({ role: 'viewer' }))).toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({ playback: { state: 'playing' } }))).toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({ type: 'display-status', status: { state: 'bad' } }))).toBeNull()
     expect(parsePresenterSyncMessage(null)).toBeNull()
@@ -88,6 +93,35 @@ describe('parsePresenterSyncMessage', () => {
       type: 'display-status',
       status: { state: 'fullscreen', isFullscreen: true, updatedAt: 123 },
     }))).toMatchObject({ type: 'display-status', status: { state: 'fullscreen' } })
+  })
+
+  it('解析放映命令、播放快照与目标 owner', () => {
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'playback-command',
+      action: 'pause',
+      targetOwnerEpoch: 100,
+    }))).toMatchObject({
+      type: 'playback-command',
+      action: 'pause',
+      targetOwnerEpoch: 100,
+    })
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'playback-state',
+      playback: { ...PLAYBACK, state: 'paused', remainingMs: 1200 },
+    }))).toMatchObject({
+      type: 'playback-state',
+      playback: { state: 'paused', remainingMs: 1200 },
+    })
+    expect(parsePresenterSyncMessage(buildMessage({ type: 'playback-command', action: 'restart' }))).toBeNull()
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'navigate', currentPath: '/b', playback: PLAYBACK, targetOwnerEpoch: -1,
+    }))).toBeNull()
+  })
+
+  it('目标 owner 缺省时兼容旧消息，存在时必须匹配', () => {
+    expect(isPresenterMessageForOwner({}, 100)).toBe(true)
+    expect(isPresenterMessageForOwner({ targetOwnerEpoch: 100 }, 100)).toBe(true)
+    expect(isPresenterMessageForOwner({ targetOwnerEpoch: 99 }, 100)).toBe(false)
   })
 })
 
@@ -106,6 +140,14 @@ describe('PresenterSyncReceiver', () => {
     }))
     expect(second.received?.deadline).toBe(5_500)
     expect(receiver.getLatest()?.message).toMatchObject({ revision: 2 })
+
+    now = 4_000
+    const playbackState = receiver.receive(buildMessage({
+      eventId: 'console-1:3', revision: 3, type: 'playback-state', playback: { ...PLAYBACK, remainingMs: 700 },
+    }))
+    expect(playbackState.accepted).toBe(true)
+    expect(playbackState.received?.deadline).toBe(4_700)
+    expect(receiver.getLatest()?.message).toMatchObject({ type: 'playback-state' })
   })
 
   it('拒绝自身、频道/产物不匹配、重复事件与重复命令', () => {
@@ -121,6 +163,22 @@ describe('PresenterSyncReceiver', () => {
     expect(receiver.receive(buildMessage({
       eventId: 'console-1:3', revision: 3, commandId: 'command-1',
     }))).toMatchObject({ accepted: false, reason: 'duplicate-command' })
+  })
+
+  it('owner 水位按角色隔离，观众 owner 不会阻塞后续控制台命令', () => {
+    const receiver = new PresenterSyncReceiver(IDENTITY, () => 0)
+    expect(receiver.receive(buildMessage({
+      role: 'console', ownerEpoch: 10, revision: 1, eventId: 'console-1:1',
+    })).accepted).toBe(true)
+    expect(receiver.receive(buildMessage({
+      role: 'display', sourceId: 'display-new', ownerEpoch: 99, revision: 1, eventId: 'display-new:1',
+    })).accepted).toBe(true)
+    expect(receiver.receive(buildMessage({
+      role: 'console', ownerEpoch: 11, revision: 2, eventId: 'console-1:2',
+    })).accepted).toBe(true)
+    expect(receiver.receive(buildMessage({
+      role: 'console', ownerEpoch: 9, revision: 3, eventId: 'console-1:3',
+    }))).toMatchObject({ accepted: false, reason: 'stale-owner' })
   })
 
   it('拒绝旧 revision 与旧 owner，新 owner 可接管并重置 revision', () => {
