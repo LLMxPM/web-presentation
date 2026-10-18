@@ -106,6 +106,7 @@ class AssetType(str, Enum):
     FONT = "font"
     IMAGE = "image"
     VIDEO = "video"
+    AUDIO = "audio"
     DRAWIO = "drawio"
     MERMAID = "mermaid"
     CHART = "chart"

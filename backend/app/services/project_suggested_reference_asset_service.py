@@ -18,6 +18,7 @@ from app.services.asset_render_metadata_service import AssetRenderMetadataServic
 PROJECT_SUGGESTED_REFERENCE_ASSET_TYPES = (
     AssetType.IMAGE,
     AssetType.VIDEO,
+    AssetType.AUDIO,
     AssetType.DRAWIO,
     AssetType.MERMAID,
     AssetType.CHART,

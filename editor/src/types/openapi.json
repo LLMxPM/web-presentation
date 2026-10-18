@@ -28690,6 +28690,7 @@
           "font",
           "image",
           "video",
+          "audio",
           "drawio",
           "mermaid",
           "chart",
@@ -39857,7 +39858,7 @@
           "auto_start": {
             "type": "boolean",
             "title": "Auto Start",
-            "description": "正常放映宿主就绪后是否尝试自动开始。"
+            "description": "进入全屏放映时的初始自动推进模式；运行中可切换，不写回配置。"
           }
         },
         "additionalProperties": false,

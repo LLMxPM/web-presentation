@@ -29,13 +29,26 @@ from app.models.page_version import PageVersion
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.models.workspace_theme import WorkspaceTheme
-from app.schemas.asset import AssetReferenceSummary, resolve_asset_content_editable, resolve_asset_role
-from app.services.asset_storage_drivers import BaseStorageDriver, get_driver
-from app.services.icon_analysis_service import IconAnalysisService
-from app.repositories.component_resource_index_repository import ComponentResourceIndexRepository
+from app.repositories.component_resource_index_repository import (
+    ComponentResourceIndexRepository,
+)
+from app.schemas.asset import (
+    AssetReferenceSummary,
+    resolve_asset_content_editable,
+    resolve_asset_role,
+)
+from app.schemas.audio import (
+    AUDIO_ALLOWED_CONTENT_TYPES_BY_EXTENSION,
+    AUDIO_ALLOWED_EXTENSIONS,
+)
 from app.services.asset_binding_service import AssetBindingService
-from app.services.asset_render_metadata_service import AssetRenderMetadataService, AspectRatioSource
+from app.services.asset_render_metadata_service import (
+    AspectRatioSource,
+    AssetRenderMetadataService,
+)
+from app.services.asset_storage_drivers import BaseStorageDriver, get_driver
 from app.services.component_resource_index_service import ComponentResourceIndexService
+from app.services.icon_analysis_service import IconAnalysisService
 from app.services.model3d_acceptance_policy import (
     ASSET_ERROR_OVERWRITE_REQUIRES_REPLACE,
     ASSET_ERROR_VERSION_CONFLICT,
@@ -47,7 +60,6 @@ from app.services.model3d_acceptance_policy import (
 )
 from app.services.model3d_glb_service import Model3dGlbService
 from app.services.workspace_font_service import WorkspaceFontService
-
 
 # 分析摘要未预计算哨兵：区分「调用方未提供」与「提供且为 None」。
 _ANALYSIS_UNSET: Any = object()
@@ -61,6 +73,7 @@ class AssetService:
         AssetType.FONT: {".woff2", ".woff", ".ttf", ".otf"},
         AssetType.IMAGE: {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"},
         AssetType.VIDEO: {".mp4", ".webm", ".ogg", ".ogv", ".mov", ".m4v"},
+        AssetType.AUDIO: set(AUDIO_ALLOWED_EXTENSIONS),
         AssetType.DRAWIO: {".drawio", ".xml"},
         AssetType.MERMAID: {".mmd", ".mermaid", ".txt"},
         AssetType.CHART: {".json", ".yaml", ".yml"},
@@ -295,6 +308,12 @@ class AssetService:
         asset_name = self._normalize_asset_name(name)
         original_name = self._normalize_original_name(original_name)
         normalized_description = self._normalize_description(description)
+        if asset_type not in self.CONTENT_EDITABLE_TYPES:
+            raise AppException(
+                status_code=400,
+                code="ASSET_CONTENT_EDIT_UNSUPPORTED",
+                detail="该资源类型不支持内容写入。",
+            )
         self._validate_asset_file_type(asset_type, original_name, None)
         normalized_content, content_type = self._validate_editable_content(asset_type, original_name, content)
         content_bytes = normalized_content.encode("utf-8")
@@ -1724,6 +1743,15 @@ class AssetService:
             or base_content_type in {"application/mp4", "application/octet-stream"}
         ):
             raise AppException(status_code=400, code="ASSET_CONTENT_TYPE_UNSUPPORTED", detail="视频资源的 MIME 类型不符合要求。")
+        if asset_type == AssetType.AUDIO:
+            allowed_content_types = AUDIO_ALLOWED_CONTENT_TYPES_BY_EXTENSION.get(suffix, ())
+            if not base_content_type or base_content_type not in allowed_content_types:
+                allowed_text = "、".join(allowed_content_types)
+                raise AppException(
+                    status_code=400,
+                    code="ASSET_CONTENT_TYPE_UNSUPPORTED",
+                    detail=f"{suffix} 音频资源仅接受以下 MIME 类型：{allowed_text}。",
+                )
         if asset_type == AssetType.MODEL3D and base_content_type and base_content_type not in MODEL3D_ACCEPTED_CONTENT_TYPES:
             raise AppException(
                 status_code=400,

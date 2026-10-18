@@ -224,6 +224,7 @@ const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   icon: '图标',
   font: '字体',
   video: '视频',
+  audio: '音频',
   drawio: 'Draw.io',
   mermaid: 'Mermaid',
   chart: '图表',

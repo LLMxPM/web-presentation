@@ -707,7 +707,7 @@ export type AssetRestoreRequest = {
 
 export type AssetRole = "foundation" | "content"
 
-export type AssetType = "icon" | "font" | "image" | "video" | "drawio" | "mermaid" | "chart" | "formula" | "model3d"
+export type AssetType = "icon" | "font" | "image" | "video" | "audio" | "drawio" | "mermaid" | "chart" | "formula" | "model3d"
 
 export type AssetUpdateRequest = {
   "name"?: (string) | (null)
