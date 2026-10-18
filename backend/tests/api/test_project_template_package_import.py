@@ -117,6 +117,21 @@ async def test_project_template_package_should_roundtrip_audio_reference(
     assert project_response.status_code == 200
     project_id = project_response.json()["id"]
     audio_asset = await _upload_audio_asset(authenticated_client, source_workspace_id, "chapter_01")
+    cue_asset = await _upload_audio_asset(authenticated_client, source_workspace_id, "click_soft")
+    audio_update = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={
+            "audio_settings": {
+                "master_volume_percent": 70,
+                "narration_volume_percent": 80,
+                "effects_volume_percent": 50,
+                "cue_bindings": [
+                    {"key": "interaction.confirm", "asset_id": cue_asset["id"], "gain_percent": 60}
+                ],
+            }
+        },
+    )
+    assert audio_update.status_code == 200, audio_update.text
     page_response = await authenticated_client.post(
         "/api/pages",
         json={
@@ -147,6 +162,20 @@ async def test_project_template_package_should_roundtrip_audio_reference(
         )
         page_payload = next(name for name in names if name.startswith("pages/") and name.endswith("/index.vue"))
         assert "AssetAudio" in archive.read(page_payload).decode("utf-8")
+        project_payload = json.loads(archive.read("project/project.json").decode("utf-8"))
+        assert project_payload["audio_settings"] == {
+            "master_volume_percent": 70,
+            "narration_volume_percent": 80,
+            "effects_volume_percent": 50,
+            "cue_bindings": [
+                {"key": "interaction.confirm", "asset_name": "click_soft", "gain_percent": 60}
+            ],
+        }
+        # cue 资产不在页面源码中，也必须由项目配置主动进入资源清单。
+        assert any(
+            item["name"] == "click_soft" and item["asset_type"] == "audio"
+            for item in manifest["assets"]
+        )
 
     target_workspace_id = await _create_workspace(authenticated_client, "模板音频目标空间")
     import_response = await _import_template_package(
@@ -162,10 +191,24 @@ async def test_project_template_package_should_roundtrip_audio_reference(
         params={"asset_type": "audio"},
     )
     assert target_assets.status_code == 200
-    items = target_assets.json()["items"]
-    assert len(items) == 1
-    assert items[0]["name"] == "chapter_01"
-    assert items[0]["file_hash"] == audio_asset["file_hash"]
+    items = {item["name"]: item for item in target_assets.json()["items"]}
+    assert set(items) == {"chapter_01", "click_soft"}
+    assert items["chapter_01"]["file_hash"] == audio_asset["file_hash"]
+    assert items["click_soft"]["file_hash"] == cue_asset["file_hash"]
+
+    imported_project = await authenticated_client.get(f"/api/projects/{imported_project_id}")
+    assert imported_project.status_code == 200, imported_project.text
+    imported_settings = imported_project.json()["audio_settings"]
+    assert imported_settings["master_volume_percent"] == 70
+    assert imported_settings["narration_volume_percent"] == 80
+    assert imported_settings["effects_volume_percent"] == 50
+    assert imported_settings["cue_bindings"] == [
+        {
+            "key": "interaction.confirm",
+            "asset_id": items["click_soft"]["id"],
+            "gain_percent": 60,
+        }
+    ]
 
     async with get_session_factory()() as session:
         imported_pages = (
@@ -210,7 +253,7 @@ async def _upload_audio_asset(client: AsyncClient, workspace_id: int, name: str)
 
     response = await client.post(
         f"/api/workspaces/{workspace_id}/assets/upload",
-        files={"file": (f"{name}.mp3", b"template-audio-bytes", "audio/mpeg")},
+        files={"file": (f"{name}.mp3", f"template-audio-bytes-{name}".encode(), "audio/mpeg")},
         data={"asset_type": "audio", "tags": "[]", "name": name},
     )
     assert response.status_code == 200, response.text

@@ -27992,6 +27992,11 @@
             "title": "Component Version Count",
             "default": 0
           },
+          "project_audio_cue_count": {
+            "type": "integer",
+            "title": "Project Audio Cue Count",
+            "default": 0
+          },
           "references": {
             "items": {
               "additionalProperties": true,
@@ -28764,6 +28769,37 @@
         "type": "object",
         "title": "AssetUpdateRequest",
         "description": "更新静态资源（如改名或修改标签）。"
+      },
+      "AudioCueBindingInput": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 3,
+            "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z0-9_-]+)+$",
+            "title": "Key"
+          },
+          "asset_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "title": "Asset Id"
+          },
+          "gain_percent": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Gain Percent",
+            "default": 100
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "asset_id"
+        ],
+        "title": "AudioCueBindingInput",
+        "description": "项目 API 接受的 cue 资源绑定。"
       },
       "AuthUser": {
         "properties": {
@@ -37549,6 +37585,45 @@
         "title": "PreviewSizePresetUpdateRequest",
         "description": "更新当前登录用户预设尺寸的入参。"
       },
+      "ProjectAudioSettings": {
+        "properties": {
+          "master_volume_percent": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Master Volume Percent"
+          },
+          "narration_volume_percent": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Narration Volume Percent"
+          },
+          "effects_volume_percent": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Effects Volume Percent"
+          },
+          "cue_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/AudioCueBindingInput"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Cue Bindings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "master_volume_percent",
+          "narration_volume_percent",
+          "effects_volume_percent"
+        ],
+        "title": "ProjectAudioSettings",
+        "description": "项目音频 API 的完整设置，cue key 在同一项目内必须唯一。"
+      },
       "ProjectBuildAssetSummary": {
         "properties": {
           "automatic_asset_names": {
@@ -37905,6 +37980,10 @@
           "slideshow": {
             "$ref": "#/components/schemas/SlideshowSettings",
             "description": "项目默认放映配置，省略时使用平台默认值；提供时必须为完整对象。"
+          },
+          "audio_settings": {
+            "$ref": "#/components/schemas/ProjectAudioSettings",
+            "description": "项目音量与 cue 绑定，省略时使用默认音量且不绑定 cue。"
           }
         },
         "additionalProperties": false,
@@ -38059,6 +38138,9 @@
           "slideshow": {
             "$ref": "#/components/schemas/SlideshowSettings"
           },
+          "audio_settings": {
+            "$ref": "#/components/schemas/ProjectAudioSettings"
+          },
           "routed_page_count": {
             "type": "integer",
             "title": "Routed Page Count",
@@ -38144,6 +38226,7 @@
           "style_spec_markdown",
           "build_extra_assets_json",
           "slideshow",
+          "audio_settings",
           "created_at",
           "updated_at",
           "created_by",
@@ -39426,6 +39509,17 @@
               }
             ],
             "description": "项目默认放映配置；省略表示保留，提供完整对象表示替换，显式 null 拒绝。"
+          },
+          "audio_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectAudioSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "项目音量与 cue 绑定；省略表示保留，提供完整对象表示替换，显式空 cue_bindings 表示清空。"
           }
         },
         "additionalProperties": false,

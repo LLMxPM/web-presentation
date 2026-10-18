@@ -14,6 +14,7 @@ from app.models.workspace import Project
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.repositories.workspace_style_repository import WorkspaceStyleRepository
+from app.schemas.audio import ProjectAudioSettings, default_project_audio_settings
 from app.schemas.common import ListQuery, PagedResponse
 from app.schemas.project import (
     ProjectCreateRequest,
@@ -22,6 +23,7 @@ from app.schemas.project import (
     normalize_project_build_extra_assets_config,
 )
 from app.schemas.slideshow import load_slideshow_settings
+from app.services.project_audio_settings_service import ProjectAudioSettingsService
 from app.services.project_config_service import ProjectConfigService
 from app.services.page_screenshot_url import build_page_screenshot_url
 from app.services.project_suggested_reference_asset_service import ProjectSuggestedReferenceAssetService
@@ -40,6 +42,7 @@ class ProjectService:
         self.workspace_repository = WorkspaceRepository(session)
         self.workspace_style_repository = WorkspaceStyleRepository(session)
         self.project_config_service = ProjectConfigService(session)
+        self.project_audio_service = ProjectAudioSettingsService(session)
         self.workspace_theme_service = WorkspaceThemeService(session)
         self.workspace_service = WorkspaceService(session)
         self.settings = get_settings()
@@ -51,6 +54,7 @@ class ProjectService:
         first_page: Page | None = None,
         page_counts: tuple[int, int] = (0, 0),
         latest_page_updated_at: datetime | None = None,
+        audio_settings: ProjectAudioSettings | None = None,
     ) -> ProjectItem:
         """将 ORM 项目对象转换为接口层需要的显式响应结构。"""
 
@@ -81,6 +85,7 @@ class ProjectService:
                     project.build_extra_assets_json
                 ).model_dump(mode="python"),
                 "slideshow": load_slideshow_settings(project.slideshow_config_json),
+                "audio_settings": audio_settings or default_project_audio_settings(),
                 "routed_page_count": page_counts[0],
                 "total_page_count": page_counts[1],
                 "first_page_title": first_page.title if first_page is not None else None,
@@ -110,6 +115,7 @@ class ProjectService:
         first_pages = await self.repository.list_cover_pages([item.id for item in items])
         page_counts = await self.repository.list_page_counts([item.id for item in items])
         latest_page_updated_at = await self.repository.list_page_latest_updated_at([item.id for item in items])
+        audio_settings = await self.project_audio_service.load_settings_many([item.id for item in items])
         return PagedResponse[ProjectItem](
             items=[
                 self._to_item(
@@ -117,6 +123,7 @@ class ProjectService:
                     first_page=first_pages.get(item.id),
                     page_counts=page_counts.get(item.id, (0, 0)),
                     latest_page_updated_at=latest_page_updated_at.get(item.id),
+                    audio_settings=audio_settings.get(item.id),
                 )
                 for item in items
             ],
@@ -139,6 +146,7 @@ class ProjectService:
             project,
             page_counts=page_counts.get(project.id, (0, 0)),
             latest_page_updated_at=latest_page_updated_at.get(project.id),
+            audio_settings=await self.project_audio_service.load_settings(project),
         )
 
     async def create(
@@ -173,6 +181,8 @@ class ProjectService:
             presentation = configuration.presentation
         resolved_theme_key = presentation.theme_key or workspace.default_theme_key
         resolved_theme_key = await self.workspace_theme_service.ensure_theme_key_exists(payload.workspace_id, resolved_theme_key)
+        # 先校验全部 cue 资源，再进入编码生成与写入，避免创建后才失败。
+        await self.project_audio_service.validate_bindings(payload.workspace_id, payload.audio_settings.cue_bindings)
 
         async def write_project(code: str) -> Project:
             """使用指定编码创建项目。"""
@@ -195,10 +205,12 @@ class ProjectService:
                 style_spec_markdown=presentation.style_spec_markdown,
                 build_extra_assets_json=payload.build_extra_assets_json.model_dump(mode="python"),
                 slideshow_config_json=payload.slideshow.model_dump(mode="json"),
+                audio_settings_json=payload.audio_settings.volume_settings().model_dump(mode="python"),
                 created_by=operator_id,
                 updated_by=operator_id,
             )
             await self.repository.create(project)
+            await self.project_audio_service.replace_cues(project.id, payload.audio_settings.cue_bindings)
             if source_style is not None:
                 await SuggestedComponentService(self.session).copy_style_components_to_project(
                     project.id,
@@ -224,7 +236,10 @@ class ProjectService:
         if not commit:
             await self.session.flush()
         reloaded = await self.repository.get_by_id(project.id)
-        return self._to_item(reloaded)
+        return self._to_item(
+            reloaded,
+            audio_settings=await self.project_audio_service.load_settings(reloaded),
+        )
 
     async def update(
         self,
@@ -241,12 +256,26 @@ class ProjectService:
             raise AppException(status_code=404, code="PROJECT_NOT_FOUND", detail="项目不存在。")
         await self.workspace_service.ensure_access(project.workspace_id, user_id=operator_id)
 
+        target_workspace_id = (
+            payload.workspace_id
+            if payload.workspace_id is not None and payload.workspace_id != project.workspace_id
+            else project.workspace_id
+        )
+        if payload.audio_settings is not None:
+            # 在修改任何字段前完成资源校验；工作空间迁移时按目标空间校验。
+            await self.project_audio_service.validate_bindings(
+                target_workspace_id,
+                payload.audio_settings.cue_bindings,
+            )
+
         if payload.workspace_id is not None and payload.workspace_id != project.workspace_id:
             if not await self.repository.workspace_exists(payload.workspace_id):
                 raise AppException(status_code=404, code="WORKSPACE_NOT_FOUND", detail="所属工作空间不存在。")
             await self.workspace_service.ensure_access(payload.workspace_id, user_id=operator_id)
             await ProjectSuggestedReferenceAssetService(self.session).clear_project_assets(project_id, commit=False)
             await SuggestedComponentService(self.session).clear_project_components(project_id, commit=False)
+            # cue 绑定必须与项目同工作空间，迁移时先断开旧资源。
+            await self.project_audio_service.replace_cues(project_id, [])
             project.workspace_id = payload.workspace_id
             if project.theme_key is not None:
                 project.theme_key = await self.workspace_theme_service.ensure_theme_key_exists(
@@ -317,6 +346,14 @@ class ProjectService:
         if payload.slideshow is not None:
             # 只有显式提供完整对象时才替换；应用样式分支不触碰放映配置。
             project.slideshow_config_json = payload.slideshow.model_dump(mode="json")
+        if payload.audio_settings is not None:
+            # 完整对象整体替换音量与 cue；空 cue_bindings 表示显式清空。
+            await self.project_audio_service.replace_settings(
+                project,
+                payload.audio_settings,
+                operator_id=operator_id,
+                commit=False,
+            )
         project.updated_by = operator_id
         if commit:
             await self.session.commit()
@@ -324,7 +361,11 @@ class ProjectService:
             await self.session.flush()
         reloaded = await self.repository.get_by_id(project.id)
         page_counts = await self.repository.list_page_counts([project.id])
-        return self._to_item(reloaded, page_counts=page_counts.get(project.id, (0, 0)))
+        return self._to_item(
+            reloaded,
+            page_counts=page_counts.get(project.id, (0, 0)),
+            audio_settings=await self.project_audio_service.load_settings(reloaded),
+        )
 
     async def delete(self, project_id: int, *, user_id: int, commit: bool = True) -> None:
         """对当前用户可访问项目执行软删除，不影响页面资源。"""

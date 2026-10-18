@@ -316,6 +316,67 @@ async def test_audio_reference_should_block_delete_and_survive_archive(authentic
     assert delete_response.json()["code"] == "ASSET_DELETE_FORBIDDEN"
 
 
+async def test_project_cue_audio_should_appear_in_references_and_block_delete(
+    authenticated_client: AsyncClient,
+) -> None:
+    """项目 cue 绑定即使没有页面引用，也必须在资源引用摘要和删除保护中体现。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "音频 cue 引用")
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "音频 cue 项目", "status": "active"},
+    )
+    assert project_response.status_code == 200, project_response.text
+    project_id = project_response.json()["id"]
+    asset = await _upload_audio(
+        authenticated_client,
+        workspace_id,
+        file_name="confirm.mp3",
+        content_type="audio/mpeg",
+        content=b"cue-audio",
+        name="confirm_soft",
+    )
+    update_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={
+            "audio_settings": {
+                "master_volume_percent": 100,
+                "narration_volume_percent": 100,
+                "effects_volume_percent": 30,
+                "cue_bindings": [
+                    {"key": "interaction.confirm", "asset_id": asset["id"], "gain_percent": 90}
+                ],
+            }
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+
+    reference_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}/references",
+    )
+    assert reference_response.status_code == 200
+    summary = reference_response.json()
+    assert summary["project_audio_cue_count"] == 1
+    assert summary["has_references"] is True
+    assert any(
+        item["kind"] == "project_audio_cue"
+        and item["project_id"] == project_id
+        and item["cue_key"] == "interaction.confirm"
+        for item in summary["references"]
+    )
+
+    archive_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}/archive",
+        json={"archive_reason": "cue 引用保护测试"},
+    )
+    assert archive_response.status_code == 200, archive_response.text
+    delete_response = await authenticated_client.delete(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}",
+    )
+    assert delete_response.status_code == 409
+    assert delete_response.json()["code"] == "ASSET_DELETE_FORBIDDEN"
+
+
 async def test_invalid_audio_page_props_should_be_rejected_before_save(authenticated_client: AsyncClient) -> None:
     """页面保存应静态阻断旁白循环、越界音量与多旁白冲突。"""
 

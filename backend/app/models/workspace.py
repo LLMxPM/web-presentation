@@ -16,6 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.audio_defaults import default_audio_volume_payload
 from app.core.slideshow_defaults import default_slideshow_payload
 from app.db.base import Base
 from app.db.types import UTCDateTime
@@ -93,6 +94,12 @@ class Project(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
         nullable=False,
         default=default_slideshow_payload,
         server_default='{"transition":{"effect":"fade","duration_ms":400},"advance":{"mode":"manual","delay_ms":5000,"media_timeout_ms":300000},"loop":false,"auto_start":false}',
+    )
+    audio_settings_json: Mapped[Mapping[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=default_audio_volume_payload,
+        server_default='{"master_volume_percent":100,"narration_volume_percent":100,"effects_volume_percent":30}',
     )
 
     workspace: Mapped[Workspace] = relationship(back_populates="projects")

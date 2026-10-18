@@ -26,6 +26,8 @@ from app.models.font import WorkspaceFontConfig
 from app.models.page import Page
 from app.models.page_component_resource import PageVersionComponentResource
 from app.models.page_version import PageVersion
+from app.models.project_audio_cue import ProjectAudioCueBinding
+from app.models.workspace import Project
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.models.workspace_theme import WorkspaceTheme
@@ -953,14 +955,42 @@ class AssetService:
                 }
             )
 
+        project_cues = await self._list_project_audio_cue_references(asset)
+        for project, cue_key in project_cues:
+            references.append(
+                {
+                    "kind": "project_audio_cue",
+                    "id": project.id,
+                    "project_id": project.id,
+                    "name": project.name,
+                    "cue_key": cue_key,
+                }
+            )
+
         return AssetReferenceSummary(
             theme_count=len(themes),
             font_count=len(fonts),
             page_count=len(pages),
             component_count=len(components),
             component_version_count=len(component_versions),
+            project_audio_cue_count=len(project_cues),
             references=references,
         )
+
+    async def _list_project_audio_cue_references(
+        self,
+        asset: WorkspaceAsset,
+    ) -> list[tuple[Project, str]]:
+        """列出把资源绑定为项目 cue 的引用，归档项目也保留阻断语义。"""
+
+        rows = await self.session.execute(
+            select(Project, ProjectAudioCueBinding.cue_key)
+            .join(ProjectAudioCueBinding, ProjectAudioCueBinding.project_id == Project.id)
+            .where(ProjectAudioCueBinding.asset_id == asset.id)
+            .where(Project.deleted_at.is_(None))
+            .order_by(Project.id, ProjectAudioCueBinding.cue_key)
+        )
+        return list(rows.all())
 
     async def get_asset_by_hash(self, workspace_id: int, file_hash: str) -> tuple[WorkspaceAsset, BaseStorageDriver]:
         """根据 Hash 获取资产模型与存储驱动；允许多个记录复用同一物理文件。"""

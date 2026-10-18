@@ -21,9 +21,9 @@ from app.schemas.slideshow import SlideshowSettings, default_slideshow_settings
 from app.schemas.workspace_style import WorkspaceStylePackageThemeSummary
 
 
-PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION = 3
+PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION = 4
 # 导入侧必须同时接受 1/2/3：升级 CURRENT 不能使历史模板包失效。
-SUPPORTED_PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSIONS = frozenset({1, 2, 3})
+SUPPORTED_PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 PROJECT_TEMPLATE_PACKAGE_TYPE = "web-presentation-project-template"
 
 

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models.enums import RecordStatus
 from app.models.enums import AssetType
+from app.schemas.audio import ProjectAudioSettings, default_project_audio_settings
 from app.schemas.common import SchemaBase
 from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration, ProjectUpdateConfiguration
 from app.schemas.project_app_config import ProjectMenuMode
@@ -91,6 +92,10 @@ class ProjectCreateRequest(BaseModel):
         default_factory=default_slideshow_settings,
         description="项目默认放映配置，省略时使用平台默认值；提供时必须为完整对象。",
     )
+    audio_settings: ProjectAudioSettings = Field(
+        default_factory=default_project_audio_settings,
+        description="项目音量与 cue 绑定，省略时使用默认音量且不绑定 cue。",
+    )
 
     @model_validator(mode="after")
     def normalize_build_extra_assets_json(self) -> "ProjectCreateRequest":
@@ -115,6 +120,10 @@ class ProjectUpdateRequest(BaseModel):
         default=None,
         description="项目默认放映配置；省略表示保留，提供完整对象表示替换，显式 null 拒绝。",
     )
+    audio_settings: ProjectAudioSettings | None = Field(
+        default=None,
+        description="项目音量与 cue 绑定；省略表示保留，提供完整对象表示替换，显式空 cue_bindings 表示清空。",
+    )
 
     @model_validator(mode="after")
     def reject_null_slideshow(self) -> "ProjectUpdateRequest":
@@ -122,6 +131,14 @@ class ProjectUpdateRequest(BaseModel):
 
         if "slideshow" in self.model_fields_set and self.slideshow is None:
             raise ValueError("更新项目放映配置时必须提供完整对象，不能使用 null。")
+        return self
+
+    @model_validator(mode="after")
+    def reject_null_audio_settings(self) -> "ProjectUpdateRequest":
+        """音频设置只支持“省略保留/完整替换”，清空 cue 使用空列表。"""
+
+        if "audio_settings" in self.model_fields_set and self.audio_settings is None:
+            raise ValueError("更新项目音频设置时必须提供完整对象，不能使用 null。")
         return self
 
     @model_validator(mode="after")
@@ -155,6 +172,7 @@ class ProjectItem(SchemaBase):
     style_spec_markdown: str
     build_extra_assets_json: ProjectBuildExtraAssetsConfig
     slideshow: SlideshowSettings
+    audio_settings: ProjectAudioSettings
     routed_page_count: int = 0
     total_page_count: int = 0
     first_page_title: str | None = None

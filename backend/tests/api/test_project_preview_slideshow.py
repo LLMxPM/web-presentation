@@ -125,6 +125,69 @@ async def test_preview_artifact_should_freeze_slideshow_defaults_and_effective_r
     assert routes["second"]["meta"]["advance"] == {"mode": "timer", "delayMs": 5000, "mediaTimeoutMs": 300000}
 
 
+async def _upload_audio(client: AsyncClient, workspace_id: int, name: str) -> int:
+    """上传最小音频并返回资源 ID。"""
+
+    response = await client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": (f"{name}.mp3", b"audio-contract-bytes", "audio/mpeg")},
+        data={"asset_type": "audio", "tags": "[]", "name": name},
+    )
+    assert response.status_code == 200, response.text
+    return int(response.json()["id"])
+
+
+async def test_preview_artifact_should_freeze_audio_volume_and_cues(
+    authenticated_client: AsyncClient,
+    runtime_service_headers,
+) -> None:
+    """预览配置包固化音量与 cue 逻辑名，项目更新后旧 artifact 不热读。"""
+
+    workspace_id, project_id, _ = await _setup_project(authenticated_client)
+    audio_id = await _upload_audio(authenticated_client, workspace_id, "whoosh")
+    initial_settings = {
+        "master_volume_percent": 80,
+        "narration_volume_percent": 90,
+        "effects_volume_percent": 40,
+        "cue_bindings": [{"key": "transition.forward", "asset_id": audio_id, "gain_percent": 100}],
+    }
+    update = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={"audio_settings": initial_settings},
+    )
+    assert update.status_code == 200, update.text
+
+    old_artifact_id = await _create_preview(authenticated_client, project_id)
+    old_bundle = await _read_config_bundle(authenticated_client, old_artifact_id, runtime_service_headers)
+    assert old_bundle["audio"] == {
+        "volume": {"master": 0.8, "narration": 0.9, "effects": 0.4},
+        "cues": {"transition.forward": {"assetName": "whoosh", "gain": 1.0}},
+    }
+
+    replaced = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={
+            "audio_settings": {
+                "master_volume_percent": 50,
+                "narration_volume_percent": 60,
+                "effects_volume_percent": 70,
+                "cue_bindings": [],
+            }
+        },
+    )
+    assert replaced.status_code == 200, replaced.text
+
+    frozen_bundle = await _read_config_bundle(authenticated_client, old_artifact_id, runtime_service_headers)
+    assert frozen_bundle["audio"] == old_bundle["audio"]
+
+    new_artifact_id = await _create_preview(authenticated_client, project_id)
+    new_bundle = await _read_config_bundle(authenticated_client, new_artifact_id, runtime_service_headers)
+    assert new_bundle["audio"] == {
+        "volume": {"master": 0.5, "narration": 0.6, "effects": 0.7},
+        "cues": {},
+    }
+
+
 async def test_existing_preview_artifact_should_not_hot_read_updated_slideshow(
     authenticated_client: AsyncClient,
     runtime_service_headers,

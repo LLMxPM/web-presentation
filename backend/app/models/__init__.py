@@ -36,6 +36,7 @@ from app.models.render_attempt import RenderAttempt
 from app.models.render_execution import RenderResult, RenderSchedulerState, RenderWorker
 from app.models.render_request import RenderRequest
 from app.models.page_version import PageVersion
+from app.models.project_audio_cue import ProjectAudioCueBinding
 from app.models.project_build_job import ProjectBuildJob
 from app.models.project_route import ProjectRoute
 from app.models.project_suggested_reference_asset import ProjectSuggestedReferenceAsset
@@ -90,6 +91,7 @@ __all__ = [
     "Project",
     "Page",
     "ProjectRoute",
+    "ProjectAudioCueBinding",
     "PageVersion",
     "PageVersionComponentDependency",
     "PageVersionComponentUsage",

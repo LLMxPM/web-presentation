@@ -615,6 +615,56 @@ async def test_project_build_snapshot_should_include_audio_static_reference(
 
 
 @pytest.mark.asyncio
+async def test_project_build_snapshot_should_include_cue_only_audio(
+    authenticated_client: AsyncClient,
+) -> None:
+    """项目 cue 绑定即使未出现在页面源码中，也必须进入构建资源与 Runtime 配置。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    cue_asset = await upload_build_audio_asset(authenticated_client, workspace_id, "click_soft")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        "<template><main>无页面音频</main></template>",
+    )
+    update_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={
+            "audio_settings": {
+                "master_volume_percent": 75,
+                "narration_volume_percent": 100,
+                "effects_volume_percent": 25,
+                "cue_bindings": [
+                    {"key": "interaction.confirm", "asset_id": cue_asset["id"], "gain_percent": 80}
+                ],
+            }
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200, create_response.text
+
+    async with get_session_factory()() as session:
+        release = await session.get(Release, create_response.json()["snapshot_release_id"])
+
+    assert release is not None
+    assert release.manifest["assets"] == {"click_soft": cue_asset["file_hash"]}
+    assert release.config_bundle["audio"] == {
+        "volume": {"master": 0.75, "narration": 1.0, "effects": 0.25},
+        "cues": {"interaction.confirm": {"assetName": "click_soft", "gain": 0.8}},
+    }
+
+    summary_response = await authenticated_client.get(f"/api/projects/{project_id}/build-assets")
+    assert summary_response.status_code == 200
+    assert "click_soft" in summary_response.json()["automatic_asset_names"]
+
+
+@pytest.mark.asyncio
 async def test_project_build_snapshot_should_keep_frozen_audio_hash_after_replacement(
     authenticated_client: AsyncClient,
 ) -> None:

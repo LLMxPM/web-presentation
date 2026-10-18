@@ -338,6 +338,7 @@ class AssetReferenceSummary(BaseModel):
     page_count: int = 0
     component_count: int = 0
     component_version_count: int = 0
+    project_audio_cue_count: int = 0
     references: list[dict[str, object]] = Field(default_factory=list)
 
     @computed_field
@@ -352,6 +353,7 @@ class AssetReferenceSummary(BaseModel):
                 self.page_count,
                 self.component_count,
                 self.component_version_count,
+                self.project_audio_cue_count,
             ]
         )
 

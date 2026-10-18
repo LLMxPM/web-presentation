@@ -609,6 +609,7 @@ export type AssetReferenceSummary = {
   "page_count"?: number
   "component_count"?: number
   "component_version_count"?: number
+  "project_audio_cue_count"?: number
   "references"?: (Record<string, unknown>)[]
   "has_references": boolean
 }
@@ -715,6 +716,12 @@ export type AssetUpdateRequest = {
   "description"?: (string) | (null)
   "tags"?: ((string)[]) | (null)
   "approx_aspect_ratio"?: (string) | (null)
+}
+
+export type AudioCueBindingInput = {
+  "key": string
+  "asset_id": number
+  "gain_percent"?: number
 }
 
 export type AuthUser = {
@@ -2091,6 +2098,13 @@ export type PreviewSizePresetUpdateRequest = {
   "presets"?: (PreviewSizePreset)[]
 }
 
+export type ProjectAudioSettings = {
+  "master_volume_percent": number
+  "narration_volume_percent": number
+  "effects_volume_percent": number
+  "cue_bindings"?: (AudioCueBindingInput)[]
+}
+
 export type ProjectBuildAssetSummary = {
   "automatic_asset_names"?: (string)[]
   "extra_asset_names"?: (string)[]
@@ -2144,6 +2158,7 @@ export type ProjectCreateRequest = {
   "configuration"?: (ProjectDefaultConfiguration) | (ProjectStyleConfiguration) | (ProjectCustomConfiguration)
   "build_extra_assets_json"?: ProjectBuildExtraAssetsConfig
   "slideshow"?: SlideshowSettings
+  "audio_settings"?: ProjectAudioSettings
 }
 
 export type ProjectCustomConfiguration = {
@@ -2176,6 +2191,7 @@ export type ProjectItem = {
   "style_spec_markdown": string
   "build_extra_assets_json": ProjectBuildExtraAssetsConfig
   "slideshow": SlideshowSettings
+  "audio_settings": ProjectAudioSettings
   "routed_page_count"?: number
   "total_page_count"?: number
   "first_page_title"?: (string) | (null)
@@ -2392,6 +2408,7 @@ export type ProjectUpdateRequest = {
   "configuration"?: ((ProjectPatchConfiguration) | (ProjectStyleConfiguration)) | (null)
   "build_extra_assets_json"?: (ProjectBuildExtraAssetsConfig) | (null)
   "slideshow"?: (SlideshowSettings) | (null)
+  "audio_settings"?: (ProjectAudioSettings) | (null)
 }
 
 export type ReasoningPolicy = {

@@ -145,7 +145,7 @@ async def test_template_package_schema3_should_roundtrip_slideshow_and_route_ove
 
     with zipfile.ZipFile(io.BytesIO(archive_content)) as archive:
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
-        assert manifest["schema_version"] == 3
+        assert manifest["schema_version"] == 4
         project_payload = json.loads(archive.read("project/project.json").decode("utf-8"))
         assert project_payload["slideshow"] == PROJECT_SLIDESHOW
         routes_payload = json.loads(archive.read("project/routes.json").decode("utf-8"))

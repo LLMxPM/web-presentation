@@ -23,9 +23,10 @@ from app.core.runtime_module_policy import build_runtime_module_resolver_config,
 from app.core.text_normalizer import normalize_text_to_lf
 from app.core.time_utils import utc_now
 from app.models.asset import WorkspaceAsset
-from app.models.enums import PageFileType, ProjectRouteType, RecordStatus
+from app.models.enums import AssetType, PageFileType, ProjectRouteType, RecordStatus
 from app.models.font import WorkspaceFontConfig
 from app.models.page import Page
+from app.models.project_audio_cue import ProjectAudioCueBinding
 from app.models.project_route import ProjectRoute
 from app.models.project_suggested_component import ProjectSuggestedComponent
 from app.models.project_suggested_reference_asset import ProjectSuggestedReferenceAsset
@@ -85,7 +86,15 @@ from app.services.component_share_package_models import (
 from app.services.object_storage_service import ObjectStorageService
 from app.services.page_screenshot_service import PageScreenshotService
 from app.services.page_version_service import PageVersionService
+from app.schemas.audio import (
+    AudioVolumeSettings,
+    ProjectAudioTemplateSettings,
+    build_runtime_audio_config,
+    default_audio_volume_payload,
+    normalize_project_audio_template_settings,
+)
 from app.services.project_artifact_builder import ProjectArtifactBuilder
+from app.services.project_audio_settings_service import ProjectAudioSettingsService
 from app.services.project_config_service import ProjectConfigService
 from app.services.project_route_service import ProjectRouteService
 from app.services.project_template_package_format import (
@@ -139,6 +148,7 @@ class ProjectTemplatePackageService:
         self.style_package_service = WorkspaceStylePackageService(session)
         self.object_storage_service = ObjectStorageService()
         self.project_config_service = ProjectConfigService(session)
+        self.project_audio_settings_service = ProjectAudioSettingsService(session)
         self.font_service = WorkspaceFontService(session)
 
     async def validate_export_package(
@@ -355,12 +365,14 @@ class ProjectTemplatePackageService:
         theme_assets, theme_font_configs = await self._collect_theme_dependencies(project.workspace_id, themes)
         page_asset_names, dynamic_resource_modules = self._collect_page_asset_references(pages)
         config_asset_names = await self._collect_project_config_asset_names(project)
+        cue_asset_names = await self.project_audio_settings_service.collect_cue_asset_names(project.id)
         suggested_asset_names = await self._collect_project_suggested_asset_names(project.id)
         extra_asset_names = normalize_project_build_extra_assets_config(project.build_extra_assets_json).asset_names
         automatic_asset_names = self._deduplicate_names(
             [
                 *page_asset_names,
                 *config_asset_names,
+                *cue_asset_names,
                 *suggested_asset_names,
                 *extra_asset_names,
                 *[asset.name for asset in theme_assets],
@@ -579,13 +591,14 @@ class ProjectTemplatePackageService:
             errors.append("导入文件 package_type 不受支持。")
         if schema_version not in SUPPORTED_PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSIONS:
             errors.append(
-                "导入文件 schema_version 必须是 1、2 或 3。"
+                "导入文件 schema_version 必须是 1、2、3 或 4。"
             )
         if await self.workspace_repository.get_by_id(workspace_id) is None:
             errors.append("目标工作空间不存在。")
 
         self._validate_template_project_payload(parsed.project, errors)
         self._validate_template_slideshow_payload(parsed.project, schema_version, errors)
+        await self._validate_template_audio_settings(workspace_id, parsed, schema_version, errors)
         self._validate_template_route_slideshow(parsed.routes, schema_version, errors)
         page_summaries = self._validate_template_pages(parsed.pages, parsed.routes, errors)
         self._validate_page_component_refs(parsed.pages, parsed.components, errors)
@@ -641,6 +654,7 @@ class ProjectTemplatePackageService:
         """把模板包内容写入目标工作空间，返回新项目和页面映射。"""
 
         project_payload = parsed.project
+        audio_settings = self._normalize_package_audio_settings(project_payload)
         project = Project(
             workspace_id=workspace_id,
             code=await generate_code(self.session, Project, CODE_PREFIX_PROJECT),
@@ -664,6 +678,11 @@ class ProjectTemplatePackageService:
                 if project_payload.get("slideshow") is not None
                 else default_slideshow_settings().model_dump(mode="json")
             ),
+            audio_settings_json={
+                "master_volume_percent": audio_settings.master_volume_percent,
+                "narration_volume_percent": audio_settings.narration_volume_percent,
+                "effects_volume_percent": audio_settings.effects_volume_percent,
+            },
             created_by=operator_id,
             updated_by=operator_id,
         )
@@ -702,6 +721,7 @@ class ProjectTemplatePackageService:
             page_mapping[package_page.source_page_code] = page
 
         await self._create_project_routes_from_package(project.id, parsed.routes, page_mapping, operator_id)
+        await self._create_project_audio_cues(project.id, workspace_id, audio_settings)
         await self._create_project_suggested_assets(project.id, workspace_id, parsed.project)
         await self._create_project_suggested_components(project.id, parsed.project, component_mapping)
         return project, page_mapping
@@ -773,6 +793,7 @@ class ProjectTemplatePackageService:
         suggested_assets = await self._collect_project_suggested_asset_names(project.id)
         suggested_components = await self._collect_project_suggested_component_payloads(project.id)
         runtime_theme_config = await self.project_config_service.resolve_runtime_theme_config(project)
+        audio_settings = await self.project_audio_settings_service.build_export_payload(project)
         return {
             "source_project_code": project.code,
             "name": project.name,
@@ -788,6 +809,7 @@ class ProjectTemplatePackageService:
             "style_spec_markdown": project.style_spec_markdown,
             "build_extra_assets_json": normalize_project_build_extra_assets_config(project.build_extra_assets_json).model_dump(mode="python"),
             "slideshow": load_slideshow_settings(project.slideshow_config_json).model_dump(mode="json"),
+            "audio_settings": audio_settings,
             "suggested_reference_asset_names": suggested_assets,
             "suggested_components": suggested_components,
         }
@@ -1057,6 +1079,55 @@ class ProjectTemplatePackageService:
             )
         )
 
+    @staticmethod
+    def _normalize_package_audio_settings(project_payload: dict[str, Any]) -> ProjectAudioTemplateSettings:
+        """解析模板包音频设置；旧包省略时回填默认音量且无 cue。"""
+
+        raw = project_payload.get("audio_settings")
+        if raw is None:
+            return ProjectAudioTemplateSettings(**default_audio_volume_payload(), cue_bindings=[])
+        return normalize_project_audio_template_settings(raw)
+
+    async def _create_project_audio_cues(
+        self,
+        project_id: int,
+        workspace_id: int,
+        settings: ProjectAudioTemplateSettings,
+    ) -> None:
+        """按逻辑资源名解析目标工作空间资源并重建 cue 绑定。"""
+
+        bindings = settings.cue_bindings
+        if not bindings:
+            return
+        names = {binding.asset_name for binding in bindings}
+        result = await self.session.scalars(
+            select(WorkspaceAsset)
+            .where(WorkspaceAsset.workspace_id == workspace_id)
+            .where(WorkspaceAsset.name.in_(names))
+            .where(WorkspaceAsset.source_asset_id.is_(None))
+            .where(WorkspaceAsset.status == RecordStatus.ACTIVE.value)
+            .where(WorkspaceAsset.asset_type == AssetType.AUDIO.value)
+        )
+        asset_by_name = {asset.name: asset for asset in result.all()}
+        missing = sorted(name for name in names if name not in asset_by_name)
+        if missing:
+            raise AppException(
+                status_code=400,
+                code="PROJECT_TEMPLATE_AUDIO_ASSET_MISSING",
+                detail=f"模板 cue 绑定的音频资源不可用：{', '.join(missing)}。",
+            )
+        for binding in bindings:
+            asset = asset_by_name[binding.asset_name]
+            self.session.add(
+                ProjectAudioCueBinding(
+                    project_id=project_id,
+                    cue_key=binding.key,
+                    asset_id=asset.id,
+                    gain_percent=binding.gain_percent,
+                )
+            )
+        await self.session.flush()
+
     async def _create_project_suggested_assets(self, project_id: int, workspace_id: int, project_payload: dict[str, Any]) -> None:
         """按资源 name 恢复项目建议引用资源。"""
 
@@ -1098,6 +1169,32 @@ class ProjectTemplatePackageService:
             self.session.add_all(rows)
             await self.session.flush()
 
+    @classmethod
+    def _build_package_runtime_audio_config(cls, parsed: ParsedProjectTemplatePackage) -> dict[str, Any]:
+        """把模板包音频设置转换为 Runtime 快照；缺失 cue 资源直接拒绝。"""
+
+        settings = cls._normalize_package_audio_settings(parsed.project)
+        available = {
+            str(asset.metadata.get("name") or "").strip()
+            for asset in parsed.assets
+            if str(asset.metadata.get("asset_type") or "") == AssetType.AUDIO.value
+        }
+        missing = sorted(
+            binding.asset_name for binding in settings.cue_bindings if binding.asset_name not in available
+        )
+        if missing:
+            raise AppException(
+                status_code=400,
+                code="PROJECT_TEMPLATE_AUDIO_ASSET_MISSING",
+                detail=f"模板 cue 绑定的音频资源不可用：{', '.join(missing)}。",
+            )
+        volume = AudioVolumeSettings(
+            master_volume_percent=settings.master_volume_percent,
+            narration_volume_percent=settings.narration_volume_percent,
+            effects_volume_percent=settings.effects_volume_percent,
+        )
+        return build_runtime_audio_config(volume, settings.cue_bindings)
+
     def _build_preview_config_bundle(self, parsed: ParsedProjectTemplatePackage) -> dict[str, Any]:
         """从模板包构建 Runtime 预览配置包。"""
 
@@ -1117,6 +1214,7 @@ class ProjectTemplatePackageService:
             "icons": {"static_icons": []},
             "themes": self._parse_theme_config(parsed.project.get("theme_config_yaml")),
             "fonts": self._build_preview_font_bundle(parsed.font_configs),
+            "audio": self._build_package_runtime_audio_config(parsed),
             "module_resolver": build_runtime_module_resolver_config(),
         }
 
@@ -1321,6 +1419,48 @@ class ProjectTemplatePackageService:
             normalize_slideshow_settings(raw)
         except (TypeError, ValueError):
             errors.append("project/project.json 的 slideshow 配置不合法。")
+
+    async def _validate_template_audio_settings(
+        self,
+        workspace_id: int,
+        parsed: ParsedProjectTemplatePackage,
+        schema_version: int | None,
+        errors: list[str],
+    ) -> None:
+        """校验模板音频设置和 cue 资源；旧包省略时按默认静音设置兼容。"""
+
+        raw = parsed.project.get("audio_settings")
+        if raw is None:
+            if schema_version == PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION:
+                errors.append("project/project.json 缺少 audio_settings 配置。")
+            return
+        try:
+            settings = normalize_project_audio_template_settings(raw)
+        except (TypeError, ValueError):
+            errors.append("project/project.json 的 audio_settings 配置不合法。")
+            return
+        names = {binding.asset_name for binding in settings.cue_bindings}
+        if not names:
+            return
+
+        package_audio_names = {
+            str(asset.metadata.get("name") or "").strip()
+            for asset in parsed.assets
+            if str(asset.metadata.get("asset_type") or "") == AssetType.AUDIO.value
+        }
+        existing_names = set(
+            await self.session.scalars(
+                select(WorkspaceAsset.name)
+                .where(WorkspaceAsset.workspace_id == workspace_id)
+                .where(WorkspaceAsset.name.in_(names))
+                .where(WorkspaceAsset.source_asset_id.is_(None))
+                .where(WorkspaceAsset.status == RecordStatus.ACTIVE.value)
+                .where(WorkspaceAsset.asset_type == AssetType.AUDIO.value)
+            )
+        )
+        missing = sorted(name for name in names if name not in package_audio_names and name not in existing_names)
+        if missing:
+            errors.append(f"模板 cue 绑定的音频资源不可用：{', '.join(missing)}。")
 
     @classmethod
     def _validate_template_route_slideshow(
@@ -1600,12 +1740,14 @@ class ProjectTemplatePackageService:
             modules_data=[{"logical_path": f"src/views/{page.code}.{page.file_type}", "content": page.page_content} for page in await self._list_project_pages(project.id)],
         )
         font_bundle = await WorkspaceFontService(self.session).build_font_bundle_for_project(project)
+        audio_config = await self.project_audio_settings_service.build_runtime_config(project)
         return ProjectArtifactBuilder.collect_config_asset_names(
             {
                 "app": app_config,
                 "themes": theme_config,
                 "icons": icon_config,
                 "fonts": font_bundle.model_dump(),
+                "audio": audio_config,
             }
         )
 

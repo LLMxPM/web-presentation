@@ -22,6 +22,14 @@ from pydantic import (
 )
 from pydantic_core import PydanticCustomError
 
+from app.core.audio_defaults import (
+    DEFAULT_CUE_GAIN_PERCENT,
+    DEFAULT_EFFECTS_VOLUME_PERCENT,
+    DEFAULT_MASTER_VOLUME_PERCENT,
+    DEFAULT_NARRATION_VOLUME_PERCENT,
+    default_audio_volume_payload,
+)
+
 AUDIO_SCHEMA_VERSION = 1
 
 AudioPurpose = Literal["content", "narration"]
@@ -53,11 +61,6 @@ AUDIO_MILESTONE_CAPABILITIES: dict[str, tuple[str, ...]] = {
         AUDIO_CAPABILITY_AUDIO_CUES,
     ),
 }
-
-DEFAULT_MASTER_VOLUME_PERCENT = 100
-DEFAULT_NARRATION_VOLUME_PERCENT = 100
-DEFAULT_EFFECTS_VOLUME_PERCENT = 30
-DEFAULT_CUE_GAIN_PERCENT = 100
 
 AUDIO_CUE_KEY_MAX_LENGTH = 80
 AUDIO_CUE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$")
@@ -215,14 +218,24 @@ class ResolvedAudioCueBinding(BaseModel):
         return validate_audio_cue_key(value)
 
 
-def default_audio_volume_payload() -> dict[str, int]:
-    """返回项目音量的唯一默认 payload。"""
+class ProjectAudioTemplateSettings(BaseModel):
+    """模板包携带的音频设置：cue 使用逻辑资源名而不是数据库 ID。"""
 
-    return {
-        "master_volume_percent": DEFAULT_MASTER_VOLUME_PERCENT,
-        "narration_volume_percent": DEFAULT_NARRATION_VOLUME_PERCENT,
-        "effects_volume_percent": DEFAULT_EFFECTS_VOLUME_PERCENT,
-    }
+    model_config = ConfigDict(extra="forbid")
+
+    master_volume_percent: StrictInt = Field(ge=0, le=100)
+    narration_volume_percent: StrictInt = Field(ge=0, le=100)
+    effects_volume_percent: StrictInt = Field(ge=0, le=100)
+    cue_bindings: list[ResolvedAudioCueBinding] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_unique_cue_keys(self) -> ProjectAudioTemplateSettings:
+        """模板包内 cue key 必须唯一，导入后才能稳定重建绑定。"""
+
+        keys = [binding.key for binding in self.cue_bindings]
+        if len(keys) != len(set(keys)):
+            raise ValueError("同一项目的 cue key 不得重复。")
+        return self
 
 
 def default_project_audio_settings() -> ProjectAudioSettings:
@@ -257,6 +270,16 @@ def normalize_project_audio_settings(value: object) -> ProjectAudioSettings:
     if not isinstance(value, dict):
         raise TypeError("项目音频设置必须是完整 JSON 对象。")
     return ProjectAudioSettings.model_validate(value)
+
+
+def normalize_project_audio_template_settings(value: object) -> ProjectAudioTemplateSettings:
+    """严格解析模板包音频设置，cue 只接受逻辑资源名。"""
+
+    if isinstance(value, ProjectAudioTemplateSettings):
+        return value
+    if not isinstance(value, dict):
+        raise TypeError("模板音频设置必须是完整 JSON 对象。")
+    return ProjectAudioTemplateSettings.model_validate(value)
 
 
 def build_runtime_audio_config(

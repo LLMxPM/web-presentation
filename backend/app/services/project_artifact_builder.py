@@ -31,6 +31,7 @@ from app.schemas.project import normalize_project_build_extra_assets_config
 from app.schemas.release import PreviewEntryDescriptor
 from app.services.asset_manifest_metadata_service import build_asset_manifest_metadata
 from app.services.component_dependency_service import ComponentDependencyService
+from app.services.project_audio_settings_service import ProjectAudioSettingsService
 from app.services.project_config_service import ProjectConfigService
 from app.services.resource_reference_parser import ResourceReferenceParser
 from app.services.project_route_service import ProjectRouteService
@@ -103,6 +104,7 @@ class ProjectArtifactBuilder:
         self.session = session
         self.project_route_service = ProjectRouteService(session)
         self.project_config_service = ProjectConfigService(session)
+        self.project_audio_settings_service = ProjectAudioSettingsService(session)
         self.component_repository = WorkspaceComponentRepository(session)
         self.component_version_repository = WorkspaceComponentVersionRepository(session)
         self.module_dependency_repository = ModuleDependencyRepository(session)
@@ -194,12 +196,14 @@ class ProjectArtifactBuilder:
                 modules_data=modules_data,
             )
 
+        audio_config = await self.project_audio_settings_service.build_runtime_config(project)
         config_bundle = {
             "app": app_config,
             "routes": runtime_route_config,
             "icons": icon_config,
             "themes": theme_config,
             "fonts": font_bundle.model_dump(),
+            "audio": audio_config,
             "module_resolver": build_runtime_module_resolver_config(),
         }
 
@@ -269,12 +273,14 @@ class ProjectArtifactBuilder:
             project_icon_name=self.project_config_service.resolve_project_icon_name_from_theme_config(theme_config),
             modules_data=modules_data,
         )
+        audio_config = await self.project_audio_settings_service.build_runtime_config(project)
         config_bundle = {
             "app": app_config,
             "routes": runtime_route_config,
             "icons": icon_config,
             "themes": theme_config,
             "fonts": font_bundle.model_dump(),
+            "audio": audio_config,
             "module_resolver": build_runtime_module_resolver_config(),
         }
 
@@ -477,6 +483,15 @@ class ProjectArtifactBuilder:
                 for font_item in font_items.values():
                     if isinstance(font_item, dict):
                         cls.append_asset_name(asset_names, font_item.get("asset_name"))
+
+        audio_config = config_bundle.get("audio")
+        if isinstance(audio_config, dict):
+            cues = audio_config.get("cues")
+            if isinstance(cues, dict):
+                for cue_item in cues.values():
+                    if isinstance(cue_item, dict):
+                        # cue 资产不一定出现在页面源码中，构建必须主动物化。
+                        cls.append_asset_name(asset_names, cue_item.get("assetName"))
 
         return cls.normalize_asset_names(asset_names)
 
