@@ -26,7 +26,7 @@
 - `TransitionStartedEvent` 在 `PageTransitionHost.show()` 通过同路径与初次挂载检查后、视觉分支前发出，因此 `effect=none`、`disabled` 与 `prefers-reduced-motion` 不改变音频契约；快速导航只有最终被接受的 generation 才发出。
 - `RuntimePageStage`、`PresenterPageStage` 透传 `started`；`ResponsiveLayout` 仅在根元素全屏时播放方向 cue，`PresenterDisplayView` 作为观众窗口唯一播放者，控制台保持 thumbnail 无音频。
 - 导航控件没有注册全局 click cue，避免与切页 cue 形成双声。
-- 已运行：`pnpm exec vitest run src/runtime-shell/transitions/PageTransitionHost.test.ts`（9 passed，包含初次/同路径、前进/后退、effect=none、reduced motion、快速连跳与卸载）；`pnpm exec vue-tsc -b` 通过。
+- 已运行：`pnpm exec vitest run src/runtime-shell/transitions/PageTransitionHost.test.ts`（10 passed，包含初次/同路径、前进/后退、effect=none、reduced motion、快速连跳、200 次连续导航与卸载）；`pnpm exec vue-tsc -b` 通过。
 - 未运行：双窗口观众真机翻页与快速长按演示留待 WP20。
 
 建议提交标题：`WP16：接入切页方向音效`。

@@ -70,6 +70,7 @@ afterEach(async () => {
   mountedApps.splice(0).forEach(app => app.unmount())
   setRuntimePreloadedConfig(undefined)
   resetRuntimeExecutionForTests()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
   await loadAudioConfig(true)
@@ -202,5 +203,22 @@ describe('useAudioCues', () => {
 
     window.dispatchEvent(new Event('pageshow'))
     expect(pagePlay('interaction.open')).toBe('played')
+  })
+
+  it('卸载时移除监听并释放正在播放的音频', async () => {
+    const removeDocument = vi.spyOn(document, 'removeEventListener')
+    const removeWindow = vi.spyOn(window, 'removeEventListener')
+    const { pagePlay } = await mountAudio(true)
+    expect(pagePlay('interaction.confirm')).toBe('played')
+    const element = FakeAudio.instances[0]
+    const app = mountedApps.pop()
+
+    app?.unmount()
+
+    expect(element.paused).toBe(true)
+    expect(removeDocument).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
+    expect(removeDocument).toHaveBeenCalledWith('freeze', expect.any(Function))
+    expect(removeWindow).toHaveBeenCalledWith('pageshow', expect.any(Function))
+    expect(pagePlay('interaction.confirm')).toBe('unavailable')
   })
 })

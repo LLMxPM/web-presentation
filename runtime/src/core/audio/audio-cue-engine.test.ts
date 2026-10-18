@@ -210,6 +210,24 @@ describe('AudioCueEngine', () => {
     expect(throwingElement.pause).toHaveBeenCalled()
   })
 
+  it('1000 次切页与交互后实例数保持恒定并可全部释放', () => {
+    let clock = 0
+    const { engine, elements } = createHarness({ now: () => clock })
+
+    for (let index = 0; index < 1000; index += 1) {
+      clock += 100
+      engine.playTransition(index % 2 === 0 ? 'transition.forward' : 'transition.backward')
+      const keys = ['interaction.confirm', 'interaction.open', 'interaction.close', 'interaction.next', 'interaction.prev']
+      engine.playInteraction(keys[index % keys.length])
+    }
+
+    // 1 个切页通道 + 4 个交互池槽位，不随触发次数增长。
+    expect(elements).toHaveLength(5)
+    engine.dispose()
+    expect(elements.every(element => element.pause.mock.calls.length > 0)).toBe(true)
+    expect(engine.playTransition('transition.forward')).toBe('unavailable')
+  })
+
   it('浏览器不提供 Audio 时返回 unavailable', () => {
     const engine = new AudioCueEngine({
       config: DEFAULT_RUNTIME_AUDIO_CONFIG,

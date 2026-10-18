@@ -231,4 +231,23 @@ describe('PageTransitionHost started 信号', () => {
     await vi.advanceTimersByTimeAsync(1200)
     expect(started.map(item => item.toPath)).toEqual(['b'])
   })
+
+  it('200 次连续导航只为真实翻页发一次信号，并始终最多保留两层', async () => {
+    vi.useFakeTimers()
+    const { state, root, app, started } = mountStarted()
+    await nextTick(); await nextTick()
+
+    for (let index = 1; index <= 200; index += 1) {
+      state.page = `page-${index}`
+      state.number = index
+      await nextTick(); await nextTick()
+      expect(started).toHaveLength(index)
+      expect(root.querySelectorAll('.page-transition-layer').length).toBeLessThanOrEqual(2)
+      await vi.advanceTimersByTimeAsync(600)
+    }
+
+    expect(started.at(-1)?.toPath).toBe('page-200')
+    app.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })

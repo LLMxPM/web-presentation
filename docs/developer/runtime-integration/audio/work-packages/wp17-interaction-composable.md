@@ -26,7 +26,7 @@
 - `useAudioCue.v1` 只暴露 `playCue(key)`，同步返回 `played | skipped | unavailable`；空 key 直接 no-op，缺少 shell provider 时返回稳定 `unavailable`。
 - shell 通过 `AUDIO_CUE_SERVICE_KEY` 注入交互服务；播放资格同时受执行策略和宿主 `active` 限制，普通预览、卡片、thumbnail、capture、export 均返回 `unavailable`。
 - manifest 新增 `useAudioCue.v1` 的用法、返回、示例与约束；Backend 直接消费 Runtime Kit manifest 允许清单，无第二份静态目录。
-- 已运行：`pnpm exec vitest run src/runtime-shell/audio/useAudioCues.test.ts src/runtime-kit/manifest/runtime-kit.manifest.test.ts`（22 passed）；`pnpm exec vue-tsc -b` 通过。
+- 已运行：`pnpm exec vitest run src/runtime-shell/audio/useAudioCues.test.ts src/runtime-kit/manifest/runtime-kit.manifest.test.ts`（23 passed）；`pnpm exec vue-tsc -b` 通过。
 - 未运行：在真实页面源码中由 Agent/Backend 生成并执行点击 cue 的联调留待 WP19/WP20。
 
 建议提交标题：`WP17：公开 useAudioCue.v1 交互音效`。
