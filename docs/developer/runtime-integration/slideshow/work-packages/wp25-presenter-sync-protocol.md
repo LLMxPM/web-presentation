@@ -34,6 +34,6 @@
 - 验证：定向 12 passed；Runtime 全量 141 files/1081 passed/3 skipped；`pnpm --dir runtime check` 与改动文件 ESLint 通过。
 - 未运行：真实双窗口调度权交接与播放器应用（WP26）；生产 OAuth 无关。
 - 产物：`.tmp/wp25/`。
-- 提交：待回填。
+- 提交：`61d1457`。
 
 测试环境与命令选择遵循 [dev-start-test](../../../../../.agents/skills/dev-start-test/SKILL.md)，不因执行本卡重复启动服务或重置开发数据。
