@@ -1,6 +1,6 @@
 # 自动放映联调与验收计划
 
-状态：M0 已验收（2026-10-17，WP01–WP12）；M1 已验收（2026-10-17，WP13–WP21），Backend capabilities 已声明 timer 与单窗口自动放映；M2 已验收（2026-10-18，WP22–WP30），已开放 schema 2、`media_end`、媒体超时与演讲者自动放映，捕获仍禁播；M3 待实施。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；A09/A11/A14/A15 的 M1 真实浏览器证据见 [WP16 实施记录](./work-packages/wp16-playback-entry-controls.md)；A15/A16 的静态捕获真实 PNG 证据见 [WP17 实施记录](./work-packages/wp17-renderer-static-media.md)；A16 的 PDF/PPTX/打印真实产物与取消隔离证据见 [WP18 实施记录](./work-packages/wp18-export-isolation.md)；A10/A12/A13 的真实过渡后计时、手动/快速/浏览器导航、末页/单页循环与隐藏页证据见 [WP21 实施记录](./work-packages/wp21-m1-integration-release.md)；A17 的 CLI/MCP 证据见 WP19/WP20。M2 的 A18–A24 真实浏览器、CLI/MCP 与 Renderer 生命周期证据统一见 [WP30 实施记录](./work-packages/wp30-m2-integration-release.md)。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
+状态：M0 已验收（2026-10-17，WP01–WP12）；M1 已验收（2026-10-17，WP13–WP21），Backend capabilities 已声明 timer 与单窗口自动放映；M2 已验收（2026-10-18，WP22–WP30），已开放 schema 2、`media_end`、媒体超时与演讲者自动放映，捕获仍禁播；M3 已验收（2026-10-18，WP31–WP33），本地构建产物完成 61 分钟多页循环与恢复演练，未开放产品级远端无人值守。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；A09/A11/A14/A15 的 M1 真实浏览器证据见 [WP16 实施记录](./work-packages/wp16-playback-entry-controls.md)；A15/A16 的静态捕获真实 PNG 证据见 [WP17 实施记录](./work-packages/wp17-renderer-static-media.md)；A16 的 PDF/PPTX/打印真实产物与取消隔离证据见 [WP18 实施记录](./work-packages/wp18-export-isolation.md)；A10/A12/A13 的真实过渡后计时、手动/快速/浏览器导航、末页/单页循环与隐藏页证据见 [WP21 实施记录](./work-packages/wp21-m1-integration-release.md)；A17 的 CLI/MCP 证据见 WP19/WP20。M2 的 A18–A24 真实浏览器、CLI/MCP 与 Renderer 生命周期证据统一见 [WP30 实施记录](./work-packages/wp30-m2-integration-release.md)。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
 
 执行分工见[工作包清单](./work-packages/README.md)。阶段出口分别为 [WP12](./work-packages/wp12-m0-integration.md)、[WP21](./work-packages/wp21-m1-integration-release.md)、[WP30](./work-packages/wp30-m2-integration-release.md)、[WP33](./work-packages/wp33-unattended-soak-release.md)，负责汇总本阶段场景与真实产物证据。
 
@@ -61,7 +61,18 @@ WP26 在独立 Runtime（7373，同源 standalone，4s timer）用两个真实 C
 
 WP30 在真实预览 artifact（`127.0.0.1:8000` 桥接 iframe）和 4.2 秒有声 WebM 上完成 A18–A24：媒体结束后 3839ms 翻页（素材 4200ms）；无媒体回退 1590ms；有声非静音实际播放（`audioTracks=1`）；注入受阻后显示重试/下一页/停止并可恢复；失效资源返回真实错误、超时进入暂停、下一页可回放；暂停后跳页保持暂停且离开页无残留播放。演讲者模式下观众窗口唯一调度，媒体结束推进到下一页，控制台隐藏不影响观众，观众隐藏暂停并需显式继续，关闭观众后控制台回显已关闭并暂停。A24 截图成功（1280×720、36740 字节，画面为媒体暂停首帧），槽位在任务期间 `busy` 且出现 5 个 Chromium/Node 后代进程，取消与期限任务结束后恢复 `idle`、后代进程和临时产物清零；期限失败为 `RENDER_ASSET_NOT_READY`。CLI（`wp`）与 MCP（生产 binding/`AsyncApiClient`）均在能力开放后的真实 Backend 完成项目默认值与路由覆盖的 `media_end` 读改写回滚，未回写只读生效值。Firefox/WebKit、移动端行内播放与真实远端无人值守仍不在已支持范围。
 
-## 5. 兼容与发布
+## 5. M3：本地构建产物长稳
+
+| 编号 | 场景 | 通过条件 |
+| :--- | :--- | :--- |
+| L01 | 真实构建产物与本地入口 | 普通用户鉴权下载 ZIP，SHA-256 与构建记录一致；按产物 `base_url` 启动本机静态服务，入口、路由、资源、字体和放映配置可达；不使用预览 artifact、Runtime 开发服务器或远端代理 |
+| L02 | 至少 60 分钟多页循环 | 可见页面按配置顺序循环，无旧事件推进、重复调度或持续资源增长；记录 JS 堆、DOM、监听器、媒体元素、计时器和浏览器进程 |
+| L03 | 防休眠与恢复 | Screen Wake Lock 获得或权限拒绝时普通放映；隐藏、`freeze`/`pageshow`、本地服务中断重试和浏览器重载后按显式步骤恢复，不连跳、不无限重试；退出释放锁与媒体 |
+| L04 | 支持边界与证据 | 记录代码版本、设备/浏览器/服务形态、实际命令、通过项和未运行项；一次演练不扩展为所有设备全天承诺 |
+
+具体长稳数据、支持矩阵和未覆盖项见 [WP33 实施记录](./work-packages/wp33-unattended-soak-release.md)。2026-10-18 的最终演练使用构建任务 13（SHA-256 `73580772e85a0f75aa3f783f9ae2b4c7b0c5894d6fd2285ead8d6eadb12807de`），在有头 Chromium 148.0.7778.96（Playwright 1.60.0，1280×720，Windows 10.0.26300 x64）和本机静态服务上连续运行 61.08 分钟：61 次采样、553 次自动翻页（约 138 轮）；JS 堆 8.4→8.4MB、浏览器进程树 RSS 704.2→703.5MB、DOM 139–141、监听器低水位 66→66、活动计时器最大 3、媒体元素最大 2，外部点击/按键 0；隐藏 15 秒、冻结/`pageshow` 20 秒、本地服务中断重试和浏览器重载均按显式步骤恢复，全部检查通过。M3 只关闭本地验证门槛，不开放产品级远端无人值守、构建访问代理或公开发布能力。
+
+## 6. 兼容与发布
 
 | 组合 | 预期 |
 | :--- | :--- |
@@ -74,12 +85,12 @@ WP30 在真实预览 artifact（`127.0.0.1:8000` 桥接 iframe）和 4.2 秒有�
 
 配置快照、Runtime 构建身份和能力版本一起记录；已有历史 artifact 不重写。发布前完成迁移备份、同版部署验证和回滚说明，旧应用回滚不等于新模板/新配置可被旧版本完整编辑。
 
-## 6. 证据与检查清单
+## 7. 证据与检查清单
 
 - [x] M0：接口正反例、SQLite/PostgreSQL 迁移、类型生成、预览/构建配置对拍和模板往返报告（2026-10-17，证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md) 与 `.tmp/wp12/`）。
 - [x] M1：控制器单测、Editor 表单验证、真实浏览器计时记录、实际 PNG/PDF/PPTX 与客户端往返证据（2026-10-17，WP13–WP21；证据见 `.tmp/wp16/`、`.tmp/wp17/`、`.tmp/wp18/`、`.tmp/wp19/`、`.tmp/wp20/`、`.tmp/wp21/`）。
 - [x] M2：媒体播放结果、权限失败、双窗口消息/状态记录与 Renderer 生命周期清理报告（2026-10-18，WP22–WP30；证据见 [WP30 实施记录](./work-packages/wp30-m2-integration-release.md) 与 `.tmp/wp30/`）。
-- [ ] M3：通过普通用户鉴权下载真实构建产物 ZIP，本地解压并按产物 base 启动静态服务，至少一次持续 60 分钟的多页循环；记录防休眠、休眠/唤醒、本地服务或浏览器恢复与资源占用；不使用预览 artifact 或 Runtime 开发服务器；远端构建访问入口、票据/Cookie 与代理不在 M3 范围，由独立代理服务另行验收；完成前不承诺产品级无人值守。
+- [x] M3：通过普通用户鉴权下载真实构建产物 ZIP，本地解压并按产物 base 启动静态服务，至少一次持续 60 分钟的多页循环；记录防休眠、休眠/唤醒、本地服务或浏览器恢复与资源占用；不使用预览 artifact 或 Runtime 开发服务器；远端构建访问入口、票据/Cookie 与代理不在 M3 范围，由独立代理服务另行验收；完成前不承诺产品级无人值守。（2026-10-18，WP31–WP33；证据见 [WP33 实施记录](./work-packages/wp33-unattended-soak-release.md) 与 `.tmp/wp31/`、`.tmp/wp32/browser/`、`.tmp/wp33/soak/`）
 
 证据写入专属 `.tmp/` 或 `test-results/` 子目录，不提交可再生成的大文件。报告记录提交版本、浏览器/运行环境组合、实际命令、通过/失败数量、失败原因与未运行项。
 
