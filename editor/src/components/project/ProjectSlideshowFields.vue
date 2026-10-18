@@ -35,7 +35,7 @@
 
     <fieldset class="min-w-0 border-t border-border pt-3">
       <legend class="text-sm font-semibold text-text-emphasis">翻页方式</legend>
-      <p class="mt-0.5 text-xs text-text-disabled">动画结束后开始计时；手动模式保留停留时长但不自动翻页。</p>
+      <p class="mt-0.5 text-xs text-text-disabled">动画结束后开始计时；媒体结束模式等待当前页音视频播完。</p>
 
       <div class="mt-3 grid grid-cols-2 gap-3">
         <UiFormField label="翻页模式">
@@ -49,7 +49,7 @@
             />
           </template>
         </UiFormField>
-        <UiFormField label="停留时长（秒）">
+        <UiFormField :label="delayFieldLabel">
           <template #default="field">
             <UiInput
               :model-value="draft.delaySeconds"
@@ -62,6 +62,33 @@
           </template>
         </UiFormField>
       </div>
+
+      <div v-if="draft.advanceMode === 'media_end'" class="mt-3 grid grid-cols-2 gap-3">
+        <UiFormField label="媒体等待上限（秒）">
+          <template #default="field">
+            <UiInput
+              :model-value="draft.mediaTimeoutSeconds ?? ''"
+              inputmode="decimal"
+              placeholder="300"
+              :input-id="field.inputId"
+              :described-by="field.describedBy"
+              @update:model-value="updateMediaTimeout"
+            />
+          </template>
+        </UiFormField>
+      </div>
+
+      <template v-if="draft.advanceMode === 'media_end'">
+        <p class="mt-2 text-xs text-text-disabled">
+          播放当前页的非循环音视频，全部结束后翻页；没有可等待媒体时按停留时长翻页。循环背景媒体不参与等待。
+        </p>
+        <p class="mt-1 text-xs text-text-disabled">
+          若浏览器阻止自动播放，放映窗口会显示受阻提示，可点“重试”恢复或使用“下一页”继续。
+        </p>
+        <p v-if="mediaEndUnavailable" class="mt-1 text-xs font-medium text-warning-strong" role="status">
+          当前服务端未开放媒体结束模式，请改用其它翻页方式后保存。
+        </p>
+      </template>
 
       <div class="mt-3 grid gap-2 sm:grid-cols-2">
         <label class="flex items-center gap-2 text-sm text-text">
@@ -81,15 +108,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { UiCheckbox, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import type { SlideshowCapabilities } from '@/types/api'
 import type { SlideshowDraft } from './project-slideshow-values'
-import { formatMillisecondsAsSeconds } from './project-slideshow-values'
+import {
+  buildAdvanceModeOptions,
+  formatMillisecondsAsSeconds,
+  isMediaEndAdvanceAvailable,
+} from './project-slideshow-values'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   draft: SlideshowDraft
-}>()
+  capabilities?: SlideshowCapabilities | null
+}>(), {
+  capabilities: null,
+})
 
 const emit = defineEmits<{
   'update:draft': [value: SlideshowDraft]
@@ -100,10 +135,12 @@ const effectOptions = [
   { label: '推入', value: 'push' },
   { label: '无动画', value: 'none' },
 ]
-const advanceModeOptions = [
-  { label: '手动翻页', value: 'manual' },
-  { label: '定时翻页', value: 'timer' },
-]
+const mediaEndAvailable = computed(() => isMediaEndAdvanceAvailable(props.capabilities))
+const advanceModeOptions = computed(() => buildAdvanceModeOptions(props.capabilities))
+const delayFieldLabel = computed(() => props.draft.advanceMode === 'media_end' ? '无媒体时停留（秒）' : '停留时长（秒）')
+const mediaEndUnavailable = computed(() => {
+  return props.capabilities != null && props.draft.advanceMode === 'media_end' && !mediaEndAvailable.value
+})
 
 // 切到“无动画”时保留上一段有效时长，切回其它效果时恢复，避免用户反复重填。
 const lastDurationSeconds = ref(props.draft.effect === 'none' ? '0.4' : props.draft.durationSeconds)
@@ -142,11 +179,22 @@ function updateDuration(value: string | number): void {
 }
 
 function updateAdvanceMode(value: unknown): void {
-  patchDraft({ advanceMode: value === 'timer' ? 'timer' : 'manual' })
+  const mode = value === 'timer' || value === 'media_end' ? value : 'manual'
+  if (mode === 'media_end' && !mediaEndAvailable.value) {
+    return
+  }
+  patchDraft({
+    advanceMode: mode,
+    mediaTimeoutSeconds: mode === 'media_end' ? props.draft.mediaTimeoutSeconds ?? '300' : props.draft.mediaTimeoutSeconds,
+  })
 }
 
 function updateDelay(value: string | number): void {
   patchDraft({ delaySeconds: String(value) })
+}
+
+function updateMediaTimeout(value: string | number): void {
+  patchDraft({ mediaTimeoutSeconds: String(value) })
 }
 
 function updateLoop(value: boolean | 'indeterminate'): void {

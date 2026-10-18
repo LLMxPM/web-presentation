@@ -58,7 +58,12 @@
       </div>
     </section>
 
-    <ProjectRouteTreeTable v-model="routesDraft" :pages="activePages" :slideshow-defaults="slideshowDefaults ?? null" />
+    <ProjectRouteTreeTable
+      v-model="routesDraft"
+      :pages="activePages"
+      :slideshow-defaults="slideshowDefaults ?? null"
+      :slideshow-capabilities="slideshowCapabilities"
+    />
   </div>
 </template>
 
@@ -68,16 +73,18 @@ import { computed, ref } from 'vue'
 import ProjectRouteTreeTable from '@/components/project/ProjectRouteTreeTable.vue'
 import SimpleSearchBar from '@/components/patterns/SimpleSearchBar.vue'
 import { UiButton } from '@/components/ui'
-import type { PageItem, ProjectRouteItemWrite, SlideshowSettings } from '@/types/api'
+import type { PageItem, ProjectRouteItemWrite, SlideshowCapabilities, SlideshowSettings } from '@/types/api'
 import { appendRootPageRoute } from '@/utils/project-route'
 
 const props = withDefaults(defineProps<{
   modelValue: ProjectRouteItemWrite[]
   pages: PageItem[]
   slideshowDefaults?: SlideshowSettings | null
+  slideshowCapabilities?: SlideshowCapabilities | null
   loading?: boolean
 }>(), {
   slideshowDefaults: null,
+  slideshowCapabilities: null,
   loading: false,
 })
 

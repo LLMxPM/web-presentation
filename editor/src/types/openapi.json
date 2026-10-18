@@ -22422,6 +22422,28 @@
         }
       }
     },
+    "/api/system/slideshow-capabilities": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get Slideshow Capabilities",
+        "description": "返回当前服务端已开放执行的放映能力，供 Editor 与外部客户端共用同一份声明。",
+        "operationId": "get_slideshow_capabilities_api_system_slideshow_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalSlideshowCapabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/template-package/export/validate": {
       "post": {
         "tags": [

@@ -204,6 +204,7 @@
     :transition="slideshowNode?.transition ?? null"
     :advance="slideshowNode?.advance ?? null"
     :defaults="resolvedSlideshowDefaults"
+    :capabilities="slideshowCapabilities"
     @save="applySlideshowOverrides"
   />
 </template>
@@ -214,7 +215,7 @@ import { CornerDownRight, FileText, FolderTree, GripVertical, Plus } from '@luci
 
 import { UiButton, UiCheckbox, UiCombobox, UiIconButton, UiInput } from '@/components/ui'
 import type { SelectOption, SelectPrimitive } from '@/components/ui/select'
-import type { PageItem, ProjectRouteChildWrite, ProjectRouteItemWrite, SlideshowAdvance, SlideshowSettings, SlideshowTransition } from '@/types/api'
+import type { PageItem, ProjectRouteChildWrite, ProjectRouteItemWrite, SlideshowAdvance, SlideshowCapabilities, SlideshowSettings, SlideshowTransition } from '@/types/api'
 import ProjectRouteSlideshowDialog from './ProjectRouteSlideshowDialog.vue'
 import { DEFAULT_SLIDESHOW_SETTINGS } from './project-slideshow-values'
 import {
@@ -234,8 +235,10 @@ const props = withDefaults(defineProps<{
   modelValue: ProjectRouteItemWrite[]
   pages: PageItem[]
   slideshowDefaults?: SlideshowSettings | null
+  slideshowCapabilities?: SlideshowCapabilities | null
 }>(), {
   slideshowDefaults: null,
+  slideshowCapabilities: null,
 })
 
 const emit = defineEmits<{

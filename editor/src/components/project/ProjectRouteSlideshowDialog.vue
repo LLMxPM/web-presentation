@@ -42,7 +42,7 @@
           覆盖翻页方式
         </label>
         <p class="mt-1 text-xs text-text-disabled">
-          未勾选时继承项目默认：{{ advanceModeLabel(defaults.advance.mode) }}，停留 {{ formatMillisecondsAsSeconds(defaults.advance.delay_ms) }} 秒。
+          未勾选时继承项目默认：{{ inheritedAdvanceSummary }}。
         </p>
         <div v-if="overrideAdvance" class="mt-3 grid grid-cols-2 gap-3">
           <UiFormField label="翻页模式">
@@ -55,7 +55,7 @@
               />
             </template>
           </UiFormField>
-          <UiFormField label="停留时长（秒）">
+          <UiFormField :label="advanceMode === 'media_end' ? '无媒体时停留（秒）' : '停留时长（秒）'">
             <template #default="field">
               <UiInput
                 :model-value="delaySeconds"
@@ -67,6 +67,30 @@
             </template>
           </UiFormField>
         </div>
+        <div v-if="overrideAdvance && advanceMode === 'media_end'" class="mt-3 grid grid-cols-2 gap-3">
+          <UiFormField label="媒体等待上限（秒）">
+            <template #default="field">
+              <UiInput
+                :model-value="mediaTimeoutSeconds"
+                inputmode="decimal"
+                placeholder="300"
+                :input-id="field.inputId"
+                @update:model-value="mediaTimeoutSeconds = String($event)"
+              />
+            </template>
+          </UiFormField>
+        </div>
+        <template v-if="overrideAdvance && advanceMode === 'media_end'">
+          <p class="mt-2 text-xs text-text-disabled">
+            播放当前页的非循环音视频，全部结束后翻页；没有可等待媒体时按停留时长翻页。循环背景媒体不参与等待。
+          </p>
+          <p class="mt-1 text-xs text-text-disabled">
+            若浏览器阻止自动播放，放映窗口会显示受阻提示，可点“重试”恢复或使用“下一页”继续。
+          </p>
+        </template>
+        <p v-if="mediaEndUnavailable" class="mt-2 text-xs font-medium text-warning-strong" role="status">
+          当前服务端未开放媒体结束模式，请改用其它翻页方式后保存。
+        </p>
       </section>
     </div>
 
@@ -83,20 +107,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { UiButton, UiCheckbox, UiDialog, UiFormField, UiInput, UiSelect } from '@/components/ui'
-import type { SlideshowAdvance, SlideshowSettings, SlideshowTransition } from '@/types/api'
+import type {
+  SlideshowAdvance,
+  SlideshowCapabilities,
+  SlideshowSettings,
+  SlideshowTransition,
+} from '@/types/api'
 import type { SlideshowAdvanceMode, SlideshowEffect } from './project-slideshow-values'
-import { formatMillisecondsAsSeconds, parseSecondsToMilliseconds } from './project-slideshow-values'
+import {
+  ADVANCE_MODE_LABELS,
+  buildAdvanceModeOptions,
+  formatMillisecondsAsSeconds,
+  isMediaEndAdvanceAvailable,
+  parseSecondsToMilliseconds,
+} from './project-slideshow-values'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   title: string
   transition: SlideshowTransition | null
   advance: SlideshowAdvance | null
   defaults: SlideshowSettings
-}>()
+  capabilities?: SlideshowCapabilities | null
+}>(), {
+  capabilities: null,
+})
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -108,10 +146,24 @@ const effectOptions = [
   { label: '推入', value: 'push' },
   { label: '无动画', value: 'none' },
 ]
-const advanceModeOptions = [
-  { label: '手动翻页', value: 'manual' },
-  { label: '定时翻页', value: 'timer' },
-]
+const mediaEndAvailable = computed(() => isMediaEndAdvanceAvailable(props.capabilities))
+const advanceModeOptions = computed(() => buildAdvanceModeOptions(props.capabilities))
+const effectiveAdvanceMode = computed<SlideshowAdvanceMode>(() => {
+  return overrideAdvance.value ? advanceMode.value : props.defaults.advance.mode
+})
+const mediaEndUnavailable = computed(() => {
+  return props.capabilities != null && effectiveAdvanceMode.value === 'media_end' && !mediaEndAvailable.value
+})
+const inheritedAdvanceSummary = computed(() => {
+  const advance = props.defaults.advance
+  const mode = advanceModeLabel(advance.mode)
+  const delay = formatMillisecondsAsSeconds(advance.delay_ms)
+  if (advance.mode === 'media_end') {
+    const timeout = formatMillisecondsAsSeconds(advance.media_timeout_ms ?? 300000)
+    return `${mode}，无媒体时停留 ${delay} 秒，等待上限 ${timeout} 秒`
+  }
+  return `${mode}，停留 ${delay} 秒`
+})
 
 const overrideTransition = ref(false)
 const overrideAdvance = ref(false)
@@ -119,6 +171,7 @@ const effect = ref<SlideshowEffect>('fade')
 const durationSeconds = ref('0.4')
 const advanceMode = ref<SlideshowAdvanceMode>('manual')
 const delaySeconds = ref('5')
+const mediaTimeoutSeconds = ref('300')
 
 watch(
   () => [props.open, props.transition, props.advance] as const,
@@ -132,6 +185,9 @@ watch(
     durationSeconds.value = formatMillisecondsAsSeconds(transition?.duration_ms ?? props.defaults.transition.duration_ms)
     advanceMode.value = advance?.mode ?? props.defaults.advance.mode
     delaySeconds.value = formatMillisecondsAsSeconds(advance?.delay_ms ?? props.defaults.advance.delay_ms)
+    mediaTimeoutSeconds.value = formatMillisecondsAsSeconds(
+      advance?.media_timeout_ms ?? props.defaults.advance.media_timeout_ms ?? 300000,
+    )
   },
   { immediate: true },
 )
@@ -151,6 +207,7 @@ function toggleAdvance(value: boolean | 'indeterminate'): void {
   if (!overrideAdvance.value) {
     advanceMode.value = props.defaults.advance.mode
     delaySeconds.value = formatMillisecondsAsSeconds(props.defaults.advance.delay_ms)
+    mediaTimeoutSeconds.value = formatMillisecondsAsSeconds(props.defaults.advance.media_timeout_ms ?? 300000)
   }
 }
 
@@ -164,7 +221,16 @@ function updateEffect(value: unknown): void {
 }
 
 function updateAdvanceMode(value: unknown): void {
-  advanceMode.value = value === 'timer' ? 'timer' : 'manual'
+  const mode = value === 'timer' || value === 'media_end' ? value : 'manual'
+  if (mode === 'media_end' && !mediaEndAvailable.value) {
+    return
+  }
+  advanceMode.value = mode
+  if (mode === 'media_end' && !mediaTimeoutSeconds.value) {
+    mediaTimeoutSeconds.value = formatMillisecondsAsSeconds(
+      props.advance?.media_timeout_ms ?? props.defaults.advance.media_timeout_ms ?? 300000,
+    )
+  }
 }
 
 /** 清除两组覆盖，等价于路由写请求显式提交 null。 */
@@ -189,9 +255,12 @@ function handleSave(): void {
     ? {
         mode: advanceMode.value,
         delay_ms: clamp(parseSecondsToMilliseconds(delaySeconds.value), 1000, 3_600_000, props.defaults.advance.delay_ms),
-        media_timeout_ms: props.advance?.media_timeout_ms
-          ?? props.defaults.advance.media_timeout_ms
-          ?? 300000,
+        media_timeout_ms: clamp(
+          parseSecondsToMilliseconds(mediaTimeoutSeconds.value),
+          1000,
+          3_600_000,
+          props.advance?.media_timeout_ms ?? props.defaults.advance.media_timeout_ms ?? 300000,
+        ),
       }
     : null
   emit('save', { transition, advance })
@@ -210,6 +279,6 @@ function effectLabel(value: SlideshowEffect): string {
 }
 
 function advanceModeLabel(value: SlideshowAdvanceMode): string {
-  return advanceModeOptions.find(option => option.value === value)?.label ?? value
+  return ADVANCE_MODE_LABELS[value] ?? value
 }
 </script>

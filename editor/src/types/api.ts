@@ -81,6 +81,7 @@ export type SlideshowSettings = GeneratedApi.SlideshowSettings
 export type SlideshowTransition = GeneratedApi.SlideshowTransition
 export type SlideshowAdvance = GeneratedApi.SlideshowAdvance
 export type EffectiveSlideshowSettings = GeneratedApi.EffectiveSlideshowSettings
+export type SlideshowCapabilities = GeneratedApi.ExternalSlideshowCapabilities
 
 export type ProjectBuildStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 

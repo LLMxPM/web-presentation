@@ -1,9 +1,32 @@
-/** 文件功能：验证放映表单展示可用效果、无动画时长禁用与循环开关事件。 */
+/** 文件功能：验证放映表单按能力开放模式、媒体超时字段、无媒体说明与事件回传。 */
 import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
+import type { SlideshowCapabilities } from '@/types/api'
 import ProjectSlideshowFields from './ProjectSlideshowFields.vue'
 import type { SlideshowDraft } from './project-slideshow-values'
+
+const capabilities: SlideshowCapabilities = {
+  schema_version: 2,
+  transition_effects: ['none', 'fade', 'push'],
+  advance_modes: ['manual', 'timer', 'media_end'],
+  single_window_auto_play: true,
+  presenter_auto_play: false,
+  capture_auto_play: false,
+  transition_duration_ms: { min: 100, max: 2000, none: 0 },
+  delay_ms: { min: 1000, max: 3600000 },
+  media_timeout_ms: { min: 1000, max: 3600000 },
+}
+
+const selectStub = {
+  props: ['modelValue', 'options'],
+  emits: ['update:modelValue'],
+  template: `
+    <select v-bind="$attrs" :value="modelValue" @change="$emit('update:modelValue', $event.target.value)">
+      <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
+    </select>
+  `,
+}
 
 function buildDraft(overrides: Partial<SlideshowDraft> = {}): SlideshowDraft {
   return {
@@ -11,6 +34,7 @@ function buildDraft(overrides: Partial<SlideshowDraft> = {}): SlideshowDraft {
     durationSeconds: '0.4',
     advanceMode: 'timer',
     delaySeconds: '5',
+    mediaTimeoutSeconds: '300',
     loop: false,
     autoStart: false,
     ...overrides,
@@ -44,5 +68,40 @@ describe('ProjectSlideshowFields', () => {
     expect(screen.getByLabelText('动画时长（秒）')).toBeDisabled()
     expect(screen.getByLabelText('动画时长（秒）')).toHaveValue('0')
     expect(emitted('update:draft')).toBeUndefined()
+  })
+
+  it('能力开放时应提供媒体结束选项与等待上限，并回传完整草稿', async () => {
+    const { emitted, rerender } = render(ProjectSlideshowFields, {
+      props: { draft: buildDraft(), capabilities },
+      global: { stubs: { UiSelect: selectStub } },
+    })
+
+    const select = screen.getByLabelText('翻页模式') as HTMLSelectElement
+    expect(Array.from(select.options).map(option => option.value)).toEqual(['manual', 'timer', 'media_end'])
+
+    await fireEvent.update(select, 'media_end')
+
+    const updates = emitted('update:draft') as SlideshowDraft[][]
+    expect(updates.at(-1)?.[0]).toEqual(buildDraft({ advanceMode: 'media_end' }))
+
+    await rerender({ draft: buildDraft({ advanceMode: 'media_end' }), capabilities })
+    expect(screen.getByLabelText('无媒体时停留（秒）')).toHaveValue('5')
+    expect(screen.getByLabelText('媒体等待上限（秒）')).toHaveValue('300')
+    expect(screen.getByText(/没有可等待媒体时按停留时长翻页/)).toBeInTheDocument()
+  })
+
+  it('能力未开放时不出现媒体结束选项，已有草稿给出可操作提示', () => {
+    const timerOnlyCapabilities: SlideshowCapabilities = {
+      ...capabilities,
+      advance_modes: ['manual', 'timer'],
+    }
+    render(ProjectSlideshowFields, {
+      props: { draft: buildDraft({ advanceMode: 'media_end' }), capabilities: timerOnlyCapabilities },
+      global: { stubs: { UiSelect: selectStub } },
+    })
+
+    const select = screen.getByLabelText('翻页模式') as HTMLSelectElement
+    expect(Array.from(select.options).map(option => option.value)).toEqual(['manual', 'timer'])
+    expect(screen.getByText('当前服务端未开放媒体结束模式，请改用其它翻页方式后保存。')).toBeInTheDocument()
   })
 })

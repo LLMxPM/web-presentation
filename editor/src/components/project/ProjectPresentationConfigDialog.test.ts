@@ -6,6 +6,22 @@ vi.mock('@/api/styles', () => ({
   createWorkspaceStyle: vi.fn(),
 }))
 
+vi.mock('@/api/system', () => ({
+  fetchDefaultStyleSpec: vi.fn().mockResolvedValue({ style_spec_markdown: '' }),
+  fetchSystemSettings: vi.fn().mockResolvedValue({ app_timezone: 'Asia/Shanghai' }),
+  fetchSlideshowCapabilities: vi.fn().mockResolvedValue({
+    schema_version: 2,
+    transition_effects: ['none', 'fade', 'push'],
+    advance_modes: ['manual', 'timer', 'media_end'],
+    single_window_auto_play: true,
+    presenter_auto_play: false,
+    capture_auto_play: false,
+    transition_duration_ms: { min: 100, max: 2000, none: 0 },
+    delay_ms: { min: 1000, max: 3600000 },
+    media_timeout_ms: { min: 1000, max: 3600000 },
+  }),
+}))
+
 import type { ProjectItem } from '@/types/api'
 import ProjectPresentationConfigDialog from './ProjectPresentationConfigDialog.vue'
 
@@ -30,7 +46,7 @@ const project = {
   build_extra_assets_json: { asset_names: [] },
   slideshow: {
     transition: { effect: 'push', duration_ms: 650 },
-    advance: { mode: 'timer', delay_ms: 8000 },
+    advance: { mode: 'timer', delay_ms: 8000, media_timeout_ms: 300000 },
     loop: true,
     auto_start: false,
   },
@@ -71,7 +87,7 @@ describe('ProjectPresentationConfigDialog', () => {
     expect(saves).toHaveLength(1)
     expect(saves[0][0].slideshow).toEqual({
       transition: { effect: 'none', duration_ms: 0 },
-      advance: { mode: 'timer', delay_ms: 8000 },
+      advance: { mode: 'timer', delay_ms: 8000, media_timeout_ms: 300000 },
       loop: true,
       auto_start: false,
     })

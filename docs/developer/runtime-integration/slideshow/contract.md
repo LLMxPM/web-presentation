@@ -107,7 +107,7 @@ Backend 拟新增独立 `schemas/slideshow.py`，定义严格 DTO 和统一解�
 }
 ```
 
-M0 只声明已贯通的动画和 `manual`，两个 auto_play 能力为 false；M1 出口完成真实计时与跨仓验收后，已按上述基线声明 timer 与单窗口自动放映（2026-10-17），媒体与演讲者能力仍为 false。M2 结构已升为 schema 2（WP22，2026-10-18），capabilities 追加 `media_timeout_ms` 范围；`advance_modes` 仍为 manual/timer，`media_end` 写入门禁、执行器与 presenter/capture 能力在 WP24–WP30 完成真实验收后再开放。能力必须对应实际发布的 Backend/Runtime 组合，不能仅因数据库已接受字段就声明可执行。现有 `/standards/page`、`/standards/component` 仍维护源码规范，不把项目放映 Schema 复制到其中。
+M0 只声明已贯通的动画和 `manual`，两个 auto_play 能力为 false；M1 出口完成真实计时与跨仓验收后，已按上述基线声明 timer 与单窗口自动放映（2026-10-17），媒体与演讲者能力仍为 false。M2 结构已升为 schema 2（WP22，2026-10-18），capabilities 追加 `media_timeout_ms` 范围；`advance_modes` 仍为 manual/timer，`media_end` 写入门禁、执行器与 presenter/capture 能力在 WP24–WP30 完成真实验收后再开放。能力必须对应实际发布的 Backend/Runtime 组合，不能仅因数据库已接受字段就声明可执行。Editor 通过同一 builder 派生的只读 `GET /api/system/slideshow-capabilities` 获取相同结构，仅在 `advance_modes` 声明后展示对应模式，避免内外两套能力判断。现有 `/standards/page`、`/standards/component` 仍维护源码规范，不把项目放映 Schema 复制到其中。
 
 ## 5. Runtime 下发契约
 

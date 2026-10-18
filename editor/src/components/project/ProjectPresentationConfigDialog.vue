@@ -51,7 +51,11 @@
           <h3 class="text-sm font-semibold text-text-emphasis">自动放映</h3>
           <p class="mt-0.5 text-xs text-text-disabled">项目默认值；逐页可在路由配置中覆盖。应用样式不会修改这里的设置。</p>
           <div class="mt-3">
-            <ProjectSlideshowFields :draft="draft.slideshow" @update:draft="updateSlideshowDraft" />
+            <ProjectSlideshowFields
+              :draft="draft.slideshow"
+              :capabilities="capabilities"
+              @update:draft="updateSlideshowDraft"
+            />
           </div>
         </section>
       </section>
@@ -97,6 +101,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 
 import { createWorkspaceStyle, type WorkspaceStylePayload } from '@/api/styles'
+import { useSlideshowCapabilities } from '@/composables/useSlideshowCapabilities'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
 import type { ProjectItem, ProjectMenuMode, SlideshowSettings, WorkspaceStyleItem } from '@/types/api'
@@ -159,6 +164,7 @@ const draft = reactive({
 const saveAsStyleDialogVisible = ref(false)
 const saveAsStyleSaving = ref(false)
 const appliedWorkspaceStyleId = ref<number | null>(null)
+const { capabilities, load: loadSlideshowCapabilities } = useSlideshowCapabilities()
 
 const normalizedPageWidth = computed(() => normalizeDimension(draft.pageWidth, DEFAULT_PROJECT_PAGE_WIDTH))
 const normalizedPageHeight = computed(() => normalizeDimension(draft.pageHeight, DEFAULT_PROJECT_PAGE_HEIGHT))
@@ -322,6 +328,7 @@ watch(
   ([visible, project]) => {
     if (visible) {
       syncDraftFromProject(project)
+      void loadSlideshowCapabilities()
     }
   },
   { immediate: true },

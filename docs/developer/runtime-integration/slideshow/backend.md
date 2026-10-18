@@ -69,7 +69,7 @@ Backend 负责项目和逐页参数的完整生命周期，包括保存、校验
 
 ### B06：媒体结束模式与预览授权（M2，依赖 B03，契约先行、能力开放后置）
 
-- [x] 先交付 `advance` 扩展 Schema、旧数据读取和预览权限适配，供 R04 实现（WP22，2026-10-18）；`media_end` 写入门禁保留到 R04/G04 验收后的 WP30。
+- [x] 先交付 `advance` 扩展 Schema、旧数据读取和预览权限适配，供 R04 实现（WP22，2026-10-18）；`media_end` 写入门禁保留到 R04/G04 验收后的 WP30。公开只读端点 `/api/system/slideshow-capabilities` 复用外部能力 builder，供 Editor 按真实能力显示表单（WP27）。
 - [x] 核查并贯通 Editor→桥接宿主→Runtime 的 autoplay/fullscreen Permissions Policy；保持现有独立预览域与来源校验（WP22）。
 - [ ] 为预览票据到期提供可识别终态；本阶段不实现独立窗口自动续签，也不扩大业务 Cookie/CORS 范围。
 

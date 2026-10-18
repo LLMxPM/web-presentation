@@ -4,7 +4,13 @@
     @update:open="handleVisibleChange">
     <div v-if="project" class="flex h-full min-h-0 flex-col">
 
-      <ProjectRouteEditor v-model="draftRoutes" :pages="routePages" :slideshow-defaults="project?.slideshow ?? null" :loading="routeEditorLoading" />
+      <ProjectRouteEditor
+        v-model="draftRoutes"
+        :pages="routePages"
+        :slideshow-defaults="project?.slideshow ?? null"
+        :slideshow-capabilities="capabilities"
+        :loading="routeEditorLoading"
+      />
     </div>
 
     <div v-else class="py-10 text-center text-sm text-text-disabled">
@@ -25,6 +31,7 @@ import { ref, watch } from 'vue'
 
 import { getProjectRoutes, listPages } from '@/api/catalog'
 import { getErrorMessage } from '@/api/http'
+import { useSlideshowCapabilities } from '@/composables/useSlideshowCapabilities'
 import ProjectRouteEditor from '@/components/project/ProjectRouteEditor.vue'
 import { UiButton, UiDialog } from '@/components/ui'
 import type { PageItem, ProjectItem, ProjectRouteItemWrite } from '@/types/api'
@@ -50,6 +57,7 @@ const routePages = ref<PageItem[]>([])
 const draftRoutes = ref<ProjectRouteItemWrite[]>([])
 const routeEditorLoading = ref(false)
 const routeLoadToken = ref(0)
+const { capabilities, load: loadSlideshowCapabilities } = useSlideshowCapabilities()
 
 /**
  * 向父组件同步弹窗开关状态。
@@ -114,6 +122,7 @@ watch(
   ([visible, currentProject]) => {
     if (visible && currentProject) {
       void loadRouteEditorData(currentProject)
+      void loadSlideshowCapabilities()
     }
   },
   { immediate: true },

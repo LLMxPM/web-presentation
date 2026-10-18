@@ -2,10 +2,16 @@
  * 文件功能：项目放映配置在表单草稿与 API 毫秒值之间的转换、范围收敛与默认值。
  */
 
-import type { SlideshowSettings } from '@/types/api'
+import type { SlideshowCapabilities, SlideshowSettings } from '@/types/api'
 
 export type SlideshowEffect = 'none' | 'fade' | 'push'
 export type SlideshowAdvanceMode = 'manual' | 'timer' | 'media_end'
+
+export const ADVANCE_MODE_LABELS: Record<SlideshowAdvanceMode, string> = {
+  manual: '手动翻页',
+  timer: '定时翻页',
+  media_end: '媒体结束',
+}
 
 export interface SlideshowDraft {
   effect: SlideshowEffect
@@ -30,6 +36,31 @@ const ADVANCE_DELAY_MIN_MS = 1000
 const ADVANCE_DELAY_MAX_MS = 3_600_000
 const MEDIA_TIMEOUT_MIN_MS = 1000
 const MEDIA_TIMEOUT_MAX_MS = 3_600_000
+
+/**
+ * 判断服务端是否已开放媒体结束模式；能力缺失或读取失败时按未开放处理。
+ * @param capabilities 服务端放映能力声明
+ */
+export function isMediaEndAdvanceAvailable(capabilities?: SlideshowCapabilities | null): boolean {
+  return capabilities?.advance_modes.includes('media_end') ?? false
+}
+
+/**
+ * 按能力声明构建翻页模式选项，未开放的模式不出现在表单中。
+ * @param capabilities 服务端放映能力声明
+ */
+export function buildAdvanceModeOptions(
+  capabilities?: SlideshowCapabilities | null,
+): Array<{ label: string; value: SlideshowAdvanceMode }> {
+  const options: Array<{ label: string; value: SlideshowAdvanceMode }> = [
+    { label: ADVANCE_MODE_LABELS.manual, value: 'manual' },
+    { label: ADVANCE_MODE_LABELS.timer, value: 'timer' },
+  ]
+  if (isMediaEndAdvanceAvailable(capabilities)) {
+    options.push({ label: ADVANCE_MODE_LABELS.media_end, value: 'media_end' })
+  }
+  return options
+}
 
 /**
  * 把毫秒值转换为无冗余小数的秒字符串。
