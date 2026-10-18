@@ -49,7 +49,7 @@ docker compose -f scripts/dev/compose.infra.yml up -d --wait postgres redis
 | Backend | `uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload --reload-dir backend` | `/api/auth/me` 返回 200/401 |
 | Runtime | `pnpm --dir runtime dev --host 127.0.0.1 --port 7373` | `/__runtime_healthz` 200；构建还需 `/__runtime_readyz` 200 |
 | Editor | `pnpm --dir editor dev --host 127.0.0.1 --port 5173` | 首页 200 |
-| Renderer | `uv run --project renderer uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400` | `/readyz` 200 |
+| Renderer | `uv run --project renderer uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400 --reload --reload-dir renderer` | `/readyz` 200 |
 
 首次启动 Renderer 前安装 Chromium：`uv run --project renderer playwright install chromium`。Node 与 Python 的 Playwright 浏览器分别安装。启动后重新探测并报告服务与地址。默认管理员取根或 Backend `.env`，默认值为 `admin` / `Admin123456`。
 

@@ -67,8 +67,10 @@ uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1
 
 ```powershell
 uv run --project renderer playwright install chromium
-uv run --project renderer uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400
+uv run --project renderer uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400 --reload --reload-dir renderer
 ```
+
+开发态必须保留 `--reload`；`--reload-dir renderer` 只监听 Renderer 源码。生产镜像入口不带 reload。
 
 Linux 首次安装浏览器时使用 `playwright install --with-deps chromium`。Node Playwright 与 Python Playwright 的浏览器版本分别由 pnpm 和 uv 锁文件约束，两者都需要安装。
 
