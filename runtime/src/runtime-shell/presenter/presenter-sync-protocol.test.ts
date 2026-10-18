@@ -11,6 +11,7 @@ import {
   parsePresenterSyncMessage,
   type PresenterSyncIdentity,
   type PresenterSyncPlaybackSnapshot,
+  type PresenterSyncRole,
 } from './presenter-sync-protocol'
 
 const IDENTITY: PresenterSyncIdentity = {
@@ -179,6 +180,28 @@ describe('PresenterSyncReceiver', () => {
     expect(receiver.receive(buildMessage({
       role: 'console', ownerEpoch: 9, revision: 3, eventId: 'console-1:3',
     }))).toMatchObject({ accepted: false, reason: 'stale-owner' })
+  })
+
+  it.each<PresenterSyncRole>(['console', 'display'])('%s 的 revision 不因另一角色接管而回退', (role) => {
+    const receiver = new PresenterSyncReceiver({ ...IDENTITY, sourceId: 'receiver' }, () => 0)
+    const otherRole = role === 'console' ? 'display' : 'console'
+    expect(receiver.receive(buildMessage({
+      role, sourceId: 'source', ownerEpoch: 10, revision: 5, eventId: 'source:5',
+    })).accepted).toBe(true)
+    expect(receiver.receive(buildMessage({
+      role: otherRole, sourceId: 'other', ownerEpoch: 20, revision: 1, eventId: 'other:1',
+    })).accepted).toBe(true)
+
+    // 该旧事件此前没有到达，不能仅依赖 eventId 去重来阻止状态回退。
+    expect(receiver.receive(buildMessage({
+      role, sourceId: 'source', ownerEpoch: 10, revision: 4, eventId: 'source:4',
+    }))).toMatchObject({ accepted: false, reason: 'stale-revision' })
+    expect(receiver.receive(buildMessage({
+      role, sourceId: 'source', ownerEpoch: 10, revision: 6, eventId: 'source:6',
+    })).accepted).toBe(true)
+    expect(receiver.receive(buildMessage({
+      role, sourceId: 'source', ownerEpoch: 11, revision: 1, eventId: 'source:new:1',
+    })).accepted).toBe(true)
   })
 
   it('拒绝旧 revision 与旧 owner，新 owner 可接管并重置 revision', () => {

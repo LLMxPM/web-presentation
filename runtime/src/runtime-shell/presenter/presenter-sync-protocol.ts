@@ -188,7 +188,11 @@ export class PresenterSyncSender {
 export class PresenterSyncReceiver {
   private readonly seenEvents = new Set<string>()
   private readonly seenCommands = new Set<string>()
-  private readonly revisions = new Map<string, number>()
+  /** 两个角色分别维护顺序水位，任一角色接管都不能重置另一角色的消息顺序。 */
+  private readonly revisions: Record<PresenterSyncRole, Map<string, number>> = {
+    console: new Map(),
+    display: new Map(),
+  }
   /** owner epoch 只在同角色窗口之间比较，避免观众 owner 的数字高于控制台时互相阻塞。 */
   private readonly ownerWatermarks: Record<PresenterSyncRole, number> = {
     console: -1,
@@ -222,14 +226,15 @@ export class PresenterSyncReceiver {
     }
     if (isAuthoritative(message)) {
       const watermark = this.ownerWatermarks[message.role]
+      const revisions = this.revisions[message.role]
       if (message.ownerEpoch < watermark) return { accepted: false, reason: 'stale-owner' }
       if (message.ownerEpoch > watermark) {
         this.ownerWatermarks[message.role] = message.ownerEpoch
-        this.revisions.clear()
+        revisions.clear()
       }
-      const lastRevision = this.revisions.get(message.sourceId) ?? -1
+      const lastRevision = revisions.get(message.sourceId) ?? -1
       if (message.revision <= lastRevision) return { accepted: false, reason: 'stale-revision' }
-      this.revisions.set(message.sourceId, message.revision)
+      revisions.set(message.sourceId, message.revision)
     }
 
     this.remember(this.seenEvents, message.eventId)

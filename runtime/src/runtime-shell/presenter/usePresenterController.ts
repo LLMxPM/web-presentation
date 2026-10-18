@@ -68,6 +68,7 @@ interface PresenterControllerOptions {
 const TILE_SIZE_STORAGE_KEY = 'web-presentation.presenter.tileSize'
 const CHANNEL_NAME_PREFIX = 'web-presentation:presenter:'
 const SYNC_STORAGE_KEY_PREFIX = 'web-presentation.presenter.sync.'
+const EVENT_STORAGE_KEY_PREFIX = 'web-presentation.presenter.event.'
 const DEFAULT_TILE_SIZE = 300
 const MIN_TILE_SIZE = 140
 const MAX_TILE_SIZE = 420
@@ -321,7 +322,11 @@ export function usePresenterController(options: PresenterControllerOptions) {
    * @param event storage 事件
    */
   function handleStorageMessage(event: StorageEvent): void {
-    if (!options.channelId || event.key !== buildPresenterStorageKey(options.channelId) || !event.newValue) {
+    if (!options.channelId || !event.newValue) {
+      return
+    }
+    if (event.key !== buildPresenterStorageKey(options.channelId)
+      && event.key !== buildPresenterEventStorageKey(options.channelId)) {
       return
     }
     const storedMessage = parseStoredSyncMessage(event.newValue)
@@ -410,12 +415,14 @@ export function usePresenterController(options: PresenterControllerOptions) {
       window.addEventListener('storage', handleStorageMessage)
     }
 
-    if (!options.channelId || typeof BroadcastChannel === 'undefined') {
+    if (!options.channelId) return
+    if (typeof BroadcastChannel === 'undefined') {
       channelSupported.value = isPresenterStorageSupported()
-      return
+    } else {
+      channel = new BroadcastChannel(`${CHANNEL_NAME_PREFIX}${options.channelId}`)
+      channel.addEventListener('message', handleChannelMessage as EventListener)
     }
-    channel = new BroadcastChannel(`${CHANNEL_NAME_PREFIX}${options.channelId}`)
-    channel.addEventListener('message', handleChannelMessage as EventListener)
+    // 握手对两种通道都生效，避免降级后控制台一直拿不到观众 owner。
     if (options.role === 'display') {
       postMessage({ type: 'ready' })
       postDisplayStatus(document.fullscreenElement ? 'fullscreen' : 'connected', Boolean(document.fullscreenElement))
@@ -491,11 +498,11 @@ export function usePresenterController(options: PresenterControllerOptions) {
   }
 
   /**
-   * 写入 localStorage 兜底同步消息。
+   * 写入 localStorage 兜底同步消息；实时命令/回执使用独立键，避免覆盖页面恢复快照。
    * @param message 已补齐信封的协议消息
    */
   function writeStoredSyncMessage(message: PresenterSyncMessage): void {
-    if (!options.channelId || !isPresenterPersistedMessage(message) || !isPresenterStorageSupported()) {
+    if (!options.channelId || !isPresenterStorageSupported()) {
       return
     }
     const storedMessage: PresenterStoredMessage = {
@@ -504,7 +511,10 @@ export function usePresenterController(options: PresenterControllerOptions) {
       message,
     }
     try {
-      localStorage.setItem(buildPresenterStorageKey(options.channelId), JSON.stringify(storedMessage))
+      const key = isPresenterPersistedMessage(message)
+        ? buildPresenterStorageKey(options.channelId)
+        : buildPresenterEventStorageKey(options.channelId)
+      localStorage.setItem(key, JSON.stringify(storedMessage))
     } catch {
       // localStorage 只是 BroadcastChannel 的兜底通道，失败时不影响主同步链路。
     }
@@ -587,9 +597,9 @@ function readStoredTileSize(): number {
 }
 
 /**
- * 判断消息是否需要写入本地存储兜底通道。
+ * 判断消息是否使用持久化快照键；其它消息仅供已挂载窗口实时接收。
  * @param message 协议消息
- * @returns 是否为可兜底同步的消息
+ * @returns 是否为持久化同步消息
  */
 function isPresenterPersistedMessage(
   message: PresenterSyncMessage,
@@ -623,6 +633,11 @@ function isPresenterDisplayStatusState(state: unknown): state is PresenterDispla
  */
 export function buildPresenterStorageKey(channelId: string): string {
   return `${SYNC_STORAGE_KEY_PREFIX}${channelId}`
+}
+
+/** 构建实时事件同步键；挂载恢复只读取快照键，不重放旧放映命令。 */
+function buildPresenterEventStorageKey(channelId: string): string {
+  return `${EVENT_STORAGE_KEY_PREFIX}${channelId}`
 }
 
 /**
