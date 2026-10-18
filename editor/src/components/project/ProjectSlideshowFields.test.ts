@@ -42,13 +42,17 @@ function buildDraft(overrides: Partial<SlideshowDraft> = {}): SlideshowDraft {
 }
 
 describe('ProjectSlideshowFields', () => {
-  it('应展示动画与翻页字段，无动画时禁用时长输入', () => {
-    render(ProjectSlideshowFields, { props: { draft: buildDraft({ effect: 'none', durationSeconds: '0' }) } })
+  it('应展示动画与翻页字段，无动画时禁用时长输入，timer 旁白提示不修改草稿', () => {
+    const { emitted } = render(ProjectSlideshowFields, {
+      props: { draft: buildDraft({ effect: 'none', durationSeconds: '0' }) },
+    })
 
     expect(screen.getByLabelText('动画效果')).toBeInTheDocument()
     expect(screen.getByLabelText('动画时长（秒）')).toBeDisabled()
     expect(screen.getByLabelText('翻页模式')).toBeInTheDocument()
     expect(screen.getByLabelText('停留时长（秒）')).toHaveValue('5')
+    expect(screen.getByText(/定时推进会在计时到达时停止旁白并翻页/)).toBeInTheDocument()
+    expect(emitted('update:draft')).toBeUndefined()
   })
 
   it('勾选循环放映应回传完整草稿且不改其它字段', async () => {

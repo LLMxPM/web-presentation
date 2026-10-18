@@ -63,6 +63,10 @@
         </UiFormField>
       </div>
 
+      <p v-if="draft.advanceMode === 'timer'" class="mt-2 text-xs text-text-disabled">
+        若使用页面旁白，定时推进会在计时到达时停止旁白并翻页；旁白页面建议改用“媒体结束”。
+      </p>
+
       <div v-if="draft.advanceMode === 'media_end'" class="mt-3 grid grid-cols-2 gap-3">
         <UiFormField label="媒体等待上限（秒）">
           <template #default="field">

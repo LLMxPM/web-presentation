@@ -20,7 +20,7 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "保持 Tailwind class 为源码中的静态完整字符串" in prompt
     assert "空态、加载态和错误态" in prompt
     assert "事实、数字、引用和来源不得凭空补全" in prompt
-    assert "处理视觉内容时，先判断当前信息最适合用文字、表格、图表、示意图、图片还是三维模型表达" in prompt
+    assert "处理视觉内容时，先判断当前信息最适合用文字、表格、图表、示意图、图片、音频还是三维模型表达" in prompt
     assert "需要素材时优先查询工作空间资源，不满足再按可用能力创建或生成" in prompt
     assert "主体内容区、内容面板和稀疏卡片默认应在自身可用高度内上下平衡" in prompt
     assert "sparse_top_aligned" in prompt
@@ -74,12 +74,18 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "useAssetSrc(() => props.imageName)" in page_standard
     assert "ThemeLogo" in page_standard
     assert "AssetModel" in page_standard
+    assert "AssetAudio" in page_standard
+    assert "旁白自动播放已开放" in page_standard
+    assert "能力未开放时只使用 content" in page_standard
+    assert "组件不暴露 autoplay" in page_standard
     assert "build_extra_assets_json" in page_standard
     assert "cameraIndex 与显式 cameraPosition/cameraTarget 互斥" in page_standard
     assert "动画数据不代表支持动画播放" in page_standard
     assert "preview_schema" in component_standard
     assert "Runtime 主题语义颜色键包括" in component_standard
-    assert "Icon、AssetImage、AssetVideo、AssetModel 等组件的 name" in component_standard
+    assert "AssetAudio" in component_standard
+    assert "旁白自动播放已开放" in component_standard
+    assert "Icon、AssetImage、AssetVideo、AssetAudio、AssetModel 等组件的 name" in component_standard
     assert "build_extra_assets_json" in component_standard
     assert "AssetModel" in component_standard
     assert "defineProps`/`defineEmits" in component_standard

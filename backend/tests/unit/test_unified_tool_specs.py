@@ -99,6 +99,9 @@ def test_unified_prompt_should_describe_platform_assets_and_relations() -> None:
         "项目、页面、组件、资源、主题和样式归档后退出查询与操作边界",
         "三维模型（自包含 GLB）",
         "内容助手不能通过文本工具写入 GLB",
+        "asset_type=audio",
+        "AssetAudio",
+        "能力未声明旁白自动播放时不得向用户宣称旁白可用",
     ):
         assert phrase in catalog.default_prompt
 
@@ -118,3 +121,20 @@ def test_model3d_guides_should_link_resource_selection_to_runtime_contract() -> 
     assert any("不得把 url" in item.lower() or "不允许把 url" in item.lower() for item in asset_detail.constraints)
     assert any("cameraIndex" in item for item in runtime_detail.constraints)
     assert any("cameraPosition/cameraTarget" in item for item in runtime_detail.constraints)
+
+
+def test_audio_guides_should_gate_narration_by_runtime_capability() -> None:
+    """音频手册应把资源选择、版本化 import 与旁白能力门槛放在同一条路径上。"""
+
+    asset_list = get_operation_guide_spec("asset.query.list")
+    asset_detail = get_operation_guide_spec("asset.query.detail")
+    runtime_detail = get_operation_guide_spec("runtime_kit.query.detail")
+
+    assert asset_list is not None
+    assert asset_detail is not None
+    assert runtime_detail is not None
+    assert any("AssetAudio.v1" in item for item in asset_list.constraints)
+    assert any("runtime_kit" in item and "旁白" in item for item in asset_list.constraints)
+    assert any("不允许把 url" in item.lower() and "audio" in item.lower() for item in asset_detail.constraints)
+    assert any("AssetAudio.v1" in item and "narration" in item for item in runtime_detail.constraints)
+    assert any("loop" in item and "autoplay" in item for item in runtime_detail.constraints)

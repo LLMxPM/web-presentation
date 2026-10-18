@@ -186,6 +186,9 @@
                 <p class="text-sm font-bold text-text-secondary">该资源不支持文本内容编辑</p>
                 <p v-if="detail.detailAsset.value.asset_type === 'model3d'" class="mt-2 text-xs leading-6 text-text-disabled">三维模型是标准二进制资源：请通过「替换」上传新的 GLB 文件更新内容；页面通过资源名引用并各自设置视角。</p>
                 <p v-else-if="detail.detailAsset.value.asset_type === 'audio'" class="mt-2 text-xs leading-6 text-text-disabled">音频是二进制资源：请通过「替换」上传新的音频文件更新内容；页面通过资源名引用并配置旁白或交互音效。</p>
+                <p v-if="detail.detailAsset.value.asset_type === 'audio'" class="mt-2 text-xs leading-6 text-text-disabled">
+                  音频通过 <code>AssetAudio.v1</code> 按资源名引用：内容音频使用 <code>purpose="content"</code>，由用户手动播放；页面旁白使用 <code>purpose="narration"</code>，需当前 Runtime 已开放旁白能力，且同一页面最多一个旁白目标、不要循环。不要写远程 URL 或 autoplay。
+                </p>
                 <p v-else class="mt-2 text-xs leading-6 text-text-disabled">位图图标和位图图片只能复制、归档、删除或维护元数据。</p>
               </div>
             </div>
