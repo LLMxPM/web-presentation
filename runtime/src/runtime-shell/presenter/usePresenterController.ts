@@ -9,8 +9,23 @@ import { getRuntimeSession } from '@/core/router/runtime-session'
 import { appPageConfig, routeConfigs } from '@/core/utils/config'
 import type { RouteConfig } from '@/core/types/navigation'
 import { normalizePresenterRoutePath } from '@/runtime-shell/presenter/presenter-url'
+import {
+  PRESENTER_SYNC_PROTOCOL_VERSION,
+  PresenterSyncReceiver,
+  PresenterSyncSender,
+  resolvePresenterArtifactIdentity,
+  parsePresenterSyncMessage,
+  type PresenterSyncDisplayStatusMessage,
+  type PresenterSyncIdentity,
+  type PresenterSyncMessageBody,
+  type PresenterSyncMessage,
+  type PresenterSyncPlaybackSnapshot,
+  type PresenterSyncStateMessage,
+  type PresenterSyncViewMode,
+  type ReceivedPresenterSync,
+} from '@/runtime-shell/presenter/presenter-sync-protocol'
 
-export type PresenterViewMode = 'focus' | 'grid'
+export type PresenterViewMode = PresenterSyncViewMode
 export type PresenterRole = 'console' | 'display'
 export type PresenterDisplayStatusState = 'unknown' | 'connected' | 'windowed' | 'fullscreen' | 'closed'
 
@@ -28,50 +43,22 @@ export interface PresenterDisplayStatus {
   updatedAt: number
 }
 
-interface PresenterStateMessage {
-  type: 'state-sync'
-  currentPath: string
-  viewMode: PresenterViewMode
-  tileSize: number
-}
-
-interface PresenterNavigateMessage {
-  type: 'navigate'
-  currentPath: string
-}
-
-interface PresenterReadyMessage {
-  type: 'ready'
-}
-
-interface PresenterCloseMessage {
-  type: 'close'
-}
-
-interface PresenterDisplayStatusMessage {
-  type: 'display-status'
-  status: PresenterDisplayStatus
-}
-
-type PresenterMessageBody =
-  | PresenterStateMessage
-  | PresenterNavigateMessage
-  | PresenterReadyMessage
-  | PresenterCloseMessage
-  | PresenterDisplayStatusMessage
-
-type PresenterMessage = PresenterMessageBody & { eventId?: string; sourceId?: string }
-
 export interface PresenterStoredMessage {
   sourceId: string
   sentAt: number
-  message: PresenterStateMessage | PresenterNavigateMessage | PresenterCloseMessage | PresenterDisplayStatusMessage
+  message: PresenterSyncMessage
 }
 
 interface PresenterControllerOptions {
   channelId: string
   initialPath?: string
   role: PresenterRole
+  /** 覆盖产物身份，仅用于测试或受控宿主。 */
+  artifactIdentity?: string
+  /** 覆盖 owner epoch，仅用于测试。 */
+  ownerEpoch?: number
+  /** 本地时钟注入点，跨窗口只比较本地到达时间。 */
+  now?: () => number
 }
 
 const TILE_SIZE_STORAGE_KEY = 'web-presentation.presenter.tileSize'
@@ -90,8 +77,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
   const router = inject(routerKey, undefined)
   const session = router ? getRuntimeSession(router) : undefined
   let remotePath = ''
-  const seenEvents = new Set<string>()
-  let sequence = 0
+  let commandSequence = 0
   let applyingRemoteView = false
   const currentPath = ref(normalizePresenterRoutePath(router?.currentRoute.value.path || options.initialPath || ''))
   const viewMode = ref<PresenterViewMode>('focus')
@@ -103,6 +89,22 @@ export function usePresenterController(options: PresenterControllerOptions) {
     updatedAt: 0,
   })
   const controllerId = createControllerId()
+  const now = options.now ?? (() => Date.now())
+  const identity: PresenterSyncIdentity = {
+    channelId: options.channelId,
+    artifactIdentity: options.artifactIdentity ?? resolvePresenterArtifactIdentity(),
+    sourceId: controllerId,
+    ownerEpoch: options.ownerEpoch ?? createOwnerEpoch(),
+  }
+  const sender = new PresenterSyncSender(identity)
+  const receiver = new PresenterSyncReceiver(identity, options.now)
+  const remotePlayback = ref<ReceivedPresenterSync | null>(null)
+  const playbackValues = ref<{
+    state: PresenterSyncPlaybackSnapshot['state']
+    remainingMs: number
+    delayMs: number | null
+    waitingForMedia: boolean
+  }>({ state: 'stopped', remainingMs: 0, delayMs: null, waitingForMedia: false })
   let channel: BroadcastChannel | null = null
 
   const pages = computed<PresenterPage[]>(() => buildPresenterPages(routeConfigs.value))
@@ -115,6 +117,27 @@ export function usePresenterController(options: PresenterControllerOptions) {
   const previousPage = computed(() => pages.value[currentIndex.value - 1] ?? null)
   const canGoPrevious = computed(() => Boolean(previousPage.value))
   const canGoNext = computed(() => Boolean(nextPage.value))
+  const playbackSnapshot = computed<PresenterSyncPlaybackSnapshot>(() => ({
+    ...playbackValues.value,
+    currentPath: currentPath.value,
+    index: currentIndex.value,
+    total: pages.value.length,
+  }))
+
+  /**
+   * 更新本窗口的放映状态，供下一次 state-sync 携带；不在协议层启动调度。
+   * @param value 放映状态片段
+   */
+  function updatePlayback(
+    value: Partial<Pick<PresenterSyncPlaybackSnapshot, 'state' | 'remainingMs' | 'delayMs' | 'waitingForMedia'>>,
+  ): void {
+    playbackValues.value = {
+      state: value.state ?? playbackValues.value.state,
+      remainingMs: Math.max(0, value.remainingMs ?? playbackValues.value.remainingMs),
+      delayMs: value.delayMs === undefined ? playbackValues.value.delayMs : value.delayMs,
+      waitingForMedia: value.waitingForMedia ?? playbackValues.value.waitingForMedia,
+    }
+  }
 
   /**
    * 跳转到指定页面，并按控制台角色向观众窗口同步。
@@ -129,7 +152,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
     if (router) {
       void router.push({ path: normalizedPath, query: router.currentRoute.value.query })
     } else {
-      postMessage({ type: 'navigate', currentPath: normalizedPath })
+      postMessage({ type: 'navigate', currentPath: normalizedPath, playback: playbackSnapshot.value }, nextCommandId())
     }
   }
 
@@ -170,6 +193,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
       currentPath: currentPath.value,
       viewMode: viewMode.value,
       tileSize: tileSize.value,
+      playback: playbackSnapshot.value,
     })
   }
 
@@ -191,7 +215,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
       status: {
         state,
         isFullscreen,
-        updatedAt: Date.now(),
+        updatedAt: now(),
       },
     })
   }
@@ -199,9 +223,10 @@ export function usePresenterController(options: PresenterControllerOptions) {
   /**
    * 发送频道消息。
    * @param message 消息体
+   * @param commandId 可选命令 ID
    */
-  function postMessage(message: PresenterMessage): void {
-    const envelope: PresenterMessage = { ...message, sourceId: controllerId, eventId: `${controllerId}:${++sequence}` }
+  function postMessage(message: PresenterSyncMessageBody, commandId?: string): void {
+    const envelope = sender.create(message, commandId)
     channel?.postMessage(envelope)
     writeStoredSyncMessage(envelope)
   }
@@ -210,22 +235,17 @@ export function usePresenterController(options: PresenterControllerOptions) {
    * 处理 BroadcastChannel 收到的跨窗口消息。
    * @param event 消息事件
    */
-  function handleChannelMessage(event: MessageEvent<PresenterMessage>): void {
-    const message = event.data
-    if (!message || typeof message !== 'object') {
+  function handleChannelMessage(event: MessageEvent<unknown>): void {
+    const result = receiver.receive(event.data)
+    if (!result.accepted || !result.received) return
+    const { message } = result.received
+    if (message.type === 'state-sync' || message.type === 'navigate') {
+      remotePlayback.value = result.received
+      applyIncomingState(message)
       return
-    }
-    if (message.sourceId === controllerId || (message.eventId && seenEvents.has(message.eventId))) return
-    if (message.eventId) {
-      seenEvents.add(message.eventId)
-      if (seenEvents.size > 256) seenEvents.delete(seenEvents.values().next().value!)
     }
     if (message.type === 'ready' && options.role === 'console') {
       postState()
-      return
-    }
-    if (message.type === 'state-sync' || message.type === 'navigate') {
-      applyIncomingState(message)
       return
     }
     if (message.type === 'display-status') {
@@ -249,14 +269,14 @@ export function usePresenterController(options: PresenterControllerOptions) {
     if (!storedMessage || storedMessage.sourceId === controllerId) {
       return
     }
-    handleChannelMessage({ data: storedMessage.message } as MessageEvent<PresenterMessage>)
+    handleChannelMessage({ data: storedMessage.message } as MessageEvent<unknown>)
   }
 
   /**
    * 应用外部窗口传来的页面和视图状态。
    * @param message 状态或导航消息
    */
-  function applyIncomingState(message: PresenterStateMessage | PresenterNavigateMessage): void {
+  function applyIncomingState(message: PresenterSyncStateMessage | Extract<PresenterSyncMessage, { type: 'navigate' }>): void {
     const normalizedPath = normalizePresenterRoutePath(message.currentPath)
     if (pages.value.some(page => page.path === normalizedPath)) {
       currentPath.value = normalizedPath
@@ -288,8 +308,14 @@ export function usePresenterController(options: PresenterControllerOptions) {
     displayStatus.value = {
       state: status.state,
       isFullscreen: Boolean(status.isFullscreen),
-      updatedAt: Number.isFinite(status.updatedAt) ? status.updatedAt : Date.now(),
+      updatedAt: Number.isFinite(status.updatedAt) ? status.updatedAt : now(),
     }
+  }
+
+  /** 生成单次导航命令 ID；同一命令跨通道重发时复用。 */
+  function nextCommandId(): string {
+    commandSequence += 1
+    return `${controllerId}:command:${commandSequence}`
   }
 
   onMounted(() => {
@@ -333,7 +359,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
       if (!pages.value.some(page => page.path === path)) return
       currentPath.value = path
       if (path === remotePath) { remotePath = ''; return }
-      postMessage({ type: 'navigate', currentPath: path })
+      postMessage({ type: 'navigate', currentPath: path, playback: playbackSnapshot.value }, nextCommandId())
     })
   }
 
@@ -362,6 +388,9 @@ export function usePresenterController(options: PresenterControllerOptions) {
     viewMode,
     tileSize,
     channelSupported,
+    playbackSnapshot,
+    remotePlayback,
+    updatePlayback,
     navigateTo,
     goPrevious,
     goNext,
@@ -373,15 +402,15 @@ export function usePresenterController(options: PresenterControllerOptions) {
 
   /**
    * 写入 localStorage 兜底同步消息。
-   * @param message 频道消息
+   * @param message 已补齐信封的协议消息
    */
-  function writeStoredSyncMessage(message: PresenterMessage): void {
+  function writeStoredSyncMessage(message: PresenterSyncMessage): void {
     if (!options.channelId || !isPresenterPersistedMessage(message) || !isPresenterStorageSupported()) {
       return
     }
     const storedMessage: PresenterStoredMessage = {
       sourceId: controllerId,
-      sentAt: Date.now(),
+      sentAt: now(),
       message,
     }
     try {
@@ -392,7 +421,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
   }
 
   /**
-   * 读取并应用已持久化的最新同步消息。
+   * 读取并应用已持久化的最新同步消息；仍通过接收器去重与校验身份。
    */
   function applyStoredSyncMessage(): void {
     if (!options.channelId || !isPresenterStorageSupported()) {
@@ -402,9 +431,12 @@ export function usePresenterController(options: PresenterControllerOptions) {
     if (!storedMessage || storedMessage.sourceId === controllerId) {
       return
     }
-    if (storedMessage.message.type === 'navigate' || storedMessage.message.type === 'state-sync') {
-      applyIncomingState({ type: 'state-sync', currentPath: storedMessage.message.currentPath, viewMode: 'focus', tileSize: tileSize.value })
-    }
+    const result = receiver.receive(storedMessage.message)
+    if (!result.accepted || !result.received) return
+    const { message } = result.received
+    if (message.type !== 'navigate' && message.type !== 'state-sync') return
+    remotePlayback.value = result.received
+    applyIncomingState(message)
   }
 }
 
@@ -466,12 +498,15 @@ function readStoredTileSize(): number {
 
 /**
  * 判断消息是否需要写入本地存储兜底通道。
- * @param message 频道消息
+ * @param message 协议消息
  * @returns 是否为可兜底同步的消息
  */
 function isPresenterPersistedMessage(
-  message: PresenterMessage,
-): message is PresenterStateMessage | PresenterNavigateMessage | PresenterCloseMessage | PresenterDisplayStatusMessage {
+  message: PresenterSyncMessage,
+): message is PresenterSyncStateMessage
+  | Extract<PresenterSyncMessage, { type: 'navigate' }>
+  | Extract<PresenterSyncMessage, { type: 'close' }>
+  | PresenterSyncDisplayStatusMessage {
   return message.type === 'state-sync'
     || message.type === 'navigate'
     || message.type === 'close'
@@ -504,17 +539,39 @@ export function buildPresenterStorageKey(channelId: string): string {
  * 写入演讲模式入口的初始导航状态，供观众页先于控制台加载时兜底读取。
  * @param channelId 通信频道 ID
  * @param currentPath 当前演讲页路径
+ * @param artifactIdentity 产物身份；默认读取当前 Runtime 产物
  */
-export function writePresenterInitialNavigateMessage(channelId: string, currentPath: string): void {
+export function writePresenterInitialNavigateMessage(
+  channelId: string,
+  currentPath: string,
+  artifactIdentity = resolvePresenterArtifactIdentity(),
+): void {
   if (!channelId || !isPresenterStorageSupported()) {
     return
   }
+  const path = normalizePresenterRoutePath(currentPath)
   const storedMessage: PresenterStoredMessage = {
     sourceId: 'presenter-entry',
     sentAt: Date.now(),
     message: {
+      protocol: PRESENTER_SYNC_PROTOCOL_VERSION,
+      channelId,
+      artifactIdentity,
+      sourceId: 'presenter-entry',
+      ownerEpoch: 0,
+      revision: 0,
+      eventId: 'presenter-entry:1',
       type: 'navigate',
-      currentPath: normalizePresenterRoutePath(currentPath),
+      currentPath: path,
+      playback: {
+        state: 'stopped',
+        currentPath: path,
+        remainingMs: 0,
+        delayMs: null,
+        waitingForMedia: false,
+        index: 0,
+        total: 0,
+      },
     },
   }
   try {
@@ -525,7 +582,7 @@ export function writePresenterInitialNavigateMessage(channelId: string, currentP
 }
 
 /**
- * 解析本地同步消息。
+ * 解析本地同步消息；协议版本、信封和消息体都必须合法。
  * @param value localStorage 原始值
  * @returns 合法消息或 null
  */
@@ -538,10 +595,11 @@ export function parseStoredSyncMessage(value: string | null): PresenterStoredMes
     if (!parsed || typeof parsed !== 'object' || typeof parsed.sourceId !== 'string') {
       return null
     }
-    if (!parsed.message || !isPresenterPersistedMessage(parsed.message)) {
+    const message = parsePresenterSyncMessage(parsed.message)
+    if (!message || message.sourceId !== parsed.sourceId) {
       return null
     }
-    return parsed
+    return { sourceId: parsed.sourceId, sentAt: Number(parsed.sentAt) || 0, message }
   } catch {
     return null
   }
@@ -556,6 +614,14 @@ function createControllerId(): string {
     return crypto.randomUUID()
   }
   return `presenter-controller-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+let lastOwnerEpoch = 0
+
+/** 同一浏览器内保证新控制台窗口的 owner epoch 严格递增，旧 owner 消息随后失效。 */
+function createOwnerEpoch(): number {
+  lastOwnerEpoch = Math.max(Date.now(), lastOwnerEpoch + 1)
+  return lastOwnerEpoch
 }
 
 /**

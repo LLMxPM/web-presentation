@@ -98,67 +98,95 @@ describe('buildPresenterPages', () => {
     ])
   })
 
-  it('应解析 localStorage 兜底同步消息', () => {
+  it('应解析 schema 2 localStorage 兜底同步消息', () => {
     const storageKey = buildPresenterStorageKey('channel-a')
+    const envelope = {
+      protocol: 2,
+      channelId: 'channel-a',
+      artifactIdentity: 'artifact-1',
+      sourceId: 'console-a',
+      ownerEpoch: 5,
+      revision: 1,
+      eventId: 'console-a:1',
+    }
     const parsed = parseStoredSyncMessage(JSON.stringify({
       sourceId: 'console-a',
       sentAt: 1,
       message: {
+        ...envelope,
         type: 'state-sync',
         currentPath: '/second',
         viewMode: 'focus',
         tileSize: 240,
+        playback: {
+          state: 'playing',
+          currentPath: '/second',
+          remainingMs: 4000,
+          delayMs: 5000,
+          waitingForMedia: false,
+          index: 1,
+          total: 2,
+        },
       },
     }))
 
     expect(storageKey).toBe('web-presentation.presenter.sync.channel-a')
-    expect(parsed?.message).toEqual({
+    expect(parsed?.message).toMatchObject({
       type: 'state-sync',
       currentPath: '/second',
       viewMode: 'focus',
       tileSize: 240,
+      playback: { state: 'playing', remainingMs: 4000 },
     })
     expect(parseStoredSyncMessage('not-json')).toBeNull()
     expect(parseStoredSyncMessage(JSON.stringify({ sourceId: 'x', message: { type: 'ready' } }))).toBeNull()
     expect(parseStoredSyncMessage(JSON.stringify({
       sourceId: 'console-a',
       sentAt: 1,
-      message: {
-        type: 'close',
-      },
-    }))?.message).toEqual({
-      type: 'close',
-    })
+      message: { ...envelope, type: 'close' },
+    }))?.message.type).toBe('close')
     expect(parseStoredSyncMessage(JSON.stringify({
       sourceId: 'display-a',
       sentAt: 2,
       message: {
+        ...envelope,
+        sourceId: 'display-a',
+        eventId: 'display-a:1',
         type: 'display-status',
-        status: {
-          state: 'fullscreen',
-          isFullscreen: true,
-          updatedAt: 100,
-        },
+        status: { state: 'fullscreen', isFullscreen: true, updatedAt: 100 },
       },
-    }))?.message).toEqual({
+    }))?.message).toMatchObject({
       type: 'display-status',
-      status: {
-        state: 'fullscreen',
-        isFullscreen: true,
-        updatedAt: 100,
-      },
+      status: { state: 'fullscreen', isFullscreen: true, updatedAt: 100 },
     })
+    expect(parseStoredSyncMessage(JSON.stringify({
+      sourceId: 'console-a',
+      sentAt: 1,
+      message: {
+        type: 'state-sync',
+        currentPath: '/legacy',
+        viewMode: 'focus',
+        tileSize: 240,
+      },
+    }))).toBeNull()
   })
 
-  it('应写入演讲入口初始导航兜底消息', () => {
-    writePresenterInitialNavigateMessage('channel-entry', 'intro')
+  it('应写入演讲入口 schema 2 初始导航兜底消息', () => {
+    writePresenterInitialNavigateMessage('channel-entry', 'intro', 'artifact-1')
 
     const parsed = parseStoredSyncMessage(localStorage.getItem(buildPresenterStorageKey('channel-entry')))
 
     expect(parsed?.sourceId).toBe('presenter-entry')
-    expect(parsed?.message).toEqual({
+    expect(parsed?.message).toMatchObject({
+      protocol: 2,
+      channelId: 'channel-entry',
+      artifactIdentity: 'artifact-1',
+      sourceId: 'presenter-entry',
+      ownerEpoch: 0,
+      revision: 0,
       type: 'navigate',
       currentPath: '/intro',
+      playback: { state: 'stopped', currentPath: '/intro', remainingMs: 0 },
     })
   })
 
