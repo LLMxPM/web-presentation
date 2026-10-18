@@ -117,6 +117,17 @@ afterEach(() => {
 })
 
 describe('PresenterConsoleView', () => {
+  it('控制台根节点应声明 thumbnail 执行作用域并阻断媒体播放', async () => {
+    const { app, host } = mountPresenterConsoleView()
+    await nextTick()
+
+    const root = host.querySelector<HTMLElement>('.presenter-console')
+    expect(root?.dataset.runtimeExecution).toBe('thumbnail')
+    expect(root?.dataset.runtimeMedia).toBe('block')
+
+    app.unmount()
+  })
+
   it('单页模式应为当前页和下一页预览添加不可交互遮罩', async () => {
     const { app, host } = mountPresenterConsoleView()
     await nextTick()

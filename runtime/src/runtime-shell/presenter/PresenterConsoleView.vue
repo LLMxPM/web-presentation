@@ -140,7 +140,8 @@ import { openPresenterDisplayWindow } from '@/runtime-shell/presenter/presenter-
 const route = useRoute()
 const router = useRouter()
 // 控制台不是主放映画布；其中的当前/下一页小窗由 ViewPreview 进一步收紧为 thumbnail。
-const execution = provideRuntimeExecutionScope('interactive-preview')
+// 演讲者控制台只展示静态预览；唯一媒体 owner 是 audience Display 窗口。
+const execution = provideRuntimeExecutionScope('thumbnail')
 const executionAttrs = computed(() => executionAttributes(execution.value))
 const channelId = computed(() => String(route.query.channel || ''))
 const initialPath = computed(() => String(route.query.route || route.path))

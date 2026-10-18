@@ -25,6 +25,16 @@
       </button>
 
       <span class="runtime-playback-controls__divider" aria-hidden="true"></span>
+      <button
+        type="button" class="runtime-playback-controls__button"
+        :title="muted ? '取消静音 (M)' : '静音 (M)'" :aria-label="muted ? '取消静音' : '静音'"
+        :aria-pressed="muted" data-testid="playback-mute-toggle" @click="toggleMute">
+        <VolumeX v-if="muted" :size="14" />
+        <Volume2 v-else :size="14" />
+        <span>{{ muted ? '已静音' : '静音' }}</span>
+      </button>
+
+      <span class="runtime-playback-controls__divider" aria-hidden="true"></span>
       <span class="runtime-playback-controls__page">{{ pageLabel }}</span>
       <span class="runtime-playback-controls__state">{{ stateLabel }}</span>
       <span class="runtime-playback-controls__remaining" data-testid="playback-remaining">{{ remainingLabel }}</span>
@@ -69,8 +79,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, Hand, Minimize2, Monitor, Play, RotateCcw, Timer } from '@lucide/vue'
+import { ChevronLeft, ChevronRight, Hand, Minimize2, Monitor, Play, RotateCcw, Timer, Volume2, VolumeX } from '@lucide/vue'
 import { getRuntimeSession } from '@/core/router/runtime-session'
+import { isEditableKeyboardTarget } from '@/runtime-shell/keyboard/keyboard-map'
 import { usePlaybackHost } from './usePlaybackHost'
 import type { PlaybackState } from './playback-controller'
 
@@ -90,18 +101,29 @@ const emit = defineEmits<{
 }>()
 
 const {
-  snapshot, errorMessage, wakeLockState, canGoPrevious, canGoNext,
-  start, pause, resume, retry, goPrevious, goNext, toggleAutoAdvance, refresh,
+  snapshot, errorMessage, wakeLockState, muted, canGoPrevious, canGoNext,
+  start, pause, resume, retry, goPrevious, goNext, toggleAutoAdvance, toggleMute, refresh,
 } = usePlaybackHost({ autoStart: true, initialAutoAdvance: props.initialAutoAdvance })
 const session = getRuntimeSession(useRouter())
+
+/** 全局静音快捷键；输入框和系统组合键不劫持。 */
+function handleMuteKeydown(event: KeyboardEvent): void {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return
+  if (isEditableKeyboardTarget(event.target)) return
+  if (event.key.toLowerCase() !== 'm') return
+  event.preventDefault()
+  toggleMute()
+}
 
 /** 进入演讲交接前暂停本窗口放映；观众窗口会从同一页重新开始。 */
 onMounted(() => {
   session.pausePlayback = pause
   session.playbackAutoAdvance = () => snapshot.value?.autoAdvanceEnabled ?? props.initialAutoAdvance
+  document.addEventListener('keydown', handleMuteKeydown)
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleMuteKeydown)
   if (session.pausePlayback === pause) {
     session.pausePlayback = null
   }

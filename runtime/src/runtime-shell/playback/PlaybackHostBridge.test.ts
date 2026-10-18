@@ -146,6 +146,33 @@ describe('PlaybackHostBridge 控制条', () => {
     app.unmount()
   })
 
+  it('静音按钮与 M 快捷键切换，不改变放映状态', async () => {
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { root, app } = mountBridge(router)
+    const session = getRuntimeSession(router)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(text(root)).toContain('放映中')
+
+    const mute = root.querySelector<HTMLButtonElement>('[data-testid="playback-mute-toggle"]')!
+    expect(mute.getAttribute('aria-pressed')).toBe('false')
+    expect(text(root)).toContain('静音')
+
+    mute.click()
+    await flushAsync()
+    expect(mute.getAttribute('aria-pressed')).toBe('true')
+    expect(text(root)).toContain('已静音')
+    expect(text(root)).toContain('放映中')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true, cancelable: true }))
+    await flushAsync()
+    expect(mute.getAttribute('aria-pressed')).toBe('false')
+    expect(text(root)).toContain('放映中')
+    app.unmount()
+  })
+
   it('控制条随指针进入底部区域显示，移出后隐藏，键盘聚焦时保持可见', async () => {
     const router = makeRouter()
     await router.push('/a')

@@ -9,23 +9,43 @@ afterEach(() => {
 })
 
 interface MediaFixture {
-  element: HTMLVideoElement
+  element: HTMLMediaElement
   isPaused: () => boolean
   play: ReturnType<typeof vi.fn>
   pause: ReturnType<typeof vi.fn>
 }
 
-/** 创建带可控播放状态并挂到指定根节点的视频元素。 */
+/** 创建带可控播放状态并挂到指定根节点的音视频元素。 */
 function createMedia(
   root: HTMLElement,
-  options: { playing?: boolean; ended?: boolean; loop?: boolean } = {},
+  options: {
+    playing?: boolean
+    ended?: boolean
+    loop?: boolean
+    tag?: 'audio' | 'video'
+    purpose?: 'content' | 'narration'
+    purposeOnAncestor?: boolean
+  } = {},
 ): MediaFixture {
-  const element = document.createElement('video')
+  const element = document.createElement(options.tag ?? 'video')
   let paused = !(options.playing ?? false)
   let ended = options.ended ?? false
   Object.defineProperty(element, 'paused', { configurable: true, get: () => paused })
   Object.defineProperty(element, 'ended', { configurable: true, get: () => ended })
   element.loop = options.loop ?? false
+  if (options.purpose) {
+    if (options.purposeOnAncestor) {
+      const wrapper = document.createElement('div')
+      wrapper.dataset.runtimeMediaPurpose = options.purpose
+      wrapper.append(element)
+      root.append(wrapper)
+    } else {
+      element.dataset.runtimeMediaPurpose = options.purpose
+      root.append(element)
+    }
+  } else {
+    root.append(element)
+  }
   element.pause = vi.fn(() => {
     paused = true
   })
@@ -34,7 +54,6 @@ function createMedia(
     ended = false
     return Promise.resolve()
   })
-  root.append(element)
   return {
     element,
     isPaused: () => paused,
@@ -138,6 +157,22 @@ describe('createPageMediaSession', () => {
     media.element.dispatchEvent(new Event('play'))
     expect(nextEvents.at(-1)).toEqual(expect.objectContaining({ type: 'play', generation: 5 }))
     next.dispose()
+  })
+
+  it('dispose 后迟到的 play() 结果会立即停播，不产生旧 generation 幽灵声音', async () => {
+    const root = createRoot()
+    const fixture = createMedia(root)
+    let resolvePlay: (() => void) | null = null
+    fixture.element.play = vi.fn(() => new Promise<void>(resolve => { resolvePlay = resolve }))
+    const session = createPageMediaSession({ root, generation: 1 })
+
+    const playing = session.play()
+    session.dispose()
+    resolvePlay?.()
+    await playing
+
+    expect(fixture.element.play).toHaveBeenCalledTimes(1)
+    expect(fixture.pause).toHaveBeenCalledTimes(1)
   })
 
   it('暂停/恢复只处理本会话暂停前正在播放的媒体', () => {
@@ -264,6 +299,107 @@ describe('createPageMediaSession', () => {
     expect(result.attempts).toHaveLength(1)
     expect(result.attempts[0].outcome).toBe('played')
     expect(session.getSnapshot().allEnded).toBe(false)
+    session.dispose()
+  })
+
+  it('读取元素或祖先的媒体用途，未声明时按 content 兼容', () => {
+    const root = createRoot()
+    const video = createMedia(root)
+    const content = createMedia(root, { tag: 'audio', purpose: 'content' })
+    const narration = createMedia(root, { tag: 'audio', purpose: 'narration', purposeOnAncestor: true })
+    const session = createPageMediaSession({ root, generation: 1 })
+
+    const targets = session.getSnapshot().targets
+    expect(targets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ purpose: 'content', autoplayEligible: false }),
+      expect.objectContaining({ purpose: 'narration', autoplayEligible: true }),
+    ]))
+    expect(targets).toHaveLength(3)
+    expect(video.element.tagName).toBe('VIDEO')
+    expect(content.element.dataset.runtimeMediaPurpose).toBe('content')
+    expect(narration.element.isConnected).toBe(true)
+    session.dispose()
+  })
+
+  it('playAutoplay 只播放旁白，内容音频保持用户手势播放', async () => {
+    const root = createRoot()
+    const content = createMedia(root, { tag: 'audio' })
+    const narration = createMedia(root, { tag: 'audio', purpose: 'narration' })
+    const session = createPageMediaSession({ root, generation: 1 })
+
+    const result = await session.playAutoplay()
+    expect(result.attempts).toHaveLength(1)
+    expect(narration.play).toHaveBeenCalledTimes(1)
+    expect(content.play).not.toHaveBeenCalled()
+    session.dispose()
+  })
+
+  it('多个旁白目标进入有界契约错误，不参与完成也不自动播放', async () => {
+    const root = createRoot()
+    const first = createMedia(root, { tag: 'audio', purpose: 'narration' })
+    const second = createMedia(root, { tag: 'audio', purpose: 'narration' })
+    const content = createMedia(root, { tag: 'audio' })
+    const events: PageMediaEvent[] = []
+    const session = createPageMediaSession({ root, generation: 1, onEvent: event => events.push(event) })
+
+    const snapshot = session.getSnapshot()
+    expect(snapshot.contractError).toContain('最多只能有一个页面旁白目标')
+    expect(snapshot.targets).toEqual([
+      expect.objectContaining({ purpose: 'content', participating: true }),
+    ])
+    expect(events.some(event => event.type === 'contract-error')).toBe(true)
+
+    const result = await session.playAutoplay()
+    expect(result.attempts).toEqual([])
+    expect(first.play).not.toHaveBeenCalled()
+    expect(second.play).not.toHaveBeenCalled()
+    expect(content.play).not.toHaveBeenCalled()
+    session.dispose()
+  })
+
+  it('旁白循环属于契约错误，不进入无限完成等待', () => {
+    const root = createRoot()
+    createMedia(root, { tag: 'audio', purpose: 'narration', loop: true })
+    const session = createPageMediaSession({ root, generation: 1 })
+
+    expect(session.getSnapshot().contractError).toContain('旁白不允许循环')
+    expect(session.getSnapshot().targets).toHaveLength(0)
+    expect(session.getSnapshot().allEnded).toBe(false)
+    session.dispose()
+  })
+
+  it('动态改用途后重新计算自动播放资格与参与集合', () => {
+    const root = createRoot()
+    const media = createMedia(root, { tag: 'audio', purpose: 'content' })
+    const session = createPageMediaSession({ root, generation: 1 })
+    expect(session.getSnapshot().targets[0]).toMatchObject({ purpose: 'content', autoplayEligible: false })
+
+    media.element.dataset.runtimeMediaPurpose = 'narration'
+    session.refresh()
+    expect(session.getSnapshot().targets[0]).toMatchObject({ purpose: 'narration', autoplayEligible: true })
+
+    media.element.dataset.runtimeMediaPurpose = 'content'
+    session.refresh()
+    expect(session.getSnapshot().targets[0]).toMatchObject({ purpose: 'content', autoplayEligible: false })
+    session.dispose()
+  })
+
+  it('会话静音对现有与后续媒体生效，解除时恢复页面自身 muted', () => {
+    const root = createRoot()
+    const first = createMedia(root, { tag: 'audio', purpose: 'narration' })
+    first.element.muted = true
+    const session = createPageMediaSession({ root, generation: 1 })
+
+    session.setMuted(true)
+    expect(session.isMuted()).toBe(true)
+    expect(first.element.muted).toBe(true)
+
+    const second = createMedia(root, { tag: 'audio', purpose: 'narration' })
+    session.refresh()
+    expect(second.element.muted).toBe(true)
+    session.setMuted(false)
+    expect(first.element.muted).toBe(true)
+    expect(second.element.muted).toBe(false)
     session.dispose()
   })
 })

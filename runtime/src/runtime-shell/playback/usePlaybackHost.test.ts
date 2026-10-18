@@ -128,14 +128,17 @@ function addPageElement(path: string): HTMLElement {
 }
 
 /** 在指定放映页内放置可控视频，供 media_end 宿主链路测试。 */
-function addTestVideo(path: string, options: { blocked?: boolean } = {}) {
+function addTestVideo(path: string, options: { blocked?: boolean; error?: boolean; loop?: boolean } = {}) {
   const element = document.createElement('video')
   let paused = true
   let ended = false
+  let blocked = options.blocked ?? false
   Object.defineProperty(element, 'paused', { configurable: true, get: () => paused })
   Object.defineProperty(element, 'ended', { configurable: true, get: () => ended })
+  element.loop = options.loop ?? false
   const play = vi.fn(() => {
-    if (options.blocked) return Promise.reject(new DOMException('blocked', 'NotAllowedError'))
+    if (blocked) return Promise.reject(new DOMException('blocked', 'NotAllowedError'))
+    if (options.error) return Promise.reject(new Error('媒体播放失败。'))
     paused = false
     ended = false
     return Promise.resolve()
@@ -154,6 +157,57 @@ function addTestVideo(path: string, options: { blocked?: boolean } = {}) {
       ended = true
       paused = true
       element.dispatchEvent(new Event('ended'))
+    },
+    /** 派发原生 error，模拟浏览器解码或网络失败。 */
+    fail: () => {
+      paused = true
+      element.dispatchEvent(new Event('error'))
+    },
+    /** 模拟用户手势后浏览器解除自动播放限制。 */
+    allowPlayback: () => {
+      blocked = false
+    },
+  }
+}
+
+/** 在指定放映页内放置可控音频，供旁白与内容音频测试使用。 */
+function addTestAudio(
+  path: string,
+  options: { purpose?: 'content' | 'narration'; blocked?: boolean; error?: boolean; loop?: boolean } = {},
+) {
+  const element = document.createElement('audio')
+  let paused = true
+  let ended = false
+  Object.defineProperty(element, 'paused', { configurable: true, get: () => paused })
+  Object.defineProperty(element, 'ended', { configurable: true, get: () => ended })
+  if (options.purpose) element.dataset.runtimeMediaPurpose = options.purpose
+  element.loop = options.loop ?? false
+  const play = vi.fn(() => {
+    if (options.blocked) return Promise.reject(new DOMException('blocked', 'NotAllowedError'))
+    if (options.error) return Promise.reject(new Error('媒体播放失败。'))
+    paused = false
+    ended = false
+    return Promise.resolve()
+  })
+  const pause = vi.fn(() => { paused = true })
+  Object.assign(element, { play, pause })
+  const page = document.querySelector(`[data-runtime-route-path="${path}"]`)
+  if (!page) throw new Error(`页面 ${path} 不存在`)
+  page.append(element)
+  return {
+    element,
+    play,
+    pause,
+    /** 派发实际元素 ended，模拟旁白自然结束。 */
+    end: () => {
+      ended = true
+      paused = true
+      element.dispatchEvent(new Event('ended'))
+    },
+    /** 派发原生 error，模拟浏览器解码或网络失败。 */
+    fail: () => {
+      paused = true
+      element.dispatchEvent(new Event('error'))
     },
   }
 }
@@ -476,6 +530,27 @@ describe('usePlaybackHost media_end 媒体调度', () => {
     app.unmount()
   })
 
+  it('只有循环媒体时不进入媒体等待，按停留时间翻页', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 5000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const loop = addTestAudio('/a', { purpose: 'content', loop: true })
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', waitingForMedia: false, delayMs: 1000 })
+    expect(loop.play).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    app.unmount()
+  })
+
   it('媒体播放受阻进入受阻态，下一页可继续放映', async () => {
     preloadPlaybackConfig({ advances: { '/a': { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 5000 } } })
     await reloadAllConfigs()
@@ -496,6 +571,33 @@ describe('usePlaybackHost media_end 媒体调度', () => {
     await flushAsync()
     expect(router.currentRoute.value.path).toBe('/b')
     expect(host.snapshot.value).toMatchObject({ state: 'preparing', path: '/b' })
+    app.unmount()
+  })
+
+  it('媒体受阻后用户重试恢复播放并最终翻页', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 5000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const video = addTestVideo('/a', { blocked: true })
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('blocked')
+
+    video.allowPlayback()
+    expect(host.retry()).toBe(true)
+    await flushAsync()
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', waitingForMedia: true })
+    expect(video.play).toHaveBeenCalledTimes(2)
+
+    video.end()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
     app.unmount()
   })
 
@@ -547,6 +649,132 @@ describe('usePlaybackHost media_end 媒体调度', () => {
     await vi.advanceTimersByTimeAsync(0)
     await flushAsync()
     expect(router.currentRoute.value.path).toBe('/b')
+    app.unmount()
+  })
+})
+
+describe('usePlaybackHost 页面旁白', () => {
+  it('manual 页面自动播放旁白，内容音频保持用户手动播放', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'manual', delayMs: 1000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const narration = addTestAudio('/a', { purpose: 'narration' })
+    const content = addTestAudio('/a', { purpose: 'content' })
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', advanceMode: 'manual' })
+    expect(narration.play).toHaveBeenCalledTimes(1)
+    expect(content.play).not.toHaveBeenCalled()
+    narration.end()
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/a')
+    app.unmount()
+  })
+
+  it('旁白与视频共同参与 media_end，全部结束后翻页', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 5000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const narration = addTestAudio('/a', { purpose: 'narration' })
+    const video = addTestVideo('/a')
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', waitingForMedia: true })
+    expect(narration.play).toHaveBeenCalledTimes(1)
+    expect(video.play).toHaveBeenCalledTimes(1)
+
+    video.end()
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/a')
+
+    narration.end()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    app.unmount()
+  })
+
+  it('manual 页内容音频报错不改变放映状态，旁白报错进入错误态', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'manual', delayMs: 1000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const narration = addTestAudio('/a', { purpose: 'narration' })
+    const content = addTestAudio('/a', { purpose: 'content' })
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    content.fail()
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('playing')
+    expect(host.errorMessage.value).toBe('')
+
+    narration.fail()
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('error')
+    expect(host.errorMessage.value).toContain('媒体播放失败')
+    app.unmount()
+  })
+
+  it('旁白自动播放被浏览器阻止时进入受阻态', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'manual', delayMs: 1000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    addTestAudio('/a', { purpose: 'narration', blocked: true })
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.snapshot.value?.state).toBe('blocked')
+    expect(host.errorMessage.value).toContain('阻止')
+    app.unmount()
+  })
+
+  it('会话静音对当前和后续加入的媒体生效，且不改变暂停状态', async () => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'manual', delayMs: 1000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const narration = addTestAudio('/a', { purpose: 'narration' })
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.muted.value).toBe(false)
+    expect(host.toggleMute()).toBe(true)
+    expect(host.muted.value).toBe(true)
+    expect(narration.element.muted).toBe(true)
+    expect(host.snapshot.value?.state).toBe('playing')
+
+    const late = addTestAudio('/a', { purpose: 'content' })
+    await flushAsync()
+    expect(late.element.muted).toBe(true)
+    expect(host.toggleMute()).toBe(true)
+    expect(narration.element.muted).toBe(false)
+    expect(late.element.muted).toBe(false)
     app.unmount()
   })
 })

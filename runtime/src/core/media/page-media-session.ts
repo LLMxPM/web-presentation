@@ -5,10 +5,19 @@
  * 播放状态来自元素事件与 play() Promise，不根据 autoplay 属性推断成功。
  */
 
-export type PageMediaEventType = 'targets' | 'play' | 'pause' | 'ended' | 'error' | 'blocked' | 'reset'
+export type PageMediaEventType = 'targets' | 'play' | 'pause' | 'ended' | 'error' | 'blocked' | 'reset' | 'contract-error'
+
+/** 页面媒体用途；未声明时按 content 兼容旧页面。 */
+export type PageMediaPurpose = 'content' | 'narration'
 
 export interface PageMediaTargetSnapshot {
   id: string
+  purpose: PageMediaPurpose
+  loop: boolean
+  /** 是否参与 media_end 完成判定；loop 与冲突旁白不参与。 */
+  participating: boolean
+  /** 是否具备放映自动播放资格；内容音频只允许用户手势播放。 */
+  autoplayEligible: boolean
   playing: boolean
   ended: boolean
   error: string | null
@@ -21,6 +30,8 @@ export interface PageMediaSnapshot {
   allEnded: boolean
   /** play() 被浏览器策略阻止；等待用户手势或重试。 */
   blocked: boolean
+  /** 同一页面多个旁白或旁白循环等运行期契约冲突；进入后不自动播放并交由宿主报错。 */
+  contractError: string | null
 }
 
 export interface PageMediaEvent {
@@ -59,8 +70,10 @@ export interface PageMediaSession {
   getSnapshot(): PageMediaSnapshot
   /** 重新收集活动目标的动态增删，MutationObserver 也会自动调用。 */
   refresh(): void
-  /** 播放当前页全部未结束目标；返回真实 Promise 结果。 */
+  /** 播放当前页全部未结束参与目标；返回真实 Promise 结果。 */
   play(): Promise<PageMediaPlayResult>
+  /** 只播放具备自动播放资格的旁白目标；内容音频保持手动。 */
+  playAutoplay(): Promise<PageMediaPlayResult>
   /** 单页循环重播：已结束目标归零后重新播放全部目标。 */
   restart(): Promise<PageMediaPlayResult>
   /** 暂停当前页目标，返回实际暂停数量。 */
@@ -69,6 +82,9 @@ export interface PageMediaSession {
   suspend(): number
   /** 只恢复本会话 suspend() 记录且仍在文档中的目标。 */
   resume(): number
+  /** 设置会话级静音；新加入的媒体继承当前状态。 */
+  setMuted(muted: boolean): void
+  isMuted(): boolean
   isSuspended(): boolean
   dispose(): void
 }
@@ -76,16 +92,25 @@ export interface PageMediaSession {
 interface MediaState {
   element: HTMLMediaElement
   id: string
+  purpose: PageMediaPurpose
+  loop: boolean
   playing: boolean
   ended: boolean
   error: string | null
   /** 非循环媒体参与完成判定；循环背景只参与暂停、恢复与清理。 */
   participating: boolean
+  /** 旁白具备自动播放资格；内容音频保持手动。 */
+  autoplayEligible: boolean
+  /** 会话静音前的元素 muted 值；解除会话静音时恢复。 */
+  baseMuted: boolean
 }
 
 const MEDIA_SELECTOR = 'audio, video'
 /** HTMLMediaElement.NETWORK_NO_SOURCE；失败后再次 play() 会直接拒绝，必须先 load() 重新选源。 */
 const NETWORK_NO_SOURCE = 3
+const MEDIA_PURPOSE_ATTRIBUTE = 'data-runtime-media-purpose'
+const NARRATION_CONFLICT_MESSAGE = '同一页面最多只能有一个页面旁白目标，已停止自动播放。'
+const NARRATION_LOOP_MESSAGE = '页面旁白不允许循环播放。'
 
 /**
  * 创建单个活动页面的媒体会话。
@@ -101,12 +126,63 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
   let disposed = false
   let blocked = false
   let suspended = false
+  let muted = false
+  let contractError: string | null = null
   let recorded: HTMLMediaElement[] = []
   let observer: MutationObserver | null = null
 
   function emit(event: Omit<PageMediaEvent, 'generation'>): void {
     if (disposed) return
     onEvent?.({ ...event, generation })
+  }
+
+  /** 从媒体元素或页面祖先读取用途；未声明按 content 兼容旧页面。 */
+  function resolvePurpose(element: Element): PageMediaPurpose {
+    let current: Element | null = element
+    while (current) {
+      const value = current.getAttribute?.(MEDIA_PURPOSE_ATTRIBUTE)
+      if (value === 'narration') return 'narration'
+      if (value === 'content') return 'content'
+      if (current === root) break
+      current = current.parentElement
+    }
+    return 'content'
+  }
+
+  /** 计算单目标的参与完成、自动播放与契约状态。 */
+  function resolveMediaState(element: HTMLMediaElement): { purpose: PageMediaPurpose; loop: boolean; participating: boolean; autoplayEligible: boolean } {
+    const purpose = resolvePurpose(element)
+    const loop = Boolean(element.loop)
+    return {
+      purpose,
+      loop,
+      // 循环媒体不参与完成；旁白循环属于契约错误，同样不能参与。
+      participating: !loop,
+      autoplayEligible: purpose === 'narration' && !loop,
+    }
+  }
+
+  /** 重算旁白数量与契约错误，返回有界文案并只在变化时上报。 */
+  function refreshContractError(): void {
+    const narrationStates = [...media.values()].filter(state => state.purpose === 'narration')
+    const invalidLoop = narrationStates.some(state => state.loop)
+    let nextError: string | null = null
+    if (invalidLoop) nextError = NARRATION_LOOP_MESSAGE
+    else if (narrationStates.length > 1) nextError = NARRATION_CONFLICT_MESSAGE
+
+    if (nextError === contractError) return
+    contractError = nextError
+    // 冲突时所有旁白都不参与完成与自动播放，避免同时说话或无限等待。
+    const conflicted = nextError !== null
+    for (const state of media.values()) {
+      if (state.purpose !== 'narration') continue
+      state.participating = conflicted ? false : !state.loop
+      state.autoplayEligible = !conflicted && !state.loop
+      if (conflicted) state.ended = false
+    }
+    if (nextError) {
+      emit({ type: 'contract-error', message: nextError })
+    }
   }
 
   function targetId(element: HTMLMediaElement): string {
@@ -123,12 +199,17 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
       generation,
       targets: states.map(state => ({
         id: state.id,
+        purpose: state.purpose,
+        loop: state.loop,
+        participating: state.participating,
+        autoplayEligible: state.autoplayEligible,
         playing: state.playing,
         ended: state.ended,
         error: state.error,
       })),
       allEnded: states.length > 0 && states.every(state => state.ended),
       blocked,
+      contractError,
     }
   }
 
@@ -199,29 +280,45 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
         changed = true
         continue
       }
-      const participating = !state.element.loop
-      if (state.participating !== participating) {
-        state.participating = participating
-        if (!participating) state.ended = false
+      const resolved = resolveMediaState(state.element)
+      if (
+        state.purpose !== resolved.purpose
+        || state.loop !== resolved.loop
+        || state.participating !== resolved.participating
+        || state.autoplayEligible !== resolved.autoplayEligible
+      ) {
+        state.purpose = resolved.purpose
+        state.loop = resolved.loop
+        state.participating = resolved.participating
+        state.autoplayEligible = resolved.autoplayEligible
+        if (!state.participating) state.ended = false
         changed = true
       }
     }
 
     for (const element of found) {
       if ([...media.values()].some(state => state.element === element)) continue
+      const resolved = resolveMediaState(element)
       const state: MediaState = {
         element,
         id: targetId(element),
+        purpose: resolved.purpose,
+        loop: resolved.loop,
         playing: !element.paused,
         ended: element.ended,
         error: null,
-        participating: !element.loop,
+        participating: resolved.participating,
+        autoplayEligible: resolved.autoplayEligible,
+        baseMuted: element.muted,
       }
+      // 会话静音是覆盖层；新加入媒体继承静音，但不丢弃页面自身声明的 muted。
+      if (muted) element.muted = true
       media.set(state.id, state)
       bind(state)
       changed = true
     }
 
+    refreshContractError()
     if (changed) {
       emit({
         type: 'targets',
@@ -231,6 +328,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
   }
 
   function pauseTargets(): number {
+    refresh()
     let paused = 0
     for (const state of media.values()) {
       if (!state.element.paused) {
@@ -243,6 +341,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
   }
 
   function suspend(): number {
+    refresh()
     if (suspended) return recorded.length
     recorded = [...media.values()]
       .map(state => state.element)
@@ -270,16 +369,11 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
     return resumed
   }
 
-  async function play(): Promise<PageMediaPlayResult> {
-    if (disposed || !allowPlayback) {
-      return { attempts: [], blocked: false, failed: false }
-    }
-    refresh()
+  async function playStates(states: MediaState[]): Promise<PageMediaPlayResult> {
     blocked = false
     const attempts: PageMediaPlayAttempt[] = []
-    const pending = [...media.values()].filter(state => state.participating && !state.ended)
     const results = await Promise.allSettled(
-      pending.map(async state => {
+      states.map(async state => {
         state.error = null
         try {
           // 失败的媒体元素保留错误且无法直接重播；先重新选源，服务恢复后重试才能成功。
@@ -287,6 +381,11 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
             state.element.load()
           }
           await state.element.play()
+          if (disposed) {
+            // 会话在 play() Promise 返回前已销毁：立即停播，避免旧 generation 幽灵声音。
+            state.element.pause()
+            return { state, outcome: 'error' as const, message: '页面媒体会话已结束。' }
+          }
           state.playing = true
           return { state, outcome: 'played' as const }
         } catch (error) {
@@ -318,6 +417,24 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
     }
   }
 
+  async function play(): Promise<PageMediaPlayResult> {
+    if (disposed || !allowPlayback) {
+      return { attempts: [], blocked: false, failed: false }
+    }
+    refresh()
+    return playStates([...media.values()].filter(state => state.participating && !state.ended))
+  }
+
+  async function playAutoplay(): Promise<PageMediaPlayResult> {
+    if (disposed || !allowPlayback || contractError) {
+      return { attempts: [], blocked: false, failed: false }
+    }
+    refresh()
+    return playStates(
+      [...media.values()].filter(state => state.participating && state.autoplayEligible && !state.ended),
+    )
+  }
+
   async function restart(): Promise<PageMediaPlayResult> {
     for (const state of media.values()) {
       if (!state.participating) continue
@@ -343,11 +460,32 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
     for (const state of media.values()) {
       unbind(state.element)
       if (!state.element.paused) state.element.pause()
+      try {
+        // 离页释放时归零，返回同一页面实例时不继承旧播放位置。
+        state.element.currentTime = 0
+      } catch {
+        // 元数据未就绪的元素可能拒绝写入 currentTime；不影响释放。
+      }
     }
     media.clear()
     recorded = []
     suspended = false
     blocked = false
+    contractError = null
+  }
+
+  /** 设置会话级静音；只覆盖元素 muted，解除时恢复页面自身声明。 */
+  function setMuted(nextMuted: boolean): void {
+    if (muted === nextMuted) return
+    muted = nextMuted
+    for (const state of media.values()) {
+      if (nextMuted) {
+        state.baseMuted = state.element.muted
+        state.element.muted = true
+      } else {
+        state.element.muted = state.baseMuted
+      }
+    }
   }
 
   refresh()
@@ -357,7 +495,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['loop'],
+      attributeFilter: ['loop', MEDIA_PURPOSE_ATTRIBUTE],
     })
   }
 
@@ -366,10 +504,13 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
     getSnapshot: snapshot,
     refresh,
     play,
+    playAutoplay,
     restart,
     pause: pauseTargets,
     suspend,
     resume,
+    setMuted,
+    isMuted: () => muted,
     isSuspended: () => suspended,
     dispose,
   }

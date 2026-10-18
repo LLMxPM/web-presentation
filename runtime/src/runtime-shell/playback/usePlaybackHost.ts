@@ -12,7 +12,12 @@ import { resolvePageAdvance } from '@/core/utils/page-transition'
 import { waitForEditorVisualAssets } from '@/core/utils/visual-assets'
 import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
 import { mediaPlaybackCoordinator } from '@/core/execution/media-playback-guard'
-import { createPageMediaSession, type PageMediaEvent, type PageMediaSession } from '@/core/media/page-media-session'
+import {
+  createPageMediaSession,
+  type PageMediaEvent,
+  type PageMediaSession,
+  type PageMediaSnapshot,
+} from '@/core/media/page-media-session'
 import { PlaybackController, type PlaybackPage, type PlaybackSnapshot } from './playback-controller'
 import { useScreenWakeLock, type WakeLockState } from './useScreenWakeLock'
 
@@ -33,6 +38,8 @@ export interface PlaybackHost {
   errorMessage: Ref<string>
   /** Screen Wake Lock 状态；不支持或拒绝时放映仍正常进行。 */
   wakeLockState: Readonly<Ref<WakeLockState>>
+  /** 会话级静音；不写回项目配置。 */
+  muted: Readonly<Ref<boolean>>
   canGoPrevious: ComputedRef<boolean>
   /** 失败态允许跳过当前页；循环时末页也允许。 */
   canGoNext: ComputedRef<boolean>
@@ -49,6 +56,8 @@ export interface PlaybackHost {
   /** 切换本次放映的自动推进；关闭时媒体继续但页面等待用户翻页。 */
   setAutoAdvance: (enabled: boolean) => boolean
   toggleAutoAdvance: () => boolean
+  /** 切换会话静音；当前页与后续页的新媒体继承该状态。 */
+  toggleMute: () => boolean
   /** 按控制器单调时钟刷新剩余时间，供控制条定时读取。 */
   refresh: () => void
 }
@@ -78,6 +87,17 @@ export function findPlaybackPageElement(path: string): HTMLElement | null {
     .find(element => element.dataset.runtimeRoutePath === path) ?? null
 }
 
+/** 只保留参与完成判定的媒体；循环背景与冲突旁白不阻塞 media_end。 */
+function participatingTargets(media: PageMediaSnapshot) {
+  return media.targets.filter(target => target.participating)
+}
+
+/** 当前页所有参与媒体是否都已结束；没有参与媒体时不视为完成。 */
+function allParticipatingEnded(media: PageMediaSnapshot): boolean {
+  const targets = participatingTargets(media)
+  return targets.length > 0 && targets.every(target => target.ended)
+}
+
 /**
  * 在放映主画布宿主中创建调度链路。
  * 非 presentation 上下文（卡片、缩略图、捕获等）不会创建控制器或计时句柄。
@@ -90,6 +110,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   const snapshot = ref<PlaybackSnapshot | null>(null)
   const errorMessage = ref('')
   const wakeLock = useScreenWakeLock()
+  const muted = ref(false)
   let unsubscribe: (() => void) | null = null
   let pendingAttempt: ReadinessAttempt | null = null
   let attemptSequence = 0
@@ -115,7 +136,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       snapshot.value = next
       errorMessage.value = next.state === 'error' || next.state === 'blocked' ? next.message : ''
       syncWakeLock(next)
-      syncMediaWithSnapshot(instance, next)
+      syncMediaWithSnapshot(next)
     })
     snapshot.value = instance.getSnapshot()
     controller.value = instance
@@ -147,9 +168,18 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     if (!session || !instance) return
     const current = instance.getSnapshot()
     if (current.path !== mediaPath || current.generation !== event.generation) return
-    if (event.type === 'error') {
+    if (event.type === 'contract-error') {
       session.pause()
-      instance.reportMediaError(mediaPath, event.generation, event.message)
+      instance.reportMediaError(mediaPath, event.generation, event.message || MEDIA_BLOCKED_MESSAGE)
+      return
+    }
+    if (event.type === 'error') {
+      // manual/timer 下的内容音频由用户控制，单个资源失败不应阻塞整场放映；
+      // 旁白与 media_end 参与媒体仍进入统一错误链路。
+      const failed = session.getSnapshot().targets.find(target => target.id === event.targetId)
+      if (current.advanceMode !== 'media_end' && failed?.purpose !== 'narration') return
+      session.pause()
+      instance.reportMediaError(mediaPath, event.generation, event.message || MEDIA_BLOCKED_MESSAGE)
       return
     }
     if (event.type === 'blocked') {
@@ -159,30 +189,40 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     }
     if (current.state !== 'playing') return
     if (event.type !== 'ended' && event.type !== 'targets') return
+    // 只有 media_end 页面由媒体完成集合推进；manual/timer 页面旁白结束不改变推进。
+    if (current.advanceMode !== 'media_end') return
     const media = session.getSnapshot()
-    if (media.targets.length === 0) {
+    const participating = participatingTargets(media)
+    if (participating.length === 0) {
       instance.reportMediaEmpty(mediaPath, event.generation)
       return
     }
-    if (media.allEnded) {
+    if (allParticipatingEnded(media)) {
       instance.reportMediaEnded(mediaPath, event.generation)
       return
     }
     if (event.type === 'targets') {
       if (!current.waitingForMedia) {
-        instance.reportMediaTargets(mediaPath, event.generation, media.targets.length)
+        instance.reportMediaTargets(mediaPath, event.generation, participating.length)
       }
       void playPageMedia(session)
     }
   }
 
   /** 主动播放当前页媒体；Promise 结果区分阻止、失败与真实成功，不推断 autoplay。 */
-  async function playPageMedia(session: PageMediaSession, restart = false): Promise<void> {
+  async function playPageMedia(
+    session: PageMediaSession,
+    options: { restart?: boolean; autoplayOnly?: boolean } = {},
+  ): Promise<void> {
     const instance = controller.value
     if (!instance || mediaSession !== session) return
     const path = mediaPath
     if (instance.getSnapshot().state !== 'playing') return
-    const result = restart ? await session.restart() : await session.play()
+    const result = options.restart
+      ? await session.restart()
+      : options.autoplayOnly
+        ? await session.playAutoplay()
+        : await session.play()
     if (mediaSession !== session || controller.value !== instance) return
     const current = instance.getSnapshot()
     if (current.path !== path || current.generation !== session.generation) return
@@ -197,7 +237,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       instance.reportMediaError(path, session.generation, failed.message)
       return
     }
-    if (session.getSnapshot().allEnded) {
+    if (!options.autoplayOnly && allParticipatingEnded(session.getSnapshot())) {
       instance.reportMediaEnded(path, session.generation)
     }
   }
@@ -213,6 +253,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       allowPlayback: policy.value.allowAutoplay,
       onEvent: handleMediaEvent,
     })
+    mediaSession.setMuted(muted.value)
     return mediaSession
   }
 
@@ -222,9 +263,10 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     if (!root) return
     const session = createSessionForPage(root, next.path, next.generation)
     const media = session.getSnapshot()
-    instance.reportMediaTargets(next.path, next.generation, media.targets.length)
-    const shouldRestart = media.targets.length > 0 && media.targets.every(target => target.ended)
-    void playPageMedia(session, shouldRestart)
+    const participating = participatingTargets(media)
+    instance.reportMediaTargets(next.path, next.generation, participating.length)
+    const shouldRestart = participating.length > 0 && participating.every(target => target.ended)
+    void playPageMedia(session, { restart: shouldRestart })
   }
 
   /** 自动翻页的准备阶段保持申请，避免逐页释放/重试；暂停、失败、结束和停止立即释放。 */
@@ -236,8 +278,8 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     }
   }
 
-  /** 控制器状态变化时同步媒体：失败先停播，离场销毁，同页新一代播放重建会话。 */
-  function syncMediaWithSnapshot(instance: PlaybackController, next: PlaybackSnapshot): void {
+  /** 控制器状态变化时同步媒体：失败先停播，离场销毁，旧 generation 会话立即释放。 */
+  function syncMediaWithSnapshot(next: PlaybackSnapshot): void {
     if (next.state === 'blocked' || next.state === 'error') {
       mediaSession?.pause()
       return
@@ -246,14 +288,10 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       disposePageMedia()
       return
     }
-    if (next.state !== 'playing' || next.advanceMode !== 'media_end') return
-    if (next.generation === mediaSessionGeneration) return
-    const generation = next.generation
-    queueMicrotask(() => {
-      const current = controller.value?.getSnapshot()
-      if (!current || current.state !== 'playing' || current.generation !== generation) return
-      restartPageMedia(instance, current)
-    })
+    if (next.state !== 'playing') return
+    if (mediaSession && (next.generation !== mediaSessionGeneration || next.path !== mediaPath)) {
+      disposePageMedia()
+    }
   }
 
   function disposeController(): void {
@@ -300,14 +338,23 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     pendingAttempt = null
     if (result.ok) {
       const current = instance?.getSnapshot()
-      if (instance && current?.advanceMode === 'media_end') {
-        const session = createSessionForPage(root, attempt.path, attempt.generation)
-        const targetCount = session.getSnapshot().targets.length
-        instance.reportReady(attempt.path, attempt.generation, targetCount)
-        if (targetCount > 0) void playPageMedia(session)
+      if (!instance || !current) return
+      // 每个稳定放映页都建立会话；是否自动播放由用途、推进模式与执行策略决定。
+      const session = createSessionForPage(root, attempt.path, attempt.generation)
+      const media = session.getSnapshot()
+      if (media.contractError) {
+        instance.reportMediaError(attempt.path, attempt.generation, media.contractError)
+        return
+      }
+      if (current.advanceMode === 'media_end') {
+        const participating = participatingTargets(media)
+        instance.reportReady(attempt.path, attempt.generation, participating.length)
+        if (media.targets.length > 0) void playPageMedia(session)
       } else {
-        disposePageMedia()
-        instance?.reportReady(attempt.path, attempt.generation)
+        instance.reportReady(attempt.path, attempt.generation)
+        if (policy.value.allowAutoplay && media.targets.some(target => target.autoplayEligible)) {
+          void playPageMedia(session, { autoplayOnly: true })
+        }
       }
       return
     }
@@ -394,12 +441,11 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     const instance = controller.value
     if (!instance || !instance.resume()) return false
     const current = instance.getSnapshot()
-    if (current.state === 'playing' && current.advanceMode === 'media_end') {
+    if (current.state === 'playing') {
       if (mediaSession?.isSuspended()) mediaSession.resume()
-      else if (mediaSession) void playPageMedia(mediaSession)
-      else restartPageMedia(instance, current)
-    } else {
-      mediaPlaybackCoordinator.resume()
+      else if (mediaSession && current.advanceMode === 'media_end') void playPageMedia(mediaSession)
+      else if (!mediaSession && current.advanceMode === 'media_end') restartPageMedia(instance, current)
+      else mediaPlaybackCoordinator.resume()
     }
     if (current.state === 'preparing') beginReadiness(instance.getSnapshot().path, true)
     return true
@@ -479,6 +525,14 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     return instance.setAutoAdvance(!current.autoAdvanceEnabled)
   }
 
+  /** 切换会话级静音；只影响本地播放，不写回项目或创建额外计时。 */
+  function toggleMute(): boolean {
+    if (disposed) return false
+    muted.value = !muted.value
+    mediaSession?.setMuted(muted.value)
+    return true
+  }
+
   /** 窗口隐藏、页面冻结或 bfcache 恢复时暂停；等待用户显式继续，不补课。 */
   function pauseForInterruption(): void {
     const instance = controller.value
@@ -526,6 +580,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     snapshot,
     errorMessage,
     wakeLockState: wakeLock.state,
+    muted,
     canGoPrevious,
     canGoNext,
     start: startPlayback,
@@ -538,6 +593,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     goNext: () => goBy(1),
     setAutoAdvance,
     toggleAutoAdvance,
+    toggleMute,
     refresh: () => {
       const instance = controller.value
       if (instance) snapshot.value = instance.getSnapshot()
