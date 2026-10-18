@@ -1,6 +1,6 @@
 # 自动放映配置与接口契约
 
-状态：M0 字段与行为已通过 [WP12 联调验收](./work-packages/wp12-m0-integration.md)；M1 的 `timer`、自动开始与单窗口自动放映已通过 WP21 开放；M2 的 `media_end`、`media_timeout_ms` 与演讲者自动放映已通过 [WP30 验收](./work-packages/wp30-m2-integration-release.md)并于 2026-10-18 开放（schema 2）。已发布事实以实际 DTO、OpenAPI 和契约测试为准，阶段定义见[总计划](./README.md)。
+状态：M0 字段与行为已通过 [WP12 联调验收](./work-packages/wp12-m0-integration.md)；M1 的 `timer`、自动开始与单窗口自动放映已通过 WP21 开放；M2 的 `media_end`、`media_timeout_ms` 与演讲者自动放映已通过 [WP30 验收](./work-packages/wp30-m2-integration-release.md)并于 2026-10-18 开放（schema 2）。2026-10-18 全屏放映统一模型调整了 `auto_start` 的运行语义，不改变字段、DTO 或存储；已发布事实以实际 DTO、OpenAPI 和契约测试为准，阶段定义见[总计划](./README.md)。
 
 ## 1. 配置归属与名称
 
@@ -39,7 +39,7 @@ Backend 拟新增独立 `schemas/slideshow.py`，定义严格 DTO 和统一解�
 | `advance.delay_ms` | 1000–3600000 | 从当前页就绪且过渡结束后计时；`manual` 保留该值但不运行计时，`media_end` 在无参与媒体时按该值停留 |
 | `advance.media_timeout_ms` | 1000–3600000；省略时规范化为 300000 | 媒体等待上限；到期进入错误暂停，可重试、下一页或停止 |
 | `loop` | 布尔值 | 自动到达末页并满足该页完成条件后，回到第一个可放映叶子页 |
-| `auto_start` | 布尔值 | 正常放映宿主就绪后尝试启动；只读预览、捕获和导出上下文强制不启动 |
+| `auto_start` | 布尔值 | 进入全屏放映时的初始自动推进模式：`true` 按页面 `advance` 自动推进，`false` 先进入手动；运行中可切换，不写回配置。正常预览、只读预览、捕获和导出上下文不启动放映 |
 
 布尔值不得作为整数接受；字符串数字、浮点数、未知字段和显式 null 子字段都拒绝。缺省值由 Backend 在创建和旧数据升级时补齐；项目写入中显式给出的 `slideshow` 必须是完整对象，不由客户端猜补。
 

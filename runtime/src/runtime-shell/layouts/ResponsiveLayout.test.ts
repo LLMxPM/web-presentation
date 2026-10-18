@@ -43,7 +43,16 @@ function formatMockAppConfig(appConfig: unknown): string {
   return `${title}:${menuMode}`
 }
 
-const { sidebarPropSpy, sidePreviewPropSpy, bottomStripPropSpy, mockMenuMode, mockPageConfig, mockNavigableRoutes } = vi.hoisted(() => ({
+const {
+  sidebarPropSpy,
+  sidePreviewPropSpy,
+  bottomStripPropSpy,
+  mockMenuMode,
+  mockPageConfig,
+  mockNavigableRoutes,
+  mockNavigationState,
+  nextPageSpy,
+} = vi.hoisted(() => ({
   sidebarPropSpy: vi.fn(),
   sidePreviewPropSpy: vi.fn(),
   bottomStripPropSpy: vi.fn(),
@@ -61,6 +70,10 @@ const { sidebarPropSpy, sidePreviewPropSpy, bottomStripPropSpy, mockMenuMode, mo
   mockNavigableRoutes: {
     value: [] as Array<{ path: string; name: string; pageNumber: number }>,
   },
+  mockNavigationState: {
+    value: { canGoNext: false, canGoPrevious: false },
+  },
+  nextPageSpy: vi.fn(),
 }))
 
 vi.mock('@/core/utils/config', async () => {
@@ -271,10 +284,10 @@ vi.mock('@/core/composables/usePageNavigation', async () => {
     usePageNavigation: () => ({
       previousPage: computed(() => null),
       nextPage: computed(() => null),
-      canGoPrevious: computed(() => false),
-      canGoNext: computed(() => false),
+      canGoPrevious: computed(() => mockNavigationState.value.canGoPrevious),
+      canGoNext: computed(() => mockNavigationState.value.canGoNext),
       goToPreviousPage: vi.fn(),
-      goToNextPage: vi.fn(),
+      goToNextPage: nextPageSpy,
       getPageTitle: vi.fn(() => '测试页面'),
       getAllNavigableRoutes: vi.fn(() => mockNavigableRoutes.value),
     }),
@@ -323,6 +336,10 @@ vi.mock('@lucide/vue', async () => {
     PanelLeft: createIconStub('PanelLeftStub'),
     PanelBottom: createIconStub('PanelBottomStub'),
     LayoutGrid: createIconStub('LayoutGridStub'),
+    Timer: createIconStub('TimerStub'),
+    Hand: createIconStub('HandStub'),
+    Play: createIconStub('PlayStub'),
+    RotateCcw: createIconStub('RotateCcwStub'),
   }
 })
 
@@ -344,6 +361,8 @@ afterEach(() => {
   sidePreviewPropSpy.mockReset()
   bottomStripPropSpy.mockReset()
   mockNavigableRoutes.value = []
+  mockNavigationState.value = { canGoNext: false, canGoPrevious: false }
+  nextPageSpy.mockReset()
   localStorage.clear()
   document.body.innerHTML = ''
 })
@@ -447,7 +466,7 @@ describe('ResponsiveLayout', () => {
     app.unmount()
   })
 
-  it('底部缩略图模式进入全屏后应按侧边预览模式渲染', async () => {
+  it('进入全屏后隐藏预览导航并挂载放映控制条，退出后恢复预览', async () => {
     mockMenuMode.value = 'bottom-preview'
 
     const router = createRouter({
@@ -479,8 +498,8 @@ describe('ResponsiveLayout', () => {
 
     expect(host.querySelector('[data-testid="bottom-preview-strip-stub"]')).not.toBeNull()
     expect(host.querySelector('.canvas-navigation-buttons')).not.toBeNull()
-    expect(host.querySelector('.canvas-navigation-buttons .nav-button--canvas.nav-button--canvas-left')).not.toBeNull()
-    expect(host.querySelector('.canvas-navigation-buttons .nav-button--canvas.nav-button--canvas-right')).not.toBeNull()
+    expect(host.querySelector('button[title="进入放映"]')).not.toBeNull()
+    expect(host.querySelector('[aria-label="退出放映"]')).toBeNull()
 
     Object.defineProperty(document, 'fullscreenElement', {
       configurable: true,
@@ -490,21 +509,81 @@ describe('ResponsiveLayout', () => {
     await nextTick()
 
     expect(host.querySelector('[data-testid="bottom-preview-strip-stub"]')).toBeNull()
+    expect(host.querySelector('[data-testid="responsive-sidebar-stub"]')).toBeNull()
     expect(host.querySelector('.canvas-navigation-buttons')).toBeNull()
-    expect(host.querySelector('[data-testid="side-preview-strip-stub"]')).not.toBeNull()
-    expect(host.querySelector('.nav-button--previous')).not.toBeNull()
-    expect(host.querySelector('.nav-button--next')).not.toBeNull()
-    expect(sidePreviewPropSpy).toHaveBeenCalledWith(expect.objectContaining({
-      title: '测试标题',
-      features: expect.objectContaining({
-        menuMode: 'preview',
-      }),
-    }))
+    expect(host.querySelector('.page-navigation-buttons')).toBeNull()
+    expect(host.querySelector('.top-right-controls')).toBeNull()
+    expect(host.querySelector('.runtime-playback-controls')).not.toBeNull()
+    expect(host.querySelector('[aria-label="退出放映"]')).not.toBeNull()
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: null,
+    })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await nextTick()
+
+    expect(host.querySelector('.runtime-playback-controls')).toBeNull()
+    expect(host.querySelector('[data-testid="bottom-preview-strip-stub"]')).not.toBeNull()
+    expect(host.querySelector('button[title="进入放映"]')).not.toBeNull()
 
     app.unmount()
   })
 
-  it('点击演讲模式应打开观众窗口并进入演讲者控制台', async () => {
+  it('全屏放映时工具栏按钮聚焦仍响应方向键翻页', async () => {
+    mockMenuMode.value = 'preview'
+    mockNavigationState.value.canGoNext = true
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/',
+          component: {
+            template: '<div>route content</div>',
+          },
+        },
+      ],
+    })
+
+    await router.push('/')
+    await router.isReady()
+
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+
+    const app = createApp(ResponsiveLayout)
+    app.use(router)
+    app.config.errorHandler = (error) => {
+      throw error
+    }
+
+    app.mount(host)
+    await nextTick()
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: document.documentElement,
+    })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await nextTick()
+
+    const exitButton = host.querySelector('[aria-label="退出放映"]') as HTMLButtonElement | null
+    expect(exitButton).not.toBeNull()
+    exitButton?.focus()
+    expect(document.activeElement).toBe(exitButton)
+
+    exitButton?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    expect(nextPageSpy).not.toHaveBeenCalled()
+
+    exitButton?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await nextTick()
+    expect(nextPageSpy).toHaveBeenCalledTimes(1)
+
+    app.unmount()
+  })
+
+  it('全屏放映控制条可打开演讲模式并进入演讲者控制台', async () => {
     mockMenuMode.value = 'preview'
     mockNavigableRoutes.value = [{ path: '/', name: '首页', pageNumber: 1 }]
     const openMock = vi.spyOn(window, 'open').mockReturnValue({} as Window)
@@ -540,6 +619,13 @@ describe('ResponsiveLayout', () => {
     }
 
     app.mount(host)
+    await nextTick()
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: document.documentElement,
+    })
+    document.dispatchEvent(new Event('fullscreenchange'))
     await nextTick()
 
     const presenterButton = host.querySelector('button[title="演讲模式 (Shift+P)"]') as HTMLButtonElement | null

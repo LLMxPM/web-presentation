@@ -22,10 +22,10 @@ function createSession(router: Router) {
     bottomCollapsed: ref(false),
     suppressTransition: ref(false),
     transitionSettled: ref<TransitionSettledEvent | null>(null),
-    // 自动开始每次宿主初始化只尝试一次；卡片模式等禁用上下文同样占用该次机会。
-    autoStartAttempted: ref(false),
     // 普通放映宿主挂载时登记暂停入口；进入演讲模式先暂停，避免交接期间继续计时。
     pausePlayback: null as (() => void) | null,
+    // 进入演讲模式时读取当前放映的自动/手动模式，观众窗口继承它而不是重新读 auto_start。
+    playbackAutoAdvance: null as (() => boolean) | null,
   }
 }
 

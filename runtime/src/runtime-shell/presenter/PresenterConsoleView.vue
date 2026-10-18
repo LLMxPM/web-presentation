@@ -86,32 +86,15 @@
               <PresenterPlaybackPanel
                 :playback="remotePlayback"
                 :display-available="displayAvailable"
+                :can-go-previous="canGoPrevious"
+                :can-go-next="canGoNext"
+                :page-label="`${currentPage.pageNumber} / ${pages.length}`"
                 @command="handlePlaybackCommand"
+                @previous="goPrevious"
+                @next="handleTransportNext"
+                @auto="handleAutoAdvanceCommand"
               />
               <PresenterTimerPanel :current-path="currentPath" />
-              <nav class="presenter-console__page-controls" aria-label="演讲翻页">
-                <button
-                  type="button"
-                  class="presenter-console__page-button"
-                  :disabled="!canGoPrevious"
-                  @click="goPrevious"
-                >
-                  <ChevronLeft class="h-4 w-4" />
-                  <span>上一页</span>
-                </button>
-                <div class="presenter-console__page-indicator">
-                  {{ currentPage.pageNumber }} / {{ pages.length }}
-                </div>
-                <button
-                  type="button"
-                  class="presenter-console__page-button presenter-console__page-button--primary"
-                  :disabled="!canGoNext"
-                  @click="goNext"
-                >
-                  <span>下一页</span>
-                  <ChevronRight class="h-4 w-4" />
-                </button>
-              </nav>
             </div>
           </section>
         </aside>
@@ -144,9 +127,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
-import { getRuntimeSession, switchRuntimeMode } from '@/core/router/runtime-session'
-import { ChevronLeft, ChevronRight, LogOut, Monitor } from '@lucide/vue'
-
+import { switchRuntimeMode } from '@/core/router/runtime-session'
+import { LogOut, Monitor } from '@lucide/vue'
 import ViewPreview from '@/runtime-shell/preview/ViewPreview.vue'
 import PresenterPageGrid from '@/runtime-shell/presenter/PresenterPageGrid.vue'
 import PresenterPlaybackPanel from '@/runtime-shell/presenter/PresenterPlaybackPanel.vue'
@@ -190,6 +172,15 @@ const {
   role: 'console',
   channelId: channelId.value,
   initialPath: initialPath.value,
+})
+
+const remotePlaybackState = computed(() => {
+  const message = remotePlayback.value?.message
+  return message && 'playback' in message ? message.playback.state : null
+})
+const remoteAutoAdvance = computed(() => {
+  const message = remotePlayback.value?.message
+  return message && 'playback' in message ? message.playback.autoAdvanceEnabled : false
 })
 
 const displayStatusLabel = computed(() => {
@@ -240,8 +231,6 @@ function openDisplayWindow(): void {
  */
 function exitPresenterMode(): void {
   postClose()
-  // 退出演讲回到普通窗口时保持暂停，避免 auto_start 立即重新推进。
-  getRuntimeSession(router).autoStartAttempted.value = true
   void switchRuntimeMode(router, 'normal')
 }
 
@@ -254,17 +243,43 @@ function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction): void
 }
 
 /**
- * 处理控制台快捷键。
+ * 传输栏翻页：失败态让观众窗口跳过当前页，其余情况发送普通页面导航。
+ */
+function handleTransportNext(): void {
+  if (remotePlaybackState.value === 'error' || remotePlaybackState.value === 'blocked') {
+    sendPlaybackCommand('next')
+    return
+  }
+  goNext()
+}
+
+/**
+ * 切换观众窗口的自动/手动推进。
+ * @param enabled 目标状态
+ */
+function handleAutoAdvanceCommand(enabled: boolean): void {
+  sendPlaybackCommand('set-auto-advance', enabled)
+}
+
+/**
+ * 处理控制台快捷键：空格切换自动/手动，方向键翻页。
  * @param event 键盘事件
  */
 function handleKeydown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null
-  if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) {
+  if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA'
+    || target?.tagName === 'BUTTON' || target?.tagName === 'SELECT'
+    || target?.isContentEditable) {
     return
   }
-  if (event.key === 'PageDown' || event.key === 'ArrowRight' || event.key === ' ') {
+  if (event.key === ' ') {
     event.preventDefault()
-    goNext()
+    handleAutoAdvanceCommand(!remoteAutoAdvance.value)
+    return
+  }
+  if (event.key === 'PageDown' || event.key === 'ArrowRight') {
+    event.preventDefault()
+    handleTransportNext()
     return
   }
   if (event.key === 'PageUp' || event.key === 'ArrowLeft') {
@@ -489,48 +504,5 @@ onUnmounted(() => {
   color: #92400e;
   font-size: 0.8125rem;
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
-}
-
-.presenter-console__page-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.presenter-console__page-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  min-width: 5.25rem;
-  height: 2rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 0.5rem;
-  background: white;
-  color: #334155;
-  font-size: 0.75rem;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.presenter-console__page-button--primary {
-  border-color: #4338ca;
-  background: #4f46e5;
-  color: white;
-}
-
-.presenter-console__page-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
-
-.presenter-console__page-indicator {
-  min-width: 3.25rem;
-  color: #475569;
-  font-size: 0.75rem;
-  font-weight: 800;
-  text-align: center;
 }
 </style>

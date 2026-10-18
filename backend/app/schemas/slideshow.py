@@ -96,7 +96,7 @@ class SlideshowSettings(BaseModel):
     transition: SlideshowTransition = Field(description="项目默认翻页动画。")
     advance: SlideshowAdvance = Field(description="项目默认翻页推进设置。")
     loop: StrictBool = Field(description="自动到达末页后是否回到第一个可放映叶子页。")
-    auto_start: StrictBool = Field(description="正常放映宿主就绪后是否尝试自动开始。")
+    auto_start: StrictBool = Field(description="进入全屏放映时的初始自动推进模式；运行中可切换，不写回配置。")
 
 
 def default_slideshow_settings() -> SlideshowSettings:

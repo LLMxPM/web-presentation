@@ -41,14 +41,23 @@ export function buildPresenterWindowUrls(currentPath: string): PresenterWindowUr
  * @param routePath 内部路由路径
  * @param channelId 通信频道 ID
  * @param currentPath 初始页面路径
+ * @param autoAdvance 观众窗口继承的自动/手动模式；控制台不传
  * @returns 可由 window.open 打开的完整 URL
  */
-export function buildPresenterRouteUrl(routePath: string, channelId: string, currentPath: string): string {
+export function buildPresenterRouteUrl(
+  routePath: string,
+  channelId: string,
+  currentPath: string,
+  autoAdvance?: boolean,
+): string {
   const url = new URL(window.location.href)
   const params = new URLSearchParams({
     channel: channelId,
     runtimeMode: routePath === PRESENTER_DISPLAY_ROUTE ? 'display' : 'presenter',
   })
+  if (routePath === PRESENTER_DISPLAY_ROUTE && autoAdvance !== undefined) {
+    params.set('auto', autoAdvance ? '1' : '0')
+  }
   url.hash = `${normalizePresenterRoutePath(currentPath)}?${params.toString()}`
   return url.toString()
 }

@@ -84,6 +84,7 @@
       <template v-if="overrideAdvance && advanceMode === 'media_end'">
         <p class="mt-2 text-xs text-text-disabled">
           播放当前页的非循环音视频，全部结束后翻页；没有可等待媒体时按停留时长翻页。循环背景媒体不参与等待。
+          切换到手动模式时媒体继续播放，但不会自动翻页。
         </p>
         <p class="mt-1 text-xs text-text-disabled">
           若浏览器阻止自动播放，放映窗口会显示受阻提示，可点“重试”恢复或使用“下一页”继续。

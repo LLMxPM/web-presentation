@@ -62,7 +62,7 @@ interface PresenterControllerOptions {
   /** 本地时钟注入点，跨窗口只比较本地到达时间。 */
   now?: () => number
   /** 观众窗口处理控制台命令；控制台不提供该回调。 */
-  onPlaybackCommand?: (action: PresenterSyncPlaybackCommandAction) => void
+  onPlaybackCommand?: (action: PresenterSyncPlaybackCommandAction, autoAdvance?: boolean) => void
 }
 
 const TILE_SIZE_STORAGE_KEY = 'web-presentation.presenter.tileSize'
@@ -111,7 +111,8 @@ export function usePresenterController(options: PresenterControllerOptions) {
     remainingMs: number
     delayMs: number | null
     waitingForMedia: boolean
-  }>({ state: 'stopped', remainingMs: 0, delayMs: null, waitingForMedia: false })
+    autoAdvanceEnabled: boolean
+  }>({ state: 'stopped', remainingMs: 0, delayMs: null, waitingForMedia: false, autoAdvanceEnabled: false })
   // 观众窗口先于控制台加载时，ready 已错过；收到控制台状态后补一次身份与状态回执。
   const acknowledgedConsoleSources = new Set<string>()
   let channel: BroadcastChannel | null = null
@@ -132,11 +133,10 @@ export function usePresenterController(options: PresenterControllerOptions) {
     index: currentIndex.value,
     total: pages.value.length,
   }))
-  /** 观众窗口已连接才允许发送放映命令；关闭后保持暂停并等待重新打开。 */
+  /** 观众窗口全屏后才算可放映；窗口化时控制台显示等待并禁用命令。 */
   const displayAvailable = computed(() => {
-    return displayStatus.value.state === 'connected'
-      || displayStatus.value.state === 'windowed'
-      || displayStatus.value.state === 'fullscreen'
+    return displayStatus.value.isFullscreen
+      && (displayStatus.value.state === 'connected' || displayStatus.value.state === 'fullscreen')
   })
 
   /**
@@ -144,13 +144,17 @@ export function usePresenterController(options: PresenterControllerOptions) {
    * @param value 放映状态片段
    */
   function updatePlayback(
-    value: Partial<Pick<PresenterSyncPlaybackSnapshot, 'state' | 'remainingMs' | 'delayMs' | 'waitingForMedia'>>,
+    value: Partial<Pick<
+      PresenterSyncPlaybackSnapshot,
+      'state' | 'remainingMs' | 'delayMs' | 'waitingForMedia' | 'autoAdvanceEnabled'
+    >>,
   ): void {
     playbackValues.value = {
       state: value.state ?? playbackValues.value.state,
       remainingMs: Math.max(0, value.remainingMs ?? playbackValues.value.remainingMs),
       delayMs: value.delayMs === undefined ? playbackValues.value.delayMs : value.delayMs,
       waitingForMedia: value.waitingForMedia ?? playbackValues.value.waitingForMedia,
+      autoAdvanceEnabled: value.autoAdvanceEnabled ?? playbackValues.value.autoAdvanceEnabled,
     }
   }
 
@@ -229,12 +233,17 @@ export function usePresenterController(options: PresenterControllerOptions) {
   /**
    * 控制台向当前观众 owner 发送放映命令；没有已连接观众时拒绝发送。
    * @param action 命令动作
+   * @param autoAdvance set-auto-advance 的目标状态
    */
-  function sendPlaybackCommand(action: PresenterSyncPlaybackCommandAction): boolean {
+  function sendPlaybackCommand(
+    action: PresenterSyncPlaybackCommandAction,
+    autoAdvance?: boolean,
+  ): boolean {
     if (options.role !== 'console' || activeDisplayOwnerEpoch.value === null) return false
     postMessage({
       type: 'playback-command',
       action,
+      ...(action === 'set-auto-advance' ? { autoAdvance: Boolean(autoAdvance) } : {}),
       targetOwnerEpoch: activeDisplayOwnerEpoch.value,
     }, nextCommandId())
     return true
@@ -301,7 +310,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
     }
     if (message.type === 'playback-command' && options.role === 'display' && message.role === 'console') {
       if (!isPresenterMessageForOwner(message, identity.ownerEpoch)) return
-      options.onPlaybackCommand?.(message.action)
+      options.onPlaybackCommand?.(message.action, message.autoAdvance)
       return
     }
     if (message.type === 'ready' && options.role === 'console' && message.role === 'display') {
@@ -644,11 +653,13 @@ function buildPresenterEventStorageKey(channelId: string): string {
  * 写入演讲模式入口的初始导航状态，供观众页先于控制台加载时兜底读取。
  * @param channelId 通信频道 ID
  * @param currentPath 当前演讲页路径
+ * @param autoAdvance 观众窗口继承的初始自动/手动模式
  * @param artifactIdentity 产物身份；默认读取当前 Runtime 产物
  */
 export function writePresenterInitialNavigateMessage(
   channelId: string,
   currentPath: string,
+  autoAdvance = false,
   artifactIdentity = resolvePresenterArtifactIdentity(),
 ): void {
   if (!channelId || !isPresenterStorageSupported()) {
@@ -675,6 +686,7 @@ export function writePresenterInitialNavigateMessage(
         remainingMs: 0,
         delayMs: null,
         waitingForMedia: false,
+        autoAdvanceEnabled: autoAdvance,
         index: 0,
         total: 0,
       },

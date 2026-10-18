@@ -13,7 +13,7 @@
 
 - 配置驱动的 PPT/演示页面渲染
 - `app.config.yaml` 驱动的页面画布尺寸（`app.page.width` / `app.page.height`）
-- 目录导航、翻页、全屏放映
+- 目录导航、翻页、全屏放映（非全屏为预览，全屏为放映）
 - 主题与图标配置加载
 - Runtime Kit 基础组件清单（`src/runtime-kit/manifest/runtime-kit.manifest.json`）：清单项使用 `base_name + version_no + name` 描述能力版本，`name` 形如 `Icon.v1`，不兼容演进新增 v2/v3 文件。
 - PDF 导出
@@ -71,7 +71,7 @@ docker run --rm -p 7373:7373 --env-file ../deploy/runtime.env.example web-runtim
 
 ### 6. Backend build release
 
-Backend 触发整项目构建时，Runtime 会使用专用的 `build-release-main` 入口和 manifest 生成的页面模块映射。构建产物保留演示外壳能力，包括导航、翻页、全屏、侧栏/缩略图与 PDF 导出；组件预览宿主、资源预览宿主、Standalone 单页预览、本地 examples/fixture 页面和默认 Runtime Shell 静态示例资源不会进入 build release 依赖图。
+Backend 触发整项目构建时，Runtime 会使用专用的 `build-release-main` 入口和 manifest 生成的页面模块映射。构建产物保留演示外壳能力，包括导航、翻页、全屏放映、侧栏/缩略图与 PDF 导出；进入全屏放映后隐藏预览导航，只保留画布和放映控制条。组件预览宿主、资源预览宿主、Standalone 单页预览、本地 examples/fixture 页面和默认 Runtime Shell 静态示例资源不会进入 build release 依赖图。
 
 ### 7. 页面可视化编辑 v1（平台内部）
 

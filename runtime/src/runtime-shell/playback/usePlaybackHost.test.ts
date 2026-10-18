@@ -21,6 +21,9 @@ vi.mock('@/core/utils/visual-assets', () => ({ waitForEditorVisualAssets: waitFo
 
 const READY = { ok: true, timedOut: false, total: 0, loaded: 0, failed: [], pending: [], waitedMs: 0 }
 
+// 测试宿主默认沿用预载配置的 auto_start；显式传参优先，便于验证手动启动与初始模式。
+let configuredAutoStart = false
+
 interface FakeWakeLockSentinel {
   released: boolean
   release: ReturnType<typeof vi.fn>
@@ -71,6 +74,7 @@ function preloadPlaybackConfig(options: {
   delays?: Record<string, number>
   advances?: Record<string, { mode: 'manual' | 'timer' | 'media_end'; delayMs: number; mediaTimeoutMs?: number }>
 } = {}) {
+  configuredAutoStart = options.autoStart ?? false
   const delays = options.delays ?? { '/a': 1000, '/b': 2000 }
   const route = (name: string, order: number, hidden = false) => ({
     route: name.slice(1),
@@ -159,7 +163,7 @@ function mountPlaybackHost(router: ReturnType<typeof makeRouter>, options?: Play
   let host: PlaybackHost | undefined
   const Root = defineComponent({
     setup() {
-      host = usePlaybackHost(options)
+      host = usePlaybackHost(options ?? { autoStart: configuredAutoStart })
       return () => h('div')
     },
   })
@@ -261,6 +265,38 @@ describe('usePlaybackHost 自动开始与就绪', () => {
     session.transitionSettled.value = { path: '/a', generation: 1 }
     await flushAsync()
     expect(host.snapshot.value?.state).toBe('playing')
+    app.unmount()
+  })
+
+  it('手动会话切换自动后按当前页重新计时', async () => {
+    preloadPlaybackConfig({ autoStart: true })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router, { autoStart: true, initialAutoAdvance: false })
+    const session = getRuntimeSession(router)
+
+    await flushAsync()
+    expect(host.snapshot.value).toMatchObject({ state: 'preparing', autoAdvanceEnabled: false })
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value).toMatchObject({
+      state: 'playing',
+      autoAdvanceEnabled: false,
+      effectiveAdvanceMode: 'manual',
+      remainingMs: 0,
+    })
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(router.currentRoute.value.path).toBe('/a')
+
+    expect(host.setAutoAdvance(true)).toBe(true)
+    expect(host.setAutoAdvance(true)).toBe(false)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(router.currentRoute.value.path).toBe('/a')
+    await vi.advanceTimersByTimeAsync(1)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
     app.unmount()
   })
 
@@ -376,7 +412,7 @@ describe('usePlaybackHost 自动开始与就绪', () => {
     app.unmount()
   })
 
-  it('同一 Router 会话重新挂载不会再次自动开始', async () => {
+  it('同一 Router 会话重新挂载会开始新一轮放映', async () => {
     preloadPlaybackConfig({ autoStart: true })
     await reloadAllConfigs()
     const router = makeRouter()
@@ -384,12 +420,12 @@ describe('usePlaybackHost 自动开始与就绪', () => {
     await router.isReady()
     const first = mountPlaybackHost(router)
     await flushAsync()
+    expect(first.host.snapshot.value?.state).toBe('preparing')
     first.app.unmount()
 
     const second = mountPlaybackHost(router)
     await flushAsync()
-    expect(second.host.snapshot.value?.state).toBe('stopped')
-    expect(waitForAssets).not.toHaveBeenCalled()
+    expect(second.host.snapshot.value).toMatchObject({ state: 'preparing', path: '/a' })
     second.app.unmount()
   })
 })
@@ -627,7 +663,7 @@ describe('usePlaybackHost 可见性与快捷键', () => {
     app.unmount()
   })
 
-  it('空格切换开始/暂停/继续并阻止布局层重复翻页', async () => {
+  it('空格切换自动/手动并阻止布局层重复翻页', async () => {
     const router = makeRouter()
     await router.push('/a')
     await router.isReady()
@@ -651,11 +687,11 @@ describe('usePlaybackHost 可见性与快捷键', () => {
     expect(host.snapshot.value?.state).toBe('playing')
 
     expect(pressSpace().defaultPrevented).toBe(true)
-    expect(host.snapshot.value?.state).toBe('paused')
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', autoAdvanceEnabled: false })
     expect(layoutShortcuts).toBe(0)
 
     expect(pressSpace().defaultPrevented).toBe(true)
-    expect(host.snapshot.value?.state).toBe('playing')
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', autoAdvanceEnabled: true })
     expect(layoutShortcuts).toBe(0)
 
     app.unmount()
@@ -762,7 +798,6 @@ describe('usePlaybackHost 可见性与快捷键', () => {
     expect(host.snapshot.value).toBeNull()
     expect(host.start()).toBe(false)
     expect(waitForAssets).not.toHaveBeenCalled()
-    expect(getRuntimeSession(router).autoStartAttempted.value).toBe(true)
     app.unmount()
   })
 })

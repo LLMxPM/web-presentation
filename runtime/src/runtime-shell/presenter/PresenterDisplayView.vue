@@ -90,6 +90,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
+import { playbackConfig } from '@/core/utils/config'
 
 import { usePlaybackHost } from '@/runtime-shell/playback/usePlaybackHost'
 import PresenterPageStage from './PresenterPageStage.vue'
@@ -143,11 +144,13 @@ const screenOptions = ref<PresenterScreenOption[]>([])
 const fullscreenMessage = ref('')
 const shouldShowFullscreenPrompt = computed(() => !isInFullscreen.value && !isFullscreenPromptDismissed.value)
 const isScreenDetectionSupported = computed(() => typeof getScreenDetailsApi() === 'function')
+const autoParam = route.query.auto
+const initialAutoAdvance = autoParam === '1'
+  ? true
+  : autoParam === '0' ? false : playbackConfig.value.autoStart
 
 const {
   currentPage,
-  goPrevious,
-  goNext,
   postDisplayStatus,
   updatePlayback,
   postPlaybackState,
@@ -167,17 +170,25 @@ const {
   stop: stopPlayback,
   retry: retryPlayback,
   next: nextPlayback,
-} = usePlaybackHost({ autoStart: false })
+  setAutoAdvance: setPlaybackAutoAdvance,
+} = usePlaybackHost({ autoStart: false, initialAutoAdvance })
 
 watch(playbackSnapshot, snapshot => {
   if (!snapshot) {
-    updatePlayback({ state: 'stopped', remainingMs: 0, delayMs: null, waitingForMedia: false })
+    updatePlayback({
+      state: 'stopped',
+      remainingMs: 0,
+      delayMs: null,
+      waitingForMedia: false,
+      autoAdvanceEnabled: initialAutoAdvance,
+    })
   } else {
     updatePlayback({
       state: snapshot.state,
       remainingMs: snapshot.remainingMs,
       delayMs: snapshot.delayMs,
       waitingForMedia: snapshot.waitingForMedia,
+      autoAdvanceEnabled: snapshot.autoAdvanceEnabled,
     })
   }
   postPlaybackState()
@@ -185,9 +196,16 @@ watch(playbackSnapshot, snapshot => {
 
 /**
  * 执行控制台命令；观众窗口是双窗口中的唯一调度者。
+ * 未全屏时拒绝开始/继续，避免窗口化放映。
  * @param action 控制台命令动作
+ * @param autoAdvance set-auto-advance 的目标状态
  */
-function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction): void {
+function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction, autoAdvance?: boolean): void {
+  if ((action === 'start' || action === 'resume') && !isInFullscreen.value) {
+    fullscreenMessage.value = '请先在观众窗口进入全屏，再从控制台开始放映。'
+    postDisplayStatus('windowed', false)
+    return
+  }
   switch (action) {
     case 'start':
       startPlayback()
@@ -206,6 +224,9 @@ function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction): void
       break
     case 'next':
       nextPlayback()
+      break
+    case 'set-auto-advance':
+      setPlaybackAutoAdvance(Boolean(autoAdvance))
       break
   }
 }
@@ -358,70 +379,40 @@ function isSameDetailedScreen(left: PresenterDetailedScreen, right: PresenterDet
     && left.availHeight === right.availHeight
 }
 
+/**
+ * 同步观众窗口全屏状态。
+ * 进入全屏才启动放映；退出全屏立即暂停并恢复全屏提示。
+ */
 function updateFullscreenState(): void {
-  isInFullscreen.value = Boolean(document.fullscreenElement)
-  if (isInFullscreen.value) {
+  const element = document.fullscreenElement
+  // 页面内元素（视频等）全屏不改变观众窗口接管状态。
+  if (element && element !== document.documentElement) return
+  const next = element === document.documentElement
+  const wasFullscreen = isInFullscreen.value
+  isInFullscreen.value = next
+  if (next) {
     isFullscreenPromptDismissed.value = true
     fullscreenMessage.value = ''
+    const state = playbackSnapshot.value?.state
+    if (!wasFullscreen && (!state || state === 'stopped' || state === 'ended')) startPlayback()
   } else {
     isFullscreenPromptDismissed.value = false
+    const state = playbackSnapshot.value?.state
+    if (state === 'playing' || state === 'preparing') pausePlayback()
   }
-  postDisplayStatus(isInFullscreen.value ? 'fullscreen' : 'windowed', isInFullscreen.value)
-}
-
-/**
- * 处理浏览器级全屏快捷键。
- * @param event 键盘事件
- */
-function handleKeydown(event: KeyboardEvent): void {
-  if (event.key === 'F11') {
-    isFullscreenPromptDismissed.value = true
-    fullscreenMessage.value = ''
-    return
-  }
-
-  if (isKeyboardTargetInteractive(event.target)) {
-    return
-  }
-
-  if (event.key === 'PageDown' || event.key === 'ArrowRight' || event.key === ' ') {
-    event.preventDefault()
-    goNext()
-    return
-  }
-  if (event.key === 'PageUp' || event.key === 'ArrowLeft') {
-    event.preventDefault()
-    goPrevious()
-  }
-}
-
-/**
- * 判断键盘事件目标是否应保留原生交互。
- * @param target 事件目标
- * @returns 是否为输入或按钮类交互元素
- */
-function isKeyboardTargetInteractive(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false
-  }
-  return target.tagName === 'INPUT'
-    || target.tagName === 'TEXTAREA'
-    || target.tagName === 'BUTTON'
-    || target.isContentEditable
+  postDisplayStatus(next ? 'fullscreen' : 'windowed', next)
 }
 
 onMounted(() => {
   updateFullscreenState()
   // 通道在控制器 onMounted 中建立；此后再上报初始停止状态。
   postPlaybackState()
-  document.addEventListener('keydown', handleKeydown)
   document.addEventListener('fullscreenchange', updateFullscreenState)
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 onUnmounted(() => {
   postDisplayStatus('closed', false)
-  document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('fullscreenchange', updateFullscreenState)
   window.removeEventListener('beforeunload', handleBeforeUnload)
 })

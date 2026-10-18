@@ -62,6 +62,7 @@ function createController(options: {
   pages?: PlaybackPage[]
   loop?: boolean
   initialPath?: string
+  autoAdvance?: boolean
   navigate?: (path: string) => void | Promise<void>
 } = {}) {
   const clock = new ManualClock()
@@ -70,6 +71,7 @@ function createController(options: {
     pages: options.pages ?? TIMER_PAGES,
     loop: options.loop,
     initialPath: options.initialPath ?? '/one',
+    autoAdvance: options.autoAdvance,
     clock,
     navigate: options.navigate ?? (path => { navigations.push(path) }),
   })
@@ -472,6 +474,103 @@ describe('PlaybackController 媒体结束翻页', () => {
     })
     expect(looped.clock.pending).toBe(1)
     expect(looped.navigations).toEqual([])
+  })
+})
+
+describe('PlaybackController 自动/手动切换', () => {
+  const PAGES: PlaybackPage[] = [
+    { path: '/one', advance: { mode: 'timer', delayMs: 5000 } },
+    { path: '/two', advance: { mode: 'timer', delayMs: 7000 } },
+  ]
+  const MEDIA_PAGES: PlaybackPage[] = [
+    { path: '/media', advance: { mode: 'media_end', delayMs: 2000, mediaTimeoutMs: 5000 } },
+    { path: '/next', advance: { mode: 'manual', delayMs: 5000 } },
+  ]
+
+  it('以手动会话启动时不计时，切换自动后从完整周期开始', () => {
+    const { clock, navigations, controller } = createController({ pages: PAGES, autoAdvance: false })
+    startReady(controller)
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'playing',
+      autoAdvanceEnabled: false,
+      effectiveAdvanceMode: 'manual',
+      remainingMs: 0,
+      delayMs: null,
+    })
+    expect(clock.pending).toBe(0)
+    clock.advance(60_000)
+    expect(navigations).toEqual([])
+
+    expect(controller.setAutoAdvance(true)).toBe(true)
+    expect(controller.setAutoAdvance(true)).toBe(false)
+    expect(controller.getSnapshot()).toMatchObject({ effectiveAdvanceMode: 'timer', remainingMs: 5000 })
+    expect(clock.pending).toBe(1)
+    clock.advance(4_999)
+    expect(navigations).toEqual([])
+    clock.advance(1)
+    expect(navigations).toEqual(['/two'])
+  })
+
+  it('自动切换到手动取消计时但保持媒体，手动期间媒体结束不翻页', () => {
+    const { clock, navigations, controller } = createController({ pages: MEDIA_PAGES })
+    const generation = startReady(controller, '/media', 1)
+    expect(clock.pending).toBe(1)
+
+    expect(controller.setAutoAdvance(false)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'playing',
+      waitingForMedia: true,
+      effectiveAdvanceMode: 'manual',
+      remainingMs: 0,
+    })
+    expect(clock.pending).toBe(0)
+
+    expect(controller.reportMediaEnded('/media', generation)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'playing', waitingForMedia: false })
+    expect(navigations).toEqual([])
+
+    expect(controller.setAutoAdvance(true)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ effectiveAdvanceMode: 'media_end', remainingMs: 2000 })
+    expect(clock.pending).toBe(1)
+    clock.advance(2_000)
+    expect(navigations).toEqual(['/next'])
+  })
+
+  it('手动配置页在自动会话中仍保持手动', () => {
+    const pages: PlaybackPage[] = [{ path: '/manual', advance: { mode: 'manual', delayMs: 5000 } }]
+    const { clock, navigations, controller } = createController({ pages, autoAdvance: false })
+    startReady(controller)
+    expect(controller.setAutoAdvance(true)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({
+      advanceMode: 'manual',
+      effectiveAdvanceMode: 'manual',
+      remainingMs: 0,
+    })
+    expect(clock.pending).toBe(0)
+    clock.advance(60_000)
+    expect(navigations).toEqual([])
+  })
+
+  it('暂停时关闭自动清空剩余时间，重新开启后按完整周期恢复', () => {
+    const { clock, navigations, controller } = createController({ pages: PAGES })
+    startReady(controller)
+    clock.advance(1_000)
+    expect(controller.pause()).toBe(true)
+    expect(controller.setAutoAdvance(false)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'paused', remainingMs: 0 })
+
+    expect(controller.resume()).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'playing', remainingMs: 0 })
+    expect(clock.pending).toBe(0)
+    clock.advance(60_000)
+    expect(navigations).toEqual([])
+
+    expect(controller.pause()).toBe(true)
+    expect(controller.setAutoAdvance(true)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'paused', remainingMs: 5000 })
+    expect(controller.resume()).toBe(true)
+    clock.advance(5_000)
+    expect(navigations).toEqual(['/two'])
   })
 })
 

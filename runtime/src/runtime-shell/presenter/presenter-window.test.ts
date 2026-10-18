@@ -54,6 +54,16 @@ describe('presenter-window', () => {
     expect(openMock.mock.calls[0][1]).toBe('web-presentation-presenter-display-channel-direct')
   })
 
+  it('观众窗口 URL 携带进入演讲时继承的自动/手动模式', () => {
+    window.history.replaceState(null, '', '/preview/artifacts/artifact-1?token=abc#/intro')
+    const windowRef = createWindowRef()
+    const openMock = vi.spyOn(window, 'open').mockReturnValue(windowRef)
+
+    openPresenterDisplayWindow('channel-auto', '/intro', true)
+
+    expect(String(openMock.mock.calls[0][0])).toContain('runtimeMode=display&auto=1')
+  })
+
   it('窗口特性应包含当前屏幕可用尺寸', () => {
     const features = buildPresenterDisplayWindowFeatures()
 

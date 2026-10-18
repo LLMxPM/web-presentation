@@ -6,13 +6,15 @@
   <div
     class="responsive-layout" v-bind="executionAttrs"
     :class="{ 'responsive-layout--fullscreen': isFullscreen }" :style="layoutStyles">
-    <PlaybackHostBridge />
+    <PlaybackHostBridge
+      v-if="isFullscreen"
+      :initial-auto-advance="playbackAutoStart"
+      :presenter-available="shouldShowPresenterButton"
+      @presenter="openPresenterMode"
+      @exit="exitSlideshow"
+    />
     <!-- 响应式侧边栏 -->
-    <div
-v-if="isSidebarMenuVisible" class="sidebar-wrapper" :class="{
-      'sidebar-wrapper--fullscreen': isFullscreen,
-      'sidebar-wrapper--fullscreen-hover': isFullscreen && isSidebarHovered
-    }" @mouseenter="handleSidebarMouseEnter" @mouseleave="handleSidebarMouseLeave">
+    <div v-if="isSidebarMenuVisible" class="sidebar-wrapper">
       <ResponsiveSidebar
 v-if="effectiveMenuMode === 'text'" :navigation-items="processedNavigationItems"
         :app-config="sidebarAppConfig" @collapse-change="handleCollapseChange" />
@@ -21,16 +23,6 @@ v-else-if="effectiveMenuMode === 'preview'" :navigation-items="processedNavigati
         :app-config="sidebarAppConfig" @collapse-change="handleCollapseChange" />
     </div>
 
-    <!-- 全屏模式下的左侧悬停触发区域 -->
-    <div
-v-if="isFullscreen && isSidebarMenuVisible" class="fullscreen-sidebar-trigger"
-      @mouseenter="handleSidebarMouseEnter" @mouseleave="handleSidebarMouseLeave"></div>
-
-    <!-- 全屏模式下的底栏悬停触发区域 -->
-    <div
-v-if="isFullscreen && isBottomPreviewMode" class="fullscreen-bottom-preview-trigger"
-      @mouseenter="handleBottomPreviewMouseEnter" @mouseleave="handleBottomPreviewMouseLeave"></div>
-
     <!-- 主内容区域 -->
     <main
 class="main-content" :class="{
@@ -38,67 +30,36 @@ class="main-content" :class="{
       'main-content--fullscreen': isFullscreen,
       'main-content--bottom-preview': isBottomPreviewMode
     }" :style="mainContentStyles">
-      <!-- 全屏模式下的右上角悬停触发区域 -->
-      <div
-v-if="isFullscreen" class="fullscreen-button-trigger" @mouseenter="handleFullscreenButtonMouseEnter"
-        @mouseleave="handleFullscreenButtonMouseLeave"></div>
-
-      <div
-class="top-right-controls" :class="{
-        'top-right-controls--fullscreen': isFullscreen,
-        'top-right-controls--visible': isTopRightControlsVisible
-      }" @mouseenter="handleFullscreenButtonMouseEnter" @mouseleave="handleFullscreenButtonMouseLeave">
-        <!-- 全屏切换按钮 -->
-        <button
-class="fullscreen-button" :class="{
-          'fullscreen-button--fullscreen': isFullscreen
-        }" :title="isFullscreen ? '退出全屏' : '进入全屏'" @click.stop="toggleFullscreen">
-          <Minimize2 v-if="isFullscreen" :size="20" />
-          <Maximize2 v-else :size="20" />
+      <div v-if="!isFullscreen" class="top-right-controls">
+        <!-- 进入放映：全屏即放映 -->
+        <button class="fullscreen-button" title="进入放映" @click.stop="enterSlideshow">
+          <Maximize2 :size="20" />
         </button>
       </div>
 
-      <!-- 页面导航按钮 -->
+      <!-- 页面导航按钮（仅预览态） -->
       <div
-v-if="shouldShowTopRightPageControls || canTogglePreviewMenuMode" class="page-navigation-buttons" :class="{
-        'page-navigation-buttons--fullscreen': isFullscreen,
-        'page-navigation-buttons--visible': isTopRightControlsVisible
-      }" @mouseenter="handleFullscreenButtonMouseEnter" @mouseleave="handleFullscreenButtonMouseLeave">
+v-if="!isFullscreen && (shouldShowTopRightPageControls || canTogglePreviewMenuMode)"
+        class="page-navigation-buttons">
         <!-- 预览模式切换按钮 -->
         <button
 v-if="canTogglePreviewMenuMode" class="nav-button nav-button--mode"
-          :class="{ 'nav-button--fullscreen': isFullscreen }" :title="menuModeToggleTitle" @click.stop="toggleMenuMode">
+          :title="menuModeToggleTitle" @click.stop="toggleMenuMode">
           <PanelLeft v-if="currentMenuMode === 'bottom-preview'" :size="16" />
           <PanelBottom v-else :size="16" />
         </button>
 
         <!-- PDF导出按钮 -->
         <button
-v-if="shouldShowPdfExportButton" class="nav-button nav-button--export" :class="{
-          'nav-button--fullscreen': isFullscreen
-        }" title="导出" @click.stop="showExportDialog">
+v-if="shouldShowPdfExportButton" class="nav-button nav-button--export"
+          title="导出" @click.stop="showExportDialog">
           <FileDown :size="16" />
-        </button>
-
-        <!-- 演讲模式按钮 -->
-        <button
-          v-if="shouldShowPresenterButton"
-          class="nav-button nav-button--presenter"
-          :class="{ 'nav-button--fullscreen': isFullscreen }"
-          title="演讲模式 (Shift+P)"
-          @click.stop="openPresenterMode"
-        >
-          <Monitor :size="16" />
         </button>
 
         <!-- 卡片模式按钮 -->
         <button
-          v-if="shouldShowCardModeButton"
-          class="nav-button nav-button--cards"
-          :class="{ 'nav-button--fullscreen': isFullscreen }"
-          title="卡片模式"
-          @click.stop="openCardMode"
-        >
+v-if="shouldShowCardModeButton" class="nav-button nav-button--cards"
+          title="卡片模式" @click.stop="openCardMode">
           <LayoutGrid :size="16" />
         </button>
 
@@ -106,8 +67,7 @@ v-if="shouldShowPdfExportButton" class="nav-button nav-button--export" :class="{
           <!-- 上一页按钮 -->
           <button
 class="nav-button nav-button--previous" :class="{
-            'nav-button--disabled': !canGoPrevious,
-            'nav-button--fullscreen': isFullscreen
+            'nav-button--disabled': !canGoPrevious
           }" :aria-disabled="!canGoPrevious" :title="canGoPrevious ? `上一页 ${getPageTitle(previousPage)}` : '当前已经是首页'"
             @click.stop="handlePreviousPageAction">
             <ChevronLeft :size="16" />
@@ -116,8 +76,7 @@ class="nav-button nav-button--previous" :class="{
           <!-- 下一页按钮 -->
           <button
 class="nav-button nav-button--next" :class="{
-            'nav-button--disabled': !canGoNext,
-            'nav-button--fullscreen': isFullscreen
+            'nav-button--disabled': !canGoNext
           }" :aria-disabled="!canGoNext" :title="canGoNext ? `下一页 ${getPageTitle(nextPage)}` : '当前已经是末页'"
             @click.stop="handleNextPageAction">
             <ChevronRightIcon :size="16" />
@@ -126,18 +85,17 @@ class="nav-button nav-button--next" :class="{
       </div>
 
       <transition name="page-boundary-hint">
-        <div v-if="pageBoundaryMessage" class="page-boundary-hint" role="status" aria-live="polite">
+        <div v-if="!isFullscreen && pageBoundaryMessage" class="page-boundary-hint" role="status" aria-live="polite">
           {{ pageBoundaryMessage }}
         </div>
       </transition>
 
       <!-- 页面内容 -->
       <div class="page-content-wrapper">
-        <div v-if="isBottomPreviewMode" class="canvas-navigation-buttons">
+        <div v-if="isBottomPreviewMode && !isFullscreen" class="canvas-navigation-buttons">
           <button
 class="nav-button nav-button--canvas nav-button--canvas-left" :class="{
-            'nav-button--disabled': !canGoPrevious,
-            'nav-button--fullscreen': isFullscreen
+            'nav-button--disabled': !canGoPrevious
           }" :style="canvasPreviousButtonStyle" :aria-disabled="!canGoPrevious"
             :title="canGoPrevious ? `上一页 ${getPageTitle(previousPage)}` : '当前已经是首页'"
             @click.stop="handlePreviousPageAction">
@@ -146,8 +104,7 @@ class="nav-button nav-button--canvas nav-button--canvas-left" :class="{
 
           <button
 class="nav-button nav-button--canvas nav-button--canvas-right" :class="{
-            'nav-button--disabled': !canGoNext,
-            'nav-button--fullscreen': isFullscreen
+            'nav-button--disabled': !canGoNext
           }" :style="canvasNextButtonStyle" :aria-disabled="!canGoNext"
             :title="canGoNext ? `下一页 ${getPageTitle(nextPage)}` : '当前已经是末页'"
             @click.stop="handleNextPageAction">
@@ -167,22 +124,20 @@ class="nav-button nav-button--canvas nav-button--canvas-right" :class="{
     </main>
 
     <div
-v-if="isBottomPreviewMode" class="bottom-preview-wrapper" :class="{
-      'bottom-preview-wrapper--collapsed': isBottomStripCollapsed,
-      'bottom-preview-wrapper--fullscreen': isFullscreen,
-      'bottom-preview-wrapper--fullscreen-hover': isFullscreen && isBottomPreviewHovered
-    }" @mouseenter="handleBottomPreviewMouseEnter" @mouseleave="handleBottomPreviewMouseLeave">
+v-if="isBottomPreviewMode && !isFullscreen" class="bottom-preview-wrapper" :class="{
+      'bottom-preview-wrapper--collapsed': isBottomStripCollapsed
+    }">
       <BottomPreviewStrip
 :collapsed="isBottomStripCollapsed" :navigation-items="processedNavigationItems"
         :page-config="pageViewport" :app-config="layoutAppConfig" @collapsed-change="handleBottomStripCollapsedChange" />
     </div>
 
     <!-- 导出对话框 -->
-    <ExportDialog v-model:visible="isExportDialogVisible" @export-error="handleExportError" />
+    <ExportDialog v-if="!isFullscreen" v-model:visible="isExportDialogVisible" @export-error="handleExportError" />
 
     <transition name="card-mode-fade">
       <CardModePanel
-        v-if="isCardModeVisible"
+        v-if="isCardModeVisible && !isFullscreen"
         :pages="cardModePages"
         :current-path="router.currentRoute.value.path"
         @close="isCardModeVisible = false"
@@ -200,12 +155,10 @@ import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execut
 import { readRuntimePreference, writeRuntimePreference } from '@/core/utils/runtime-preferences'
 import {
   Maximize2,
-  Minimize2,
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
   FileDown,
   LayoutGrid,
-  Monitor,
   PanelLeft,
   PanelBottom
 } from '@lucide/vue'
@@ -221,7 +174,7 @@ import ErrorBoundary from '@/runtime-shell/feedback/ErrorBoundary.vue'
 import { useMenu } from '@/core/composables/useMenu'
 import { usePageNavigation } from '@/core/composables/usePageNavigation'
 import { PDFExportService } from '@/core/services/PDFExportService'
-import { appConfig as runtimeAppConfig, appPageConfig, routeConfigs, type RuntimeMenuMode } from '@/core/utils/config'
+import { appConfig as runtimeAppConfig, appPageConfig, playbackConfig, routeConfigs, type RuntimeMenuMode } from '@/core/utils/config'
 import { useTheme } from '@runtime-kit/public/composables/theme/useTheme.v1'
 import {
   createPresenterChannelId,
@@ -238,10 +191,9 @@ import { openPresenterDisplayWindow } from '@/runtime-shell/presenter/presenter-
 const router = useRouter()
 const session = getRuntimeSession(router)
 const isCollapsed = session.collapsed
-const isFullscreen = ref(Boolean(document.fullscreenElement))
+// 只有根元素全屏才是放映；视频等页面内元素全屏不改变放映壳。
+const isFullscreen = ref(document.fullscreenElement === document.documentElement)
 // 缩放容器已抽取到独立组件处理窗口尺寸
-const isSidebarHovered = ref(false)
-const isFullscreenButtonHovered = ref(false)
 const isExportDialogVisible = ref(false)
 const isCardModeVisible = computed({
   get: () => session.mode.value === 'cards',
@@ -321,19 +273,14 @@ const savedMenuMode = readRuntimePreference('menuMode', configuredMenuMode.value
 const currentMenuMode = ref<RuntimeMenuMode>(['text', 'preview', 'bottom-preview'].includes(savedMenuMode) ? savedMenuMode as RuntimeMenuMode : configuredMenuMode.value)
 watch(currentMenuMode, value => writeRuntimePreference('menuMode', value))
 const isBottomStripCollapsed = session.bottomCollapsed
-const isBottomPreviewHovered = ref(false)
+
+/** 进入放映时的初始自动推进模式，来自项目 auto_start。 */
+const playbackAutoStart = computed(() => playbackConfig.value.autoStart)
 
 /**
- * 当前布局实际使用的菜单模式。
- * @returns 全屏放映时底部缩略图模式临时按侧边预览渲染，退出全屏后恢复原模式
+ * 当前布局实际使用的菜单模式；全屏放映不显示任何预览导航。
  */
-const effectiveMenuMode = computed<RuntimeMenuMode>(() => {
-  if (isFullscreen.value && currentMenuMode.value === 'bottom-preview') {
-    return 'preview'
-  }
-
-  return currentMenuMode.value
-})
+const effectiveMenuMode = computed<RuntimeMenuMode>(() => currentMenuMode.value)
 
 /**
  * 是否允许在侧栏预览与底部缩略图之间切换。
@@ -350,7 +297,9 @@ const isBottomPreviewMode = computed(() => effectiveMenuMode.value === 'bottom-p
 /**
  * 当前是否需要显示左侧边栏。
  */
-const isSidebarMenuVisible = computed(() => effectiveMenuMode.value !== 'bottom-preview')
+const isSidebarMenuVisible = computed(() => {
+  return !isFullscreen.value && effectiveMenuMode.value !== 'bottom-preview'
+})
 
 /**
  * 当前底栏实际占用的高度。
@@ -452,13 +401,6 @@ const shouldShowTopRightPageControls = computed(() => {
 })
 
 /**
- * 全屏态右上角控制是否可见。
- */
-const isTopRightControlsVisible = computed(() => {
-  return !isFullscreen.value || isFullscreenButtonHovered.value
-})
-
-/**
  * 当前项目的页面画布尺寸。
  */
 const pageViewport = computed(() => appPageConfig.value)
@@ -545,7 +487,6 @@ const toggleMenuMode = (): void => {
   }
 
   currentMenuMode.value = currentMenuMode.value === 'bottom-preview' ? 'preview' : 'bottom-preview'
-  isBottomPreviewHovered.value = false
 }
 
 /**
@@ -599,60 +540,6 @@ const handleNextPageAction = async (): Promise<void> => {
 }
 
 /**
- * 处理底栏悬停进入事件。
- */
-const handleBottomPreviewMouseEnter = (): void => {
-  if (isFullscreen.value) {
-    isBottomPreviewHovered.value = true
-  }
-}
-
-/**
- * 处理底栏悬停离开事件。
- */
-const handleBottomPreviewMouseLeave = (): void => {
-  if (isFullscreen.value) {
-    isBottomPreviewHovered.value = false
-  }
-}
-
-/**
- * 处理侧边栏鼠标进入事件
- */
-const handleSidebarMouseEnter = (): void => {
-  if (isFullscreen.value) {
-    isSidebarHovered.value = true
-  }
-}
-
-/**
- * 处理侧边栏鼠标离开事件
- */
-const handleSidebarMouseLeave = (): void => {
-  if (isFullscreen.value) {
-    isSidebarHovered.value = false
-  }
-}
-
-/**
- * 处理全屏按钮鼠标进入事件
- */
-const handleFullscreenButtonMouseEnter = (): void => {
-  if (isFullscreen.value) {
-    isFullscreenButtonHovered.value = true
-  }
-}
-
-/**
- * 处理全屏按钮鼠标离开事件
- */
-const handleFullscreenButtonMouseLeave = (): void => {
-  if (isFullscreen.value) {
-    isFullscreenButtonHovered.value = false
-  }
-}
-
-/**
  * 预览模式切换按钮提示。
  * @returns 目标模式的完整标题
  */
@@ -663,44 +550,62 @@ const menuModeToggleTitle = computed(() => {
 })
 
 /**
- * 切换全屏模式
+ * 进入全屏放映。
+ * 关键约束：全屏请求必须由 Runtime 窗口内的用户手势触发；失败时留在预览并提示。
  */
-const toggleFullscreen = async (): Promise<void> => {
+const enterSlideshow = async (): Promise<void> => {
+  if (document.fullscreenElement === document.documentElement) return
   try {
-    if (!document.fullscreenElement) {
-      await document.documentElement.requestFullscreen()
-    } else {
-      await document.exitFullscreen()
+    await document.documentElement.requestFullscreen()
+    isFullscreen.value = document.fullscreenElement === document.documentElement
+    if (!isFullscreen.value) {
+      showPageBoundaryMessage('浏览器未进入全屏，仍在预览。')
     }
   } catch (error) {
-    console.error('全屏API调用失败:', error)
-    // 如果全屏API失败，手动重置状态
-    isFullscreen.value = !!document.fullscreenElement
+    console.error('进入全屏放映失败:', error)
+    isFullscreen.value = false
+    showPageBoundaryMessage('无法进入全屏放映，请允许浏览器全屏后重试。')
   }
 }
 
 /**
- * 键盘事件处理
+ * 退出全屏并结束本次放映。
+ */
+const exitSlideshow = async (): Promise<void> => {
+  if (!document.fullscreenElement) {
+    isFullscreen.value = false
+    return
+  }
+  try {
+    if (typeof document.exitFullscreen === 'function') {
+      await document.exitFullscreen()
+    }
+    isFullscreen.value = document.fullscreenElement === document.documentElement
+  } catch (error) {
+    console.error('退出全屏放映失败:', error)
+    showPageBoundaryMessage('退出全屏失败，请按 Esc 或使用浏览器退出全屏。')
+  }
+}
+
+/**
+ * 键盘事件处理。
+ * 关键约束：全屏放映的空格由播放层独占，布局层只处理翻页和演讲入口。
  */
 const handleKeydown = (event: KeyboardEvent): void => {
-  // F11 键处理（全局有效）
-  if (event.key === 'F11') {
-    event.preventDefault()
-    toggleFullscreen()
-    return
-  }
-
-  // 防止在输入框等元素中触发
   const target = event.target as HTMLElement
-  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+    || target.tagName === 'SELECT' || target.isContentEditable) {
     return
   }
+  // 焦点停留在按钮/链接上时，空格保留原生激活；方向键仍用于放映翻页。
+  const interactiveTarget = target.tagName === 'BUTTON' || target.tagName === 'A'
 
   if (isCardModeVisible.value) {
     if (event.key === 'Escape') {
       event.preventDefault()
       isCardModeVisible.value = false
-    } else if (event.key === 'ArrowRight' || event.key === 'PageDown') {
+    } else if (event.key === 'ArrowRight' || event.key === 'PageDown'
+      || (event.key === ' ' && !interactiveTarget)) {
       event.preventDefault()
       void handleNextPageAction()
     } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
@@ -710,41 +615,47 @@ const handleKeydown = (event: KeyboardEvent): void => {
     return
   }
 
-  if (event.shiftKey && event.key.toLowerCase() === 'p') {
-    event.preventDefault()
-    openPresenterMode()
+  if (isFullscreen.value) {
+    if (event.shiftKey && event.key.toLowerCase() === 'p') {
+      event.preventDefault()
+      openPresenterMode()
+      return
+    }
+    if (event.key === 'ArrowRight' || event.key === 'PageDown') {
+      event.preventDefault()
+      void handleNextPageAction()
+    } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+      event.preventDefault()
+      void handlePreviousPageAction()
+    }
     return
   }
 
-  // 只在全屏模式下处理其他键盘事件
-  if (!isFullscreen.value) return
-
-  switch (event.key) {
-    case 'PageDown':
-    case 'ArrowRight':
-    case ' ': // 空格键
-      event.preventDefault()
-      void handleNextPageAction()
-      break
-    case 'PageUp':
-    case 'ArrowLeft':
-      event.preventDefault()
-      void handlePreviousPageAction()
-      break
+  // 预览态：空格与方向键翻页，不启动放映。
+  if (event.key === 'ArrowRight' || event.key === 'PageDown'
+    || (event.key === ' ' && !interactiveTarget)) {
+    event.preventDefault()
+    void handleNextPageAction()
+  } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+    event.preventDefault()
+    void handlePreviousPageAction()
   }
 }
 
 /**
- * 全屏状态变化监听
+ * 全屏状态变化监听。
+ * 关键约束：其他元素全屏期间保持当前放映状态，退出到无全屏元素才算结束放映。
  */
 const handleFullscreenChange = (): void => {
-  isFullscreen.value = !!document.fullscreenElement
-
-  // 退出全屏时重置悬停状态
-  if (!isFullscreen.value) {
-    isSidebarHovered.value = false
-    isFullscreenButtonHovered.value = false
-    isBottomPreviewHovered.value = false
+  const element = document.fullscreenElement
+  if (element === document.documentElement) {
+    isFullscreen.value = true
+    isCardModeVisible.value = false
+    isExportDialogVisible.value = false
+    return
+  }
+  if (!element) {
+    isFullscreen.value = false
   }
 }
 
@@ -773,17 +684,11 @@ const selectCardPage = async (path: string): Promise<void> => {
     path,
     query: { ...router.currentRoute.value.query, runtimeMode: 'normal' },
   })
-  if (!document.fullscreenElement) {
-    try {
-      await document.documentElement.requestFullscreen()
-    } catch (error) {
-      console.warn('进入全屏失败:', error)
-    }
-  }
+  await enterSlideshow()
 }
 
 /**
- * 打开演讲模式；同步打开观众窗口，同时当前窗口进入演讲者控制台。
+ * 打开演讲模式；主窗口退出全屏放映，观众窗口接管唯一调度。
  */
 const openPresenterMode = (): void => {
   if (!shouldShowPresenterButton.value) {
@@ -791,12 +696,14 @@ const openPresenterMode = (): void => {
     return
   }
 
-  // 先停住普通窗口的推进和媒体，再把当前页交给观众窗口。
+  // 先停住本窗口推进和媒体，再把当前页和自动/手动模式交给观众窗口。
   session.pausePlayback?.()
+  const autoAdvance = session.playbackAutoAdvance?.() ?? playbackConfig.value.autoStart
+  void exitSlideshow()
   const currentPath = normalizePresenterRoutePath(router.currentRoute.value.path)
   const channelId = createPresenterChannelId()
-  const displayWindow = openPresenterDisplayWindow(channelId, currentPath)
-  writePresenterInitialNavigateMessage(channelId, currentPath)
+  const displayWindow = openPresenterDisplayWindow(channelId, currentPath, autoAdvance)
+  writePresenterInitialNavigateMessage(channelId, currentPath, autoAdvance)
 
   const presenterQuery: Record<string, string> = {
     channel: channelId,
@@ -921,46 +828,6 @@ const scaleRatio = computed(() => {
   z-index: 100;
 }
 
-/* 全屏模式下的侧边栏包装器 */
-.sidebar-wrapper--fullscreen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  height: 100vh;
-  transform: translateX(-100%);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 100;
-}
-
-/* 全屏模式下鼠标悬停时显示侧边栏 */
-.sidebar-wrapper--fullscreen-hover {
-  transform: translateX(0);
-}
-
-/* 全屏模式下侧边栏悬停触发区域 */
-.sidebar-wrapper--fullscreen::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: -20px;
-  width: 20px;
-  height: 100%;
-  background: transparent;
-  z-index: 101;
-}
-
-/* 全屏模式下的左侧悬停触发区域 */
-.fullscreen-sidebar-trigger {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 20px;
-  height: 100vh;
-  background: transparent;
-  z-index: 101;
-  cursor: pointer;
-}
-
 /* 主内容区域 - 固定比例缩放模式 */
 .main-content {
   position: relative;
@@ -980,28 +847,6 @@ const scaleRatio = computed(() => {
   align-items: stretch;
 }
 
-.fullscreen-button-trigger {
-  position: fixed;
-  top: 0;
-  right: 0;
-  width: 108px;
-  height: 180px;
-  background: transparent;
-  z-index: 101;
-  cursor: pointer;
-}
-
-.fullscreen-bottom-preview-trigger {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 20px;
-  background: transparent;
-  z-index: 101;
-  cursor: pointer;
-}
-
 .top-right-controls {
   position: fixed;
   top: 1rem;
@@ -1010,19 +855,6 @@ const scaleRatio = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.top-right-controls--fullscreen {
-  opacity: 0;
-  transform: translateY(-4px);
-  pointer-events: none;
-}
-
-.top-right-controls--visible {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
 }
 
 .fullscreen-button {
@@ -1042,53 +874,6 @@ const scaleRatio = computed(() => {
   backdrop-filter: blur(8px);
 }
 
-/* 全屏模式下的控制按钮 */
-.fullscreen-button--fullscreen {
-  z-index: 1;
-  background: transparent;
-  border: 1px solid transparent;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.layout-mode-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 40px;
-  height: 32px;
-  padding: 0 0.75rem;
-  background: rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-  color: rgba(0, 0, 0, 0.65);
-  cursor: pointer;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(8px);
-}
-
-.layout-mode-button:hover {
-  transform: translateY(-1px);
-  background: rgba(0, 0, 0, 0.8);
-  border-color: rgba(0, 0, 0, 0.9);
-  color: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.layout-mode-button--fullscreen {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.72);
-}
-
-.layout-mode-button--fullscreen:hover {
-  background: rgba(0, 0, 0, 0.8);
-  border-color: rgba(0, 0, 0, 0.9);
-  color: rgba(255, 255, 255, 0.95);
-}
-
 /* 按钮悬停效果 */
 .fullscreen-button:hover {
   opacity: 1;
@@ -1100,16 +885,6 @@ const scaleRatio = computed(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.fullscreen-button--fullscreen:hover {
-  opacity: 1;
-  transform: scale(1.05);
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(0, 0, 0, 0.9);
-  color: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
 /* 页面导航按钮 */
 .page-navigation-buttons {
   position: fixed;
@@ -1119,22 +894,6 @@ const scaleRatio = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.page-navigation-buttons--fullscreen {
-  opacity: 0;
-  background: transparent;
-  border: 1px solid transparent;
-  color: rgba(255, 255, 255, 0.5);
-  pointer-events: none;
-  transform: translateY(-4px);
-}
-
-.page-navigation-buttons--visible {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
 }
 
 .page-boundary-hint {
@@ -1193,19 +952,6 @@ const scaleRatio = computed(() => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.nav-button--fullscreen {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.nav-button--fullscreen:hover:not(.nav-button--disabled) {
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(0, 0, 0, 0.9);
-  color: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
 .nav-button--disabled {
   opacity: 0.3;
   cursor: not-allowed;
@@ -1217,12 +963,6 @@ const scaleRatio = computed(() => {
   border: 1px solid rgba(0, 0, 0, 0.1);
   color: rgba(0, 0, 0, 0.6);
   box-shadow: none;
-}
-
-.nav-button--fullscreen.nav-button--disabled:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.5);
 }
 
 /* 主内容区域全屏状态 */
@@ -1299,17 +1039,6 @@ const scaleRatio = computed(() => {
   backdrop-filter: blur(18px);
 }
 
-.bottom-preview-wrapper--fullscreen {
-  position: fixed;
-  bottom: 1rem;
-  transform: translateY(calc(100% + 1rem));
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.bottom-preview-wrapper--fullscreen-hover {
-  transform: translateY(0);
-}
-
 .bottom-preview-wrapper--collapsed {
   left: 50%;
   right: auto;
@@ -1320,14 +1049,6 @@ const scaleRatio = computed(() => {
   border: none;
   box-shadow: none;
   backdrop-filter: none;
-}
-
-.bottom-preview-wrapper--collapsed.bottom-preview-wrapper--fullscreen {
-  transform: translate(-50%, calc(100% + 1rem));
-}
-
-.bottom-preview-wrapper--collapsed.bottom-preview-wrapper--fullscreen-hover {
-  transform: translate(-50%, 0);
 }
 
 /* --- 卡片模式淡入淡出动画 --- */

@@ -81,6 +81,7 @@
       <template v-if="draft.advanceMode === 'media_end'">
         <p class="mt-2 text-xs text-text-disabled">
           播放当前页的非循环音视频，全部结束后翻页；没有可等待媒体时按停留时长翻页。循环背景媒体不参与等待。
+          切换到手动模式时媒体继续播放，但不会自动翻页。
         </p>
         <p class="mt-1 text-xs text-text-disabled">
           若浏览器阻止自动播放，放映窗口会显示受阻提示，可点“重试”恢复或使用“下一页”继续。
@@ -97,11 +98,12 @@
         </label>
         <label class="flex items-center gap-2 text-sm text-text">
           <UiCheckbox :model-value="draft.autoStart" @update:model-value="updateAutoStart" />
-          预览时自动开始
+          进入放映后自动推进
         </label>
       </div>
       <p class="mt-2 text-xs text-text-disabled">
-        自动开始需放映入口支持，部分浏览器会要求先点击页面后才允许播放或翻页。
+        开启后进入全屏放映时按当前页翻页方式自动推进；关闭时进入手动模式，仍可在放映控制条随时切回自动。
+        浏览器要求全屏由用户手势触发，请在 Runtime 窗口点击“进入放映”。
       </p>
     </fieldset>
   </div>

@@ -36,6 +36,10 @@ export interface PlaybackSnapshot {
   remainingMs: number
   delayMs: number | null
   advanceMode: PageAdvanceConfig['mode']
+  /** 当前页实际生效的推进方式；会话关闭自动推进时为 manual。 */
+  effectiveAdvanceMode: PageAdvanceConfig['mode']
+  /** 本次放映是否允许自动推进；关闭后所有页面等待用户翻页。 */
+  autoAdvanceEnabled: boolean
   /** 当前页正在等待媒体结束；暂停时保留，供恢复与界面提示。 */
   waitingForMedia: boolean
   index: number
@@ -53,6 +57,8 @@ export interface PlaybackOptions {
   clock?: PlaybackClock
   navigate: PlaybackNavigate
   initialPath?: string
+  /** 会话初始是否允许自动推进；默认 true，供手动全屏浏览和演讲交接使用。 */
+  autoAdvance?: boolean
 }
 
 const defaultClock: PlaybackClock = {
@@ -94,6 +100,7 @@ export class PlaybackController {
   private mediaWait = false
   private mediaTargetCount = 0
   private timerKind: 'stay' | 'media-timeout' | null = null
+  private autoAdvanceEnabled: boolean
 
   constructor(options: PlaybackOptions) {
     this.clock = options.clock ?? defaultClock
@@ -101,6 +108,7 @@ export class PlaybackController {
     this.loop = Boolean(options.loop)
     this.pages = dedupeVisiblePages(options.pages)
     this.path = options.initialPath ?? this.pages[0]?.path ?? ''
+    this.autoAdvanceEnabled = options.autoAdvance ?? true
   }
 
   /** 订阅状态变化；返回取消订阅函数。 */
@@ -115,15 +123,19 @@ export class PlaybackController {
    */
   getSnapshot(): PlaybackSnapshot {
     const page = this.currentPage()
+    const pageMode = page?.advance.mode ?? 'manual'
+    const effectiveMode = this.autoAdvanceEnabled ? pageMode : 'manual'
     return {
       state: this.state,
       path: this.path,
       generation: this.generation,
-      remainingMs: this.currentRemaining(),
-      delayMs: page?.advance.mode === 'timer' || (page?.advance.mode === 'media_end' && !this.mediaWait)
-        ? page.advance.delayMs
+      remainingMs: effectiveMode === 'manual' ? 0 : this.currentRemaining(),
+      delayMs: this.autoAdvanceEnabled && (pageMode === 'timer' || (pageMode === 'media_end' && !this.mediaWait))
+        ? page?.advance.delayMs ?? null
         : null,
-      advanceMode: page?.advance.mode ?? 'manual',
+      advanceMode: pageMode,
+      effectiveAdvanceMode: effectiveMode,
+      autoAdvanceEnabled: this.autoAdvanceEnabled,
       waitingForMedia: this.mediaWait,
       index: this.indexOf(this.path),
       total: this.pages.length,
@@ -169,7 +181,9 @@ export class PlaybackController {
       this.remaining = this.currentRemaining()
       this.clearTimer()
     } else {
-      this.remaining = this.mediaWait ? this.remaining : this.pageDelay(this.currentPage())
+      this.remaining = this.mediaWait
+        ? this.remaining
+        : this.autoAdvanceEnabled ? this.pageDelay(this.currentPage()) : 0
     }
     this.state = 'paused'
     this.emit()
@@ -189,6 +203,50 @@ export class PlaybackController {
       return true
     }
     this.enterPlaying(Math.max(0, this.remaining), this.mediaTargetCount)
+    return true
+  }
+
+  /**
+   * 切换本次放映的自动推进开关。
+   * 关闭时取消当前页计时但保留媒体播放；开启时按当前页配置重新进入一轮自动逻辑。
+   * manual 配置页在开启后仍保持手动，不会被会话开关强行推进。
+   */
+  setAutoAdvance(enabled: boolean): boolean {
+    if (this.disposed || this.autoAdvanceEnabled === enabled) return false
+    this.autoAdvanceEnabled = enabled
+    const page = this.currentPage()
+    if (!page) {
+      this.emit()
+      return true
+    }
+    if (this.state === 'playing' && this.pageReady) {
+      this.clearTimer()
+      if (!enabled || page.advance.mode === 'manual') {
+        this.remaining = 0
+        this.emit()
+        return true
+      }
+      if (page.advance.mode === 'media_end' && this.mediaWait && this.mediaTargetCount > 0) {
+        this.remaining = this.mediaTimeout(page)
+        this.armTimer(this.remaining, 'media-timeout')
+      } else {
+        this.mediaWait = false
+        this.remaining = this.pageDelay(page)
+        this.armTimer(this.remaining, 'stay')
+      }
+      this.emit()
+      return true
+    }
+    if (this.state === 'paused') {
+      if (!enabled || page.advance.mode === 'manual') {
+        this.remaining = 0
+      } else if (page.advance.mode === 'media_end' && this.mediaWait && this.mediaTargetCount > 0) {
+        this.remaining = this.mediaTimeout(page)
+      } else {
+        this.remaining = this.pageDelay(page)
+      }
+    }
+    this.emit()
     return true
   }
 
@@ -287,12 +345,17 @@ export class PlaybackController {
     return true
   }
 
-  /** 当前页全部参与媒体已结束；仅在仍有媒体等待时推进一次。 */
+  /** 当前页全部参与媒体已结束；手动会话只更新状态，自动会话推进一次。 */
   reportMediaEnded(path: string, generation: number): boolean {
     if (this.disposed || path !== this.path || generation !== this.generation) return false
     if (this.state !== 'playing' || !this.mediaWait) return false
     this.clearTimer()
     this.mediaWait = false
+    this.remaining = 0
+    if (!this.autoAdvanceEnabled) {
+      this.emit()
+      return true
+    }
     this.advanceAfterStay(true)
     return true
   }
@@ -379,6 +442,12 @@ export class PlaybackController {
   /** 停留或媒体等待到期：按末页/循环规则推进，或为单页循环开启新周期。 */
   private handleTimer(token: number): void {
     if (this.disposed || token !== this.generation || this.state !== 'playing' || !this.pageReady) return
+    if (!this.autoAdvanceEnabled) {
+      this.clearTimer()
+      this.remaining = 0
+      this.emit()
+      return
+    }
     const kind = this.timerKind
     this.timer = undefined
     this.timerKind = null
@@ -404,6 +473,7 @@ export class PlaybackController {
    * replayMedia 表示这次完成来自媒体结束；单页循环需要重置媒体时限并通知宿主重播。
    */
   private advanceAfterStay(replayMedia: boolean): void {
+    if (!this.autoAdvanceEnabled) return
     const page = this.currentPage()
     if (!page) return
     const currentIndex = this.indexOf(this.path)
@@ -496,19 +566,18 @@ export class PlaybackController {
   private enterPlaying(delayMs: number, mediaTargets = this.mediaTargetCount): void {
     this.state = 'playing'
     const page = this.currentPage()
+    const waitingForMedia = Boolean(page?.advance.mode === 'media_end' && mediaTargets > 0)
     this.mediaTargetCount = mediaTargets
-    if (!page || page.advance.mode === 'manual') {
-      this.mediaWait = false
+    this.mediaWait = waitingForMedia
+    if (!page || page.advance.mode === 'manual' || !this.autoAdvanceEnabled) {
       this.remaining = 0
       this.emit()
       return
     }
-    if (page.advance.mode === 'media_end' && mediaTargets > 0) {
-      this.mediaWait = true
+    if (waitingForMedia) {
       this.remaining = delayMs
       this.armTimer(delayMs, 'media-timeout')
     } else {
-      this.mediaWait = false
       this.remaining = delayMs
       this.armTimer(delayMs, 'stay')
     }

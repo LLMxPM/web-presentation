@@ -1,11 +1,30 @@
 <!--
-  文件用途：控制台回显观众窗口放映状态与剩余时间，并发送开始、暂停、继续和失败恢复命令。
+  文件用途：演讲者控制台的唯一传输栏，回显观众放映状态并发送翻页、自动/手动与失败恢复命令。
 -->
-
 <template>
   <section class="presenter-playback-panel" aria-label="观众放映状态">
-    <div class="presenter-playback-panel__metrics">
-      <span class="presenter-playback-panel__label">观众放映</span>
+    <div class="presenter-playback-panel__transport">
+      <button
+        type="button" class="presenter-playback-panel__icon-button"
+        title="上一页" aria-label="上一页"
+        :disabled="!displayAvailable || !canGoPrevious" @click="emit('previous')">
+        <ChevronLeft :size="14" />
+      </button>
+      <button
+        type="button" class="presenter-playback-panel__button presenter-playback-panel__button--mode"
+        data-testid="presenter-playback-auto"
+        :title="autoAdvanceEnabled ? '切换为手动：停止自动翻页，媒体继续播放' : '切换为自动：按当前页配置重新计时'"
+        :disabled="!displayAvailable" @click="emit('auto', !autoAdvanceEnabled)">
+        <span>{{ autoAdvanceEnabled ? '自动' : '手动' }}</span>
+      </button>
+      <button
+        type="button" class="presenter-playback-panel__icon-button"
+        title="下一页" aria-label="下一页"
+        :disabled="!displayAvailable || !canGoNext" @click="emit('next')">
+        <ChevronRight :size="14" />
+      </button>
+
+      <span class="presenter-playback-panel__page" data-testid="presenter-playback-page">{{ pageLabel }}</span>
       <strong class="presenter-playback-panel__state" data-testid="presenter-playback-state">
         {{ stateLabel }}
       </strong>
@@ -25,15 +44,6 @@
         {{ primaryAction.label }}
       </button>
       <button
-        v-if="showNext"
-        type="button"
-        class="presenter-playback-panel__button"
-        data-testid="presenter-playback-next"
-        @click="emit('command', 'next')"
-      >
-        下一页
-      </button>
-      <button
         v-if="showStop"
         type="button"
         class="presenter-playback-panel__button presenter-playback-panel__button--danger"
@@ -48,6 +58,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { ChevronLeft, ChevronRight } from '@lucide/vue'
 
 import type {
   PresenterSyncPlaybackCommandAction,
@@ -57,10 +68,16 @@ import type {
 const props = defineProps<{
   playback: ReceivedPresenterSync | null
   displayAvailable: boolean
+  canGoPrevious: boolean
+  canGoNext: boolean
+  pageLabel: string
 }>()
 
 const emit = defineEmits<{
   command: [action: PresenterSyncPlaybackCommandAction]
+  previous: []
+  next: []
+  auto: [enabled: boolean]
 }>()
 
 const nowMs = ref(Date.now())
@@ -69,9 +86,10 @@ const snapshot = computed(() => {
   const message = props.playback?.message
   return message && 'playback' in message ? message.playback : null
 })
+const autoAdvanceEnabled = computed(() => snapshot.value?.autoAdvanceEnabled ?? false)
 
 const stateLabel = computed(() => {
-  if (!props.displayAvailable) return '已暂停（观众窗口未连接）'
+  if (!props.displayAvailable) return '等待观众窗口全屏'
   const current = snapshot.value
   if (!current) return '等待观众窗口'
   if (current.waitingForMedia) return current.state === 'paused' ? '媒体已暂停' : '媒体播放中'
@@ -105,11 +123,9 @@ const remainingMs = computed(() => {
 const remainingLabel = computed(() => {
   const current = snapshot.value
   if (!props.displayAvailable || !current) return '—'
-  if (current.state === 'preparing' || current.state === 'playing' || current.state === 'paused') {
-    if (current.delayMs != null) return formatDuration(remainingMs.value)
-    return current.waitingForMedia ? '媒体' : '手动'
-  }
-  return '—'
+  if (!current.autoAdvanceEnabled) return '手动'
+  if (current.delayMs != null) return formatDuration(remainingMs.value)
+  return current.waitingForMedia ? '等待媒体' : '本页手动'
 })
 
 const primaryAction = computed<{ label: string; command: PresenterSyncPlaybackCommandAction } | null>(() => {
@@ -129,13 +145,6 @@ const primaryAction = computed<{ label: string; command: PresenterSyncPlaybackCo
     default:
       return null
   }
-})
-
-const showNext = computed(() => {
-  if (!props.displayAvailable) return false
-  const current = snapshot.value
-  if (!current || (current.state !== 'blocked' && current.state !== 'error')) return false
-  return current.index >= 0 && current.index < current.total - 1
 })
 
 const showStop = computed(() => {
@@ -182,25 +191,27 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.5rem;
-  min-height: 2rem;
+  min-height: 2.25rem;
   border: 1px solid #e2e8f0;
   border-radius: 0.5rem;
   padding: 0.375rem 0.5rem;
   background: #f8fafc;
 }
 
-.presenter-playback-panel__metrics {
+.presenter-playback-panel__transport {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.375rem;
   min-width: 0;
 }
 
-.presenter-playback-panel__label {
-  color: #64748b;
-  font-size: 11px;
+.presenter-playback-panel__page {
+  padding: 0 0.25rem;
+  color: #475569;
+  font-size: 0.75rem;
   font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .presenter-playback-panel__state {
@@ -225,7 +236,11 @@ onBeforeUnmount(() => {
   gap: 0.375rem;
 }
 
-.presenter-playback-panel__button {
+.presenter-playback-panel__button,
+.presenter-playback-panel__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 1.75rem;
   border: 1px solid #cbd5e1;
   border-radius: 0.5rem;
@@ -235,6 +250,21 @@ onBeforeUnmount(() => {
   font-size: 0.75rem;
   font-weight: 800;
   cursor: pointer;
+}
+
+.presenter-playback-panel__icon-button {
+  width: 1.75rem;
+  padding: 0;
+}
+
+.presenter-playback-panel__button--mode {
+  min-width: 3.5rem;
+}
+
+.presenter-playback-panel__button:disabled,
+.presenter-playback-panel__icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 .presenter-playback-panel__button--primary {

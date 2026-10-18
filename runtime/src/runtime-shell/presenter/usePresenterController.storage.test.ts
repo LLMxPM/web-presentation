@@ -18,6 +18,7 @@ const pendingStorageEvents: StorageEvent[] = []
 
 beforeEach(async () => {
   vi.stubGlobal('BroadcastChannel', undefined)
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: document.documentElement })
   vi.spyOn(window, 'close').mockImplementation(() => {})
   const setItem = Storage.prototype.setItem
   // 同一 jsdom Window 承载两个控制器，手动投递跨窗口 storage 事件并保留异步顺序。
@@ -46,6 +47,7 @@ afterEach(() => {
   pendingStorageEvents.length = 0
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null })
   localStorage.clear()
   setRuntimePreloadedConfig(undefined)
   document.body.innerHTML = ''

@@ -28,6 +28,7 @@ const PLAYBACK: PresenterSyncPlaybackSnapshot = {
   remainingMs: 5000,
   delayMs: 8000,
   waitingForMedia: false,
+  autoAdvanceEnabled: true,
   index: 0,
   total: 2,
 }
@@ -59,7 +60,7 @@ describe('PresenterSyncSender', () => {
     const second = sender.create({ type: 'navigate', currentPath: '/b', playback: PLAYBACK }, 'command-1')
 
     expect(first).toMatchObject({
-      protocol: 2,
+      protocol: 3,
       channelId: 'channel-1',
       artifactIdentity: 'artifact-1',
       sourceId: 'console-1',
@@ -113,7 +114,27 @@ describe('parsePresenterSyncMessage', () => {
       type: 'playback-state',
       playback: { state: 'paused', remainingMs: 1200 },
     })
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'playback-command',
+      action: 'set-auto-advance',
+      autoAdvance: false,
+      targetOwnerEpoch: 100,
+    }))).toMatchObject({
+      type: 'playback-command',
+      action: 'set-auto-advance',
+      autoAdvance: false,
+    })
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'playback-command',
+      action: 'set-auto-advance',
+    }))).toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({ type: 'playback-command', action: 'restart' }))).toBeNull()
+    const legacyPlayback: Record<string, unknown> = { ...PLAYBACK }
+    delete legacyPlayback.autoAdvanceEnabled
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'playback-state',
+      playback: legacyPlayback,
+    }))).toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({
       type: 'navigate', currentPath: '/b', playback: PLAYBACK, targetOwnerEpoch: -1,
     }))).toBeNull()

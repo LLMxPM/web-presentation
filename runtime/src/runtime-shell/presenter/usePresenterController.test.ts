@@ -104,10 +104,10 @@ describe('buildPresenterPages', () => {
     ])
   })
 
-  it('应解析 schema 2 localStorage 兜底同步消息', () => {
+  it('应解析 schema 3 localStorage 兜底同步消息', () => {
     const storageKey = buildPresenterStorageKey('channel-a')
     const envelope = {
-      protocol: 2,
+      protocol: 3,
       channelId: 'channel-a',
       artifactIdentity: 'artifact-1',
       sourceId: 'console-a',
@@ -131,6 +131,7 @@ describe('buildPresenterPages', () => {
           remainingMs: 4000,
           delayMs: 5000,
           waitingForMedia: false,
+          autoAdvanceEnabled: true,
           index: 1,
           total: 2,
         },
@@ -178,14 +179,14 @@ describe('buildPresenterPages', () => {
     }))).toBeNull()
   })
 
-  it('应写入演讲入口 schema 2 初始导航兜底消息', () => {
-    writePresenterInitialNavigateMessage('channel-entry', 'intro', 'artifact-1')
+  it('应写入演讲入口 schema 3 初始导航兜底消息', () => {
+    writePresenterInitialNavigateMessage('channel-entry', 'intro', true, 'artifact-1')
 
     const parsed = parseStoredSyncMessage(localStorage.getItem(buildPresenterStorageKey('channel-entry')))
 
     expect(parsed?.sourceId).toBe('presenter-entry')
     expect(parsed?.message).toMatchObject({
-      protocol: 2,
+      protocol: 3,
       channelId: 'channel-entry',
       artifactIdentity: 'artifact-1',
       sourceId: 'presenter-entry',
@@ -251,7 +252,7 @@ describe('presenter playback commands', () => {
       type: 'display-status',
       revision: 2,
       eventId: 'display-1:2',
-      status: { state: 'connected', isFullscreen: false, updatedAt: 1 },
+      status: { state: 'fullscreen', isFullscreen: true, updatedAt: 1 },
     }))
     expect(controller.displayAvailable.value).toBe(true)
 
@@ -259,6 +260,14 @@ describe('presenter playback commands', () => {
     expect(channel.posted.at(-1)).toMatchObject({
       type: 'playback-command',
       action: 'pause',
+      targetOwnerEpoch: 77,
+    })
+
+    expect(controller.sendPlaybackCommand('set-auto-advance', false)).toBe(true)
+    expect(channel.posted.at(-1)).toMatchObject({
+      type: 'playback-command',
+      action: 'set-auto-advance',
+      autoAdvance: false,
       targetOwnerEpoch: 77,
     })
 
@@ -327,6 +336,7 @@ describe('presenter playback commands', () => {
         remainingMs: 0,
         delayMs: null,
         waitingForMedia: false,
+          autoAdvanceEnabled: true,
         index: 0,
         total: 2,
       },
@@ -355,6 +365,7 @@ describe('presenter playback commands', () => {
         remainingMs: 0,
         delayMs: null,
         waitingForMedia: false,
+          autoAdvanceEnabled: true,
         index: 0,
         total: 2,
       },
@@ -389,7 +400,7 @@ describe('presenter playback commands', () => {
       type: 'display-status',
       revision: 2,
       eventId: 'display-1:2',
-      status: { state: 'connected', isFullscreen: false, updatedAt: 1 },
+      status: { state: 'fullscreen', isFullscreen: true, updatedAt: 1 },
     }))
     expect(controller.displayAvailable.value).toBe(true)
 
@@ -402,7 +413,7 @@ describe('presenter playback commands', () => {
       status: { state: 'closed', isFullscreen: false, updatedAt: 2 },
     }))
     expect(controller.displayAvailable.value).toBe(true)
-    expect(controller.displayStatus.value.state).toBe('connected')
+    expect(controller.displayStatus.value.state).toBe('fullscreen')
 
     app.unmount()
   })
@@ -443,6 +454,7 @@ describe('presenter playback commands', () => {
       remainingMs: 0,
       delayMs: null,
       waitingForMedia: false,
+          autoAdvanceEnabled: true,
       index: 1,
       total: 2,
     }
@@ -479,7 +491,7 @@ describe('presenter playback commands', () => {
 /** 构造观众窗口来源的协议消息。 */
 function displayMessage(overrides: Record<string, unknown>) {
   return {
-    protocol: 2,
+    protocol: 3,
     channelId: 'channel-command',
     artifactIdentity: '',
     sourceId: 'display-1',
@@ -492,7 +504,7 @@ function displayMessage(overrides: Record<string, unknown>) {
 /** 构造控制台放映命令消息。 */
 function commandMessage(action: string, revision: number, eventId: string, targetOwnerEpoch: number) {
   return {
-    protocol: 2,
+    protocol: 3,
     channelId: 'channel-command',
     artifactIdentity: '',
     sourceId: 'console-1',

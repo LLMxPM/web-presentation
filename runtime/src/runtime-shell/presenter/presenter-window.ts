@@ -37,12 +37,17 @@ export function openPendingPresenterDisplayWindow(channelId: string, currentPath
  * 调用方只负责同步打开窗口以避免弹窗拦截；屏幕授权和全屏选择由观众窗口内完成。
  * @param channelId 通信频道 ID
  * @param currentPath 当前演讲页路径
+ * @param autoAdvance 进入放映时继承的自动/手动模式
  * @returns 新窗口引用；被浏览器拦截时为空
  */
-export function openPresenterDisplayWindow(channelId: string, currentPath: string): Window | null {
+export function openPresenterDisplayWindow(
+  channelId: string,
+  currentPath: string,
+  autoAdvance?: boolean,
+): Window | null {
   const fallbackBounds = readCurrentScreenBounds()
   const windowRef = window.open(
-    buildPresenterDisplayUrl(channelId, currentPath),
+    buildPresenterDisplayUrl(channelId, currentPath, autoAdvance),
     buildPresenterDisplayWindowName(channelId),
     buildPresenterDisplayWindowFeatures(fallbackBounds),
   )
@@ -54,10 +59,20 @@ export function openPresenterDisplayWindow(channelId: string, currentPath: strin
  * 构建观众页 URL。
  * @param channelId 通信频道 ID
  * @param currentPath 当前演讲页路径
+ * @param autoAdvance 进入放映时继承的自动/手动模式
  * @returns 观众页完整 URL
  */
-export function buildPresenterDisplayUrl(channelId: string, currentPath: string): string {
-  return buildPresenterRouteUrl(PRESENTER_DISPLAY_ROUTE, channelId, normalizePresenterRoutePath(currentPath))
+export function buildPresenterDisplayUrl(
+  channelId: string,
+  currentPath: string,
+  autoAdvance?: boolean,
+): string {
+  return buildPresenterRouteUrl(
+    PRESENTER_DISPLAY_ROUTE,
+    channelId,
+    normalizePresenterRoutePath(currentPath),
+    autoAdvance,
+  )
 }
 
 /**

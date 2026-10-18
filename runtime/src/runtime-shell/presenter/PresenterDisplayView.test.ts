@@ -10,34 +10,36 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import PresenterDisplayView from './PresenterDisplayView.vue'
 
 const presenterFixture = vi.hoisted(() => ({
-  commandHandler: null as null | ((action: string) => void),
+  commandHandler: null as null | ((action: string, autoAdvance?: boolean) => void),
   postPlaybackState: vi.fn(),
   updatePlayback: vi.fn(),
 }))
 
 const playbackFixture = vi.hoisted(() => ({
-  options: null as null | { autoStart?: boolean },
+  options: null as null | { autoStart?: boolean; initialAutoAdvance?: boolean },
   start: vi.fn(),
   pause: vi.fn(),
   resume: vi.fn(),
   stop: vi.fn(),
   retry: vi.fn(),
   next: vi.fn(),
+  setAutoAdvance: vi.fn(),
+}))
+
+const routeFixture = vi.hoisted(() => ({
+  query: { channel: 'channel-display', route: '/intro' } as Record<string, unknown>,
 }))
 
 vi.mock('./PresenterPageStage.vue', () => ({ default: { template: '<div />' } }))
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({
-    query: {
-      channel: 'channel-display',
-      route: '/intro',
-    },
+    query: routeFixture.query,
   }),
 }))
 
 vi.mock('@/runtime-shell/presenter/usePresenterController', () => ({
-  usePresenterController: (options: { onPlaybackCommand?: (action: string) => void }) => {
+  usePresenterController: (options: { onPlaybackCommand?: (action: string, autoAdvance?: boolean) => void }) => {
     presenterFixture.commandHandler = options.onPlaybackCommand ?? null
     return {
       currentPage: {
@@ -47,8 +49,6 @@ vi.mock('@/runtime-shell/presenter/usePresenterController', () => ({
         componentPath: '@/views/intro.vue',
         speakerNotes: '',
       },
-      goPrevious: vi.fn(),
-      goNext: vi.fn(),
       postDisplayStatus: vi.fn(),
       postPlaybackState: presenterFixture.postPlaybackState,
       updatePlayback: presenterFixture.updatePlayback,
@@ -59,7 +59,7 @@ vi.mock('@/runtime-shell/presenter/usePresenterController', () => ({
 vi.mock('@/runtime-shell/playback/usePlaybackHost', async () => {
   const { ref } = await import('vue')
   return {
-    usePlaybackHost: (options: { autoStart?: boolean }) => {
+    usePlaybackHost: (options: { autoStart?: boolean; initialAutoAdvance?: boolean }) => {
       playbackFixture.options = options
       return {
         snapshot: ref(null),
@@ -70,6 +70,7 @@ vi.mock('@/runtime-shell/playback/usePlaybackHost', async () => {
         stop: playbackFixture.stop,
         retry: playbackFixture.retry,
         next: playbackFixture.next,
+        setAutoAdvance: playbackFixture.setAutoAdvance,
         refresh: vi.fn(),
       }
     },
@@ -102,6 +103,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.clearAllMocks()
   presenterFixture.commandHandler = null
+  routeFixture.query = { channel: 'channel-display', route: '/intro' }
   Reflect.deleteProperty(window, 'getScreenDetails')
   Reflect.deleteProperty(document.documentElement, 'requestFullscreen')
   Object.defineProperty(document, 'fullscreenElement', {
@@ -196,25 +198,47 @@ describe('PresenterDisplayView', () => {
     app.unmount()
   })
 
-  it('观众窗口应由控制台命令驱动播放宿主并上报状态', async () => {
+  it('继承进入演讲时 URL 携带的自动/手动模式', async () => {
+    routeFixture.query = { channel: 'channel-display', route: '/intro', auto: '1' }
     const { app } = mountPresenterDisplayView()
     await flushVueUpdates()
 
-    expect(playbackFixture.options).toEqual({ autoStart: false })
+    expect(playbackFixture.options).toMatchObject({ autoStart: false, initialAutoAdvance: true })
+    app.unmount()
+  })
+
+  it('观众窗口应由控制台命令驱动播放宿主，并在全屏后才开始放映', async () => {
+    const { app, host } = mountPresenterDisplayView()
+    await flushVueUpdates()
+
+    expect(playbackFixture.options).toMatchObject({ autoStart: false, initialAutoAdvance: false })
     expect(presenterFixture.postPlaybackState).toHaveBeenCalled()
     expect(presenterFixture.updatePlayback).toHaveBeenCalledWith(expect.objectContaining({ state: 'stopped' }))
 
     presenterFixture.commandHandler?.('start')
+    await flushVueUpdates()
+    expect(playbackFixture.start).not.toHaveBeenCalled()
+    expect(host.textContent).toContain('请先在观众窗口进入全屏')
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: document.documentElement,
+    })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushVueUpdates()
+    expect(playbackFixture.start).toHaveBeenCalledTimes(1)
+
     presenterFixture.commandHandler?.('pause')
     presenterFixture.commandHandler?.('resume')
     presenterFixture.commandHandler?.('next')
     presenterFixture.commandHandler?.('stop')
+    presenterFixture.commandHandler?.('set-auto-advance', false)
 
-    expect(playbackFixture.start).toHaveBeenCalledTimes(1)
     expect(playbackFixture.pause).toHaveBeenCalledTimes(1)
     expect(playbackFixture.resume).toHaveBeenCalledTimes(1)
     expect(playbackFixture.next).toHaveBeenCalledTimes(1)
     expect(playbackFixture.stop).toHaveBeenCalledTimes(1)
+    expect(playbackFixture.setAutoAdvance).toHaveBeenCalledWith(false)
 
     app.unmount()
   })

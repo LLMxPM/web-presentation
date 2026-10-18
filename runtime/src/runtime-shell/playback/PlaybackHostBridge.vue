@@ -1,57 +1,109 @@
-<!-- 文件功能：放映主画布的调度入口、控制条与可见错误提示。 -->
+<!-- 文件功能：全屏放映的唯一控制条，负责翻页、自动/手动切换、状态提示、演讲与退出。 -->
 <template>
   <div v-if="errorMessage" class="runtime-playback-error" role="alert">{{ errorMessage }}</div>
   <div
-    v-if="snapshot" class="runtime-playback-controls" role="group" aria-label="放映控制"
-    :data-wake-lock="wakeLockState">
-    <button
-      type="button" class="runtime-playback-controls__button runtime-playback-controls__button--primary"
-      :title="primaryAction.title" aria-keyshortcuts="Space" @click="handlePrimaryAction">
-      <Pause v-if="primaryAction.icon === 'pause'" :size="16" />
-      <Play v-else :size="16" />
-      <span>{{ primaryAction.label }}</span>
-    </button>
-    <button
-      v-if="canNextPage" type="button" class="runtime-playback-controls__button"
-      title="跳到下一页并继续放映" aria-label="跳到下一页" @click="next">
-      <ChevronRight :size="14" />
-      <span>下一页</span>
-    </button>
-    <button
-      v-if="canStop" type="button" class="runtime-playback-controls__button"
-      title="停止放映，保留当前页" aria-label="停止放映" @click="stop">
-      <Square :size="14" />
-    </button>
+    class="runtime-playback-controls" role="group" aria-label="放映控制" :data-wake-lock="wakeLockState">
+    <template v-if="snapshot">
+      <button
+        type="button" class="runtime-playback-controls__button" title="上一页" aria-label="上一页"
+        :disabled="!canGoPrevious" @click="goPrevious">
+        <ChevronLeft :size="16" />
+      </button>
+      <button
+        type="button" class="runtime-playback-controls__button runtime-playback-controls__button--mode"
+        data-testid="playback-auto-toggle" :title="autoTitle" @click="toggleAutoAdvance">
+        <Timer v-if="snapshot.autoAdvanceEnabled" :size="14" />
+        <Hand v-else :size="14" />
+        <span>{{ autoLabel }}</span>
+      </button>
+      <button
+        type="button" class="runtime-playback-controls__button" title="下一页" aria-label="下一页"
+        :disabled="!canGoNext" @click="goNext">
+        <ChevronRight :size="16" />
+      </button>
+
+      <span class="runtime-playback-controls__divider" aria-hidden="true"></span>
+      <span class="runtime-playback-controls__page">{{ pageLabel }}</span>
+      <span class="runtime-playback-controls__state">{{ stateLabel }}</span>
+      <span class="runtime-playback-controls__remaining" data-testid="playback-remaining">{{ remainingLabel }}</span>
+
+      <button
+        v-if="snapshot.state === 'paused'" type="button"
+        class="runtime-playback-controls__button runtime-playback-controls__button--primary"
+        title="继续放映（空格）" @click="resume">
+        <Play :size="14" />
+        <span>继续</span>
+      </button>
+      <button
+        v-else-if="snapshot.state === 'error' || snapshot.state === 'blocked'" type="button"
+        class="runtime-playback-controls__button runtime-playback-controls__button--primary"
+        title="重试当前页" @click="retry">
+        <RotateCcw :size="14" />
+        <span>重试</span>
+      </button>
+      <button
+        v-else-if="snapshot.state === 'ended'" type="button"
+        class="runtime-playback-controls__button runtime-playback-controls__button--primary"
+        title="从当前页重新开始" @click="start">
+        <Play :size="14" />
+        <span>重新开始</span>
+      </button>
+    </template>
+    <span v-else class="runtime-playback-controls__state">当前项目未启用放映配置</span>
+
     <span class="runtime-playback-controls__divider" aria-hidden="true"></span>
-    <span class="runtime-playback-controls__page">{{ pageLabel }}</span>
-    <span class="runtime-playback-controls__state">{{ stateLabel }}</span>
-    <span class="runtime-playback-controls__remaining">{{ remainingLabel }}</span>
+    <button
+      v-if="presenterAvailable" type="button" class="runtime-playback-controls__button"
+      title="演讲模式 (Shift+P)" aria-label="进入演讲模式" @click="emit('presenter')">
+      <Monitor :size="14" />
+    </button>
+    <button
+      type="button" class="runtime-playback-controls__button" title="退出放映 (Esc)"
+      aria-label="退出放映" @click="emit('exit')">
+      <Minimize2 :size="14" />
+    </button>
   </div>
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, Pause, Play, Square } from '@lucide/vue'
+import { ChevronLeft, ChevronRight, Hand, Minimize2, Monitor, Play, RotateCcw, Timer } from '@lucide/vue'
 import { getRuntimeSession } from '@/core/router/runtime-session'
 import { usePlaybackHost } from './usePlaybackHost'
 import type { PlaybackState } from './playback-controller'
 
-const { snapshot, errorMessage, wakeLockState, start, pause, resume, stop, retry, next, refresh } = usePlaybackHost()
+const props = withDefaults(defineProps<{
+  /** 进入放映时的初始推进模式；来自项目 auto_start。 */
+  initialAutoAdvance?: boolean
+  /** 当前项目是否存在可演讲页面。 */
+  presenterAvailable?: boolean
+}>(), {
+  initialAutoAdvance: true,
+  presenterAvailable: false,
+})
+
+const emit = defineEmits<{
+  presenter: []
+  exit: []
+}>()
+
+const {
+  snapshot, errorMessage, wakeLockState, canGoPrevious, canGoNext,
+  start, pause, resume, retry, goPrevious, goNext, toggleAutoAdvance, refresh,
+} = usePlaybackHost({ autoStart: true, initialAutoAdvance: props.initialAutoAdvance })
 const session = getRuntimeSession(useRouter())
 
-/** 进入演讲模式前由会话调用，先停住普通窗口推进和媒体。 */
-function pauseForPresenterHandoff(): void {
-  pause()
-}
-
+/** 进入演讲交接前暂停本窗口放映；观众窗口会从同一页重新开始。 */
 onMounted(() => {
-  session.pausePlayback = pauseForPresenterHandoff
+  session.pausePlayback = pause
+  session.playbackAutoAdvance = () => snapshot.value?.autoAdvanceEnabled ?? props.initialAutoAdvance
 })
 
 onBeforeUnmount(() => {
-  if (session.pausePlayback === pauseForPresenterHandoff) {
+  if (session.pausePlayback === pause) {
     session.pausePlayback = null
   }
+  session.playbackAutoAdvance = null
 })
 
 const STATE_LABELS: Record<PlaybackState, string> = {
@@ -70,41 +122,27 @@ const stateLabel = computed(() => {
   if (current.waitingForMedia) return current.state === 'paused' ? '媒体已暂停' : '媒体播放中'
   return STATE_LABELS[current.state]
 })
+
 const pageLabel = computed(() => {
   const current = snapshot.value
   if (!current || current.index < 0 || current.total === 0) return '— / —'
   return `${current.index + 1} / ${current.total}`
 })
 
-const primaryAction = computed<{ label: string; title: string; icon: 'play' | 'pause' }>(() => {
-  const state = snapshot.value?.state
-  if (state === 'paused') return { label: '继续', title: '继续放映（空格）', icon: 'play' }
-  if (state === 'preparing' || state === 'playing') return { label: '暂停', title: '暂停放映（空格）', icon: 'pause' }
-  if (state === 'error' || state === 'blocked') return { label: '重试', title: '重试当前页（空格）', icon: 'play' }
-  return { label: state === 'ended' ? '重新开始' : '开始放映', title: '开始放映（空格）', icon: 'play' }
-})
-
-const canStop = computed(() => {
-  const state = snapshot.value?.state
-  return state === 'preparing' || state === 'playing' || state === 'paused' || state === 'blocked' || state === 'error'
-})
-
-/** 失败态允许直接跳过当前页；末页不循环时没有下一页。 */
-const canNextPage = computed(() => {
-  const current = snapshot.value
-  if (!current || (current.state !== 'blocked' && current.state !== 'error')) return false
-  if (current.index < 0) return false
-  return current.index < current.total - 1 || current.loop
-})
+const autoLabel = computed(() => snapshot.value?.autoAdvanceEnabled ? '自动' : '手动')
+const autoTitle = computed(() => snapshot.value?.autoAdvanceEnabled
+  ? '切换为手动：停止自动翻页，媒体继续播放（空格）'
+  : '切换为自动：按当前页配置重新计时（空格）')
 
 const remainingLabel = computed(() => {
   const current = snapshot.value
   if (!current) return ''
-  if (current.state === 'preparing' || current.state === 'playing' || current.state === 'paused') {
-    if (current.delayMs != null) return formatDuration(current.remainingMs)
-    return current.advanceMode === 'media_end' ? '媒体' : '手动'
-  }
-  return '—'
+  if (current.state === 'ended' || current.state === 'error' || current.state === 'blocked') return '—'
+  if (!current.autoAdvanceEnabled) return '手动'
+  if (current.effectiveAdvanceMode === 'manual') return '本页手动'
+  if (current.waitingForMedia) return '等待媒体'
+  if (current.delayMs != null) return formatDuration(current.remainingMs)
+  return '手动'
 })
 
 /** 将剩余毫秒格式化为 m:ss，向上取整避免显示 0:00 时仍在计时。 */
@@ -113,26 +151,9 @@ function formatDuration(ms: number): string {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`
 }
 
-function handlePrimaryAction(): void {
-  const state = snapshot.value?.state
-  if (state === 'paused') {
-    resume()
-    return
-  }
-  if (state === 'preparing' || state === 'playing') {
-    pause()
-    return
-  }
-  if (state === 'error' || state === 'blocked') {
-    retry()
-    return
-  }
-  start()
-}
-
 let tickTimer: ReturnType<typeof setInterval> | undefined
 
-/** 仅在计时页放映中刷新剩余时间；控制条不参与调度。 */
+/** 仅在自动计时页刷新剩余时间；控制条不参与调度。 */
 function syncTicker(): void {
   if (tickTimer !== undefined) {
     clearInterval(tickTimer)
@@ -143,7 +164,7 @@ function syncTicker(): void {
   }
 }
 
-watch(() => snapshot.value?.state, syncTicker, { immediate: true })
+watch(() => [snapshot.value?.state, snapshot.value?.delayMs], syncTicker, { immediate: true })
 onBeforeUnmount(() => {
   if (tickTimer !== undefined) clearInterval(tickTimer)
 })
@@ -155,6 +176,7 @@ onBeforeUnmount(() => {
   left: 50%;
   transform: translateX(-50%);
   z-index: 10000;
+  max-width: min(680px, calc(100vw - 32px));
   padding: 12px 20px;
   background: #fff;
   color: #b91c1c;
@@ -162,6 +184,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
   font-size: 14px;
+  text-align: center;
 }
 
 .runtime-playback-controls {
@@ -172,7 +195,8 @@ onBeforeUnmount(() => {
   z-index: 9000;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
   padding: 8px 14px;
   color: #f8fafc;
   background: rgb(15 23 42 / 82%);
@@ -198,16 +222,26 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
-.runtime-playback-controls__button:hover {
+.runtime-playback-controls__button:hover:not(:disabled) {
   background: rgb(248 250 252 / 20%);
+}
+
+.runtime-playback-controls__button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .runtime-playback-controls__button--primary {
   background: #2563eb;
 }
 
-.runtime-playback-controls__button--primary:hover {
+.runtime-playback-controls__button--primary:hover:not(:disabled) {
   background: #1d4ed8;
+}
+
+.runtime-playback-controls__button--mode {
+  min-width: 4.25rem;
+  justify-content: center;
 }
 
 .runtime-playback-controls__button:focus-visible {
@@ -230,7 +264,7 @@ onBeforeUnmount(() => {
 }
 
 .runtime-playback-controls__remaining {
-  min-width: 3.5em;
+  min-width: 4.5em;
   text-align: right;
   color: #e2e8f0;
 }

@@ -66,7 +66,7 @@
           variant="secondary"
           :disabled="previewPending"
           :loading="previewPending"
-          :title="previewPending ? '正在生成项目放映' : '从首页开始放映'"
+          :title="previewPending ? '正在生成项目放映' : '打开 Runtime 预览，在窗口内点击“进入放映”后全屏播放'"
           @click.stop="emit('preview', project)"
         >
           <Play class="h-3.5 w-3.5" />

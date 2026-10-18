@@ -7,7 +7,7 @@
 
 import { getRuntimePreloadedConfig, getRuntimePreviewContext } from '@/core/utils/path'
 
-export const PRESENTER_SYNC_PROTOCOL_VERSION = 2
+export const PRESENTER_SYNC_PROTOCOL_VERSION = 3
 const MAX_SEEN_EVENTS = 256
 
 export type PresenterSyncViewMode = 'focus' | 'grid'
@@ -28,6 +28,7 @@ export type PresenterSyncPlaybackCommandAction =
   | 'stop'
   | 'retry'
   | 'next'
+  | 'set-auto-advance'
 
 export interface PresenterSyncPlaybackSnapshot {
   state: PresenterSyncPlaybackState
@@ -36,6 +37,8 @@ export interface PresenterSyncPlaybackSnapshot {
   /** timer 的停留时间；manual/media_end 等待时为 null。 */
   delayMs: number | null
   waitingForMedia: boolean
+  /** 本次放映是否自动推进；控制台据此显示自动/手动。 */
+  autoAdvanceEnabled: boolean
   index: number
   total: number
 }
@@ -74,6 +77,8 @@ export interface PresenterSyncNavigateMessage extends PresenterSyncEnvelope {
 export interface PresenterSyncPlaybackCommandMessage extends PresenterSyncEnvelope {
   type: 'playback-command'
   action: PresenterSyncPlaybackCommandAction
+  /** set-auto-advance 的目标状态；其他命令忽略。 */
+  autoAdvance?: boolean
   /** 控制台命令只针对当前观众 owner，旧观众窗口必须忽略。 */
   targetOwnerEpoch?: number
 }
@@ -300,10 +305,13 @@ export function parsePresenterSyncMessage(value: unknown): PresenterSyncMessage 
     }
     case 'playback-command': {
       if (!isPlaybackCommandAction(value.action) || !isValidTargetOwnerEpoch(value.targetOwnerEpoch)) return null
+      if (value.autoAdvance !== undefined && typeof value.autoAdvance !== 'boolean') return null
+      if (value.action === 'set-auto-advance' && typeof value.autoAdvance !== 'boolean') return null
       return {
         ...baseEnvelope(value),
         type: 'playback-command',
         action: value.action,
+        ...(typeof value.autoAdvance === 'boolean' ? { autoAdvance: value.autoAdvance } : {}),
         ...targetOwnerField(value.targetOwnerEpoch),
       }
     }
@@ -362,12 +370,14 @@ function parsePlayback(value: unknown): PresenterSyncPlaybackSnapshot | null {
   if (!isPlaybackState(value.state) || !isNonEmptyString(value.currentPath)) return null
   if (!Number.isFinite(value.remainingMs) || !Number.isInteger(value.index) || !Number.isInteger(value.total)) return null
   if (value.delayMs !== null && !Number.isFinite(value.delayMs)) return null
+  if (typeof value.autoAdvanceEnabled !== 'boolean') return null
   return {
     state: value.state,
     currentPath: value.currentPath,
     remainingMs: Math.max(0, Number(value.remainingMs)),
     delayMs: value.delayMs === null ? null : Number(value.delayMs),
     waitingForMedia: Boolean(value.waitingForMedia),
+    autoAdvanceEnabled: value.autoAdvanceEnabled,
     index: Number(value.index),
     total: Number(value.total),
   }
@@ -410,6 +420,7 @@ function isPlaybackCommandAction(value: unknown): value is PresenterSyncPlayback
     || value === 'stop'
     || value === 'retry'
     || value === 'next'
+    || value === 'set-auto-advance'
 }
 
 function isViewMode(value: unknown): value is PresenterSyncViewMode {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** 文件功能：验证放映控制条的开始/暂停/继续/停止、页码与剩余时间展示。 */
+/** 文件功能：验证全屏放映控制条的翻页、自动/手动切换、状态提示、演讲与退出入口。 */
 import { createApp, nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +14,7 @@ vi.mock('@/core/utils/visual-assets', () => ({ waitForEditorVisualAssets: waitFo
 
 const READY = { ok: true, timedOut: false, total: 0, loaded: 0, failed: [], pending: [], waitedMs: 0 }
 
-function preloadConfig() {
+function preloadConfig(autoStart = true) {
   setRuntimePreloadedConfig({
     app: {
       app: {
@@ -27,7 +27,7 @@ function preloadConfig() {
     },
     routes: {
       playback: {
-        autoStart: false,
+        autoStart,
         loop: false,
         advanceDefaults: { mode: 'manual', delayMs: 5000 },
       },
@@ -57,27 +57,31 @@ function addPageElement(path: string): void {
 }
 
 async function flushAsync(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0)
   for (let index = 0; index < 6; index += 1) {
     await nextTick()
     await Promise.resolve()
   }
 }
 
-function mountBridge(router: ReturnType<typeof makeRouter>) {
+function mountBridge(
+  router: ReturnType<typeof makeRouter>,
+  props: { initialAutoAdvance?: boolean; presenterAvailable?: boolean } = {},
+) {
   const root = document.createElement('div')
   document.body.append(root)
-  const app = createApp(PlaybackHostBridge)
+  const app = createApp(PlaybackHostBridge, props)
   app.use(router)
   app.mount(root)
   return { root, app }
 }
 
-function button(root: HTMLElement): HTMLButtonElement {
-  return root.querySelector<HTMLButtonElement>('.runtime-playback-controls__button--primary')!
-}
-
 function text(root: HTMLElement): string {
   return root.querySelector<HTMLElement>('.runtime-playback-controls')?.textContent ?? ''
+}
+
+function buttonByLabel(root: HTMLElement, label: string): HTMLButtonElement {
+  return root.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!
 }
 
 beforeEach(async () => {
@@ -99,7 +103,7 @@ afterEach(() => {
 })
 
 describe('PlaybackHostBridge 控制条', () => {
-  it('展示页码与状态，完成开始、暂停、继续、停止和自动翻页', async () => {
+  it('自动推进、自动切手动后停留，再切回自动并在末页结束', async () => {
     const router = makeRouter()
     await router.push('/a')
     await router.isReady()
@@ -107,52 +111,70 @@ describe('PlaybackHostBridge 控制条', () => {
     const session = getRuntimeSession(router)
     await flushAsync()
 
-    expect(text(root)).toContain('开始放映')
-    expect(text(root)).toContain('已停止')
-    expect(text(root)).toContain('1 / 2')
-    expect(text(root)).toContain('—')
-
-    button(root).click()
-    await flushAsync()
-    expect(text(root)).toContain('暂停')
     expect(text(root)).toContain('准备中')
+    expect(text(root)).toContain('1 / 2')
+    expect(text(root)).toContain('自动')
     expect(text(root)).toContain('0:01')
 
     session.transitionSettled.value = { path: '/a', generation: 1 }
     await flushAsync()
     expect(text(root)).toContain('放映中')
-    expect(text(root)).toContain('0:01')
-
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(1_000)
     await flushAsync()
     expect(router.currentRoute.value.path).toBe('/b')
-    expect(text(root)).toContain('准备中')
-
-    button(root).click()
-    await flushAsync()
-    expect(text(root)).toContain('继续')
-    expect(text(root)).toContain('已暂停')
-
-    button(root).click()
-    await flushAsync()
-    expect(text(root)).toContain('暂停')
-    expect(text(root)).toContain('准备中')
 
     session.transitionSettled.value = { path: '/b', generation: 2 }
     await flushAsync()
     expect(text(root)).toContain('放映中')
+    expect(text(root)).toContain('0:02')
 
-    const stopButton = root.querySelector<HTMLButtonElement>('[aria-label="停止放映"]')
-    stopButton?.click()
+    const toggle = root.querySelector<HTMLButtonElement>('[data-testid="playback-auto-toggle"]')!
+    toggle.click()
     await flushAsync()
-    expect(text(root)).toContain('开始放映')
-    expect(text(root)).toContain('已停止')
+    expect(text(root)).toContain('手动')
+    await vi.advanceTimersByTimeAsync(10_000)
     expect(router.currentRoute.value.path).toBe('/b')
+
+    toggle.click()
+    await flushAsync()
+    expect(text(root)).toContain('自动')
+    await vi.advanceTimersByTimeAsync(2_000)
+    await flushAsync()
+    expect(text(root)).toContain('已结束')
+    expect(text(root)).toContain('重新开始')
 
     app.unmount()
   })
 
-  it('资源失败显示错误提示并保持当前页', async () => {
+  it('使用上一页/下一页翻页且边界不绕回', async () => {
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { root, app } = mountBridge(router, { initialAutoAdvance: false })
+    const session = getRuntimeSession(router)
+    await flushAsync()
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(text(root)).toContain('手动')
+    expect(buttonByLabel(root, '上一页').disabled).toBe(true)
+    expect(buttonByLabel(root, '下一页').disabled).toBe(false)
+
+    buttonByLabel(root, '下一页').click()
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    session.transitionSettled.value = { path: '/b', generation: 2 }
+    await flushAsync()
+    expect(buttonByLabel(root, '上一页').disabled).toBe(false)
+    expect(buttonByLabel(root, '下一页').disabled).toBe(true)
+
+    buttonByLabel(root, '上一页').click()
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/a')
+    app.unmount()
+  })
+
+  it('资源失败显示错误与重试，并触发演讲和退出事件', async () => {
     waitForAssets.mockResolvedValue({
       ...READY,
       ok: false,
@@ -161,16 +183,54 @@ describe('PlaybackHostBridge 控制条', () => {
     const router = makeRouter()
     await router.push('/a')
     await router.isReady()
-    const { root, app } = mountBridge(router)
+    const { root, app } = mountBridge(router, { presenterAvailable: true })
     const session = getRuntimeSession(router)
     await flushAsync()
-    button(root).click()
     session.transitionSettled.value = { path: '/a', generation: 1 }
     await flushAsync()
 
     expect(root.querySelector('.runtime-playback-error')?.textContent).toContain('图片资源加载失败')
     expect(text(root)).toContain('重试')
     expect(text(root)).toContain('错误')
+
+    const onExit = vi.fn()
+    const onPresenter = vi.fn()
+    app.unmount()
+
+    const second = createApp(PlaybackHostBridge, {
+      initialAutoAdvance: true,
+      presenterAvailable: true,
+      onExit,
+      onPresenter,
+    })
+    const secondRoot = document.createElement('div')
+    document.body.append(secondRoot)
+    second.use(router)
+    second.mount(secondRoot)
+    await flushAsync()
+    secondRoot.querySelector<HTMLButtonElement>('[aria-label="进入演讲模式"]')!.click()
+    secondRoot.querySelector<HTMLButtonElement>('[aria-label="退出放映"]')!.click()
+    expect(onPresenter).toHaveBeenCalledTimes(1)
+    expect(onExit).toHaveBeenCalledTimes(1)
+    second.unmount()
+  })
+
+  it('旧产物没有放映配置时仍提供演讲与退出入口', async () => {
+    setRuntimePreloadedConfig({
+      app: { app: { icon: 'slider', title: '旧产物', description: '', page: { width: 1920, height: 1080, baseFontSize: '24px', iconDefaultStrokeWidth: 2 }, features: { showPdfExportButton: false, menuMode: 'text' } } },
+      routes: { routes: [{ route: 'a', component: '@/views/a.vue', meta: { title: 'A', order: 1 } }] },
+      icons: { static_icons: [] },
+    } as never)
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { root, app } = mountBridge(router, { presenterAvailable: true })
+    await flushAsync()
+
+    expect(text(root)).toContain('当前项目未启用放映配置')
+    expect(root.querySelector('[aria-label="进入演讲模式"]')).not.toBeNull()
+    expect(root.querySelector('[aria-label="退出放映"]')).not.toBeNull()
     app.unmount()
   })
 })

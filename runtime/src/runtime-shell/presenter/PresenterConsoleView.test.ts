@@ -155,6 +155,7 @@ describe('PresenterConsoleView', () => {
           remainingMs: 0,
           delayMs: null,
           waitingForMedia: false,
+          autoAdvanceEnabled: true,
           index: 0,
           total: 2,
         },
@@ -182,7 +183,7 @@ describe('PresenterConsoleView', () => {
     await nextTick()
 
     expect(host.querySelector('[data-testid="presenter-playback-state"]')?.textContent?.trim())
-      .toBe('已暂停（观众窗口未连接）')
+      .toBe('等待观众窗口全屏')
     expect(host.querySelector('[data-testid="presenter-playback-primary"]')).toBeNull()
 
     app.unmount()

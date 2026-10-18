@@ -47,7 +47,7 @@
                   size="sm"
                   :loading="previewLoading"
                   :disabled="!projectDetails"
-                  title="从首页开始放映；每次生成新的只读快照，旧窗口不会自动更新"
+                  title="打开 Runtime 预览；在 Runtime 窗口点击“进入放映”后全屏播放，每次生成新的只读快照"
                   @click="handlePreviewProject"
                 >
                   <template #icon>

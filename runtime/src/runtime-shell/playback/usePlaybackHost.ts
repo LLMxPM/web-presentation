@@ -3,7 +3,7 @@
  * 只有路由提交、过渡结束且当前页必要资源就绪后才上报 ready；旧页面、旧 generation
  * 和卸载后的探测结果都不会启动计时。
  */
-import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch, type ComputedRef, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getRuntimeSession, navigateRuntimePage } from '@/core/router/runtime-session'
 import { playbackConfig } from '@/core/utils/config'
@@ -11,7 +11,6 @@ import { getRouteInfosSortedByPageNumber } from '@/core/utils/route-generator'
 import { resolvePageAdvance } from '@/core/utils/page-transition'
 import { waitForEditorVisualAssets } from '@/core/utils/visual-assets'
 import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
-import { shouldStartAutomatically } from '@/core/execution/execution-policy'
 import { mediaPlaybackCoordinator } from '@/core/execution/media-playback-guard'
 import { createPageMediaSession, type PageMediaEvent, type PageMediaSession } from '@/core/media/page-media-session'
 import { PlaybackController, type PlaybackPage, type PlaybackSnapshot } from './playback-controller'
@@ -34,6 +33,9 @@ export interface PlaybackHost {
   errorMessage: Ref<string>
   /** Screen Wake Lock 状态；不支持或拒绝时放映仍正常进行。 */
   wakeLockState: Readonly<Ref<WakeLockState>>
+  canGoPrevious: ComputedRef<boolean>
+  /** 失败态允许跳过当前页；循环时末页也允许。 */
+  canGoNext: ComputedRef<boolean>
   start: () => boolean
   pause: () => boolean
   resume: () => boolean
@@ -41,13 +43,21 @@ export interface PlaybackHost {
   retry: () => boolean
   /** 失败态跳到下一页；没有下一页时返回 false。 */
   next: () => boolean
+  /** 手动翻页；失败态等价于跳到下一页。 */
+  goPrevious: () => boolean
+  goNext: () => boolean
+  /** 切换本次放映的自动推进；关闭时媒体继续但页面等待用户翻页。 */
+  setAutoAdvance: (enabled: boolean) => boolean
+  toggleAutoAdvance: () => boolean
   /** 按控制器单调时钟刷新剩余时间，供控制条定时读取。 */
   refresh: () => void
 }
 
 export interface PlaybackHostOptions {
-  /** 观众窗口由控制台命令启动，不执行项目 auto_start。 */
+  /** 挂载时是否立即启动会话；默认 false，由全屏放映壳显式开启。 */
   autoStart?: boolean
+  /** 会话初始自动推进状态；全屏放映由项目 auto_start 决定。 */
+  initialAutoAdvance?: boolean
 }
 
 /**
@@ -98,6 +108,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       pages,
       loop: playbackConfig.value.loop,
       initialPath: router.currentRoute.value.path,
+      autoAdvance: options.initialAutoAdvance ?? true,
       navigate: path => navigateRuntimePage(router, path),
     })
     unsubscribe = instance.subscribe(next => {
@@ -394,6 +405,11 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     return true
   }
 
+  /** 切换会话自动推进；只影响计时，不改变当前页、路由或已播放媒体。 */
+  function setAutoAdvance(enabled: boolean): boolean {
+    return controller.value?.setAutoAdvance(enabled) ?? false
+  }
+
   function stopPlayback(): boolean {
     if (!controller.value?.stop()) return false
     if (mediaSession) disposePageMedia()
@@ -420,6 +436,49 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     return true
   }
 
+  const canGoPrevious = computed(() => {
+    const current = snapshot.value
+    if (!current || current.index <= 0) return false
+    return current.state !== 'error' && current.state !== 'blocked'
+  })
+
+  const canGoNext = computed(() => {
+    const current = snapshot.value
+    if (!current || current.index < 0) return false
+    if (current.state === 'error' || current.state === 'blocked') {
+      return current.index < current.total - 1 || current.loop
+    }
+    return current.index < current.total - 1
+  })
+
+  /**
+   * 在放映序列内手动翻页；手动模式不绕回。
+   * 失败态交给控制器 next() 以清除旧媒体并重新就绪。
+   */
+  function goBy(offset: -1 | 1): boolean {
+    const instance = controller.value
+    const current = instance?.getSnapshot()
+    if (!instance || !current || current.index < 0) return false
+    if (current.state === 'error' || current.state === 'blocked') {
+      return offset === 1 ? nextPlayback() : false
+    }
+    const targetIndex = current.index + offset
+    if (targetIndex < 0 || targetIndex >= current.total) return false
+    const target = buildPlaybackPages()[targetIndex]
+    if (!target) return false
+    void navigateRuntimePage(router, target.path).catch(error => {
+      console.error('[runtime-playback] 手动翻页失败', error)
+    })
+    return true
+  }
+
+  function toggleAutoAdvance(): boolean {
+    const instance = controller.value
+    const current = instance?.getSnapshot()
+    if (!instance || !current) return false
+    return instance.setAutoAdvance(!current.autoAdvanceEnabled)
+  }
+
   /** 窗口隐藏、页面冻结或 bfcache 恢复时暂停；等待用户显式继续，不补课。 */
   function pauseForInterruption(): void {
     const instance = controller.value
@@ -442,8 +501,8 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   }
 
   /**
-   * 空格键在放映主画布中切换开始/暂停/继续。
-   * 捕获阶段处理后阻止传播，避免与布局层的空格翻页快捷键重复触发。
+   * 空格键在放映主画布中切换自动/手动；系统暂停时继续，结束或失败时重新开始。
+   * 捕获阶段处理后阻止传播，避免与预览层的空格翻页快捷键重复触发。
    */
   function handlePlaybackKeydown(event: KeyboardEvent): void {
     if (event.repeat || event.key !== ' ' || event.altKey || event.ctrlKey || event.metaKey) return
@@ -452,13 +511,15 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     const instance = controller.value
     if (!instance) return
     const state = instance.getSnapshot().state
-    let handled = false
-    if (state === 'stopped' || state === 'ended' || state === 'error' || state === 'blocked') {
-      handled = startPlayback()
-    } else if (state === 'playing' || state === 'preparing') {
-      handled = pausePlayback()
-    } else if (state === 'paused') {
+    let handled: boolean
+    if (state === 'paused') {
       handled = resumePlayback()
+    } else if (state === 'stopped' || state === 'ended') {
+      handled = startPlayback()
+    } else if (state === 'error' || state === 'blocked') {
+      handled = retryPlayback()
+    } else {
+      handled = toggleAutoAdvance()
     }
     if (!handled) return
     event.preventDefault()
@@ -470,12 +531,9 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     document.addEventListener('freeze', handlePageFreeze)
     window.addEventListener('pageshow', handlePageShow)
     document.addEventListener('keydown', handlePlaybackKeydown, true)
-    if (disposed || session.autoStartAttempted.value) return
-    session.autoStartAttempted.value = true
-    if (options.autoStart === false) return
+    if (disposed || options.autoStart !== true) return
     const instance = ensureController()
     if (!instance) return
-    if (!shouldStartAutomatically(policy.value, playbackConfig.value.autoStart)) return
     if (instance.start()) beginReadiness(instance.getSnapshot().path, true)
   })
 
@@ -496,12 +554,18 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     snapshot,
     errorMessage,
     wakeLockState: wakeLock.state,
+    canGoPrevious,
+    canGoNext,
     start: startPlayback,
     pause: pausePlayback,
     resume: resumePlayback,
     stop: stopPlayback,
     retry: retryPlayback,
     next: nextPlayback,
+    goPrevious: () => goBy(-1),
+    goNext: () => goBy(1),
+    setAutoAdvance,
+    toggleAutoAdvance,
     refresh: () => {
       const instance = controller.value
       if (instance) snapshot.value = instance.getSnapshot()
