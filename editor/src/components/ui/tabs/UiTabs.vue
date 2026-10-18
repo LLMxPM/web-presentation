@@ -1,6 +1,6 @@
 <!-- 文件功能：基于 Reka UI 提供页面和面板级标签切换。 -->
 <template>
-  <TabsRoot :model-value="modelValue" :orientation="orientation" class="min-w-0" @update:model-value="emit('update:modelValue', $event)">
+  <TabsRoot :model-value="modelValue" :orientation="orientation" class="min-w-0" :class="rootClass" @update:model-value="emit('update:modelValue', $event)">
     <TabsList class="flex items-center gap-1 border-b border-border" :class="listClass">
       <TabsTrigger
         v-for="item in items"
@@ -31,6 +31,7 @@ defineProps<{
   modelValue: string
   items: Array<{ label: string; value: string; disabled?: boolean }>
   orientation?: 'horizontal' | 'vertical'
+  rootClass?: string
   listClass?: string
   contentClass?: string
 }>()

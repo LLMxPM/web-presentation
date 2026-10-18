@@ -62,10 +62,10 @@
       <CardActionBar>
         <UiIconButton
           v-if="mode === 'routed'"
-          label="管理路由"
+          label="管理页面结构"
           size="sm"
           variant="secondary"
-          title="管理路由"
+          title="管理页面结构"
           @click.stop="emit('open-route-config')"
         >
           <RouteIcon class="h-3.5 w-3.5" />

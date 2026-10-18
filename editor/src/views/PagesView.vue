@@ -71,7 +71,7 @@
                   <template #icon>
                     <SlidersHorizontal class="h-4 w-4" />
                   </template>
-                  样式
+                  项目设置
                 </UiButton>
                 <UiButton variant="ghost" size="sm" :disabled="!projectDetails" @click="openSuggestedReferenceAssetsDialog">
                   <template #icon>
@@ -243,7 +243,9 @@
 
     <ProjectPresentationConfigDialog v-model="presentationConfigDialogVisible" :project="projectDetails"
       :workspace-id="workspaceId" :default-theme-key="workspaceQuery.data.value?.default_theme_key ?? null"
-      :loading="presentationConfigSaving" @save="handlePresentationConfigSave" />
+      :initial-tab="presentationConfigInitialTab"
+      :loading="presentationConfigSaving" @save="handlePresentationConfigSave"
+      @open-route-config="handlePresentationOpenRouteConfig" />
 
     <ProjectSuggestedReferenceAssetsDialog
       v-model="suggestedReferenceAssetsDialogVisible"
@@ -261,7 +263,7 @@
     />
 
     <ProjectRouteConfigDialog v-model="routeConfigDialogVisible" :project="projectDetails" :loading="routeSaving"
-      @save="handleRouteSave" />
+      @save="handleRouteSave" @open-project-settings="handleRouteOpenProjectSettings" />
 
     <ProjectBuildDialog v-model="projectBuildDialogVisible" :history="buildHistory"
       :history-loading="buildHistoryQuery.isFetching.value" :latest-job="latestBuildJob"
@@ -325,7 +327,7 @@ import {
   updateProject,
   waitForPageScreenshotJobGroup,
 } from '@/api/catalog'
-import { openProjectPresentation } from '@/utils/project-presentation'
+import { openProjectPresentation, preopenProjectPresentationWindow } from '@/utils/project-presentation'
 import { getErrorCode, getErrorData, getErrorMessage } from '@/api/http'
 import MonacoCodeEditor from '@/components/editor/MonacoCodeEditor.vue'
 import CommandBar from '@/components/patterns/CommandBar.vue'
@@ -521,6 +523,7 @@ const projectBuildResourceIssue = ref<ProjectBuildResourceIssueData | null>(null
 const deletingBuildArtifactJobId = ref<number | null>(null)
 const projectIdentityDialogVisible = ref(false)
 const presentationConfigDialogVisible = ref(false)
+const presentationConfigInitialTab = ref<'presentation' | 'slideshow'>('presentation')
 const suggestedReferenceAssetsDialogVisible = ref(false)
 const suggestedComponentsDialogVisible = ref(false)
 const routeConfigDialogVisible = ref(false)
@@ -1176,7 +1179,23 @@ function openProjectIdentityDialog(): void {
 }
 
 function openPresentationConfigDialog(): void {
+  presentationConfigInitialTab.value = 'presentation'
   presentationConfigDialogVisible.value = true
+}
+
+/**
+ * 从页面结构的项目默认摘要跳到项目设置放映分区。
+ */
+function handleRouteOpenProjectSettings(): void {
+  presentationConfigInitialTab.value = 'slideshow'
+  presentationConfigDialogVisible.value = true
+}
+
+/**
+ * 从项目设置跳到页面结构。
+ */
+function handlePresentationOpenRouteConfig(): void {
+  routeConfigDialogVisible.value = true
 }
 
 function openSuggestedReferenceAssetsDialog(): void {
@@ -1261,8 +1280,8 @@ async function handleProjectIdentityUpdate(payload: { name: string; description:
 }
 
 /**
- * 保存项目展示配置。
- * @param payload 项目展示配置
+ * 保存项目设置。
+ * @param payload 项目设置
  */
 async function handlePresentationConfigSave(payload: {
   page_width: number
@@ -1288,9 +1307,9 @@ async function handlePresentationConfigSave(payload: {
       queryClient.invalidateQueries({ queryKey: ['projects-by-ws', workspaceId.value] }),
     ])
     presentationConfigDialogVisible.value = false
-    Message.success('项目展示配置已保存。')
+    Message.success('项目设置已保存。')
   } catch (error) {
-    Message.error(getErrorMessage(error, '保存项目展示配置失败。'))
+    Message.error(getErrorMessage(error, '保存项目设置失败。'))
   } finally {
     presentationConfigSaving.value = false
   }
@@ -1298,26 +1317,48 @@ async function handlePresentationConfigSave(payload: {
 
 /**
  * 覆盖保存项目路由树，并刷新页面列表中的路由绑定状态。
- * @param payload 最新路由树
+ * 若携带 entryRoute，保存成功后按该页生成新的只读放映快照。
+ * @param payload 最新路由树与可选放映入口
  */
-async function handleRouteSave(payload: { routes: ProjectRouteItemWrite[] }): Promise<void> {
+async function handleRouteSave(payload: {
+  routes: ProjectRouteItemWrite[]
+  entryRoute?: string | null
+}): Promise<void> {
   if (!projectDetails.value) {
     return
   }
 
+  const projectIdValue = projectDetails.value.id
+  const presentationWindow = payload.entryRoute ? preopenProjectPresentationWindow() : null
   routeSaving.value = true
   try {
-    await replaceProjectRoutes(projectDetails.value.id, { routes: payload.routes })
+    await replaceProjectRoutes(projectIdValue, { routes: payload.routes })
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['pages-by-project', projectId.value] }),
       queryClient.invalidateQueries({ queryKey: ['project', projectId.value] }),
     ])
     routeConfigDialogVisible.value = false
-    Message.success('项目路由已保存。')
+    Message.success('页面结构已保存。')
   } catch (error) {
-    Message.error(getErrorMessage(error, '保存项目路由失败。'))
+    if (presentationWindow && !presentationWindow.closed) {
+      presentationWindow.close()
+    }
+    Message.error(getErrorMessage(error, '保存页面结构失败。'))
+    return
   } finally {
     routeSaving.value = false
+  }
+
+  if (!payload.entryRoute) {
+    return
+  }
+  try {
+    await openProjectPresentation(
+      { projectId: projectIdValue, entryRoute: payload.entryRoute },
+      presentationWindow,
+    )
+  } catch (error) {
+    Message.error(getErrorMessage(error, '页面结构已保存，但打开放映失败。'))
   }
 }
 

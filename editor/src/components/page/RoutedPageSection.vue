@@ -34,7 +34,7 @@
           <template #icon>
             <RouteIcon class="h-3.5 w-3.5" />
           </template>
-          路由
+          页面结构
         </UiButton>
         <UiButton
           v-if="selectedCount === 0"
@@ -70,7 +70,7 @@
     <DataState
       :state="entries.length === 0 ? 'empty' : 'ready'"
       title="当前没有页面加入项目路由"
-      description="可在下方页面中加入顶层路由，或通过路由配置统一编排。"
+      description="可在下方页面中加入顶层路由，或通过页面结构统一编排目录与放映顺序。"
       :retryable="false"
     >
     <div data-testid="routed-page-card-grid" class="grid gap-4" :style="pageCardGridStyle">

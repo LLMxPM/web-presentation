@@ -1,6 +1,6 @@
 # Editor 翻页动画与自动放映实施计划
 
-状态：M0 已实现（WP09、WP10、WP12）；M1 单窗口入口已实现（WP16）；M2 媒体表单、权限链与双屏入口已由 WP22/WP26/WP27 交付并通过 WP30 回归（2026-10-18）。字段与写入语义以[统一契约](./contract.md)为准，UI 遵循根目录 [DESIGN.md](../../../../DESIGN.md)。
+状态：M0 已实现（WP09、WP10、WP12）；M1 单窗口入口已实现（WP16）；M2 媒体表单、权限链与双屏入口已由 WP22/WP26/WP27 交付并通过 WP30 回归（2026-10-18）。Editor 页面结构弹窗已完成 P0/P1 交互重构（三栏检查器、批量放映、预计时长与保存并放映，2026-10-18）。字段与写入语义以[统一契约](./contract.md)为准，UI 遵循根目录 [DESIGN.md](../../../../DESIGN.md)。
 
 实施拆分见[工作包执行清单](./work-packages/README.md)：WP09 项目表单、WP10 路由覆盖、WP16 单窗口入口、WP22 权限链、WP26 双屏入口、WP27 媒体配置。以下 E 编号保留为上层职责。
 
@@ -8,14 +8,14 @@
 
 Editor 负责配置与操作入口，项目默认值和逐页覆盖通过 Backend 持久化。已有项目展示配置、路由编辑器及预览 iframe；新增表单不在浏览器本地存储第二份项目放映配置。
 
-主要入口为 [ProjectPresentationConfigDialog.vue](../../../../editor/src/components/project/ProjectPresentationConfigDialog.vue)、[ProjectRouteConfigDialog.vue](../../../../editor/src/components/project/ProjectRouteConfigDialog.vue)、[ProjectRouteTreeTable.vue](../../../../editor/src/components/project/ProjectRouteTreeTable.vue)、[路由映射工具](../../../../editor/src/utils/project-route.ts)和 [RuntimePreviewFrame.vue](../../../../editor/src/components/runtime-preview/RuntimePreviewFrame.vue)。
+主要入口为 [ProjectPresentationConfigDialog.vue](../../../../editor/src/components/project/ProjectPresentationConfigDialog.vue)、[ProjectRouteConfigDialog.vue](../../../../editor/src/components/project/ProjectRouteConfigDialog.vue)、[ProjectRouteWorkbench.vue](../../../../editor/src/components/project/ProjectRouteWorkbench.vue)、[ProjectRouteSequenceTable.vue](../../../../editor/src/components/project/ProjectRouteSequenceTable.vue)、[ProjectRouteInspector.vue](../../../../editor/src/components/project/ProjectRouteInspector.vue)、[路由映射工具](../../../../editor/src/utils/project-route.ts)和 [RuntimePreviewFrame.vue](../../../../editor/src/components/runtime-preview/RuntimePreviewFrame.vue)。
 
 ## 2. 工作包
 
 ### E01：项目放映配置（M0，依赖 B01/B02/B05）
 
 - [x] 从生成 API 类型读取 `slideshow`，拆出专门的配置字段组件和草稿组合逻辑，避免继续扩大现有展示配置弹窗。
-- [x] 在项目配置入口提供“放映”区域：默认动画、动画时长、翻页方式、停留时间、循环、进入后自动开始。
+- [x] 在项目设置提供“放映”分区：默认动画、动画时长、翻页方式、停留时间、循环、进入后自动开始。
 - [x] 放映草稿单独提交项目顶层参数，不混入共享样式 `presentation`；应用或另存工作空间样式不重置它。
 - [x] UI 可显示秒，提交统一转换为整数毫秒；动画时长和停留时间使用不同标签及说明；无动画时提交合法的 0ms。
 - [x] 保存失败保留草稿和字段错误，保存成功按 Backend 返回值刷新；“恢复当前值”只恢复已保存值。
@@ -26,11 +26,11 @@ Editor 负责配置与操作入口，项目默认值和逐页覆盖通过 Backen
 ### E02：逐路由覆盖与继承（M0，依赖 B02/E01）
 
 - [x] 叶子路由增加放映设置入口，动画和翻页各自选择“继承项目/覆盖”；分组只保留已有路由组织能力。
-- [x] 显示 Backend 返回的项目默认值、原始覆盖及生效摘要；用户无需理解 Runtime YAML。
+- [x] 显示项目默认值、原始覆盖及生效摘要；前端在草稿阶段按同一继承规则即时计算，保存后的权威生效值仍由 Backend 派生。
 - [x] 选择覆盖时以当前生效组初始化完整对象；恢复继承明确提交 null，不提交展开后的生效值。
 - [x] 更新读模型→草稿→写模型的映射，过滤只读 `effective_slideshow`，保留排序、重命名、移动和重复引用中的覆盖设置。
-- [x] 复杂字段使用节点设置面板或弹窗，表格只显示短摘要，避免每行堆积表单；批量设置作为后续增强。
-- [x] 草稿修改和取消不污染已保存路由；整树保存失败保持所有草稿，避免局部成功的误导。
+- [x] 复杂字段使用右侧检查器，表格只显示短摘要，避免每行堆积表单；批量设置与“应用到本章”已交付。
+- [x] 草稿修改和取消不污染已保存路由；关闭前提供未保存修改确认；整树保存失败保持所有草稿，避免局部成功的误导。
 
 验收：修改项目默认值时继承项随之变化，覆盖项保持；同一页面的两次引用可保存不同时间；单组恢复继承不影响另一组。
 
@@ -52,7 +52,16 @@ Editor 负责配置与操作入口，项目默认值和逐页覆盖通过 Backen
 
 验收：模式选项与 Backend/Runtime 能力一致，媒体受阻有明确操作，单页预览和演讲者缩略图均不抢播。
 
-## 3. 组件和验证约束
+## 3. P0/P1 交互重构（2026-10-18）
+
+- 页面列表入口保留两个专注界面：顶部 **项目设置** 分「展示 / 放映」两个标签页，展示页含主题、尺寸、菜单、导出与样式规范，放映页管理项目默认值；**已加入路由 → 页面结构** 管理顺序、隐藏、路径和逐页覆盖。
+- 页面结构采用“页面池 / 序列 / 检查器”三栏；行内显示生效摘要与继承/覆盖/隐藏徽标，Route 片段收进检查器高级区，操作不再挤在表格行内。
+- `hidden` 明确为“不显示在下拉目录，也不参与自动或手动翻页”；隐藏页禁用“从这里放映”，但保留覆盖设置。
+- 批量放映支持“不修改 / 恢复继承 / 设置覆盖”三态；选中分组时“批量设置本章”展开为子页节点执行，同一页面多次引用可分别设置。
+- 顶部按可见叶子页估算总时长，手动页和媒体页单独提示；检查器提供“保存并从这里放映”，父组件保存成功后按 `entryRoute` 打开新的只读快照。
+- 页面结构保存仍为整树 PUT，项目设置仍为 `PATCH /projects/{id}`；两侧共享 `ProjectSlideshowFields` 与只读默认值摘要，不合并保存接口。
+
+## 4. 组件和验证约束
 
 复用 `components/ui` 的表单、数字输入、选择、开关、弹窗和提示；遵循语义 Token、标题不换行、单一滚动所有者与 `min-h-0/min-w-0` 约束。核查 1440px、1180px、960px 及键盘访问，保存状态不能仅用颜色表示。
 

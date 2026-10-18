@@ -13,6 +13,18 @@ export const ADVANCE_MODE_LABELS: Record<SlideshowAdvanceMode, string> = {
   media_end: '媒体结束',
 }
 
+export const TRANSITION_EFFECT_LABELS: Record<SlideshowEffect, string> = {
+  none: '无动画',
+  fade: '淡入淡出',
+  push: '推入',
+}
+
+export const TRANSITION_EFFECT_OPTIONS: Array<{ label: string; value: SlideshowEffect }> = [
+  { label: TRANSITION_EFFECT_LABELS.fade, value: 'fade' },
+  { label: TRANSITION_EFFECT_LABELS.push, value: 'push' },
+  { label: TRANSITION_EFFECT_LABELS.none, value: 'none' },
+]
+
 export interface SlideshowDraft {
   effect: SlideshowEffect
   durationSeconds: string
@@ -30,12 +42,12 @@ export const DEFAULT_SLIDESHOW_SETTINGS: SlideshowSettings = {
   auto_start: false,
 }
 
-const TRANSITION_DURATION_MIN_MS = 100
-const TRANSITION_DURATION_MAX_MS = 2000
-const ADVANCE_DELAY_MIN_MS = 1000
-const ADVANCE_DELAY_MAX_MS = 3_600_000
-const MEDIA_TIMEOUT_MIN_MS = 1000
-const MEDIA_TIMEOUT_MAX_MS = 3_600_000
+export const TRANSITION_DURATION_MIN_MS = 100
+export const TRANSITION_DURATION_MAX_MS = 2000
+export const ADVANCE_DELAY_MIN_MS = 1000
+export const ADVANCE_DELAY_MAX_MS = 3_600_000
+export const MEDIA_TIMEOUT_MIN_MS = 1000
+export const MEDIA_TIMEOUT_MAX_MS = 3_600_000
 
 /**
  * 判断服务端是否已开放媒体结束模式；能力缺失或读取失败时按未开放处理。

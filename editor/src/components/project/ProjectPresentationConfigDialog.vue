@@ -1,72 +1,120 @@
-<!-- 文件功能：项目展示配置弹窗，统一编辑主题、页面尺寸、菜单模式与导出按钮。 -->
+<!-- 文件功能：项目设置弹窗，按展示（含样式规范）与放映两个分区编辑项目级配置，并与页面结构互链。 -->
 <template>
   <UiDialog
     :open="modelValue"
-    title="项目展示配置"
+    title="项目设置"
     size="canvas"
     width="1480px"
     body-preset="dense"
     @update:open="handleVisibleChange"
   >
-    <div v-if="project && modelValue" class="project-config-layout">
-      <section class="project-config-panel">
-        <section class="project-config-card shrink-0 bg-canvas/70">
-          <WorkspaceStyleApplyField
-            v-if="workspaceId"
-            :workspace-id="workspaceId"
-            embedded
-            label="样式模板"
-            hint="从模板快速填充项目展示配置。"
-            @apply="applyWorkspaceStyle"
-          />
-          <div v-else>
-            <label class="text-sm font-semibold text-text-emphasis">应用样式</label>
-            <p class="mt-1 text-xs text-text-disabled">缺少工作空间上下文，暂时不能从样式库填充项目草稿。</p>
+    <template #header-extra>
+      <span
+        v-if="isDirty"
+        class="rounded-full border border-warning-border bg-warning-muted px-2.5 py-1 text-[11px] font-semibold text-warning-strong"
+      >
+        未保存
+      </span>
+    </template>
+
+    <div v-if="project && modelValue" class="flex h-full min-h-0 flex-col">
+      <UiTabs
+        v-model="activeTab"
+        :items="tabs"
+        root-class="flex h-full min-h-0 flex-col"
+        content-class="min-h-0 flex-1 overflow-y-auto pt-4"
+      >
+        <template #presentation>
+          <div class="project-config-layout">
+            <section class="project-config-panel">
+              <section class="project-config-card shrink-0 bg-canvas/70">
+                <WorkspaceStyleApplyField
+                  v-if="workspaceId"
+                  :workspace-id="workspaceId"
+                  embedded
+                  label="样式模板"
+                  hint="从模板快速填充项目展示配置。"
+                  @apply="applyWorkspaceStyle"
+                />
+                <div v-else>
+                  <label class="text-sm font-semibold text-text-emphasis">应用样式</label>
+                  <p class="mt-1 text-xs text-text-disabled">缺少工作空间上下文，暂时不能从样式库填充项目草稿。</p>
+                </div>
+
+                <div class="mt-4 border-t border-border pt-4">
+                  <ThemeSelectorField
+                    :workspace-id="workspaceId"
+                    :model-value="draft.themeKey"
+                    :preferred-key="defaultThemeKey"
+                    label="项目主题"
+                    :show-preview="false"
+                    @update:model-value="updateThemeKey"
+                  />
+                </div>
+              </section>
+
+              <section class="project-config-card project-config-card--fill bg-surface">
+                <ProjectPresentationFields
+                  v-model:page-width="draft.pageWidth"
+                  v-model:page-height="draft.pageHeight"
+                  v-model:base-font-size="draft.baseFontSize"
+                  v-model:icon-default-stroke-width="draft.iconDefaultStrokeWidth"
+                  v-model:show-pdf-export-button="draft.showPdfExportButton"
+                  v-model:menu-mode="draft.menuMode"
+                />
+              </section>
+            </section>
+
+            <section class="project-config-card project-config-spec-card bg-surface">
+              <UiFormField label="样式规范 Markdown" class="min-h-0 flex-1">
+                <template #default="field">
+                  <UiInput
+                    v-model="draft.styleSpecMarkdown"
+                    type="textarea"
+                    textarea-mode="fill"
+                    placeholder="记录内容助手生成页面时应遵循的版式、排版和视觉约束"
+                    :rows="16"
+                    class="project-config-spec-textarea"
+                    :input-id="field.inputId"
+                    :described-by="field.describedBy"
+                  />
+                </template>
+              </UiFormField>
+            </section>
           </div>
+        </template>
 
-          <div class="mt-4 border-t border-border pt-4">
-            <ThemeSelectorField
-              :workspace-id="workspaceId"
-              :model-value="draft.themeKey"
-              :preferred-key="defaultThemeKey"
-              label="项目主题"
-              :show-preview="false"
-              @update:model-value="updateThemeKey"
-            />
+        <template #slideshow>
+          <div class="project-settings-slideshow">
+            <section class="project-config-card bg-surface">
+              <h3 class="text-sm font-semibold text-text-emphasis">自动放映</h3>
+              <p class="mt-0.5 text-xs leading-5 text-text-disabled">
+                项目默认值；逐页可在页面结构中覆盖。隐藏页不显示在目录，也不参与自动或手动翻页。
+              </p>
+              <div class="mt-3">
+                <ProjectSlideshowFields
+                  :draft="draft.slideshow"
+                  :capabilities="capabilities"
+                  @update:draft="updateSlideshowDraft"
+                />
+              </div>
+            </section>
+
+            <section class="project-config-card bg-surface">
+              <h3 class="text-sm font-semibold text-text-emphasis">页面级覆盖</h3>
+              <p class="mt-1 text-xs leading-5 text-text-muted">
+                逐页的翻页动画和方式在“页面结构”中设置；同一页面被多次引用时可以分别设置。
+              </p>
+              <p class="mt-2 text-xs leading-5 text-text-disabled">
+                放映配置不随“应用样式”或“另存为样式”改变，保存后会写入项目默认值。
+              </p>
+              <UiButton variant="secondary" size="sm" class="mt-3" @click="handleOpenRouteConfig">
+                打开页面结构
+              </UiButton>
+            </section>
           </div>
-        </section>
-
-        <section class="project-config-card project-config-card--fill bg-surface">
-          <ProjectPresentationFields
-            v-model:page-width="draft.pageWidth"
-            v-model:page-height="draft.pageHeight"
-            v-model:base-font-size="draft.baseFontSize"
-            v-model:icon-default-stroke-width="draft.iconDefaultStrokeWidth"
-            v-model:show-pdf-export-button="draft.showPdfExportButton"
-            v-model:menu-mode="draft.menuMode"
-          />
-        </section>
-
-        <section class="project-config-card bg-surface">
-          <h3 class="text-sm font-semibold text-text-emphasis">自动放映</h3>
-          <p class="mt-0.5 text-xs text-text-disabled">项目默认值；逐页可在路由配置中覆盖。应用样式不会修改这里的设置。</p>
-          <div class="mt-3">
-            <ProjectSlideshowFields
-              :draft="draft.slideshow"
-              :capabilities="capabilities"
-              @update:draft="updateSlideshowDraft"
-            />
-          </div>
-        </section>
-      </section>
-
-      <section class="project-config-card project-config-spec-card bg-surface">
-        <UiFormField label="样式规范 Markdown" class="min-h-0 flex-1">
-          <template #default="field">
-            <UiInput v-model="draft.styleSpecMarkdown" type="textarea" textarea-mode="fill" placeholder="记录内容助手生成页面时应遵循的版式、排版和视觉约束" :rows="16" class="project-config-spec-textarea" :input-id="field.inputId" :described-by="field.describedBy" />
-          </template>
-        </UiFormField>
-      </section>
+        </template>
+      </UiTabs>
     </div>
 
     <div v-else class="py-10 text-center text-sm text-text-disabled">
@@ -78,7 +126,14 @@
         <UiButton variant="ghost" @click="handleVisibleChange(false)">取消</UiButton>
         <div class="flex flex-wrap justify-end gap-2">
           <UiButton variant="ghost" :disabled="!project" @click="resetDraft">恢复当前值</UiButton>
-          <UiButton variant="ghost" :disabled="!project || !workspaceId" @click="openSaveAsStyleDialog">另存为样式</UiButton>
+          <UiButton
+            v-if="activeTab === 'presentation'"
+            variant="ghost"
+            :disabled="!project || !workspaceId"
+            @click="openSaveAsStyleDialog"
+          >
+            另存为样式
+          </UiButton>
           <UiButton variant="primary" :loading="loading" :disabled="!project" @click="handleSave">
             保存配置
           </UiButton>
@@ -103,9 +158,9 @@ import { computed, reactive, ref, watch } from 'vue'
 import { createWorkspaceStyle, type WorkspaceStylePayload } from '@/api/styles'
 import { useSlideshowCapabilities } from '@/composables/useSlideshowCapabilities'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
-import { UiButton, UiDialog, UiFormField, UiInput } from '@/components/ui'
+import { UiButton, UiDialog, UiFormField, UiInput, UiTabs } from '@/components/ui'
 import type { ProjectItem, ProjectMenuMode, SlideshowSettings, WorkspaceStyleItem } from '@/types/api'
-import { Message } from '@/utils/message'
+import { Message, createConfirm } from '@/utils/message'
 import { getErrorMessage } from '@/api/http'
 import WorkspaceStyleApplyField from './WorkspaceStyleApplyField.vue'
 import WorkspaceStyleEditorDialog from './WorkspaceStyleEditorDialog.vue'
@@ -122,14 +177,18 @@ import {
   normalizeProjectInteger as normalizeIntegerWithinRange,
 } from './project-presentation-values'
 
+type ProjectSettingsTab = 'presentation' | 'slideshow'
+
 const props = withDefaults(defineProps<{
   modelValue: boolean
   project: ProjectItem | null
   workspaceId: number | null
   defaultThemeKey?: string | null
+  initialTab?: ProjectSettingsTab
   loading?: boolean
 }>(), {
   defaultThemeKey: null,
+  initialTab: 'presentation',
   loading: false,
 })
 
@@ -147,7 +206,13 @@ const emit = defineEmits<{
     slideshow: SlideshowSettings
     source_style_id?: number | null
   }]
+  'open-route-config': []
 }>()
+
+const tabs = [
+  { label: '展示', value: 'presentation' },
+  { label: '放映', value: 'slideshow' },
+]
 
 const draft = reactive({
   pageWidth: String(DEFAULT_PROJECT_PAGE_WIDTH),
@@ -161,15 +226,19 @@ const draft = reactive({
   slideshow: createSlideshowDraft(null),
 })
 
+const activeTab = ref<string>('presentation')
 const saveAsStyleDialogVisible = ref(false)
 const saveAsStyleSaving = ref(false)
 const appliedWorkspaceStyleId = ref<number | null>(null)
+const initialSnapshot = ref('')
+const closeConfirming = ref(false)
 const { capabilities, load: loadSlideshowCapabilities } = useSlideshowCapabilities()
 
 const normalizedPageWidth = computed(() => normalizeDimension(draft.pageWidth, DEFAULT_PROJECT_PAGE_WIDTH))
 const normalizedPageHeight = computed(() => normalizeDimension(draft.pageHeight, DEFAULT_PROJECT_PAGE_HEIGHT))
 const normalizedBaseFontSize = computed(() => normalizeBaseFontSize(draft.baseFontSize, DEFAULT_PROJECT_BASE_FONT_SIZE))
 const normalizedIconDefaultStrokeWidth = computed(() => normalizeIntegerWithinRange(draft.iconDefaultStrokeWidth, 2, 1, 64))
+const isDirty = computed(() => JSON.stringify(draft) !== initialSnapshot.value)
 const saveAsStyleInitialValue = computed<Partial<WorkspaceStylePayload>>(() => ({
   key: buildStyleKey(props.project?.name ?? 'project-style'),
   name: `${props.project?.name ?? '项目'}样式`,
@@ -186,7 +255,7 @@ const saveAsStyleInitialValue = computed<Partial<WorkspaceStylePayload>>(() => (
 type WorkspaceStyleEditorSavePayload = WorkspaceStylePayload & { suggested_component_ids?: number[] }
 
 /**
- * 根据项目详情刷新展示配置草稿。
+ * 根据项目详情刷新设置草稿，并重置脏检查基线。
  * @param project 当前项目
  */
 function syncDraftFromProject(project: ProjectItem | null): void {
@@ -200,6 +269,7 @@ function syncDraftFromProject(project: ProjectItem | null): void {
   draft.styleSpecMarkdown = project?.style_spec_markdown ?? ''
   draft.slideshow = createSlideshowDraft(project?.slideshow)
   appliedWorkspaceStyleId.value = null
+  initialSnapshot.value = JSON.stringify(draft)
 }
 
 /**
@@ -211,11 +281,31 @@ function updateSlideshowDraft(value: SlideshowDraft): void {
 }
 
 /**
- * 向父组件同步弹窗可见状态。
+ * 拦截关闭请求，存在未保存修改时先确认。
  * @param value 目标可见状态
  */
-function handleVisibleChange(value: boolean): void {
-  emit('update:modelValue', value)
+async function handleVisibleChange(value: boolean): Promise<void> {
+  if (value) {
+    emit('update:modelValue', true)
+    return
+  }
+  if (props.loading || closeConfirming.value) {
+    return
+  }
+  if (!isDirty.value) {
+    emit('update:modelValue', false)
+    return
+  }
+  closeConfirming.value = true
+  const confirmed = await createConfirm(
+    '项目设置有未保存的修改，关闭后将丢失。确定放弃这些修改吗？',
+    '放弃未保存的修改？',
+    { dangerous: true, confirmLabel: '放弃并关闭', cancelLabel: '继续编辑' },
+  )
+  closeConfirming.value = false
+  if (confirmed) {
+    emit('update:modelValue', false)
+  }
 }
 
 /**
@@ -245,14 +335,14 @@ function applyWorkspaceStyle(style: WorkspaceStyleItem): void {
 }
 
 /**
- * 恢复到当前项目已保存的展示配置。
+ * 恢复到当前项目已保存的设置。
  */
 function resetDraft(): void {
   syncDraftFromProject(props.project)
 }
 
 /**
- * 提交项目展示配置。
+ * 提交项目设置。
  */
 function handleSave(): void {
   const payload: {
@@ -288,6 +378,27 @@ function handleSave(): void {
  */
 function openSaveAsStyleDialog(): void {
   saveAsStyleDialogVisible.value = true
+}
+
+/**
+ * 跳转到页面结构；有未保存修改时先确认。
+ */
+async function handleOpenRouteConfig(): Promise<void> {
+  if (props.loading) {
+    return
+  }
+  if (isDirty.value) {
+    const confirmed = await createConfirm(
+      '项目设置有未保存的修改，打开页面结构将丢失这些修改。确定继续吗？',
+      '打开页面结构？',
+      { dangerous: true, confirmLabel: '继续打开', cancelLabel: '继续编辑' },
+    )
+    if (!confirmed) {
+      return
+    }
+  }
+  emit('update:modelValue', false)
+  emit('open-route-config')
 }
 
 /**
@@ -327,6 +438,7 @@ watch(
   () => [props.modelValue, props.project] as const,
   ([visible, project]) => {
     if (visible) {
+      activeTab.value = props.initialTab
       syncDraftFromProject(project)
       void loadSlideshowCapabilities()
     }
@@ -377,6 +489,14 @@ watch(
   min-height: 260px;
 }
 
+.project-settings-slideshow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 1rem;
+  min-height: 100%;
+  align-items: start;
+}
+
 @media (max-height: 820px) {
   .project-config-layout {
     gap: 0.75rem;
@@ -388,10 +508,9 @@ watch(
 }
 
 @media (max-width: 1280px) {
+  /* 窄屏改为纵向流式；滚动交给标签页内容区，避免与弹窗内容区形成双重滚动。 */
   .project-config-layout {
     display: block;
-    overflow-y: auto;
-    padding-right: 0.25rem;
   }
 
   .project-config-panel {
@@ -408,6 +527,15 @@ watch(
     margin-top: 0.75rem;
   }
 
+  .project-settings-slideshow {
+    display: block;
+    height: auto;
+  }
+
+  .project-settings-slideshow > * + * {
+    margin-top: 0.75rem;
+  }
+
   /* 窄屏下布局改为纵向流式，卡片没有确定高度，改回固定高度避免塌陷。 */
   .project-config-spec-card :deep(.project-config-spec-textarea) {
     height: min(420px, calc(100dvh - 330px));
@@ -415,4 +543,3 @@ watch(
   }
 }
 </style>
-

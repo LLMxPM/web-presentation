@@ -136,29 +136,42 @@ export function appendRootPageRoute(
  */
 export function validateProjectRoutes(routeItems: ProjectRouteItemWrite[]): string[] {
   const errors: string[] = []
+  const rootRoutes = new Set<string>()
 
   routeItems.forEach((routeItem, routeIndex) => {
     const routeLabel = `第 ${routeIndex + 1} 个顶层节点`
-    if (!routeItem.route.trim()) {
+    const normalizedRoute = routeItem.route.trim()
+    if (!normalizedRoute) {
       errors.push(`${routeLabel} 的 Route 不能为空。`)
-    } else if (!isValidProjectRouteSegment(routeItem.route)) {
+    } else if (!isValidProjectRouteSegment(normalizedRoute)) {
       errors.push(`${routeLabel} 的 Route 只能使用单段相对片段，例如 home、chapter-1 或 PAGE_01，不能使用 /、/home、home/、a/b 或包含空格。`)
+    } else if (rootRoutes.has(normalizedRoute)) {
+      errors.push(`${routeLabel} 的 Route 与前面的顶层节点重复。`)
     }
+    rootRoutes.add(normalizedRoute)
 
     if (routeItem.route_type === 'group') {
       if (!(routeItem.group_title ?? '').trim()) {
         errors.push(`${routeLabel} 的分组标题不能为空。`)
       }
+      if ((routeItem.children ?? []).length === 0) {
+        errors.push(`${routeLabel} 至少需要一个子页面。`)
+      }
+      const childRoutes = new Set<string>()
       ;(routeItem.children ?? []).forEach((childRoute, childIndex) => {
         const childLabel = `${routeLabel} 的第 ${childIndex + 1} 个子页`
+        const normalizedChildRoute = childRoute.route.trim()
         if (!childRoute.page_id) {
           errors.push(`${childLabel} 必须选择关联页面。`)
         }
-        if (!childRoute.route.trim()) {
+        if (!normalizedChildRoute) {
           errors.push(`${childLabel} 的 Route 不能为空。`)
-        } else if (!isValidProjectRouteSegment(childRoute.route)) {
+        } else if (!isValidProjectRouteSegment(normalizedChildRoute)) {
           errors.push(`${childLabel} 的 Route 只能使用单段相对片段，例如 home、chapter-1 或 PAGE_01，不能使用 /、/home、home/、a/b 或包含空格。`)
+        } else if (childRoutes.has(normalizedChildRoute)) {
+          errors.push(`${childLabel} 的 Route 与本章前面的子页重复。`)
         }
+        childRoutes.add(normalizedChildRoute)
       })
       return
     }

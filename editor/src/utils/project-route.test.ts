@@ -190,6 +190,43 @@ describe('project-route utils', () => {
       '第 2 个顶层节点 的第 1 个子页 的 Route 只能使用单段相对片段，例如 home、chapter-1 或 PAGE_01，不能使用 /、/home、home/、a/b 或包含空格。',
     ])
   })
+
+  it('保存前应提示同级重复 Route', () => {
+    const errors = validateProjectRoutes([
+      {
+        route_type: 'page',
+        route: 'home',
+        order: 10,
+        hidden: false,
+        page_id: 1,
+        children: [],
+      },
+      {
+        route_type: 'page',
+        route: 'home',
+        order: 20,
+        hidden: false,
+        page_id: 2,
+        children: [],
+      },
+      {
+        route_type: 'group',
+        route: 'chapter',
+        order: 30,
+        hidden: false,
+        group_title: '章节',
+        children: [
+          { route: 'intro', order: 10, hidden: false, page_id: 3 },
+          { route: 'intro', order: 20, hidden: false, page_id: 4 },
+        ],
+      },
+    ])
+
+    expect(errors).toEqual([
+      '第 2 个顶层节点 的 Route 与前面的顶层节点重复。',
+      '第 3 个顶层节点 的第 2 个子页 的 Route 与本章前面的子页重复。',
+    ])
+  })
 })
 
 describe('project-route slideshow overrides', () => {
@@ -242,5 +279,22 @@ describe('project-route slideshow overrides', () => {
     expect(cloned[0].transition).toBeNull()
     expect(cloned[0].children?.[0].transition).toEqual({ effect: 'none', duration_ms: 0 })
     expect(cloned[0].children?.[0].advance).toEqual({ mode: 'manual', delay_ms: 3000 })
+  })
+})
+
+describe('project-route validation for empty groups', () => {
+  it('分组至少需要一个子页面', () => {
+    const errors = validateProjectRoutes([
+      {
+        route_type: 'group',
+        route: 'chapter',
+        order: 10,
+        hidden: false,
+        group_title: '章节',
+        children: [],
+      },
+    ])
+
+    expect(errors).toContain('第 1 个顶层节点 至少需要一个子页面。')
   })
 })

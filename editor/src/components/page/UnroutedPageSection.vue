@@ -56,7 +56,7 @@
     <DataState
       :state="pages.length === 0 ? 'empty' : 'ready'"
       title="当前没有未加入路由的页面"
-      description="可新增页面，或从路由配置中调整现有页面。"
+      description="可新增页面，或在页面结构中调整现有页面。"
       :retryable="false"
     >
     <template #empty>

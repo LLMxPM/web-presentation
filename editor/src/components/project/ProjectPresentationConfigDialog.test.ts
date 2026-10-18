@@ -74,9 +74,19 @@ const dialogStubs = {
 }
 
 describe('ProjectPresentationConfigDialog', () => {
+  it('分区只保留展示与放映，样式规范归入展示分区', async () => {
+    render(ProjectPresentationConfigDialog, {
+      props: { modelValue: true, project, workspaceId: 3, defaultThemeKey: null },
+      global: { stubs: dialogStubs },
+    })
+
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent?.trim())).toEqual(['展示', '放映'])
+    expect(screen.getByText('样式规范 Markdown')).toBeInTheDocument()
+  })
+
   it('保存时应提交表单收敛后的完整放映配置', async () => {
     const { emitted } = render(ProjectPresentationConfigDialog, {
-      props: { modelValue: true, project, workspaceId: 3, defaultThemeKey: null },
+      props: { modelValue: true, project, workspaceId: 3, defaultThemeKey: null, initialTab: 'slideshow' },
       global: { stubs: dialogStubs },
     })
 
