@@ -163,12 +163,14 @@
       </div>
 
       <footer class="space-y-2 border-t border-border p-3">
-        <UiButton variant="primary" size="sm" class="w-full" :disabled="!canPresent" @click="handlePresent">
-          {{ isGroup ? '保存并从本章放映' : '保存并从这里放映' }}
-        </UiButton>
-        <UiButton variant="danger" size="sm" class="w-full" @click="handleDelete">
-          删除{{ isGroup ? '分组' : '此页' }}
-        </UiButton>
+        <div class="flex items-center gap-2">
+          <UiButton variant="primary" size="sm" class="min-w-0 flex-1" :disabled="!canPresent" @click="handlePresent">
+            {{ isGroup ? '保存并从本章放映' : '保存并从这里放映' }}
+          </UiButton>
+          <UiButton variant="danger" size="sm" class="shrink-0" @click="handleDelete">
+            删除{{ isGroup ? '分组' : '此页' }}
+          </UiButton>
+        </div>
         <p v-if="item.hidden" class="text-center text-[11px] leading-4 text-warning-strong">已隐藏，不参与放映序列；取消隐藏后可从这里放映。</p>
         <p v-else class="text-center text-[11px] leading-4 text-text-disabled">保存后按当前页生成新的只读放映快照。</p>
       </footer>

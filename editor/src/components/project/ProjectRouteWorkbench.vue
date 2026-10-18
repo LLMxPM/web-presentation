@@ -26,10 +26,14 @@
         <article
           v-for="page in filteredPages"
           :key="page.id"
-          class="rounded-xl border border-border bg-surface p-2"
+          class="rounded-xl border border-border bg-surface px-2.5 py-2"
         >
-          <div class="flex items-start justify-between gap-1">
+          <div class="flex items-center justify-between gap-1.5">
             <span class="truncate text-xs font-semibold text-text-strong" :title="page.title">{{ page.title }}</span>
+            <UiButton size="xs" variant="secondary" class="shrink-0" @click="addPage(page)">添加</UiButton>
+          </div>
+          <div class="mt-0.5 flex items-center justify-between gap-1.5">
+            <span class="truncate font-mono text-[11px] text-text-disabled" :title="page.code">{{ page.code }}</span>
             <span
               class="shrink-0 text-[11px]"
               :class="getPageUsageCount(page.id) > 0 ? 'text-success-strong' : 'text-text-disabled'"
@@ -37,15 +41,13 @@
               {{ getPageUsageCount(page.id) > 0 ? `已用 ${getPageUsageCount(page.id)}` : '未用' }}
             </span>
           </div>
-          <div class="mt-0.5 truncate font-mono text-[11px] text-text-disabled" :title="page.code">{{ page.code }}</div>
           <div
-            v-if="getPageUsageCount(page.id) > 0"
-            class="mt-1 truncate text-[11px] text-text-muted"
+            class="mt-0.5 truncate text-[11px]"
+            :class="getPageUsageCount(page.id) > 0 ? 'text-text-muted' : 'text-text-disabled'"
             :title="getPageUsageText(page.id)"
           >
-            {{ getPageUsageText(page.id) }}
+            {{ getPageUsageCount(page.id) > 0 ? getPageUsageText(page.id) : '未加入放映序列' }}
           </div>
-          <UiButton size="xs" variant="secondary" class="mt-2 w-full" @click="addPage(page)">添加</UiButton>
         </article>
 
         <div v-if="filteredPages.length === 0" class="rounded-xl border border-dashed border-border bg-surface px-3 py-8 text-center text-[11px] text-text-disabled">
@@ -183,31 +185,6 @@ const batchKeys = ref<string[]>([])
 const batchItemCount = ref(0)
 
 const activePages = computed(() => props.pages.filter(page => page.status === 'active'))
-const filteredPages = computed(() => {
-  const keyword = pageKeyword.value.trim().toLowerCase()
-  const ordered = [...activePages.value].sort((left, right) => left.title.localeCompare(right.title, 'zh-CN'))
-  if (!keyword) {
-    return ordered
-  }
-  return ordered.filter(page => {
-    return [page.title, page.code, page.summary ?? '']
-      .some(value => value.toLowerCase().includes(keyword))
-  })
-})
-const targetOptions = computed(() => {
-  const groups = props.modelValue.filter(item => item.route_type === 'group')
-  return [
-    { label: '顶层', value: 'root' },
-    ...groups.map(group => ({
-      label: group.group_title || group.route || '未命名分组',
-      value: `group:${group.route}`,
-    })),
-  ]
-})
-const selection = computed(() => findRouteNodeByKey(props.modelValue, props.selectedKey))
-const selectedPageCount = computed(() => countSelectedPages(props.modelValue, props.selectedKeys))
-const batchPageCount = computed(() => batchKeys.value.length)
-
 const pageBindingMap = computed(() => {
   const result = new Map<number, string[]>()
   for (const item of props.modelValue) {
@@ -221,6 +198,41 @@ const pageBindingMap = computed(() => {
   }
   return result
 })
+const filteredPages = computed(() => {
+  const keyword = pageKeyword.value.trim().toLowerCase()
+  const ordered = [...activePages.value].sort(comparePagePoolOrder)
+  if (!keyword) {
+    return ordered
+  }
+  return ordered.filter(page => {
+    return [page.title, page.code, page.summary ?? '']
+      .some(value => value.toLowerCase().includes(keyword))
+  })
+})
+
+/** 未加入放映序列的页面排在前面，同组内按标题排序。 */
+function comparePagePoolOrder(left: PageItem, right: PageItem): number {
+  const leftUsed = getPageUsageCount(left.id) > 0 ? 1 : 0
+  const rightUsed = getPageUsageCount(right.id) > 0 ? 1 : 0
+  if (leftUsed !== rightUsed) {
+    return leftUsed - rightUsed
+  }
+  return left.title.localeCompare(right.title, 'zh-CN')
+}
+
+const targetOptions = computed(() => {
+  const groups = props.modelValue.filter(item => item.route_type === 'group')
+  return [
+    { label: '顶层', value: 'root' },
+    ...groups.map(group => ({
+      label: group.group_title || group.route || '未命名分组',
+      value: `group:${group.route}`,
+    })),
+  ]
+})
+const selection = computed(() => findRouteNodeByKey(props.modelValue, props.selectedKey))
+const selectedPageCount = computed(() => countSelectedPages(props.modelValue, props.selectedKeys))
+const batchPageCount = computed(() => batchKeys.value.length)
 
 watch(
   targetOptions,
