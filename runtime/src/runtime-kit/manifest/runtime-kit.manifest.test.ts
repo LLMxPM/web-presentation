@@ -49,6 +49,7 @@ describe('runtime kit manifest', () => {
     expect(exportNames).toContain('useTheme.v1')
     expect(exportNames).toContain('useAssetFontFamily.v1')
     expect(exportNames).toContain('resolveAssetFontFamily.v1')
+    expect(exportNames).toContain('useAudioCue.v1')
   })
 
   it('公开能力应使用文件名版本化命名', () => {

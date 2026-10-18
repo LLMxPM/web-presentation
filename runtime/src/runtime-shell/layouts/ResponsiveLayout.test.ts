@@ -136,6 +136,7 @@ vi.mock('@/core/utils/config', async () => {
     appPageConfig: appPageConfigRef,
     routeConfigs: mockRouteConfigs,
     playbackConfig: { value: { supported: false, autoStart: false, loop: false } },
+    audioConfig: { value: { volume: { master: 1, narration: 1, effects: 1 }, cues: {} } },
     loadIconConfig: vi.fn().mockResolvedValue({ icons: [] }),
   }
 })

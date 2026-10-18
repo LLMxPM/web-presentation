@@ -204,6 +204,8 @@ export interface RuntimePreloadedConfigBundle {
   icons?: unknown
   themes?: unknown
   fonts?: RuntimeFontBundle
+  /** 项目音量与 cue 快照；旧产物缺失时按默认静音配置处理。 */
+  audio?: unknown
   manifest?: RuntimePreviewArtifactManifest
   module_resolver?: RuntimeModuleResolverConfig
   component_preview?: RuntimeComponentPreviewConfig

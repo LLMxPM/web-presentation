@@ -5,7 +5,7 @@
       :node="wrapPage(Component, route.path, route.query.runtimeCaptureTicket)" :page-key="route.path"
       :page-number="Number(route.meta.pageNumber) || undefined"
       :config="resolvePageTransition(route.meta.transition)" :disabled="disabled || session.suppressTransition.value"
-      @settled="handleSettled" @error="handleError" />
+      @started="emit('started', $event)" @settled="handleSettled" @error="handleError" />
   </router-view>
 </template>
 
@@ -15,11 +15,14 @@ import { useRouter } from 'vue-router'
 import { getRuntimeSession } from '@/core/router/runtime-session'
 import { resolvePageTransition } from '@/core/utils/page-transition'
 import { buildPageContentScaleStyles } from '@/core/utils/page-scale'
-import type { TransitionSettledEvent } from '@/core/types/page-transition'
+import type { TransitionSettledEvent, TransitionStartedEvent } from '@/core/types/page-transition'
 import PageTransitionHost from './PageTransitionHost.vue'
 
 defineProps<{ disabled?: boolean }>()
-const emit = defineEmits<{ settled: [event: TransitionSettledEvent] }>()
+const emit = defineEmits<{
+  settled: [event: TransitionSettledEvent]
+  started: [event: TransitionStartedEvent]
+}>()
 const router = useRouter()
 const session = getRuntimeSession(router)
 

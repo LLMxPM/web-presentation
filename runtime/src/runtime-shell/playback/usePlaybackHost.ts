@@ -110,7 +110,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   const snapshot = ref<PlaybackSnapshot | null>(null)
   const errorMessage = ref('')
   const wakeLock = useScreenWakeLock()
-  const muted = ref(false)
+  const muted = session.audioMuted
   let unsubscribe: (() => void) | null = null
   let pendingAttempt: ReadinessAttempt | null = null
   let attemptSequence = 0

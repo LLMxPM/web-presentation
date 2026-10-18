@@ -2,7 +2,7 @@
 <template>
   <div ref="container" class="presenter-page-stage">
     <ScaledCanvasViewport :scale="scale" :design-width="appPageConfig.width" :design-height="appPageConfig.height" :is-fullscreen="false">
-      <RuntimePageStage />
+      <RuntimePageStage @started="emit('started', $event)" />
     </ScaledCanvasViewport>
   </div>
 </template>
@@ -10,7 +10,9 @@
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { appPageConfig } from '@/core/utils/config'
 import ScaledCanvasViewport from '@runtime-kit/internal/components/viewport/ScaledCanvasViewport.vue'
+import type { TransitionStartedEvent } from '@/core/types/page-transition'
 import RuntimePageStage from '../transitions/RuntimePageStage.vue'
+const emit = defineEmits<{ started: [event: TransitionStartedEvent] }>()
 const container = ref<HTMLElement>()
 const scale = ref(1)
 let observer: ResizeObserver | undefined

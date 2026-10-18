@@ -10,6 +10,15 @@ export interface TransitionSettledEvent {
   generation: number
 }
 
+/** 真实、不同页面被接受为新手过渡时发出的开始信号。 */
+export interface TransitionStartedEvent {
+  generation: number
+  fromPath: string
+  toPath: string
+  direction: 1 | -1
+  effect: 'none' | 'fade' | 'push'
+}
+
 /** 页面停留与翻页推进配置；旧产物可能缺少 mediaTimeoutMs。 */
 export type PageAdvanceMode = 'manual' | 'timer' | 'media_end'
 

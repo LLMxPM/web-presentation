@@ -14,7 +14,7 @@
 
 <script setup lang="ts">
 import { cloneVNode, computed, defineComponent, nextTick, onBeforeUnmount, onErrorCaptured, ref, shallowRef, watch, type PropType, type VNode } from 'vue'
-import type { PageTransitionConfig, TransitionSettledEvent } from '@/core/types/page-transition'
+import type { PageTransitionConfig, TransitionSettledEvent, TransitionStartedEvent } from '@/core/types/page-transition'
 
 interface Frame { path: string; node: VNode; pageNumber?: number }
 const props = defineProps<{
@@ -24,12 +24,16 @@ const props = defineProps<{
   config: PageTransitionConfig
   disabled?: boolean
 }>()
-const emit = defineEmits<{ error: [path: string, error: unknown]; settled: [event: TransitionSettledEvent] }>()
+const emit = defineEmits<{
+  error: [path: string, error: unknown]
+  settled: [event: TransitionSettledEvent]
+  started: [event: TransitionStartedEvent]
+}>()
 const root = ref<HTMLElement>()
 const frames = shallowRef<Frame[]>([])
 const phase = ref<'idle' | 'preparing' | 'running'>('idle')
 const activeConfig = shallowRef<PageTransitionConfig>({ effect: 'none', durationMs: 0 })
-const direction = ref(1)
+const direction = ref<1 | -1>(1)
 let pending: Frame | undefined
 let timer: ReturnType<typeof setTimeout> | undefined
 let generation = 0
@@ -89,15 +93,28 @@ async function show(target: Frame): Promise<void> {
     emit('settled', { path: target.path, generation: token })
     return
   }
-  if (!previous || props.disabled || reducedMotion.value || props.config.effect === 'none') {
+  if (!previous) {
+    // 初次静态挂载不是真实翻页，不发出 cue 开始信号。
     frames.value = [target]
-    // 初次静态挂载也必须等到 DOM 提交后再报告稳定页。
     await nextTick()
     emit('settled', { path: target.path, generation: token })
     return
   }
   direction.value = previous.pageNumber != null && target.pageNumber != null && target.pageNumber < previous.pageNumber ? -1 : 1
   activeConfig.value = { ...props.config }
+  emit('started', {
+    generation: token,
+    fromPath: previous.path,
+    toPath: target.path,
+    direction: direction.value,
+    effect: props.config.effect,
+  })
+  if (props.disabled || reducedMotion.value || props.config.effect === 'none') {
+    frames.value = [target]
+    await nextTick()
+    emit('settled', { path: target.path, generation: token })
+    return
+  }
   frames.value = [previous, target]
   phase.value = 'preparing'
   await nextTick()

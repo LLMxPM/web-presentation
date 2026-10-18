@@ -4,7 +4,7 @@ import { createApp, h, nextTick, reactive } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PageTransitionHost from './PageTransitionHost.vue'
 
-afterEach(() => { vi.useRealTimers(); document.body.innerHTML = '' })
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
 /** 挂载可更新页面参数的测试宿主。 */
 function mountHost() {
@@ -115,5 +115,120 @@ describe('PageTransitionHost settled 信号', () => {
     expect(settled.at(-1)?.path).toBe('b')
     expect(new Set(settled.map(item => item.generation)).size).toBe(settled.length)
     app.unmount()
+  })
+})
+
+describe('PageTransitionHost started 信号', () => {
+  interface Started { generation: number; fromPath: string; toPath: string; direction: 1 | -1; effect: string }
+
+  /** 挂载带 started 记录的最小宿主。 */
+  function mountStarted(options: { effect?: 'none' | 'fade' | 'push'; disabled?: boolean } = {}) {
+    const started: Started[] = []
+    const state = reactive({
+      page: 'a', number: 1, disabled: options.disabled ?? false,
+      effect: (options.effect ?? 'push') as 'none' | 'fade' | 'push',
+    })
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({ render: () => h(PageTransitionHost, {
+      node: h('p', state.page), pageKey: state.page, pageNumber: state.number,
+      config: { effect: state.effect, durationMs: 400 }, disabled: state.disabled,
+      onStarted: (event: Started) => started.push(event),
+    }) })
+    app.mount(root)
+    return { state, root, app, started }
+  }
+
+  it('初次挂载与同路径刷新不发声', async () => {
+    const { state, app, started } = mountStarted()
+    await nextTick(); await nextTick()
+    expect(started).toHaveLength(0)
+
+    state.number = 9
+    await nextTick(); await nextTick()
+    expect(started).toHaveLength(0)
+    app.unmount()
+  })
+
+  it('真实前进/后退报告方向并复用过渡 generation', async () => {
+    vi.useFakeTimers()
+    const { state, app, started } = mountStarted()
+    await nextTick(); await nextTick()
+
+    state.page = 'b'; state.number = 2
+    await nextTick(); await nextTick()
+    expect(started).toHaveLength(1)
+    expect(started[0]).toMatchObject({ fromPath: 'a', toPath: 'b', direction: 1, effect: 'push' })
+
+    await vi.advanceTimersByTimeAsync(600)
+    state.page = 'previous'; state.number = 0
+    await nextTick(); await nextTick()
+    expect(started).toHaveLength(2)
+    expect(started[1]).toMatchObject({ fromPath: 'b', toPath: 'previous', direction: -1 })
+    expect(started[1].generation).toBeGreaterThan(started[0].generation)
+    app.unmount()
+  })
+
+  it('effect=none 与减少动态效果仍视为真实翻页', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: false, media: query, onchange: null,
+      addEventListener: () => undefined, removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    }))
+    const none = mountStarted({ effect: 'none' })
+    await nextTick(); await nextTick()
+    none.state.page = 'b'; none.state.number = 2
+    await nextTick(); await nextTick()
+    expect(none.started).toHaveLength(1)
+    expect(none.started[0].effect).toBe('none')
+    none.app.unmount()
+
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true, media: query, onchange: null,
+      addEventListener: () => undefined, removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    }))
+    const reduced = mountStarted()
+    await nextTick(); await nextTick()
+    reduced.state.page = 'b'; reduced.state.number = 2
+    await nextTick(); await nextTick()
+    expect(reduced.started).toHaveLength(1)
+    reduced.app.unmount()
+  })
+
+  it('快速连跳只为实际被接受的 generation 发声，被替换的中间页不发声', async () => {
+    vi.useFakeTimers()
+    const { state, app, started } = mountStarted()
+    await nextTick(); await nextTick()
+
+    state.page = 'b'; state.number = 2
+    await nextTick(); await nextTick()
+    state.page = 'c'; state.number = 3
+    await nextTick()
+    state.page = 'd'; state.number = 4
+    await nextTick()
+    expect(started.map(item => item.toPath)).toEqual(['b'])
+
+    await vi.advanceTimersByTimeAsync(1200)
+    expect(started.map(item => item.toPath)).toEqual(['b', 'd'])
+    app.unmount()
+  })
+
+  it('卸载丢弃尚未开始的待切换页，不产生迟到信号', async () => {
+    vi.useFakeTimers()
+    const { state, app, started } = mountStarted()
+    await nextTick(); await nextTick()
+
+    state.page = 'b'; state.number = 2
+    await nextTick(); await nextTick()
+    expect(started.map(item => item.toPath)).toEqual(['b'])
+
+    state.page = 'c'; state.number = 3
+    await nextTick(); await nextTick()
+    expect(started.map(item => item.toPath)).toEqual(['b'])
+
+    app.unmount()
+    await vi.advanceTimersByTimeAsync(1200)
+    expect(started.map(item => item.toPath)).toEqual(['b'])
   })
 })

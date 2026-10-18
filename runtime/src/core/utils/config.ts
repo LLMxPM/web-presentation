@@ -3,6 +3,11 @@
  */
 
 import { reactive, computed } from 'vue'
+import {
+  DEFAULT_RUNTIME_AUDIO_CONFIG,
+  normalizeRuntimeAudioConfig,
+  type RuntimeAudioConfig,
+} from '@/core/audio/audio-config'
 import { resolvePageAdvance, resolvePageTransition } from './page-transition'
 import type { PageAdvanceConfig, PageTransitionConfig } from '../types/page-transition'
 import { parse } from 'yaml'
@@ -151,6 +156,7 @@ const configState = reactive({
   appConfig: null as AppConfig | null,
   routeConfig: null as RouteConfigYaml | null,
   iconConfig: null as IconConfigYaml | null,
+  audioConfig: null as RuntimeAudioConfig | null,
   isLoading: false,
   error: null as string | null
 })
@@ -165,7 +171,7 @@ const listeners: ConfigChangeListener[] = []
  * @param configType 配置分段名称
  * @returns 预加载配置值
  */
-function getPreloadedConfigSection<T>(configType: 'app' | 'routes' | 'icons'): T | undefined {
+function getPreloadedConfigSection<T>(configType: 'app' | 'routes' | 'icons' | 'audio'): T | undefined {
   const preloadedConfig = getRuntimePreloadedConfig()
   const value = preloadedConfig?.[configType]
   if (!value) {
@@ -400,6 +406,22 @@ export async function loadIconConfig(force = false): Promise<IconConfigYaml> {
 
   return configState.iconConfig || defaultIconConfig
 }
+
+/**
+ * 加载项目音频快照。
+ * 旧 artifact 没有 audio 分段时按默认静音配置兼容；本地独立运行时同样静默。
+ */
+export async function loadAudioConfig(force = false): Promise<RuntimeAudioConfig> {
+  if (configState.audioConfig && !force) {
+    return configState.audioConfig
+  }
+  const preloadedAudioConfig = getPreloadedConfigSection<unknown>('audio')
+  configState.audioConfig = normalizeRuntimeAudioConfig(preloadedAudioConfig)
+  return configState.audioConfig
+}
+
+/** 项目级音量与 cue 绑定；旧产物按默认静音配置运行。 */
+export const audioConfig = computed(() => configState.audioConfig ?? DEFAULT_RUNTIME_AUDIO_CONFIG)
 
 /**
  * 计算默认重定向路径。
@@ -640,7 +662,8 @@ export async function initializeConfig(): Promise<void> {
   await Promise.all([
     loadAppConfig(),
     loadRouteConfig(),
-    loadIconConfig()
+    loadIconConfig(),
+    loadAudioConfig()
   ])
 }
 
@@ -652,11 +675,13 @@ export async function reloadAllConfigs(): Promise<void> {
   configState.appConfig = null
   configState.routeConfig = null
   configState.iconConfig = null
+  configState.audioConfig = null
 
   await Promise.all([
     loadAppConfig(true),
     loadRouteConfig(true),
-    loadIconConfig(true)
+    loadIconConfig(true),
+    loadAudioConfig(true)
   ])
 }
 

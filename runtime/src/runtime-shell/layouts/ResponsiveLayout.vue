@@ -108,7 +108,7 @@ class="nav-button nav-button--canvas nav-button--canvas-right" :class="{
 :is-fullscreen="isFullscreen" :scale="scaleRatio" :design-width="pageViewport.width"
           :design-height="pageViewport.height">
           <ErrorBoundary>
-            <RuntimePageStage :disabled="isCardModeVisible" />
+            <RuntimePageStage :disabled="isCardModeVisible" @started="handleTransitionStarted" />
           </ErrorBoundary>
         </ScaledCanvasViewport>
       </div>
@@ -163,6 +163,7 @@ import ScaledCanvasViewport from '@runtime-kit/internal/components/viewport/Scal
 import ExportDialog from '@/runtime-shell/export/ExportDialog.vue'
 import PlaybackHostBridge from '@/runtime-shell/playback/PlaybackHostBridge.vue'
 import RuntimePageStage from '@/runtime-shell/transitions/RuntimePageStage.vue'
+import { useAudioCues } from '@/runtime-shell/audio/useAudioCues'
 import ErrorBoundary from '@/runtime-shell/feedback/ErrorBoundary.vue'
 import { useMenu } from '@/core/composables/useMenu'
 import { usePageNavigation } from '@/core/composables/usePageNavigation'
@@ -180,6 +181,7 @@ import {
   resolveKeyboardCommand,
   type KeyboardContext,
 } from '@/runtime-shell/keyboard/keyboard-map'
+import type { TransitionStartedEvent } from '@/core/types/page-transition'
 
 // 应用配置已迁移到 @/config/app.config.ts
 
@@ -200,6 +202,13 @@ const isCardModeVisible = computed({
 // 卡片模式的主画布被卡片面板覆盖，收紧为交互预览，禁止自动推进与自动播放。
 const execution = provideRuntimeExecutionScope(computed(() => isCardModeVisible.value ? 'interactive-preview' : 'presentation'))
 const executionAttrs = computed(() => executionAttributes(execution.value))
+// 全屏即放映；窗口化预览不播放切页 cue，也不为页面提供可发声服务。
+const { playTransitionCue } = useAudioCues(isFullscreen)
+
+/** 真实页面过渡开始后播放方向 cue；静音、无绑定或窗口化时稳定 no-op。 */
+function handleTransitionStarted(event: TransitionStartedEvent): void {
+  playTransitionCue(event.direction)
+}
 const pageBoundaryMessage = ref('')
 let pageBoundaryMessageTimer: number | undefined
 

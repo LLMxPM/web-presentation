@@ -1,6 +1,6 @@
 # WP15：Runtime `AudioCueEngine`
 
-状态：待实施。阶段：M2。主责：Runtime shell。
+状态：已实现，待 WP20 真机验收。阶段：M2。主责：Runtime shell。
 
 ## 前置与输入
 
@@ -16,9 +16,17 @@
 
 ## 完成标准
 
-- [ ] 通道替换、池复用、节流、音量和 dispose 有确定性单测。
-- [ ] 反复配置切换不会泄漏 Audio、监听或定时器。
-- [ ] capture/export/console 不创建可播放引擎。
-- [ ] 播放失败不阻塞导航、点击业务或页面状态机。
+- [x] 通道替换、池复用、节流、音量和 dispose 有确定性单测。
+- [x] 反复配置切换不会泄漏 Audio、监听或定时器。
+- [x] capture/export/console 不创建可播放引擎。
+- [x] 播放失败不阻塞导航、点击业务或页面状态机。
+
+## 实施记录（2026-10-18）
+
+- `core/audio/audio-config.ts` 防御性归一化 artifact 音量/gain，并提供默认静音配置；`audio-cue-engine.ts` 实现单 transition 元素、4 槽 interaction 池、80ms 节流、会话静音读取和 `suspend/resume/dispose`。
+- `runtime-shell/audio/useAudioCues.ts` 只在 `allowMediaPlayback && allowAutoplay` 的执行策略下创建引擎；cue 资源必须命中当前 manifest assets，缺映射不会猜测相对路径。
+- 静音读取 `getRuntimeSession(...).audioMuted`，与页面媒体共用会话状态；visibilitychange、freeze、pageshow 和卸载负责暂停/释放，恢复不补播。
+- 已运行：`pnpm exec vitest run src/core/audio/audio-config.test.ts src/core/audio/audio-cue-engine.test.ts src/runtime-shell/audio/useAudioCues.test.ts`（23 passed）；`pnpm exec vue-tsc -b` 通过。
+- 未运行：真实浏览器自动播放策略、跨窗口交接和长时间池复用留待 WP20。
 
 建议提交标题：`WP15：实现 Runtime AudioCueEngine`。

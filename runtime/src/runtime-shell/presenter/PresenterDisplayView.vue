@@ -5,7 +5,7 @@
 <template>
   <div class="presenter-display-screen" v-bind="executionAttrs">
     <div v-if="currentPage" class="presenter-display-screen__content">
-      <PresenterPageStage />
+      <PresenterPageStage @started="handleTransitionStarted" />
     </div>
     <div v-else class="presenter-display-screen__waiting">
       等待演讲者控制台同步页面。
@@ -92,6 +92,8 @@ import { useRoute } from 'vue-router'
 import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
 import { playbackConfig } from '@/core/utils/config'
 
+import type { TransitionStartedEvent } from '@/core/types/page-transition'
+import { useAudioCues } from '@/runtime-shell/audio/useAudioCues'
 import { usePlaybackHost } from '@/runtime-shell/playback/usePlaybackHost'
 import PresenterPageStage from './PresenterPageStage.vue'
 import { usePresenterController } from '@/runtime-shell/presenter/usePresenterController'
@@ -135,6 +137,13 @@ const route = useRoute()
 // 观众窗口是普通放映主画布；调度权与入口由后续工作包接入。
 const execution = provideRuntimeExecutionScope('presentation')
 const executionAttrs = computed(() => executionAttributes(execution.value))
+// 观众 Display 是演讲模式唯一媒体 owner；控制台已收紧为静态 thumbnail。
+const { playTransitionCue } = useAudioCues(ref(true))
+
+/** 观众窗口每次真实翻页都播放方向 cue；控制台不会形成第二次发声。 */
+function handleTransitionStarted(event: TransitionStartedEvent): void {
+  playTransitionCue(event.direction)
+}
 const channelId = computed(() => String(route.query.channel || ''))
 const initialPath = computed(() => String(route.query.route || route.path))
 const isInFullscreen = ref(false)

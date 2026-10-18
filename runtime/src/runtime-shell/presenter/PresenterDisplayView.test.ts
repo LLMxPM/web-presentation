@@ -36,6 +36,9 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({
     query: routeFixture.query,
   }),
+  useRouter: () => ({
+    currentRoute: { value: { query: {} } },
+  }),
 }))
 
 vi.mock('@/runtime-shell/presenter/usePresenterController', () => ({

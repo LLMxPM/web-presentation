@@ -1615,6 +1615,37 @@
     },
     {
       "kind": "composable",
+      "base_name": "useAudioCue",
+      "version_no": 1,
+      "name": "useAudioCue.v1",
+      "import_path": "@runtime-kit/public/composables/audio/useAudioCue.v1",
+      "category": "runtime",
+      "description": "按语义 cue key 请求播放项目绑定的交互音效。",
+      "capability": {
+        "enabled": true,
+        "previewable": false,
+        "recommendation_level": "default",
+        "display_name": "交互音效",
+        "summary": "在页面交互中按语义 cue key 请求播放项目绑定的交互音效，音量、静音与执行上下文由 Runtime 统一处理。",
+        "tags": ["audio", "cue", "interaction"],
+        "usage": [
+          "import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v1'",
+          "const { playCue } = useAudioCue()",
+          "<button @click=\"playCue('button_confirm')\">确认</button>"
+        ],
+        "returns": "对象：playCue(key) 同步返回 'played' | 'skipped' | 'unavailable'，不等待播放结束。",
+        "return_example": ["const { playCue } = useAudioCue()", "playCue('button_confirm') // 'played'"],
+        "constraints": [
+          "只接受项目音频设置中绑定的语义 cue key，不接受 URL、资源 ID、音量或 Audio 实例。",
+          "音效只在放映或演讲观众等允许播放的执行上下文生效；预览、缩略图、截图和导出返回 no-op。",
+          "Runtime 未提供音效服务、cue 未绑定或会话静音时不抛异常，业务逻辑不得等待或依赖播放结果。",
+          "同一 cue 的连续交互触发受节流约束，不要用于旁白或持续背景音乐。"
+        ],
+        "audiences": ["backend", "agent"]
+      }
+    },
+    {
+      "kind": "composable",
       "base_name": "usePageSize",
       "version_no": 1,
       "name": "usePageSize.v1",
