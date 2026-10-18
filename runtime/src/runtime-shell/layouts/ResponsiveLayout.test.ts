@@ -646,6 +646,62 @@ describe('ResponsiveLayout', () => {
     openMock.mockRestore()
   })
 
+  it('预览页工具栏可直接进入演讲模式，并按项目默认模式打开观众窗口', async () => {
+    mockMenuMode.value = 'preview'
+    mockNavigableRoutes.value = [{ path: '/', name: '首页', pageNumber: 1 }]
+    const openMock = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/',
+          component: {
+            template: '<div>route content</div>',
+          },
+        },
+        {
+          path: '/__presenter',
+          component: {
+            template: '<div>presenter console</div>',
+          },
+        },
+      ],
+    })
+
+    await router.push('/')
+    await router.isReady()
+
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+
+    const app = createApp(ResponsiveLayout)
+    app.use(router)
+    app.config.errorHandler = (error) => {
+      throw error
+    }
+
+    app.mount(host)
+    await nextTick()
+
+    const presenterButton = host.querySelector<HTMLButtonElement>('button.nav-button--presenter')
+    expect(presenterButton).not.toBeNull()
+
+    presenterButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await new Promise(resolve => window.setTimeout(resolve, 0))
+    await nextTick()
+
+    expect(openMock).toHaveBeenCalledTimes(1)
+    const displayUrl = String(openMock.mock.calls[0][0])
+    expect(displayUrl).toContain('runtimeMode=display')
+    expect(displayUrl).toContain('auto=0')
+    expect(router.currentRoute.value.path).toBe('/')
+    expect(router.currentRoute.value.query.runtimeMode).toBe('presenter')
+
+    app.unmount()
+    openMock.mockRestore()
+  })
+
   it('翻页到首页或末页边界时应展示提示', async () => {
     mockMenuMode.value = 'preview'
 

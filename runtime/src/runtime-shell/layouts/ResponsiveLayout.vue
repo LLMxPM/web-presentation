@@ -56,6 +56,13 @@ v-if="shouldShowPdfExportButton" class="nav-button nav-button--export"
           <FileDown :size="16" />
         </button>
 
+        <!-- 演讲模式按钮：预览态可直接进入，观众窗口按项目默认模式起步 -->
+        <button
+v-if="shouldShowPresenterButton" class="nav-button nav-button--presenter"
+          title="演讲模式 (Shift+P)" @click.stop="openPresenterMode">
+          <Monitor :size="16" />
+        </button>
+
         <!-- 卡片模式按钮 -->
         <button
 v-if="shouldShowCardModeButton" class="nav-button nav-button--cards"
@@ -159,6 +166,7 @@ import {
   ChevronRight as ChevronRightIcon,
   FileDown,
   LayoutGrid,
+  Monitor,
   PanelLeft,
   PanelBottom
 } from '@lucide/vue'
@@ -631,7 +639,12 @@ const handleKeydown = (event: KeyboardEvent): void => {
     return
   }
 
-  // 预览态：空格与方向键翻页，不启动放映。
+  // 预览态：Shift+P 直接进入演讲，空格与方向键翻页，不启动放映。
+  if (event.shiftKey && event.key.toLowerCase() === 'p') {
+    event.preventDefault()
+    openPresenterMode()
+    return
+  }
   if (event.key === 'ArrowRight' || event.key === 'PageDown'
     || (event.key === ' ' && !interactiveTarget)) {
     event.preventDefault()
