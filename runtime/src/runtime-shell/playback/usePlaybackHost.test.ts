@@ -663,7 +663,7 @@ describe('usePlaybackHost 可见性与快捷键', () => {
     app.unmount()
   })
 
-  it('空格切换自动/手动并阻止布局层重复翻页', async () => {
+  it('不再拦截空格：放映态翻页交由布局层统一处理', async () => {
     const router = makeRouter()
     await router.push('/a')
     await router.isReady()
@@ -678,25 +678,18 @@ describe('usePlaybackHost 可见性与快捷键', () => {
       return event
     }
 
-    expect(pressSpace().defaultPrevented).toBe(true)
-    expect(host.snapshot.value?.state).toBe('preparing')
-    expect(layoutShortcuts).toBe(0)
-
     session.transitionSettled.value = { path: '/a', generation: 1 }
+    expect(host.start()).toBe(true)
     await flushAsync()
     expect(host.snapshot.value?.state).toBe('playing')
 
-    expect(pressSpace().defaultPrevented).toBe(true)
-    expect(host.snapshot.value).toMatchObject({ state: 'playing', autoAdvanceEnabled: false })
-    expect(layoutShortcuts).toBe(0)
-
-    expect(pressSpace().defaultPrevented).toBe(true)
+    const event = pressSpace()
+    expect(event.defaultPrevented).toBe(false)
+    // 播放状态与自动推进模式都不再被键盘改变，空格只作为翻页输入向上冒泡。
     expect(host.snapshot.value).toMatchObject({ state: 'playing', autoAdvanceEnabled: true })
-    expect(layoutShortcuts).toBe(0)
+    expect(layoutShortcuts).toBe(1)
 
     app.unmount()
-    pressSpace()
-    expect(layoutShortcuts).toBe(1)
     document.removeEventListener('keydown', layoutListener)
   })
 

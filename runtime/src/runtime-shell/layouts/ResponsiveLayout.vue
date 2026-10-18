@@ -77,7 +77,7 @@ class="nav-button nav-button--next" :class="{
       </div>
 
       <transition name="page-boundary-hint">
-        <div v-if="!isFullscreen && pageBoundaryMessage" class="page-boundary-hint" role="status" aria-live="polite">
+        <div v-if="pageBoundaryMessage" class="page-boundary-hint" role="status" aria-live="polite">
           {{ pageBoundaryMessage }}
         </div>
       </transition>
@@ -175,6 +175,11 @@ import {
 } from '@/runtime-shell/presenter/presenter-url'
 import { buildPresenterPages, writePresenterInitialNavigateMessage } from '@/runtime-shell/presenter/usePresenterController'
 import { openPresenterDisplayWindow } from '@/runtime-shell/presenter/presenter-window'
+import {
+  isEditableKeyboardTarget,
+  resolveKeyboardCommand,
+  type KeyboardContext,
+} from '@/runtime-shell/keyboard/keyboard-map'
 
 // 应用配置已迁移到 @/config/app.config.ts
 
@@ -197,6 +202,19 @@ const execution = provideRuntimeExecutionScope(computed(() => isCardModeVisible.
 const executionAttrs = computed(() => executionAttributes(execution.value))
 const pageBoundaryMessage = ref('')
 let pageBoundaryMessageTimer: number | undefined
+
+/** 当前键盘上下文：全屏即放映，卡片遮罩优先于预览。 */
+const keyboardContext = computed<KeyboardContext>(() => {
+  if (isFullscreen.value) {
+    return 'slideshow'
+  }
+  return isCardModeVisible.value ? 'cards' : 'preview'
+})
+
+/** 数字跳页缓冲：总页数超过 9 时等待后续数字，否则立即跳转。 */
+let gotoPageBuffer = ''
+let gotoPageTimer: number | undefined
+const GOTO_PAGE_BUFFER_DURATION = 600
 
 /**
  * 固定比例缩放配置
@@ -231,8 +249,12 @@ const {
   nextPage,
   canGoPrevious,
   canGoNext,
+  totalPages,
   goToPreviousPage,
   goToNextPage,
+  goToPageNumber,
+  goToFirstPage,
+  goToLastPage,
   getPageTitle,
   getAllNavigableRoutes
 } = usePageNavigation()
@@ -570,63 +592,131 @@ const exitSlideshow = async (): Promise<void> => {
   }
 }
 
+/** 提示目标页码不存在。 */
+function showMissingPage(pageNumber: number): void {
+  showPageBoundaryMessage(`没有第 ${pageNumber} 页`)
+}
+
 /**
- * 键盘事件处理。
- * 关键约束：全屏放映的空格由播放层独占，布局层只处理翻页和演讲入口。
+ * 清除数字跳页缓冲，不执行跳转。
+ * 关键约束：用户在缓冲期间改按其他键时，视为放弃本次输入。
  */
-const handleKeydown = (event: KeyboardEvent): void => {
-  const target = event.target as HTMLElement
-  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
-    || target.tagName === 'SELECT' || target.isContentEditable) {
+function resetGotoPageBuffer(): void {
+  if (gotoPageTimer !== undefined) {
+    window.clearTimeout(gotoPageTimer)
+    gotoPageTimer = undefined
+  }
+  gotoPageBuffer = ''
+}
+
+/** 提交数字跳页缓冲；页码越界时给出提示。 */
+async function commitGotoPageBuffer(): Promise<void> {
+  const raw = gotoPageBuffer
+  resetGotoPageBuffer()
+  if (!raw) {
     return
   }
-  // 焦点停留在按钮/链接上时，空格保留原生激活；方向键仍用于放映翻页。
-  const interactiveTarget = target.tagName === 'BUTTON' || target.tagName === 'A'
-
-  if (isCardModeVisible.value) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      isCardModeVisible.value = false
-    } else if (event.key === 'ArrowRight' || event.key === 'PageDown'
-      || (event.key === ' ' && !interactiveTarget)) {
-      event.preventDefault()
-      void handleNextPageAction()
-    } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
-      event.preventDefault()
-      void handlePreviousPageAction()
-    }
-    return
+  const pageNumber = Number(raw)
+  const jumped = await goToPageNumber(pageNumber)
+  if (!jumped) {
+    showMissingPage(pageNumber)
   }
+}
 
-  if (isFullscreen.value) {
-    if (event.shiftKey && event.key.toLowerCase() === 'p') {
-      event.preventDefault()
-      openPresenterMode()
+/**
+ * 处理数字键跳页。
+ * 关键约束：总页数不超过 9 时立即跳转；超过 9 时缓冲 600ms，支持输入两位数。
+ * @param digit 数字键对应的值
+ */
+function handleGotoPageDigit(digit: number): void {
+  if (totalPages.value <= 9) {
+    if (digit === 0) {
       return
     }
-    if (event.key === 'ArrowRight' || event.key === 'PageDown') {
-      event.preventDefault()
-      void handleNextPageAction()
-    } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
-      event.preventDefault()
-      void handlePreviousPageAction()
-    }
+    void goToPageNumber(digit).then((jumped) => {
+      if (!jumped) {
+        showMissingPage(digit)
+      }
+    })
+    return
+  }
+  if (gotoPageBuffer.length >= 2) {
+    gotoPageBuffer = ''
+  }
+  gotoPageBuffer += String(digit)
+  showPageBoundaryMessage(`跳转到第 ${gotoPageBuffer} 页…`)
+  if (gotoPageTimer !== undefined) {
+    window.clearTimeout(gotoPageTimer)
+  }
+  gotoPageTimer = window.setTimeout(() => {
+    void commitGotoPageBuffer()
+  }, GOTO_PAGE_BUFFER_DURATION)
+}
+
+/**
+ * 键盘事件处理。
+ * 键位映射统一来自 keyboard-map，这里只负责上下文判断与动作执行。
+ */
+const handleKeydown = (event: KeyboardEvent): void => {
+  if (isEditableKeyboardTarget(event.target)) {
     return
   }
 
-  // 预览态：Shift+P 直接进入演讲，空格与方向键翻页，不启动放映。
-  if (event.shiftKey && event.key.toLowerCase() === 'p') {
-    event.preventDefault()
-    openPresenterMode()
+  const command = resolveKeyboardCommand(event, keyboardContext.value)
+  if (!command) {
     return
   }
-  if (event.key === 'ArrowRight' || event.key === 'PageDown'
-    || (event.key === ' ' && !interactiveTarget)) {
+
+  // 焦点停留在按钮/链接上时，空格保留原生激活；其余键仍用于放映控制。
+  const target = event.target as HTMLElement
+  const interactiveTarget = target.tagName === 'BUTTON' || target.tagName === 'A'
+  if (command.action === 'next-page' && event.key === ' ' && interactiveTarget) {
+    return
+  }
+
+  if (command.action === 'goto-page') {
     event.preventDefault()
-    void handleNextPageAction()
-  } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
-    event.preventDefault()
-    void handlePreviousPageAction()
+    handleGotoPageDigit(command.pageNumber ?? 0)
+    return
+  }
+
+  // 数字缓冲期间按下其他键时，视为放弃本次跳页输入，避免异步跳转与翻页竞争。
+  resetGotoPageBuffer()
+  event.preventDefault()
+
+  switch (command.action) {
+    case 'next-page':
+      void handleNextPageAction()
+      break
+    case 'previous-page':
+      void handlePreviousPageAction()
+      break
+    case 'first-page':
+      void goToFirstPage().then((jumped) => {
+        if (!jumped) {
+          showPageBoundaryMessage('当前没有可放映页面')
+        }
+      })
+      break
+    case 'last-page':
+      void goToLastPage().then((jumped) => {
+        if (!jumped) {
+          showPageBoundaryMessage('当前没有可放映页面')
+        }
+      })
+      break
+    case 'open-card-mode':
+      openCardMode()
+      break
+    case 'enter-slideshow':
+      void enterSlideshow()
+      break
+    case 'open-presenter':
+      openPresenterMode()
+      break
+    case 'close-card-mode':
+      isCardModeVisible.value = false
+      break
   }
 }
 
@@ -753,6 +843,7 @@ onUnmounted(() => {
   if (pageBoundaryMessageTimer !== undefined) {
     window.clearTimeout(pageBoundaryMessageTimer)
   }
+  resetGotoPageBuffer()
 
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
   document.removeEventListener('keydown', handleKeydown)

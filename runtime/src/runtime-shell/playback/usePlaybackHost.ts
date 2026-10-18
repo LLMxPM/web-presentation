@@ -500,37 +500,10 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     if (event.persisted) pauseForInterruption()
   }
 
-  /**
-   * 空格键在放映主画布中切换自动/手动；系统暂停时继续，结束或失败时重新开始。
-   * 捕获阶段处理后阻止传播，避免与预览层的空格翻页快捷键重复触发。
-   */
-  function handlePlaybackKeydown(event: KeyboardEvent): void {
-    if (event.repeat || event.key !== ' ' || event.altKey || event.ctrlKey || event.metaKey) return
-    const target = event.target as HTMLElement | null
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
-    const instance = controller.value
-    if (!instance) return
-    const state = instance.getSnapshot().state
-    let handled: boolean
-    if (state === 'paused') {
-      handled = resumePlayback()
-    } else if (state === 'stopped' || state === 'ended') {
-      handled = startPlayback()
-    } else if (state === 'error' || state === 'blocked') {
-      handled = retryPlayback()
-    } else {
-      handled = toggleAutoAdvance()
-    }
-    if (!handled) return
-    event.preventDefault()
-    event.stopImmediatePropagation()
-  }
-
   onMounted(() => {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     document.addEventListener('freeze', handlePageFreeze)
     window.addEventListener('pageshow', handlePageShow)
-    document.addEventListener('keydown', handlePlaybackKeydown, true)
     if (disposed || options.autoStart !== true) return
     const instance = ensureController()
     if (!instance) return
@@ -542,7 +515,6 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     document.removeEventListener('visibilitychange', handleVisibilityChange)
     document.removeEventListener('freeze', handlePageFreeze)
     window.removeEventListener('pageshow', handlePageShow)
-    document.removeEventListener('keydown', handlePlaybackKeydown, true)
     stopRouteWatch()
     stopSettledWatch()
     stopNavigationErrorWatch()

@@ -135,16 +135,52 @@ export function usePageNavigation() {
     return getRouteInfosSortedByPageNumber()
   }
 
+  /**
+   * 计算属性：可导航页面总数
+   */
+  const totalPages = computed(() => getRouteInfosSortedByPageNumber().length)
+
+  /**
+   * 跳转到指定页码。
+   * @param pageNumber 目标页码，从 1 开始
+   * @returns 页码有效且导航完成返回 true；越界或非整数返回 false
+   */
+  const goToPageNumber = async (pageNumber: number): Promise<boolean> => {
+    if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+      return false
+    }
+    const target = getRouteInfoByPageNumber(pageNumber)
+    if (!target) {
+      return false
+    }
+    await navigateRuntimePage(router, target.path)
+    return true
+  }
+
+  /**
+   * 跳转到第一页。
+   */
+  const goToFirstPage = (): Promise<boolean> => goToPageNumber(1)
+
+  /**
+   * 跳转到最后一页。
+   */
+  const goToLastPage = (): Promise<boolean> => goToPageNumber(totalPages.value)
+
   return {
     // 状态
     previousPage,
     nextPage,
     canGoPrevious,
     canGoNext,
+    totalPages,
 
     // 方法
     goToPreviousPage,
     goToNextPage,
+    goToPageNumber,
+    goToFirstPage,
+    goToLastPage,
     getPageTitle,
     getCurrentPageNumber,
     getPageInfo,

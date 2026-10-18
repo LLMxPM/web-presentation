@@ -52,6 +52,10 @@ const {
   mockNavigableRoutes,
   mockNavigationState,
   nextPageSpy,
+  previousPageSpy,
+  gotoPageSpy,
+  firstPageSpy,
+  lastPageSpy,
   mockRouteConfigs,
 } = vi.hoisted(() => ({
   sidebarPropSpy: vi.fn(),
@@ -75,6 +79,10 @@ const {
     value: { canGoNext: false, canGoPrevious: false },
   },
   nextPageSpy: vi.fn(),
+  previousPageSpy: vi.fn(),
+  gotoPageSpy: vi.fn(async () => true),
+  firstPageSpy: vi.fn(async () => true),
+  lastPageSpy: vi.fn(async () => true),
   mockRouteConfigs: {
     value: [] as Array<Record<string, unknown>>,
   },
@@ -359,8 +367,12 @@ vi.mock('@/core/composables/usePageNavigation', async () => {
       nextPage: computed(() => null),
       canGoPrevious: computed(() => mockNavigationState.value.canGoPrevious),
       canGoNext: computed(() => mockNavigationState.value.canGoNext),
-      goToPreviousPage: vi.fn(),
+      totalPages: computed(() => mockNavigableRoutes.value.length),
+      goToPreviousPage: previousPageSpy,
       goToNextPage: nextPageSpy,
+      goToPageNumber: gotoPageSpy,
+      goToFirstPage: firstPageSpy,
+      goToLastPage: lastPageSpy,
       getPageTitle: vi.fn(() => '测试页面'),
       getAllNavigableRoutes: vi.fn(() => mockNavigableRoutes.value),
     }),
@@ -437,8 +449,14 @@ afterEach(() => {
   mockRouteConfigs.value = []
   mockNavigationState.value = { canGoNext: false, canGoPrevious: false }
   nextPageSpy.mockReset()
+  previousPageSpy.mockClear()
+  gotoPageSpy.mockClear()
+  firstPageSpy.mockClear()
+  lastPageSpy.mockClear()
   localStorage.clear()
   document.body.innerHTML = ''
+  // 键盘用例会临时补齐 jsdom 缺失的全屏 API，避免污染后续用例。
+  Reflect.deleteProperty(document.documentElement, 'requestFullscreen')
 })
 
 describe('ResponsiveLayout', () => {
@@ -943,6 +961,116 @@ describe('ResponsiveLayout', () => {
     expect(pageSource?.style.getPropertyValue('--tw-font-size-base')).toBe(
       'var(--theme-font-size-base, 20px)',
     )
+
+    app.unmount()
+  })
+})
+
+describe('ResponsiveLayout 键盘快捷键', () => {
+  /** 挂载布局并返回宿主与应用实例。 */
+  async function mountLayout(): Promise<{ host: HTMLElement; app: ReturnType<typeof createApp> }> {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/',
+          component: {
+            template: '<div>route content</div>',
+          },
+        },
+      ],
+    })
+
+    await router.push('/')
+    await router.isReady()
+
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+
+    const app = createApp(ResponsiveLayout)
+    app.use(router)
+    app.config.errorHandler = (error) => {
+      throw error
+    }
+
+    app.mount(host)
+    await nextTick()
+    return { host, app }
+  }
+
+  /** 在 document 上派发一次键盘事件。 */
+  function press(key: string, init: KeyboardEventInit = {}): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+    document.dispatchEvent(event)
+    return event
+  }
+
+  it('预览态支持 Home/End、数字跳页、上下键与 F 进入放映', async () => {
+    mockNavigationState.value = { canGoNext: true, canGoPrevious: true }
+    mockNavigableRoutes.value = [
+      { path: '/', name: '首页', pageNumber: 1 },
+      { path: '/second', name: '第二页', pageNumber: 2 },
+    ]
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document.documentElement, 'requestFullscreen', {
+      configurable: true,
+      value: requestFullscreen,
+    })
+
+    const { app } = await mountLayout()
+
+    press('Home')
+    expect(firstPageSpy).toHaveBeenCalledTimes(1)
+
+    press('End')
+    expect(lastPageSpy).toHaveBeenCalledTimes(1)
+
+    press('2')
+    await nextTick()
+    expect(gotoPageSpy).toHaveBeenCalledWith(2)
+
+    press('ArrowDown')
+    expect(nextPageSpy).toHaveBeenCalledTimes(1)
+
+    press('ArrowUp')
+    expect(previousPageSpy).toHaveBeenCalledTimes(1)
+
+    press('f')
+    expect(requestFullscreen).toHaveBeenCalledTimes(1)
+
+    app.unmount()
+  })
+
+  it('放映态空格与上下键按翻页处理，Home/End 直达首末页', async () => {
+    mockNavigationState.value = { canGoNext: true, canGoPrevious: true }
+    mockNavigableRoutes.value = [
+      { path: '/', name: '首页', pageNumber: 1 },
+      { path: '/second', name: '第二页', pageNumber: 2 },
+      { path: '/third', name: '第三页', pageNumber: 3 },
+    ]
+    const { app } = await mountLayout()
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: document.documentElement,
+    })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await nextTick()
+
+    press(' ')
+    expect(nextPageSpy).toHaveBeenCalledTimes(1)
+
+    press('ArrowDown')
+    expect(nextPageSpy).toHaveBeenCalledTimes(2)
+
+    press('ArrowUp')
+    expect(previousPageSpy).toHaveBeenCalledTimes(1)
+
+    press('Home')
+    expect(firstPageSpy).toHaveBeenCalledTimes(1)
+
+    press('End')
+    expect(lastPageSpy).toHaveBeenCalledTimes(1)
 
     app.unmount()
   })
