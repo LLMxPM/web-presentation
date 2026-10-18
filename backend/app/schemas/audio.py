@@ -24,9 +24,6 @@ from pydantic_core import PydanticCustomError
 
 from app.core.audio_defaults import (
     DEFAULT_CUE_GAIN_PERCENT,
-    DEFAULT_EFFECTS_VOLUME_PERCENT,
-    DEFAULT_MASTER_VOLUME_PERCENT,
-    DEFAULT_NARRATION_VOLUME_PERCENT,
     default_audio_volume_payload,
 )
 
