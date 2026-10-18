@@ -1,6 +1,6 @@
 # Backend 翻页动画与自动放映实施计划
 
-状态：M0 已实现（WP01–WP08、WP12）；M2 的 schema 2 结构与预览权限链已由 WP22 交付，媒体执行、双窗口与能力开放待实施。配置语义以[统一契约](./contract.md)为准，阶段与依赖以[总计划](./README.md)为准。
+状态：M0 已实现（WP01–WP08、WP12）；M1/M2 的 schema 2、预览权限链、媒体/演讲者能力已由 WP22/WP24/WP26/WP30 交付并开放（2026-10-18）。配置语义以[统一契约](./contract.md)为准，阶段与依赖以[总计划](./README.md)为准。
 
 实施拆分见[工作包执行清单](./work-packages/README.md)：WP01–WP08 负责首期 Backend 和接口交付，WP22 负责媒体扩展与权限链，能力开放由阶段出口 WP12/WP21/WP30 验收。以下 B 编号继续表示上层职责，不与 WP 卡片重复计量进度。
 
@@ -71,7 +71,7 @@ Backend 负责项目和逐页参数的完整生命周期，包括保存、校验
 
 - [x] 先交付 `advance` 扩展 Schema、旧数据读取和预览权限适配，供 R04 实现（WP22，2026-10-18）；`media_end` 写入门禁保留到 R04/G04 验收后的 WP30。公开只读端点 `/api/system/slideshow-capabilities` 复用外部能力 builder，供 Editor 按真实能力显示表单（WP27）。
 - [x] 核查并贯通 Editor→桥接宿主→Runtime 的 autoplay/fullscreen Permissions Policy；保持现有独立预览域与来源校验（WP22）。
-- [ ] 为预览票据到期提供可识别终态；本阶段不实现独立窗口自动续签，也不扩大业务 Cookie/CORS 范围。
+- [x] 为预览票据到期提供可识别终态（`PREVIEW_ARTIFACT_EXPIRED` 等）；Editor 预览恢复链路消费该终态，独立窗口不自动续签，也不扩大业务 Cookie/CORS 范围。
 
 验收：有声播放受阻能反馈；普通预览、独立窗口和捕获的权限行为一致且符合各自执行上下文。
 

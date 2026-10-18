@@ -1,6 +1,6 @@
 # CLI、MCP 与 External API 对接计划
 
-状态：主仓 External API M0 已通过 WP12 验收；CLI WP19、MCP WP20 与 WP21 阶段出口已完成，capabilities 已声明 timer 与单窗口自动放映；真实部署 Gateway/OAuth 与同版升级由发布检查清单跟踪。本文件维护主仓交付边界与跨仓工作包；CLI 和 MCP 的具体命令、工具及客户端实现分别在独立仓维护，不假定其当前已支持放映参数。
+状态：主仓 External API M0 已通过 WP12 验收；CLI WP19/WP28、MCP WP20/WP29 与 WP21/WP30 阶段出口已完成，capabilities 已声明 timer、media_end 与单窗口/演讲者自动放映；WP30 已在能力开放后的真实 Backend 复验两仓 media_end 往返。真实部署 Gateway/OAuth 与同版升级由发布检查清单跟踪。本文件维护主仓交付边界与跨仓工作包；CLI 和 MCP 的具体命令、工具及客户端实现分别在独立仓维护。
 
 实施拆分见[工作包执行清单](./work-packages/README.md)：WP07 主仓接口、WP19 CLI、WP20 MCP、WP28/WP29 两仓媒体扩展。各客户端包在对应仓内独立提交，以下 C 编号保留为上层职责。
 
@@ -48,7 +48,7 @@
 - [x] 更新样例和 Skill/Tool 说明，明确循环媒体不参与等待、播放受阻需观众窗口操作。
 - [x] 兼容 M1 服务：不能发送其不认识的扩展字段或把未支持模式降级成其它模式后返回成功。
 
-WP28（CLI，`624ea31`）写入前读取工作空间 capability，未开放 media_end 或 Schema < 2 时直接失败；未知模式不再透传。WP29（MCP，`773c75a`）在手册中要求能力预检，schema 2 字段完整透传，旧契约在 HTTP 前拒绝。两仓真实 media_end 往返随 WP30 能力开放复验。
+WP28（CLI，`624ea31`）写入前读取工作空间 capability，未开放 media_end 或 Schema < 2 时直接失败；未知模式不再透传。WP29（MCP，`773c75a`）在手册中要求能力预检，schema 2 字段完整透传，旧契约在 HTTP 前拒绝。WP30 能力开放后已用真实 Backend 复验：CLI 对项目默认值和路由覆盖写入/恢复 media_end（`.tmp/wp30/cli/`）；MCP 经生产 binding 与 `AsyncApiClient` 完成 capability → 配置写入 → 路由树写入 → 回滚 11 步（`.tmp/wp30/mcp/mcp-evidence.json`）。
 
 ## 5. 发布次序
 
