@@ -330,6 +330,30 @@ describe('PPTXDomConverter', () => {
     }))
   })
 
+  it('应将音频组件显式省略并记录报告，不截取原生控件', async () => {
+    const slide = createSlideMock()
+    const captureElementAsPng = vi.fn(async () => 'data:image/png;base64,capture')
+    document.body.innerHTML = `
+      <div id="page" style="width: 1920px; height: 1080px;">
+        <section data-runtime-kit-media="v1" data-runtime-kit-media-kind="audio" style="width: 640px; height: 96px;">
+          <audio controls src="/assets/voice.mp3"></audio>
+        </section>
+      </div>
+    `
+
+    const report = await convert(slide, captureElementAsPng)
+
+    expect(captureElementAsPng).not.toHaveBeenCalled()
+    expect(slide.addImage).not.toHaveBeenCalled()
+    expect(report.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceType: 'audio',
+        result: 'skipped',
+        reason: '首版 PPTX 导出省略音频',
+      }),
+    ]))
+  })
+
   it('应将全屏 CSS 背景图导出为图片块', async () => {
     const slide = createSlideMock()
     const captureElementAsPng = vi.fn(async () => 'data:image/png;base64,capture')

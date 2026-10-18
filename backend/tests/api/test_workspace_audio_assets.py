@@ -257,3 +257,151 @@ async def test_audio_should_copy_archive_restore_and_download(authenticated_clie
     assert downloaded.content == b"lifecycle-audio"
     assert "attachment" in downloaded.headers["content-disposition"]
     assert "lifecycle.mp3" in downloaded.headers["content-disposition"]
+
+
+async def test_audio_reference_should_block_delete_and_survive_archive(authenticated_client: AsyncClient) -> None:
+    """页面 AssetAudio 引用应进入引用摘要，并阻止归档资源被删除。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "音频引用保护")
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "音频引用项目", "status": "active"},
+    )
+    assert project_response.status_code == 200
+    project_id = project_response.json()["id"]
+    asset = await _upload_audio(
+        authenticated_client,
+        workspace_id,
+        file_name="chapter-01.mp3",
+        content_type="audio/mpeg",
+        content=b"narration-audio",
+        name="chapter_01_narration",
+    )
+
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "旁白页面",
+            "page_content": '<template><AssetAudio name="chapter_01_narration" purpose="narration" class="w-full h-16" /></template>',
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert page_response.status_code == 200, page_response.text
+
+    reference_response = await authenticated_client.get(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}/references",
+    )
+    assert reference_response.status_code == 200
+    reference_summary = reference_response.json()
+    assert reference_summary["page_count"] == 1
+    assert reference_summary["has_references"] is True
+    assert any(
+        item["kind"] == "page" and item["name"] == "旁白页面"
+        for item in reference_summary["references"]
+    )
+
+    archive_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}/archive",
+        json={"archive_reason": "引用保护测试"},
+    )
+    assert archive_response.status_code == 200
+
+    delete_response = await authenticated_client.delete(
+        f"/api/workspaces/{workspace_id}/assets/{asset['id']}",
+    )
+    assert delete_response.status_code == 409
+    assert delete_response.json()["code"] == "ASSET_DELETE_FORBIDDEN"
+
+
+async def test_invalid_audio_page_props_should_be_rejected_before_save(authenticated_client: AsyncClient) -> None:
+    """页面保存应静态阻断旁白循环、越界音量与多旁白冲突。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "音频静态校验")
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "音频校验项目", "status": "active"},
+    )
+    assert project_response.status_code == 200
+    project_id = project_response.json()["id"]
+
+    invalid_contents = [
+        '<template><AssetAudio name="voice" purpose="narration" loop /></template>',
+        '<template><AssetAudio name="voice" :volume="1.2" /></template>',
+        (
+            '<template>'
+            '<AssetAudio name="a" purpose="narration" />'
+            '<AssetAudio name="b" purpose="narration" />'
+            "</template>"
+        ),
+    ]
+    for page_content in invalid_contents:
+        response = await authenticated_client.post(
+            "/api/pages",
+            json={
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "title": "非法音频页面",
+                "page_content": page_content,
+                "file_type": "vue",
+                "status": "active",
+            },
+        )
+        assert response.status_code == 422, response.text
+        payload = response.json()
+        assert payload["code"] == "AUDIO_OPTIONS_INVALID"
+        assert "AssetAudio" in payload["message"]
+
+
+async def test_audio_asset_package_should_keep_bytes_and_metadata(authenticated_client: AsyncClient) -> None:
+    """资源离线包应原样携带音频字节、类型与 hash，导入后可直接用于播放。"""
+
+    source_workspace_id = await _create_workspace(authenticated_client, "音频包源空间")
+    content = b"asset-package-audio-bytes"
+    asset = await _upload_audio(
+        authenticated_client,
+        source_workspace_id,
+        file_name="effect.mp3",
+        content_type="audio/mpeg",
+        content=content,
+        name="effect_audio",
+    )
+
+    export_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace_id}/assets/export-package",
+        json={"asset_ids": [asset["id"]]},
+    )
+    assert export_response.status_code == 200, export_response.text
+    assert export_response.headers["content-type"] == "application/zip"
+
+    target_workspace_id = await _create_workspace(authenticated_client, "音频包目标空间")
+    import_response = await authenticated_client.post(
+        f"/api/workspaces/{target_workspace_id}/assets/import-package",
+        files={"archive": ("audio-assets.zip", export_response.content, "application/zip")},
+    )
+    assert import_response.status_code == 200, import_response.text
+    imported = import_response.json()
+    assert imported["imported_count"] == 1
+    assert imported["failed_count"] == 0
+    assert imported["assets"][0]["asset_type"] == "audio"
+    assert imported["assets"][0]["file_hash"] == asset["file_hash"]
+
+    list_response = await authenticated_client.get(
+        f"/api/workspaces/{target_workspace_id}/assets",
+        params={"asset_type": "audio"},
+    )
+    assert list_response.status_code == 200
+    items = list_response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["name"] == "effect_audio"
+    assert items[0]["file_hash"] == asset["file_hash"]
+
+    file_response = await authenticated_client.get(
+        f"/api/workspaces/{target_workspace_id}/assets/{items[0]['id']}/file",
+    )
+    assert file_response.status_code == 200
+    assert file_response.content == content
+    assert file_response.headers["content-type"] == "audio/mpeg"
+

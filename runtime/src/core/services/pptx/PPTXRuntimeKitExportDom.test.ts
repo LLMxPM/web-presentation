@@ -127,7 +127,7 @@ describe('媒体类型词汇与映射', () => {
 describe('媒体识别的类名兜底', () => {
   it('兜底选择器应保持历史 MEDIA_SELECTORS 的完整类名集合', () => {
     expect(LEGACY_MEDIA_VIEWER_SELECTOR).toBe(
-      '.mermaid-viewer,.drawio-viewer,.latex-viewer,.echarts-viewer,.video-viewer,.image-viewer',
+      '.mermaid-viewer,.drawio-viewer,.latex-viewer,.echarts-viewer,.video-viewer,.audio-viewer,.image-viewer',
     )
   })
 
@@ -137,6 +137,7 @@ describe('媒体识别的类名兜底', () => {
     ['latex-viewer', 'formula'],
     ['echarts-viewer', 'chart'],
     ['video-viewer', 'video'],
+    ['audio-viewer', 'audio'],
     ['image-viewer', 'image'],
   ])('仅有 %s 类名时应识别为媒体并解析出 %s', (className, sourceType) => {
     const element = createElement(`<div class="${className}"></div>`)
@@ -152,6 +153,7 @@ describe('媒体识别的类名兜底', () => {
     ['<video class="image-viewer"></video>', 'video'],
     ['<canvas class="video-viewer"></canvas>', 'video'],
     ['<video></video>', 'video'],
+    ['<audio></audio>', 'audio'],
     ['<canvas></canvas>', 'canvas'],
     ['<svg></svg>', 'svg'],
     ['<img src="data:image/png;base64,AAA=" />', 'image'],
@@ -302,7 +304,7 @@ describe('PPTX 转换器分派', () => {
     it('未取得静态帧时应按 skipped 语义记录且不尝试局部截图', async () => {
       renderModelPage('')
       const slide = createSlideMock()
-      const captureElementAsPng = vi.fn(async (_element: Element) => 'data:image/png;base64,screenshot')
+      const captureElementAsPng = vi.fn(async () => 'data:image/png;base64,screenshot')
 
       const report = await convert(slide, captureElementAsPng)
 

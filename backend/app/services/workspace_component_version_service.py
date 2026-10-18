@@ -12,8 +12,17 @@ from app.core.time_utils import format_in_app_timezone, utc_now
 from app.models.enums import PageFileType
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
-from app.repositories.workspace_component_version_repository import WorkspaceComponentVersionRepository
-from app.schemas.component import WorkspaceComponentVersionContent, WorkspaceComponentVersionListItem
+from app.repositories.workspace_component_version_repository import (
+    WorkspaceComponentVersionRepository,
+)
+from app.schemas.component import (
+    WorkspaceComponentVersionContent,
+    WorkspaceComponentVersionListItem,
+)
+from app.services.audio_options_gate import (
+    AUDIO_ERROR_OPTIONS_INVALID,
+    collect_asset_audio_errors,
+)
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.component_fingerprint_service import ComponentFingerprintService
 from app.services.component_resource_index_service import ComponentResourceIndexService
@@ -88,6 +97,13 @@ class WorkspaceComponentVersionService:
                 status_code=422,
                 code=MODEL3D_ERROR_VIEW_OPTIONS_INVALID,
                 detail="组件源码存在非法的 AssetModel 展示参数：" + "；".join(view_option_errors),
+            )
+        audio_option_errors = collect_asset_audio_errors(normalized_content)
+        if audio_option_errors:
+            raise AppException(
+                status_code=422,
+                code=AUDIO_ERROR_OPTIONS_INVALID,
+                detail="组件源码存在非法的音频组件参数：" + "；".join(audio_option_errors),
             )
         await self.validate_draft_dependencies(
             component=component,

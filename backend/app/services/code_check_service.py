@@ -19,7 +19,14 @@ from app.core.text_normalizer import normalize_text_to_lf
 from app.models.enums import PageFileType, RecordStatus, WorkspaceComponentType
 from app.models.page import Page
 from app.schemas.release import PreviewEntryDescriptor
-from app.services.asset_binding_service import OWNER_KIND_PREVIEW_ARTIFACT, AssetBindingService
+from app.services.asset_binding_service import (
+    OWNER_KIND_PREVIEW_ARTIFACT,
+    AssetBindingService,
+)
+from app.services.audio_options_gate import (
+    AUDIO_ERROR_OPTIONS_INVALID,
+    collect_asset_audio_errors,
+)
 from app.services.capture_viewport_resolver import CaptureViewport
 from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
 from app.services.code_check_result_cache import (
@@ -146,6 +153,9 @@ class CodeCheckService:
         )
         if isinstance(candidate, dict):
             return candidate
+        audio_failure = self._audio_option_failure(candidate.content)
+        if audio_failure is not None:
+            return audio_failure
 
         module_path = f"src/views/{page.code}.{page.file_type}"
 
@@ -223,6 +233,9 @@ class CodeCheckService:
         )
         if isinstance(candidate, dict):
             return candidate
+        audio_failure = self._audio_option_failure(candidate.content)
+        if audio_failure is not None:
+            return audio_failure
 
         preview_service = PreviewService(self.session)
         project = await preview_service.artifact_builder.get_project_or_raise(project_id)
@@ -324,6 +337,9 @@ class CodeCheckService:
         )
         if isinstance(candidate, dict):
             return ComponentValidationService.enrich_contract_failure(candidate)
+        audio_failure = self._audio_option_failure(candidate.content)
+        if audio_failure is not None:
+            return ComponentValidationService.enrich_contract_failure(audio_failure)
 
         try:
             resolved_preview_schema = validate_component_preview_schema_text(resolved_preview_schema)
@@ -631,6 +647,18 @@ class CodeCheckService:
             enriched_result["_render_artifact_cleanup_deferred"] = True
         return enriched_result
 
+    @staticmethod
+    def _audio_option_failure(source: str) -> dict[str, object] | None:
+        """静态校验候选源码中的音频组件参数；无错误时返回 None。"""
+
+        errors = collect_asset_audio_errors(source)
+        if not errors:
+            return None
+        return CodeCheckService._failed_result(
+            code=AUDIO_ERROR_OPTIONS_INVALID,
+            message="候选源码存在非法的音频组件参数：" + "；".join(errors),
+        )
+
     def _resolve_candidate_source(
         self,
         *,
@@ -683,7 +711,9 @@ class CodeCheckService:
     def _failed_result_from_exception(exc: AppException) -> dict[str, object]:
         """把 AppException 归一为检查失败结果；瞬态基础设施错误必须标记 retryable。"""
 
-        from app.services.code_check_result_cache import is_transient_infrastructure_error
+        from app.services.code_check_result_cache import (
+            is_transient_infrastructure_error,
+        )
 
         return CodeCheckService._failed_result(
             code=exc.code,

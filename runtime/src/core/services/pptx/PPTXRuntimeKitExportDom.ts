@@ -37,6 +37,7 @@ export const RUNTIME_KIT_MEDIA_KINDS = [
   'formula',
   'chart',
   'video',
+  'audio',
   'image',
   'model3d',
 ] as const
@@ -51,6 +52,7 @@ const LEGACY_MEDIA_VIEWER_CLASSES = [
   'latex-viewer',
   'echarts-viewer',
   'video-viewer',
+  'audio-viewer',
   'image-viewer',
 ] as const
 
@@ -70,6 +72,7 @@ const LEGACY_MEDIA_SOURCE_RULES: ReadonlyArray<readonly [(element: Element) => b
   [element => element.matches('.latex-viewer'), 'formula'],
   [element => element.matches('.echarts-viewer'), 'chart'],
   [element => element.matches('.video-viewer') || isTagName(element, 'video'), 'video'],
+  [element => element.matches('.audio-viewer') || isTagName(element, 'audio'), 'audio'],
   [element => isTagName(element, 'canvas'), 'canvas'],
   [element => isTagName(element, 'svg'), 'svg'],
   [element => element.matches('.image-viewer') || isTagName(element, 'img'), 'image'],

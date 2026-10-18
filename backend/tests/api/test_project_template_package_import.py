@@ -6,7 +6,10 @@ import io
 import json
 import zipfile
 
+from app.db.session import get_session_factory
+from app.models.page import Page
 from httpx import AsyncClient
+from sqlalchemy import select
 
 
 async def test_project_template_package_second_import_should_reuse_branded_theme(
@@ -101,6 +104,76 @@ async def test_project_template_package_second_import_should_reuse_branded_theme
     assert second_import.status_code == 200
 
 
+async def test_project_template_package_should_roundtrip_audio_reference(
+    authenticated_client: AsyncClient,
+) -> None:
+    """模板包应携带页面引用的音频文件，并在目标工作空间重建同名资源绑定。"""
+
+    source_workspace_id = await _create_workspace(authenticated_client, "模板音频源空间")
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": source_workspace_id, "name": "模板音频项目", "status": "active"},
+    )
+    assert project_response.status_code == 200
+    project_id = project_response.json()["id"]
+    audio_asset = await _upload_audio_asset(authenticated_client, source_workspace_id, "chapter_01")
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": source_workspace_id,
+            "project_id": project_id,
+            "title": "旁白页",
+            "status": "active",
+            "file_type": "vue",
+            "page_content": '<template><AssetAudio name="chapter_01" purpose="content" class="w-full h-16" /></template>',
+        },
+    )
+    assert page_response.status_code == 200, page_response.text
+
+    export_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/template-package/export",
+        json={"metadata": {"slug": "audio-template", "name": "音频模板"}, "refresh_screenshots": False},
+    )
+    assert export_response.status_code == 200, export_response.text
+
+    with zipfile.ZipFile(io.BytesIO(export_response.content)) as archive:
+        names = archive.namelist()
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+        audio_entries = [name for name in names if name.startswith("assets/") and name.endswith(".mp3")]
+        assert audio_entries
+        assert any(
+            item["name"] == "chapter_01" and item["asset_type"] == "audio"
+            for item in manifest["assets"]
+        )
+        page_payload = next(name for name in names if name.startswith("pages/") and name.endswith("/index.vue"))
+        assert "AssetAudio" in archive.read(page_payload).decode("utf-8")
+
+    target_workspace_id = await _create_workspace(authenticated_client, "模板音频目标空间")
+    import_response = await _import_template_package(
+        authenticated_client,
+        target_workspace_id,
+        export_response.content,
+    )
+    assert import_response.status_code == 200, import_response.text
+    imported_project_id = import_response.json()["project_id"]
+
+    target_assets = await authenticated_client.get(
+        f"/api/workspaces/{target_workspace_id}/assets",
+        params={"asset_type": "audio"},
+    )
+    assert target_assets.status_code == 200
+    items = target_assets.json()["items"]
+    assert len(items) == 1
+    assert items[0]["name"] == "chapter_01"
+    assert items[0]["file_hash"] == audio_asset["file_hash"]
+
+    async with get_session_factory()() as session:
+        imported_pages = (
+            await session.execute(select(Page).where(Page.project_id == imported_project_id))
+        ).scalars().all()
+    assert any('AssetAudio name="chapter_01"' in page.page_content for page in imported_pages)
+
+
 async def _create_workspace(client: AsyncClient, name: str) -> int:
     """创建测试工作空间并返回 ID。"""
 
@@ -129,6 +202,18 @@ async def _create_svg_asset(
         },
     )
     assert response.status_code == 200
+    return response.json()
+
+
+async def _upload_audio_asset(client: AsyncClient, workspace_id: int, name: str) -> dict:
+    """上传模板包测试使用的音频资源。"""
+
+    response = await client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": (f"{name}.mp3", b"template-audio-bytes", "audio/mpeg")},
+        data={"asset_type": "audio", "tags": "[]", "name": name},
+    )
+    assert response.status_code == 200, response.text
     return response.json()
 
 

@@ -158,6 +158,8 @@ describe('BrowserPrintService', () => {
     expect(iframe?.contentDocument?.head.textContent).toContain('.runtime-page-print-source')
     expect(iframe?.contentDocument?.head.textContent).toContain('zoom:')
     expect(iframe?.contentDocument?.head.textContent).toContain('transform: none !important')
+    expect(iframe?.contentDocument?.head.textContent).toContain('[data-runtime-kit-media-kind="audio"]')
+    expect(iframe?.contentDocument?.head.textContent).toContain('display: none !important')
   })
 
   it('应复制 canvas 位图到打印 iframe，避免 ECharts 图表空白', async () => {

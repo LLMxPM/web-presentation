@@ -40,6 +40,25 @@ _STATIC_ASSET_CALL_PATTERN = re.compile(
 )
 _RUNTIME_KIT_VERSION_SUFFIX_PATTERN = re.compile(r"\.v\d+$")
 
+# AssetAudio 播放参数静态校验：组件标签、属性别名与可判定类型。
+_AUDIO_COMPONENT_TAG = "assetaudio"
+_AUDIO_ATTR_ALIASES = {
+    "name": "name",
+    "purpose": "purpose",
+    "controls": "controls",
+    "volume": "volume",
+    "playback-rate": "playback_rate",
+    "playbackrate": "playback_rate",
+    "preload": "preload",
+    "loop": "loop",
+    "fallback": "fallback",
+}
+_AUDIO_STRING_FIELDS = frozenset({"name", "purpose", "preload", "fallback"})
+_AUDIO_BOOLEAN_FIELDS = frozenset({"controls", "loop"})
+_AUDIO_NUMERIC_FIELDS = frozenset({"volume", "playback_rate"})
+_BOUND_BOOLEAN_PATTERN = re.compile(r"^(?:true|false)$", flags=re.IGNORECASE)
+_BOUND_NUMBER_PATTERN = re.compile(r"^[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?$")
+
 # AssetModel 展示参数静态校验：组件标签与 kebab → camel 字段映射。
 _MODEL_COMPONENT_TAG = "assetmodel"
 _VIEW_OPTION_ATTR_ALIASES = {
@@ -256,6 +275,97 @@ class ResourceReferenceParser:
             if payload:
                 payloads.append(payload)
         return payloads
+
+    @classmethod
+    def collect_vue_audio_prop_payloads(cls, source: str) -> list[dict[str, Any]]:
+        """收集 AssetAudio 实例中可静态判定的播放参数 payload。
+
+        动态绑定无法静态求值时跳过该字段，交给 Runtime 校验；name 缺失或动态时
+        使用占位值，避免把资源身份问题重复报成属性错误。
+        """
+
+        template_content = cls.extract_template_content(source)
+        if not template_content:
+            return []
+        clean_template = _HTML_COMMENT_PATTERN.sub("", template_content)
+        payloads: list[dict[str, Any]] = []
+        for is_closing, raw_tag, attrs_text, _is_self_closing in cls.iter_template_tags(clean_template):
+            if is_closing or raw_tag.lower() not in {_AUDIO_COMPONENT_TAG, "asset-audio"}:
+                continue
+            payloads.append(cls._build_audio_prop_payload(attrs_text))
+        return payloads
+
+    @classmethod
+    def _build_audio_prop_payload(cls, attrs_text: str) -> dict[str, Any]:
+        """把单个 AssetAudio 标签属性串转换为可交给严格 Schema 的 payload。"""
+
+        collected: dict[str, tuple[bool, str | None]] = {}
+        for match in _TEMPLATE_ATTR_PATTERN.finditer(attrs_text or ""):
+            normalized_name = match.group("name").lower()
+            is_bound = False
+            if normalized_name.startswith("v-bind:"):
+                field_key = normalized_name[len("v-bind:"):]
+                is_bound = True
+            elif normalized_name.startswith(":"):
+                field_key = normalized_name[1:]
+                is_bound = True
+            else:
+                field_key = normalized_name
+            field = _AUDIO_ATTR_ALIASES.get(field_key)
+            if not field:
+                continue
+            raw_value = match.group("quoted")
+            if raw_value is None:
+                raw_value = match.group("bare")
+            # 同名字段以后出现者为准，与 Vue 覆盖语义一致。
+            collected[field] = (is_bound, raw_value)
+
+        payload: dict[str, Any] = {}
+        for field, (is_bound, raw_value) in collected.items():
+            resolved, value = cls._resolve_audio_prop_value(field, is_bound, raw_value)
+            if resolved:
+                payload[field] = value
+        payload.setdefault("name", "-")
+        return payload
+
+    @classmethod
+    def _resolve_audio_prop_value(
+        cls,
+        field: str,
+        is_bound: bool,
+        raw_value: str | None,
+    ) -> tuple[bool, Any]:
+        """解析单个音频属性值；返回 (是否可静态判定, 值)。"""
+
+        if field in _AUDIO_STRING_FIELDS:
+            if raw_value is None:
+                return True, ""
+            if not is_bound:
+                return True, raw_value
+            literal = cls.parse_js_string_literal(raw_value)
+            return (True, literal) if literal is not None else (False, None)
+
+        if field in _AUDIO_BOOLEAN_FIELDS:
+            if not is_bound:
+                # 裸布尔属性按 true 处理；带值的普通属性按字符串交给严格 Schema 报错。
+                return True, True if raw_value is None else raw_value
+            normalized_value = (raw_value or "").strip()
+            if _BOUND_BOOLEAN_PATTERN.match(normalized_value):
+                return True, normalized_value.lower() == "true"
+            return False, None
+
+        if field in _AUDIO_NUMERIC_FIELDS:
+            if not is_bound:
+                # 组件普通属性传字符串，严格数字契约应拒绝而不是静默转换。
+                return True, "" if raw_value is None else raw_value
+            normalized_value = (raw_value or "").strip()
+            if not _BOUND_NUMBER_PATTERN.match(normalized_value):
+                return False, None
+            if _INT_VALUE_PATTERN.match(normalized_value):
+                return True, int(normalized_value)
+            return True, float(normalized_value)
+
+        return False, None
 
     @classmethod
     def _build_model_view_option_payload(cls, attrs_text: str) -> dict[str, Any]:

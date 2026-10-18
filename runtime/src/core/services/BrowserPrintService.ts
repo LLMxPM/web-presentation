@@ -515,6 +515,13 @@ export class BrowserPrintService {
         overflow: hidden !important;
       }
 
+      /* 首版 PDF/print 省略音频，不输出原生控件或兜底文案。 */
+      [data-runtime-kit-media-kind="audio"],
+      audio,
+      .audio-viewer {
+        display: none !important;
+      }
+
       .runtime-page-print-source,
       .runtime-page-print-source > * {
         width: ${pageWidth}px !important;

@@ -89,7 +89,8 @@ export class PPTXDomConverterMedia {
       tagName === 'img' ||
       tagName === 'svg' ||
       tagName === 'canvas' ||
-      tagName === 'video'
+      tagName === 'video' ||
+      tagName === 'audio'
   }
 
   /**
@@ -160,6 +161,12 @@ export class PPTXDomConverterMedia {
 
     if (sourceType === 'video') {
       await this.addVideoBlock(host, element, label, context)
+      return
+    }
+
+    if (sourceType === 'audio') {
+      // 首版不嵌入 OOXML 音频；明确记录省略，避免静默截取原生控件或等待媒体加载。
+      host.addSkippedItem('audio', label, '首版 PPTX 导出省略音频', context)
       return
     }
 

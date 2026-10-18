@@ -11,8 +11,6 @@ from types import SimpleNamespace
 from zipfile import ZipFile
 
 import pytest
-from httpx import AsyncClient
-
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.db.session import get_session_factory
@@ -23,12 +21,15 @@ from app.services.asset_service import AssetService
 from app.services.object_storage_service import ObjectStorageService
 from app.services.preview_origin_service import isolated_preview_origin
 from app.services.project_artifact_builder import ProjectArtifactSnapshot
-from app.services.project_build_artifact_proxy_service import ProjectBuildArtifactProxyService
+from app.services.project_build_artifact_proxy_service import (
+    ProjectBuildArtifactProxyService,
+)
 from app.services.project_build_service import (
     ProjectBuildService,
     normalize_project_build_base_url,
 )
 from app.services.token_service import TokenService
+from httpx import AsyncClient
 
 _GLB_JSON_CHUNK_TYPE = 0x4E4F534A
 _GLB_BIN_CHUNK_TYPE = 0x004E4942
@@ -127,6 +128,24 @@ async def upload_build_model3d_asset(
         f"/api/workspaces/{workspace_id}/assets/upload",
         files={"file": (f"{name}.glb", _valid_glb(marker), "model/gltf-binary")},
         data={"asset_type": "model3d", "tags": "[]", "name": name},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def upload_build_audio_asset(
+    authenticated_client: AsyncClient,
+    workspace_id: int,
+    name: str,
+    *,
+    marker: str = "0",
+) -> dict:
+    """上传构建测试使用的音频资源并返回接口响应。"""
+
+    response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": (f"{name}.mp3", f"audio-{name}-{marker}".encode("utf-8"), "audio/mpeg")},
+        data={"asset_type": "audio", "tags": "[]", "name": name},
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -555,6 +574,127 @@ async def test_project_build_snapshot_should_include_model3d_static_reference(
     assert metadata["content_type"] == "model/gltf-binary"
     assert metadata["render_type"] == "model3d"
     assert metadata["asset_role"] == "content"
+
+
+@pytest.mark.asyncio
+async def test_project_build_snapshot_should_include_audio_static_reference(
+    authenticated_client: AsyncClient,
+) -> None:
+    """构建快照应物化 AssetAudio 静态引用的音频，并携带可播放元数据。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    asset = await upload_build_audio_asset(authenticated_client, workspace_id, "chapter_01")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetAudio name="chapter_01" purpose="content" class="w-full h-16" /></template>',
+    )
+
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200, create_response.text
+
+    async with get_session_factory()() as session:
+        release = await session.get(Release, create_response.json()["snapshot_release_id"])
+
+    assert release is not None
+    assert release.manifest["assets"] == {"chapter_01": asset["file_hash"]}
+    metadata = release.manifest["asset_metadata"]["chapter_01"]
+    assert metadata["file_hash"] == asset["file_hash"]
+    assert metadata["original_name"] == "chapter_01.mp3"
+    assert metadata["content_type"] == "audio/mpeg"
+    assert metadata["render_type"] == "audio"
+    assert metadata["asset_role"] == "content"
+
+    summary_response = await authenticated_client.get(f"/api/projects/{project_id}/build-assets")
+    assert summary_response.status_code == 200
+    assert "chapter_01" in summary_response.json()["automatic_asset_names"]
+
+
+@pytest.mark.asyncio
+async def test_project_build_snapshot_should_keep_frozen_audio_hash_after_replacement(
+    authenticated_client: AsyncClient,
+) -> None:
+    """构建任务冻结音频快照后替换资源，旧 release 仍保留原 hash 与原字节。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+    original_asset = await upload_build_audio_asset(authenticated_client, workspace_id, "chapter_01")
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetAudio name="chapter_01" class="w-full h-16" /></template>',
+    )
+
+    create_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert create_response.status_code == 200, create_response.text
+    release_id = create_response.json()["snapshot_release_id"]
+
+    async with get_session_factory()() as session:
+        release = await session.get(Release, release_id)
+    assert release is not None
+    assert release.manifest["assets"]["chapter_01"] == original_asset["file_hash"]
+
+    replace_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/{original_asset['id']}/replace",
+        files={"file": ("chapter_01.mp3", b"replacement-audio", "audio/mpeg")},
+        data={"expected_file_hash": original_asset["file_hash"]},
+    )
+    assert replace_response.status_code == 200, replace_response.text
+    assert replace_response.json()["file_hash"] != original_asset["file_hash"]
+
+    async with get_session_factory()() as session:
+        frozen_release = await session.get(Release, release_id)
+        frozen_asset, driver = await AssetService(session).get_asset_by_hash(
+            workspace_id, original_asset["file_hash"]
+        )
+        frozen_bytes = await driver.read_content(workspace_id, frozen_asset.file_name)
+
+    assert frozen_release is not None
+    assert frozen_release.manifest["assets"]["chapter_01"] == original_asset["file_hash"]
+    assert frozen_bytes == b"audio-chapter_01-0"
+
+
+@pytest.mark.asyncio
+async def test_project_build_should_return_structured_audio_reference_errors(
+    authenticated_client: AsyncClient,
+) -> None:
+    """动态音频引用允许保存；缺失静态引用在构建时返回结构化错误。"""
+
+    workspace_id, project_id = await create_active_project(authenticated_client)
+
+    dynamic_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "title": "动态音频引用页面",
+            "page_content": '<template><AssetAudio :name="dynamicAudio" class="w-full h-16" /></template>',
+            "file_type": "vue",
+            "status": "active",
+        },
+    )
+    assert dynamic_response.status_code == 200, dynamic_response.text
+
+    await create_routed_build_page(
+        authenticated_client,
+        workspace_id,
+        project_id,
+        '<template><AssetAudio name="missing_audio" class="w-full h-16" /></template>',
+    )
+    missing_response = await authenticated_client.post(
+        f"/api/projects/{project_id}/build-jobs",
+        json={"base_url": "./"},
+    )
+    assert missing_response.status_code == 409
+    assert missing_response.json()["code"] == "PROJECT_BUILD_ASSET_MISSING"
+    assert "missing_audio" in missing_response.json()["data"]["missing_asset_names"]
 
 
 @pytest.mark.asyncio
