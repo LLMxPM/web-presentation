@@ -31105,6 +31105,76 @@
         "title": "ExternalAssetCopyRequest",
         "description": "External API 资源复制请求。"
       },
+      "ExternalAudioCapabilities": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "audio_assets": {
+            "type": "boolean",
+            "title": "Audio Assets"
+          },
+          "page_narration": {
+            "type": "boolean",
+            "title": "Page Narration"
+          },
+          "audio_cues": {
+            "type": "boolean",
+            "title": "Audio Cues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "audio_assets",
+          "page_narration",
+          "audio_cues"
+        ],
+        "title": "ExternalAudioCapabilities",
+        "description": "音频资源、页面旁白与项目 cue 的开放状态。"
+      },
+      "ExternalAudioCueBinding": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "asset_id": {
+            "type": "integer",
+            "title": "Asset Id"
+          },
+          "asset_name": {
+            "type": "string",
+            "title": "Asset Name"
+          },
+          "asset_type": {
+            "type": "string",
+            "title": "Asset Type"
+          },
+          "asset_status": {
+            "type": "string",
+            "title": "Asset Status"
+          },
+          "gain_percent": {
+            "type": "integer",
+            "title": "Gain Percent"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "asset_id",
+          "asset_name",
+          "asset_type",
+          "asset_status",
+          "gain_percent"
+        ],
+        "title": "ExternalAudioCueBinding",
+        "description": "External 读取的 cue 绑定摘要：同时给出资产 ID、逻辑名和状态。"
+      },
       "ExternalBatchArchiveRequest": {
         "properties": {
           "ids": {
@@ -32123,6 +32193,38 @@
         "title": "ExternalProjectApplyStyleRequest",
         "description": "External API 将样式方案应用到项目的请求。"
       },
+      "ExternalProjectAudioSettings": {
+        "properties": {
+          "master_volume_percent": {
+            "type": "integer",
+            "title": "Master Volume Percent"
+          },
+          "narration_volume_percent": {
+            "type": "integer",
+            "title": "Narration Volume Percent"
+          },
+          "effects_volume_percent": {
+            "type": "integer",
+            "title": "Effects Volume Percent"
+          },
+          "cue_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalAudioCueBinding"
+            },
+            "type": "array",
+            "title": "Cue Bindings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "master_volume_percent",
+          "narration_volume_percent",
+          "effects_volume_percent"
+        ],
+        "title": "ExternalProjectAudioSettings",
+        "description": "External 项目音频设置读取模型，绑定带资源逻辑名便于客户端展示。"
+      },
       "ExternalProjectBuildAssetsRequest": {
         "properties": {
           "build_extra_assets_json": {
@@ -32167,6 +32269,10 @@
           "slideshow": {
             "$ref": "#/components/schemas/SlideshowSettings",
             "description": "项目默认放映配置，与 presentation 并列。"
+          },
+          "audio_settings": {
+            "$ref": "#/components/schemas/ExternalProjectAudioSettings",
+            "description": "项目音量与 cue 绑定摘要。"
           }
         },
         "additionalProperties": false,
@@ -32175,7 +32281,8 @@
           "project_id",
           "workspace_id",
           "presentation",
-          "slideshow"
+          "slideshow",
+          "audio_settings"
         ],
         "title": "ExternalProjectConfigurationResponse",
         "description": "External API 项目配置读取响应。"
@@ -32211,6 +32318,17 @@
               }
             ],
             "description": "项目默认放映配置；省略保留，完整对象替换，显式 null 拒绝。不与 configuration.presentation 混放。"
+          },
+          "audio_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectAudioSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "项目音量与 cue 绑定；省略保留，完整对象替换，显式空 cue_bindings 清空。"
           }
         },
         "additionalProperties": false,
@@ -32285,6 +32403,10 @@
           "slideshow": {
             "$ref": "#/components/schemas/SlideshowSettings",
             "description": "项目默认放映配置；省略时使用平台默认完整值。"
+          },
+          "audio_settings": {
+            "$ref": "#/components/schemas/ProjectAudioSettings",
+            "description": "项目音量与 cue 绑定；省略时使用默认音量且不绑定 cue。"
           }
         },
         "additionalProperties": false,
@@ -32335,6 +32457,9 @@
           },
           "media_timeout_ms": {
             "$ref": "#/components/schemas/ExternalAdvanceDelayRange"
+          },
+          "audio": {
+            "$ref": "#/components/schemas/ExternalAudioCapabilities"
           }
         },
         "additionalProperties": false,
@@ -32348,7 +32473,8 @@
           "capture_auto_play",
           "transition_duration_ms",
           "delay_ms",
-          "media_timeout_ms"
+          "media_timeout_ms",
+          "audio"
         ],
         "title": "ExternalSlideshowCapabilities",
         "description": "External API 放映能力基线；按当前已验收的 Backend/Runtime 组合声明。"

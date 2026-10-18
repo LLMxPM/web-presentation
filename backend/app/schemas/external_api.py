@@ -7,6 +7,15 @@ from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.audio import (
+    AUDIO_CAPABILITY_AUDIO_ASSETS,
+    AUDIO_CAPABILITY_AUDIO_CUES,
+    AUDIO_CAPABILITY_PAGE_NARRATION,
+    AUDIO_OPEN_CAPABILITIES,
+    AUDIO_SCHEMA_VERSION,
+    ProjectAudioSettings,
+    default_project_audio_settings,
+)
 from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration, StyleConfiguration
 from app.schemas.project_app_config import ProjectMenuMode
 from app.schemas.slideshow import (
@@ -65,6 +74,17 @@ class ExternalAdvanceDelayRange(BaseModel):
     max: int
 
 
+class ExternalAudioCapabilities(BaseModel):
+    """音频资源、页面旁白与项目 cue 的开放状态。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: int
+    audio_assets: bool
+    page_narration: bool
+    audio_cues: bool
+
+
 class ExternalSlideshowCapabilities(BaseModel):
     """External API 放映能力基线；按当前已验收的 Backend/Runtime 组合声明。"""
 
@@ -79,6 +99,18 @@ class ExternalSlideshowCapabilities(BaseModel):
     transition_duration_ms: ExternalTransitionDurationRange
     delay_ms: ExternalAdvanceDelayRange
     media_timeout_ms: ExternalAdvanceDelayRange
+    audio: ExternalAudioCapabilities
+
+
+def build_audio_capabilities() -> ExternalAudioCapabilities:
+    """按已开放能力集合声明音频能力，未通过出口验收的阶段保持关闭。"""
+
+    return ExternalAudioCapabilities(
+        schema_version=AUDIO_SCHEMA_VERSION,
+        audio_assets=AUDIO_CAPABILITY_AUDIO_ASSETS in AUDIO_OPEN_CAPABILITIES,
+        page_narration=AUDIO_CAPABILITY_PAGE_NARRATION in AUDIO_OPEN_CAPABILITIES,
+        audio_cues=AUDIO_CAPABILITY_AUDIO_CUES in AUDIO_OPEN_CAPABILITIES,
+    )
 
 
 def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
@@ -98,6 +130,7 @@ def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
         ),
         delay_ms=ExternalAdvanceDelayRange(min=ADVANCE_DELAY_MIN_MS, max=ADVANCE_DELAY_MAX_MS),
         media_timeout_ms=ExternalAdvanceDelayRange(min=MEDIA_TIMEOUT_MIN_MS, max=MEDIA_TIMEOUT_MAX_MS),
+        audio=build_audio_capabilities(),
     )
 
 
@@ -163,6 +196,30 @@ class ExternalPageMetadataUpdateRequest(BaseModel):
         return self
 
 
+class ExternalAudioCueBinding(BaseModel):
+    """External 读取的 cue 绑定摘要：同时给出资产 ID、逻辑名和状态。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    asset_id: int
+    asset_name: str
+    asset_type: str
+    asset_status: str
+    gain_percent: int
+
+
+class ExternalProjectAudioSettings(BaseModel):
+    """External 项目音频设置读取模型，绑定带资源逻辑名便于客户端展示。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    master_volume_percent: int
+    narration_volume_percent: int
+    effects_volume_percent: int
+    cue_bindings: list[ExternalAudioCueBinding] = Field(default_factory=list)
+
+
 class ExternalProjectConfigurationUpdateRequest(BaseModel):
     """External API 项目配置整体更新请求。"""
 
@@ -174,6 +231,10 @@ class ExternalProjectConfigurationUpdateRequest(BaseModel):
         default=None,
         description="项目默认放映配置；省略保留，完整对象替换，显式 null 拒绝。不与 configuration.presentation 混放。",
     )
+    audio_settings: ProjectAudioSettings | None = Field(
+        default=None,
+        description="项目音量与 cue 绑定；省略保留，完整对象替换，显式空 cue_bindings 清空。",
+    )
 
     @model_validator(mode="after")
     def reject_null_slideshow(self) -> "ExternalProjectConfigurationUpdateRequest":
@@ -181,6 +242,14 @@ class ExternalProjectConfigurationUpdateRequest(BaseModel):
 
         if "slideshow" in self.model_fields_set and self.slideshow is None:
             raise ValueError("更新项目放映配置时必须提供完整对象，不能使用 null。")
+        return self
+
+    @model_validator(mode="after")
+    def reject_null_audio_settings(self) -> "ExternalProjectConfigurationUpdateRequest":
+        """音频设置只支持省略或完整对象，清空 cue 使用空列表。"""
+
+        if "audio_settings" in self.model_fields_set and self.audio_settings is None:
+            raise ValueError("更新项目音频设置时必须提供完整对象，不能使用 null。")
         return self
 
 
@@ -211,6 +280,7 @@ class ExternalProjectConfigurationResponse(BaseModel):
     suggested_components: list[dict[str, Any]] = Field(default_factory=list)
     build_extra_assets_json: dict[str, Any] = Field(default_factory=dict)
     slideshow: SlideshowSettings = Field(description="项目默认放映配置，与 presentation 并列。")
+    audio_settings: ExternalProjectAudioSettings = Field(description="项目音量与 cue 绑定摘要。")
 
 
 class ExternalPageCopyRequest(BaseModel):
@@ -467,6 +537,10 @@ class ExternalProjectCreateRequest(BaseModel):
     slideshow: SlideshowSettings = Field(
         default_factory=default_slideshow_settings,
         description="项目默认放映配置；省略时使用平台默认完整值。",
+    )
+    audio_settings: ProjectAudioSettings = Field(
+        default_factory=default_project_audio_settings,
+        description="项目音量与 cue 绑定；省略时使用默认音量且不绑定 cue。",
     )
 
 

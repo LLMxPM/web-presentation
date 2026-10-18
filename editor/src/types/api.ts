@@ -77,11 +77,14 @@ export interface SuggestedComponentsResponse {
 export type WorkspaceItem = GeneratedApi.WorkspaceItem
 
 export type ProjectItem = GeneratedApi.ProjectItem
+export type ProjectAudioSettings = GeneratedApi.ProjectAudioSettings
+export type AudioCueBindingInput = GeneratedApi.AudioCueBindingInput
 export type SlideshowSettings = GeneratedApi.SlideshowSettings
 export type SlideshowTransition = GeneratedApi.SlideshowTransition
 export type SlideshowAdvance = GeneratedApi.SlideshowAdvance
 export type EffectiveSlideshowSettings = GeneratedApi.EffectiveSlideshowSettings
 export type SlideshowCapabilities = GeneratedApi.ExternalSlideshowCapabilities
+export type AudioCapabilities = GeneratedApi.ExternalAudioCapabilities
 
 export type ProjectBuildStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 

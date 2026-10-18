@@ -106,6 +106,8 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 
 响应中的可选 `slideshow` 字段声明服务端当前实际支持的放映范围。当前结构版本为 schema 2，`advance_modes` 仍为 `manual`/`timer`、`single_window_auto_play` 为 true，`presenter_auto_play` 与 `capture_auto_play` 保持 false；schema 2 同时披露 `media_timeout_ms` 范围，但 `media_end` 在 M2 出口前不可写、不可执行。字段缺失或为 null 表示未声明该功能，客户端不能仅凭配置字段可写就推断可执行。
 
+`slideshow.audio` 声明音频能力（`schema_version=1`）：`audio_assets` 表示可上传和引用音频资源；`page_narration` 与 `audio_cues` 在对应阶段出口验收前保持 false。客户端只能在 `audio_cues=true` 时展示项目 cue 配置；后端写入校验独立于客户端开关。
+
 ### 4.2 规范和 OpenAPI
 
 ```text
@@ -173,6 +175,17 @@ POST     /api/v1/validate/entity
 - 三维资源（`asset_type=model3d`）必须通过本接口替换；同名覆盖上传会被拒绝，避免按文件名匹配误选其他资源。
 - 同幂等键同输入重放首次结果且不生成第二份历史；不同输入复用键返回 409。
 - 成功返回 200 `AssetResponse`，`file_hash` 为新文件哈希；历史副本按平台归档规则创建。
+
+#### 音频资源与项目 cue
+
+音频复用统一资源接口，不需要专用上传路径：
+
+- `POST /api/v1/assets` 使用 `asset_type=audio` 上传 `.mp3`、`.m4a`、`.aac`、`.ogg` 或 `.wav`；扩展名与 MIME 的对应关系由 Backend 严格校验。
+- `GET /api/v1/assets?asset_type=audio` 只返回音频资源；`GET /api/v1/assets/{asset_id}/file` 读取当前版本二进制。
+- 音频替换同样使用 `POST /api/v1/assets/{asset_id}/replace`，必须携带 `expected_file_hash` 与 `Idempotency-Key`。
+- `GET/PUT /api/v1/projects/{project_id}/configuration` 的 `audio_settings` 读写项目音量与 cue 绑定；`PUT` 省略 `audio_settings` 保留现有值，完整对象替换，显式 `null` 返回 422，`cue_bindings: []` 清空绑定。
+- 读取响应中的 `cue_bindings` 同时给出 `asset_id`、`asset_name`、`asset_type`、`asset_status` 与 `gain_percent`；写入只接受 `asset_id`、`key` 和 `gain_percent`，资源必须属于当前工作空间且为 active 的 audio 类型。
+- `ProjectItem` 的 `audio_settings` 使用 ID 形式返回绑定；需要逻辑名时读取项目 configuration 或资源列表。
 
 ### 5.2 页面和组件重任务
 

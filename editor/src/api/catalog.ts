@@ -19,6 +19,7 @@ import type {
   ComponentShareImportResult,
   ComponentShareImportValidationResult,
   ProjectBuildExtraAssetsJson,
+  ProjectAudioSettings,
   ProjectItem,
   ProjectMenuMode,
   ProjectRouteItemWrite,
@@ -178,6 +179,7 @@ export async function updateProject(
     theme_key: string | null
     style_spec_markdown: string
     slideshow: SlideshowSettings
+    audio_settings: ProjectAudioSettings
     build_extra_assets_json: ProjectBuildExtraAssetsJson
     source_style_id: number | null
   }>,

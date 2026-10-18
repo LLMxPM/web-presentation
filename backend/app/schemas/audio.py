@@ -61,6 +61,8 @@ AUDIO_MILESTONE_CAPABILITIES: dict[str, tuple[str, ...]] = {
         AUDIO_CAPABILITY_AUDIO_CUES,
     ),
 }
+# 已实现并允许 Editor/External 客户端展示的音频能力；阶段出口验收后在此开放。
+AUDIO_OPEN_CAPABILITIES: frozenset[str] = frozenset({AUDIO_CAPABILITY_AUDIO_ASSETS})
 
 AUDIO_CUE_KEY_MAX_LENGTH = 80
 AUDIO_CUE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$")

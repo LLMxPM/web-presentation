@@ -1113,6 +1113,22 @@ export type ExternalAssetCopyRequest = {
   "tags"?: ((string)[]) | (null)
 }
 
+export type ExternalAudioCapabilities = {
+  "schema_version": number
+  "audio_assets": boolean
+  "page_narration": boolean
+  "audio_cues": boolean
+}
+
+export type ExternalAudioCueBinding = {
+  "key": string
+  "asset_id": number
+  "asset_name": string
+  "asset_type": string
+  "asset_status": string
+  "gain_percent": number
+}
+
 export type ExternalBatchArchiveRequest = {
   "ids": (number)[]
   "reason"?: (string) | (null)
@@ -1253,6 +1269,13 @@ export type ExternalProjectApplyStyleRequest = {
   "style_id": number
 }
 
+export type ExternalProjectAudioSettings = {
+  "master_volume_percent": number
+  "narration_volume_percent": number
+  "effects_volume_percent": number
+  "cue_bindings"?: (ExternalAudioCueBinding)[]
+}
+
 export type ExternalProjectBuildAssetsRequest = {
   "build_extra_assets_json"?: Record<string, unknown>
 }
@@ -1264,12 +1287,14 @@ export type ExternalProjectConfigurationResponse = {
   "suggested_components"?: (Record<string, unknown>)[]
   "build_extra_assets_json"?: Record<string, unknown>
   "slideshow": SlideshowSettings
+  "audio_settings": ExternalProjectAudioSettings
 }
 
 export type ExternalProjectConfigurationUpdateRequest = {
   "configuration"?: Record<string, unknown>
   "build_extra_assets_json"?: (Record<string, unknown>) | (null)
   "slideshow"?: (SlideshowSettings) | (null)
+  "audio_settings"?: (ProjectAudioSettings) | (null)
 }
 
 export type ExternalProjectCreateRequest = {
@@ -1279,6 +1304,7 @@ export type ExternalProjectCreateRequest = {
   "configuration"?: (ProjectDefaultConfiguration) | (ProjectStyleConfiguration) | (ProjectCustomConfiguration)
   "build_extra_assets_json"?: (Record<string, unknown>) | (null)
   "slideshow"?: SlideshowSettings
+  "audio_settings"?: ProjectAudioSettings
 }
 
 export type ExternalSlideshowCapabilities = {
@@ -1291,6 +1317,7 @@ export type ExternalSlideshowCapabilities = {
   "transition_duration_ms": ExternalTransitionDurationRange
   "delay_ms": ExternalAdvanceDelayRange
   "media_timeout_ms": ExternalAdvanceDelayRange
+  "audio": ExternalAudioCapabilities
 }
 
 export type ExternalStandardResponse = {

@@ -45,3 +45,10 @@ export function useSlideshowCapabilities() {
     load,
   }
 }
+
+/** 仅供测试重置共享能力缓存；生产代码不得调用。 */
+export function resetSlideshowCapabilitiesForTests(): void {
+  capabilities.value = null
+  loading.value = false
+  pending = null
+}

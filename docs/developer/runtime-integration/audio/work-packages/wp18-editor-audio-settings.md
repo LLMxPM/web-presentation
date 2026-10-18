@@ -1,6 +1,6 @@
 # WP18：Editor 项目音频设置
 
-状态：待实施。阶段：M2。主责：Editor。
+状态：已实现，等待 WP20 开放 capability 与真机验收。阶段：M2。主责：Editor。
 
 ## 前置与输入
 
@@ -16,9 +16,18 @@
 
 ## 完成标准
 
-- [ ] 保存、重新打开、清空、并发错误和旧客户端数据映射有组件测试。
-- [ ] 选择非 audio 或跨 workspace 即使伪造请求也由 Backend 拒绝。
-- [ ] 小屏、滚动、键盘操作和试听停止符合设计规范。
-- [ ] Editor 生成类型、类型检查、单测和构建通过。
+- [x] 保存、重新打开、清空、并发错误和旧客户端数据映射有组件测试。
+- [x] 选择非 audio 或跨 workspace 即使伪造请求也由 Backend 拒绝。
+- [ ] 小屏、滚动、键盘操作和试听停止符合设计规范（JSDOM 已覆盖行为，真实浏览器走查待 WP20）。
+- [x] Editor 生成类型、类型检查、单测和构建通过。
+
+## 实施记录（2026-10-18）
+
+- 项目设置新增第三个“音频”标签页，包含主/旁白/音效三段音量、前进/后退固定 cue、`interaction.*` 增删、绑定增益和最终音量摘要（主 × 音效 × 绑定）。
+- 资源选择器只请求 `asset_type=audio&status=active`；加载、失败重试、空资源与缺少工作空间都有明确状态。试听由显式按钮触发，使用当前音量计算值，dialog 关闭、标签切换和组件卸载时停止。
+- 保存前统一校验音量为 0–100 整数、交互 key 形如 `interaction.confirm`、key 唯一、已填 key 必须选择资源；交互行“删除”直接移除草稿项。旧项目缺少 `audio_settings` 时映射默认音量且不绑定 cue。
+- 服务端能力新增 `slideshow.audio`，当前仅开放 `audio_assets`；`audio_cues=false` 时 Editor 隐藏音频标签且保存不提交 `audio_settings`，避免旧 Runtime 读取未声明配置。WP20 验收后修改 `AUDIO_OPEN_CAPABILITIES` 即可开放。
+- 已运行：`pnpm --filter editor check`、`pnpm --filter editor test`（158 files / 895 tests passed）、`pnpm --filter editor build` 通过；定向音频测试 17 项通过。
+- 未运行：真实浏览器下的 Tab/小屏布局走查与 cue 试听混音，等待 WP20。
 
 建议提交标题：`WP18：增加项目音频与 cue 配置`。

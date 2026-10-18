@@ -357,6 +357,7 @@ import type {
   PageCopyToProjectPayload,
   PageFileType,
   PageItem,
+  ProjectAudioSettings,
   ProjectBuildJob,
   ProjectBuildResourceIssueData,
   ProjectMenuMode,
@@ -1293,6 +1294,7 @@ async function handlePresentationConfigSave(payload: {
   theme_key: string | null
   style_spec_markdown: string
   slideshow: SlideshowSettings
+  audio_settings?: ProjectAudioSettings
   source_style_id?: number | null
 }): Promise<void> {
   if (!projectDetails.value) {

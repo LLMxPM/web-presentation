@@ -1,6 +1,6 @@
 /** 文件功能：验证项目配置弹窗保存时提交放映配置，且应用样式不会污染放映草稿。 */
-import { fireEvent, render, screen } from '@testing-library/vue'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/api/styles', () => ({
   createWorkspaceStyle: vi.fn(),
@@ -19,10 +19,13 @@ vi.mock('@/api/system', () => ({
     transition_duration_ms: { min: 100, max: 2000, none: 0 },
     delay_ms: { min: 1000, max: 3600000 },
     media_timeout_ms: { min: 1000, max: 3600000 },
+    audio: { schema_version: 1, audio_assets: true, page_narration: false, audio_cues: true },
   }),
 }))
 
 import type { ProjectItem } from '@/types/api'
+import { fetchSlideshowCapabilities } from '@/api/system'
+import { resetSlideshowCapabilitiesForTests } from '@/composables/useSlideshowCapabilities'
 import ProjectPresentationConfigDialog from './ProjectPresentationConfigDialog.vue'
 
 const project = {
@@ -71,16 +74,39 @@ const dialogStubs = {
     emits: ['update:draft'],
     template: '<button type="button" @click="$emit(\'update:draft\', { ...draft, effect: \'none\', durationSeconds: \'0\' })">切换无动画</button>',
   },
+  ProjectAudioSettingsPanel: {
+    props: ['draft'],
+    emits: ['update:draft'],
+    template: '<button type="button" @click="$emit(\'update:draft\', { ...draft, masterVolume: \'80\', transitionForward: { key: \'\', assetId: \'51\', gainPercent: \'75\' } })">修改音频</button>',
+  },
 }
 
 describe('ProjectPresentationConfigDialog', () => {
-  it('分区只保留展示与放映，样式规范归入展示分区', async () => {
+  beforeEach(() => {
+    resetSlideshowCapabilitiesForTests()
+    vi.mocked(fetchSlideshowCapabilities).mockResolvedValue({
+      schema_version: 2,
+      transition_effects: ['none', 'fade', 'push'],
+      advance_modes: ['manual', 'timer', 'media_end'],
+      single_window_auto_play: true,
+      presenter_auto_play: false,
+      capture_auto_play: false,
+      transition_duration_ms: { min: 100, max: 2000, none: 0 },
+      delay_ms: { min: 1000, max: 3600000 },
+      media_timeout_ms: { min: 1000, max: 3600000 },
+      audio: { schema_version: 1, audio_assets: true, page_narration: false, audio_cues: true },
+    })
+  })
+
+  it('分区包含展示、放映与已开放音频', async () => {
     render(ProjectPresentationConfigDialog, {
       props: { modelValue: true, project, workspaceId: 3, defaultThemeKey: null },
       global: { stubs: dialogStubs },
     })
 
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent?.trim())).toEqual(['展示', '放映'])
+    await waitFor(() => {
+      expect(screen.getAllByRole('tab').map(tab => tab.textContent?.trim())).toEqual(['展示', '放映', '音频'])
+    })
     expect(screen.getByText('样式规范 Markdown')).toBeInTheDocument()
   })
 
@@ -122,5 +148,55 @@ describe('ProjectPresentationConfigDialog', () => {
 
     const saves = emitted('save') as Array<[Record<string, unknown>]>
     expect(saves[0][0].slideshow).toEqual(project.slideshow)
+  })
+
+  it('保存时应提交音频草稿中的音量与 cue 绑定', async () => {
+    const { emitted } = render(ProjectPresentationConfigDialog, {
+      props: { modelValue: true, project, workspaceId: 3, defaultThemeKey: null },
+      global: { stubs: dialogStubs },
+    })
+
+    await fireEvent.mouseDown(await screen.findByRole('tab', { name: '音频' }), { button: 0 })
+    await fireEvent.click(await screen.findByRole('button', { name: '修改音频' }))
+    await fireEvent.click(screen.getByRole('button', { name: '保存配置' }))
+
+    const saves = emitted('save') as Array<[Record<string, unknown>]>
+    expect(saves).toHaveLength(1)
+    expect(saves[0][0].audio_settings).toEqual({
+      master_volume_percent: 80,
+      narration_volume_percent: 100,
+      effects_volume_percent: 30,
+      cue_bindings: [
+        { key: 'transition.forward', asset_id: 51, gain_percent: 75 },
+      ],
+    })
+  })
+
+  it('能力关闭时隐藏音频分区且保存不提交音频配置', async () => {
+    vi.mocked(fetchSlideshowCapabilities).mockResolvedValueOnce({
+      schema_version: 2,
+      transition_effects: ['none', 'fade', 'push'],
+      advance_modes: ['manual', 'timer', 'media_end'],
+      single_window_auto_play: true,
+      presenter_auto_play: false,
+      capture_auto_play: false,
+      transition_duration_ms: { min: 100, max: 2000, none: 0 },
+      delay_ms: { min: 1000, max: 3600000 },
+      media_timeout_ms: { min: 1000, max: 3600000 },
+      audio: { schema_version: 1, audio_assets: true, page_narration: false, audio_cues: false },
+    })
+    const { emitted } = render(ProjectPresentationConfigDialog, {
+      props: { modelValue: true, project, workspaceId: 3, defaultThemeKey: null },
+      global: { stubs: dialogStubs },
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('tab', { name: '音频' })).not.toBeInTheDocument()
+    })
+    await fireEvent.click(screen.getByRole('button', { name: '保存配置' }))
+
+    const saves = emitted('save') as Array<[Record<string, unknown>]>
+    expect(saves).toHaveLength(1)
+    expect(saves[0][0]).not.toHaveProperty('audio_settings')
   })
 })

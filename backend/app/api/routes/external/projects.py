@@ -17,6 +17,7 @@ from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
     ExternalProjectApplyStyleRequest,
+    ExternalProjectAudioSettings,
     ExternalProjectBuildAssetsRequest,
     ExternalProjectConfigurationResponse,
     ExternalProjectConfigurationUpdateRequest,
@@ -26,6 +27,7 @@ from app.schemas.project import ProjectCreateRequest, ProjectItem, ProjectUpdate
 from app.schemas.project_route import ProjectRouteTreeResponse, ProjectRouteTreeWriteRequest
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
+from app.services.project_audio_settings_service import ProjectAudioSettingsService
 from app.services.project_service import ProjectService
 from app.services.project_route_service import ProjectRouteService
 from app.services.suggested_component_service import SuggestedComponentService
@@ -68,22 +70,24 @@ def _build_external_project_update_payload(
     """归一化 External 配置并将内部模型校验错误转换为标准请求 422。"""
 
     try:
-        # 只在请求显式携带 slideshow 时透传，避免“省略”被内部 DTO 误判为显式 null。
-        slideshow_kwargs = (
-            {"slideshow": payload.slideshow} if "slideshow" in payload.model_fields_set else {}
-        )
-        # 仅更新放映或额外资源时不构造空 configuration，避免触发展示配置的空补丁校验。
+        # 只在请求显式携带 slideshow / audio_settings 时透传，避免“省略”被内部 DTO 误判为显式 null。
+        extra_kwargs: dict[str, object] = {}
+        if "slideshow" in payload.model_fields_set:
+            extra_kwargs["slideshow"] = payload.slideshow
+        if "audio_settings" in payload.model_fields_set:
+            extra_kwargs["audio_settings"] = payload.audio_settings
+        # 仅更新放映、音频或额外资源时不构造空 configuration，避免触发展示配置的空补丁校验。
         if not payload.configuration:
             return ProjectUpdateRequest(
                 build_extra_assets_json=payload.build_extra_assets_json,
-                **slideshow_kwargs,
+                **extra_kwargs,
             )
         configuration = _normalize_external_project_configuration(payload.configuration)
         configuration.setdefault("mode", "patch")
         return ProjectUpdateRequest(
             configuration=configuration,
             build_extra_assets_json=payload.build_extra_assets_json,
-            **slideshow_kwargs,
+            **extra_kwargs,
         )
     except ValidationError as exc:
         raise RequestValidationError(exc.errors()) from exc
@@ -145,6 +149,7 @@ async def create_project(
         configuration=payload.configuration,
         build_extra_assets_json=payload.build_extra_assets_json or {},
         slideshow=payload.slideshow,
+        audio_settings=payload.audio_settings,
     )
 
     async def _operation(record_id: int | None) -> tuple[int, ProjectItem]:
@@ -266,6 +271,10 @@ async def get_project_configuration(
         project_id,
         include_unavailable=True,
     )
+    audio_settings = await ProjectAudioSettingsService(session).build_external_payload(
+        project.id,
+        project.audio_settings,
+    )
     return ExternalProjectConfigurationResponse(
         project_id=project.id,
         workspace_id=project.workspace_id,
@@ -282,6 +291,7 @@ async def get_project_configuration(
         suggested_components=[item.model_dump(mode="json") for item in suggested],
         build_extra_assets_json=project.build_extra_assets_json.model_dump(mode="json"),
         slideshow=project.slideshow,
+        audio_settings=ExternalProjectAudioSettings.model_validate(audio_settings),
     )
 
 

@@ -2,6 +2,7 @@
 
 from httpx import AsyncClient
 
+from app.schemas.audio import AUDIO_SCHEMA_VERSION
 from app.schemas.slideshow import (
     ADVANCE_DELAY_MAX_MS,
     ADVANCE_DELAY_MIN_MS,
@@ -36,3 +37,9 @@ async def test_system_slideshow_capabilities_should_publish_executable_baseline(
     }
     assert data["delay_ms"] == {"min": ADVANCE_DELAY_MIN_MS, "max": ADVANCE_DELAY_MAX_MS}
     assert data["media_timeout_ms"] == {"min": MEDIA_TIMEOUT_MIN_MS, "max": MEDIA_TIMEOUT_MAX_MS}
+    assert data["audio"] == {
+        "schema_version": AUDIO_SCHEMA_VERSION,
+        "audio_assets": True,
+        "page_narration": False,
+        "audio_cues": False,
+    }

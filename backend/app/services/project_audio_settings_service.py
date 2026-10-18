@@ -196,6 +196,41 @@ class ProjectAudioSettingsService:
             ],
         }
 
+    async def build_external_payload(
+        self,
+        project_id: int,
+        settings: ProjectAudioSettings,
+    ) -> dict[str, object]:
+        """构建 External API 读取摘要：保留资产 ID，并附带逻辑名、类型和状态。"""
+
+        rows = await self.session.execute(
+            select(
+                ProjectAudioCueBinding.cue_key,
+                ProjectAudioCueBinding.gain_percent,
+                WorkspaceAsset.id,
+                WorkspaceAsset.name,
+                WorkspaceAsset.asset_type,
+                WorkspaceAsset.status,
+            )
+            .join(WorkspaceAsset, WorkspaceAsset.id == ProjectAudioCueBinding.asset_id)
+            .where(ProjectAudioCueBinding.project_id == project_id)
+            .order_by(ProjectAudioCueBinding.cue_key)
+        )
+        return {
+            **settings.volume_settings().model_dump(mode="python"),
+            "cue_bindings": [
+                {
+                    "key": cue_key,
+                    "asset_id": asset_id,
+                    "asset_name": asset_name,
+                    "asset_type": asset_type,
+                    "asset_status": asset_status,
+                    "gain_percent": gain_percent,
+                }
+                for cue_key, gain_percent, asset_id, asset_name, asset_type, asset_status in rows.all()
+            ],
+        }
+
     async def build_runtime_config(self, project: Project) -> dict[str, object]:
         """把项目音量与可用 cue 解析为 Runtime camelCase 快照。
 

@@ -114,6 +114,16 @@
             </section>
           </div>
         </template>
+
+        <template #audio>
+          <ProjectAudioSettingsPanel
+            v-if="audioEnabled"
+            ref="audioPanel"
+            :workspace-id="workspaceId"
+            :draft="draft.audio"
+            @update:draft="updateAudioDraft"
+          />
+        </template>
       </UiTabs>
     </div>
 
@@ -159,15 +169,22 @@ import { createWorkspaceStyle, type WorkspaceStylePayload } from '@/api/styles'
 import { useSlideshowCapabilities } from '@/composables/useSlideshowCapabilities'
 import ThemeSelectorField from '@/components/theme/ThemeSelectorField.vue'
 import { UiButton, UiDialog, UiFormField, UiInput, UiTabs } from '@/components/ui'
-import type { ProjectItem, ProjectMenuMode, SlideshowSettings, WorkspaceStyleItem } from '@/types/api'
+import type { ProjectAudioSettings, ProjectItem, ProjectMenuMode, SlideshowSettings, WorkspaceStyleItem } from '@/types/api'
 import { Message, createConfirm } from '@/utils/message'
 import { getErrorMessage } from '@/api/http'
 import WorkspaceStyleApplyField from './WorkspaceStyleApplyField.vue'
 import WorkspaceStyleEditorDialog from './WorkspaceStyleEditorDialog.vue'
+import ProjectAudioSettingsPanel from './ProjectAudioSettingsPanel.vue'
 import ProjectPresentationFields from './ProjectPresentationFields.vue'
 import ProjectSlideshowFields from './ProjectSlideshowFields.vue'
 import type { SlideshowDraft } from './project-slideshow-values'
 import { createSlideshowDraft, normalizeSlideshowDraft } from './project-slideshow-values'
+import {
+  createAudioSettingsDraft,
+  normalizeAudioSettingsDraft,
+  validateAudioSettingsDraft,
+  type AudioSettingsDraft,
+} from './project-audio-values'
 import {
   DEFAULT_PROJECT_BASE_FONT_SIZE,
   DEFAULT_PROJECT_PAGE_HEIGHT,
@@ -177,7 +194,7 @@ import {
   normalizeProjectInteger as normalizeIntegerWithinRange,
 } from './project-presentation-values'
 
-type ProjectSettingsTab = 'presentation' | 'slideshow'
+type ProjectSettingsTab = 'presentation' | 'slideshow' | 'audio'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -204,15 +221,17 @@ const emit = defineEmits<{
     theme_key: string | null
     style_spec_markdown: string
     slideshow: SlideshowSettings
+    audio_settings?: ProjectAudioSettings
     source_style_id?: number | null
   }]
   'open-route-config': []
 }>()
 
-const tabs = [
+const tabs = computed(() => [
   { label: '展示', value: 'presentation' },
   { label: '放映', value: 'slideshow' },
-]
+  ...(audioEnabled.value ? [{ label: '音频', value: 'audio' }] : []),
+])
 
 const draft = reactive({
   pageWidth: String(DEFAULT_PROJECT_PAGE_WIDTH),
@@ -224,6 +243,7 @@ const draft = reactive({
   themeKey: null as string | null,
   styleSpecMarkdown: '',
   slideshow: createSlideshowDraft(null),
+  audio: createAudioSettingsDraft(null),
 })
 
 const activeTab = ref<string>('presentation')
@@ -232,7 +252,10 @@ const saveAsStyleSaving = ref(false)
 const appliedWorkspaceStyleId = ref<number | null>(null)
 const initialSnapshot = ref('')
 const closeConfirming = ref(false)
+const audioPanel = ref<InstanceType<typeof ProjectAudioSettingsPanel> | null>(null)
 const { capabilities, load: loadSlideshowCapabilities } = useSlideshowCapabilities()
+// cue 配置只在服务端开放 audio_cues 后展示；关闭时不提交 audio_settings，保护旧 Runtime。
+const audioEnabled = computed(() => capabilities.value?.audio?.audio_cues === true)
 
 const normalizedPageWidth = computed(() => normalizeDimension(draft.pageWidth, DEFAULT_PROJECT_PAGE_WIDTH))
 const normalizedPageHeight = computed(() => normalizeDimension(draft.pageHeight, DEFAULT_PROJECT_PAGE_HEIGHT))
@@ -268,6 +291,7 @@ function syncDraftFromProject(project: ProjectItem | null): void {
   draft.themeKey = project?.theme_key ?? props.defaultThemeKey ?? null
   draft.styleSpecMarkdown = project?.style_spec_markdown ?? ''
   draft.slideshow = createSlideshowDraft(project?.slideshow)
+  draft.audio = createAudioSettingsDraft(project?.audio_settings)
   appliedWorkspaceStyleId.value = null
   initialSnapshot.value = JSON.stringify(draft)
 }
@@ -278,6 +302,14 @@ function syncDraftFromProject(project: ProjectItem | null): void {
  */
 function updateSlideshowDraft(value: SlideshowDraft): void {
   draft.slideshow = value
+}
+
+/**
+ * 接收音频表单回传的完整草稿。
+ * @param value 音频草稿
+ */
+function updateAudioDraft(value: AudioSettingsDraft): void {
+  draft.audio = value
 }
 
 /**
@@ -345,6 +377,14 @@ function resetDraft(): void {
  * 提交项目设置。
  */
 function handleSave(): void {
+  if (audioEnabled.value) {
+    const audioError = validateAudioSettingsDraft(draft.audio)
+    if (audioError) {
+      activeTab.value = 'audio'
+      Message.warning(audioError)
+      return
+    }
+  }
   const payload: {
     page_width: number
     page_height: number
@@ -355,6 +395,7 @@ function handleSave(): void {
     theme_key: string | null
     style_spec_markdown: string
     slideshow: SlideshowSettings
+    audio_settings?: ProjectAudioSettings
     source_style_id?: number | null
   } = {
     page_width: normalizedPageWidth.value,
@@ -366,6 +407,9 @@ function handleSave(): void {
     theme_key: draft.themeKey,
     style_spec_markdown: draft.styleSpecMarkdown,
     slideshow: normalizeSlideshowDraft(draft.slideshow),
+  }
+  if (audioEnabled.value) {
+    payload.audio_settings = normalizeAudioSettingsDraft(draft.audio)
   }
   if (appliedWorkspaceStyleId.value !== null) {
     payload.source_style_id = appliedWorkspaceStyleId.value
@@ -445,6 +489,16 @@ watch(
   },
   { immediate: true },
 )
+
+// 能力关闭后不能停留在已隐藏的音频标签页，避免保存隐藏草稿。
+watch(audioEnabled, enabled => {
+  if (!enabled && activeTab.value === 'audio') activeTab.value = 'presentation'
+})
+// 标签切换和弹窗关闭都停止试听，避免后台继续发声。
+watch(activeTab, () => audioPanel.value?.stopPreview(true))
+watch(() => props.modelValue, visible => {
+  if (!visible) audioPanel.value?.stopPreview(true)
+})
 </script>
 
 <style scoped>
