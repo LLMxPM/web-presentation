@@ -146,6 +146,41 @@ describe('PlaybackHostBridge 控制条', () => {
     app.unmount()
   })
 
+  it('控制条随指针进入底部区域显示，移出后隐藏，键盘聚焦时保持可见', async () => {
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { root, app } = mountBridge(router)
+    await flushAsync()
+
+    const controls = root.querySelector<HTMLElement>('.runtime-playback-controls')!
+    const isHidden = (): boolean => controls.classList.contains('runtime-playback-controls--hidden')
+    expect(isHidden()).toBe(false)
+
+    window.dispatchEvent(new MouseEvent('pointermove', { clientY: 40 }))
+    await nextTick()
+    expect(isHidden()).toBe(true)
+
+    window.dispatchEvent(new MouseEvent('pointermove', { clientY: window.innerHeight - 8 }))
+    await nextTick()
+    expect(isHidden()).toBe(false)
+
+    window.dispatchEvent(new MouseEvent('pointermove', { clientY: 40 }))
+    await nextTick()
+    expect(isHidden()).toBe(true)
+
+    const exitButton = buttonByLabel(root, '退出放映')
+    exitButton.focus()
+    await nextTick()
+    expect(isHidden()).toBe(false)
+
+    exitButton.blur()
+    await nextTick()
+    expect(isHidden()).toBe(true)
+
+    app.unmount()
+  })
+
   it('使用上一页/下一页翻页且边界不绕回', async () => {
     const router = makeRouter()
     await router.push('/a')

@@ -288,7 +288,7 @@ async function enterFullscreen(screen?: PresenterDetailedScreen): Promise<boolea
     return true
   }
   if (!document.documentElement.requestFullscreen) {
-    fullscreenMessage.value = '当前环境不支持全屏 API，请使用浏览器快捷键 F11。'
+    fullscreenMessage.value = '当前环境不支持全屏 API，无法启动放映；请使用桌面版 Chrome 或 Edge。'
     return false
   }
 
@@ -298,7 +298,7 @@ async function enterFullscreen(screen?: PresenterDetailedScreen): Promise<boolea
   } catch {
     fullscreenMessage.value = screen
       ? '浏览器未能在所选屏幕全屏，请重试或使用当前窗口全屏。'
-      : '浏览器阻止了全屏，请点击按钮或按 F11。'
+      : '浏览器阻止了全屏，请再次点击全屏按钮重试。'
     return false
   }
 }

@@ -13,7 +13,7 @@
 
 - 配置驱动的 PPT/演示页面渲染
 - `app.config.yaml` 驱动的页面画布尺寸（`app.page.width` / `app.page.height`）
-- 目录导航、翻页、全屏放映（非全屏为预览，全屏为放映）
+- 目录导航、翻页、全屏放映（非全屏为预览，根元素全屏为放映；`F11` 浏览器级全屏不触发放映）
 - 主题与图标配置加载
 - Runtime Kit 基础组件清单（`src/runtime-kit/manifest/runtime-kit.manifest.json`）：清单项使用 `base_name + version_no + name` 描述能力版本，`name` 形如 `Icon.v1`，不兼容演进新增 v2/v3 文件。
 - PDF 导出

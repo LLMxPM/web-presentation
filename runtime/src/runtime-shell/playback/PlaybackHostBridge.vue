@@ -1,8 +1,10 @@
-<!-- 文件功能：全屏放映的唯一控制条，负责翻页、自动/手动切换、状态提示、演讲与退出。 -->
+<!-- 文件功能：全屏放映的唯一控制条，负责翻页、自动/手动切换、状态提示、演讲与退出；指针移入窗口底部时显示，移开后隐藏。 -->
 <template>
   <div v-if="errorMessage" class="runtime-playback-error" role="alert">{{ errorMessage }}</div>
   <div
-    class="runtime-playback-controls" role="group" aria-label="放映控制" :data-wake-lock="wakeLockState">
+    ref="controlsElement"
+    class="runtime-playback-controls" role="group" aria-label="放映控制" :data-wake-lock="wakeLockState"
+    :class="{ 'runtime-playback-controls--hidden': !controlsShown }">
     <template v-if="snapshot">
       <button
         type="button" class="runtime-playback-controls__button" title="上一页" aria-label="上一页"
@@ -65,7 +67,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight, Hand, Minimize2, Monitor, Play, RotateCcw, Timer } from '@lucide/vue'
 import { getRuntimeSession } from '@/core/router/runtime-session'
@@ -133,6 +135,73 @@ const autoLabel = computed(() => snapshot.value?.autoAdvanceEnabled ? '自动' :
 const autoTitle = computed(() => snapshot.value?.autoAdvanceEnabled
   ? '切换为手动：停止自动翻页，媒体继续播放（空格）'
   : '切换为自动：按当前页配置重新计时（空格）')
+
+/** 指针进入窗口底部多高时唤出控制条。 */
+const CONTROLS_REVEAL_ZONE_PX = 120
+const controlsElement = ref<HTMLElement | null>(null)
+/** 进入放映时先展示一次，避免用户找不到退出入口；指针移出底部区域后隐藏。 */
+const controlsVisible = ref(true)
+
+/** 暂停、错误、受阻与结束态保留控制条，保证恢复与退出入口始终可见。 */
+const controlsPinned = computed(() => {
+  const current = snapshot.value
+  if (!current) return true
+  return current.state === 'paused' || current.state === 'error'
+    || current.state === 'blocked' || current.state === 'ended'
+})
+const controlsShown = computed(() => controlsVisible.value || controlsPinned.value)
+
+/** 判断指针是否位于窗口底部的控制条唤出区域。 */
+function isPointerInRevealZone(event: PointerEvent): boolean {
+  const revealZone = Math.min(CONTROLS_REVEAL_ZONE_PX, window.innerHeight * 0.35)
+  return window.innerHeight - event.clientY <= revealZone
+}
+
+/** 指针在窗口内移动时按所在区域显示或隐藏控制条。 */
+function handlePointerMove(event: PointerEvent): void {
+  controlsVisible.value = isPointerInRevealZone(event)
+}
+
+/** 触摸或点击同样按落点唤醒控制条。 */
+function handlePointerDown(event: PointerEvent): void {
+  controlsVisible.value = isPointerInRevealZone(event)
+}
+
+/** 指针移出窗口或窗口失焦时收起控制条。 */
+function hideControls(): void {
+  controlsVisible.value = false
+}
+
+/** 键盘聚焦到控制条时保持可见；焦点移出后按指针离开处理。 */
+function handleControlsFocusIn(): void {
+  controlsVisible.value = true
+}
+
+function handleControlsFocusOut(event: FocusEvent): void {
+  const nextTarget = event.relatedTarget as Node | null
+  if (nextTarget && controlsElement.value?.contains(nextTarget)) return
+  controlsVisible.value = false
+}
+
+onMounted(() => {
+  window.addEventListener('pointermove', handlePointerMove, { passive: true })
+  window.addEventListener('pointerdown', handlePointerDown, { passive: true })
+  document.documentElement.addEventListener('pointerleave', hideControls)
+  window.addEventListener('blur', hideControls)
+  const element = controlsElement.value
+  element?.addEventListener('focusin', handleControlsFocusIn)
+  element?.addEventListener('focusout', handleControlsFocusOut)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', handlePointerMove)
+  window.removeEventListener('pointerdown', handlePointerDown)
+  document.documentElement.removeEventListener('pointerleave', hideControls)
+  window.removeEventListener('blur', hideControls)
+  const element = controlsElement.value
+  element?.removeEventListener('focusin', handleControlsFocusIn)
+  element?.removeEventListener('focusout', handleControlsFocusOut)
+})
 
 const remainingLabel = computed(() => {
   const current = snapshot.value
@@ -207,6 +276,19 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.runtime-playback-controls--hidden {
+  opacity: 0;
+  transform: translate(-50%, 10px);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runtime-playback-controls {
+    transition: none;
+  }
 }
 
 .runtime-playback-controls__button {
