@@ -47,20 +47,29 @@ class PageScreenshotFingerprintService:
     async def build_page_snapshot(self, page: Page) -> PageScreenshotConfigSnapshot:
         """为指定页面生成当前项目展示配置快照，并叠加页面级资源实时身份。"""
 
+        return await self._with_page_resource_identity(page, await self.build_page_base_snapshot(page))
+
+    async def build_page_base_snapshot(self, page: Page) -> PageScreenshotConfigSnapshot:
+        """构造页面所属项目的展示配置基础快照，不含页面级资源身份。
+
+        该快照只依赖项目级配置，可在同一项目的多个页面之间复用；页面级资源身份必须
+        再经 ``build_page_snapshot_from_project`` 逐页叠加，不能整份快照跨页共享。
+        """
+
         if page.project_id is None:
-            base = PageScreenshotConfigSnapshot(
-                page_config=ProjectAppPageConfig(),
+            page_config = ProjectAppPageConfig()
+            return PageScreenshotConfigSnapshot(
+                page_config=page_config,
                 config_hash=self.build_hash(
-                    page_config=ProjectAppPageConfig(),
+                    page_config=page_config,
                     theme_key=None,
                     theme_config={},
                 ),
                 theme_key=None,
                 theme_config={},
             )
-            return await self._with_page_resource_identity(page, base)
         project = await self.project_config_service.get_active_project_or_raise(page.project_id)
-        return await self._with_page_resource_identity(page, await self.build_project_snapshot(project))
+        return await self.build_project_snapshot(project)
 
     async def build_project_snapshot(self, project: Project) -> PageScreenshotConfigSnapshot:
         """为项目生成当前展示配置快照。"""

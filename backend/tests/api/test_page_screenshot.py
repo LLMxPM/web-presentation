@@ -1065,3 +1065,82 @@ async def test_page_screenshot_should_be_marked_outdated_after_model3d_asset_rep
     assert detail_data["current_version_no"] == 1
     assert detail_data["screenshot_version_no"] == 1
     assert detail_data["screenshot_is_latest"] is False
+
+
+async def test_page_list_should_not_share_screenshot_fingerprint_across_pages(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """同项目页面列表不得跨页复用截图指纹：引用资产的页面刚截图也应标记为最新。"""
+
+    workspace_id, project_id = await _create_workspace_project(authenticated_client, "截图列表指纹")
+    asset_response = await authenticated_client.post(
+        f"/api/workspaces/{workspace_id}/assets/upload",
+        files={"file": ("hero.svg", b"<svg><rect /></svg>", "image/svg+xml")},
+        data={"asset_type": "icon", "tags": "[]", "name": "hero"},
+    )
+    assert asset_response.status_code == 200, asset_response.text
+
+    async def create_page(title: str, content: str) -> dict:
+        response = await authenticated_client.post(
+            "/api/pages",
+            json={
+                "page_content": content,
+                "file_type": "vue",
+                "title": title,
+                "status": "active",
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+            },
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    async def fake_create_page_preview(  # noqa: ANN001, ARG001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
+        return PagePreviewResult(
+            file_path=f"src/views/{page.code}.vue",
+            preview_url="http://runtime.local/__preview?ticket=list-fingerprint",
+        )
+
+    async def fake_capture_preview(  # noqa: ANN001, ARG001
+        self,
+        preview_url,
+        viewport,
+        *,
+        extra_http_headers=None,
+        **kwargs,  # noqa: ARG001
+    ) -> bytes:
+        return b"asset-page-png"
+
+    async def fake_put_object(self, storage_key: str, content: bytes, content_type: str | None = None) -> str:  # noqa: ANN001, ARG001
+        return storage_key
+
+    monkeypatch.setattr("app.services.page_screenshot_service.PagePreviewService.create_page_preview", fake_create_page_preview)
+    monkeypatch.setattr("app.services.page_screenshot_service.BrowserCaptureService.capture_preview", fake_capture_preview)
+    monkeypatch.setattr("app.services.page_screenshot_service.ObjectStorageService.put_object", fake_put_object)
+
+    # 先创建无资源页面，列表按 id 升序时它会成为同项目的第一条，用于暴露跨页复用。
+    plain_page = await create_page("无资产页面", "<template><div>plain</div></template>")
+    asset_page = await create_page("资产页面", '<template><div><AssetImage name="hero" /></div></template>')
+
+    for page in (plain_page, asset_page):
+        screenshot_response = await authenticated_client.post(
+            f"/api/pages/{page['id']}/screenshot",
+            json={},
+        )
+        assert screenshot_response.status_code == 200, screenshot_response.text
+        assert screenshot_response.json()["screenshot_is_latest"] is True
+
+    list_response = await authenticated_client.get(
+        "/api/pages?page=1&page_size=10&sort_by=id&sort_order=asc"
+    )
+    assert list_response.status_code == 200
+    listed_page = next(item for item in list_response.json()["items"] if item["id"] == asset_page["id"])
+    assert listed_page["screenshot_is_latest"] is True

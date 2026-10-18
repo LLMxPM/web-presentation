@@ -76,12 +76,13 @@ class PageService:
         route_bindings_map: dict[int, list] = {}
         if query.project_id is not None:
             route_bindings_map = await ProjectRouteService(self.session).build_page_bindings_map(query.project_id)
-        screenshot_config_hash_cache: dict[int, tuple[str, int, int] | None] = {}
+        screenshot_snapshot_cache: dict[int, tuple[str, int, int] | None] = {}
+        await self._prime_screenshot_snapshot_cache(items, screenshot_snapshot_cache)
         page_items = [
             await self._to_item(
                 item,
                 route_bindings=route_bindings_map.get(item.id),
-                screenshot_config_hash_cache=screenshot_config_hash_cache,
+                screenshot_snapshot_cache=screenshot_snapshot_cache,
             )
             for item in items
         ]
@@ -601,7 +602,7 @@ class PageService:
         page_model: Page,
         *,
         route_bindings: list | None = None,
-        screenshot_config_hash_cache: dict[int, tuple[str, int, int] | None] | None = None,
+        screenshot_snapshot_cache: dict[int, tuple[str, int, int] | None] | None = None,
     ) -> PageItem:
         """统一补齐页面截图公开地址后再输出响应。"""
 
@@ -610,7 +611,7 @@ class PageService:
         screenshot_is_latest = await self._is_page_screenshot_latest(
             page_model,
             screenshot_url=screenshot_url,
-            screenshot_config_hash_cache=screenshot_config_hash_cache,
+            screenshot_snapshot_cache=screenshot_snapshot_cache,
         )
         return PageItem.model_validate(
             {
@@ -632,7 +633,7 @@ class PageService:
         page_model: Page,
         *,
         screenshot_url: str | None,
-        screenshot_config_hash_cache: dict[int, tuple[str, int, int] | None] | None = None,
+        screenshot_snapshot_cache: dict[int, tuple[str, int, int] | None] | None = None,
     ) -> bool:
         """判断页面截图是否同时匹配当前页面版本和项目展示配置。"""
 
@@ -646,7 +647,7 @@ class PageService:
 
         current_snapshot = await self._resolve_page_screenshot_snapshot(
             page_model,
-            screenshot_config_hash_cache=screenshot_config_hash_cache,
+            screenshot_snapshot_cache=screenshot_snapshot_cache,
         )
         return bool(
             current_snapshot is not None
@@ -655,30 +656,73 @@ class PageService:
             and page_model.screenshot_viewport_height == current_snapshot[2]
         )
 
+    async def _prime_screenshot_snapshot_cache(
+        self,
+        pages: list[Page],
+        cache: dict[int, tuple[str, int, int] | None],
+    ) -> None:
+        """按项目批量预解析列表页截图指纹，避免逐页重复解析项目配置与资源闭包。
+
+        指纹同时包含项目展示配置和页面级资源身份，因此只能缓存到页面维度；
+        项目级基础快照按项目复用，页面级资源身份用批量闭包解析补齐。
+        """
+
+        candidates = [
+            page
+            for page in pages
+            if page.screenshot_storage_key
+            and page.screenshot_config_hash
+            and page.screenshot_version_no is not None
+            and page.screenshot_version_no == page.current_version_no
+        ]
+        groups: dict[tuple[int, int], list[Page]] = {}
+        for page in candidates:
+            groups.setdefault((int(page.project_id or 0), int(page.workspace_id or 0)), []).append(page)
+
+        for group in groups.values():
+            try:
+                base = await self.screenshot_fingerprint_service.build_page_base_snapshot(group[0])
+                snapshots = await self.screenshot_fingerprint_service.build_page_snapshots_from_project(group, base)
+            except AppException:
+                for page in group:
+                    cache[int(page.id)] = None
+                continue
+            for page in group:
+                snapshot = snapshots.get(int(page.id))
+                if snapshot is None:
+                    cache[int(page.id)] = None
+                    continue
+                viewport = self.capture_viewport_resolver.resolve(
+                    page,
+                    project_page_config=snapshot.page_config,
+                )
+                cache[int(page.id)] = (snapshot.config_hash, viewport.width, viewport.height)
+
     async def _resolve_page_screenshot_snapshot(
         self,
         page_model: Page,
         *,
-        screenshot_config_hash_cache: dict[int, tuple[str, int, int] | None] | None = None,
+        screenshot_snapshot_cache: dict[int, tuple[str, int, int] | None] | None = None,
     ) -> tuple[str, int, int] | None:
-        """解析当前截图指纹和默认视口；旧尺寸缓存会被保守标记为非最新。"""
+        """解析当前截图指纹和默认视口；指纹按页面计算，不能在同项目页面间复用。"""
 
-        cache_key = int(page_model.project_id or 0)
-        if screenshot_config_hash_cache is not None and cache_key in screenshot_config_hash_cache:
-            return screenshot_config_hash_cache[cache_key]
+        cache_key = int(page_model.id)
+        if screenshot_snapshot_cache is not None and cache_key in screenshot_snapshot_cache:
+            return screenshot_snapshot_cache[cache_key]
 
         try:
-            config_snapshot = await self.screenshot_fingerprint_service.build_page_snapshot(page_model)
+            base = await self.screenshot_fingerprint_service.build_page_base_snapshot(page_model)
+            snapshot = await self.screenshot_fingerprint_service.build_page_snapshot_from_project(page_model, base)
             viewport = self.capture_viewport_resolver.resolve(
                 page_model,
-                project_page_config=config_snapshot.page_config,
+                project_page_config=snapshot.page_config,
             )
-            resolved = (config_snapshot.config_hash, viewport.width, viewport.height)
+            resolved = (snapshot.config_hash, viewport.width, viewport.height)
         except AppException:
             resolved = None
 
-        if screenshot_config_hash_cache is not None:
-            screenshot_config_hash_cache[cache_key] = resolved
+        if screenshot_snapshot_cache is not None:
+            screenshot_snapshot_cache[cache_key] = resolved
         return resolved
 
     def _build_versioned_screenshot_url(self, page_model: Page) -> str | None:
