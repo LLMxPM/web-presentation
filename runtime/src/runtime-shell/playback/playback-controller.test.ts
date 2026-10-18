@@ -38,10 +38,15 @@ class ManualClock implements PlaybackClock {
       }
       if (!next) break
       this.timers.delete(next[0])
-      this.current = next[1].at
+      this.current = Math.max(this.current, next[1].at)
       next[1].callback()
     }
     this.current = target
+  }
+
+  /** 模拟系统休眠：跳过一段时间但不执行期间到期的计时。 */
+  jump(ms: number): void {
+    this.current += ms
   }
 }
 
@@ -143,6 +148,23 @@ describe('PlaybackController 就绪与计时', () => {
     expect(controller.resume()).toBe(false)
     expect(clock.pending).toBe(1)
     clock.advance(3_799)
+    expect(navigations).toEqual([])
+    clock.advance(1)
+    expect(navigations).toEqual(['/two'])
+  })
+
+  it('系统休眠导致计时回调严重迟到时先暂停，不醒来立即翻页', () => {
+    const { clock, navigations, controller } = createController()
+    startReady(controller)
+    clock.advance(1_000)
+    expect(controller.getSnapshot().remainingMs).toBe(4_000)
+    clock.jump(30_000)
+    clock.advance(0)
+    expect(navigations).toEqual([])
+    expect(controller.getSnapshot()).toMatchObject({ state: 'paused', path: '/one', remainingMs: 5_000 })
+
+    expect(controller.resume()).toBe(true)
+    clock.advance(4_999)
     expect(navigations).toEqual([])
     clock.advance(1)
     expect(navigations).toEqual(['/two'])

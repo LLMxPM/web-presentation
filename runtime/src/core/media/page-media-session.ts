@@ -84,6 +84,8 @@ interface MediaState {
 }
 
 const MEDIA_SELECTOR = 'audio, video'
+/** HTMLMediaElement.NETWORK_NO_SOURCE；失败后再次 play() 会直接拒绝，必须先 load() 重新选源。 */
+const NETWORK_NO_SOURCE = 3
 
 /**
  * 创建单个活动页面的媒体会话。
@@ -280,6 +282,10 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
       pending.map(async state => {
         state.error = null
         try {
+          // 失败的媒体元素保留错误且无法直接重播；先重新选源，服务恢复后重试才能成功。
+          if (state.element.error || state.element.networkState === NETWORK_NO_SOURCE) {
+            state.element.load()
+          }
           await state.element.play()
           state.playing = true
           return { state, outcome: 'played' as const }

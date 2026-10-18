@@ -15,6 +15,7 @@ import { shouldStartAutomatically } from '@/core/execution/execution-policy'
 import { mediaPlaybackCoordinator } from '@/core/execution/media-playback-guard'
 import { createPageMediaSession, type PageMediaEvent, type PageMediaSession } from '@/core/media/page-media-session'
 import { PlaybackController, type PlaybackPage, type PlaybackSnapshot } from './playback-controller'
+import { useScreenWakeLock, type WakeLockState } from './useScreenWakeLock'
 
 const PLAYBACK_READY_TIMEOUT_MS = 15000
 const PAGE_MISSING_MESSAGE = '页面节点未就绪，自动放映已暂停。'
@@ -31,6 +32,8 @@ interface ReadinessAttempt {
 export interface PlaybackHost {
   snapshot: Ref<PlaybackSnapshot | null>
   errorMessage: Ref<string>
+  /** Screen Wake Lock 状态；不支持或拒绝时放映仍正常进行。 */
+  wakeLockState: Readonly<Ref<WakeLockState>>
   start: () => boolean
   pause: () => boolean
   resume: () => boolean
@@ -76,6 +79,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   const controller = shallowRef<PlaybackController | null>(null)
   const snapshot = ref<PlaybackSnapshot | null>(null)
   const errorMessage = ref('')
+  const wakeLock = useScreenWakeLock()
   let unsubscribe: (() => void) | null = null
   let pendingAttempt: ReadinessAttempt | null = null
   let attemptSequence = 0
@@ -99,6 +103,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     unsubscribe = instance.subscribe(next => {
       snapshot.value = next
       errorMessage.value = next.state === 'error' || next.state === 'blocked' ? next.message : ''
+      syncWakeLock(next)
       syncMediaWithSnapshot(instance, next)
     })
     snapshot.value = instance.getSnapshot()
@@ -211,6 +216,15 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     void playPageMedia(session, shouldRestart)
   }
 
+  /** 自动翻页的准备阶段保持申请，避免逐页释放/重试；暂停、失败、结束和停止立即释放。 */
+  function syncWakeLock(next: PlaybackSnapshot): void {
+    if ((next.state === 'playing' || next.state === 'preparing') && policy.value.allowAutoAdvance) {
+      wakeLock.request()
+    } else {
+      wakeLock.release()
+    }
+  }
+
   /** 控制器状态变化时同步媒体：失败先停播，离场销毁，同页新一代播放重建会话。 */
   function syncMediaWithSnapshot(instance: PlaybackController, next: PlaybackSnapshot): void {
     if (next.state === 'blocked' || next.state === 'error') {
@@ -232,6 +246,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   }
 
   function disposeController(): void {
+    wakeLock.release()
     suspendPageMedia()
     disposePageMedia()
     pendingAttempt = null
@@ -405,13 +420,25 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     return true
   }
 
-  /** 窗口隐藏时暂停并保留剩余时间；重新可见后等待用户显式继续，不补课。 */
-  function handleVisibilityChange(): void {
-    if (!document.hidden) return
+  /** 窗口隐藏、页面冻结或 bfcache 恢复时暂停；等待用户显式继续，不补课。 */
+  function pauseForInterruption(): void {
     const instance = controller.value
     if (!instance) return
     const state = instance.getSnapshot().state
     if (state === 'playing' || state === 'preparing') pausePlayback()
+  }
+
+  function handleVisibilityChange(): void {
+    if (!document.hidden) return
+    pauseForInterruption()
+  }
+
+  function handlePageFreeze(): void {
+    pauseForInterruption()
+  }
+
+  function handlePageShow(event: PageTransitionEvent): void {
+    if (event.persisted) pauseForInterruption()
   }
 
   /**
@@ -440,6 +467,8 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
 
   onMounted(() => {
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    document.addEventListener('freeze', handlePageFreeze)
+    window.addEventListener('pageshow', handlePageShow)
     document.addEventListener('keydown', handlePlaybackKeydown, true)
     if (disposed || session.autoStartAttempted.value) return
     session.autoStartAttempted.value = true
@@ -453,6 +482,8 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   onBeforeUnmount(() => {
     disposed = true
     document.removeEventListener('visibilitychange', handleVisibilityChange)
+    document.removeEventListener('freeze', handlePageFreeze)
+    window.removeEventListener('pageshow', handlePageShow)
     document.removeEventListener('keydown', handlePlaybackKeydown, true)
     stopRouteWatch()
     stopSettledWatch()
@@ -464,6 +495,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   return {
     snapshot,
     errorMessage,
+    wakeLockState: wakeLock.state,
     start: startPlayback,
     pause: pausePlayback,
     resume: resumePlayback,

@@ -184,6 +184,39 @@ describe('createPageMediaSession', () => {
     session.dispose()
   })
 
+  it('失败元素重试前先 load() 重新选源，服务恢复后可播放', async () => {
+    const root = createRoot()
+    const media = createMedia(root)
+    Object.defineProperty(media.element, 'error', { configurable: true, get: () => ({ code: 4 }) })
+    Object.defineProperty(media.element, 'networkState', { configurable: true, get: () => 3 })
+    const load = vi.fn(() => {
+      Object.defineProperty(media.element, 'error', { configurable: true, get: () => null })
+      Object.defineProperty(media.element, 'networkState', { configurable: true, get: () => 1 })
+    })
+    media.element.load = load
+    const session = createPageMediaSession({ root, generation: 2 })
+
+    const result = await session.play()
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(media.play).toHaveBeenCalledTimes(1)
+    expect(load.mock.invocationCallOrder[0]).toBeLessThan(media.play.mock.invocationCallOrder[0])
+    expect(result.failed).toBe(false)
+    session.dispose()
+  })
+
+  it('正常元素播放前不重新加载，避免丢弃已缓冲内容', async () => {
+    const root = createRoot()
+    const media = createMedia(root)
+    const load = vi.fn()
+    media.element.load = load
+    const session = createPageMediaSession({ root, generation: 1 })
+
+    await session.play()
+    expect(load).not.toHaveBeenCalled()
+    expect(media.play).toHaveBeenCalledTimes(1)
+    session.dispose()
+  })
+
   it('循环背景不参与完成集合，但暂停、恢复与销毁同样生效', () => {
     const root = createRoot()
     const target = createMedia(root, { playing: true })

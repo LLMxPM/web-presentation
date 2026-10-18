@@ -1,7 +1,9 @@
 <!-- 文件功能：放映主画布的调度入口、控制条与可见错误提示。 -->
 <template>
   <div v-if="errorMessage" class="runtime-playback-error" role="alert">{{ errorMessage }}</div>
-  <div v-if="snapshot" class="runtime-playback-controls" role="group" aria-label="放映控制">
+  <div
+    v-if="snapshot" class="runtime-playback-controls" role="group" aria-label="放映控制"
+    :data-wake-lock="wakeLockState">
     <button
       type="button" class="runtime-playback-controls__button runtime-playback-controls__button--primary"
       :title="primaryAction.title" aria-keyshortcuts="Space" @click="handlePrimaryAction">
@@ -34,7 +36,7 @@ import { getRuntimeSession } from '@/core/router/runtime-session'
 import { usePlaybackHost } from './usePlaybackHost'
 import type { PlaybackState } from './playback-controller'
 
-const { snapshot, errorMessage, start, pause, resume, stop, retry, next, refresh } = usePlaybackHost()
+const { snapshot, errorMessage, wakeLockState, start, pause, resume, stop, retry, next, refresh } = usePlaybackHost()
 const session = getRuntimeSession(useRouter())
 
 /** 进入演讲模式前由会话调用，先停住普通窗口推进和媒体。 */

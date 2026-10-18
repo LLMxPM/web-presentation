@@ -21,6 +21,49 @@ vi.mock('@/core/utils/visual-assets', () => ({ waitForEditorVisualAssets: waitFo
 
 const READY = { ok: true, timedOut: false, total: 0, loaded: 0, failed: [], pending: [], waitedMs: 0 }
 
+interface FakeWakeLockSentinel {
+  released: boolean
+  release: ReturnType<typeof vi.fn>
+  addEventListener: ReturnType<typeof vi.fn>
+  removeEventListener: ReturnType<typeof vi.fn>
+  emitRelease: () => void
+}
+
+interface FakeWakeLockApi {
+  request: ReturnType<typeof vi.fn>
+  sentinel: FakeWakeLockSentinel
+}
+
+/** 安装可控 Screen Wake Lock；拒绝时模拟浏览器权限失败。 */
+function installWakeLock(options: { reject?: DOMException } = {}): FakeWakeLockApi {
+  let releaseListener: (() => void) | null = null
+  const sentinel: FakeWakeLockSentinel = {
+    released: false,
+    release: vi.fn(async () => { sentinel.released = true }),
+    addEventListener: vi.fn((type: string, listener: () => void) => {
+      if (type === 'release') releaseListener = listener
+    }),
+    removeEventListener: vi.fn((type: string, listener: () => void) => {
+      if (type === 'release' && releaseListener === listener) releaseListener = null
+    }),
+    emitRelease: () => {
+      sentinel.released = true
+      releaseListener?.()
+    },
+  }
+  const request = vi.fn(async () => {
+    if (options.reject) throw options.reject
+    sentinel.released = false
+    return sentinel
+  })
+  Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request } })
+  return { request, sentinel }
+}
+
+function removeWakeLock(): void {
+  delete (navigator as Navigator & { wakeLock?: unknown }).wakeLock
+}
+
 function preloadPlaybackConfig(options: {
   supported?: boolean
   autoStart?: boolean
@@ -154,6 +197,7 @@ afterEach(() => {
   setRuntimePreloadedConfig(undefined)
   resetRuntimeExecutionForTests()
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
+  removeWakeLock()
   document.body.innerHTML = ''
 })
 
@@ -508,6 +552,39 @@ describe('usePlaybackHost 可见性与快捷键', () => {
     app.unmount()
   })
 
+  it('页面冻结与 bfcache 恢复时暂停，唤醒后不连跳', async () => {
+    preloadPlaybackConfig({ autoStart: true })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    await vi.advanceTimersByTimeAsync(400)
+
+    document.dispatchEvent(new Event('freeze'))
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('paused')
+    const remaining = host.snapshot.value?.remainingMs ?? 0
+    expect(remaining).toBeGreaterThan(0)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(router.currentRoute.value.path).toBe('/a')
+
+    const pageShow = new Event('pageshow') as PageTransitionEvent
+    Object.defineProperty(pageShow, 'persisted', { value: true })
+    window.dispatchEvent(pageShow)
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('paused')
+
+    expect(host.resume()).toBe(true)
+    await vi.advanceTimersByTimeAsync(remaining)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    app.unmount()
+  })
+
   it('暂停暂停当前页媒体，继续只恢复此前播放的媒体，停止清理记录', async () => {
     const router = makeRouter()
     await router.push('/a')
@@ -585,6 +662,92 @@ describe('usePlaybackHost 可见性与快捷键', () => {
     pressSpace()
     expect(layoutShortcuts).toBe(1)
     document.removeEventListener('keydown', layoutListener)
+  })
+
+  it('放映期间持有 Screen Wake Lock，隐藏暂停和卸载时释放', async () => {
+    const lock = installWakeLock()
+    preloadPlaybackConfig({ autoStart: true })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('playing')
+    expect(lock.request).toHaveBeenCalledTimes(1)
+    expect(host.wakeLockState.value).toBe('active')
+
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('paused')
+    expect(lock.sentinel.release).toHaveBeenCalledTimes(1)
+    expect(host.wakeLockState.value).toBe('idle')
+
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('paused')
+    expect(lock.request).toHaveBeenCalledTimes(1)
+
+    expect(host.resume()).toBe(true)
+    await flushAsync()
+    expect(lock.request).toHaveBeenCalledTimes(2)
+    expect(host.wakeLockState.value).toBe('active')
+    app.unmount()
+    expect(lock.sentinel.release).toHaveBeenCalledTimes(2)
+  })
+
+  it('浏览器回收屏幕锁后在可见的放映中重新申请', async () => {
+    const lock = installWakeLock()
+    preloadPlaybackConfig({ autoStart: true })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.wakeLockState.value).toBe('active')
+
+    lock.sentinel.emitRelease()
+    await flushAsync()
+    expect(lock.request).toHaveBeenCalledTimes(2)
+    expect(host.wakeLockState.value).toBe('active')
+    app.unmount()
+  })
+
+  it('防休眠权限拒绝时正常放映，只在显式重新开始时重试', async () => {
+    const lock = installWakeLock({ reject: new DOMException('denied', 'NotAllowedError') })
+    preloadPlaybackConfig({ autoStart: true })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('playing')
+    expect(host.wakeLockState.value).toBe('denied')
+    expect(lock.request).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    session.transitionSettled.value = { path: '/b', generation: 2 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('playing')
+    expect(lock.request).toHaveBeenCalledTimes(1)
+
+    expect(host.pause()).toBe(true)
+    expect(host.resume()).toBe(true)
+    await flushAsync()
+    expect(lock.request).toHaveBeenCalledTimes(2)
+    app.unmount()
   })
 
   it('旧产物缺少 playback 配置时不创建控制器与入口', async () => {

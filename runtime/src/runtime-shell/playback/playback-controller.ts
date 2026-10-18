@@ -66,6 +66,8 @@ const READY_ERROR_MESSAGE = '页面加载或资源准备失败，请重试。'
 const BLOCKED_MESSAGE = '播放被浏览器阻止，请手动开始。'
 const MEDIA_TIMEOUT_MESSAGE = '媒体播放超时，请重试、跳到下一页或停止放映。'
 const MEDIA_ERROR_MESSAGE = '媒体播放失败，请重试、跳到下一页或停止放映。'
+/** 计时回调明显晚于截止时间时视为系统休眠/长中断，先暂停等待显式继续。 */
+const TIMER_WAKE_GAP_MS = 3000
 
 /**
  * 单窗口放映控制器。
@@ -380,12 +382,20 @@ export class PlaybackController {
     const kind = this.timerKind
     this.timer = undefined
     this.timerKind = null
+    const page = this.currentPage()
+    if (!page) return
+    // 休眠或长时间冻结会让回调远晚于截止时间；此时先停在当前页，避免醒来立即连跳。
+    if (this.clock.now() - this.deadline > TIMER_WAKE_GAP_MS) {
+      this.remaining = kind === 'media-timeout' ? this.mediaTimeout(page) : this.pageDelay(page)
+      this.state = 'paused'
+      this.emit()
+      return
+    }
     if (kind === 'media-timeout') {
       this.enterFailure('error', this.path, token, MEDIA_TIMEOUT_MESSAGE)
       return
     }
-    const page = this.currentPage()
-    if (!page || page.advance.mode === 'manual') return
+    if (page.advance.mode === 'manual') return
     this.advanceAfterStay(false)
   }
 
