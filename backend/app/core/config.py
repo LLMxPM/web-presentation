@@ -225,8 +225,10 @@ class AppSettings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_key_prefix: str = "web_presentation"
     redis_healthcheck_timeout_seconds: float = 2.0
-    runtime_preview_artifact_ttl_seconds: int = 3600
-    runtime_preview_token_ttl_seconds: int = 300
+    # 预览快照（artifact）寿命默认 2 小时；预览票据（URL 中的 ?token=）默认 1 小时。
+    # 票据必须严格短于快照寿命，否则票据到期时快照同时消失，到期前续签只能拿到 410。
+    runtime_preview_artifact_ttl_seconds: int = 7200
+    runtime_preview_token_ttl_seconds: int = 3600
     runtime_artifact_sweep_interval_seconds: float = 30.0
     runtime_build_state_ttl_seconds: int = 604800
     # 进程内 memory:// 运行态的有限 payload 预算：2C4G Lite 实测混合负载峰值约 105MB，
@@ -286,6 +288,21 @@ class AppSettings(BaseSettings):
 
         if self.ai_run_owner_ttl_seconds < self.ai_run_owner_heartbeat_seconds * 3:
             raise ValueError("AI_RUN_OWNER_TTL_SECONDS 必须至少为心跳周期的三倍。")
+        return self
+
+    @model_validator(mode="after")
+    def validate_preview_ttl_relationship(self) -> "AppSettings":
+        """预览票据必须严格短于快照寿命，保证票据到期前仍有一次有效续签窗口。
+
+        两者相等或票据更长时，续签只会拿到快照的残余秒数并立刻 410，
+        表现为「放映窗口到点后必须回工作台重建」，因此启动期直接拒绝这种配置。
+        """
+
+        if self.runtime_preview_token_ttl_seconds >= self.runtime_preview_artifact_ttl_seconds:
+            raise ValueError(
+                "RUNTIME_PREVIEW_TOKEN_TTL_SECONDS 必须小于 RUNTIME_PREVIEW_ARTIFACT_TTL_SECONDS："
+                "票据到期时快照必须仍然存在，否则续签无法成功。"
+            )
         return self
 
     @field_validator("app_timezone")
