@@ -30,7 +30,7 @@
 - 协议：新增 `presenter-sync-protocol.ts`，v2 信封包含 `protocol`、`channelId`、产物身份、`sourceId`、`ownerEpoch`、递增 `revision`、`eventId` 与可选 `commandId`；state-sync/navigate 携带完整路径、视图、tileSize 与播放快照（状态、剩余毫秒、delay、媒体等待、页码）。
 - 处理器：Receiver 在业务应用前完成协议/身份/self/频道/产物校验，按 event 与 command 去重，维护 owner epoch 水位与 per-source revision；新 owner 接管后旧 owner 的消息失效。
 - 时钟：接收方只用本地到达时间加 `remainingMs` 计算 deadline，不跨窗口比较 `performance.now`；新观众 `ready` 后控制台回发状态快照。
-- 集成：控制器所有 BroadcastChannel 与 storage 消息统一走 Receiver；storage 初始导航升级为 v2；暴露 `playbackSnapshot`/`remotePlayback`/`updatePlayback` 供 WP26 消费。
+- 集成：控制器所有 BroadcastChannel 与 storage 消息统一走 Receiver；storage 初始导航升级为 v2；暴露 `playbackSnapshot`/`remotePlayback`/`updatePlayback` 供 WP26 消费。WP26 在 v2 信封追加 `role` 并按角色隔离 owner 水位，观众窗口只接受控制台来源的导航。
 - 验证：定向 12 passed；Runtime 全量 141 files/1081 passed/3 skipped；`pnpm --dir runtime check` 与改动文件 ESLint 通过。
 - 未运行：真实双窗口调度权交接与播放器应用（WP26）；生产 OAuth 无关。
 - 产物：`.tmp/wp25/`。

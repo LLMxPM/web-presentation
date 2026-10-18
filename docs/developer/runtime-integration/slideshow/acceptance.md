@@ -1,6 +1,6 @@
 # 自动放映联调与验收计划
 
-状态：M0 已验收（2026-10-17）；M1 已验收（2026-10-17，WP13–WP21）。WP13–WP18 的调度、执行上下文、Router/就绪桥接、单窗口入口/控制条、Renderer 静态捕获与导出隔离已完成；WP19/WP20 客户端完成，WP21 完成 A09–A17 真实计时、导航/循环与跨仓证据，Backend capabilities 已声明 timer 与单窗口自动放映（媒体和演讲者保持关闭）。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；A09/A11/A14/A15 的 M1 真实浏览器证据见 [WP16 实施记录](./work-packages/wp16-playback-entry-controls.md)；A15/A16 的静态捕获真实 PNG 证据见 [WP17 实施记录](./work-packages/wp17-renderer-static-media.md)；A16 的 PDF/PPTX/打印真实产物与取消隔离证据见 [WP18 实施记录](./work-packages/wp18-export-isolation.md)；A10/A12/A13 的真实过渡后计时、手动/快速/浏览器导航、末页/单页循环与隐藏页证据见 [WP21 实施记录](./work-packages/wp21-m1-integration-release.md)；A17 的 CLI/MCP 证据见 WP19/WP20。M2 进行中：WP22 已交付 schema 2 与预览 autoplay/fullscreen 权限链（2026-10-18），WP23 已交付活动页媒体注册与生命周期适配层，WP24 已交付媒体结束翻页与受阻恢复（2026-10-18）；媒体执行的真实浏览器证据见 [WP24 实施记录](./work-packages/wp24-media-end-advance.md)，WP25 已交付去重/旧 owner 隔离的同步协议 v2。WP28/WP29 已完成 CLI/MCP 媒体模式往返与能力门禁（`624ea31`/`773c75a`），真实 media_end API 往返随 WP30 能力开放复验；双窗口调度（WP26）与能力开放待后续包。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
+状态：M0 已验收（2026-10-17）；M1 已验收（2026-10-17，WP13–WP21）。WP13–WP18 的调度、执行上下文、Router/就绪桥接、单窗口入口/控制条、Renderer 静态捕获与导出隔离已完成；WP19/WP20 客户端完成，WP21 完成 A09–A17 真实计时、导航/循环与跨仓证据，Backend capabilities 已声明 timer 与单窗口自动放映（媒体和演讲者保持关闭）。A01–A08 的真实预览/构建、双库迁移、模板与 Chromium 动画证据见 [WP12 实施记录](./work-packages/wp12-m0-integration.md)；A09/A11/A14/A15 的 M1 真实浏览器证据见 [WP16 实施记录](./work-packages/wp16-playback-entry-controls.md)；A15/A16 的静态捕获真实 PNG 证据见 [WP17 实施记录](./work-packages/wp17-renderer-static-media.md)；A16 的 PDF/PPTX/打印真实产物与取消隔离证据见 [WP18 实施记录](./work-packages/wp18-export-isolation.md)；A10/A12/A13 的真实过渡后计时、手动/快速/浏览器导航、末页/单页循环与隐藏页证据见 [WP21 实施记录](./work-packages/wp21-m1-integration-release.md)；A17 的 CLI/MCP 证据见 WP19/WP20。M2 进行中：WP22 已交付 schema 2 与预览 autoplay/fullscreen 权限链（2026-10-18），WP23 已交付活动页媒体注册与生命周期适配层，WP24 已交付媒体结束翻页与受阻恢复（2026-10-18）；媒体执行的真实浏览器证据见 [WP24 实施记录](./work-packages/wp24-media-end-advance.md)，WP25 已交付去重/旧 owner 隔离的同步协议 v2。WP28/WP29 已完成 CLI/MCP 媒体模式往返与能力门禁（`624ea31`/`773c75a`），真实 media_end API 往返随 WP30 能力开放复验；WP26 已交付观众唯一调度与双窗口操作，A21–A23 的真实 Chromium 证据见 [WP26 实施记录](./work-packages/wp26-presenter-single-owner.md)，能力开放待 WP30。字段以[统一契约](./contract.md)为准，工作包以[总计划](./README.md)为准。
 
 执行分工见[工作包清单](./work-packages/README.md)。阶段出口分别为 [WP12](./work-packages/wp12-m0-integration.md)、[WP21](./work-packages/wp21-m1-integration-release.md)、[WP30](./work-packages/wp30-m2-integration-release.md)、[WP33](./work-packages/wp33-unattended-soak-release.md)，负责汇总本阶段场景与真实产物证据。
 
@@ -56,6 +56,8 @@ WP13 的虚拟时钟用例已覆盖 A09、A11、A12、A13 的纯调度层（就�
 | A24 | 媒体模式下远程截图与取消/期限 | 捕获禁播、PNG 正确、槽位和浏览器进程/临时产物释放 |
 
 桌面 Chromium 必测；Firefox/WebKit 的媒体与全屏差异记录为支持矩阵，未验证浏览器不列为已支持。跨域 iframe 授权使用真实预览拓扑，不能只在同源测试页上验收。
+
+WP26 在独立 Runtime（7373，同源 standalone，4s timer）用两个真实 Chromium 窗口验证 A21–A23：控制台先加载时保持未连接且不接管推进，观众后加载后显式开始；自动翻页间隔 3947ms/8016ms、控制台跟随且无双重计时；控制台/观众键盘与页面按钮导航一致。控制台隐藏时观众继续自动翻页；观众隐藏后暂停、4.5s 内不翻页，重新可见保持暂停且剩余时间未重置，显式继续后完成翻页。全屏进入/退出剩余时间 0:04→0:03→0:03→0:02。关闭观众窗口后回显“已关闭”并暂停，重开未显式开始 4.5s 内不翻页；重复、旧 owner 与旧 revision 注入不改变路径。Firefox/WebKit 与媒体模式双窗口仍由 WP30 回归。
 
 ## 5. 兼容与发布
 
