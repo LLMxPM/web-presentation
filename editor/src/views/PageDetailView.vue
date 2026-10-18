@@ -54,14 +54,18 @@
                   <Code2 class="h-3.5 w-3.5" />
                   编辑
                 </UiButton>
-                <UiDropdownMenu :items="presentationMenuItems" @select="handlePresentationSelect">
-                  <template #trigger>
-                    <UiButton variant="secondary" size="sm" :disabled="isSaveActionPending" :loading="isPresentationPending">
-                      <Play class="h-3.5 w-3.5" />
-                      放映
-                    </UiButton>
-                  </template>
-                </UiDropdownMenu>
+                <UiButton
+                  v-if="presentationRoute"
+                  variant="secondary"
+                  size="sm"
+                  :disabled="isSaveActionPending"
+                  :loading="isPresentationPending"
+                  :title="presentationButtonTitle"
+                  @click="handlePresentation"
+                >
+                  <Play class="h-3.5 w-3.5" />
+                  放映
+                </UiButton>
 
                 <div class="mx-0.5 h-5 w-px bg-border"></div>
                 <UiButton
@@ -285,8 +289,7 @@ import PageUsageDialog from '@/components/page-detail/PageUsageDialog.vue'
 import PageVersionHistoryDialog from '@/components/page-detail/PageVersionHistoryDialog.vue'
 import { useRuntimePreviewLifecycle } from '@/composables/useRuntimePreviewLifecycle'
 import { previewTokenExpiresAt } from '@/composables/useRuntimePreviewRecovery'
-import { UiButton, UiDropdownMenu, UiIconButton } from '@/components/ui'
-import type { DropdownMenuEntry } from '@/components/ui'
+import { UiButton, UiIconButton } from '@/components/ui'
 import CommandBar from '@/components/patterns/CommandBar.vue'
 import DataState from '@/components/patterns/DataState.vue'
 import type {
@@ -591,24 +594,17 @@ const previousPageId = computed(() => pageNavigation.value.previousPageId)
 const nextPageId = computed(() => pageNavigation.value.nextPageId)
 const presentationRoute = computed(() => resolvePagePresentationRoute(pageDetails.value))
 const isPresentationPending = ref(false)
-const presentationMenuItems = computed<DropdownMenuEntry[]>(() => [
-  { value: 'home', label: '从首页放映', description: '从第一个可见页面开始；生成新的只读快照' },
-  {
-    value: 'current',
-    label: '从当前页放映',
-    description: presentationRoute.value || '当前页面尚未加入项目路由',
-    disabled: !presentationRoute.value,
-  },
-])
+/** 页面未加入项目路由时不渲染放映入口，说明文字只需交代窗口内仍需一次手势。 */
+const presentationButtonTitle = '从当前页开始打开 Runtime 放映窗口；在窗口内点击“进入放映”后全屏播放，每次生成新的只读快照'
 
-/** 创建新的项目放映快照；当前页入口使用页面在路由树中的第一条绑定。 */
-async function handlePresentationSelect(value: string): Promise<void> {
-  if (!projectId.value || isPresentationPending.value) return
+/** 创建新的整项目放映快照；入口固定取当前页在路由树中的第一条绑定。 */
+async function handlePresentation(): Promise<void> {
+  if (!projectId.value || isPresentationPending.value || !presentationRoute.value) return
   isPresentationPending.value = true
   try {
     await openProjectPresentation({
       projectId: projectId.value,
-      entryRoute: value === 'current' ? presentationRoute.value : null,
+      entryRoute: presentationRoute.value,
     })
   } catch (error) {
     Message.error(getErrorMessage(error, '生成项目放映失败。'))

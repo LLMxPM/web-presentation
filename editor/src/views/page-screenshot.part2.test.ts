@@ -770,7 +770,8 @@ describe('page screenshot views', () => {
     expect(screen.getByRole('button', { name: '截图' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '资源' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '编辑' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '放映' })).toBeInTheDocument()
+    // 未加入项目路由的页面没有放映入口，避免打开与当前页无关的整项目快照。
+    expect(screen.queryByRole('button', { name: '放映' })).toBeNull()
     expect(screen.queryByRole('button', { name: '编辑器' })).toBeNull()
     expect(screen.queryByRole('button', { name: '可视化' })).toBeNull()
     expect(screen.queryByRole('button', { name: '保存' })).toBeNull()
@@ -791,6 +792,44 @@ describe('page screenshot views', () => {
 
     expect(await screen.findByRole('button', { name: 'monaco-mark-dirty' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
+  })
+
+  it('未加入路由的页面不渲染放映入口', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload())
+
+    render(PageDetailView, createTestingRenderOptions())
+
+    expect(await screen.findByText('页面详情')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '放映' })).toBeNull()
+    expect(screen.queryByText('从首页放映')).toBeNull()
+    expect(screen.queryByText('从当前页放映')).toBeNull()
+  })
+
+  it('放映按钮以当前页在路由树中的第一条绑定作为入口', async () => {
+    getPageMock.mockResolvedValue(createPageDetailPayload({
+      is_in_project_route: true,
+      route_bindings: [{ route_id: 101, parent_route: null, route: 'home', full_path: '/home' }],
+    }))
+    createProjectPreviewArtifactMock.mockResolvedValue({
+      preview_url: 'http://backend.local/preview/artifacts/rt_current?token=t',
+      artifact_id: 'rt_current',
+    })
+    const openMock = vi.spyOn(window, 'open').mockReturnValue({
+      closed: false,
+      location: { replace: vi.fn() },
+    } as unknown as Window)
+
+    try {
+      render(PageDetailView, createTestingRenderOptions())
+
+      await fireEvent.click(await screen.findByRole('button', { name: '放映' }))
+
+      await waitFor(() => {
+        expect(createProjectPreviewArtifactMock).toHaveBeenCalledWith(21, '/home')
+      })
+    } finally {
+      openMock.mockRestore()
+    }
   })
 
   it('PageDetailView 与编辑弹窗应限制超长页面标题并保留完整悬浮提示', async () => {
