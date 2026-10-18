@@ -50,6 +50,7 @@ beforeEach(async () => {
         'transition.backward': { assetName: 'backward-sound', gain: 1 },
         'interaction.confirm': { assetName: 'confirm-sound', gain: 0.8 },
         'interaction.open': { assetName: 'open-sound', gain: 1 },
+        'interaction.after-resume': { assetName: 'resume-sound', gain: 1 },
       },
     },
     manifest: {
@@ -59,6 +60,7 @@ beforeEach(async () => {
         'backward-sound': 'backward.mp3',
         'confirm-sound': 'confirm.mp3',
         'open-sound': 'open.mp3',
+        'resume-sound': 'resume.mp3',
       },
       asset_base_url: 'https://cdn.example/assets/',
     },
@@ -72,6 +74,7 @@ afterEach(async () => {
   resetRuntimeExecutionForTests()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  Reflect.deleteProperty(document, 'hidden')
   document.body.innerHTML = ''
   await loadAudioConfig(true)
 })
@@ -193,16 +196,25 @@ describe('useAudioCues', () => {
     expect(FakeAudio.instances).toHaveLength(0)
   })
 
-  it('窗口隐藏与冻结暂停音效，恢复后允许新的 cue', async () => {
+  it('窗口隐藏与冻结暂停音效，恢复可见后允许新的 cue', async () => {
     const { pagePlay } = await mountAudio(true)
     expect(pagePlay('interaction.confirm')).toBe('played')
     expect(FakeAudio.instances[0].paused).toBe(false)
 
-    document.dispatchEvent(new Event('freeze'))
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    document.dispatchEvent(new Event('visibilitychange'))
     expect(FakeAudio.instances[0].paused).toBe(true)
+    expect(pagePlay('interaction.open')).toBe('unavailable')
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(pagePlay('interaction.open')).toBe('played')
+
+    document.dispatchEvent(new Event('freeze'))
+    expect(FakeAudio.instances.at(-1)?.paused).toBe(true)
 
     window.dispatchEvent(new Event('pageshow'))
-    expect(pagePlay('interaction.open')).toBe('played')
+    expect(pagePlay('interaction.after-resume')).toBe('played')
   })
 
   it('卸载时移除监听并释放正在播放的音频', async () => {

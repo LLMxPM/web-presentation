@@ -158,6 +158,9 @@ describe('ProjectAudioSettingsPanel', () => {
     await fireEvent.update(screen.getByLabelText('主音量'), '40')
     expect(FakeAudio.instances[0].volume).toBeCloseTo(0.05)
 
+    await fireEvent.update(screen.getAllByLabelText('绑定增益')[0], '100')
+    expect(FakeAudio.instances[0].volume).toBeCloseTo(0.1)
+
     await fireEvent.click(screen.getByRole('button', { name: '停止试听' }))
     expect(FakeAudio.instances[0].paused).toBe(true)
   })

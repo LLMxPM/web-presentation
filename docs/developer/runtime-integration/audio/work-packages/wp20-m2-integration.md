@@ -23,7 +23,7 @@
 ## 当前证据（2026-10-18）
 
 - 自动化已覆盖：ABAC/引用/模板包（Backend 48 项本批目标测试）、切页精确 generation 与 200 次连续导航、1000 次 transition + 1000 次 interaction 的固定实例池、静音/冻结/卸载监听清理、Editor 音频设置保存与 capability 隐藏。
-- 已运行：Runtime `pnpm run test`（151 files / 1211 passed / 3 skipped）、`vue-tsc -b`；Editor `check`、`test`（158 files / 895 passed）、`build`；Backend 音频/External 目标测试 48 passed；`pnpm run test:contracts:generated` 通过。
+- 已运行：Runtime `pnpm run test`（152 files / 1213 passed / 3 skipped）、`vue-tsc -b`；Editor `check`、`test`（158 files / 895 passed）、`build`；Backend 音频/External 目标测试 48 passed；`pnpm run test:contracts:generated` 与根契约测试 110 passed。
 - 当前 capability 仍只开放 `audio_assets`；`page_narration` 与 `audio_cues` 保持 false，Editor 音频标签页和 `useAudioCue.v1` 未向最终用户宣称可用。
 - 未运行：真实 Chromium/Firefox/WebKit 的 autoplay、试听、切页/点击长稳与执行上下文验收；独立构建产物无 Backend/外网依赖验证；Renderer 相关门禁；CLI/MCP 独立仓交付与真实流程；数据库迁移在真实 SQLite/PostgreSQL 的 upgrade/downgrade 演练。
 - 结论：M2 不能宣布发布完成；在完成上述实机证据前不得修改 `AUDIO_OPEN_CAPABILITIES` 开放 cue，也不得更新用户文档宣称音效可用。

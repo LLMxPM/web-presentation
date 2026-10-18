@@ -64,9 +64,10 @@ export function useAudioCues(active: Ref<boolean>): RuntimeAudioCues {
 
   provide<AudioCueService>(AUDIO_CUE_SERVICE_KEY, { playInteractionCue })
 
-  /** 窗口隐藏、页面冻结时立即停掉短音效；恢复不补播。 */
+  /** 窗口隐藏、页面冻结时立即停掉短音效；恢复可见后允许新的 cue，不补播。 */
   const handleVisibility = (): void => {
     if (document.hidden) engine?.suspend()
+    else engine?.resume()
   }
   const handleFreeze = (): void => {
     engine?.suspend()

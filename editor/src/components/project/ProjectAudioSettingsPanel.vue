@@ -289,6 +289,14 @@ function updateVolume(field: VolumeField, value: string): void {
 
 /** 更新切页或交互 cue 行；交互行按索引替换。 */
 function updateBinding(row: CueRow, patch: Partial<AudioCueBindingDraft>): void {
+  // 替换资源时停止旧试听，避免继续播放已不在该行上的声音。
+  if (
+    previewingId.value === row.id
+    && patch.assetId !== undefined
+    && patch.assetId !== row.binding.assetId
+  ) {
+    stopPreview(true)
+  }
   if (row.interactionIndex === null) {
     const key = row.id === 'transition-forward' ? 'transitionForward' : 'transitionBackward'
     emitDraft({
@@ -374,15 +382,23 @@ function togglePreview(row: CueRow): void {
   }
 }
 
-/** 音量变化时同步正在试听元素的音量，不重启播放。 */
+/** 音量、音效音量或绑定增益变化时同步试听元素，不重启播放。 */
+function updatePreviewVolume(): void {
+  const row = cueRows.value.find(item => item.id === previewingId.value)
+  if (!previewElement || !row) return
+  const gainPercent = calculateCueGainPercent(props.draft.masterVolume, props.draft.effectsVolume, row.binding.gainPercent)
+  if (gainPercent !== null) previewElement.volume = Math.min(1, Math.max(0, gainPercent / 100))
+}
+
 watch(
-  () => [props.draft.masterVolume, props.draft.effectsVolume] as const,
-  () => {
-    const row = cueRows.value.find(item => item.id === previewingId.value)
-    if (!previewElement || !row) return
-    const gainPercent = calculateCueGainPercent(props.draft.masterVolume, props.draft.effectsVolume, row.binding.gainPercent)
-    if (gainPercent !== null) previewElement.volume = Math.min(1, Math.max(0, gainPercent / 100))
-  },
+  () => [
+    props.draft.masterVolume,
+    props.draft.effectsVolume,
+    props.draft.transitionForward.gainPercent,
+    props.draft.transitionBackward.gainPercent,
+    ...props.draft.interactionCues.map(binding => binding.gainPercent),
+  ] as const,
+  updatePreviewVolume,
 )
 
 /** 读取当前工作空间 active 音频资源，供选择器与试听使用。 */
