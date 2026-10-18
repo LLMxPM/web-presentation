@@ -36,6 +36,6 @@
 - 真实 Chromium（Editor 5173 + Backend 8000，专属证据账号与项目）：真实能力返回 schema 2、`advance_modes=["manual","timer"]`，项目与路由表单均只有两种模式且无超时字段；将能力响应模拟为开放后，表单出现“媒体结束”、超时默认 300 秒、无媒体/循环/受阻说明，项目 PATCH 与路由 PUT 载荷均带完整 `{mode, delay_ms, media_timeout_ms}`；真实定时路由保存返回 200 并持久化完整 `advance`。`media_end` 写入仍按门禁返回 422，属 WP30 开放范围。
 - 未运行：真实 `media_end` 保存与回读、有声/移动端播放策略、双窗口入口（WP26/WP30）。
 - 产物：`.tmp/wp27/`（摘要、测试输出、浏览器截图与 JSON）。
-- 提交：待回填。
+- 提交：`a690fe9`。
 
 测试环境与命令选择遵循 [dev-start-test](../../../../../.agents/skills/dev-start-test/SKILL.md)，不因执行本卡重复启动服务或重置开发数据。
