@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from pathlib import Path
 import re
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, RecordStatus
 from app.models.font import WorkspaceFontConfig, WorkspaceFontFamily
 from app.models.workspace import Project
+from app.models.workspace_theme import WorkspaceTheme
 from app.schemas.asset import AssetFontConfigSummary
 from app.schemas.common import ListQuery, PagedResponse
 from app.schemas.font import (
@@ -213,9 +214,25 @@ class WorkspaceFontService:
         next_name = payload.name.strip()
         await self._ensure_family_name_available(workspace_id, next_name, exclude_family_id=family.id)
         family.name = next_name
+        await self._sync_theme_font_labels(workspace_id, family.id, next_name)
         await self.session.commit()
         await self.session.refresh(family)
         return (await self._to_family_responses(workspace_id, [family]))[0]
+
+    async def _sync_theme_font_labels(self, workspace_id: int, family_id: int, family_name: str) -> None:
+        """字体族改名后同步主题内的冗余字体标签，避免导出与预检长期沿用旧名。"""
+
+        for family_column, label_column in (
+            (WorkspaceTheme.heading_font_family_id, "heading_font_label"),
+            (WorkspaceTheme.body_font_family_id, "body_font_label"),
+            (WorkspaceTheme.code_font_family_id, "code_font_label"),
+        ):
+            await self.session.execute(
+                update(WorkspaceTheme)
+                .where(WorkspaceTheme.workspace_id == workspace_id)
+                .where(family_column == family_id)
+                .values({label_column: family_name})
+            )
 
     async def delete_font_family(self, workspace_id: int, family_id: int) -> None:
         """删除字体族；仍有 face 或被主题绑定时拒绝删除。"""

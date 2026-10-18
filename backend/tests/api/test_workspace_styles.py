@@ -6,6 +6,10 @@ import json
 import zipfile
 
 from httpx import AsyncClient
+from sqlalchemy import select
+
+from app.db.session import get_session_factory
+from app.models.workspace_theme import WorkspaceTheme
 from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
 
 CONTENT_COMPONENT_SIZE_PREVIEW_SCHEMA = '{"props":{"height":{"type":"number","label":"高度","default":320}}}'
@@ -261,6 +265,92 @@ async def test_workspace_style_package_should_export_import_with_theme_dependenc
     assert imported_theme["logo_asset"]["name"] == "style_pkg_logo"
     assert imported_theme["project_icon_asset"]["name"] == "style_pkg_icon"
     assert imported_theme["heading_font_family"]["name"] == "PkgFont"
+
+
+async def test_workspace_style_package_should_reimport_after_font_family_rename(
+    authenticated_client: AsyncClient,
+) -> None:
+    """字体族改名后主题标签应同步，同一离线包第二次导入不应误报主题内容不同。"""
+
+    source_workspace_id = await _create_workspace(authenticated_client, "字体改名样式源空间")
+    font_asset = await _upload_font_asset(authenticated_client, source_workspace_id, "rename_font", b"rename-font-content")
+    font_config = await _create_font_config(authenticated_client, source_workspace_id, font_asset["id"], "RenameOldFont")
+    theme = await _create_theme(
+        authenticated_client,
+        source_workspace_id,
+        "rename-font-theme",
+        heading_font_family_id=font_config["family_id"],
+    )
+    rename_response = await authenticated_client.patch(
+        f"/api/workspaces/{source_workspace_id}/font-families/{font_config['family_id']}",
+        json={"name": "RenameNewFont"},
+    )
+    assert rename_response.status_code == 200
+    renamed_theme_response = await authenticated_client.get(
+        f"/api/workspaces/{source_workspace_id}/themes",
+        params={"keyword": theme["key"], "page": 1, "page_size": 10},
+    )
+    assert renamed_theme_response.status_code == 200
+    assert renamed_theme_response.json()["items"][0]["heading_font_label"] == "RenameNewFont"
+
+    style = await _create_style(authenticated_client, source_workspace_id, "rename-font-style", theme["key"])
+    export_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace_id}/styles/export-package",
+        json={"style_ids": [style["id"]]},
+    )
+    assert export_response.status_code == 200
+    archive_content = export_response.content
+
+    target_workspace_id = await _create_workspace(authenticated_client, "字体改名样式目标空间")
+    first_import = await _import_style_package(authenticated_client, target_workspace_id, archive_content)
+    assert first_import.status_code == 200
+    second_validation = await _validate_style_package(authenticated_client, target_workspace_id, archive_content)
+    assert second_validation["valid"] is True, second_validation["errors"]
+    assert second_validation["themes"][0]["action"] == "reuse"
+
+
+async def test_workspace_style_package_export_should_use_current_font_family_name(
+    authenticated_client: AsyncClient,
+) -> None:
+    """主题标签滞留旧名时，导出应按当前字体族名序列化并支持重复导入。"""
+
+    source_workspace_id = await _create_workspace(authenticated_client, "字体标签滞留源空间")
+    font_asset = await _upload_font_asset(authenticated_client, source_workspace_id, "stale_font", b"stale-font-content")
+    font_config = await _create_font_config(authenticated_client, source_workspace_id, font_asset["id"], "CurrentFont")
+    theme = await _create_theme(
+        authenticated_client,
+        source_workspace_id,
+        "stale-font-theme",
+        heading_font_family_id=font_config["family_id"],
+    )
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        theme_row = await session.scalar(
+            select(WorkspaceTheme).where(
+                WorkspaceTheme.workspace_id == source_workspace_id,
+                WorkspaceTheme.key == theme["key"],
+            )
+        )
+        assert theme_row is not None
+        theme_row.heading_font_label = "StaleLegacyFont"
+        await session.commit()
+
+    style = await _create_style(authenticated_client, source_workspace_id, "stale-font-style", theme["key"])
+    export_response = await authenticated_client.post(
+        f"/api/workspaces/{source_workspace_id}/styles/export-package",
+        json={"style_ids": [style["id"]]},
+    )
+    assert export_response.status_code == 200
+    archive_content = export_response.content
+    with zipfile.ZipFile(io.BytesIO(archive_content)) as archive:
+        theme_payload = json.loads(archive.read(f"themes/{theme['key']}.json").decode("utf-8"))
+    assert theme_payload["heading_font_label"] == "CurrentFont"
+
+    target_workspace_id = await _create_workspace(authenticated_client, "字体标签滞留目标空间")
+    first_import = await _import_style_package(authenticated_client, target_workspace_id, archive_content)
+    assert first_import.status_code == 200
+    second_validation = await _validate_style_package(authenticated_client, target_workspace_id, archive_content)
+    assert second_validation["valid"] is True, second_validation["errors"]
 
 
 async def test_workspace_style_package_export_should_warn_for_suggested_component_dynamic_assets(

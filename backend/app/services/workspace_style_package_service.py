@@ -960,9 +960,11 @@ class WorkspaceStylePackageService:
             "heading_font_asset_name": heading_font.asset_name if heading_font is not None else None,
             "body_font_asset_name": body_font.asset_name if body_font is not None else None,
             "code_font_asset_name": code_font.asset_name if code_font is not None else None,
-            "heading_font_label": theme.heading_font_label,
-            "body_font_label": theme.body_font_label,
-            "code_font_label": theme.code_font_label,
+            # 绑定字体族时标签由族名派生，与导入写入语义保持一致；
+            # 族名改名后不得继续使用主题里可能滞留的旧标签。
+            "heading_font_label": heading_font.font_family if heading_font is not None else theme.heading_font_label,
+            "body_font_label": body_font.font_family if body_font is not None else theme.body_font_label,
+            "code_font_label": code_font.font_family if code_font is not None else theme.code_font_label,
             "palette": ThemePalette.model_validate(theme.palette).model_dump(mode="python"),
         }
 
