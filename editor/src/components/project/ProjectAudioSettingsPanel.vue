@@ -63,7 +63,7 @@
       <div class="flex flex-wrap items-start justify-between gap-2">
         <div class="min-w-0">
           <h3 class="text-sm font-semibold text-text-emphasis">音效资源</h3>
-          <p class="mt-0.5 text-xs leading-5 text-text-disabled">只列出当前工作空间 active 的音频资源；切页 cue 只有一个通道，新音效会替换上一段。</p>
+          <p class="mt-0.5 text-xs leading-5 text-text-disabled">分页加载当前工作空间 active 的音频资源；切页 cue 只有一个通道，新音效会替换上一段。</p>
         </div>
         <UiButton variant="ghost" size="sm" :loading="assetsLoading" @click="loadAssets">刷新资源</UiButton>
       </div>
@@ -136,6 +136,7 @@
               <UiFormField label="音效资源">
                 <template #default="field">
                   <UiSelect
+                    :key="assetSelectKey(row)"
                     :model-value="row.binding.assetId"
                     :options="assetOptions"
                     placeholder="未绑定"
@@ -171,6 +172,24 @@
           </article>
         </div>
 
+        <div
+          v-if="assetsHasMore || assetsMoreError"
+          class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border px-3 py-2"
+        >
+          <p class="text-xs leading-5 text-text-disabled">
+            已加载 {{ assets.length }} / {{ assetsTotal }} 个音频资源
+            <span v-if="assetsMoreError" class="ml-1 text-danger-strong">{{ assetsMoreError }}</span>
+          </p>
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :loading="assetsLoadingMore"
+            @click="loadMoreAssets"
+          >
+            {{ assetsMoreError ? '重试加载' : '加载更多' }}
+          </UiButton>
+        </div>
+
         <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
           <p class="text-xs leading-5 text-text-disabled">
             交互音效由页面业务 handler 主动触发；同一 key 80ms 内只播放一次，最多同时 4 路。
@@ -201,7 +220,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { listWorkspaceAssets } from '@/api/assets'
 import { getErrorMessage } from '@/api/http'
 import { UiButton, UiFormField, UiInput, UiSelect } from '@/components/ui'
-import type { AssetResponse } from '@/types/api'
+import type { AssetResponse, PagedResponse } from '@/types/api'
 import {
   TRANSITION_CUE_KEYS,
   calculateCueGainPercent,
@@ -234,17 +253,51 @@ const emit = defineEmits<{
 
 const assets = ref<AssetResponse[]>([])
 const assetsLoading = ref(false)
+const assetsLoadingMore = ref(false)
 const assetsError = ref('')
+const assetsMoreError = ref('')
+const assetsTotal = ref(0)
+const assetsPage = ref(1)
 const previewingId = ref<string | null>(null)
 const previewError = ref('')
 let previewElement: HTMLAudioElement | null = null
+let assetsRequestToken = 0
 
-const assetOptions = computed(() => assets.value.map(asset => ({
-  label: asset.name,
-  value: String(asset.id),
-})))
+/** 草稿中已绑定但尚未加载到当前页的资源 ID，用于保留占位而不是显示空白。 */
+const unresolvedBoundAssetIds = computed(() => {
+  const loaded = new Set(assets.value.map(asset => String(asset.id)))
+  const bound = new Set<string>()
+  for (const binding of [
+    props.draft.transitionForward,
+    props.draft.transitionBackward,
+    ...props.draft.interactionCues,
+  ]) {
+    if (binding.assetId) bound.add(binding.assetId)
+  }
+  return [...bound].filter(id => !loaded.has(id))
+})
+
+const assetOptions = computed(() => [
+  ...assets.value.map(asset => ({
+    label: asset.name,
+    value: String(asset.id),
+  })),
+  ...unresolvedBoundAssetIds.value.map(id => ({
+    label: `资源 #${id}（加载更多后可选）`,
+    value: id,
+    disabled: true,
+  })),
+])
+
+const assetsHasMore = computed(() => assets.value.length < assetsTotal.value)
 
 const assetById = computed(() => new Map(assets.value.map(asset => [String(asset.id), asset])))
+
+/** 绑定资源从“未加载占位”变为真实选项时重建下拉，避免 Reka 复用旧标签。 */
+function assetSelectKey(row: CueRow): string {
+  const resolved = !row.binding.assetId || assetById.value.has(row.binding.assetId)
+  return `${row.id}-${resolved ? 'resolved' : 'missing'}`
+}
 
 /** 组装切页与交互 cue 行，交互行保留草稿索引用于不可变更新。 */
 const cueRows = computed<CueRow[]>(() => [
@@ -401,31 +454,75 @@ watch(
   updatePreviewVolume,
 )
 
-/** 读取当前工作空间 active 音频资源，供选择器与试听使用。 */
+/** 请求一页 active 音频资源；page_size 受 Backend 上限约束固定为 100。 */
+function fetchAssetPage(workspaceId: number, page: number): Promise<PagedResponse<AssetResponse>> {
+  return listWorkspaceAssets(workspaceId, {
+    assetType: 'audio',
+    status: 'active',
+    page,
+    page_size: 100,
+  })
+}
+
+/** 重新读取第一页资源；刷新、切换工作空间与首次挂载都从这里开始。 */
 async function loadAssets(): Promise<void> {
   stopPreview(true)
+  assetsMoreError.value = ''
+  assetsLoadingMore.value = false
   if (!props.workspaceId) {
+    assetsRequestToken += 1
     assets.value = []
+    assetsTotal.value = 0
+    assetsPage.value = 1
     assetsError.value = '缺少工作空间上下文，暂时不能加载音频资源。'
     return
   }
+  const token = ++assetsRequestToken
   assetsLoading.value = true
   assetsError.value = ''
   try {
-    const response = await listWorkspaceAssets(props.workspaceId, {
-      assetType: 'audio',
-      status: 'active',
-      page: 1,
-      page_size: 100,
-    })
+    const response = await fetchAssetPage(props.workspaceId, 1)
+    if (token !== assetsRequestToken) return
     assets.value = response.items
+    assetsTotal.value = response.total
+    assetsPage.value = response.page
   }
   catch (error) {
+    if (token !== assetsRequestToken) return
     assets.value = []
+    assetsTotal.value = 0
+    assetsPage.value = 1
     assetsError.value = getErrorMessage(error, '加载音频资源失败。')
   }
   finally {
-    assetsLoading.value = false
+    if (token === assetsRequestToken) assetsLoading.value = false
+  }
+}
+
+/** 追加下一页资源；按 ID 去重，失败时保留已加载内容并提供重试。 */
+async function loadMoreAssets(): Promise<void> {
+  const workspaceId = props.workspaceId
+  if (!workspaceId || assetsLoading.value || assetsLoadingMore.value || !assetsHasMore.value) return
+  const token = assetsRequestToken
+  assetsLoadingMore.value = true
+  assetsMoreError.value = ''
+  try {
+    const response = await fetchAssetPage(workspaceId, assetsPage.value + 1)
+    if (token !== assetsRequestToken) return
+    const loadedIds = new Set(assets.value.map(asset => asset.id))
+    assets.value = [
+      ...assets.value,
+      ...response.items.filter(asset => !loadedIds.has(asset.id)),
+    ]
+    assetsTotal.value = response.total
+    assetsPage.value = response.page
+  }
+  catch (error) {
+    if (token !== assetsRequestToken) return
+    assetsMoreError.value = getErrorMessage(error, '加载更多音频资源失败。')
+  }
+  finally {
+    if (token === assetsRequestToken) assetsLoadingMore.value = false
   }
 }
 

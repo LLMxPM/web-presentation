@@ -30,4 +30,10 @@
 - 已运行：`pnpm --filter editor check`、`pnpm --filter editor test`（158 files / 895 tests passed）、`pnpm --filter editor build` 通过；定向音频测试 17 项通过。
 - 未运行：真实浏览器下的 Tab/小屏布局走查与 cue 试听混音，等待 WP20。
 
+## Review 修复（2026-10-19）
+
+- 资源选择器改为分页：首次加载 100 条，可“加载更多”追加并按 ID 去重；超过一页时显示已加载/总数。加载更多失败保留已加载内容并可重试。
+- 已绑定但尚未加载到当前页的资源保留禁用占位（`资源 #ID（加载更多后可选）`），加载完成后自动替换为真实名称；下拉按解析状态重建，避免 Reka 复用旧占位标签。
+- 已运行：`pnpm --filter editor check`、`pnpm --filter editor test`（158 files / 896 tests passed）、`pnpm --filter editor build` 通过。
+
 建议提交标题：`WP18：增加项目音频与 cue 配置`。

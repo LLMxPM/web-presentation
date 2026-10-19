@@ -92,6 +92,41 @@ describe('ProjectAudioSettingsPanel', () => {
     }))
   })
 
+  it('超过一页时按页追加资源，并为未加载的已绑定资源保留占位', async () => {
+    const secondAsset = {
+      ...audioAssets[0],
+      id: 52,
+      name: '结束音',
+      url: '/api/workspaces/3/assets/52/file',
+      file_hash: 'hash-52',
+    }
+    vi.mocked(listWorkspaceAssets)
+      .mockResolvedValueOnce({ items: audioAssets, total: 2, page: 1, page_size: 100 })
+      .mockResolvedValueOnce({ items: [secondAsset], total: 2, page: 2, page_size: 100 })
+    const draft = createDraft()
+    draft.transitionBackward = { key: 'transition.backward', assetId: '52', gainPercent: '100' }
+
+    render(ProjectAudioSettingsPanel, {
+      props: { workspaceId: 3, draft },
+    })
+
+    await waitFor(() => expect(screen.getByText('确认音')).toBeInTheDocument())
+    expect(screen.getByText('资源 #52（加载更多后可选）')).toBeInTheDocument()
+    expect(screen.getByText('已加载 1 / 2 个音频资源')).toBeInTheDocument()
+
+    await fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
+
+    await waitFor(() => expect(screen.getByText('结束音')).toBeInTheDocument())
+    expect(listWorkspaceAssets).toHaveBeenLastCalledWith(3, expect.objectContaining({
+      assetType: 'audio',
+      status: 'active',
+      page: 2,
+      page_size: 100,
+    }))
+    expect(screen.queryByText('资源 #52（加载更多后可选）')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '加载更多' })).not.toBeInTheDocument()
+  })
+
   it('编辑音量、绑定增益与清空操作都回传完整草稿', async () => {
     const { emitted } = render(ProjectAudioSettingsPanel, {
       props: { workspaceId: 3, draft: createDraft() },

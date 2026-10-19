@@ -28,4 +28,15 @@
 - 未运行：真实 Chromium/Firefox/WebKit 的 autoplay、试听、切页/点击长稳与执行上下文验收；独立构建产物无 Backend/外网依赖验证；Renderer 相关门禁；CLI/MCP 独立仓交付与真实流程；数据库迁移在真实 SQLite/PostgreSQL 的 upgrade/downgrade 演练。
 - 结论：M2 不能宣布发布完成；在完成上述实机证据前不得修改 `AUDIO_OPEN_CAPABILITIES` 开放 cue，也不得更新用户文档宣称音效可用。
 
+## Review 修复（2026-10-19）
+
+独立 review 在开放 capability 前发现 3 个 P1 播放链路问题与 2 个 P2 边界问题，均已修复并补回归测试：
+
+- 旁白有效音量：`AudioViewer` 现在按 `master × narration × AssetAudio.volume` 设置原生音量；内容音频保持组件音量，任一项目音量为 0 时旁白静音。
+- 兜底错误语义：主音频失败切换到 `fallbackSrc` 时只发 `media-reset`，兜底也失败才发 `error`；放映宿主不会在兜底仍可发声时中止。
+- BFCache 恢复：`pageshow.persisted=true` 先停残留短音效，再按可见性恢复，修复恢复后 cue 永久 suspend。
+- 公开 key 边界：`useAudioCue.v1` 与注入服务只接受合法 `interaction.*`；`transition.*` 只能由切页单通道触发。
+- Editor 资源选择器：分页“加载更多”最多按 100 条追加；未加载的已绑定资源保留占位并在加载后替换。
+- 复验已运行：Runtime `pnpm run test`（152 files / 1219 passed / 3 skipped）、`vue-tsc -b`；Editor `check`、`test`（158 files / 896 passed）、`build`。capability 仍保持关闭，实机证据缺口不变。
+
 建议提交标题：`WP20：完成 M2 页面音效联调`。
