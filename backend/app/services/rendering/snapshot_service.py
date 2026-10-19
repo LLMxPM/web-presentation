@@ -75,10 +75,17 @@ class RenderSnapshotService:
             "operation_options": operation_options,
             "runtime_build_id": artifact_id,
         }
-        resource_identity = await self._resolve_page_resource_identity(
-            workspace_id=page.workspace_id,
-            page_version_id=version.id if version is not None else None,
-        )
+        if source_override is not None:
+            from app.services.runtime_artifact_store import RuntimeArtifactStore
+            manifest = await RuntimeArtifactStore().get_manifest(artifact_id)
+            # 候选的新资源引用已由 artifact builder 解析，不能套用旧版本的依赖索引。
+            resource_identity = {"candidate_assets": (manifest or {}).get("asset_metadata") or {},
+                                 "candidate_modules": (manifest or {}).get("modules") or {}}
+        else:
+            resource_identity = await self._resolve_page_resource_identity(
+                workspace_id=page.workspace_id,
+                page_version_id=version.id if version is not None else None,
+            )
         if resource_identity:
             input_material["resource_identity"] = resource_identity
         input_digest = sha256_hex(canonical_json(input_material))

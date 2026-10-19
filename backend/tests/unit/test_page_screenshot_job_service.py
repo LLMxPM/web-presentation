@@ -35,6 +35,10 @@ async def test_ensure_latest_page_screenshot_refreshes_only_target_page() -> Non
             pytest.fail("截图刷新不应使共享 Session 中的全部 ORM 对象过期")
 
     class FakePageService:
+        async def _ensure_page_access(self, page, *, user_id: int):
+            """缓存读取也必须先检查当前调用者权限。"""
+            assert page is target_page and user_id == 1
+
         async def _get_page_or_raise(self, page_id: int):
             assert page_id == 339
             return target_page
@@ -75,7 +79,7 @@ async def test_ensure_latest_page_screenshot_refreshes_only_target_page() -> Non
     service.page_service = FakePageService()
     service.screenshot_service = FakeScreenshotService()
     service.object_storage_service = FakeObjectStorageService()
-    service.settings = SimpleNamespace(page_screenshot_ai_wait_timeout_seconds=90)
+    service.settings = SimpleNamespace(page_screenshot_ai_wait_timeout_seconds=90, page_mutation_capture_screenshot=False)
 
     async def try_build_current_result(current_page: object):
         assert current_page is target_page

@@ -219,6 +219,12 @@ class PageScreenshotJobService:
         page = await self.page_service._get_page_or_raise(page_id)
         self.screenshot_service._validate_page_screenshot_supported(page)
         self.screenshot_service._ensure_page_within_scope(page, workspace_id=workspace_id, project_id=project_id)
+        await self.page_service._ensure_page_access(page, user_id=user_id)
+        if self.settings.page_mutation_capture_screenshot:
+            from app.services.runtime_release_identity import refresh_runtime_release_identity
+            from app.db.tx import commit_end_read
+            await commit_end_read(self.session)
+            await refresh_runtime_release_identity()
         cached = await self._try_build_current_result(page)
         if cached is not None:
             return cached

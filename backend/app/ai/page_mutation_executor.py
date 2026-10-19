@@ -30,6 +30,7 @@ from app.ai.tools.project.project_pages import (
 from app.services.validation_result import resolve_write_gate
 from app.ai.tools.shared import apply_source_edits
 from app.core.exceptions import AppException
+from app.core.config import get_settings
 from app.core.time_utils import utc_now
 from app.db.retry import exponential_backoff_delays, run_with_write_retry
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentToolCall
@@ -41,6 +42,8 @@ from app.schemas.page import PageCreateRequest, PageUpdateRequest
 from app.services.code_check_service import CodeCheckService, build_code_check_failed_result
 from app.services.durable_job_lease_service import transition_owned_running_job
 from app.services.page_service import PageService
+from app.services.page_candidate_code import plan_candidate_code
+from app.services.validation_screenshot_publisher import prepare_validation_screenshot, publish_validation_screenshot
 
 
 logger = logging.getLogger(__name__)
@@ -205,6 +208,17 @@ class AiPageMutationExecutor:
             raise AppException(status_code=409, code="AI_PROJECT_CONTEXT_REQUIRED", detail="创建页面缺少项目上下文。")
 
         validation_started_at = time.perf_counter()
+        capture_screenshot = get_settings().page_mutation_capture_screenshot
+        candidate_code = None
+        if capture_screenshot:
+            async def plan_identity(session: AsyncSession) -> None:
+                """保存未落库候选编码，重试或恢复沿用此身份，不提前创建业务页面。"""
+                nonlocal candidate_code
+                job, _run = await self._lock_owned_job(session, context=context, worker_id=worker_id)
+                candidate_code = await plan_candidate_code(session, job.candidate_code)
+                job.candidate_code = candidate_code
+                await session.commit()
+            await self._run_final_write(plan_identity)
         async with self._session_factory() as session:
             validation_result = await CodeCheckService(session).check_page_code(
                 page_id=None,
@@ -212,6 +226,7 @@ class AiPageMutationExecutor:
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
                 content=page_content,
+                **({"capture_screenshot": True, "candidate_code": candidate_code, "candidate_title": title} if capture_screenshot else {}),
             )
         logger.info(
             "AI 页面创建检查阶段完成。",
@@ -239,6 +254,7 @@ class AiPageMutationExecutor:
 
         await progress("saving")
         self._raise_if_lease_lost(lease_lost)
+        prepared_screenshot = await prepare_validation_screenshot(validation_result, workspace_id=context.workspace_id)
 
         async def save(session: AsyncSession) -> None:
             """在单个短事务内创建页面并同步收敛 Job。"""
@@ -257,7 +273,10 @@ class AiPageMutationExecutor:
                 ),
                 context.user_id,
                 commit=False,
+                **({"candidate_code": candidate_code} if candidate_code else {}),
             )
+            page_model = await session.get(Page, created.id)
+            screenshot = await publish_validation_screenshot(session, page=page_model, validation=validation_result, prepared=prepared_screenshot)
             response: dict[str, Any] = {
                 "success": True,
                 "message": "页面已创建。",
@@ -268,6 +287,7 @@ class AiPageMutationExecutor:
                 "speaker_notes": created.speaker_notes,
                 "project_id": created.project_id,
                 "version_no": created.current_version_no,
+                "screenshot": screenshot,
                 "diagnostics": _extract_diagnostics(validation_result),
                 "layout_analysis": _extract_layout_analysis(validation_result),
                 "code_check_summary": validation_result.get("summary"),
@@ -360,6 +380,7 @@ class AiPageMutationExecutor:
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
                 content=edit_result.next_content,
+                **({"capture_screenshot": True} if get_settings().page_mutation_capture_screenshot else {}),
             )
         logger.info(
             "AI 页面更新检查阶段完成。",
@@ -393,6 +414,7 @@ class AiPageMutationExecutor:
 
         await progress("saving")
         self._raise_if_lease_lost(lease_lost)
+        prepared_screenshot = await prepare_validation_screenshot(validation_result, workspace_id=context.workspace_id)
 
         async def save(session: AsyncSession) -> None:
             """在单个短事务内复核版本、写入新版本并同步收敛 Job。"""
@@ -412,12 +434,15 @@ class AiPageMutationExecutor:
                 context.user_id,
                 commit=False,
             )
+            page_model = await session.get(Page, updated_page.id)
+            screenshot = await publish_validation_screenshot(session, page=page_model, validation=validation_result, prepared=prepared_screenshot)
             response: dict[str, Any] = {
                 "success": True,
                 "message": "页面代码已更新并生成新版本。",
                 "page_id": updated_page.id,
                 "page_code": updated_page.code,
                 "version_no": updated_page.current_version_no,
+                "screenshot": screenshot,
                 "edits_applied": current_edit_result.applied_edit_count,
                 "diagnostics": _extract_diagnostics(validation_result),
                 "layout_analysis": _extract_layout_analysis(validation_result),

@@ -207,6 +207,7 @@ class CodeCheckService:
             candidate=candidate,
             execute_check=execute_check,
             capture_screenshot=capture_screenshot,
+            page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes},
         )
 
     async def _check_transient_page_code(
@@ -306,6 +307,7 @@ class CodeCheckService:
             candidate=candidate,
             execute_check=execute_check,
             capture_screenshot=capture_screenshot,
+            page_metadata={"code": draft_page.code, "title": draft_page.title, "speaker_notes": draft_page.speaker_notes},
         )
 
     async def check_component_code(
@@ -430,11 +432,16 @@ class CodeCheckService:
         component_preview_schema: str | None = None,
         component_type_value: str = "",
         profile_key: str = "",
+        page_metadata: dict[str, object] | None = None,
         capture_screenshot: bool = False,
     ) -> dict[str, object]:
         """鉴权之后按完整输入指纹复用检查结果，并对并发相同检查做 in-flight 合并。"""
 
         try:
+            if capture_screenshot:
+                from app.services.runtime_release_identity import refresh_runtime_release_identity
+                await self._release_session_before_diagnostics()
+                await refresh_runtime_release_identity()
             if kind == "component":
                 fingerprint = await self.fingerprint_builder.build_component_fingerprint(
                     workspace_id=workspace_id,
@@ -449,6 +456,7 @@ class CodeCheckService:
                     project_id=int(project_id or 0),
                     source=source,
                     importer_module_path=importer_module_path or "",
+                    **({"page_metadata": page_metadata} if capture_screenshot else {}),
                 )
         except AppException as exc:
             if kind == "component":
@@ -470,6 +478,7 @@ class CodeCheckService:
             "patch_repaired": candidate.patch_repaired,
             "canonical_diff": candidate.canonical_diff,
             "_code_check_cache": cache_source,
+            **({"_capture_identity": fingerprint, "_capture_metadata": page_metadata} if capture_screenshot else {}),
         }
 
     async def _dispatch_diagnostics(

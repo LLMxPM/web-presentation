@@ -136,7 +136,7 @@ class PageScreenshotFingerprintService:
                 if version_id is not None
                 else OwnerResourceTokens()
             )
-            snapshots[int(page.id)] = self._apply_resource_tokens(project_snapshot, resource_tokens)
+            snapshots[int(page.id)] = await self._with_render_context(page, self._apply_resource_tokens(project_snapshot, resource_tokens))
         return snapshots
 
     async def _with_page_resource_identity(
@@ -147,7 +147,20 @@ class PageScreenshotFingerprintService:
         """把页面引用资源的实时身份并入 config hash；无资源引用时保持基础快照。"""
 
         resource_tokens = await self._collect_page_resource_tokens(page)
-        return self._apply_resource_tokens(base, resource_tokens)
+        return await self._with_render_context(page, self._apply_resource_tokens(base, resource_tokens))
+
+    async def _with_render_context(self, page: Page, snapshot: PageScreenshotConfigSnapshot) -> PageScreenshotConfigSnapshot:
+        """叠加源码闭包、路由元数据、Kit/Runtime 构建与捕获策略，供所有截图入口共用。"""
+        from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
+        if page.project_id is None:
+            return snapshot
+        identity = await CodeCheckFingerprintBuilder(self.session).build_page_fingerprint(
+            workspace_id=page.workspace_id, project_id=page.project_id, source=page.page_content,
+            importer_module_path=f"src/views/{page.code}.{page.file_type}",
+            page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes})
+        return PageScreenshotConfigSnapshot(page_config=snapshot.page_config,
+            config_hash=hashlib.sha256(f"{snapshot.config_hash}|{identity}|page-static-capture.v1|dpr=1".encode()).hexdigest(),
+            theme_key=snapshot.theme_key, theme_config=snapshot.theme_config)
 
     def _apply_resource_tokens(
         self,

@@ -92,6 +92,10 @@ class RenderCoordinator:
 
         processed = 0
         try:
+            if time.monotonic() - getattr(self, "_last_screenshot_cleanup", 0) >= 60:
+                from app.services.validation_screenshot_cleanup import cleanup_validation_screenshots
+                await cleanup_validation_screenshots(self.session_factory)
+                self._last_screenshot_cleanup = time.monotonic()
             async with self.session_factory() as session:
                 repository = RenderRepository(session)
                 await repository.expire_requests()

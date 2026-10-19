@@ -32,6 +32,7 @@ class ApiMutationJob(Base):
     target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     base_version_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    candidate_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

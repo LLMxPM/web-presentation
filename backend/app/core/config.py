@@ -187,6 +187,7 @@ class AppSettings(BaseSettings):
     render_attempt_lease_seconds: float = 180.0
     render_unknown_reconcile_after_seconds: float = 30.0
     render_artifact_max_bytes: int = 32 * 1024 * 1024
+    page_mutation_capture_screenshot: bool = False
     render_runtime_navigation_base_url: str | None = None
     render_runtime_asset_base_url: str | None = None
     render_platform_asset_base_url: str | None = None

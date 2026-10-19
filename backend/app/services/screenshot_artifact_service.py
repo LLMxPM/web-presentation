@@ -12,6 +12,8 @@ from app.core.exceptions import AppException
 from app.models.page import Page
 from app.services.file_auth_service import FileAuthService
 from app.services.object_storage_service import ObjectStorageService
+from app.models.page_screenshot_artifact import PageScreenshotArtifact
+from sqlalchemy import select
 
 
 def screenshot_object_key(page_id: int, digest: str) -> str:
@@ -23,6 +25,8 @@ def screenshot_content_id(page: Page) -> str:
     """从新对象键提取内容 hash；旧数据使用可重新验证的 latest 指针。"""
     key = str(page.screenshot_storage_key or "")
     match = re.fullmatch(rf"page-screenshots/{int(page.id)}/objects/([a-f0-9]{{64}})\.png", key)
+    if not match:
+        match = re.fullmatch(r"page-screenshots/staged/\d+/[a-f0-9]{32}/([a-f0-9]{64})\.png", key)
     return match.group(1) if match else "latest"
 
 
@@ -32,7 +36,7 @@ def resolve_screenshot_object(page: Page, screenshot_id: str) -> tuple[str, str]
     if clean_id in {"latest", "current"}:
         key = str(page.screenshot_storage_key or "")
     elif re.fullmatch(r"[a-f0-9]{64}", clean_id):
-        key = screenshot_object_key(page.id, clean_id)
+        key = str(page.screenshot_storage_key) if clean_id == screenshot_content_id(page) else screenshot_object_key(page.id, clean_id)
     else:
         key = ""
     if not key:
@@ -46,7 +50,16 @@ def resolve_screenshot_object(page: Page, screenshot_id: str) -> tuple[str, str]
 async def serve_screenshot(request: Request, page: Page, screenshot_id: str, *, download: bool = False) -> Any:
     """在调用方完成页面鉴权后读取截图；旧可变 key 不进入不可变对象缓存。"""
     key, filename = resolve_screenshot_object(page, screenshot_id)
+    if re.fullmatch(r"[a-f0-9]{64}", screenshot_id):
+        from app.db.session import get_session_factory
+        async with get_session_factory()() as session:
+            mapped_key = await session.scalar(select(PageScreenshotArtifact.storage_key).where(
+                PageScreenshotArtifact.page_id == page.id, PageScreenshotArtifact.workspace_id == page.workspace_id,
+                PageScreenshotArtifact.sha256 == screenshot_id, PageScreenshotArtifact.expires_at.is_(None)).limit(1))
+            key = mapped_key or key
     match = re.fullmatch(rf"page-screenshots/{int(page.id)}/objects/([a-f0-9]{{64}})\.png", key)
+    if not match:
+        match = re.fullmatch(r"page-screenshots/staged/\d+/[a-f0-9]{32}/([a-f0-9]{64})\.png", key)
     storage = ObjectStorageService()
     if match:
         return await FileAuthService.serve_protected_file(

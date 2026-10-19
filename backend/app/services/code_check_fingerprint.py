@@ -92,6 +92,7 @@ class CodeCheckFingerprintBuilder:
         project_id: int,
         source: str,
         importer_module_path: str,
+        page_metadata: dict[str, object] | None = None,
     ) -> str:
         """页面检查指纹：源码 + 依赖版本 + 引用资源 + Kit/编译器 + 主题样式 + 规则版本。"""
 
@@ -118,6 +119,8 @@ class CodeCheckFingerprintBuilder:
             "workspace_id": int(workspace_id),
             "project_id": int(project_id),
             "module_path": importer_module_path or "",
+            "page_metadata": page_metadata or {},
+            "render_context": await self._page_render_context(project_id),
             "dependency_identity": dependency_identity,
             "referenced_assets": referenced_assets,
             "compiler_identity": _compiler_identity(),
@@ -128,6 +131,22 @@ class CodeCheckFingerprintBuilder:
             "audio_capabilities": audio_capability_identity(),
         }
         return compute_check_fingerprint(payload)
+
+    async def _page_render_context(self, project_id: int) -> dict[str, object]:
+        """将可被页面读取的项目配置与完整路由元数据纳入身份，避免标题/路由变化后复用旧图。"""
+        from app.models.workspace import Project
+        from app.services.project_route_service import ProjectRouteService
+        from app.services.project_config_service import ProjectConfigService
+        from app.core.config import get_settings
+
+        project = await self.session.get(Project, project_id)
+        if project is None:
+            return {}
+        config = ProjectConfigService(self.session)
+        return {"app": await config.build_runtime_app_dict(project),
+                "routes": await ProjectRouteService(self.session).build_runtime_route_config(project_id),
+                "renderer_profile": get_settings().render_profile_digest,
+                "capture_policy": "page-static-capture.v1"}
 
     async def build_component_fingerprint(
         self,
@@ -386,12 +405,14 @@ def _compiler_identity() -> dict[str, object]:
     """编译器/规则身份：Kit 清单内容 hash + 三维规则与引擎身份 + 解析器配置，避免只依赖进程级版本字符串。"""
 
     manifest = load_runtime_kit_manifest()
+    from app.services.runtime_release_identity import current_runtime_release_identity
     # 清单全文入指纹：即使 version 字段未变，exports 结构变化也必须失效缓存。
     manifest_hash = _hash_json_payload(manifest)
     return {
         "runtime_kit_version": str(manifest.get("version") or ""),
         "runtime_kit_manifest_hash": manifest_hash,
         "compile_config": _hash_json_payload(build_runtime_module_resolver_config()),
+        "runtime_build": current_runtime_release_identity(),
         # 三维接受规则与运行时引擎策略同源入指纹：规则或引擎策略变化必须使检查缓存失效。
         "model3d_rules_identity": _hash_json_payload(build_model3d_support_matrix()),
         "model3d_engine_identity": _hash_json_payload(manifest.get("model3d_engine") or {}),

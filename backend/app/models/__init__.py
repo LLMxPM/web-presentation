@@ -31,6 +31,7 @@ from app.models.page_component_dependency import PageVersionComponentDependency
 from app.models.page_component_resource import PageVersionComponentResource
 from app.models.page_component_usage import PageVersionComponentUsage
 from app.models.page_screenshot_job import PageScreenshotJob
+from app.models.page_screenshot_artifact import PageScreenshotArtifact
 from app.models.page_screenshot_job_group import PageScreenshotJobGroup, PageScreenshotJobGroupItem
 from app.models.render_attempt import RenderAttempt
 from app.models.render_execution import RenderResult, RenderSchedulerState, RenderWorker
@@ -52,6 +53,7 @@ from app.models.workspace_theme import WorkspaceTheme
 from app.models.system_setting import SystemSetting
 
 __all__ = [
+    "PageScreenshotArtifact",
     "SystemSetting",
     "AiLlmConfig",
     "AiLlmProviderConfig",

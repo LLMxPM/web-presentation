@@ -207,6 +207,8 @@ def _drop_model_canonical_diff(result: dict[str, Any], *, resource_type: str) ->
 
     if resource_type not in {"page", "component"}:
         return result
+    if any(key.startswith("_") for key in result):
+        result = {key: value for key, value in result.items() if not key.startswith("_")}
     data = result.get("data")
     if "canonical_diff" not in result and not (
         isinstance(data, dict) and "canonical_diff" in data

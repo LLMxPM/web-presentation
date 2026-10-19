@@ -44,11 +44,14 @@ from app.services.job_runtime_vocabulary import MUTATION_JOB_VOCABULARY
 from app.services.mutation_planners.component_mutation_planner import ComponentMutationPlanner
 from app.services.mutation_planners.page_mutation_planner import PageMutationPlanner
 from app.services.page_service import PageService
+from app.services.page_candidate_code import plan_candidate_code
+from app.services.validation_screenshot_publisher import prepare_validation_screenshot, publish_validation_screenshot
 from app.services.workspace_component_service import WorkspaceComponentService
 
 logger = logging.getLogger(__name__)
 
 RETRYABLE_ERROR_CODES = {
+    "PAGE_CANDIDATE_CODE_CONFLICT",
     "RUNTIME_UNAVAILABLE",
     "RENDER_SERVICE_UNAVAILABLE",
     "CHROMIUM_TIMEOUT",
@@ -473,6 +476,17 @@ class MutationJobService:
 
         async with session_factory() as session:
             if job.job_type == "page_create":
+                candidate_code = None
+                if self.settings.page_mutation_capture_screenshot:
+                    owned = await session.scalar(select(ApiMutationJob).where(
+                        ApiMutationJob.id == job.id, ApiMutationJob.status == "running",
+                        ApiMutationJob.worker_id == self.worker_id, ApiMutationJob.lease_generation == job.lease_generation,
+                        ApiMutationJob.lease_expires_at > utc_now(), ApiMutationJob.cancel_requested_at.is_(None)))
+                    if owned is None:
+                        raise AppException(409, "MUTATION_LEASE_LOST", "页面创建任务租约失效或已取消。")
+                    candidate_code = await plan_candidate_code(session, owned.candidate_code)
+                    owned.candidate_code = candidate_code
+                    await session.commit()
                 planner = PageMutationPlanner(session)
                 return await planner.plan_create(
                     workspace_id=job.workspace_id,
@@ -481,6 +495,7 @@ class MutationJobService:
                     title=payload.get("name") or payload.get("title") or "新页面",
                     page_content=payload.get("source_code") or payload.get("page_content") or "",
                     summary=payload.get("description") or payload.get("summary"),
+                    **({"candidate_code": candidate_code, "capture_screenshot": True} if candidate_code else {}),
                 )
             elif job.job_type == "page_edit":
                 planner = PageMutationPlanner(session)
@@ -492,6 +507,7 @@ class MutationJobService:
                     base_version_no=payload["base_version_no"],
                     user_id=job.created_by,
                     edits=payload["edits"],
+                    **({"capture_screenshot": True} if self.settings.page_mutation_capture_screenshot else {}),
                 )
             elif job.job_type == "component_create":
                 planner = ComponentMutationPlanner(session)
@@ -554,6 +570,11 @@ class MutationJobService:
         now = utc_now()
         session_factory = get_session_factory()
 
+        validation = getattr(plan_result, "validation_result", None) or {}
+        async with session_factory() as read_session:
+            owner_workspace = await read_session.scalar(select(ApiMutationJob.workspace_id).where(ApiMutationJob.id == job_id))
+        prepared_screenshot = await prepare_validation_screenshot(validation, workspace_id=owner_workspace or 0)
+
         async with session_factory() as session:
             # 1. CAS 锁定任务行
             stmt = (
@@ -593,6 +614,7 @@ class MutationJobService:
                     payload=page_req,
                     operator_id=job.created_by,
                     commit=False,
+                    **({"candidate_code": job.candidate_code} if job.candidate_code else {}),
                 )
                 target_id = created_page.id
                 validation_text = build_validation_text(
@@ -757,6 +779,10 @@ class MutationJobService:
                 }
 
             # 3. 标记任务成功
+            if job.job_type in {"page_create", "page_edit"} and target_id is not None:
+                page_model = await session.get(Page, target_id)
+                result_dict["screenshot"] = await publish_validation_screenshot(
+                    session, page=page_model, validation=validation, prepared=prepared_screenshot)
             job.status = "succeeded"
             job.target_id = target_id
             job.result_json = result_dict

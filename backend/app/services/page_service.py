@@ -121,6 +121,7 @@ class PageService:
         operator_id: int,
         *,
         route_options: PageCopyToProjectRequest | None = None,
+        candidate_code: str | None = None,
         commit: bool = True,
     ) -> PageItem:
         """创建页面资源；可由上层接管提交，以便和持久化任务状态保持原子性。"""
@@ -165,13 +166,16 @@ class PageService:
                 )
             return page_model
 
-        page_model = await create_with_generated_code(
-            self.session,
-            Page,
-            CODE_PREFIX_PAGE,
-            write_page,
-            commit=commit,
-        )
+        if candidate_code:
+            if await self.session.scalar(select(Page.id).where(Page.code == candidate_code)):
+                raise AppException(status_code=409, code="PAGE_CANDIDATE_CODE_CONFLICT", detail="候选编码已被占用，必须重新规划并校验。")
+            page_model = await write_page(candidate_code)
+            if commit:
+                await self.session.commit()
+        else:
+            page_model = await create_with_generated_code(
+                self.session, Page, CODE_PREFIX_PAGE, write_page, commit=commit,
+            )
         if not commit:
             await self.session.flush()
         await self.session.refresh(page_model)

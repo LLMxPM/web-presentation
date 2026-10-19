@@ -79,6 +79,8 @@ class PageMutationPlanner:
         page_content: str,
         summary: str | None = None,
         speaker_notes: str | None = None,
+        candidate_code: str | None = None,
+        capture_screenshot: bool = False,
     ) -> PreparedPageMutationResult:
         """规划页面创建：执行代码语法与场景布局诊断。"""
 
@@ -95,6 +97,7 @@ class PageMutationPlanner:
             workspace_id=workspace_id,
             user_id=user_id,
             content=page_content,
+            **({"capture_screenshot": True, "candidate_code": candidate_code, "candidate_title": title} if capture_screenshot else {}),
         )
 
         passed = is_validation_passed(validation_result)
@@ -134,6 +137,7 @@ class PageMutationPlanner:
         base_version_no: int,
         user_id: int,
         edits: list[dict[str, Any]],
+        capture_screenshot: bool = False,
     ) -> PreparedPageMutationResult:
         """规划页面更新：复核基线版本，应用代码 diff 并执行 Chromium 场景渲染诊断。"""
 
@@ -157,6 +161,7 @@ class PageMutationPlanner:
             workspace_id=workspace_id,
             user_id=user_id,
             content=applied.next_content,
+            **({"capture_screenshot": True} if capture_screenshot else {}),
         )
 
         passed = is_validation_passed(validation_result)

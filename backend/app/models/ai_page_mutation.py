@@ -58,6 +58,7 @@ class AiPageMutationJob(TimestampMixin, Base):
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
     page_id: Mapped[int | None] = mapped_column(ForeignKey("pages.id"), nullable=True, index=True)
     base_version_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    candidate_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
