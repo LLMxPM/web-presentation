@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_RUNTIME_AUDIO_CONFIG,
+  isInteractionCueKey,
   normalizeRuntimeAudioConfig,
   resolveAudioCue,
   resolveCueVolume,
+  resolveNarrationVolume,
 } from './audio-config'
 
 describe('runtime audio config', () => {
@@ -57,5 +59,25 @@ describe('runtime audio config', () => {
     })
 
     expect(resolveCueVolume(config, config.cues.confirm!)).toBe(0)
+  })
+
+  it('旁白有效音量按 master × narration × 组件音量计算', () => {
+    const config = normalizeRuntimeAudioConfig({
+      volume: { master: 0.5, narration: 0.4, effects: 1 },
+    })
+
+    expect(resolveNarrationVolume(config, 0.5)).toBeCloseTo(0.1)
+    expect(resolveNarrationVolume(config, 0)).toBe(0)
+    expect(resolveNarrationVolume({ ...config, volume: { ...config.volume, master: 0 } }, 1)).toBe(0)
+  })
+
+  it('公开 cue key 只接受 interaction.* 的合法分段', () => {
+    expect(isInteractionCueKey('interaction.confirm')).toBe(true)
+    expect(isInteractionCueKey('interaction.quiz.correct')).toBe(true)
+    expect(isInteractionCueKey('transition.forward')).toBe(false)
+    expect(isInteractionCueKey('interaction')).toBe(false)
+    expect(isInteractionCueKey('interaction.')).toBe(false)
+    expect(isInteractionCueKey('Interaction.confirm')).toBe(false)
+    expect(isInteractionCueKey(`interaction.${'a'.repeat(80)}`)).toBe(false)
   })
 })

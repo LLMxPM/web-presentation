@@ -10,6 +10,7 @@ import { useRouter } from 'vue-router'
 import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
 import { AUDIO_CUE_SERVICE_KEY, type AudioCueService } from '@/core/audio/audio-cue-context'
 import { AudioCueEngine, type AudioCueResult } from '@/core/audio/audio-cue-engine'
+import { isInteractionCueKey } from '@/core/audio/audio-config'
 import { audioConfig } from '@/core/utils/config'
 import { getRuntimePreloadedConfig, resolveResourcePath } from '@/core/utils/path'
 import { normalizeAssetKey } from '@/core/shared/runtime-preview'
@@ -55,6 +56,8 @@ export function useAudioCues(active: Ref<boolean>): RuntimeAudioCues {
   const noop = (): AudioCueResult => 'unavailable'
   const playInteractionCue = (key: string): AudioCueResult => {
     if (!engine || !active.value) return 'unavailable'
+    // transition 只能通过 shell 的单通道入口触发，页面与注入服务都不能抢占。
+    if (!isInteractionCueKey(key)) return 'unavailable'
     return engine.playInteraction(key)
   }
   const playTransitionCue = (direction: 1 | -1): AudioCueResult => {
@@ -72,9 +75,17 @@ export function useAudioCues(active: Ref<boolean>): RuntimeAudioCues {
   const handleFreeze = (): void => {
     engine?.suspend()
   }
+  /**
+   * BFCache 恢复时浏览器先派发 visibilitychange 再派发 persisted pageshow；
+   * 这里先停掉页面冻结前的残留短音效，再按可见性恢复，避免恢复后永久 suspend。
+   */
   const handlePageShow = (event: PageTransitionEvent): void => {
-    if (event.persisted) engine?.suspend()
-    else engine?.resume()
+    if (!event.persisted) {
+      engine?.resume()
+      return
+    }
+    engine?.suspend()
+    if (!document.hidden) engine?.resume()
   }
   onMounted(() => {
     document.addEventListener('visibilitychange', handleVisibility)

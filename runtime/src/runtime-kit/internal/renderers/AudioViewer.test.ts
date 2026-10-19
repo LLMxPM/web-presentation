@@ -7,6 +7,9 @@ import {
   initializeRuntimeExecution,
   resetRuntimeExecutionForTests,
 } from '@/core/execution/execution-scope'
+import type { RuntimePreloadedConfigBundle } from '@/core/shared/runtime-preview'
+import { loadAudioConfig } from '@/core/utils/config'
+import { setRuntimePreloadedConfig } from '@/core/utils/path'
 import AudioViewer from './AudioViewer.vue'
 
 const mountedApps: App<Element>[] = []
@@ -17,8 +20,10 @@ beforeEach(() => {
   Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value: pauseMock })
 })
 
-afterEach(() => {
+afterEach(async () => {
   for (const app of mountedApps.splice(0)) app.unmount()
+  setRuntimePreloadedConfig(undefined)
+  await loadAudioConfig(true)
   resetRuntimeExecutionForTests()
   document.body.innerHTML = ''
 })
@@ -68,6 +73,39 @@ describe('AudioViewer', () => {
     expect(audio?.volume).toBe(0.6)
     expect(audio?.playbackRate).toBe(1.25)
     expect(audio?.preload).toBe('auto')
+  })
+
+  it('旁白叠加项目 master × narration，内容音频不受项目音量影响', async () => {
+    setRuntimePreloadedConfig({
+      audio: { volume: { master: 0.5, narration: 0.4, effects: 1 }, cues: {} },
+    } as unknown as RuntimePreloadedConfigBundle)
+    await loadAudioConfig(true)
+
+    const narration = await mountViewer({ purpose: 'narration', volume: 0.5 })
+    expect(narration.host.querySelector<HTMLAudioElement>('audio')?.volume).toBeCloseTo(0.1)
+
+    const content = await mountViewer({ volume: 0.5 })
+    expect(content.host.querySelector<HTMLAudioElement>('audio')?.volume).toBeCloseTo(0.5)
+  })
+
+  it('主资源失败时切换到兜底且不报最终错误，兜底再失败才上报', async () => {
+    const onError = vi.fn()
+    const { host } = await mountViewer({
+      fallbackSrc: '/fallback.mp3',
+      fallbackMessage: '音频不可用',
+      onError,
+    })
+
+    host.querySelector('audio')!.dispatchEvent(new Event('error'))
+    await nextTick()
+    expect(onError).not.toHaveBeenCalled()
+    expect(host.querySelector('audio')?.getAttribute('src')).toBe('/fallback.mp3')
+
+    host.querySelector('audio')!.dispatchEvent(new Event('error'))
+    await nextTick()
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(host.querySelector('audio')).toBeNull()
+    expect(host.textContent).toContain('音频不可用')
   })
 
   it('旁白循环或数值越界时应进入有界错误状态且不渲染媒体', async () => {

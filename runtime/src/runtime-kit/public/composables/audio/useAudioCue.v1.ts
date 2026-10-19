@@ -5,6 +5,7 @@
  * 不暴露 URL、资产 ID、Audio 实例或音量绕过入口。
  */
 
+import { isInteractionCueKey } from '@/core/audio/audio-config'
 import { useInjectedAudioCueService } from '@/core/audio/audio-cue-context'
 import type { AudioCueResult } from '@/core/audio/audio-cue-engine'
 
@@ -17,8 +18,11 @@ export function useAudioCue(): UseAudioCueApi {
   const service = useInjectedAudioCueService()
   return {
     playCue: (key: string): AudioCueResult => {
-      if (typeof key !== 'string' || !key.trim()) return 'unavailable'
-      return service.playInteractionCue(key.trim())
+      if (typeof key !== 'string') return 'unavailable'
+      const normalized = key.trim()
+      // 公开 API 只允许 interaction.*；系统 transition 通道不向页面开放。
+      if (!isInteractionCueKey(normalized)) return 'unavailable'
+      return service.playInteractionCue(normalized)
     },
   }
 }

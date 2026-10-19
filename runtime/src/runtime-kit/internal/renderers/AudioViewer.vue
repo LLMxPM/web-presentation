@@ -34,7 +34,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
+import { resolveNarrationVolume } from '@/core/audio/audio-config'
 import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
+import { audioConfig } from '@/core/utils/config'
 import {
   resolveAudioPlaybackOptions,
   type AudioPreload,
@@ -109,6 +111,12 @@ const resolved = computed(() => {
   }
   return options
 })
+/** 旁白叠加项目 master × narration；内容音频只使用组件自身音量。 */
+const effectiveVolume = computed(() => (
+  resolved.value.error || resolved.value.purpose !== 'narration'
+    ? resolved.value.volume
+    : resolveNarrationVolume(audioConfig.value, resolved.value.volume)
+))
 const showMedia = computed(() => Boolean(activeSrc.value) && !resolved.value.error && !failed.value)
 const audioState = computed(() => (
   resolved.value.error || failed.value ? 'error' : activeSrc.value ? 'ready' : 'empty'
@@ -120,7 +128,7 @@ const fallbackError = computed(() => (
 /** 把已校验的动态音量和速率同步到原生媒体属性。 */
 function syncMediaProperties(element = mediaElement.value): void {
   if (!element || resolved.value.error) return
-  element.volume = resolved.value.volume
+  element.volume = effectiveVolume.value
   element.playbackRate = resolved.value.playbackRate
 }
 
@@ -145,7 +153,7 @@ watch(mediaElement, (element, previous) => {
 }, { flush: 'post' })
 
 watch(
-  () => [resolved.value.volume, resolved.value.playbackRate] as const,
+  () => [effectiveVolume.value, resolved.value.playbackRate] as const,
   () => syncMediaProperties(),
 )
 
@@ -158,15 +166,17 @@ watch(
   },
 )
 
-/** 主资源失败时只尝试一次兼容兜底地址，兜底仍失败则展示有界错误占位。 */
+/**
+ * 主资源失败时只尝试一次兼容兜底地址，兜底仍失败才上报最终错误。
+ * 切换到兜底不算失败，避免放映宿主在兜底仍可能发声时提前中止。
+ */
 function handleMediaError(event: Event): void {
   if (props.fallbackSrc && activeSrc.value !== props.fallbackSrc) {
     activeSrc.value = props.fallbackSrc
     emit('media-reset')
+    return
   }
-  else {
-    failed.value = true
-  }
+  failed.value = true
   emit('error', event)
 }
 

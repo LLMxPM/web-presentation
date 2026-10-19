@@ -69,3 +69,13 @@ export function resolveAudioCue(config: RuntimeAudioConfig, key: string): Runtim
 export function resolveCueVolume(config: RuntimeAudioConfig, cue: RuntimeAudioCue): number {
   return normalizeGain(config.volume.master * config.volume.effects * cue.gain, 0)
 }
+
+/** 计算旁白有效音量：master × narration × AssetAudio.volume。 */
+export function resolveNarrationVolume(config: RuntimeAudioConfig, componentVolume: number): number {
+  return normalizeGain(config.volume.master * config.volume.narration * componentVolume, 0)
+}
+
+/** 公开 composable 只接受 interaction.* key；transition 通道只能由 shell 触发。 */
+export function isInteractionCueKey(value: string): boolean {
+  return value.length <= 80 && /^interaction\.[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/.test(value)
+}

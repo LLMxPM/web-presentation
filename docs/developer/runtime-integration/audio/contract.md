@@ -138,6 +138,8 @@ M2 新增项目级音频设置，存储中把音量设置与资源绑定分开�
 音效 = master × effects × binding.gain
 ```
 
+Applier 位置：旁白由 `AudioViewer` 在设置原生 `volume` 时叠加项目快照；cue 由 `AudioCueEngine` 在播放时计算。两者都不向页面暴露音量入口。
+
 Runtime 会话静音不写回项目配置，初始为未静音；用户可通过控制条和 `M` 快捷键切换。项目没有绑定 cue 时完全静默，不内置默认音效文件。
 
 cue key 规则为小写点分段：`^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$`，最大 80 字符。系统保留：
@@ -204,7 +206,7 @@ function confirm(): void {
 }
 ```
 
-返回值只表达 `played | skipped | unavailable` 等同步可观察状态，页面不得依赖 cue 播放完成推进业务。composable 通过 Runtime 注入服务工作；组件预览、捕获、导出和未提供 shell 的上下文返回稳定 no-op。
+返回值只表达 `played | skipped | unavailable` 等同步可观察状态，页面不得依赖 cue 播放完成推进业务。composable 通过 Runtime 注入服务工作；组件预览、捕获、导出和未提供 shell 的上下文返回稳定 no-op。公开 API 只接受合法 `interaction.*` key；`transition.forward` / `transition.backward` 由 shell 切页单通道独占，页面调用返回 `unavailable`。
 
 ## 7. 切页音效触发
 

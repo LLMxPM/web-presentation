@@ -1631,11 +1631,12 @@
         "usage": [
           "import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v1'",
           "const { playCue } = useAudioCue()",
-          "<button @click=\"playCue('button_confirm')\">确认</button>"
+          "<button @click=\"playCue('interaction.confirm')\">确认</button>"
         ],
         "returns": "对象：playCue(key) 同步返回 'played' | 'skipped' | 'unavailable'，不等待播放结束。",
-        "return_example": ["const { playCue } = useAudioCue()", "playCue('button_confirm') // 'played'"],
+        "return_example": ["const { playCue } = useAudioCue()", "playCue('interaction.confirm') // 'played'"],
         "constraints": [
+          "只接受 interaction.* 形式的语义 cue key；transition.forward / transition.backward 由 Runtime 切页通道独占，页面调用返回 unavailable。",
           "只接受项目音频设置中绑定的语义 cue key，不接受 URL、资源 ID、音量或 Audio 实例。",
           "音效只在放映或演讲观众等允许播放的执行上下文生效；预览、缩略图、截图和导出返回 no-op。",
           "Runtime 未提供音效服务、cue 未绑定或会话静音时不抛异常，业务逻辑不得等待或依赖播放结果。",

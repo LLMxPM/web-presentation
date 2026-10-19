@@ -147,7 +147,19 @@ describe('useAudioCues', () => {
 
     expect(pagePlay('')).toBe('unavailable')
     expect(pagePlay('   ')).toBe('unavailable')
+    expect(pagePlay('interaction.CONFIRM')).toBe('unavailable')
     expect(FakeAudio.instances).toHaveLength(0)
+  })
+
+  it('公开 API 与注入服务拒绝 transition.*，不能抢占切页单通道', async () => {
+    const { host, pagePlay } = await mountAudio(true)
+
+    expect(pagePlay('transition.forward')).toBe('unavailable')
+    expect(host.playInteractionCue('transition.forward')).toBe('unavailable')
+    expect(FakeAudio.instances).toHaveLength(0)
+
+    expect(pagePlay('interaction.confirm')).toBe('played')
+    expect(FakeAudio.instances).toHaveLength(1)
   })
 
   it('方向映射到前进/后退绑定并复用切页通道', async () => {
@@ -215,6 +227,19 @@ describe('useAudioCues', () => {
 
     window.dispatchEvent(new Event('pageshow'))
     expect(pagePlay('interaction.after-resume')).toBe('played')
+  })
+
+  it('BFCache persisted pageshow 停止残留音效后恢复新 cue', async () => {
+    const { pagePlay } = await mountAudio(true)
+    expect(pagePlay('interaction.confirm')).toBe('played')
+    const element = FakeAudio.instances[0]
+
+    const event = new Event('pageshow') as PageTransitionEvent
+    Object.defineProperty(event, 'persisted', { value: true })
+    window.dispatchEvent(event)
+
+    expect(element.paused).toBe(true)
+    expect(pagePlay('interaction.open')).toBe('played')
   })
 
   it('卸载时移除监听并释放正在播放的音频', async () => {
