@@ -11,8 +11,7 @@ from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
 from app.models.page import Page
 from app.models.page_screenshot_artifact import PageScreenshotArtifact
-from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
-from app.services.code_check_result_cache import compute_check_fingerprint
+from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder, capture_check_fingerprint
 from app.services.object_storage_service import ObjectStorageService
 from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
 from render_contracts.tokens import sha256_hex
@@ -81,7 +80,7 @@ async def publish_validation_screenshot(session: AsyncSession, *, page: Page, va
         workspace_id=page.workspace_id, project_id=page.project_id, source=page.page_content,
         importer_module_path=f"src/views/{page.code}.{page.file_type}",
         page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes})
-    identity = compute_check_fingerprint({"diagnostics": base, "capture_screenshot": True, "capture_policy": "page-static-capture.v1"})
+    identity = capture_check_fingerprint(base)
     if identity != prepared.identity:
         logger.info("页面渲染输入变化，拒绝发布候选图。", extra={"event": "validation.screenshot.stale", "page_id": page.id})
         return screenshot_status(version_no=page.current_version_no, reason="SCREENSHOT_INPUT_CHANGED")

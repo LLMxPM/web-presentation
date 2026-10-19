@@ -37,8 +37,15 @@ from app.services.page_screenshot_fingerprint_service import (
 )
 from app.services.resource_reference_parser import ResourceReferenceParser
 from app.services.workspace_theme_service import WorkspaceThemeService
+from render_contracts.screenshot import CAPTURE_POLICY_VERSION
 
 _PAGE_MODULE_PATH_PATTERN = re.compile(r"^src/views/(?P<code>[A-Za-z0-9_-]+)\.(?P<file_type>[A-Za-z0-9]+)$")
+
+
+def capture_check_fingerprint(diagnostic_fingerprint: str) -> str:
+    """有图与无图检查不合并，捕获策略升级必须使结果缓存与发布身份一并失效。"""
+    return compute_check_fingerprint({"diagnostics": diagnostic_fingerprint, "capture_screenshot": True,
+                                      "capture_policy": CAPTURE_POLICY_VERSION})
 
 
 def _sha256_text(value: str) -> str:
@@ -146,7 +153,7 @@ class CodeCheckFingerprintBuilder:
         return {"app": await config.build_runtime_app_dict(project),
                 "routes": await ProjectRouteService(self.session).build_runtime_route_config(project_id),
                 "renderer_profile": get_settings().render_profile_digest,
-                "capture_policy": "page-static-capture.v1"}
+                "capture_policy": CAPTURE_POLICY_VERSION}
 
     async def build_component_fingerprint(
         self,

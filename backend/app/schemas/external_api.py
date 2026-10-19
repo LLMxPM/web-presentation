@@ -8,6 +8,7 @@ from typing import Any, Generic, Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas import audio as audio_schema
+from app.schemas.mutation_result import ExternalMutationResult
 from app.schemas.audio import (
     AUDIO_CAPABILITY_AUDIO_ASSETS,
     AUDIO_CAPABILITY_AUDIO_CUES,
@@ -494,7 +495,7 @@ class ExternalMutationJobResponse(BaseModel):
     last_error_code: str | None = Field(default=None, description="最近一次错误码")
     cancel_requested_at: datetime | None = Field(default=None, description="协作式取消请求时间")
     retry_of_job_id: str | None = Field(default=None, description="人工重试来源任务公开标识")
-    result: dict[str, Any] | None = Field(default=None, description="任务成功后的输出结果")
+    result: ExternalMutationResult | None = Field(default=None, description="任务成功后的输出结果；页面附图 pending 表示待后续按需生成")
     error: ExternalErrorDetail | None = Field(default=None, description="任务失败或取消时的结构化错误")
     created_at: datetime
     started_at: datetime | None = None

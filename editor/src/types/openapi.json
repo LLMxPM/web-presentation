@@ -1637,6 +1637,97 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/audio-cues/clear": {
+      "post": {
+        "tags": [
+          "External Projects"
+        ],
+        "summary": "Clear Project Audio Cues",
+        "description": "清空项目 cue 绑定并保留三段音量（支持 Idempotency-Key 幂等保护）。\n\n能力关闭时仍允许清空历史绑定，便于降级治理；本接口不接受新增或恢复绑定。\n单事务只删除绑定，不读出并重写音量，避免覆盖并发音量更新。",
+        "operationId": "clear_project_audio_cues_api_v1_projects__project_id__audio_cues_clear_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Workspace-Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/route-tree": {
       "get": {
         "tags": [
@@ -31891,15 +31982,13 @@
           "result": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/ExternalMutationResult"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Result",
-            "description": "任务成功后的输出结果"
+            "description": "任务成功后的输出结果；页面附图 pending 表示待后续按需生成"
           },
           "error": {
             "anyOf": [
@@ -31955,6 +32044,17 @@
         ],
         "title": "ExternalMutationJobResponse",
         "description": "异步变更任务状态响应模型。"
+      },
+      "ExternalMutationResult": {
+        "properties": {
+          "screenshot": {
+            "$ref": "#/components/schemas/MutationScreenshotResult"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "ExternalMutationResult",
+        "description": "只约束新增截图对象，其余已有及未来业务字段保持透传，不丢失旧客户端数据。"
       },
       "ExternalPageApplyEditsMutationRequest": {
         "properties": {
@@ -33479,6 +33579,54 @@
         "type": "object",
         "title": "ModelCatalogSyncItem",
         "description": "目录同步可观测状态。"
+      },
+      "MutationScreenshotResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "pending",
+              "skipped"
+            ],
+            "title": "Status"
+          },
+          "version_no": {
+            "type": "integer",
+            "title": "Version No"
+          },
+          "screenshot_id": {
+            "type": "string",
+            "title": "Screenshot Id"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "status",
+          "version_no"
+        ],
+        "title": "MutationScreenshotResult",
+        "description": "ready 表示可读取的正式图片；pending 不暗示已入队，skipped 表示未请求截图。"
       },
       "PageComponentResourceItem": {
         "properties": {

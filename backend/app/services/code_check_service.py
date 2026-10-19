@@ -468,9 +468,8 @@ class CodeCheckService:
             return self._failed_result(code=exc.code, message=exc.detail)
 
         if kind == "page" and capture_screenshot:
-            from app.services.code_check_result_cache import compute_check_fingerprint
-            fingerprint = compute_check_fingerprint({"diagnostics": fingerprint, "capture_screenshot": True,
-                                                     "capture_policy": "page-static-capture.v1"})
+            from app.services.code_check_fingerprint import capture_check_fingerprint
+            fingerprint = capture_check_fingerprint(fingerprint)
         result, cache_source = await self.result_cache.get_or_execute(fingerprint, execute_check)
         # 命中/合并结果复用检查结论，但回填本次候选的 edits 元数据，避免复用别的编辑路径 diff。
         return {

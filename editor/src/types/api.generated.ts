@@ -1226,11 +1226,16 @@ export type ExternalMutationJobResponse = {
   "last_error_code"?: (string) | (null)
   "cancel_requested_at"?: (string) | (null)
   "retry_of_job_id"?: (string) | (null)
-  "result"?: (Record<string, unknown>) | (null)
+  "result"?: (ExternalMutationResult) | (null)
   "error"?: (ExternalErrorDetail) | (null)
   "created_at": string
   "started_at"?: (string) | (null)
   "finished_at"?: (string) | (null)
+}
+
+export type ExternalMutationResult = {
+  "screenshot"?: MutationScreenshotResult
+  [key: string]: unknown
 }
 
 export type ExternalPageApplyEditsMutationRequest = {
@@ -1481,6 +1486,16 @@ export type ModelCatalogSyncItem = {
   "last_success_at"?: (string) | (null)
   "last_error"?: (string) | (null)
   "syncing"?: boolean
+}
+
+export type MutationScreenshotResult = {
+  "status": "ready" | "pending" | "skipped"
+  "version_no": number
+  "screenshot_id"?: string
+  "width"?: number
+  "height"?: number
+  "reason_code"?: (string) | (null)
+  [key: string]: unknown
 }
 
 export type PageComponentResourceItem = {
