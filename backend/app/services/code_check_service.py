@@ -125,6 +125,8 @@ class CodeCheckService:
         capture_screenshot: bool = False,
         candidate_code: str | None = None,
         candidate_title: str | None = None,
+        candidate_speaker_notes: str | None = None,
+        candidate_route_options: dict | None = None,
     ) -> dict[str, object]:
         """检查页面当前源码、完整候选源码或 edits 应用后的候选源码。
 
@@ -141,9 +143,12 @@ class CodeCheckService:
                 capture_screenshot=capture_screenshot,
                 candidate_code=candidate_code,
                 candidate_title=candidate_title,
+                candidate_speaker_notes=candidate_speaker_notes,
+                candidate_route_options=candidate_route_options,
             )
 
         page = await PageService(self.session)._get_page_or_raise(page_id)
+        await PageService(self.session)._ensure_page_access(page, user_id=user_id)
         if workspace_id is not None and page.workspace_id != workspace_id:
             raise AppException(status_code=403, code="AI_PAGE_SCOPE_DENIED", detail="页面不属于当前工作空间，拒绝检查。")
         if page.project_id is None:
@@ -221,6 +226,8 @@ class CodeCheckService:
         capture_screenshot: bool = False,
         candidate_code: str | None = None,
         candidate_title: str | None = None,
+        candidate_speaker_notes: str | None = None,
+        candidate_route_options: dict | None = None,
     ) -> dict[str, object]:
         """检查新增页面写入前的未落库完整候选源码。"""
 
@@ -253,6 +260,8 @@ class CodeCheckService:
 
         preview_service = PreviewService(self.session)
         project = await preview_service.artifact_builder.get_project_or_raise(project_id)
+        from app.services.workspace_service import WorkspaceService
+        await WorkspaceService(self.session).ensure_access(project.workspace_id, user_id=user_id)
         if workspace_id is not None and project.workspace_id != workspace_id:
             raise AppException(status_code=403, code="AI_PAGE_SCOPE_DENIED", detail="项目不属于当前工作空间，拒绝检查。")
 
@@ -262,11 +271,14 @@ class CodeCheckService:
             current_version_no=1,
             file_type=PageFileType.VUE.value,
             title=candidate_title or "未保存页面草稿",
+            speaker_notes=candidate_speaker_notes,
             status=RecordStatus.ACTIVE.value,
             workspace_id=project.workspace_id,
             project_id=project.id,
         )
         module_path = f"src/views/{draft_page.code}.{draft_page.file_type}"
+        from app.services.page_candidate_routes import candidate_runtime_routes
+        runtime_routes_override = await candidate_runtime_routes(self.session, page=draft_page, options=candidate_route_options)
 
         async def execute_check() -> dict[str, object]:
             try:
@@ -281,6 +293,7 @@ class CodeCheckService:
                         )
                     },
                     transient_pages=[draft_page],
+                    **({"runtime_routes_override": runtime_routes_override} if runtime_routes_override is not None else {}),
                     snapshot_profile="page_diagnostics",
                 )
             except AppException as exc:
@@ -308,6 +321,7 @@ class CodeCheckService:
             execute_check=execute_check,
             capture_screenshot=capture_screenshot,
             page_metadata={"code": draft_page.code, "title": draft_page.title, "speaker_notes": draft_page.speaker_notes},
+            runtime_routes_override=runtime_routes_override,
         )
 
     async def check_component_code(
@@ -433,13 +447,16 @@ class CodeCheckService:
         component_type_value: str = "",
         profile_key: str = "",
         page_metadata: dict[str, object] | None = None,
+        runtime_routes_override: dict[str, object] | None = None,
         capture_screenshot: bool = False,
     ) -> dict[str, object]:
         """鉴权之后按完整输入指纹复用检查结果，并对并发相同检查做 in-flight 合并。"""
 
         try:
             if capture_screenshot:
-                from app.services.runtime_release_identity import refresh_runtime_release_identity
+                from app.services.runtime_release_identity import (
+                    refresh_runtime_release_identity,
+                )
                 await self._release_session_before_diagnostics()
                 await refresh_runtime_release_identity()
             if kind == "component":
@@ -457,6 +474,7 @@ class CodeCheckService:
                     source=source,
                     importer_module_path=importer_module_path or "",
                     **({"page_metadata": page_metadata} if capture_screenshot else {}),
+                    **({"runtime_routes_override": runtime_routes_override} if runtime_routes_override is not None else {}),
                 )
         except AppException as exc:
             if kind == "component":
@@ -471,6 +489,9 @@ class CodeCheckService:
             from app.services.code_check_fingerprint import capture_check_fingerprint
             fingerprint = capture_check_fingerprint(fingerprint)
         result, cache_source = await self.result_cache.get_or_execute(fingerprint, execute_check)
+        logger.info("代码检查结果已解析。", extra={"event": "code_check.result", "fingerprint": fingerprint,
+                    "cache_source": cache_source, "capture_screenshot": capture_screenshot,
+                    "screenshot_status": (result.get("_screenshot_phase") or {}).get("status")})
         # 命中/合并结果复用检查结论，但回填本次候选的 edits 元数据，避免复用别的编辑路径 diff。
         return {
             **result,

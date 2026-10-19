@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from render_contracts.schema import ExecutionResult
-
 from wp_renderer.engine.joint_capture import append_screenshot
 
 

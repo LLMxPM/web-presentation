@@ -14,11 +14,14 @@ from app.ai.tools.page.apply_page_edits import (
 from app.ai.tools.project.project_pages import (
     _has_warning_diagnostics,
 )
-from app.services.validation_result import is_validation_passed, resolve_validation_error_code
 from app.ai.tools.shared import apply_source_edits
 from app.core.exceptions import AppException
 from app.services.code_check_service import CodeCheckService
 from app.services.page_service import PageService
+from app.services.validation_result import (
+    is_validation_passed,
+    resolve_validation_error_code,
+)
 
 logger = logging.getLogger(__name__)
 

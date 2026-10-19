@@ -32,12 +32,15 @@ from render_contracts.errors import (
 from render_contracts.schema import ArtifactDescriptor, DiagnosticItem, ExecutionResult
 from render_contracts.tokens import sha256_hex
 
+from wp_renderer.engine.joint_capture import append_screenshot
 from wp_renderer.engine.layout_scripts import (
     build_component_render_layout_script,
     build_page_render_layout_script,
 )
-from wp_renderer.engine.render_ready import validate_static_render_bridge, wait_for_render_ready
-from wp_renderer.engine.joint_capture import append_screenshot
+from wp_renderer.engine.render_ready import (
+    validate_static_render_bridge,
+    wait_for_render_ready,
+)
 from wp_renderer.engine.static_media import (
     MIN_STATIC_MEDIA_TIMEOUT_MS,
     STATIC_MEDIA_TIMEOUT_MS,
@@ -159,6 +162,8 @@ class RenderExecutor:
         self._shutdown_started = False
         self._deadline: DeadlineClock | None = None
         self._unsettled_tasks: set[asyncio.Future[Any]] = set()
+        self._browser_launch_count = 0
+        self._navigation_count = 0
 
     async def execute(self, *, artifact_dir: Path) -> ExecutionResult:
         """按 operation 执行页面截图、页面诊断或组件诊断；全程受硬期限与取消约束。"""
@@ -185,6 +190,8 @@ class RenderExecutor:
         await self._launch_browser(request)
         try:
             self._check_cancel(stage="navigate")
+            self._navigation_count += 1
+            self.slot.navigations_total = getattr(self.slot, "navigations_total", 0) + 1
             await self._await_bounded(
                 self._page.goto(navigation_url, wait_until="domcontentloaded"),
                 stage="navigate",
@@ -223,7 +230,9 @@ class RenderExecutor:
             if request.operation == OPERATION_PAGE_CAPTURE:
                 return await self._await_bounded(self._capture_page(artifact_dir), stage="capture")
             if request.operation == OPERATION_PAGE_DIAGNOSE:
+                diagnose_started = time.perf_counter()
                 result = await self._await_bounded(self._diagnose_page(), stage="diagnose")
+                result.environment_summary["diagnose_ms"] = round((time.perf_counter() - diagnose_started) * 1000, 2)
                 return await append_screenshot(self, result, ready=ready, artifact_dir=artifact_dir)
             if request.operation == OPERATION_COMPONENT_DIAGNOSE:
                 return await self._await_bounded(self._diagnose_component(), stage="diagnose")
@@ -316,6 +325,8 @@ class RenderExecutor:
             self._playwright.chromium.launch(headless=True),
             stage="launch",
         )
+        self._browser_launch_count += 1
+        self.slot.browser_launches_total = getattr(self.slot, "browser_launches_total", 0) + 1
         viewport = request.viewport
         self._context = await self._await_bounded(
             self._browser.new_context(
@@ -527,6 +538,8 @@ class RenderExecutor:
                 "runtime_protocol_version": self.slot.settings.runtime_protocol_version,
                 "worker_id": self.slot.worker_id,
                 "worker_epoch": self.slot.worker_epoch,
+                "browser_launch_count": self._browser_launch_count,
+                "navigation_count": self._navigation_count,
             },
             finished_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             # 产物尚在 retained 状态，cleaned_at 留空，resource_state 与真实状态一致。

@@ -8,22 +8,6 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.config import get_settings
-from app.core.exceptions import AppException
-from app.core.time_utils import utc_now
-from app.db.session import get_session_factory
-from app.services.asset_binding_service import OWNER_KIND_RENDER_REQUEST, AssetBindingService
-from app.services.rendering.coordinator import RenderCoordinator, get_render_coordinator
-from app.services.rendering.credentials import RenderCredentialService
-from app.services.rendering.errors import render_error_to_app_exception
-from app.services.rendering.layout_contract import normalize_layout_analysis
-from app.services.rendering.request_service import RenderRequestService
-from app.services.rendering.sanitize import sanitize_error_message
-from app.services.rendering.snapshot_service import RenderSnapshotService
-from app.services.rendering.target_resolver import RenderTargetResolver
-from app.services.runtime_artifact_store import RuntimeArtifactStore
 from render_contracts.constants import (
     OPERATION_PAGE_CAPTURE,
     OPERATION_PAGE_DIAGNOSE,
@@ -36,6 +20,25 @@ from render_contracts.errors import (
     RenderExecutionError,
 )
 from render_contracts.tokens import sha256_hex
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.core.exceptions import AppException
+from app.core.time_utils import utc_now
+from app.db.session import get_session_factory
+from app.services.asset_binding_service import (
+    OWNER_KIND_RENDER_REQUEST,
+    AssetBindingService,
+)
+from app.services.rendering.coordinator import RenderCoordinator, get_render_coordinator
+from app.services.rendering.credentials import RenderCredentialService
+from app.services.rendering.errors import render_error_to_app_exception
+from app.services.rendering.layout_contract import normalize_layout_analysis
+from app.services.rendering.request_service import RenderRequestService
+from app.services.rendering.sanitize import sanitize_error_message
+from app.services.rendering.snapshot_service import RenderSnapshotService
+from app.services.rendering.target_resolver import RenderTargetResolver
+from app.services.runtime_artifact_store import RuntimeArtifactStore
 
 logger = logging.getLogger(__name__)
 

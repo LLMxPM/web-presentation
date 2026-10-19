@@ -6,8 +6,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
-from app.ai.platform_tools import AgentToolResult, RECOVERABLE_TOOL_ERROR_KIND
-
+from app.ai.platform_tools import RECOVERABLE_TOOL_ERROR_KIND, AgentToolResult
 
 MAX_VALIDATION_ISSUES = 10
 _PAGE_LAYOUT_SECTIONS = (

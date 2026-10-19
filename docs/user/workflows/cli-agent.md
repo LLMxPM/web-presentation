@@ -14,6 +14,8 @@
 
 ## 2. 安装 CLI
 
+创作时先查真实资源和 Runtime Kit 契约，再提交源码；成功写入已有自动校验，不需要例行重复 `validate`。结果中的 `screenshot.status=ready` 表示对应版本图片已经发布，可用 `wp page screenshot <page_id> --screenshot-id <screenshot_id> --output <path>` 直接下载；`pending` 时仅在需要看图时请求最新截图。生成截图与完成视觉复核是两个步骤。
+
 推荐使用 `uv` 或 `pipx` 全局安装官方发布版：
 
 ```bash

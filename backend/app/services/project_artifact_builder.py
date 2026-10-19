@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from collections.abc import Iterable, Mapping
 from typing import Literal
 
 from sqlalchemy import select
@@ -25,16 +25,18 @@ from app.repositories.module_dependency_repository import (
     ModuleDependencyRepository,
 )
 from app.repositories.workspace_component_repository import WorkspaceComponentRepository
-from app.repositories.workspace_component_version_repository import WorkspaceComponentVersionRepository
-from app.schemas.project_app_config import ProjectAppPageConfig
+from app.repositories.workspace_component_version_repository import (
+    WorkspaceComponentVersionRepository,
+)
 from app.schemas.project import normalize_project_build_extra_assets_config
+from app.schemas.project_app_config import ProjectAppPageConfig
 from app.schemas.release import PreviewEntryDescriptor
 from app.services.asset_manifest_metadata_service import build_asset_manifest_metadata
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.project_audio_settings_service import ProjectAudioSettingsService
 from app.services.project_config_service import ProjectConfigService
-from app.services.resource_reference_parser import ResourceReferenceParser
 from app.services.project_route_service import ProjectRouteService
+from app.services.resource_reference_parser import ResourceReferenceParser
 from app.services.runtime_icon_service import RuntimeIconService
 from app.services.workspace_font_service import WorkspaceFontService
 
@@ -57,6 +59,7 @@ class ProjectArtifactSnapshot:
     asset_metadata: dict[str, dict[str, object]]
     modules_metadata: dict[str, dict[str, str]]
     modules_data: list[dict[str, str]]
+    entry_page: dict[str, object] | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -117,6 +120,7 @@ class ProjectArtifactBuilder:
         entry_descriptor: PreviewEntryDescriptor | None = None,
         page_module_overrides: dict[str, ProjectPageModuleOverride] | None = None,
         transient_pages: list[Page] | None = None,
+        runtime_routes_override: dict[str, object] | None = None,
         asset_delivery_mode: AssetDeliveryMode = "public",
         asset_snapshot_mode: AssetSnapshotMode = "all",
         snapshot_profile: ArtifactSnapshotProfile = "full",
@@ -127,7 +131,7 @@ class ProjectArtifactBuilder:
 
         settings = get_settings()
         project = await self.get_project_or_raise(project_id)
-        runtime_route_config = await self.project_route_service.build_runtime_route_config(project.id)
+        runtime_route_config = runtime_routes_override if runtime_routes_override is not None else await self.project_route_service.build_runtime_route_config(project.id)
         normalized_entry_descriptor = entry_descriptor or PreviewEntryDescriptor(
             entry_type="route",
             route=self.resolve_default_entry_route(runtime_route_config),
@@ -240,6 +244,8 @@ class ProjectArtifactBuilder:
             asset_metadata=asset_metadata,
             modules_metadata=modules_metadata,
             modules_data=modules_data,
+            entry_page=({"code": standalone_entry_page.code, "title": standalone_entry_page.title,
+                         "speaker_notes": standalone_entry_page.speaker_notes} if standalone_entry_page else None),
         )
 
     async def collect_project_build_asset_reference_summary(

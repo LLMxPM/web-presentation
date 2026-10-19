@@ -31,6 +31,8 @@ English | [简体中文](./README.zh-CN.md)
 
 ## Product Positioning
 
+页面创建和源码编辑支持在同一次布局诊断中附带截图，保存后可按对应版本的内容 ID 直接下载或供视觉工具读取。附图失败单独表达，页面仍遵循原校验门禁；生成 PNG 不代表已经完成视觉、声音或交互验收。
+
 Existing AI slide generation skills and tools demonstrate that AI excels at structuring content, visual layout generation, and code-based expressions.
 
 | Approach | Typical Output | Key Advantages | Typical Boundaries / Limitations |

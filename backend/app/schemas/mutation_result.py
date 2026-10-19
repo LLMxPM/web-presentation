@@ -1,8 +1,9 @@
 """文件功能：冻结页面 Mutation 截图描述的公开字段，并保留既有页面/组件结果的增量兼容。"""
 
-from typing import Any, Literal
-from typing_extensions import TypedDict, NotRequired
+from typing import Literal
+
 from pydantic import ConfigDict
+from typing_extensions import NotRequired, TypedDict
 
 
 class MutationScreenshotResult(TypedDict):

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, Integer, JSON, String
+from sqlalchemy import JSON, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.time_utils import utc_now

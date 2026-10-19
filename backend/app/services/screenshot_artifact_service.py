@@ -7,13 +7,13 @@ import re
 from typing import Any
 
 from fastapi import Request
+from sqlalchemy import select
 
 from app.core.exceptions import AppException
 from app.models.page import Page
+from app.models.page_screenshot_artifact import PageScreenshotArtifact
 from app.services.file_auth_service import FileAuthService
 from app.services.object_storage_service import ObjectStorageService
-from app.models.page_screenshot_artifact import PageScreenshotArtifact
-from sqlalchemy import select
 
 
 def screenshot_object_key(page_id: int, digest: str) -> str:

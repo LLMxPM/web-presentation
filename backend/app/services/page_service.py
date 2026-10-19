@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.code_generator import CODE_PREFIX_PAGE, create_with_generated_code
+from app.core.code_generator import (
+    CODE_PREFIX_PAGE,
+    create_with_generated_code,
+    is_code_unique_integrity_error,
+)
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.text_normalizer import normalize_text_to_lf
@@ -25,22 +31,24 @@ from app.schemas.page import (
     PageCreateRequest,
     PageCurrentComponentIndex,
     PageCurrentModuleDependencies,
-    PageModuleDependencyItem,
     PageItem,
     PageListQuery,
+    PageModuleDependencyItem,
     PageSnapshotCreateRequest,
     PageUpdateRequest,
     PageVersionContent,
     PageVersionListItem,
     PageVersionRestoreRequest,
 )
-from app.services.component_dependency_service import ComponentDependencyService
 from app.services.capture_viewport_resolver import CaptureViewportResolver
-from app.services.page_version_service import PageVersionService
+from app.services.component_dependency_service import ComponentDependencyService
 from app.services.page_component_index_service import PageComponentIndexService
-from app.services.project_route_service import ProjectRouteService
-from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
+from app.services.page_screenshot_fingerprint_service import (
+    PageScreenshotFingerprintService,
+)
 from app.services.page_screenshot_url import build_page_screenshot_url
+from app.services.page_version_service import PageVersionService
+from app.services.project_route_service import ProjectRouteService
 from app.services.project_service import ProjectService
 from app.services.workspace_service import WorkspaceService
 
@@ -169,7 +177,14 @@ class PageService:
         if candidate_code:
             if await self.session.scalar(select(Page.id).where(Page.code == candidate_code)):
                 raise AppException(status_code=409, code="PAGE_CANDIDATE_CODE_CONFLICT", detail="候选编码已被占用，必须重新规划并校验。")
-            page_model = await write_page(candidate_code)
+            try:
+                async with self.session.begin_nested():
+                    page_model = await write_page(candidate_code)
+                    await self.session.flush()
+            except IntegrityError as error:
+                if not is_code_unique_integrity_error(error, Page):
+                    raise
+                raise AppException(status_code=409, code="PAGE_CANDIDATE_CODE_CONFLICT", detail="候选编码发生并发冲突，必须重新规划。") from error
             if commit:
                 await self.session.commit()
         else:

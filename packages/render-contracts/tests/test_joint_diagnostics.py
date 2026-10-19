@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
-
 from render_contracts.errors import RenderContractError
 from render_contracts.schema import ExecutionResult
 from render_contracts.screenshot import ScreenshotPhaseResult

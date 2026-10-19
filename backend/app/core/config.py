@@ -1,11 +1,10 @@
 """文件功能：集中定义应用配置，并从环境变量与 .env 文件读取运行参数。"""
 
-from pathlib import Path
-from functools import lru_cache
 import json
 import logging
 import os
 import threading
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -17,7 +16,6 @@ from app.core.system_settings_spec import (
     is_env_overridden,
     safe_mode_convert_value,
 )
-
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _BACKEND_DIR = Path(__file__).resolve().parents[2]

@@ -9,8 +9,8 @@ from render_contracts.screenshot import ScreenshotPhaseResult
 from render_contracts.tokens import sha256_hex
 
 from app.core.time_utils import utc_now
-from app.services.object_storage_service import ObjectStorageService
 from app.services.image_metadata import read_image_dimensions
+from app.services.object_storage_service import ObjectStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ async def materialize_result(*, client: Any, settings: Any, endpoint: Any, reque
             refs[artifact["name"]] = ref
         if joint and payload["screenshot"]["status"] == "available" and "page.png" not in refs:
             raise _invalid("截图阶段声明 available，但缺少 page.png。")
-    except Exception as exc:
+    except Exception:
         if not joint:
             raise
         payload["screenshot"] = ScreenshotPhaseResult("failed", "SCREENSHOT_MATERIALIZATION_FAILED", True).to_dict()

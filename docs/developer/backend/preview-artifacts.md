@@ -19,6 +19,12 @@ preview artifact 是 Runtime 预览页面或组件时读取的短期上下文。
 
 截图由 Backend 持久化渲染请求并调度独立 Renderer；Renderer 在 Chromium 中加载 Runtime 预览页面，回传截图结果。需要关注 viewport、超时、并发和 visual-ready 等参数，避免截图队列阻塞。Backend 不直接启动浏览器。
 
+页面创建与源码编辑可在 `page.diagnose` 的同一 attempt 中附带 PNG。诊断先完成，再进行静态视频帧和捕获画面准备；图片阶段最多使用剩余硬期限内的 10 秒。编译/布局诊断失败仍拒写，诊断完成后的图片失败只让截图处于 `pending`，不重开浏览器。
+
+新建任务持久化 `candidate_code`，正式保存必须使用同一编码；冲突重新规划。单页 artifact 的 `entry_page` 只下发已知的 code、title、speaker_notes，候选不伪造尚未分配的页面 ID。Runtime 以该元数据构建单页宿主标题与备注。新增路由等无法与候选一致的上下文变化会使附图失效，后续截图需求走原队列。
+
+临时 PNG 独立于输入 artifact，引用携带 workspace/request/attempt/hash/大小/有效期。公共 `validation_screenshot_publisher` 在事务外复制并登记 10 分钟持有，事务内复核最终源码闭包、实时资源、主题字体、路由元数据、画布、Runtime 构建与捕获策略后，和页面及 Job 结果一起发布。`page_screenshot_artifacts` 维护页面范围内的历史内容映射；取消、事务失败和崩溃遗留由原渲染协调器每分钟执行过期回收。输入 artifact 清理不会删除输出图。
+
 ## build snapshot
 
 build snapshot 是一次项目构建的固化输入。构建开始后 Runtime 应基于 snapshot 执行，不应继续读取可能变化的项目状态。

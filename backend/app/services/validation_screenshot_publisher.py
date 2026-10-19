@@ -5,16 +5,21 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from render_contracts.tokens import sha256_hex
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
 from app.models.page import Page
 from app.models.page_screenshot_artifact import PageScreenshotArtifact
-from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder, capture_check_fingerprint
+from app.services.code_check_fingerprint import (
+    CodeCheckFingerprintBuilder,
+    capture_check_fingerprint,
+)
 from app.services.object_storage_service import ObjectStorageService
-from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
-from render_contracts.tokens import sha256_hex
+from app.services.page_screenshot_fingerprint_service import (
+    PageScreenshotFingerprintService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +47,9 @@ async def prepare_validation_screenshot(validation: dict, *, workspace_id: int) 
     if not isinstance(ref, dict) or (validation.get("_screenshot_phase") or {}).get("status") != "available":
         return None
     try:
-        from app.services.runtime_release_identity import refresh_runtime_release_identity
+        from app.services.runtime_release_identity import (
+            refresh_runtime_release_identity,
+        )
         if await refresh_runtime_release_identity() == "unknown":
             return None
         if int(ref.get("workspace_id") or 0) != workspace_id or not validation.get("_capture_identity"):
@@ -72,6 +79,8 @@ async def publish_validation_screenshot(session: AsyncSession, *, page: Page, va
     """调用方先持有 Job/页面围栏；同事务核验最终源码、依赖与渲染上下文后发布指针。"""
     if prepared is None:
         phase = validation.get("_screenshot_phase") or {}
+        if (validation.get("stages") or {}).get("render") in {"unavailable", "skipped"}:
+            return screenshot_status(version_no=page.current_version_no, reason="VISUAL_VERIFICATION_SKIPPED", skipped=True)
         return screenshot_status(version_no=page.current_version_no, reason=phase.get("reason_code") or "SCREENSHOT_NOT_AVAILABLE",
                                   skipped="_capture_identity" not in validation)
     if prepared.workspace_id != page.workspace_id:

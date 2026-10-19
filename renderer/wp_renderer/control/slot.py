@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from wp_renderer.config import get_renderer_settings
 from render_contracts.constants import (
     ATTEMPT_STATUS_ACCEPTED,
     ATTEMPT_STATUS_CLEANING,
@@ -26,6 +25,8 @@ from render_contracts.errors import (
     RenderExecutionError,
 )
 from render_contracts.schema import ExecutionReceipt, ExecutionRequest, ExecutionResult
+
+from wp_renderer.config import get_renderer_settings
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,8 @@ class SlotController:
         self.worker_id = worker_id
         self.worker_epoch = worker_epoch
         self.slot_generation = 0
+        self.browser_launches_total = 0
+        self.navigations_total = 0
         self._lock = asyncio.Lock()
         self._current: SlotExecution | None = None
         self._receipts: dict[str, SlotExecution] = {}
@@ -91,6 +94,8 @@ class SlotController:
                 "playwright_mode": "async",
                 "chromium": "launched-per-attempt",
                 "page_diagnose_capture": "page-static-capture.v1",
+                "browser_launches_total": self.browser_launches_total,
+                "navigations_total": self.navigations_total,
             },
             "limits": {
                 "max_png_bytes": self.settings.max_png_bytes,

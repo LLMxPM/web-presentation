@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock
 
 import pytest
-
 from app.services.code_check_fingerprint import capture_check_fingerprint
 from app.services.code_check_result_cache import CodeCheckResultCache
 from app.services.validation_screenshot_publisher import prepare_validation_screenshot

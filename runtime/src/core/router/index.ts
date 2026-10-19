@@ -5,8 +5,9 @@
 import type { RouteRecordRaw } from 'vue-router'
 
 import { normalizeViewModulePath, resolvePreviewEntryModulePath } from '@/core/shared/runtime-preview'
-import { getRuntimePreviewContext } from '@/core/utils/path'
+import { getRuntimePreviewContext, getRuntimePreloadedConfig } from '@/core/utils/path'
 import { createProjectRouter } from './project-router'
+import { previewEntryMeta } from './preview-entry-meta'
 
 /**
  * 生成非构建态专用的预览宿主路由。
@@ -29,7 +30,7 @@ function buildPreviewHostRoutes(): RouteRecordRaw[] {
         designWidth: Number(route.query.width) || undefined,
         designHeight: Number(route.query.height) || undefined,
       }),
-      meta: { title: '单页预览' },
+      meta: previewEntryMeta(getRuntimePreloadedConfig()?.manifest?.entry_page),
     })
   }
 

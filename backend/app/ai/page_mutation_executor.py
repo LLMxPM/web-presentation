@@ -17,7 +17,6 @@ from app.ai.page_mutation_arguments import (
     normalize_page_mutation_result,
 )
 from app.ai.platform_tools import recoverable_tool_error_result
-from app.ai.validation_result_formatter import compact_mutation_result
 from app.ai.tools.page.apply_page_edits import (
     _ensure_page_base_version,
     _ensure_page_in_context,
@@ -27,10 +26,10 @@ from app.ai.tools.project.project_pages import (
     _has_warning_diagnostics,
     _with_create_validation_failure_message,
 )
-from app.services.validation_result import resolve_write_gate
 from app.ai.tools.shared import apply_source_edits
-from app.core.exceptions import AppException
+from app.ai.validation_result_formatter import compact_mutation_result
 from app.core.config import get_settings
+from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db.retry import exponential_backoff_delays, run_with_write_retry
 from app.models.ai_agent_runtime import AiAgentRun, AiAgentToolCall
@@ -38,13 +37,23 @@ from app.models.ai_page_mutation import AiPageMutationJob
 from app.models.enums import PageFileType, RecordStatus
 from app.models.page import Page
 from app.models.user import User
-from app.schemas.page import PageCreateRequest, PageUpdateRequest
-from app.services.code_check_service import CodeCheckService, build_code_check_failed_result
+from app.schemas.page import (
+    PageCopyToProjectRequest,
+    PageCreateRequest,
+    PageUpdateRequest,
+)
+from app.services.code_check_service import (
+    CodeCheckService,
+    build_code_check_failed_result,
+)
 from app.services.durable_job_lease_service import transition_owned_running_job
-from app.services.page_service import PageService
 from app.services.page_candidate_code import plan_candidate_code
-from app.services.validation_screenshot_publisher import prepare_validation_screenshot, publish_validation_screenshot
-
+from app.services.page_service import PageService
+from app.services.validation_result import resolve_write_gate
+from app.services.validation_screenshot_publisher import (
+    prepare_validation_screenshot,
+    publish_validation_screenshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +235,9 @@ class AiPageMutationExecutor:
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
                 content=page_content,
-                **({"capture_screenshot": True, "candidate_code": candidate_code, "candidate_title": title} if capture_screenshot else {}),
+                **({"capture_screenshot": True, "candidate_code": candidate_code, "candidate_title": title,
+                    "candidate_speaker_notes": _optional_string(context.arguments.get("speaker_notes")),
+                    "candidate_route_options": {key: context.arguments[key] for key in ("route_placement", "parent_route_id", "route") if context.arguments.get(key) is not None}} if capture_screenshot else {}),
             )
         logger.info(
             "AI 页面创建检查阶段完成。",
@@ -273,6 +284,9 @@ class AiPageMutationExecutor:
                 ),
                 context.user_id,
                 commit=False,
+                route_options=PageCopyToProjectRequest(target_project_id=context.project_id,
+                    route_placement=context.arguments.get("route_placement") or "none",
+                    parent_route_id=context.arguments.get("parent_route_id"), route=context.arguments.get("route")),
                 **({"candidate_code": candidate_code} if candidate_code else {}),
             )
             page_model = await session.get(Page, created.id)

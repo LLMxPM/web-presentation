@@ -1,9 +1,8 @@
 """文件功能：验证新增截图描述 DTO 的增量兼容、状态约束及敏感字段边界。"""
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
-
 from app.schemas.mutation_result import ExternalMutationResult
+from pydantic import TypeAdapter, ValidationError
 
 
 def test_mutation_result_preserves_legacy_fields():

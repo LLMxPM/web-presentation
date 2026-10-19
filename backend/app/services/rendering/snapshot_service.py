@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
+from render_contracts.tokens import PreviewAccess, canonical_json, sha256_hex
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,11 +19,13 @@ from app.models.page import Page
 from app.models.page_version import PageVersion
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
-from app.services.owner_resource_token_resolver import OwnerResourceTokenResolver, OwnerResourceTokens
+from app.services.owner_resource_token_resolver import (
+    OwnerResourceTokenResolver,
+    OwnerResourceTokens,
+)
 from app.services.rendering.credentials import RenderCredentialService
 from app.services.rendering.target_resolver import RenderTargetResolver
 from app.services.token_service import TokenService
-from render_contracts.tokens import PreviewAccess, canonical_json, sha256_hex
 
 logger = logging.getLogger(__name__)
 

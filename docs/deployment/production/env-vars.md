@@ -142,6 +142,7 @@ Gateway Nginx 访问日志在平台镜像配置中默认关闭；错误日志仍
 - `RENDER_ATTEMPT_LEASE_SECONDS`：单个 attempt 租约时长，默认 `60` 秒。
 - `RENDER_UNKNOWN_RECONCILE_AFTER_SECONDS`：未知状态 attempt 等待对账窗口，默认 `15` 秒。
 - `RENDER_ARTIFACT_MAX_BYTES`：单次渲染产物字节上限，默认 `33554432`（32 MiB）。
+- `PAGE_MUTATION_CAPTURE_SCREENSHOT`：页面创建与源码编辑在诊断中附带截图；关闭时仍执行完整页面校验，后续取图使用既有截图队列。
 - `RENDER_RUNTIME_NAVIGATION_BASE_URL` / `RENDER_RUNTIME_ASSET_BASE_URL` / `RENDER_PLATFORM_ASSET_BASE_URL`：渲染器回源基址，默认自动根据平台与 Runtime 地址推导。
 
 ### 5. 项目构建持久领取

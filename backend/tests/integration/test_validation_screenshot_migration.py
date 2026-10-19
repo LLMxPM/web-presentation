@@ -15,7 +15,7 @@ def test_candidate_screenshot_migration_roundtrip(tmp_path):
     env = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{database.as_posix()}", "REDIS_URL": "memory://validation-migration"}
     for action, revision in (("upgrade", "head"), ("downgrade", "20261018_0100"), ("upgrade", "head")):
         result = subprocess.run([sys.executable, "-m", "alembic", "-c", "alembic.ini", action, revision], cwd=root,
-                                env=env, capture_output=True, text=True)
+                                env=env, capture_output=True, text=True, check=False)
         assert result.returncode == 0, result.stderr
         engine = create_engine(f"sqlite:///{database.as_posix()}")
         try:

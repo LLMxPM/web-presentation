@@ -21,6 +21,10 @@ from app.db.session import get_session_factory
 from app.models.api_mutation_job import ApiMutationJob
 from app.models.page import Page
 from app.models.workspace_component import WorkspaceComponent
+from app.schemas.component import (
+    WorkspaceComponentCreateRequest,
+    WorkspaceComponentUpdateRequest,
+)
 from app.schemas.external_api import (
     ExternalComponentApplyEditsMutationRequest,
     ExternalComponentCreateMutationRequest,
@@ -31,21 +35,22 @@ from app.schemas.external_api import (
     ExternalPageCreateMutationRequest,
 )
 from app.schemas.page import PageCreateRequest, PageUpdateRequest
-from app.schemas.component import (
-    WorkspaceComponentCreateRequest,
-    WorkspaceComponentUpdateRequest,
-)
 from app.services.durable_job_lease_service import (
     build_durable_worker_id,
     claim_rows_by_cas,
     recover_expired_running_jobs,
 )
 from app.services.job_runtime_vocabulary import MUTATION_JOB_VOCABULARY
-from app.services.mutation_planners.component_mutation_planner import ComponentMutationPlanner
+from app.services.mutation_planners.component_mutation_planner import (
+    ComponentMutationPlanner,
+)
 from app.services.mutation_planners.page_mutation_planner import PageMutationPlanner
-from app.services.page_service import PageService
 from app.services.page_candidate_code import plan_candidate_code
-from app.services.validation_screenshot_publisher import prepare_validation_screenshot, publish_validation_screenshot
+from app.services.page_service import PageService
+from app.services.validation_screenshot_publisher import (
+    prepare_validation_screenshot,
+    publish_validation_screenshot,
+)
 from app.services.workspace_component_service import WorkspaceComponentService
 
 logger = logging.getLogger(__name__)

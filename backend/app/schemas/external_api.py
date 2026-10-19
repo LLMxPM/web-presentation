@@ -8,7 +8,6 @@ from typing import Any, Generic, Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas import audio as audio_schema
-from app.schemas.mutation_result import ExternalMutationResult
 from app.schemas.audio import (
     AUDIO_CAPABILITY_AUDIO_ASSETS,
     AUDIO_CAPABILITY_AUDIO_CUES,
@@ -17,7 +16,12 @@ from app.schemas.audio import (
     ProjectAudioSettings,
     default_project_audio_settings,
 )
-from app.schemas.presentation_style import ProjectCreateConfiguration, ProjectDefaultConfiguration, StyleConfiguration
+from app.schemas.mutation_result import ExternalMutationResult
+from app.schemas.presentation_style import (
+    ProjectCreateConfiguration,
+    ProjectDefaultConfiguration,
+    StyleConfiguration,
+)
 from app.schemas.project_app_config import ProjectMenuMode
 from app.schemas.slideshow import (
     ADVANCE_DELAY_MAX_MS,

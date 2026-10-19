@@ -17,7 +17,10 @@ from app.models.page import Page
 from app.models.page_version import PageVersion
 from app.models.workspace import Project
 from app.schemas.project_app_config import ProjectAppPageConfig
-from app.services.owner_resource_token_resolver import OwnerResourceTokenResolver, OwnerResourceTokens
+from app.services.owner_resource_token_resolver import (
+    OwnerResourceTokenResolver,
+    OwnerResourceTokens,
+)
 from app.services.project_config_service import ProjectConfigService
 
 

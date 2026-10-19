@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from render_contracts.errors import RenderExecutionError, ERROR_CODE_CANCELLED
+from render_contracts.errors import ERROR_CODE_CANCELLED, RenderExecutionError
 from render_contracts.screenshot import ScreenshotPhaseResult
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,7 @@ async def append_screenshot(executor: Any, result: Any, *, ready: dict, artifact
     try:
         image = await executor._await_without_cancelling(capture(), timeout=min(MAX_IMAGE_PHASE_SECONDS, remaining - 0.1))
         executor._check_cancel(stage="capture")
+        result.environment_summary["screenshot_ms"] = round((time.perf_counter() - started) * 1000, 2)
         return replace(result, artifacts=image.artifacts, screenshot=ScreenshotPhaseResult("available"))
     except asyncio.CancelledError:
         raise

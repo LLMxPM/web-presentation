@@ -18,8 +18,8 @@ from render_contracts.constants import (
     SUPPORTED_OPERATIONS,
 )
 from render_contracts.errors import RenderContractError, parse_bool
-from render_contracts.tokens import AdmissionTicket, PreviewAccess
 from render_contracts.screenshot import ScreenshotPhaseResult
+from render_contracts.tokens import AdmissionTicket, PreviewAccess
 
 # 产物文件名仅允许字母数字、点、短横线与下划线，禁止路径分隔符。
 _ARTIFACT_NAME_PATTERN: Final = re.compile(r"^[A-Za-z0-9._-]+$")

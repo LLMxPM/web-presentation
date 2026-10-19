@@ -3,7 +3,6 @@
 from types import SimpleNamespace
 
 import pytest
-
 from app.services.page_screenshot_job_service import PageScreenshotJobService
 
 

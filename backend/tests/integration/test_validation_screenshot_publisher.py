@@ -4,17 +4,27 @@ from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import select
-
+from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
 from app.models.page import Page
 from app.models.page_screenshot_artifact import PageScreenshotArtifact
+from app.models.project_route import ProjectRoute
+from app.schemas.page import PageCopyToProjectRequest, PageCreateRequest
 from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
 from app.services.code_check_result_cache import compute_check_fingerprint
-from app.services.validation_screenshot_publisher import PreparedValidationScreenshot, publish_validation_screenshot
+from app.services.page_candidate_routes import candidate_runtime_routes
+from app.services.page_screenshot_fingerprint_service import (
+    PageScreenshotFingerprintService,
+)
+from app.services.page_service import PageService
+from app.services.project_route_service import ProjectRouteService
 from app.services.validation_screenshot_cleanup import cleanup_validation_screenshots
-from app.services.page_screenshot_fingerprint_service import PageScreenshotFingerprintService
+from app.services.validation_screenshot_publisher import (
+    PreparedValidationScreenshot,
+    publish_validation_screenshot,
+)
+from sqlalchemy import select
 
 
 @pytest.mark.parametrize("drift", [None, "source", "title", "expired", "scope", "viewport"])
@@ -64,3 +74,41 @@ async def test_cleanup_only_unpublished_expired_candidates(authenticated_client,
     remove.assert_awaited_once_with("test/expired.png")
     async with get_session_factory()() as session:
         assert list(await session.scalars(select(PageScreenshotArtifact.artifact_id))) == ["fresh"]
+
+
+async def test_create_uses_planned_code_and_rejects_conflict(authenticated_client):
+    """正式创建必须沿用候选编码；冲突时拒绝保存，不改码复用旧图。"""
+    identity = (await authenticated_client.get("/api/auth/me")).json()
+    ws = (await authenticated_client.post("/api/workspaces", json={"name": "候选编码测试"})).json()["id"]
+    project = (await authenticated_client.post("/api/projects", json={"workspace_id": ws, "name": "候选编码项目"})).json()["id"]
+    async with get_session_factory()() as session:
+        service = PageService(session)
+        payload = PageCreateRequest(workspace_id=ws, project_id=project, title="正式标题", page_content="<template><main /></template>")
+        created = await service.create(payload, identity["id"], candidate_code="PG20261019991")
+        assert created.code == "PG20261019991"
+        with pytest.raises(AppException) as caught:
+            await service.create(payload, identity["id"], candidate_code=created.code)
+        assert caught.value.code == "PAGE_CANDIDATE_CODE_CONFLICT"
+
+
+@pytest.mark.parametrize("placement", ["root", "group"])
+async def test_created_route_context_matches_candidate(authenticated_client, placement):
+    """创建页读取目录/页码时，候选路由结构必须与正式保存结果完全一致。"""
+    user = (await authenticated_client.get("/api/auth/me")).json()["id"]
+    ws = (await authenticated_client.post("/api/workspaces", json={"name": "候选路由测试"})).json()["id"]
+    project = (await authenticated_client.post("/api/projects", json={"workspace_id": ws, "name": "候选路由项目"})).json()["id"]
+    async with get_session_factory()() as session:
+        options = {"route_placement": placement, "route": "overview"}
+        if placement == "group":
+            parent = ProjectRoute(project_id=project, route="chapter", route_type="group", group_title="章节", order=10, hidden=False,
+                                  created_by=user, updated_by=user)
+            session.add(parent)
+            await session.flush()
+            options["parent_route_id"] = parent.id
+        draft = Page(code="PG20261019992", project_id=project, workspace_id=ws, title="正式标题", speaker_notes="备注", file_type="vue")
+        candidate = await candidate_runtime_routes(session, page=draft, options=options)
+        await PageService(session).create(PageCreateRequest(workspace_id=ws, project_id=project, title=draft.title,
+            speaker_notes=draft.speaker_notes, page_content="<template><main /></template>"), user, candidate_code=draft.code,
+            route_options=PageCopyToProjectRequest(target_project_id=project, **options), commit=False)
+        actual = await ProjectRouteService(session).build_runtime_route_config(project)
+        assert candidate == actual

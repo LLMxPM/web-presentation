@@ -1,7 +1,6 @@
 """文件功能：保证内部与外部校验共用事实，同时隔离恢复入口及重试语义。"""
 
 import pytest
-
 from app.ai.validation_result_formatter import build_validation_text
 
 

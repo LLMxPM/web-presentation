@@ -1,6 +1,6 @@
 """文件功能：为页面创建任务规划稳定编码，保存冲突时必须重新规划而不能换码发布旧图。"""
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.code_generator import CODE_PREFIX_PAGE, generate_code

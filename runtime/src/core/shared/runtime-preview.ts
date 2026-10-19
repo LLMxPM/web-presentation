@@ -93,6 +93,7 @@ export interface RuntimePreviewArtifactManifest {
   preview_kind: PreviewKind
   owner_scope: RuntimePreviewOwnerScope
   entry_descriptor: RuntimePreviewEntryDescriptor
+  entry_page?: { code: string; title: string; speaker_notes?: string | null } | null
   asset_base_url?: string
   project_id?: string
   workspace_id?: string

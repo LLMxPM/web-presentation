@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, delete
+from sqlalchemy import String, cast, delete, select
 
 from app.core.time_utils import utc_now
 from app.models.page_screenshot_artifact import PageScreenshotArtifact
@@ -22,6 +22,7 @@ async def cleanup_validation_screenshots(session_factory) -> int:
             PageScreenshotArtifact.page_id.is_(None), PageScreenshotArtifact.expires_at <= now).limit(100)))
         candidates = [(row.artifact_id, row.storage_key) for row in rows]
         results = list(await session.scalars(select(RenderResult).where(RenderResult.operation == "page.diagnose",
+                    cast(RenderResult.object_refs, String).notin_(("{}", "null")),
                     RenderResult.created_at <= now - timedelta(minutes=10)).limit(100)))
         result_refs = [(row.id, dict(row.object_refs or {})) for row in results]
     storage, removed = ObjectStorageService(), 0

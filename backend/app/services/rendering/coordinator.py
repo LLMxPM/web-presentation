@@ -10,17 +10,6 @@ import uuid
 from datetime import UTC, timedelta
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from app.core.config import get_settings
-from app.core.time_utils import utc_now
-from app.db import metrics as write_path_metrics
-from app.db.session import get_session_factory
-from app.services.rendering.client import RendererClient
-from app.services.rendering.credentials import RenderCredentialService
-from app.services.rendering.repository import RenderRepository
-from app.services.rendering.snapshot_service import RenderSnapshotService
-from app.services.rendering.target_resolver import RenderTargetResolver
 from render_contracts.constants import (
     OPERATION_PAGE_CAPTURE,
     OPERATION_PAGE_DIAGNOSE,
@@ -42,7 +31,18 @@ from render_contracts.errors import (
     RenderExecutionError,
 )
 from render_contracts.schema import ExecutionRequest, SnapshotRef, ViewportSpec
-from render_contracts.tokens import AdmissionTicket, sha256_hex
+from render_contracts.tokens import AdmissionTicket
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.config import get_settings
+from app.core.time_utils import utc_now
+from app.db import metrics as write_path_metrics
+from app.db.session import get_session_factory
+from app.services.rendering.client import RendererClient
+from app.services.rendering.credentials import RenderCredentialService
+from app.services.rendering.repository import RenderRepository
+from app.services.rendering.snapshot_service import RenderSnapshotService
+from app.services.rendering.target_resolver import RenderTargetResolver
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,9 @@ class RenderCoordinator:
         processed = 0
         try:
             if time.monotonic() - getattr(self, "_last_screenshot_cleanup", 0) >= 60:
-                from app.services.validation_screenshot_cleanup import cleanup_validation_screenshots
+                from app.services.validation_screenshot_cleanup import (
+                    cleanup_validation_screenshots,
+                )
                 await cleanup_validation_screenshots(self.session_factory)
                 self._last_screenshot_cleanup = time.monotonic()
             async with self.session_factory() as session:
@@ -715,10 +717,10 @@ class RenderCoordinator:
     ) -> bool:
         """判断 Worker/epoch 是否仍有未释放占用。"""
 
+        from render_contracts.constants import ATTEMPT_OCCUPYING_STATUSES
         from sqlalchemy import select
 
         from app.models.render_attempt import RenderAttempt
-        from render_contracts.constants import ATTEMPT_OCCUPYING_STATUSES
 
         stmt = select(RenderAttempt.id).where(
             RenderAttempt.worker_id == worker_id,

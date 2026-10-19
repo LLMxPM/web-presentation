@@ -4,6 +4,8 @@ AI 一次创建或修改多页时，页面源码校验会同时触发 Runtime Vi
 
 ## 执行链路
 
+页面写入的布局诊断可在同一 `page.diagnose` attempt 中附带 PNG，不新建 AI external task。两类领域队列共用候选图发布服务，页面、版本、截图指针与 Job 终态同事务提交；取消、租约、generation、AI 写围栏仍由原队列维护。图片阶段失败或输入漂移只返回 `pending`，按后续真实截图需求再进入原截图队列，不无条件重试浏览器。发布与回收细节见[预览 artifact](./preview-artifacts.md)。
+
 ```text
 AI 页面写工具
   → ai_page_mutation_jobs（领域执行） + ai_agent_external_tasks（续跑控制面）

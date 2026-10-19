@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 
+from render_contracts.screenshot import CAPTURE_POLICY_VERSION
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +38,6 @@ from app.services.page_screenshot_fingerprint_service import (
 )
 from app.services.resource_reference_parser import ResourceReferenceParser
 from app.services.workspace_theme_service import WorkspaceThemeService
-from render_contracts.screenshot import CAPTURE_POLICY_VERSION
 
 _PAGE_MODULE_PATH_PATTERN = re.compile(r"^src/views/(?P<code>[A-Za-z0-9_-]+)\.(?P<file_type>[A-Za-z0-9]+)$")
 
@@ -100,6 +100,7 @@ class CodeCheckFingerprintBuilder:
         source: str,
         importer_module_path: str,
         page_metadata: dict[str, object] | None = None,
+        runtime_routes_override: dict[str, object] | None = None,
     ) -> str:
         """页面检查指纹：源码 + 依赖版本 + 引用资源 + Kit/编译器 + 主题样式 + 规则版本。"""
 
@@ -127,7 +128,7 @@ class CodeCheckFingerprintBuilder:
             "project_id": int(project_id),
             "module_path": importer_module_path or "",
             "page_metadata": page_metadata or {},
-            "render_context": await self._page_render_context(project_id),
+            "render_context": await self._page_render_context(project_id, runtime_routes_override),
             "dependency_identity": dependency_identity,
             "referenced_assets": referenced_assets,
             "compiler_identity": _compiler_identity(),
@@ -139,19 +140,19 @@ class CodeCheckFingerprintBuilder:
         }
         return compute_check_fingerprint(payload)
 
-    async def _page_render_context(self, project_id: int) -> dict[str, object]:
+    async def _page_render_context(self, project_id: int, runtime_routes_override: dict | None = None) -> dict[str, object]:
         """将可被页面读取的项目配置与完整路由元数据纳入身份，避免标题/路由变化后复用旧图。"""
-        from app.models.workspace import Project
-        from app.services.project_route_service import ProjectRouteService
-        from app.services.project_config_service import ProjectConfigService
         from app.core.config import get_settings
+        from app.models.workspace import Project
+        from app.services.project_config_service import ProjectConfigService
+        from app.services.project_route_service import ProjectRouteService
 
         project = await self.session.get(Project, project_id)
         if project is None:
             return {}
         config = ProjectConfigService(self.session)
         return {"app": await config.build_runtime_app_dict(project),
-                "routes": await ProjectRouteService(self.session).build_runtime_route_config(project_id),
+                "routes": runtime_routes_override if runtime_routes_override is not None else await ProjectRouteService(self.session).build_runtime_route_config(project_id),
                 "renderer_profile": get_settings().render_profile_digest,
                 "capture_policy": CAPTURE_POLICY_VERSION}
 

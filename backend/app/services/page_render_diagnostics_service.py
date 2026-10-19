@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
+from render_contracts.errors import (
+    ERROR_CODE_DEADLINE_EXCEEDED,
+    ERROR_CODE_INTERNAL_ERROR,
+    ERROR_CODE_SERVICE_UNAVAILABLE,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -17,11 +21,6 @@ from app.services.rendering.domain_facade import RenderDomainFacade
 from app.services.rendering.target_resolver import RenderTargetResolver
 from app.services.runtime_target_router import RUNTIME_SERVICE_TOKEN_HEADER
 from app.services.token_service import TokenService
-from render_contracts.errors import (
-    ERROR_CODE_DEADLINE_EXCEEDED,
-    ERROR_CODE_INTERNAL_ERROR,
-    ERROR_CODE_SERVICE_UNAVAILABLE,
-)
 
 PAGE_RENDER_WARNING_SOURCE = "runtime-render"
 PAGE_RENDER_BOTTOM_OVERFLOW_CODE = "PAGE_RENDER_BOTTOM_OVERFLOW"

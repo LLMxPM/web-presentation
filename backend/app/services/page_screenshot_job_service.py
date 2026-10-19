@@ -15,7 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
-from app.db.retry import WriteConflictContext, exponential_backoff_delays, run_with_write_retry
+from app.db.retry import (
+    WriteConflictContext,
+    exponential_backoff_delays,
+    run_with_write_retry,
+)
 from app.models.enums import PageFileType, RecordStatus
 from app.models.page import Page
 from app.models.page_screenshot_job import PageScreenshotJob
@@ -28,15 +32,19 @@ from app.services.capture_viewport_resolver import CaptureViewport
 from app.services.durable_job_lease_service import (
     DurableJobRecoverySummary,
     build_durable_worker_id,
-    claim_pending_jobs as claim_durable_jobs,
     recover_expired_running_jobs,
     renew_running_job_lease,
     request_job_cancellation,
     transition_owned_running_job,
 )
+from app.services.durable_job_lease_service import (
+    claim_pending_jobs as claim_durable_jobs,
+)
 from app.services.object_storage_service import ObjectStorageService
 from app.services.page_screenshot_job_group_service import PageScreenshotJobGroupService
-from app.services.page_screenshot_render_lifecycle import cancel_screenshot_render_requests
+from app.services.page_screenshot_render_lifecycle import (
+    cancel_screenshot_render_requests,
+)
 from app.services.page_screenshot_service import (
     PageScreenshotCaptureArtifact,
     PageScreenshotResult,
@@ -221,8 +229,10 @@ class PageScreenshotJobService:
         self.screenshot_service._ensure_page_within_scope(page, workspace_id=workspace_id, project_id=project_id)
         await self.page_service._ensure_page_access(page, user_id=user_id)
         if self.settings.page_mutation_capture_screenshot:
-            from app.services.runtime_release_identity import refresh_runtime_release_identity
             from app.db.tx import commit_end_read
+            from app.services.runtime_release_identity import (
+                refresh_runtime_release_identity,
+            )
             await commit_end_read(self.session)
             await refresh_runtime_release_identity()
         cached = await self._try_build_current_result(page)
@@ -297,7 +307,9 @@ class PageScreenshotJobService:
         """用短 Session 等待一组任务；每轮最多内联领取一个任务以限制 SQLite 写入压力。"""
 
         from app.db.session import get_session_factory
-        from app.services.page_screenshot_queue_worker import start_page_screenshot_job_task
+        from app.services.page_screenshot_queue_worker import (
+            start_page_screenshot_job_task,
+        )
 
         ordered_ids = list(dict.fromkeys(job_ids))
         if not ordered_ids:
@@ -835,7 +847,9 @@ async def run_page_screenshot_queue_loop(
 ) -> None:
     """兼容旧导入路径，委托独立 Worker 模块运行截图队列。"""
 
-    from app.services.page_screenshot_queue_worker import run_page_screenshot_queue_loop as run_loop
+    from app.services.page_screenshot_queue_worker import (
+        run_page_screenshot_queue_loop as run_loop,
+    )
 
     await run_loop(session_factory)
 
@@ -848,7 +862,9 @@ async def run_page_screenshot_job(
 ) -> None:
     """兼容旧导入路径，委托独立 Worker 模块执行单个任务。"""
 
-    from app.services.page_screenshot_queue_worker import run_page_screenshot_job as run_job
+    from app.services.page_screenshot_queue_worker import (
+        run_page_screenshot_job as run_job,
+    )
 
     await run_job(job_id, worker_id=worker_id, session_factory=session_factory)
 
@@ -858,6 +874,8 @@ async def recover_interrupted_screenshot_jobs_on_startup(
 ) -> int:
     """兼容旧导入路径，委托 Worker 模块恢复过期任务。"""
 
-    from app.services.page_screenshot_queue_worker import recover_interrupted_screenshot_jobs_on_startup as recover
+    from app.services.page_screenshot_queue_worker import (
+        recover_interrupted_screenshot_jobs_on_startup as recover,
+    )
 
     return await recover(session_factory)

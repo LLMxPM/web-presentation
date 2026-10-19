@@ -4,9 +4,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from render_contracts.errors import RenderExecutionError
-
 from app.services.rendering.result_materializer import materialize_result
+from render_contracts.errors import RenderExecutionError
 
 
 @pytest.mark.asyncio

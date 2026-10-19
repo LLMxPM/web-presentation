@@ -14,21 +14,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.models.page import Page
-from app.services.project_artifact_builder import (
-    ArtifactSnapshotProfile,
-    AssetDeliveryMode,
-    ProjectArtifactBuilder,
-    ProjectPageModuleOverride,
-)
 from app.schemas.release import (
     PreviewArtifactAccessRenewalResponse,
     PreviewArtifactResponse,
     PreviewEntryDescriptor,
 )
 from app.services.asset_binding_service import AssetBindingService
+from app.services.project_artifact_builder import (
+    ArtifactSnapshotProfile,
+    AssetDeliveryMode,
+    ProjectArtifactBuilder,
+    ProjectPageModuleOverride,
+)
 from app.services.runtime_artifact_store import RuntimeArtifactStore
 from app.services.token_service import TokenService
-
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +61,7 @@ class PreviewService:
         tenant_id: str,
         page_module_overrides: dict[str, ProjectPageModuleOverride] | None = None,
         transient_pages: list[Page] | None = None,
+        runtime_routes_override: dict[str, object] | None = None,
         asset_delivery_mode: AssetDeliveryMode = "public",
         asset_base_url_override: str | None = None,
         artifact_kind: PreviewArtifactKind = "preview_artifact",
@@ -82,6 +82,7 @@ class PreviewService:
             entry_descriptor=entry_descriptor,
             page_module_overrides=page_module_overrides,
             transient_pages=transient_pages,
+            **({"runtime_routes_override": runtime_routes_override} if runtime_routes_override is not None else {}),
             asset_delivery_mode=asset_delivery_mode,
             asset_snapshot_mode="referenced" if snapshot_profile == "page_diagnostics" else "all",
             snapshot_profile=snapshot_profile,
@@ -101,6 +102,7 @@ class PreviewService:
                 "workspace_id": str(snapshot.project.workspace_id),
             },
             "entry_descriptor": entry_descriptor_payload,
+            "entry_page": snapshot.entry_page,
             "asset_base_url": snapshot.asset_base_url,
             "modules": snapshot.modules_metadata,
             "assets": snapshot.asset_mapping,

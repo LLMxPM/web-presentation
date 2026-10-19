@@ -224,6 +224,12 @@ CLI 拼接源码模块路径，Backend 会根据页面当前的 `code` 和 `file
 
 ### 5.4 截图
 
+页面创建与源码编辑的 Mutation 成功结果可包含 `result.screenshot`：`status` 为 `ready | pending | skipped`，`version_no` 为对应保存版本，`ready` 同时给出 `screenshot_id`、`width`、`height`；未就绪时给出 `reason_code`。`pending` 表示等待后续真实需求生成，不表示已经入队。客户端可忽略增量字段；字段缺失的旧响应继续沿用截图入口。
+
+`ready` 图片可按页面范围内的内容 ID 直接下载；读取 latest 或模型视觉工具优先复用匹配版本和配置的图片。图片生成不表示模型已经看图，声音、交互和动画需另行验证。附图失败不会掩盖已成功的布局诊断，也不会自动立即再开浏览器。
+
+校验警告和失败的 External 文本不包含内部工具名。需要明细时保留相同目标和原 `content/edits` 候选，设置 `detail=true`；创建失败且尚无 ID 时修正原候选重提。CLI 在本地补充 `wp page validate` / `wp component validate`，MCP 使用其注册的 `wp_validate_entity`。
+
 ```text
 GET  /api/v1/pages/{page_id}/screenshot
 ```
