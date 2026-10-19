@@ -338,3 +338,92 @@ async def test_external_project_audio_settings_should_reject_invalid_bindings(cl
         headers=_headers(token, workspace_id, "audio-gain"),
     )
     assert invalid_gain.status_code == 422
+
+
+async def test_external_project_audio_cues_clear_should_keep_volumes_and_replay(client: AsyncClient) -> None:
+    """原子清空只删除 cue 绑定，保留音量并支持同键重放。"""
+
+    token, workspace_id = await _create_external_actor(
+        ["project:read", "project:write", "asset:read", "asset:write", "workspace:read"]
+    )
+    asset = await _upload_audio(client, token, workspace_id, name="clear-cue", payload=b"clear-audio")
+    project = await _create_project(client, token, workspace_id, {
+        "audio_settings": {
+            "master_volume_percent": 76,
+            "narration_volume_percent": 88,
+            "effects_volume_percent": 42,
+            "cue_bindings": [
+                {"key": "transition.forward", "asset_id": asset["id"], "gain_percent": 70},
+                {"key": "interaction.confirm", "asset_id": asset["id"], "gain_percent": 90},
+            ],
+        },
+    })
+    project_id = project["id"]
+
+    missing_key = await client.post(
+        f"/api/v1/projects/{project_id}/audio-cues/clear",
+        headers=_headers(token, workspace_id),
+    )
+    assert missing_key.status_code == 400
+    assert missing_key.json()["code"] == "IDEMPOTENCY_KEY_REQUIRED"
+
+    cleared = await client.post(
+        f"/api/v1/projects/{project_id}/audio-cues/clear",
+        headers=_headers(token, workspace_id, "audio-cues-clear"),
+    )
+    assert cleared.status_code == 200, cleared.text
+    body = cleared.json()
+    assert body["audio_settings"] == {
+        "master_volume_percent": 76,
+        "narration_volume_percent": 88,
+        "effects_volume_percent": 42,
+        "cue_bindings": [],
+    }
+
+    replay = await client.post(
+        f"/api/v1/projects/{project_id}/audio-cues/clear",
+        headers=_headers(token, workspace_id, "audio-cues-clear"),
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["audio_settings"] == body["audio_settings"]
+
+    # 清空后仍可独立更新音量，且不会被 clear 回滚。
+    updated = await client.put(
+        f"/api/v1/projects/{project_id}/configuration",
+        json={"audio_settings": {
+            "master_volume_percent": 55,
+            "narration_volume_percent": 88,
+            "effects_volume_percent": 42,
+            "cue_bindings": [],
+        }},
+        headers=_headers(token, workspace_id, "audio-volume-after-clear"),
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["audio_settings"]["master_volume_percent"] == 55
+
+
+async def test_external_project_audio_cues_clear_should_enforce_scope_and_workspace(client: AsyncClient) -> None:
+    """清空接口遵守 project:write 与工作空间隔离，越权时不泄露项目身份。"""
+
+    owner_token, workspace_id = await _create_external_actor(
+        ["project:read", "project:write", "workspace:read"]
+    )
+    project = await _create_project(client, owner_token, workspace_id, {})
+    project_id = project["id"]
+
+    read_token, _ = await _create_external_actor(["project:read", "workspace:read"])
+    forbidden = await client.post(
+        f"/api/v1/projects/{project_id}/audio-cues/clear",
+        headers=_headers(read_token, workspace_id, "audio-clear-readonly"),
+    )
+    assert forbidden.status_code == 403
+
+    foreign_token, foreign_workspace = await _create_external_actor(
+        ["project:read", "project:write", "workspace:read"]
+    )
+    foreign = await client.post(
+        f"/api/v1/projects/{project_id}/audio-cues/clear",
+        headers=_headers(foreign_token, foreign_workspace, "audio-clear-foreign"),
+    )
+    # PAT 未授权目标工作空间时在项目读取阶段即被拒绝，不泄露项目是否存在。
+    assert foreign.status_code in {403, 404}

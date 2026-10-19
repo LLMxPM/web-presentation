@@ -88,6 +88,9 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "project.configuration.update": ExternalOperationSpec(
         "project.configuration.update", ("project:write",), requires_idempotency_key=True, description="更新项目结构化配置",
     ),
+    "project.audio_cues.clear": ExternalOperationSpec(
+        "project.audio_cues.clear", ("project:write",), requires_idempotency_key=True, description="清空项目 cue 绑定并保留音量设置",
+    ),
     "project.route.get": ExternalOperationSpec(
         "project.route.get", ("project:read",), description="获取项目路由树"
     ),
@@ -368,6 +371,7 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "project.archive": ("POST", "/projects/{project_id}/archive"),
     "project.configuration.get": ("GET", "/projects/{project_id}/configuration"),
     "project.configuration.update": ("PUT", "/projects/{project_id}/configuration"),
+    "project.audio_cues.clear": ("POST", "/projects/{project_id}/audio-cues/clear"),
     "project.route.get": ("GET", "/projects/{project_id}/route-tree"),
     "project.route.update": ("PUT", "/projects/{project_id}/route-tree"),
     "project.apply_style": ("POST", "/projects/{project_id}/apply-style"),

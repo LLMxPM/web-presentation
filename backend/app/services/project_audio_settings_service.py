@@ -145,6 +145,32 @@ class ProjectAudioSettingsService:
 
         await self._replace_cues(project_id, bindings)
 
+    async def clear_cue_bindings(
+        self,
+        project: Project,
+        *,
+        operator_id: int | None = None,
+        commit: bool = False,
+    ) -> None:
+        """只删除项目 cue 绑定，保留三段音量与其它配置。
+
+        清空是单条 DELETE，不读出再写回音量，避免覆盖两次请求之间其它客户端提交的音量更新；
+        事务边界与 `replace_settings` 一致，由调用方决定提交或 flush。
+        """
+
+        await self.session.execute(
+            delete(ProjectAudioCueBinding).where(
+                ProjectAudioCueBinding.project_id == project.id
+            )
+        )
+        if operator_id is not None:
+            project.updated_by = operator_id
+            project.updated_at = utc_now()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+
     async def list_cue_bindings(
         self,
         project_id: int,

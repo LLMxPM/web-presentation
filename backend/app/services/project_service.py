@@ -367,6 +367,36 @@ class ProjectService:
             audio_settings=await self.project_audio_service.load_settings(reloaded),
         )
 
+    async def clear_audio_cues(
+        self,
+        project: Project,
+        operator_id: int,
+        *,
+        commit: bool = False,
+    ) -> ProjectItem:
+        """清空项目 cue 绑定并保留音量；返回与配置接口一致的项目详情。
+
+        只删除绑定，不读出并重写 `audio_settings_json`，因此不会覆盖并发提交的音量更新。
+        能力关闭时仍允许清空历史绑定，便于降级治理；本方法不接受新增或恢复绑定。
+        """
+
+        await self.project_audio_service.clear_cue_bindings(
+            project,
+            operator_id=operator_id,
+            commit=False,
+        )
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+        reloaded = await self.repository.get_by_id(project.id)
+        page_counts = await self.repository.list_page_counts([project.id])
+        return self._to_item(
+            reloaded,
+            page_counts=page_counts.get(project.id, (0, 0)),
+            audio_settings=await self.project_audio_service.load_settings(reloaded),
+        )
+
     async def delete(self, project_id: int, *, user_id: int, commit: bool = True) -> None:
         """对当前用户可访问项目执行软删除，不影响页面资源。"""
 

@@ -330,6 +330,47 @@ async def update_project_configuration(
     return result if isinstance(result, ProjectItem) else ProjectItem.model_validate(result)
 
 
+@router.post("/{project_id}/audio-cues/clear", response_model=ProjectItem)
+async def clear_project_audio_cues(
+    request: Request,
+    project_id: int,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.audio_cues.clear"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ProjectItem:
+    """清空项目 cue 绑定并保留三段音量（支持 Idempotency-Key 幂等保护）。
+
+    能力关闭时仍允许清空历史绑定，便于降级治理；本接口不接受新增或恢复绑定。
+    单事务只删除绑定，不读出并重写音量，避免覆盖并发音量更新。
+    """
+
+    project = await ProjectService(session).get(project_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(project.workspace_id, session)
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST",
+        path=request.url.path,
+        json_data={"project_id": project_id},
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, ProjectItem]:
+        cleared = await ProjectService(session).clear_audio_cues(
+            project,
+            auth.user.id,
+            commit=False,
+        )
+        return 200, cleared
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=project.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="project.audio_cues.clear",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, ProjectItem) else ProjectItem.model_validate(result)
+
+
 @router.get("/{project_id}/route-tree", response_model=ProjectRouteTreeResponse)
 async def get_project_route_tree(
     project_id: int,

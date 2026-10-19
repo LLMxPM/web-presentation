@@ -153,6 +153,8 @@ cue key 规则为小写点分段：`^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$`，最大
 
 允许项目增加其它 `interaction.*` key；首版拒绝未知的系统命名空间。绑定资产必须属于项目所在工作空间、状态可用且类型为 `audio`。项目归档不级联归档资产；资产归档/删除前引用检查必须显示项目 cue 绑定。
 
+清空绑定使用原子入口 `POST /api/v1/projects/{project_id}/audio-cues/clear`：单事务只删除绑定，不读出并重写音量，因此保留三段当前值并避免覆盖并发音量更新。能力关闭时仍允许清空历史绑定，但不允许新增或恢复绑定；完整音量更新仍需显式提交完整 `audio_settings` 对象，不隐含在 clear 中。
+
 ## 5. Runtime artifact 结构
 
 Backend 在创建 preview artifact 或 build job 时把数据库绑定解析为不可变快照：
