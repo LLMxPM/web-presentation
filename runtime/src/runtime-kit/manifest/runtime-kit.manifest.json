@@ -1123,7 +1123,7 @@
       "name": "Icon.v1",
       "import_path": "@runtime-kit/public/components/primitives/Icon.v1.vue",
       "category": "runtime",
-      "description": "渲染 Runtime 图标资源并支持主题色。",
+      "description": "渲染图标资源并支持主题色；平台图标名来自当前工作空间的 active 图标资源，不是内置图标目录。",
       "capability": {
         "enabled": true,
         "previewable": true,
@@ -1134,7 +1134,7 @@
         "usage": ["import Icon from '@runtime-kit/public/components/primitives/Icon.v1.vue'", "<Icon name=\"home\" class=\"size-8\" color=\"primary\" />"],
         "returns": "Vue 组件；渲染图标或回退内容。",
         "return_example": ["<Icon name=\"home\" class=\"size-8\" color=\"primary\" />"],
-        "constraints": ["图标名称应来自 Runtime 图标配置或工作空间图标资源逻辑名。", "适合需要 Runtime 解析图标资源、inline SVG 或主题色的场景。", "普通文本、卡片图标位置和布局仍由 Backend/Agent 生成。"],
+        "constraints": ["平台内容先查询当前工作空间 active 图标资源，使用返回的真实 name；Icon 是渲染组件，不提供内置图标名称目录。", "home 等示例名称不保证存在；没有合适图标时按任务授权创建 SVG 图标资源，再使用返回名称，不用整页渲染试探名称。", "独立运行的 Runtime 可使用自身图标配置中的名称；平台预览按工作空间资源配置解析。", "适合需要 Runtime 解析图标资源、inline SVG 或主题色的场景。", "普通文本、卡片图标位置和布局仍由 Backend/Agent 生成。"],
         "audiences": ["backend", "agent"],
         "preview_schema": {
           "props": {
