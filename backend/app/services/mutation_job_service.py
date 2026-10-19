@@ -548,7 +548,7 @@ class MutationJobService:
             if isinstance(validation_result, dict):
                 op = str(getattr(plan_result, "operation", "") or "")
                 res_type = "component" if "component" in op else "page"
-                details = {"validation": build_validation_text(validation_result, resource_type=res_type)}
+                details = {"validation": build_validation_text(validation_result, resource_type=res_type, audience="external")}
             raise AppException(status_code=422, code=error_code, detail=error_msg, data=details)
 
         now = utc_now()
@@ -597,7 +597,7 @@ class MutationJobService:
                 target_id = created_page.id
                 validation_text = build_validation_text(
                     getattr(plan_result, "validation_result", None) or {},
-                    resource_type="page",
+                    resource_type="page", audience="external",
                 )
                 result_dict = {
                     "page_id": created_page.id,
@@ -633,7 +633,7 @@ class MutationJobService:
                 target_id = updated_page.id
                 validation_text = build_validation_text(
                     getattr(plan_result, "validation_result", None) or {},
-                    resource_type="page",
+                    resource_type="page", audience="external",
                 )
                 result_dict = {
                     "page_id": updated_page.id,
@@ -658,7 +658,7 @@ class MutationJobService:
                 target_id = created_comp.id
                 validation_text = build_validation_text(
                     getattr(plan_result, "validation_result", None) or {},
-                    resource_type="component",
+                    resource_type="component", audience="external",
                 )
                 result_dict = {
                     "component_id": created_comp.id,
@@ -701,7 +701,7 @@ class MutationJobService:
                 target_id = updated_comp.id
                 validation_text = build_validation_text(
                     getattr(plan_result, "validation_result", None) or {},
-                    resource_type="component",
+                    resource_type="component", audience="external",
                 )
                 result_dict = {
                     "component_id": updated_comp.id,
@@ -746,7 +746,7 @@ class MutationJobService:
                 target_id = updated_comp.id
                 validation_res = getattr(plan_result, "validation_result", None)
                 validation_text = (
-                    build_validation_text(validation_res, resource_type="component")
+                    build_validation_text(validation_res, resource_type="component", audience="external")
                     if isinstance(validation_res, dict)
                     else "检查通过，无警告"
                 )

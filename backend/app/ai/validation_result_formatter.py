@@ -92,6 +92,7 @@ def build_validation_text(
     resource_type: str,
     detail: bool = False,
     include_next_step: bool = True,
+    audience: str = "agent",
 ) -> str:
     """把完整校验结果渲染为有界短文本，保留模型修复所需的错误上下文。"""
 
@@ -135,7 +136,12 @@ def build_validation_text(
         lines.append(f"已省略 {hidden_count} 条 warning/error。")
 
     if include_next_step and (errors or warnings or status == "unavailable"):
-        lines.append("下一步：如需查看诊断明细，请使用同一目标和候选 mode 调用 validate_entity；需要更完整信息时设置 detail=true。")
+        if audience == "external":
+            lines.append("下一步：按相同目标和候选模式查看详细诊断，保留原 content/edits 输入并设置 detail=true；创建失败且尚无目标 ID 时，修正原创建候选后重新提交。")
+            if status == "unavailable" and result.get("retryable") is True:
+                lines.append("渲染基础设施暂不可用，可按任务重试策略有界重试。")
+        else:
+            lines.append("下一步：如需查看诊断明细，请使用同一目标和候选 mode 调用 validate_entity；需要更完整信息时设置 detail=true。")
     return "\n".join(lines)
 
 
