@@ -93,6 +93,7 @@ from app.schemas.audio import (
     default_audio_volume_payload,
     normalize_project_audio_template_settings,
 )
+from app.services.audio_capability_gate import ensure_cue_bindings_allowed
 from app.services.project_artifact_builder import ProjectArtifactBuilder
 from app.services.project_audio_settings_service import ProjectAudioSettingsService
 from app.services.project_config_service import ProjectConfigService
@@ -1099,6 +1100,7 @@ class ProjectTemplatePackageService:
         bindings = settings.cue_bindings
         if not bindings:
             return
+        ensure_cue_bindings_allowed(bindings)
         names = {binding.asset_name for binding in bindings}
         result = await self.session.scalars(
             select(WorkspaceAsset)

@@ -11,6 +11,25 @@ from tests.fixtures.app import *  # noqa: F401,F403
 
 
 @pytest.fixture
+def open_audio_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
+    """把 M2 三个音频能力标记为已开放，供 cue/旁白写入正例复用。"""
+
+    from app.schemas import audio as audio_schema
+
+    monkeypatch.setattr(
+        audio_schema,
+        "AUDIO_OPEN_CAPABILITIES",
+        frozenset(
+            {
+                audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS,
+                audio_schema.AUDIO_CAPABILITY_PAGE_NARRATION,
+                audio_schema.AUDIO_CAPABILITY_AUDIO_CUES,
+            }
+        ),
+    )
+
+
+@pytest.fixture
 def build_worker_credential(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     """注入测试用 Runtime Build Worker 共享凭证，并在结束时清理 settings 缓存。"""
 

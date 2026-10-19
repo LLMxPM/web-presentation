@@ -155,6 +155,13 @@ cue key 规则为小写点分段：`^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$`，最大
 
 清空绑定使用原子入口 `POST /api/v1/projects/{project_id}/audio-cues/clear`：单事务只删除绑定，不读出并重写音量，因此保留三段当前值并避免覆盖并发音量更新。能力关闭时仍允许清空历史绑定，但不允许新增或恢复绑定；完整音量更新仍需显式提交完整 `audio_settings` 对象，不隐含在 clear 中。
 
+能力门禁与写入一致：
+
+- `audio_cues=false` 时，项目创建、项目更新、configuration 更新和模板导入只要携带非空 `cue_bindings` 就返回 422 `AUDIO_CAPABILITY_UNAVAILABLE`；音量更新与空 `cue_bindings` 继续允许。
+- `page_narration=false` 时，页面与组件保存拒绝可静态判定的 `purpose="narration"`；`audio_cues=false` 时拒绝可静态识别的 `useAudioCue` 调用（含别名导入）。`validate` 返回 `valid=false` 与同一业务码，真正写入仍独立校验。
+- 检查指纹包含当前开放能力集合，能力开关变化后不复用旧 `valid` 缓存。
+- 新 preview/build 快照在 `audio_cues=false` 时不携带 cue；已生成 artifact 与旧 Runtime 版本不因开关变化自动失效，也不承诺 capability 是全局紧急停声开关。
+
 ## 5. Runtime artifact 结构
 
 Backend 在创建 preview artifact 或 build job 时把数据库绑定解析为不可变快照：

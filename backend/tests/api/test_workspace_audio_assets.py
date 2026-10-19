@@ -259,7 +259,10 @@ async def test_audio_should_copy_archive_restore_and_download(authenticated_clie
     assert "lifecycle.mp3" in downloaded.headers["content-disposition"]
 
 
-async def test_audio_reference_should_block_delete_and_survive_archive(authenticated_client: AsyncClient) -> None:
+async def test_audio_reference_should_block_delete_and_survive_archive(
+    authenticated_client: AsyncClient,
+    open_audio_capabilities: None,
+) -> None:
     """页面 AssetAudio 引用应进入引用摘要，并阻止归档资源被删除。"""
 
     workspace_id = await _create_workspace(authenticated_client, "音频引用保护")
@@ -318,6 +321,7 @@ async def test_audio_reference_should_block_delete_and_survive_archive(authentic
 
 async def test_project_cue_audio_should_appear_in_references_and_block_delete(
     authenticated_client: AsyncClient,
+    open_audio_capabilities: None,
 ) -> None:
     """项目 cue 绑定即使没有页面引用，也必须在资源引用摘要和删除保护中体现。"""
 
@@ -377,7 +381,10 @@ async def test_project_cue_audio_should_appear_in_references_and_block_delete(
     assert delete_response.json()["code"] == "ASSET_DELETE_FORBIDDEN"
 
 
-async def test_invalid_audio_page_props_should_be_rejected_before_save(authenticated_client: AsyncClient) -> None:
+async def test_invalid_audio_page_props_should_be_rejected_before_save(
+    authenticated_client: AsyncClient,
+    open_audio_capabilities: None,
+) -> None:
     """页面保存应静态阻断旁白循环、越界音量与多旁白冲突。"""
 
     workspace_id = await _create_workspace(authenticated_client, "音频静态校验")

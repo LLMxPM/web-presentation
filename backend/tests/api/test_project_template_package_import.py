@@ -106,6 +106,7 @@ async def test_project_template_package_second_import_should_reuse_branded_theme
 
 async def test_project_template_package_should_roundtrip_audio_reference(
     authenticated_client: AsyncClient,
+    open_audio_capabilities: None,
 ) -> None:
     """模板包应携带页面引用的音频文件，并在目标工作空间重建同名资源绑定。"""
 

@@ -22,7 +22,9 @@ from app.schemas.component import (
 from app.services.audio_options_gate import (
     AUDIO_ERROR_OPTIONS_INVALID,
     collect_asset_audio_errors,
+    collect_audio_capability_errors,
 )
+from app.services.audio_capability_gate import AUDIO_CAPABILITY_UNAVAILABLE
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.component_fingerprint_service import ComponentFingerprintService
 from app.services.component_resource_index_service import ComponentResourceIndexService
@@ -104,6 +106,13 @@ class WorkspaceComponentVersionService:
                 status_code=422,
                 code=AUDIO_ERROR_OPTIONS_INVALID,
                 detail="组件源码存在非法的音频组件参数：" + "；".join(audio_option_errors),
+            )
+        audio_capability_errors = collect_audio_capability_errors(normalized_content)
+        if audio_capability_errors:
+            raise AppException(
+                status_code=422,
+                code=AUDIO_CAPABILITY_UNAVAILABLE,
+                detail="组件源码依赖尚未开放的音频能力：" + "；".join(audio_capability_errors),
             )
         await self.validate_draft_dependencies(
             component=component,

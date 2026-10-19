@@ -7,11 +7,11 @@ from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas import audio as audio_schema
 from app.schemas.audio import (
     AUDIO_CAPABILITY_AUDIO_ASSETS,
     AUDIO_CAPABILITY_AUDIO_CUES,
     AUDIO_CAPABILITY_PAGE_NARRATION,
-    AUDIO_OPEN_CAPABILITIES,
     AUDIO_SCHEMA_VERSION,
     ProjectAudioSettings,
     default_project_audio_settings,
@@ -105,11 +105,12 @@ class ExternalSlideshowCapabilities(BaseModel):
 def build_audio_capabilities() -> ExternalAudioCapabilities:
     """按已开放能力集合声明音频能力，未通过出口验收的阶段保持关闭。"""
 
+    open_capabilities = audio_schema.AUDIO_OPEN_CAPABILITIES
     return ExternalAudioCapabilities(
         schema_version=AUDIO_SCHEMA_VERSION,
-        audio_assets=AUDIO_CAPABILITY_AUDIO_ASSETS in AUDIO_OPEN_CAPABILITIES,
-        page_narration=AUDIO_CAPABILITY_PAGE_NARRATION in AUDIO_OPEN_CAPABILITIES,
-        audio_cues=AUDIO_CAPABILITY_AUDIO_CUES in AUDIO_OPEN_CAPABILITIES,
+        audio_assets=AUDIO_CAPABILITY_AUDIO_ASSETS in open_capabilities,
+        page_narration=AUDIO_CAPABILITY_PAGE_NARRATION in open_capabilities,
+        audio_cues=AUDIO_CAPABILITY_AUDIO_CUES in open_capabilities,
     )
 
 

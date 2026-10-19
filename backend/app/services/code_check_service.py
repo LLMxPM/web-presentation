@@ -23,9 +23,11 @@ from app.services.asset_binding_service import (
     OWNER_KIND_PREVIEW_ARTIFACT,
     AssetBindingService,
 )
+from app.services.audio_capability_gate import AUDIO_CAPABILITY_UNAVAILABLE
 from app.services.audio_options_gate import (
     AUDIO_ERROR_OPTIONS_INVALID,
     collect_asset_audio_errors,
+    collect_audio_capability_errors,
 )
 from app.services.capture_viewport_resolver import CaptureViewport
 from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
@@ -649,8 +651,14 @@ class CodeCheckService:
 
     @staticmethod
     def _audio_option_failure(source: str) -> dict[str, object] | None:
-        """静态校验候选源码中的音频组件参数；无错误时返回 None。"""
+        """静态校验候选源码的音频能力与播放参数；无错误时返回 None。"""
 
+        capability_errors = collect_audio_capability_errors(source)
+        if capability_errors:
+            return CodeCheckService._failed_result(
+                code=AUDIO_CAPABILITY_UNAVAILABLE,
+                message="候选源码依赖尚未开放的音频能力：" + "；".join(capability_errors),
+            )
         errors = collect_asset_audio_errors(source)
         if not errors:
             return None

@@ -617,6 +617,7 @@ async def test_project_build_snapshot_should_include_audio_static_reference(
 @pytest.mark.asyncio
 async def test_project_build_snapshot_should_include_cue_only_audio(
     authenticated_client: AsyncClient,
+    open_audio_capabilities: None,
 ) -> None:
     """项目 cue 绑定即使未出现在页面源码中，也必须进入构建资源与 Runtime 配置。"""
 

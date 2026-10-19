@@ -186,6 +186,7 @@ POST     /api/v1/validate/entity
 - 音频替换同样使用 `POST /api/v1/assets/{asset_id}/replace`，必须携带 `expected_file_hash` 与 `Idempotency-Key`。
 - `GET/PUT /api/v1/projects/{project_id}/configuration` 的 `audio_settings` 读写项目音量与 cue 绑定；`PUT` 省略 `audio_settings` 保留现有值，完整对象替换，显式 `null` 返回 422，`cue_bindings: []` 清空绑定。
 - `POST /api/v1/projects/{project_id}/audio-cues/clear`（operation `project.audio_cues.clear`，scope `project:write`）是原子清空入口：必须携带 `Idempotency-Key`，成功返回 200 `ProjectItem`，`audio_settings.cue_bindings` 为空且三段音量保持当前值。它只删除绑定，不读出并重写音量；能力关闭时仍允许清空历史绑定，但不允许新增或恢复绑定。
+- `audio_cues=false` 时，项目创建、项目更新、configuration 更新和模板导入携带非空 `cue_bindings` 返回 422 `AUDIO_CAPABILITY_UNAVAILABLE`；空 `cue_bindings` 与音量更新继续允许。`page_narration=false` 时，页面/组件保存拒绝 `purpose="narration"`，`audio_cues=false` 时拒绝 `useAudioCue`，`validate` 返回相同业务码。
 - 读取响应中的 `cue_bindings` 同时给出 `asset_id`、`asset_name`、`asset_type`、`asset_status` 与 `gain_percent`；写入只接受 `asset_id`、`key` 和 `gain_percent`，资源必须属于当前工作空间且为 active 的 audio 类型。
 - `ProjectItem` 的 `audio_settings` 使用 ID 形式返回绑定；需要逻辑名时读取项目 configuration 或资源列表。
 

@@ -140,6 +140,7 @@ async def _upload_audio(client: AsyncClient, workspace_id: int, name: str) -> in
 async def test_preview_artifact_should_freeze_audio_volume_and_cues(
     authenticated_client: AsyncClient,
     runtime_service_headers,
+    open_audio_capabilities: None,
 ) -> None:
     """预览配置包固化音量与 cue 逻辑名，项目更新后旧 artifact 不热读。"""
 
@@ -221,3 +222,33 @@ async def test_existing_preview_artifact_should_not_hot_read_updated_slideshow(
     # 路由原始覆盖不因项目默认值变化而重写。
     assert new_home["meta"]["transition"] == {"effect": "push", "durationMs": 700}
     assert new_home["meta"]["advance"] == {"mode": "manual", "delayMs": 9000, "mediaTimeoutMs": 300000}
+
+
+async def test_preview_artifact_should_drop_cues_when_capability_closed(
+    authenticated_client: AsyncClient,
+    runtime_service_headers,
+) -> None:
+    """能力关闭时新快照不携带 cue；历史绑定只保留在存储中，不进入执行配置。"""
+
+    from app.db.session import get_session_factory
+    from app.models.project_audio_cue import ProjectAudioCueBinding
+
+    workspace_id, project_id, _ = await _setup_project(authenticated_client)
+    audio_id = await _upload_audio(authenticated_client, workspace_id, "legacy-cue")
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        session.add(
+            ProjectAudioCueBinding(
+                project_id=project_id,
+                cue_key="transition.forward",
+                asset_id=audio_id,
+                gain_percent=100,
+            )
+        )
+        await session.commit()
+
+    artifact_id = await _create_preview(authenticated_client, project_id)
+    bundle = await _read_config_bundle(authenticated_client, artifact_id, runtime_service_headers)
+
+    assert bundle["audio"]["cues"] == {}
+    assert bundle["audio"]["volume"] == {"master": 1.0, "narration": 1.0, "effects": 0.3}

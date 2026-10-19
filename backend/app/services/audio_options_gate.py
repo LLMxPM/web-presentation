@@ -2,17 +2,86 @@
 
 from __future__ import annotations
 
+import re
 from typing import Final
 
 from pydantic import ValidationError
 
-from app.schemas.audio import AssetAudioPropsContract
+from app.schemas.audio import (
+    AUDIO_CAPABILITY_AUDIO_CUES,
+    AUDIO_CAPABILITY_PAGE_NARRATION,
+    AssetAudioPropsContract,
+)
+from app.services.audio_capability_gate import is_audio_capability_open
 from app.services.resource_reference_parser import ResourceReferenceParser
 
 AUDIO_ERROR_OPTIONS_INVALID: Final = "AUDIO_OPTIONS_INVALID"
 
 # 单次保存最多上报的错误条数，避免多实例源码产生超长错误详情。
 _MAX_REPORTED_ERRORS = 10
+
+_IMPORT_PATTERN = re.compile(
+    r"import\s+(?P<clause>[^;'\"]+?)\s+from\s+['\"](?P<module>[^'\"]+)['\"]"
+)
+
+
+def _collect_audio_cue_call_names(source: str) -> set[str]:
+    """收集 useAudioCue 的本地调用名，覆盖默认导入与命名别名导入。"""
+
+    names = {"useAudioCue"}
+    for match in _IMPORT_PATTERN.finditer(source):
+        module = match.group("module")
+        if "audio/useAudioCue" not in module:
+            continue
+        clause = match.group("clause").strip()
+        if clause.startswith("{") and clause.endswith("}"):
+            for part in clause.strip("{}").split(","):
+                tokens = part.strip().split()
+                if not tokens or tokens[0] != "useAudioCue":
+                    continue
+                alias = tokens[2] if len(tokens) >= 3 and tokens[1] == "as" else "useAudioCue"
+                names.add(alias)
+        elif clause and not clause.startswith("*"):
+            names.add(clause.split()[0])
+    return names
+
+
+def _uses_audio_cue(source: str) -> bool:
+    """静态识别 useAudioCue 调用；动态加载与间接封装无法仅靠本文件证明覆盖。"""
+
+    for name in _collect_audio_cue_call_names(source):
+        if re.search(rf"\b{re.escape(name)}\s*\(", source):
+            return True
+    return False
+
+
+def collect_audio_capability_errors(source: str) -> list[str]:
+    """按当前开放能力拒绝旁白与 cue 源码依赖，返回有界错误列表。
+
+    只处理可静态判定的 `purpose="narration"` 与 useAudioCue 调用；动态 purpose、
+    组件间接引用和动态加载不在此处推断，由写入侧门禁与执行侧策略兜底。
+    """
+
+    errors: list[str] = []
+    narration_open = is_audio_capability_open(AUDIO_CAPABILITY_PAGE_NARRATION)
+    cues_open = is_audio_capability_open(AUDIO_CAPABILITY_AUDIO_CUES)
+    if not narration_open:
+        for index, payload in enumerate(
+            ResourceReferenceParser.collect_vue_audio_prop_payloads(source),
+            start=1,
+        ):
+            if payload.get("purpose") == "narration":
+                errors.append(
+                    f"AssetAudio 实例 #{index} 使用 purpose=\"narration\"，"
+                    "但当前工作空间未开放 page_narration（capability=page_narration）。"
+                )
+                break
+    if not cues_open and _uses_audio_cue(source):
+        errors.append(
+            "源码使用 useAudioCue，但当前工作空间未开放 audio_cues（capability=audio_cues）。"
+        )
+    return errors[:_MAX_REPORTED_ERRORS]
+
 
 _FIELD_LABELS = {
     "name": "name",

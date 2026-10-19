@@ -23,6 +23,7 @@ from app.schemas.project import (
     normalize_project_build_extra_assets_config,
 )
 from app.schemas.slideshow import load_slideshow_settings
+from app.services.audio_capability_gate import ensure_cue_bindings_allowed
 from app.services.project_audio_settings_service import ProjectAudioSettingsService
 from app.services.project_config_service import ProjectConfigService
 from app.services.page_screenshot_url import build_page_screenshot_url
@@ -183,6 +184,8 @@ class ProjectService:
         resolved_theme_key = await self.workspace_theme_service.ensure_theme_key_exists(payload.workspace_id, resolved_theme_key)
         # 先校验全部 cue 资源，再进入编码生成与写入，避免创建后才失败。
         await self.project_audio_service.validate_bindings(payload.workspace_id, payload.audio_settings.cue_bindings)
+        # 能力关闭时拒绝新增绑定；音量与空 cue 仍可保存。
+        ensure_cue_bindings_allowed(payload.audio_settings.cue_bindings)
 
         async def write_project(code: str) -> Project:
             """使用指定编码创建项目。"""
@@ -267,6 +270,8 @@ class ProjectService:
                 target_workspace_id,
                 payload.audio_settings.cue_bindings,
             )
+            # 能力关闭时拒绝新增或恢复绑定；仅音量更新与空 cue 继续允许。
+            ensure_cue_bindings_allowed(payload.audio_settings.cue_bindings)
 
         if payload.workspace_id is not None and payload.workspace_id != project.workspace_id:
             if not await self.repository.workspace_exists(payload.workspace_id):

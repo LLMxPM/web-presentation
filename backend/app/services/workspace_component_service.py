@@ -28,6 +28,8 @@ from app.schemas.component import (
     WorkspaceComponentVersionContent,
     WorkspaceComponentVersionListItem,
 )
+from app.services.audio_capability_gate import AUDIO_CAPABILITY_UNAVAILABLE
+from app.services.audio_options_gate import collect_audio_capability_errors
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.workspace_service import WorkspaceService
 from app.services.workspace_component_version_service import WorkspaceComponentVersionService
@@ -94,6 +96,14 @@ class WorkspaceComponentService:
             component_type=payload.component_type.value,
             preview_schema=preview_schema,
         )
+        normalized_content = normalize_text_to_lf(payload.content)
+        audio_capability_errors = collect_audio_capability_errors(normalized_content)
+        if audio_capability_errors:
+            raise AppException(
+                status_code=422,
+                code=AUDIO_CAPABILITY_UNAVAILABLE,
+                detail="组件源码依赖尚未开放的音频能力：" + "；".join(audio_capability_errors),
+            )
 
         async def write_component(code: str) -> WorkspaceComponent:
             """使用指定编码创建组件草稿并校验依赖。"""
@@ -101,7 +111,7 @@ class WorkspaceComponentService:
             component = WorkspaceComponent(
                 workspace_id=payload.workspace_id,
                 code=code,
-                content=normalize_text_to_lf(payload.content),
+                content=normalized_content,
                 preview_schema=preview_schema,
                 current_version_no=0,
                 draft_base_version_no=0,
@@ -179,6 +189,13 @@ class WorkspaceComponentService:
             content=next_content,
             file_type=next_file_type,
         )
+        audio_capability_errors = collect_audio_capability_errors(next_content)
+        if audio_capability_errors:
+            raise AppException(
+                status_code=422,
+                code=AUDIO_CAPABILITY_UNAVAILABLE,
+                detail="组件源码依赖尚未开放的音频能力：" + "；".join(audio_capability_errors),
+            )
         component.content = next_content
         component.preview_schema = next_preview_schema
         component.file_type = next_file_type.value
