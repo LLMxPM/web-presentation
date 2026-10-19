@@ -91,3 +91,22 @@ def test_code_check_identity_tracks_capability_changes(monkeypatch: pytest.Monke
 
     assert closed_identity == ["audio_assets"]
     assert audio_capability_identity() == ["audio_assets", "audio_cues", "page_narration"]
+
+
+def test_validate_failure_uses_same_business_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """validate 与同步写入必须返回同一能力业务码，避免客户端出现第二套错误语义。"""
+
+    from app.services.code_check_service import CodeCheckService
+
+    _use_capabilities(monkeypatch, frozenset({audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS}))
+    failure = CodeCheckService._audio_option_failure(
+        '<template><AssetAudio name="bgm" purpose="narration" /></template>'
+    )
+
+    assert failure is not None
+    assert failure["success"] is False
+    assert failure["status"] == "failed"
+    diagnostics = failure["diagnostics"]
+    assert diagnostics[0]["code"] == "AUDIO_CAPABILITY_UNAVAILABLE"
