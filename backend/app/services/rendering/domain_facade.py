@@ -122,6 +122,7 @@ class RenderDomainFacade:
         artifact_id: str | None = None,
         preview_token: str | None = None,
         source_override: str | None = None,
+        capture_screenshot: bool = False,
         timeout_seconds: float | None = None,
         extra_http_headers: Mapping[str, str] | None = None,
     ) -> dict[str, object]:
@@ -141,7 +142,7 @@ class RenderDomainFacade:
                 artifact_id=artifact_id,
                 preview_token=preview_token,
                 source_override=source_override,
-                operation_options={},
+                operation_options=({"capture_screenshot": True, "capture_policy_version": "page-static-capture.v1"} if capture_screenshot else {}),
                 timeout_seconds=timeout_seconds,
                 extra_http_headers=extra_http_headers,
             )
@@ -161,6 +162,9 @@ class RenderDomainFacade:
             "diagnostics": diagnostics,
             "layout_analysis": normalize_layout_analysis(layout),
             "environment_summary": payload.get("environment_summary") or {},
+            **({"_candidate_screenshot": (payload.get("_object_refs") or {}).get("page.png"),
+                "screenshot": payload.get("screenshot") or {"status": "skipped", "reason_code": "WORKER_CAPTURE_UNSUPPORTED", "retryable": False}}
+               if capture_screenshot else {}),
         }
 
     async def _execute(

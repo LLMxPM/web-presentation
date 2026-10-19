@@ -90,6 +90,7 @@ class SlotController:
                 "platform": "linux-container",
                 "playwright_mode": "async",
                 "chromium": "launched-per-attempt",
+                "page_diagnose_capture": "page-static-capture.v1",
             },
             "limits": {
                 "max_png_bytes": self.settings.max_png_bytes,

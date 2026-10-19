@@ -122,6 +122,9 @@ class CodeCheckService:
         workspace_id: int | None = None,
         content: str | None = None,
         edits: list[SourceEditPayload] | None = None,
+        capture_screenshot: bool = False,
+        candidate_code: str | None = None,
+        candidate_title: str | None = None,
     ) -> dict[str, object]:
         """检查页面当前源码、完整候选源码或 edits 应用后的候选源码。
 
@@ -135,6 +138,9 @@ class CodeCheckService:
                 user_id=user_id,
                 content=content,
                 edits=edits,
+                capture_screenshot=capture_screenshot,
+                candidate_code=candidate_code,
+                candidate_title=candidate_title,
             )
 
         page = await PageService(self.session)._get_page_or_raise(page_id)
@@ -189,6 +195,7 @@ class CodeCheckService:
                 render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
                 page_id=page.id,
                 source_override=candidate.content,
+                capture_screenshot=capture_screenshot,
             )
 
         return await self._run_with_cache(
@@ -199,6 +206,7 @@ class CodeCheckService:
             importer_module_path=module_path,
             candidate=candidate,
             execute_check=execute_check,
+            capture_screenshot=capture_screenshot,
         )
 
     async def _check_transient_page_code(
@@ -209,6 +217,9 @@ class CodeCheckService:
         user_id: int | str,
         content: str | None,
         edits: list[SourceEditPayload] | None,
+        capture_screenshot: bool = False,
+        candidate_code: str | None = None,
+        candidate_title: str | None = None,
     ) -> dict[str, object]:
         """检查新增页面写入前的未落库完整候选源码。"""
 
@@ -245,11 +256,11 @@ class CodeCheckService:
             raise AppException(status_code=403, code="AI_PAGE_SCOPE_DENIED", detail="项目不属于当前工作空间，拒绝检查。")
 
         draft_page = Page(
-            code="__ai_page_draft__",
+            code=candidate_code or "__ai_page_draft__",
             page_content=candidate.content,
             current_version_no=1,
             file_type=PageFileType.VUE.value,
-            title="未保存页面草稿",
+            title=candidate_title or "未保存页面草稿",
             status=RecordStatus.ACTIVE.value,
             workspace_id=project.workspace_id,
             project_id=project.id,
@@ -283,6 +294,7 @@ class CodeCheckService:
                 canonical_diff=candidate.canonical_diff,
                 render_preview_url=preview.preview_url,
                 render_viewport=CaptureViewport(width=preview.viewport_width, height=preview.viewport_height),
+                capture_screenshot=capture_screenshot,
             )
 
         return await self._run_with_cache(
@@ -293,6 +305,7 @@ class CodeCheckService:
             importer_module_path=module_path,
             candidate=candidate,
             execute_check=execute_check,
+            capture_screenshot=capture_screenshot,
         )
 
     async def check_component_code(
@@ -417,6 +430,7 @@ class CodeCheckService:
         component_preview_schema: str | None = None,
         component_type_value: str = "",
         profile_key: str = "",
+        capture_screenshot: bool = False,
     ) -> dict[str, object]:
         """鉴权之后按完整输入指纹复用检查结果，并对并发相同检查做 in-flight 合并。"""
 
@@ -445,6 +459,10 @@ class CodeCheckService:
                 )
             return self._failed_result(code=exc.code, message=exc.detail)
 
+        if kind == "page" and capture_screenshot:
+            from app.services.code_check_result_cache import compute_check_fingerprint
+            fingerprint = compute_check_fingerprint({"diagnostics": fingerprint, "capture_screenshot": True,
+                                                     "capture_policy": "page-static-capture.v1"})
         result, cache_source = await self.result_cache.get_or_execute(fingerprint, execute_check)
         # 命中/合并结果复用检查结论，但回填本次候选的 edits 元数据，避免复用别的编辑路径 diff。
         return {
@@ -467,6 +485,7 @@ class CodeCheckService:
         render_viewport: CaptureViewport | None = None,
         page_id: int | None = None,
         source_override: str | None = None,
+        capture_screenshot: bool = False,
     ) -> dict[str, object]:
         """调用 Runtime 诊断接口，并补齐候选源码变更元数据。"""
 
@@ -512,6 +531,7 @@ class CodeCheckService:
                     page_id=page_id,
                     artifact_id=artifact_id,
                     source_override=source_override,
+                    capture_screenshot=capture_screenshot,
                 )
                 if isinstance(render_result, dict) and not render_result.get("_render_artifact_cleanup_deferred"):
                     defer_artifact_cleanup = False
@@ -569,6 +589,7 @@ class CodeCheckService:
         page_id: int | None = None,
         artifact_id: str | None = None,
         source_override: str | None = None,
+        capture_screenshot: bool = False,
     ) -> dict[str, object]:
         """在页面 Runtime 检查通过后追加真实渲染诊断和布局事实。"""
 
@@ -592,6 +613,7 @@ class CodeCheckService:
             artifact_id=artifact_id,
             preview_token=preview_token or None,
             source_override=source_override,
+            **({"capture_screenshot": True} if capture_screenshot else {}),
         )
         logger.info(
             "页面远程渲染诊断阶段完成。",
@@ -647,6 +669,9 @@ class CodeCheckService:
                 enriched_result["summary"] = f"代码检查通过，发现 {len(render_diagnostics)} 个布局警告。"
         if isinstance(render_result, dict) and render_result.get("_render_artifact_cleanup_deferred"):
             enriched_result["_render_artifact_cleanup_deferred"] = True
+        if capture_screenshot:
+            enriched_result["_candidate_screenshot"] = render_result.get("_candidate_screenshot")
+            enriched_result["_screenshot_phase"] = render_result.get("screenshot")
         return enriched_result
 
     @staticmethod

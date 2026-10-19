@@ -37,6 +37,7 @@ from wp_renderer.engine.layout_scripts import (
     build_page_render_layout_script,
 )
 from wp_renderer.engine.render_ready import validate_static_render_bridge, wait_for_render_ready
+from wp_renderer.engine.joint_capture import append_screenshot
 from wp_renderer.engine.static_media import (
     MIN_STATIC_MEDIA_TIMEOUT_MS,
     STATIC_MEDIA_TIMEOUT_MS,
@@ -222,7 +223,8 @@ class RenderExecutor:
             if request.operation == OPERATION_PAGE_CAPTURE:
                 return await self._await_bounded(self._capture_page(artifact_dir), stage="capture")
             if request.operation == OPERATION_PAGE_DIAGNOSE:
-                return await self._await_bounded(self._diagnose_page(), stage="diagnose")
+                result = await self._await_bounded(self._diagnose_page(), stage="diagnose")
+                return await append_screenshot(self, result, ready=ready, artifact_dir=artifact_dir)
             if request.operation == OPERATION_COMPONENT_DIAGNOSE:
                 return await self._await_bounded(self._diagnose_component(), stage="diagnose")
             raise RenderExecutionError(
@@ -346,7 +348,7 @@ class RenderExecutor:
 
         await self._page.route("**/*", _handle_route)
 
-    async def _prepare_static_capture(self, request: Any, ready: Any) -> None:
+    async def _prepare_static_capture(self, request: Any, ready: Any, *, capture: bool = False) -> None:
         """页面操作先确认捕获上下文与目标路由，再固定单层画布和视频静态帧。"""
 
         if request.operation not in {OPERATION_PAGE_CAPTURE, OPERATION_PAGE_DIAGNOSE}:
@@ -361,7 +363,7 @@ class RenderExecutor:
                     stage="ready",
                 )
             )
-        if request.operation != OPERATION_PAGE_CAPTURE:
+        if request.operation != OPERATION_PAGE_CAPTURE and not capture:
             return
         remaining_ms = self._deadline.remaining_ms() if self._deadline else STATIC_MEDIA_TIMEOUT_MS
         timeout_ms = min(STATIC_MEDIA_TIMEOUT_MS, max(MIN_STATIC_MEDIA_TIMEOUT_MS, remaining_ms - 500))

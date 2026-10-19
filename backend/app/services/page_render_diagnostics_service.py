@@ -63,6 +63,7 @@ class PageRenderDiagnosticsService:
         artifact_id: str | None = None,
         preview_token: str | None = None,
         source_override: str | None = None,
+        capture_screenshot: bool = False,
         session: AsyncSession | None = None,
     ) -> dict[str, object]:
         """打开页面预览并返回固定画布诊断与文本布局分析。"""
@@ -93,6 +94,7 @@ class PageRenderDiagnosticsService:
                 artifact_id=artifact_id,
                 preview_token=preview_token,
                 source_override=source_override,
+                **({"capture_screenshot": True} if capture_screenshot else {}),
                 timeout_seconds=float(self.settings.render_request_timeout_seconds),
                 extra_http_headers=target.extra_http_headers,
             )

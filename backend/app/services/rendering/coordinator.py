@@ -568,88 +568,10 @@ class RenderCoordinator:
     ) -> dict[str, Any]:
         """校验 digest 并把产物写入对象存储，形成有界结果 payload（不含原始字节）。"""
 
-        from app.services.object_storage_service import ObjectStorageService
+        from app.services.rendering.result_materializer import materialize_result
 
-        descriptor = dict(receipt.result_descriptor or {})
-        result_payload = dict(descriptor.get("result") or descriptor)
-        if result_payload.get("request_digest") and result_payload["request_digest"] != request.request_digest:
-            raise RenderExecutionError(
-                RenderError.from_code(
-                    ERROR_CODE_RESULT_LOST,
-                    message="Renderer 结果 request_digest 与请求不一致。",
-                    stage="commit",
-                )
-            )
-        object_storage = ObjectStorageService()
-        object_refs: dict[str, Any] = {}
-        artifacts = list(result_payload.get("artifacts") or [])
-        workspace_id = request.workspace_id
-        max_bytes = int(self.settings.render_artifact_max_bytes)
-        for artifact in artifacts:
-            if not isinstance(artifact, dict):
-                raise RenderExecutionError(
-                    RenderError.from_code(
-                        ERROR_CODE_CONTRACT_MISMATCH,
-                        message="Renderer 返回了非法产物描述。",
-                        stage="commit",
-                    )
-                )
-            name = str(artifact.get("name") or "")
-            if not name or "/" in name or "\\" in name or name in {".", ".."}:
-                raise RenderExecutionError(
-                    RenderError.from_code(
-                        ERROR_CODE_CONTRACT_MISMATCH,
-                        message="Renderer 返回了非法产物名称。",
-                        stage="commit",
-                    )
-                )
-            expected_len = int(artifact.get("byte_length") or 0)
-            if expected_len > max_bytes:
-                raise RenderExecutionError(
-                    RenderError.from_code(
-                        "RENDER_OUTPUT_LIMIT_EXCEEDED",
-                        message=f"产物 {name} 超过大小上限。",
-                        stage="commit",
-                    )
-                )
-            content = await self.client.fetch_artifact(endpoint, attempt.attempt_uid, name)
-            if len(content) > max_bytes:
-                raise RenderExecutionError(
-                    RenderError.from_code(
-                        "RENDER_OUTPUT_LIMIT_EXCEEDED",
-                        message=f"产物 {name} 实际大小超过上限。",
-                        stage="commit",
-                    )
-                )
-            sha = sha256_hex(content)
-            expected = str(artifact.get("sha256") or "")
-            if expected and sha != expected:
-                raise RenderExecutionError(
-                    RenderError.from_code(
-                        ERROR_CODE_RESULT_LOST,
-                        message=f"产物 {name} 摘要校验失败。",
-                        stage="commit",
-                    )
-                )
-            storage_key = await object_storage.put_object(
-                f"render-results/{workspace_id}/{request.id}/{attempt.id}/{name}",
-                content=content,
-                content_type=str(artifact.get("content_type") or "application/octet-stream"),
-            )
-            object_refs[name] = {
-                "workspace_id": workspace_id,
-                "request_id": request.id,
-                "attempt_id": attempt.id,
-                "sha256": sha,
-                "byte_length": len(content),
-                "content_type": str(artifact.get("content_type") or "application/octet-stream"),
-                "storage_key": storage_key,
-            }
-        return {
-            "payload": result_payload,
-            "object_refs": object_refs,
-            "environment_summary": dict(result_payload.get("environment_summary") or {}),
-        }
+        return await materialize_result(client=self.client, settings=self.settings, endpoint=endpoint,
+                                        request=request, attempt=attempt, receipt=receipt)
 
     async def _fail_unknown_attempt(
         self,
