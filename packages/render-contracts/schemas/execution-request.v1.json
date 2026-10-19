@@ -52,7 +52,13 @@
         "device_scale_factor": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
-    "operation_options": { "type": "object" },
+    "operation_options": {
+      "type": "object",
+      "properties": {
+        "capture_screenshot": { "type": "boolean", "default": false },
+        "capture_policy_version": { "type": "string" }
+      }
+    },
     "deadline_at": { "type": "string" },
     "remaining_budget_ms": { "type": "integer", "minimum": 1 },
     "admission_ticket": { "$ref": "#/$defs/admission_ticket" },

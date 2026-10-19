@@ -62,6 +62,18 @@
       }
     },
     "layout": { "type": ["object", "null"] },
+    "screenshot": {
+      "type": ["object", "null"],
+      "required": ["status", "reason_code", "retryable"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["available", "failed", "skipped"] },
+        "reason_code": { "type": ["string", "null"] },
+        "retryable": { "type": "boolean" }
+      },
+      "if": { "type": "object", "properties": { "status": { "enum": ["failed", "skipped"] } } },
+      "then": { "properties": { "reason_code": { "type": "string", "minLength": 1 } } }
+    },
     "scenarios": { "type": "array" },
     "finished_at": { "type": "string" },
     "cleaned_at": { "type": "string" },

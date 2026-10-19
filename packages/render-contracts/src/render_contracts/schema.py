@@ -19,6 +19,7 @@ from render_contracts.constants import (
 )
 from render_contracts.errors import RenderContractError, parse_bool
 from render_contracts.tokens import AdmissionTicket, PreviewAccess
+from render_contracts.screenshot import ScreenshotPhaseResult
 
 # 产物文件名仅允许字母数字、点、短横线与下划线，禁止路径分隔符。
 _ARTIFACT_NAME_PATTERN: Final = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -141,6 +142,9 @@ class ExecutionRequest:
         if self.remaining_budget_ms <= 0:
             raise RenderContractError("remaining_budget_ms 必须为正。")
         self.viewport.validate()
+        if "capture_screenshot" in self.operation_options:
+            if self.operation != "page.diagnose" or type(self.operation_options["capture_screenshot"]) is not bool:
+                raise RenderContractError("capture_screenshot 只允许用于 page.diagnose，且必须为布尔值。")
         if self.operation in {"component.diagnose"}:
             raw_scenarios = self.operation_options.get("scenarios")
             if raw_scenarios is not None and not isinstance(raw_scenarios, list):
@@ -317,6 +321,7 @@ class ExecutionResult:
     cleaned_at: str = ""
     resource_state: str = "released"
     truncated: bool = False
+    screenshot: ScreenshotPhaseResult | None = None
 
     def to_dict(self) -> dict[str, object]:
         """序列化执行结果。"""
@@ -341,6 +346,7 @@ class ExecutionResult:
             "cleaned_at": self.cleaned_at,
             "resource_state": self.resource_state,
             "truncated": self.truncated,
+            "screenshot": self.screenshot.to_dict() if self.screenshot else None,
         }
 
     @classmethod
@@ -418,6 +424,7 @@ class ExecutionResult:
             cleaned_at=str(payload.get("cleaned_at") or ""),
             resource_state=resource_state,
             truncated=parse_bool(payload.get("truncated", False)),
+            screenshot=(ScreenshotPhaseResult.from_dict(dict(payload["screenshot"])) if payload.get("screenshot") is not None else None),
         )
 
 
