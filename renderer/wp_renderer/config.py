@@ -53,6 +53,18 @@ class RendererSettings(BaseSettings):
     max_component_scenarios: int = 16
     max_canvas_pixels: int = 16_000_000
     max_canvas_edge: int = 8192
+    # 启动自检：默认实际启动一次 Chromium，验证事件循环与浏览器可执行。
+    render_self_check_browser: bool = True
+    render_self_check_timeout_seconds: float = 5.0
+
+    @field_validator("render_self_check_timeout_seconds")
+    @classmethod
+    def validate_self_check_timeout(cls, value: float) -> float:
+        """启动自检必须有正的超时上界。"""
+
+        if value <= 0:
+            raise ValueError("RENDER_SELF_CHECK_TIMEOUT_SECONDS 必须大于 0。")
+        return value
 
     @field_validator("render_cleanup_grace_seconds")
     @classmethod

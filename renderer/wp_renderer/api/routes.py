@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from render_contracts.constants import RESOURCE_STATE_RELEASED
 from render_contracts.errors import RenderContractError
 from render_contracts.schema import ExecutionRequest
@@ -15,11 +15,13 @@ from render_contracts.schema import ExecutionRequest
 from wp_renderer.config import get_renderer_settings
 from wp_renderer.control.slot import SlotController
 from wp_renderer.security.auth import require_service_token
+from wp_renderer.startup_check import RendererSelfCheck
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 _slot: SlotController | None = None
+_self_check: RendererSelfCheck | None = None
 
 
 def get_slot() -> SlotController:
@@ -42,6 +44,13 @@ def set_slot(slot: SlotController) -> None:
     _slot = slot
 
 
+def set_self_check(result: RendererSelfCheck) -> None:
+    """注入启动自检结果，供 readyz 只读复用。"""
+
+    global _self_check
+    _self_check = result
+
+
 @router.get("/internal/render/v1/capabilities")
 async def capabilities(_subject: str = Depends(require_service_token)) -> dict[str, Any]:
     """返回 Worker 能力、协议版本与槽位状态。"""
@@ -57,16 +66,21 @@ async def livez() -> dict[str, str]:
 
 
 @router.get("/readyz")
-async def readyz() -> dict[str, Any]:
-    """执行环境健康探针；忙碌通过槽位状态表达，不触发重启语义。"""
+async def readyz() -> JSONResponse:
+    """执行环境健康探针；自检失败返回非 200，忙碌只通过槽位状态表达。"""
 
     slot = get_slot()
-    return {
+    content: dict[str, Any] = {
         "status": "ok",
         "slot_state": "busy" if slot.busy else "idle",
         "worker_id": slot.worker_id,
         "worker_epoch": slot.worker_epoch,
+        "self_check": _self_check.to_dict() if _self_check is not None else None,
     }
+    if _self_check is not None and not _self_check.ok:
+        content["status"] = "error"
+        return JSONResponse(status_code=503, content=content)
+    return JSONResponse(status_code=200, content=content)
 
 
 @router.post("/internal/render/v1/executions")

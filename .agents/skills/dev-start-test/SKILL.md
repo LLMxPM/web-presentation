@@ -49,7 +49,11 @@ docker compose -f scripts/dev/compose.infra.yml up -d --wait postgres redis
 | Backend | `uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload --reload-dir backend` | `/api/auth/me` 返回 200/401 |
 | Runtime | `pnpm --dir runtime dev --host 127.0.0.1 --port 7373` | `/__runtime_healthz` 200；构建还需 `/__runtime_readyz` 200 |
 | Editor | `pnpm --dir editor dev --host 127.0.0.1 --port 5173` | 首页 200 |
-| Renderer | `uv run --project renderer uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400 --reload --reload-dir renderer` | `/readyz` 200 |
+| Renderer | `uv run --project renderer uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400` | `/readyz` 200（含 Chromium 启动自检） |
+
+Renderer 默认不带 `--reload`。Windows 开发机上 Playwright 需要 Proactor 事件循环；uvicorn 0.53 在 Windows 带 `--reload` 时会选择 SelectorEventLoop，导致 Renderer 的页面诊断以 `NotImplementedError` 失败。默认启动因此关闭 reload，显式 Proactor 方案需实测后再作为热重载方案使用；多 worker 也可能进入 subprocess 选择分支，不能只移除 reload 就推断所有启动组合可执行。
+
+`/readyz` 只读取启动自检结果和槽位状态，不会每次探针启动浏览器；自检失败返回非 200 并带稳定 `reason`（如 `RENDERER_EVENT_LOOP_UNSUPPORTED`、`RENDERER_BROWSER_UNAVAILABLE`）。busy 只通过 `slot_state` 表达，不等同于不健康。HTTP 200 仍不能替代真实截图成功，端到端证据需包含 attempt 终态、PNG 可读、浏览器/临时文件释放和槽位回到 idle。
 
 首次启动 Renderer 前安装 Chromium：`uv run --project renderer playwright install chromium`。Node 与 Python 的 Playwright 浏览器分别安装。启动后重新探测并报告服务与地址。默认管理员取根或 Backend `.env`，默认值为 `admin` / `Admin123456`。
 

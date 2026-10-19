@@ -67,10 +67,10 @@ uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1
 
 ```powershell
 uv run --project renderer playwright install chromium
-uv run --project renderer uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400 --reload --reload-dir renderer
+uv run --project renderer uvicorn wp_renderer.main:app --host 127.0.0.1 --port 7400
 ```
 
-开发态必须保留 `--reload`；`--reload-dir renderer` 只监听 Renderer 源码。生产镜像入口不带 reload。
+Renderer 默认不带 `--reload`：Windows 上 uvicorn 的 reload 子进程会改用 Selector 事件循环，Playwright 无法创建子进程启动 Chromium。显式 Proactor 热重载方案需实测通过后再使用，多 worker 启动同样需要确认实际循环类型。启动后 `/readyz` 会带一次有界自检结果（事件循环、子进程支持、Chromium 实际启动）；自检失败返回非 200 与稳定 `reason`，不能只看端口是否监听。生产镜像入口同样不带 reload。
 
 Linux 首次安装浏览器时使用 `playwright install --with-deps chromium`。Node Playwright 与 Python Playwright 的浏览器版本分别由 pnpm 和 uv 锁文件约束，两者都需要安装。
 
