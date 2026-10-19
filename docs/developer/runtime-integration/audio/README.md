@@ -62,6 +62,8 @@ WorkspaceAsset(type=audio)
 
 详细字段、默认值和行为只在[统一契约](./contract.md)维护；阶段、模块入口和提交顺序见[实施计划](./implementation-plan.md)；执行拆分见[工作包清单](./work-packages/README.md)；最终发布门槛见[验收计划](./acceptance.md)。
 
+2026-10-19 CLI 开发环境实测的复核结论、跨仓修复优先级和交付边界见 [CLI 实测复核与改造计划](./cli-dev-environment-remediation-plan.md)。该记录不替代音频阶段验收。
+
 ## 6. 关键设计原则
 
 - **资源与用途分离**：`audio` 描述文件类型，`purpose` 或 cue key 描述使用语义；不新增 `narration` 资源类型。
