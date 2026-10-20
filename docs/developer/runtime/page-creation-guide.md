@@ -320,6 +320,7 @@ import Connector from '@runtime-kit/public/components/primitives/Connector.v1.vu
 
 ## 11. 相关文档
 
+- [页内动画与减少动态效果](./page-animation-guide.md)
 - [Runtime Kit 能力说明](./runtime-kit-capabilities.md)
 - [资源引用规范](./integration/asset-usage-guide.md)
 - [路由配置指南](./routes-config-guide.md)

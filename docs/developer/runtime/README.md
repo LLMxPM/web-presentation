@@ -7,6 +7,7 @@
 | 文档 | 内容 |
 | :--- | :--- |
 | [页面添加指南](./page-creation-guide.md) | 页面源码、画布与本地开发流程 |
+| [页内动画与减少动态效果](./page-animation-guide.md) | 动效能力、静态基线、偏好适配、排查与模型提示入口 |
 | [路由配置指南](./routes-config-guide.md) | fixture 路由与页面入口配置 |
 | [主题系统使用指南](./theme-usage-guide.md) | 主题变量与页面样式 |
 | [图标系统使用指南](./icon-system-guide.md) | 图标配置与页面引用 |

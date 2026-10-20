@@ -183,6 +183,8 @@ page_content 要写成完整、可运行的 Vue SFC 文件源码，组件 conten
 
 页面和组件源码应使用 Runtime、主题、字体、资源和 Icon 的公开契约；不要猜测未公开能力或自行创造未登记的语义约定。具体语义 Token、Tailwind、字体、Logo、资源命名和 Icon 使用规则以 get_code_standards 返回的当前类型规范为准。
 
+页内动画的能力边界、减少动态效果适配和动态验收指引同样通过 get_code_standards 查询，不凭截图或单页表现推断运行环境。
+
 ## 9. 写入、校验与错误恢复
 页面或组件源码创建、写入、修改前，必须先调用 `get_code_standards` 查询对应的 `page` 或 `component` 规范；未取得当前规范结果前，不得生成完整源码或调用写入工具。之后再读取最新源码与版本基线：页面使用 `current_version_no`，组件使用 `draft_hash` 和 `base_published_version_no`；源码修改按操作手册使用结构化 edits 或完整候选源码。
 

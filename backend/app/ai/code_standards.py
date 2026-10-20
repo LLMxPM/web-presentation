@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from app.ai.animation_authoring_standard import ANIMATION_AUTHORING_STANDARD
 from app.ai.content_authoring_standard import CONTENT_AUTHORING_STANDARD
 from app.core.exceptions import AppException
 
@@ -108,9 +109,9 @@ _COMPONENT_CODE_STANDARD = """
 """.strip()
 
 
-# 页面与组件共享文案规范，避免两种创作入口的例外边界分别演进。
-PAGE_CODE_STANDARD = f"{_PAGE_CODE_STANDARD}\n\n{CONTENT_AUTHORING_STANDARD}"
-COMPONENT_CODE_STANDARD = f"{_COMPONENT_CODE_STANDARD}\n\n{CONTENT_AUTHORING_STANDARD}"
+# 页面与组件共享动画及文案规范，确保内置助手与 External API 读取同一套默认规则。
+PAGE_CODE_STANDARD = f"{_PAGE_CODE_STANDARD}\n\n{ANIMATION_AUTHORING_STANDARD}\n\n{CONTENT_AUTHORING_STANDARD}"
+COMPONENT_CODE_STANDARD = f"{_COMPONENT_CODE_STANDARD}\n\n{ANIMATION_AUTHORING_STANDARD}\n\n{CONTENT_AUTHORING_STANDARD}"
 
 
 _DEFAULT_CODE_STANDARDS: dict[str, str] = {
