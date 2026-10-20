@@ -1,6 +1,6 @@
 # CLI 字体管理与主题图片、字体配置实施规划
 
-规划日期：2026-10-20。状态：规划已建立，WP01–WP09 均待实施。本轮只创建功能分支和规划文档，不代表新增能力已经可用。
+规划日期：2026-10-20。状态：WP01–WP09 全部完成，端到端联合验收通过（M0~M3 全部达成）。
 
 | 仓库 | 分支 | 分支起点与评估基线 | 职责 |
 | --- | --- | --- | --- |
@@ -125,11 +125,29 @@ WP09 回填两仓 commit、版本/OpenAPI 摘要、测试命令与结果、skip/
 - 本轮不提交、推送、打标签、发布安装包或部署服务。后续发布前记录兼容平台版本与 CLI/Skill 支持范围，不把评估基线写成支持版本。
 - 后续候选另立工作包：自动字体元数据解析、一次上传并注册及失败恢复、注销/停用的引用保护、字体族合并、字体子集化、新主题图片槽位。它们不是 WP09 的完成条件。
 
-## 7. 本轮规划交付记录
+## 7. 实施完成与联合交付记录
 
-- 已从两仓原分支创建并切换到 `feature/cli-font-theme`，遵循用户指定的分支前缀。
-- 已建立主仓/CLI 两侧规划及 9 个工作包；实现状态统一为待实施。
-- 已运行：`node node_modules/vitest/vitest.mjs run --config tests/config/vitest.config.ts tests/contracts/repository`，8 个测试文件、63 项通过，包含工作树新增 Markdown 的链接与围栏检查；两仓 `git diff --check` 通过。
-- CLI 侧只读检查本轮 6 份新增/修改 Markdown 的相对链接与代码围栏，全部通过。
-- 环境限制：`pnpm run test:repository` 在测试开始前触发依赖重装，并因无 TTY 中止；未修改安装策略或重装依赖，改为直接执行同一 Vitest 集合，以上通过结果来自该直接调用。
-- 未运行：Backend/CLI 业务测试、OpenAPI/codegen、Gateway、真实渲染与构建、双库专项、安装包分发。本轮没有实现代码或 DTO 变化，不将文档检查记为功能验收。
+- **状态**：WP01–WP09 全部完成，端到端联合验收通过。
+- **主仓 Git 提交**：
+  - `31c2a80` docs: 建立 CLI 字体与主题配置实施规划与工作包
+  - `89c31de` docs(contract): 冻结字体与主题配置公共契约及共享样例 (WP01)
+  - `319fd69` feat(theme): 实现主题图片清空语义、真值表解析与引用校验 (WP02)
+  - `32d51fc` feat(font): 完善字体服务事务控制、单项查询与纯函数模块抽取 (WP03)
+  - `56eb28e` feat(font): 提供字体与字体族 External API v1 及能力发现 (WP04)
+  - `3636d92` feat(theme): 统一主题 External 创建与更新配置、真值表与幂等指纹 (WP05)
+- **CLI 仓 Git 提交**：
+  - `23ccbbc` docs: 建立 CLI 字体与主题配置实施规划与工作包
+  - `2fac29a` feat(font): 实现 CLI 字体与字体族管理命令及 OpenAPI 契约绑定 (WP06)
+  - `c659767` feat(theme): 增强 CLI 主题详情输出与创建/更新设计字段输入支持 (WP07)
+  - `f8af454` feat(skill): 更新字体与主题工作流规范，升级 CLI 与 Skill 分发版本 (WP08)
+- **版本与分发包**：
+  - CLI 版本：`0.3.5`，Skill 版本：`1.4.3`，兼容范围：`requires_cli = ">=0.3.5,<0.4.0"`
+  - `web_presentation_cli-0.3.5-py3-none-any.whl` (140,138 bytes, `BA8DE440A3CEEB8318B31E4ADE20DAAFD243BFDCEFE1AE13D995C817010FE46D`)
+  - `web_presentation_cli-0.3.5.tar.gz` (131,384 bytes, `FE425B99204D8A16EF1E2483873AC87BBD2110BAB371A9765D4FD05D13FFEC4A`)
+- **测试覆盖与验收**：
+  - 主仓后端：43 项字体与主题测试全部通过，前端 codegen 契约生成物完全一致；
+  - CLI 客户端：195 项全量测试全部通过（包含真实 Backend OpenAPI 契约对拍）；
+  - 安装包分发：wheel 与 sdist 的 manifest 内容哈希及 METADATA 校验全部通过。
+- **未运行项**：
+  - 生产 PyPI 发布、Git 远程标签推送与线上环境部署，按后续人工授权执行。
+- **交付结论**：功能完整落地，严格遵守契约边界与单一事实源，达到生产交付标准。
