@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Literal
 
+from app.ai.content_authoring_standard import CONTENT_AUTHORING_STANDARD
 from app.core.exceptions import AppException
 
 CodeStandardType = Literal["page", "component"]
 
 
-PAGE_CODE_STANDARD = """
+_PAGE_CODE_STANDARD = """
 ## 页面布局与内容规范
 
 - 页面是固定尺寸的演示画布，本质上是需要整体构图的二维空间，不是从上到下自然增长的网页文档；先读取项目 configuration，遵循真实画布尺寸、基础字号、安全边距和样式基线。
@@ -67,7 +68,7 @@ PAGE_CODE_STANDARD = """
 """.strip()
 
 
-COMPONENT_CODE_STANDARD = """
+_COMPONENT_CODE_STANDARD = """
 ## 组件结构与复用规范
 
 - 组件按页面组件、内容组件和原子组件选择正确的 component_type；页面组件负责整页骨架，内容组件负责页面内内容块，原子组件保持单一职责。
@@ -105,6 +106,11 @@ COMPONENT_CODE_STANDARD = """
 - 修改组件源码、component_type 或 preview_schema 前，读取最新草稿和版本基线，使用结构化 edits 或完整候选内容完成修改。
 - 写入前关注 Runtime 编译、默认态、预览 presets 和布局诊断结果；校验失败时根据精简文本中的 code、message、scenario、profile 和 detail facts 修复，需要更多上下文时调用 `validate_entity(detail=true)`，不绕过组件契约或版本锁。
 """.strip()
+
+
+# 页面与组件共享文案规范，避免两种创作入口的例外边界分别演进。
+PAGE_CODE_STANDARD = f"{_PAGE_CODE_STANDARD}\n\n{CONTENT_AUTHORING_STANDARD}"
+COMPONENT_CODE_STANDARD = f"{_COMPONENT_CODE_STANDARD}\n\n{CONTENT_AUTHORING_STANDARD}"
 
 
 _DEFAULT_CODE_STANDARDS: dict[str, str] = {

@@ -59,6 +59,16 @@ AI 会话、run、事件、消息、工具调用和 HITL 状态写入 Backend �
 
 平台目录只登记 `agent-coordinator` 一个助手，不再创建隔离子运行或披露自委派工具。历史 `component_manager` 与 `resource_manager` 模型槽位不再开放。
 
+## 成品文案默认规范
+
+内容助手默认提示词只保留观众内容边界、文本角色与事实保真的简短原则。页面和组件代码规范通过 `content_authoring_standard.py` 共用详细规则；`get_code_standards` 与 External API v1 的 `/standards/page`、`/standards/component` 返回当前用户生效内容，CLI 通过 `wp standards page/component` 读取，不在 Skill 内复制完整细则。
+
+这组规则是默认创作指导，不是新增静态检查或写入门禁。必要操作指引、真实业务状态、用户指定的技术教学、单句正文及忠实引用均有保留边界，不能靠关键词或删标点代替语义判断。
+
+用户自定义助手提示词和代码规范仍按现有机制整段覆盖对应默认值；本次默认规则更新不会自动合并进已保存的自定义内容。需要采用新规则时，可在账户 AI 设置中查看系统默认内容，手动合并或恢复默认；不要自动改写用户配置。
+
+规范装配、配置覆盖和接口对拍只能证明规则已正确提供给调用方，不能证明模型生成质量。行为评测场景与判定口径见[成品文案质量评测](./content-authoring-quality.md)。
+
 ## 诊断 CLI
 
 排查 AI run 时使用只读诊断 CLI：

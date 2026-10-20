@@ -5,6 +5,8 @@ from __future__ import annotations
 from httpx import AsyncClient
 from sqlalchemy import delete, select
 
+from app.ai.code_standards import get_default_code_standard
+from app.ai.content_authoring_standard import CONTENT_AUTHORING_STANDARD
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
 from app.db.session import get_session_factory
 from app.models.ai_agent_config import AiAgentToolUserConfig
@@ -97,9 +99,11 @@ async def test_code_standard_config_should_support_default_override_and_restore(
     assert list_response.status_code == 200
     defaults = {item["standard_type"]: item for item in list_response.json()}
     assert set(defaults) == {"page", "component"}
-    assert defaults["page"]["source"] == "system_default"
-    assert defaults["page"]["customized"] is False
-    assert defaults["page"]["content"] == defaults["page"]["default_content"]
+    for standard_type, config in defaults.items():
+        assert config["source"] == "system_default"
+        assert config["customized"] is False
+        assert config["content"] == config["default_content"] == get_default_code_standard(standard_type)
+        assert config["content"].count(CONTENT_AUTHORING_STANDARD) == 1
 
     custom_content = "## 我的页面规范\n\n- 页面标题必须使用结论句。"
     update_response = await authenticated_client.patch(
@@ -109,7 +113,7 @@ async def test_code_standard_config_should_support_default_override_and_restore(
     assert update_response.status_code == 200
     updated = {item["standard_type"]: item for item in update_response.json()}
     assert updated["page"]["content"] == custom_content
-    assert updated["page"]["default_content"] != custom_content
+    assert updated["page"]["default_content"] == defaults["page"]["default_content"]
     assert updated["page"]["source"] == "user_custom"
     assert updated["component"]["content"] == updated["component"]["default_content"]
 
@@ -138,6 +142,12 @@ async def test_code_standard_config_should_support_default_override_and_restore(
     assert other_user_defaults["page"]["customized"] is False
     assert other_user_defaults["page"]["content"] == other_user_defaults["page"]["default_content"]
 
+    # 回到实际保存覆盖配置的用户，验证恢复默认确实移除了自定义内容。
+    original_user_login = await authenticated_client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "Admin123456"},
+    )
+    assert original_user_login.status_code == 200
     restore_response = await authenticated_client.patch(
         f"/api/ai/agent-configs/{AGENT_COORDINATOR_AGENT_ID}/code-standards/page",
         json={"restore_default": True},
@@ -145,7 +155,8 @@ async def test_code_standard_config_should_support_default_override_and_restore(
     assert restore_response.status_code == 200
     restored = {item["standard_type"]: item for item in restore_response.json()}
     assert restored["page"]["customized"] is False
-    assert restored["page"]["content"] == restored["page"]["default_content"]
+    assert restored["page"]["content"] == defaults["page"]["default_content"]
+    assert restored["component"] == defaults["component"]
 
 
 async def test_legacy_query_tool_config_should_apply_to_both_read_tools() -> None:

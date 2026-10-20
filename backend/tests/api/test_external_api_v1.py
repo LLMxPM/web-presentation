@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from app.ai.code_standards import get_default_code_standard
+from app.ai.content_authoring_standard import CONTENT_AUTHORING_STANDARD
 from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
 from app.db.session import get_session_factory
 from app.models.ai_agent_config import AiAgentCodeStandardUserConfig
@@ -427,15 +429,19 @@ async def test_external_api_whoami_and_system_info(client: AsyncClient) -> None:
     assert comp_resp.json()["standard_type"] == "component"
     assert "组件结构与复用规范" in comp_resp.json()["markdown"]
     assert "preview_schema" in comp_resp.json()["markdown"]
+    for standard_type, response in (("page", std_resp), ("component", comp_resp)):
+        assert response.json()["markdown"] == get_default_code_standard(standard_type)
+        assert response.json()["markdown"].count(CONTENT_AUTHORING_STANDARD) == 1
 
     # 3. 验证用户自定义规范覆盖能正确生效
+    custom_content = "## 自定义页面规范\n\n- 自定义约束：必须使用特定全屏布局。"
     async with session_factory() as session:
         session.add(
             AiAgentCodeStandardUserConfig(
                 user_id=user.id,
                 agent_id=AGENT_COORDINATOR_AGENT_ID,
                 standard_type="page",
-                content_override="## 自定义页面规范\n\n- 自定义约束：必须使用特定全屏布局。",
+                content_override=custom_content,
                 created_by=user.id,
                 updated_by=user.id,
             )
@@ -445,8 +451,10 @@ async def test_external_api_whoami_and_system_info(client: AsyncClient) -> None:
     custom_std_resp = await client.get("/api/v1/standards/page", headers=headers)
     assert custom_std_resp.status_code == 200
     assert custom_std_resp.json()["standard_type"] == "page"
-    assert "## 自定义页面规范" in custom_std_resp.json()["markdown"]
-    assert "必须使用特定全屏布局" in custom_std_resp.json()["markdown"]
+    assert custom_std_resp.json()["markdown"] == custom_content
+    unchanged_component = await client.get("/api/v1/standards/component", headers=headers)
+    assert unchanged_component.status_code == 200
+    assert unchanged_component.json()["markdown"] == comp_resp.json()["markdown"]
 
 
 
