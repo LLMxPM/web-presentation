@@ -354,7 +354,7 @@ async def archive_page(
     )
 
     async def _operation(record_id: int | None) -> tuple[int, dict[str, str]]:
-        await PageService(session).delete(page_id=page_id, user_id=auth.user.id, commit=False)
+        await BusinessOperationService(session).archive_page(page_id=page_id, operator_id=auth.user.id, commit=False)
         return 200, {"message": "页面已成功归档"}
 
     status_code, result = await IdempotencyService(session).execute_idempotent_operation(

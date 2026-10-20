@@ -25,7 +25,7 @@ External 操作注册表：`backend/app/core/external_operations.py`（`OPERATIO
 | 校验 | **无 HTTP 端点**（仅 AI 工具） | `POST /api/v1/validate/entity`、`POST /api/v1/pages/{id}/validate` | — | Internal 单侧缺失（登记缺口） |
 | 项目预览 | `POST /api/projects/{id}/preview-artifacts` | `POST /api/v1/projects/{id}/preview-artifact` | `PreviewArtifactResponse` | 入参：`entry_descriptor` vs 扁平 `route` |
 | 页面预览 | `POST /api/pages/{id}/versions/{n}/preview-artifact` | `POST /api/v1/pages/{id}/preview-artifact` | `PreviewArtifactResponse` | External 按当前版本，粒度不同 |
-| 页面归档 | `DELETE /api/pages/{id}` → `MessageResponse` | `POST /api/v1/pages/{id}/archive` → `{"message"}` | **否** | HTTP 语义不同（DELETE vs POST）；均软删 `PageService.delete` |
+| 页面归档 | `PATCH /api/pages/{id}`（`status=archived`）→ `PageItem` | `POST /api/v1/pages/{id}/archive` → `{"message"}` | **否** | Internal 更新状态；External 使用独立动作端点；均更新归档状态并清理页面路由绑定，保留源码与版本 |
 
 ## 3. 对拍口径
 
@@ -33,7 +33,7 @@ External 操作注册表：`backend/app/core/external_operations.py`（`OPERATIO
 
 1. **注册表 ↔ 路由**：`_OPERATION_HTTP_CONTRACTS` 中 Top 操作的 method/path 在 OpenAPI `paths` 中完整匹配；只允许参数名不同，删除路径或方法但保留同前缀路由的反例必须失败。
 2. **响应模型**：声明对齐的操作（页面列表/读取/更新、预览）两侧响应引用同一 schema 名或字段集合一致。
-3. **有意差异登记**：创建（202 vs 200）、归档（DELETE vs POST）在矩阵中显式标注，测试断言差异仍然存在（防静默漂移成不一致）。
+3. **有意差异登记**：创建（202 vs 200）、归档（PATCH 状态更新 vs POST 动作）在矩阵中显式标注，测试断言差异仍然存在（防静默漂移成不一致）。
 4. **校验缺口**：Internal 无 validate 端点这一事实被测试锁定，若有人补上 Internal 端点须同步改矩阵。
 
 ## 4. 覆盖边界

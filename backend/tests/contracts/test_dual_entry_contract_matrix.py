@@ -68,7 +68,7 @@ TOP_OPERATIONS: list[tuple[str, str | None, str, str, str | None]] = [
         "/api/pages/{id}",
         "/api/v1/pages/{page_id}/archive",
         "message",
-        "DELETE vs POST",
+        "PATCH status=archived 返回 PageItem；POST 返回 message",
     ),
 ]
 
@@ -96,7 +96,7 @@ EXPECTED_METHODS = {
     "validate.entity": (None, "post"),
     "project.preview": ("post", "post"),
     "page.preview": ("post", "post"),
-    "page.archive": ("delete", "post"),
+    "page.archive": ("patch", "post"),
 }
 
 
@@ -176,9 +176,9 @@ def test_intentional_differences_are_registered() -> None:
     differences = {row[0]: row[4] for row in TOP_OPERATIONS if row[4]}
     # 创建：async vs sync
     assert "async" in differences["page.create"] or "202" in differences["page.create"]
-    # 归档：DELETE vs POST
+    # 归档：Internal 更新状态，External 使用独立动作端点。
     assert (
-        "DELETE" in differences["page.archive"]
+        "PATCH" in differences["page.archive"]
         and "POST" in differences["page.archive"]
     )
     # 校验：Internal 单侧缺失

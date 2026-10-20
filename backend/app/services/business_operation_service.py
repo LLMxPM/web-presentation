@@ -7,11 +7,13 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
+from app.models.enums import RecordStatus
 from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
 )
 from app.schemas.project import ProjectCreateRequest, ProjectItem, ProjectUpdateRequest
+from app.schemas.page import PageUpdateRequest
 from app.schemas.theme import WorkspaceThemeCreateRequest, WorkspaceThemeItem, WorkspaceThemeUpdateRequest
 from app.schemas.component import (
     WorkspaceComponentItem,
@@ -84,11 +86,28 @@ class BusinessOperationService:
         operator_id: int,
         commit: bool = False,
     ) -> None:
-        """归档项目。"""
+        """更新项目归档状态，保留项目及其页面、路由和共享资产。"""
 
-        await self.project_service.delete(
+        await self.project_service.update(
             project_id=project_id,
-            user_id=operator_id,
+            payload=ProjectUpdateRequest(status=RecordStatus.ARCHIVED),
+            operator_id=operator_id,
+            commit=commit,
+        )
+
+    async def archive_page(
+        self,
+        *,
+        page_id: int,
+        operator_id: int,
+        commit: bool = False,
+    ) -> None:
+        """更新页面归档状态并清理路由绑定，保留源码和版本以便恢复。"""
+
+        await self.page_service.update(
+            page_id=page_id,
+            payload=PageUpdateRequest(status=RecordStatus.ARCHIVED),
+            operator_id=operator_id,
             commit=commit,
         )
 
@@ -318,7 +337,7 @@ class BusinessOperationService:
                             code="WORKSPACE_NOT_AUTHORIZED",
                             detail=f"页面 ID {page_id} 不属于目标工作空间。",
                         )
-                    await self.page_service.delete(page_id=page_id, user_id=operator_id, commit=False)
+                    await self.archive_page(page_id=page_id, operator_id=operator_id, commit=False)
                     archived_ids.append(page_id)
             elif entity_type == "component":
                 for cid in payload.ids:
