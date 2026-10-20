@@ -15,7 +15,7 @@
 | 编号 | 内容与详细卡片 | 主责 | 前置 | 状态 |
 | --- | --- | --- | --- | --- |
 | WP01 | [契约、样例与兼容边界](./wp01-contract.md) | 主仓 | 无 | 完成 |
-| WP02 | [主题写入语义与引用校验](./wp02-theme-semantics.md) | 主仓 | WP01 | 待实施 |
+| WP02 | [主题写入语义与引用校验](./wp02-theme-semantics.md) | 主仓 | WP01 | 完成 |
 | WP03 | [字体服务事务与查询](./wp03-font-service.md) | 主仓 | WP01 | 待实施 |
 | WP04 | [字体 External API 与能力发现](./wp04-external-fonts.md) | 主仓 | WP01、WP03 | 待实施 |
 | WP05 | [主题 External 配置一致性](./wp05-external-themes.md) | 主仓 | WP01、WP02 | 待实施 |

@@ -1,6 +1,6 @@
 # WP02：主题清空语义、字段存在性与引用校验
 
-状态：待实施。主责：主仓 Backend。前置：[WP01](./wp01-contract.md)。
+状态：完成（2026-10-20）。主责：主仓 Backend。前置：[WP01](./wp01-contract.md)。
 
 ## 修改范围
 
@@ -17,12 +17,19 @@
 
 ## 验收标准
 
-- [ ] 三个图片槽逐一覆盖省略保留、替换、显式 null，清空后 ID、名称、YAML 与渲染配置一致。
-- [ ] 三个字体槽的来源切换和默认恢复按共享真值表通过，未提交槽位保持原样。
-- [ ] 归档/历史/跨空间/类型错误与无可用 face 的新绑定被拒绝；请求失败不部分写入。
-- [ ] 存量失效引用可查询、替换或清空，历史路径兼容有回归证据。
-- [ ] 现有主题复制、字体族改名、默认主题和预览/构建收集回归通过。
+- [x] 三个图片槽逐一覆盖省略保留、替换、显式 null，清空后 ID、名称、YAML 与渲染配置一致。
+- [x] 三个字体槽的来源切换和默认恢复按共享真值表通过，未提交槽位保持原样。
+- [x] 归档/历史/跨空间/类型错误与无可用 face 的新绑定被拒绝；请求失败不部分写入。
+- [x] 存量失效引用可查询、替换或清空，历史路径兼容有回归证据。
+- [x] 现有主题复制、字体族改名、默认主题和预览/构建收集回归通过。
 
 ## 验证与证据
 
-按 `dev-start-test` 运行主题/字体 API 定向回归和新增语义用例；影响检查身份或资源收集时补相关契约测试。实际渲染与构建证据由 WP09 汇总，本包不能将未跑的浏览器结果记为通过。回填代码版本、命令、结果及待 WP09 验证项。
+- 架构与模块拆分：新建 `backend/app/services/theme_reference_resolver.py`，承载图片资产校验、字体族 active face 校验、安全只读加载和三槽真值表解析；`workspace_theme_service.py` 缩减至 758 行，符合千行规范。
+- 缺陷修复：彻底修复显式清空图片 ID 时回退旧 `logo_path` / `invert_logo_path` / `project_icon_name` 的问题；显式传 null 清空时同步将路径与名称清空为 null，禁止向 Runtime 泄漏历史名称。
+- 容错读取：`safe_load_theme_relations` 针对只读场景优雅处理失效存量引用，防止主题列表或详情报错崩溃，并允许用户后续通过 PATCH 修复清空。
+- 验证命令与结果：
+  - `uv run --project backend pytest backend/tests/api/test_workspace_themes.py backend/tests/api/test_workspace_theme_semantics.py`：10 项全部通过。
+  - `uv run --project backend pytest backend/tests/unit/test_db_adapter_layer.py`：16 项全部通过，数据库适配层边界无漂移。
+  - `node node_modules/vitest/vitest.mjs run --config tests/config/vitest.config.ts tests/contracts/repository`：8 个测试文件、63 项全部通过。
+- 遗留与交接：实际渲染与截图证据在 WP09 联合验收。未实现 External 路由调整（由 WP05 承接）。
