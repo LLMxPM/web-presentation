@@ -22,6 +22,7 @@
 | [External Agent API v1 契约](./reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend API、Scope、任务和交付契约 |
 | [CLI 主仓集成边界](./cli.md) | 主仓负责的 CLI 外部 API 契约和 CLI 仓库交接边界 |
 | [CLI OAuth 主仓实施计划](./cli-oauth-implementation-plan.md) | CLI 原生授权、API 直接凭证、Editor 回调和跨仓验收；当前为计划 |
+| [CLI 字体与主题配置实施规划](./cli-font-theme/implementation-plan.md) | 字体注册/字体族、主题图片与字体配置、9 个跨仓工作包及联合验收；待实施 |
 | [MCP 主仓集成边界](./mcp.md) | 主仓负责的 MCP External API 依赖和独立 MCP 仓交接边界 |
 | [远程 MCP 主仓实施计划](https://github.com/LLMxPM/web-presentation/blob/mcp/docs/developer/mcp-implementation-plan.md) | 远程多用户授权、API 适配、跨仓工作包及发布退出项；内容仅在 `mcp` 分支维护，未合入本分支 |
 | [MCP 域名前本地验收](https://github.com/LLMxPM/web-presentation/blob/mcp/docs/developer/testing/mcp-local-acceptance.md) | TLS 创作/PNG、SQLite/PG、迁移与当前域名/宿主依赖；同样只在 `mcp` 分支维护 |
