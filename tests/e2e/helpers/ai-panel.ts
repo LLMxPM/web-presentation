@@ -38,6 +38,23 @@ export async function prepareIsolatedAgentPanel(page: Page): Promise<Locator> {
 }
 
 /**
+ * 幂等展开原生 details 折叠区。
+ *
+ * 工具组与视觉工具卡会随运行状态自动展开/折叠（未完成时展开、完成后折叠），
+ * 盲目点击 summary 会在「已被自动展开」时反而折叠内容，导致后续断言偶发失败。
+ * 这里先读取 open 状态再决定是否点击，并整体重试以吸收状态变更带来的抖动。
+ */
+export async function expandToolDetails(details: Locator): Promise<void> {
+  await expect(async () => {
+    const isOpen = await details.evaluate(element => (element as HTMLDetailsElement).open)
+    if (!isOpen) {
+      await details.locator(':scope > summary').click()
+    }
+    await expect(details).toHaveJSProperty('open', true)
+  }).toPass({ timeout: 10_000 })
+}
+
+/**
  * 等待视觉能力状态就绪（看图/生成图片均可用）。
  * agents 配置接口未返回前上传会被面板静默丢弃，视觉用例上传前必须先等待该状态。
  */

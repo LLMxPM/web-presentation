@@ -7,7 +7,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from '../../fixtures/base'
 
 import { AGENT_HELLO_CASE, AGENT_PAGE_EXTERNAL_CASE, AGENT_VISUAL_CASE, buildReferenceImage } from '../../fixtures/ai-cases'
-import { openAgentPanel, prepareIsolatedAgentPanel, waitForVisualCapability } from '../../helpers/ai-panel'
+import { expandToolDetails, openAgentPanel, prepareIsolatedAgentPanel, waitForVisualCapability } from '../../helpers/ai-panel'
 import { gotoWorkspaceHome, openSmokePage, openSmokeProject } from '../../helpers/navigation'
 
 test('内容助手普通对话应走真实会话链路并返回确定性终态文本', async ({ page }) => {
@@ -99,12 +99,12 @@ async function expectVisualToolResult(panel: ReturnType<Page['locator']>, option
 
   const toolGroup = panel.locator('[data-testid="tool-call-group"]').last()
   await expect(toolGroup).toBeVisible()
-  await toolGroup.locator(':scope > summary').click()
+  await expandToolDetails(toolGroup)
 
   const generationCard = toolGroup.locator('[data-testid="visual-tool-card"]').filter({ hasText: '图片生成' })
   await expect(toolGroup.getByText('图片理解', { exact: true })).toBeVisible()
   await expect(generationCard).toBeVisible()
-  await generationCard.locator(':scope > summary').click()
+  await expandToolDetails(generationCard)
   await expect(generationCard.getByRole('button', {
     name: new RegExp(`预览图片 ${AGENT_VISUAL_CASE.assetNamePrefix}`),
   })).toBeVisible()

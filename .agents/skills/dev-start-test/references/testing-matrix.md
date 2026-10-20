@@ -148,6 +148,7 @@ test:backend
 - 端口：8000/5173/7373/7400 必须空闲；同时检查 IPv4 与 IPv6。
 - 依赖：默认本机 `_e2e` 数据库与 Redis DB 15；可用 `E2E_DATABASE_URL`/`E2E_REDIS_URL` 覆盖。
 - 首次运行安装两套 Playwright Chromium；E2E 报告与失败产物在 `test-results/e2e/`。
+- 预览域断言不得依赖系统 DNS：`preview.localhost` 只在浏览器内按 `*.localhost` 约定解析到回环地址，Playwright `ApiRequestContext` 会 `getaddrinfo ENOTFOUND`。需要产物响应头时在预览页内同源 `fetch`；prepare 预检会提示 hosts 修复方式。
 - 结束或切换到开发环境前，先停止 E2E 服务，再按开发流程启动。
 
 ### 交付前验证

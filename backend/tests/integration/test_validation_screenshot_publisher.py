@@ -29,11 +29,22 @@ from sqlalchemy import select
 
 @pytest.mark.parametrize("drift", [None, "source", "title", "expired", "scope", "viewport"])
 async def test_publish_only_matching_candidate(authenticated_client, drift):
-    """原始候选可原子发布；源码/标题变化、跨空间或过期不得返回 ready。"""
+    """原始候选可原子发布；源码/标题变化、跨空间或过期不得返回 ready。
+
+    页面读取路由上下文，因此标题属于截图身份的一部分；纯内容页面的标题变化
+    不再使旧图失效，由 API 层用例覆盖。
+    """
     ws = (await authenticated_client.post("/api/workspaces", json={"name": "截图发布测试"})).json()["id"]
     project = (await authenticated_client.post("/api/projects", json={"workspace_id": ws, "name": "截图项目"})).json()["id"]
+    page_source = (
+        "<template><main>正式内容 {{ route.meta.title }}</main></template>\n"
+        "<script setup>\n"
+        "import { useRoute } from 'vue-router'\n"
+        "const route = useRoute()\n"
+        "</script>"
+    )
     page_response = await authenticated_client.post("/api/pages", json={"workspace_id": ws, "project_id": project,
-                "title": "正式标题", "page_content": "<template><main>正式内容</main></template>"})
+                "title": "正式标题", "page_content": page_source})
     assert page_response.status_code == 200, page_response.text
     page_id = page_response.json()["id"]
     async with get_session_factory()() as session:
@@ -112,3 +123,56 @@ async def test_created_route_context_matches_candidate(authenticated_client, pla
             route_options=PageCopyToProjectRequest(target_project_id=project, **options), commit=False)
         actual = await ProjectRouteService(session).build_runtime_route_config(project)
         assert candidate == actual
+
+
+@pytest.mark.parametrize("placement", ["root", "group"])
+async def test_candidate_capture_identity_matches_saved_page(authenticated_client, placement):
+    """候选捕获身份必须等于保存后复算的身份，否则附图会被判为输入变化而丢弃。"""
+    user = (await authenticated_client.get("/api/auth/me")).json()["id"]
+    ws = (await authenticated_client.post("/api/workspaces", json={"name": "候选身份测试"})).json()["id"]
+    project = (await authenticated_client.post("/api/projects", json={"workspace_id": ws, "name": "候选身份项目"})).json()["id"]
+    page_source = (
+        "<template><div>{{ catalog.length }}</div></template>\n"
+        "<script setup>\n"
+        "import { useRouteCatalog } from '@runtime-kit/public/composables/page/useRouteCatalog.v1'\n"
+        "const catalog = useRouteCatalog().catalogItems.value\n"
+        "</script>"
+    )
+    async with get_session_factory()() as session:
+        options = {"route_placement": placement, "route": "overview"}
+        if placement == "group":
+            parent = ProjectRoute(project_id=project, route="chapter", route_type="group", group_title="章节", order=10,
+                                  hidden=False, created_by=user, updated_by=user)
+            session.add(parent)
+            await session.flush()
+            options["parent_route_id"] = parent.id
+        draft = Page(code="PG20261019993", project_id=project, workspace_id=ws, title="候选身份标题",
+                     speaker_notes="备注", file_type="vue")
+        candidate = await candidate_runtime_routes(session, page=draft, options=options)
+        created = await PageService(session).create(
+            PageCreateRequest(workspace_id=ws, project_id=project, title=draft.title,
+                              speaker_notes=draft.speaker_notes, page_content=page_source),
+            user,
+            candidate_code=draft.code,
+            route_options=PageCopyToProjectRequest(target_project_id=project, **options),
+            commit=False,
+        )
+        saved_page = await session.get(Page, created.id)
+        assert saved_page is not None
+        builder = CodeCheckFingerprintBuilder(session)
+        candidate_identity = await builder.build_page_fingerprint(
+            workspace_id=ws,
+            project_id=project,
+            source=page_source,
+            importer_module_path=f"src/views/{draft.code}.vue",
+            page_metadata={"code": draft.code, "title": draft.title, "speaker_notes": draft.speaker_notes},
+            runtime_routes_override=candidate,
+        )
+        saved_identity = await builder.build_page_fingerprint(
+            workspace_id=ws,
+            project_id=project,
+            source=saved_page.page_content,
+            importer_module_path=f"src/views/{saved_page.code}.vue",
+            page_metadata={"code": saved_page.code, "title": saved_page.title, "speaker_notes": saved_page.speaker_notes},
+        )
+        assert candidate_identity == saved_identity

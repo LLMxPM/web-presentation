@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "description": "运行时路由页码分配与目录投影的跨端对拍用例；Runtime 与 Backend 必须对同一输入得到完全相同的投影。",
+  "field_policy": {
+    "included": ["path", "title", "order", "pageNumber", "parentPath", "hidden"],
+    "excluded": [
+      "component: 只决定 artifact 模块白名单，不改变单页静态输出",
+      "speakerNotes: 演讲台与 PPTX 导出专用",
+      "transition/advance: 捕获上下文禁用播放，不改变静态画面",
+      "playback/transitionDefaults: 项目级放映默认值，同上"
+    ]
+  },
+  "cases": [
+    {
+      "name": "flat_routes_default_order",
+      "routes": [
+        { "route": "a", "component": "@/views/a.vue", "meta": { "title": "A", "order": 0, "hidden": false, "speakerNotes": "备注 A" } },
+        { "route": "b", "component": "@/views/b.vue", "meta": { "title": "B", "order": 1, "hidden": false } },
+        { "route": "c", "component": "@/views/c.vue", "meta": { "title": "C", "order": 2, "hidden": false } }
+      ],
+      "expected": {
+        "catalog": [
+          { "path": "/a", "title": "A", "order": 0, "pageNumber": 1, "hidden": false },
+          { "path": "/b", "title": "B", "order": 1, "pageNumber": 2, "hidden": false },
+          { "path": "/c", "title": "C", "order": 2, "pageNumber": 3, "hidden": false }
+        ],
+        "totalPages": 3,
+        "minPageNumber": 1
+      }
+    },
+    {
+      "name": "flat_routes_unsorted_order",
+      "routes": [
+        { "route": "a", "component": "@/views/a.vue", "meta": { "title": "A", "order": 2, "hidden": false } },
+        { "route": "b", "component": "@/views/b.vue", "meta": { "title": "B", "order": 0, "hidden": false } },
+        { "route": "c", "component": "@/views/c.vue", "meta": { "title": "C", "order": 1, "hidden": false } }
+      ],
+      "expected": {
+        "catalog": [
+          { "path": "/b", "title": "B", "order": 0, "pageNumber": 1, "hidden": false },
+          { "path": "/c", "title": "C", "order": 1, "pageNumber": 2, "hidden": false },
+          { "path": "/a", "title": "A", "order": 2, "pageNumber": 3, "hidden": false }
+        ],
+        "totalPages": 3,
+        "minPageNumber": 1
+      }
+    },
+    {
+      "name": "hidden_leaf_keeps_catalog_entry_without_page_number",
+      "routes": [
+        { "route": "a", "component": "@/views/a.vue", "meta": { "title": "A", "order": 0, "hidden": false } },
+        { "route": "b", "component": "@/views/b.vue", "meta": { "title": "B", "order": 1, "hidden": true, "speakerNotes": "隐藏页备注" } },
+        { "route": "c", "component": "@/views/c.vue", "meta": { "title": "C", "order": 2, "hidden": false, "transition": { "effect": "fade", "durationMs": 400 }, "advance": { "mode": "timer", "delayMs": 5000, "mediaTimeoutMs": 300000 } } }
+      ],
+      "expected": {
+        "catalog": [
+          { "path": "/a", "title": "A", "order": 0, "pageNumber": 1, "hidden": false },
+          { "path": "/b", "title": "B", "order": 1, "hidden": true },
+          { "path": "/c", "title": "C", "order": 2, "pageNumber": 2, "hidden": false }
+        ],
+        "totalPages": 2,
+        "minPageNumber": 1
+      }
+    },
+    {
+      "name": "group_children_are_numbered_after_their_order",
+      "routes": [
+        { "route": "cover", "component": "@/views/cover.vue", "meta": { "title": "封面", "order": 0, "hidden": false } },
+        {
+          "route": "chapter",
+          "meta": { "title": "章节", "order": 1, "hidden": false },
+          "children": [
+            { "route": "part-a", "component": "@/views/part-a.vue", "meta": { "title": "甲", "order": 1, "hidden": false } },
+            { "route": "part-b", "component": "@/views/part-b.vue", "meta": { "title": "乙", "order": 0, "hidden": false } }
+          ]
+        },
+        { "route": "end", "component": "@/views/end.vue", "meta": { "title": "结束", "order": 2, "hidden": false } }
+      ],
+      "expected": {
+        "catalog": [
+          { "path": "/cover", "title": "封面", "order": 0, "pageNumber": 1, "hidden": false },
+          { "path": "/chapter/part-b", "title": "乙", "order": 0, "pageNumber": 2, "parentPath": "/chapter", "hidden": false },
+          { "path": "/chapter/part-a", "title": "甲", "order": 1, "pageNumber": 3, "parentPath": "/chapter", "hidden": false },
+          { "path": "/end", "title": "结束", "order": 2, "pageNumber": 4, "hidden": false }
+        ],
+        "totalPages": 4,
+        "minPageNumber": 1
+      }
+    },
+    {
+      "name": "hidden_group_still_numbers_visible_children",
+      "routes": [
+        {
+          "route": "appendix",
+          "meta": { "title": "附录", "order": 0, "hidden": true },
+          "children": [
+            { "route": "x1", "component": "@/views/x1.vue", "meta": { "title": "附一", "order": 0, "hidden": false } },
+            { "route": "x2", "component": "@/views/x2.vue", "meta": { "title": "附二", "order": 1, "hidden": false } }
+          ]
+        },
+        { "route": "main", "component": "@/views/main.vue", "meta": { "title": "正文", "order": 1, "hidden": false } }
+      ],
+      "expected": {
+        "catalog": [
+          { "path": "/appendix/x1", "title": "附一", "order": 0, "pageNumber": 1, "parentPath": "/appendix", "hidden": false },
+          { "path": "/appendix/x2", "title": "附二", "order": 1, "pageNumber": 2, "parentPath": "/appendix", "hidden": false },
+          { "path": "/main", "title": "正文", "order": 1, "pageNumber": 3, "hidden": false }
+        ],
+        "totalPages": 3,
+        "minPageNumber": 1
+      }
+    },
+    {
+      "name": "group_with_all_hidden_children_contributes_no_page_number",
+      "routes": [
+        {
+          "route": "draft",
+          "meta": { "title": "草稿", "order": 0, "hidden": false },
+          "children": [
+            { "route": "h1", "component": "@/views/h1.vue", "meta": { "title": "草稿一", "order": 0, "hidden": true } },
+            { "route": "h2", "component": "@/views/h2.vue", "meta": { "title": "草稿二", "order": 1, "hidden": true } }
+          ]
+        },
+        { "route": "main", "component": "@/views/main.vue", "meta": { "title": "正文", "order": 1, "hidden": false } }
+      ],
+      "expected": {
+        "catalog": [
+          { "path": "/draft/h1", "title": "草稿一", "order": 0, "parentPath": "/draft", "hidden": true },
+          { "path": "/draft/h2", "title": "草稿二", "order": 1, "parentPath": "/draft", "hidden": true },
+          { "path": "/main", "title": "正文", "order": 1, "pageNumber": 1, "hidden": false }
+        ],
+        "totalPages": 1,
+        "minPageNumber": 1
+      }
+    },
+    {
+      "name": "missing_order_treated_as_zero_and_sorted_stably",
+      "routes": [
+        { "route": "a", "component": "@/views/a.vue", "meta": { "title": "A", "hidden": false } },
+        { "route": "b", "component": "@/views/b.vue", "meta": { "title": "B", "order": 1, "hidden": false } },
+        { "route": "c", "component": "@/views/c.vue", "meta": { "title": "C", "hidden": false } }
+      ],
+      "expected": {
+        "catalog": [
+          { "path": "/a", "title": "A", "order": 0, "pageNumber": 1, "hidden": false },
+          { "path": "/c", "title": "C", "order": 0, "pageNumber": 2, "hidden": false },
+          { "path": "/b", "title": "B", "order": 1, "pageNumber": 3, "hidden": false }
+        ],
+        "totalPages": 3,
+        "minPageNumber": 1
+      }
+    },
+    {
+      "name": "equal_order_keeps_input_order",
+      "routes": [
+        { "route": "a", "component": "@/views/a.vue", "meta": { "title": "A", "order": 5, "hidden": false } },
+        { "route": "b", "component": "@/views/b.vue", "meta": { "title": "B", "order": 5, "hidden": false } },
+        { "route": "c", "component": "@/views/c.vue", "meta": { "title": "C", "order": 5, "hidden": false } }
+      ],
+      "expected": {
+        "catalog": [
+          { "path": "/a", "title": "A", "order": 5, "pageNumber": 1, "hidden": false },
+          { "path": "/b", "title": "B", "order": 5, "pageNumber": 2, "hidden": false },
+          { "path": "/c", "title": "C", "order": 5, "pageNumber": 3, "hidden": false }
+        ],
+        "totalPages": 3,
+        "minPageNumber": 1
+      }
+    },
+    {
+      "name": "playback_fields_never_reach_the_projection",
+      "routes": [
+        { "route": "a", "component": "@/views/a.vue", "meta": { "title": "A", "order": 0, "hidden": false, "speakerNotes": "不该入目录", "transition": { "effect": "push", "durationMs": 800 }, "advance": { "mode": "media_end", "delayMs": 2000, "mediaTimeoutMs": 120000 } } }
+      ],
+      "expected": {
+        "catalog": [
+          { "path": "/a", "title": "A", "order": 0, "pageNumber": 1, "hidden": false }
+        ],
+        "totalPages": 1,
+        "minPageNumber": 1
+      }
+    },
+    {
+      "name": "empty_routes",
+      "routes": [],
+      "expected": {
+        "catalog": [],
+        "totalPages": 0,
+        "minPageNumber": 0
+      }
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,9 @@ from app.services.owner_resource_token_resolver import (
     OwnerResourceTokens,
 )
 from app.services.project_config_service import ProjectConfigService
+
+if TYPE_CHECKING:
+    from app.services.code_check_fingerprint import ProjectRenderIdentity
 
 
 @dataclass(slots=True, frozen=True)
@@ -131,6 +134,9 @@ class PageScreenshotFingerprintService:
             workspace_id=workspace_id,
             page_version_ids=owner_version_ids,
         )
+        # 项目级渲染身份（项目名 + 页码目录 + 渲染档案）按项目算一次，逐页复用；
+        # 否则列表页会对每个页面重复解析路由树与项目配置。
+        render_identity = await self._resolve_project_render_identity(pages[0])
         snapshots: dict[int, PageScreenshotConfigSnapshot] = {}
         for page in pages:
             version_id = version_id_by_page_key.get((int(page.id), int(page.current_version_no)))
@@ -139,8 +145,21 @@ class PageScreenshotFingerprintService:
                 if version_id is not None
                 else OwnerResourceTokens()
             )
-            snapshots[int(page.id)] = await self._with_render_context(page, self._apply_resource_tokens(project_snapshot, resource_tokens))
+            snapshots[int(page.id)] = await self._with_render_context(
+                page,
+                self._apply_resource_tokens(project_snapshot, resource_tokens),
+                render_identity=render_identity,
+            )
         return snapshots
+
+    async def _resolve_project_render_identity(self, page: Page) -> ProjectRenderIdentity | None:
+        """解析同项目页面共享的渲染身份；无项目页面返回空。"""
+
+        if page.project_id is None:
+            return None
+        from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
+
+        return await CodeCheckFingerprintBuilder(self.session).build_project_render_identity(page.project_id)
 
     async def _with_page_resource_identity(
         self,
@@ -152,15 +171,26 @@ class PageScreenshotFingerprintService:
         resource_tokens = await self._collect_page_resource_tokens(page)
         return await self._with_render_context(page, self._apply_resource_tokens(base, resource_tokens))
 
-    async def _with_render_context(self, page: Page, snapshot: PageScreenshotConfigSnapshot) -> PageScreenshotConfigSnapshot:
-        """叠加源码闭包、路由元数据、Kit/Runtime 构建与捕获策略，供所有截图入口共用。"""
+    async def _with_render_context(
+        self,
+        page: Page,
+        snapshot: PageScreenshotConfigSnapshot,
+        *,
+        render_identity: ProjectRenderIdentity | None = None,
+    ) -> PageScreenshotConfigSnapshot:
+        """叠加源码闭包、路由身份、Kit/Runtime 构建与捕获策略，供所有截图入口共用。
+
+        ``render_identity`` 由 ``build_page_snapshots_from_project`` 按项目算一次后逐页传入；
+        单页入口不传时按页面自行解析。
+        """
         from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
         if page.project_id is None:
             return snapshot
         identity = await CodeCheckFingerprintBuilder(self.session).build_page_fingerprint(
             workspace_id=page.workspace_id, project_id=page.project_id, source=page.page_content,
             importer_module_path=f"src/views/{page.code}.{page.file_type}",
-            page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes})
+            page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes},
+            render_identity=render_identity)
         return PageScreenshotConfigSnapshot(page_config=snapshot.page_config,
             config_hash=hashlib.sha256(f"{snapshot.config_hash}|{identity}|page-static-capture.v1|dpr=1".encode()).hexdigest(),
             theme_key=snapshot.theme_key, theme_config=snapshot.theme_config)

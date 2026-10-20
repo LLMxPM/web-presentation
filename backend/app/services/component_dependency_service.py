@@ -43,6 +43,8 @@ _STATIC_DEFAULT_IMPORT_BINDING_PATTERN = re.compile(
     r"[\"'](?P<import_path>[^\"']+)[\"']",
     flags=re.MULTILINE,
 )
+# 裸模块说明符：单段、非相对/别名路径，由 Runtime 宿主解析。
+_BARE_MODULE_SPECIFIER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]*$")
 
 
 @dataclass(frozen=True)
@@ -53,13 +55,33 @@ class ParsedDefaultImportBinding:
     import_path: str
 
 
+def _is_bare_module_specifier(module_path: str) -> bool:
+    """判断说明符是否为由 Runtime 宿主提供的裸模块（并非仓库内相对/逻辑路径）。
+
+    只接受形如 `vue-router`、`vue` 的单段说明符；带 `@` 作用域、路径分隔符或已规范化为
+    `src/...` 的路径都不算，避免把页面模块或组件引用误收进裸导入集合。
+    """
+
+    normalized = str(module_path or "").strip()
+    if not normalized or normalized.startswith(("@", "/", ".")):
+        return False
+    if "/" in normalized or "\\" in normalized:
+        return False
+    return bool(_BARE_MODULE_SPECIFIER_PATTERN.fullmatch(normalized))
+
+
 @dataclass(frozen=True)
 class ParsedModuleDependencies:
-    """源码解析后得到的远程组件依赖和 Runtime 本地公共模块依赖。"""
+    """源码解析后得到的远程组件依赖、Runtime 本地公共模块依赖与裸模块说明符。
+
+    ``bare_imports`` 记录不带路径前缀的说明符（例如 vue-router）。它们不进入依赖索引，
+    只用于判定页面闭包是否能读到运行时上下文（当前路由、页码、路由目录等）。
+    """
 
     component_imports: tuple[tuple[str, int], ...]
     runtime_local_imports: tuple[RuntimeKitImportDependency, ...]
     page_module_imports: tuple[str, ...]
+    bare_imports: tuple[str, ...] = tuple()
 
 
 class ComponentDependencyService:
@@ -159,6 +181,7 @@ class ComponentDependencyService:
                 component_imports=tuple(),
                 runtime_local_imports=tuple(),
                 page_module_imports=tuple(),
+                bare_imports=tuple(),
             )
 
         if _DYNAMIC_IMPORT_PATTERN.search(script_content):
@@ -171,6 +194,7 @@ class ComponentDependencyService:
         component_imports: list[tuple[str, int]] = []
         runtime_local_imports: list[RuntimeKitImportDependency] = []
         page_module_imports: list[str] = []
+        bare_imports: list[str] = []
         for import_source in _STATIC_IMPORT_PATTERN.findall(script_content):
             normalized_source = str(import_source or "").strip()
             if not normalized_source:
@@ -255,10 +279,17 @@ class ComponentDependencyService:
                     ),
                 )
 
+            if _is_bare_module_specifier(candidate_module_path):
+                # 裸说明符（vue-router、vue 等）由 Runtime 宿主提供，不解析依赖索引；
+                # 但页面是否读取路由上下文依赖它，必须在指纹身份里可见。
+                bare_imports.append(candidate_module_path)
+                continue
+
         return ParsedModuleDependencies(
             component_imports=tuple(self._deduplicate_pairs(component_imports)),
             runtime_local_imports=tuple(self._deduplicate_runtime_kit_dependencies(runtime_local_imports)),
             page_module_imports=tuple(self._deduplicate_strings(page_module_imports)),
+            bare_imports=tuple(self._deduplicate_strings(bare_imports)),
         )
 
     def parse_default_import_bindings(

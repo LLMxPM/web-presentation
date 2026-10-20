@@ -28,7 +28,12 @@ def test_fallback_snapshot_expiry_covers_budget() -> None:
 
     from datetime import UTC, datetime, timedelta
 
-    settings = AppSettings(_env_file=None, runtime_preview_artifact_ttl_seconds=3600)
+    # 票据 TTL 必须严格小于快照 TTL，否则 settings 启动校验会拒绝构造。
+    settings = AppSettings(
+        _env_file=None,
+        runtime_preview_artifact_ttl_seconds=3600,
+        runtime_preview_token_ttl_seconds=300,
+    )
     expires = datetime.now(UTC) + timedelta(seconds=settings.runtime_preview_artifact_ttl_seconds)
     assert expires > datetime.now(UTC) + timedelta(minutes=5)
 

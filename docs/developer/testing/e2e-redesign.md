@@ -164,6 +164,8 @@ FunctionModel 不需要感知 Runtime 诊断上下文。短场景应配置足够
 - 禁止在 spec 内使用 `details.*`、`.tool-call-group` 等私有 class；视觉工具卡片改为语义化 `data-testid`（`visual-tool-card`、`visual-status-region`），由 Editor 补齐后用例引用。
 - AI 用例对「运行结果」只断言用户可见产物（图片、文案、已保存提示），不断言事件序列的私有结构。
 - 15s 是默认上限，不替代就绪检查。纯 UI 同步反馈优先使用更短的局部超时，预览、AI、构建等明确异步边界单独放宽。
+- 折叠容器（工具组、视觉工具卡）会随运行状态自动展开或折叠，断言前必须用幂等展开（先读 `open` 再点击，见 `tests/e2e/helpers/ai-panel.ts` 的 `expandToolDetails`），不能盲目点击 `summary`——否则在「已被自动展开」时会反而折叠内容。
+- 预览域（`preview.localhost`）只在浏览器内按 `*.localhost` 约定解析；需要构建产物响应头时在预览页内以同源 `fetch` 断言，不使用 `ApiRequestContext` 直接请求该主机名（会 `getaddrinfo ENOTFOUND`）。
 
 ### 3.6 Playwright project 与命令边界
 

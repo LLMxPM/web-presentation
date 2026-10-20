@@ -151,6 +151,45 @@ describe('AgentVisualToolCard', () => {
     expect(details.open).toBe(true)
   })
 
+  it('实时事件先带回 assets、附件晋级信息未同步时仍显示资源库入口', async () => {
+    const { rerender } = render(AgentVisualToolCard, {
+      props: {
+        tool: createTool({
+          outputPayload: { assets: [{ id: 102, name: 'saved-hero' }] },
+          outputAttachments: [createAttachment(2, 'saved-hero.png', 'never')],
+        }),
+      },
+    })
+
+    // 工具结果已声明资源落库，不能因为附件摘要滞后而隐藏入口，否则与工具终态文案矛盾。
+    expect(screen.getByText('saved-hero')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /已保存到资源库/ })).toBeTruthy()
+
+    await rerender({
+      tool: createTool({
+        outputPayload: { assets: [{ id: 102, name: 'saved-hero' }] },
+        outputAttachments: [createAttachment(2, 'saved-hero.png', 'promoted')],
+      }),
+    })
+
+    // 晋级信息补齐后不应重复展示同一个资源。
+    expect(screen.getByText('saved-hero')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /已保存到资源库/ })).toHaveLength(1)
+  })
+
+  it('工具输出的资源已被删除时不再展示资源库入口', () => {
+    render(AgentVisualToolCard, {
+      props: {
+        tool: createTool({
+          outputPayload: { assets: [{ id: 102, name: 'removed-hero' }] },
+          outputAttachments: [createAttachment(2, 'removed-hero.png', 'deleted')],
+        }),
+      },
+    })
+
+    expect(screen.queryByRole('button', { name: /已保存到资源库/ })).toBeNull()
+  })
+
   it('实时事件暂未带回 assets 时，已晋级附件仍显示资源库入口', () => {
     render(AgentVisualToolCard, {
       props: {

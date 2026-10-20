@@ -132,13 +132,26 @@ const outputAssets = computed(() => {
       }
     }
   }
-  return promotedOutputAttachments.value.map(attachment => {
+  const assets = new Map<number, { id: number, name: string }>()
+  for (const attachment of promotedOutputAttachments.value) {
     const assetId = Number(attachment.promoted_asset_id)
-    return assetsById.get(assetId) ?? {
+    assets.set(assetId, assetsById.get(assetId) ?? {
       id: assetId,
       name: assetNameFromAttachment(attachment.original_name),
+    })
+  }
+  // 实时事件可能先带回工具输出的 assets、后补齐附件的晋级/删除信息。
+  // 附件摘要尚无任何落库结论时，以工具结果自身声明的 assets 兜底，
+  // 避免终态文案说「已保存」而卡片没有资源入口；一旦附件给出明确结论，则完全以附件为准。
+  const hasAttachmentVerdict = promotedOutputAttachments.value.length > 0 || deletedOutputAttachments.value.length > 0
+  if (!hasAttachmentVerdict) {
+    for (const asset of assetsById.values()) {
+      if (!assets.has(asset.id)) {
+        assets.set(asset.id, asset)
+      }
     }
-  })
+  }
+  return [...assets.values()]
 })
 const deletedAssetStatusText = computed(() => (
   deletedOutputAttachments.value.length === 1

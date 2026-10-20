@@ -73,6 +73,7 @@ describe('共享预检的操作顺序', () => {
     return {
       calls,
       ensureDependencies: vi.fn(async () => { calls.push('dependencies') }),
+      ensurePreviewHost: vi.fn(async () => { calls.push('preview-host') }),
       findOccupied: vi.fn().mockResolvedValueOnce(occupied).mockImplementation(async () => { calls.push('verify-ports'); return [] }),
       stopOccupied: vi.fn((_targets, options) => { calls.push(options.dryRun ? 'plan' : 'stop') }),
       install: vi.fn(() => { calls.push('browsers') }),
@@ -82,7 +83,7 @@ describe('共享预检的操作顺序', () => {
   it('完整准备先预演，再停服，确认端口释放后才安装浏览器', async () => {
     const ops = operations()
     await preflightE2e({ stopServices: true, installBrowsers: true }, ops)
-    expect(ops.calls).toEqual(['dependencies', 'plan', 'stop', 'verify-ports', 'browsers'])
+    expect(ops.calls).toEqual(['dependencies', 'preview-host', 'plan', 'stop', 'verify-ports', 'browsers'])
   })
 
   it('dry-run 只调用停服预演，浏览器安装也携带 dry-run', async () => {
@@ -105,6 +106,13 @@ describe('共享预检的操作顺序', () => {
     expect(blocked.stopOccupied).toHaveBeenCalledOnce()
     expect(blocked.stopOccupied).toHaveBeenCalledWith(occupied, expect.objectContaining({ dryRun: true }))
     expect(blocked.install).not.toHaveBeenCalled()
+  })
+
+  it('预览主机名检查在依赖探测之后、端口检查之前执行', async () => {
+    const ops = operations()
+    await preflightE2e({ stopServices: true }, ops)
+    expect(ops.calls.indexOf('preview-host')).toBe(ops.calls.indexOf('dependencies') + 1)
+    expect(ops.calls.indexOf('preview-host')).toBeLessThan(ops.calls.indexOf('plan'))
   })
 
   it('停止后端口未释放即终止后续操作', async () => {

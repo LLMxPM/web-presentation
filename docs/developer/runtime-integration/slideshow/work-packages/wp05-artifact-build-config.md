@@ -30,6 +30,7 @@
 - 交付代码：`ProjectRouteService.build_runtime_route_config` 输出根级 `transitionDefaults`、`playback`（`autoStart`/`loop`/`advanceDefaults`），每个叶子页 `meta.transition`/`meta.advance` 为 Backend 解析后的完整生效组；`ProjectArtifactBuilder` 的路由工具类型同步放宽。
 - 快照语义：预览 artifact 与构建 snapshot 共用 `ProjectArtifactBuilder.build_snapshot` → `config_bundle.routes`，创建时一次性写入 RuntimeArtifactStore；不会热读项目表。项目默认变更不重写路由原始覆盖。
 - 截图指纹：未把 `delay_ms`/`loop`/`auto_start` 纳入 `PageScreenshotFingerprintService`，静态截图输入未变化时不触发重截；翻页动画在捕获上下文由 WP14/WP17 禁用。
+- 后续收敛（2026-10-20）：路由进入截图身份的方式改为「可达性门控 + 页码目录投影」，见[页面校验截图计划](../../page-validation-screenshot-agent-guidance-plan.md) WP04 条目与 `backend/app/services/page_render_identity.py`。`transition`/`advance`/`playback` 已从身份中彻底剔除，模块入口不渲染的 `app` 展示字段同样不再参与。
 - 验证：`pytest tests/api/test_project_preview_slideshow.py` → 2 passed（默认值/生效值下发、旧 artifact 不随 PATCH 变化、新 artifact 使用新值）；`pytest tests/api/catalog/catalog_routes_versioning_cases_1.py` → 16 passed（响应新增字段已更新期望）。未运行真实构建产物对拍（需要完整 Vite 构建链，留给 WP12 联调）。
 - 边界：模板包预览配置包未在此包改造，由 WP06 处理。
 

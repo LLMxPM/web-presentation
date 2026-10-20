@@ -79,6 +79,26 @@ it('Runtime 共享依赖变更必须触发其 PR 门禁', () => {
   }
 })
 
+/**
+ * 预览域只在浏览器内按 *.localhost 约定解析，系统 DNS 与 Playwright ApiRequestContext 不遵循该约定；
+ * CI 若不写 hosts，任何针对 preview.localhost 的真实请求都会以 getaddrinfo ENOTFOUND 失败。
+ */
+it('E2E 工作流为预览域配置 hosts 解析，且与 Backend 改写的主机名一致', () => {
+  const action = yaml('.github/actions/setup-e2e/action.yml')
+  const steps = action.runs.steps as any[]
+  const hostsStep = steps.find(step => String(step.run ?? '').includes('setup-preview-hosts.sh'))
+  expect(hostsStep, 'setup-e2e 必须调用 setup-preview-hosts.sh').toBeTruthy()
+
+  const script = fs.readFileSync('.github/scripts/setup-preview-hosts.sh', 'utf8')
+  const hostname = script.match(/readonly preview_hostname="([^"]+)"/)?.[1]
+  expect(hostname).toBeTruthy()
+  expect(script).toContain('sudo tee -a')
+
+  // 主机名必须与 Backend 的回环预览改写保持单一事实源，否则 hosts 记录将无法命中真实请求。
+  const originService = fs.readFileSync('backend/app/services/preview_origin_service.py', 'utf8')
+  expect(originService).toContain(`authority = "${hostname}"`)
+})
+
 it('门禁范围由 test-scope job 调用分级脚本产出', () => {
   const job = yaml('.github/workflows/platform-test.yml').jobs['test-scope']
   expect(job).toBeTruthy()

@@ -84,6 +84,7 @@ node .agents/skills/dev-start-test/scripts/prepare-e2e.mjs --stop-services --sta
 ```
 
 - 预检同时检查 IPv4/IPv6，地址取测试入口的 E2E 覆盖。`--start-infra` 只为不可达且指向本机默认端口的依赖启动对应 Compose 服务；远程/自定义端口不可达时直接报错。
+- 预检会校验 `preview.localhost` 可解析并给出修复提示。构建与预览链路会把本机 Runtime 地址改写为该主机名，浏览器按 `*.localhost` 约定解析到回环地址，但系统 DNS 解析器与 Playwright `ApiRequestContext` 不遵循该约定：缺少 hosts 记录时产物请求与真实截图链路会以 `getaddrinfo ENOTFOUND` 失败。修复：以管理员身份在 hosts 加入 `127.0.0.1 preview.localhost`（Linux CI 需 `sudo` 写入 `/etc/hosts`）。E2E 用例本身不得依赖该类记录——需要预览域产物响应头时在页面内以同源 `fetch` 断言，见 `tests/e2e/specs/runtime-heavy/project-build.spec.ts`。
 - 不带 `--dry-run` 就会执行准备；结束后保留 E2E 服务，并按相同地址规则校验就绪指纹。
 - 每次重置前必须先停 Backend。运行中的 Backend 可能在 `ai_agent_process_owners` 被重置后停止后台执行器。复用已有数据与服务时直接运行 Playwright，不再 prepare。
 

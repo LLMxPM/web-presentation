@@ -8,6 +8,7 @@
  * - 所有子命令在仓库根执行，避免调用方 cwd 不同导致 compose/pnpm 路径漂移。
  */
 import { execFileSync } from 'node:child_process'
+import dns from 'node:dns'
 import net from 'node:net'
 import path from 'node:path'
 import process from 'node:process'
@@ -144,6 +145,42 @@ function parseDependency(key, label, rawUrl, defaultPort, source) {
     expectedPort: defaultPort,
     source,
   }
+}
+
+export const PREVIEW_HOSTNAME = 'preview.localhost'
+
+/**
+ * 校验预览主机名可解析。
+ *
+ * 构建与预览链路会把本机 Runtime 地址改写成 {@link PREVIEW_HOSTNAME}
+ * （见 backend/app/services/preview_origin_service.py），浏览器按 *.localhost 约定解析到回环地址，
+ * 但系统 DNS 解析器与 Playwright ApiRequestContext 不遵循该约定。
+ * 缺少 hosts 记录时，针对产物前缀的 ApiRequestContext 请求会以 getaddrinfo ENOTFOUND 失败，
+ * 因此这里提前给出可执行的修复提示，而不是让 E2E 在中途报 DNS 错误。
+ */
+export async function ensurePreviewHostResolvable({ dryRun = false, logPrefix = '[e2e-env]', lookup = lookupHostname } = {}) {
+  if (await lookup(PREVIEW_HOSTNAME)) {
+    console.log(`${logPrefix} 预览主机名 ${PREVIEW_HOSTNAME} 可解析`)
+    return
+  }
+  if (dryRun) {
+    console.log(
+      `${logPrefix} dry-run：${PREVIEW_HOSTNAME} 不可解析，实际执行会给出 hosts 修复提示`,
+    )
+    return
+  }
+  console.warn(
+    `${logPrefix} 警告：${PREVIEW_HOSTNAME} 不可解析。` +
+      `以管理员身份在 hosts 文件（Windows: C:\\Windows\\System32\\drivers\\etc\\hosts，类 Unix: /etc/hosts）加入 ` +
+      `"127.0.0.1 ${PREVIEW_HOSTNAME}"，否则依赖系统 DNS 的产物请求与真实截图链路会失败。`,
+  )
+}
+
+/** 用系统解析器探测主机名，失败不抛错。 */
+function lookupHostname(hostname) {
+  return new Promise((resolve) => {
+    dns.lookup(hostname, (error, address) => resolve(!error && Boolean(address)))
+  })
 }
 
 /** 有界 TCP 可达性探测。 */

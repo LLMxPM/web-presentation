@@ -1,16 +1,25 @@
 /** 文件功能：复用 E2E/全量测试的依赖、停服预演、端口复核与浏览器准备顺序。 */
-import { ensureE2eDependencies, findOccupiedServices, installBrowsers, stopOccupiedServices } from './e2e-env.mjs'
+import {
+  ensureE2eDependencies,
+  ensurePreviewHostResolvable,
+  findOccupiedServices,
+  installBrowsers,
+  stopOccupiedServices,
+} from './e2e-env.mjs'
 
 /** 执行共同预检；可注入隔离操作验证顺序，默认实现只在显式选项开启时产生副作用。 */
 export async function preflightE2e(options, {
   logPrefix = '[e2e-env]',
   ensureDependencies = ensureE2eDependencies,
+  ensurePreviewHost = ensurePreviewHostResolvable,
   findOccupied = findOccupiedServices,
   stopOccupied = stopOccupiedServices,
   install = installBrowsers,
 } = {}) {
   console.log(`${logPrefix} 检查 E2E 基础依赖...`)
   await ensureDependencies({ startInfra: options.startInfra, dryRun: options.dryRun, logPrefix })
+  console.log(`${logPrefix} 检查预览主机名解析...`)
+  await ensurePreviewHost({ dryRun: options.dryRun, logPrefix })
   console.log(`${logPrefix} 检查服务端口（IPv4/IPv6）...`)
   const occupied = await findOccupied({ logPrefix })
   if (occupied.length > 0) {

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from app.services.code_check_fingerprint import (
-    _compiler_identity,
     _collect_source_asset_names,
+    _compiler_identity,
 )
 
 

@@ -1,11 +1,31 @@
 /**
  * 文件功能：覆盖真实项目构建重型链路：在夹具沙箱项目发起构建，等待 Runtime 构建完成并校验产物状态。
  */
+import type { Page } from '@playwright/test'
+
 import { expect, test } from '../../fixtures/test-data'
 
 interface BuildJob {
   id: number
   status: string
+}
+
+/**
+ * 在预览页内以同源 fetch 读取产物响应头。
+ *
+ * preview.localhost 只保证在浏览器内解析（Chromium 按回环地址处理 *\.localhost），
+ * 系统 DNS 与 Playwright ApiRequestContext 直接解析域名会在无 hosts 记录的机器上
+ * 报 getaddrinfo ENOTFOUND，因此产物的响应头断言必须在页面内完成。
+ */
+async function readPreviewAsset(page: Page, url: string) {
+  return await page.evaluate(async (target) => {
+    const response = await fetch(target, { credentials: 'same-origin', cache: 'no-store' })
+    return {
+      ok: response.ok,
+      status: response.status,
+      cacheControl: response.headers.get('cache-control'),
+    }
+  }, url)
 }
 
 test('沙箱项目应完成一次真实构建并展示构建成功', async ({ page, context, browser, visualEditSandbox }) => {
@@ -49,12 +69,15 @@ test('沙箱项目应完成一次真实构建并展示构建成功', async ({ pa
   await expect(builtImage).toHaveJSProperty('naturalWidth', 320)
   const cssUrl = await builtPage.locator('link[rel="stylesheet"]').first().getAttribute('href')
   const privateCssUrl = new URL(cssUrl!, builtPage.url()).href
-  const cssResponse = await api.get(privateCssUrl)
-  expect(cssResponse.ok()).toBeTruthy()
-  expect(cssResponse.headers()['cache-control']).toBe('private, no-cache')
+  const cssResponse = await readPreviewAsset(builtPage, privateCssUrl)
+  expect(cssResponse.ok).toBeTruthy()
+  expect(cssResponse.cacheControl).toBe('private, no-cache')
   const anonymous = await browser.newContext()
   try {
-    expect((await anonymous.request.get(privateCssUrl)).status()).toBe(404)
+    // 匿名上下文同样经浏览器发起，未携带构建票据时应被拒绝。
+    const anonymousPage = await anonymous.newPage()
+    const denied = await anonymousPage.goto(privateCssUrl)
+    expect(denied?.status()).toBe(404)
   } finally {
     await anonymous.close()
     await builtPage.close()

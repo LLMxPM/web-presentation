@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 
 from render_contracts.screenshot import CAPTURE_POLICY_VERSION
 from sqlalchemy import select
@@ -33,6 +34,10 @@ from app.services.component_validation_profile import (
     COMPONENT_VALIDATION_PROFILE_VERSION,
 )
 from app.services.model3d_acceptance_policy import build_model3d_support_matrix
+from app.services.page_render_identity import (
+    project_route_catalog,
+    routes_need_screenshot_identity,
+)
 from app.services.page_screenshot_fingerprint_service import (
     PageScreenshotFingerprintService,
 )
@@ -40,6 +45,43 @@ from app.services.resource_reference_parser import ResourceReferenceParser
 from app.services.workspace_theme_service import WorkspaceThemeService
 
 _PAGE_MODULE_PATH_PATTERN = re.compile(r"^src/views/(?P<code>[A-Za-z0-9_-]+)\.(?P<file_type>[A-Za-z0-9]+)$")
+
+
+@dataclass(frozen=True, slots=True)
+class ModuleGraphIdentity:
+    """源码闭包身份：依赖 token、引用资源名，以及闭包是否能读到路由上下文。"""
+
+    dependency_tokens: list[str]
+    asset_names: list[str]
+    reads_route_context: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectRenderIdentity:
+    """项目级渲染身份快照：同一项目内所有页面共用，避免逐页重复解析路由与配置。
+
+    只覆盖「页面在静态截图里真正能读到」的项目级输入：
+    - ``app_title``：项目名会被写成 ``document.title``，页面无需任何导入即可读取；
+    - ``route_catalog``：页码目录投影，仅在页面闭包可读路由上下文时进入身份；
+    - ``renderer_profile`` / ``capture_policy``：捕获环境与策略版本。
+    """
+
+    app_title: str
+    route_catalog: dict[str, object] | None
+    renderer_profile: str
+    capture_policy: str
+
+    def build_render_context(self, *, reads_route_context: bool) -> dict[str, object]:
+        """按页面可达性输出渲染上下文身份片段。"""
+
+        context: dict[str, object] = {
+            "app_title": self.app_title,
+            "renderer_profile": self.renderer_profile,
+            "capture_policy": self.capture_policy,
+        }
+        if reads_route_context and self.route_catalog is not None:
+            context["routes"] = self.route_catalog
+        return context
 
 
 def capture_check_fingerprint(diagnostic_fingerprint: str) -> str:
@@ -101,10 +143,14 @@ class CodeCheckFingerprintBuilder:
         importer_module_path: str,
         page_metadata: dict[str, object] | None = None,
         runtime_routes_override: dict[str, object] | None = None,
+        render_identity: ProjectRenderIdentity | None = None,
     ) -> str:
-        """页面检查指纹：源码 + 依赖版本 + 引用资源 + Kit/编译器 + 主题样式 + 规则版本。"""
+        """页面检查指纹：源码 + 依赖版本 + 引用资源 + Kit/编译器 + 主题样式 + 规则版本。
 
-        dependency_identity, asset_names = await self._resolve_module_graph_identity(
+        ``render_identity`` 允许调用方按项目预算一次并逐页复用；为空时本方法自行解析。
+        """
+
+        graph = await self._resolve_module_graph_identity(
             workspace_id=workspace_id,
             project_id=project_id,
             entry_content=source,
@@ -119,7 +165,11 @@ class CodeCheckFingerprintBuilder:
         )
         referenced_assets = await self._resolve_workspace_asset_tokens(
             workspace_id=workspace_id,
-            asset_names=asset_names,
+            asset_names=graph.asset_names,
+        )
+        resolved_identity = render_identity or await self.build_project_render_identity(
+            project_id,
+            runtime_routes_override,
         )
         payload = {
             "kind": "page",
@@ -127,9 +177,13 @@ class CodeCheckFingerprintBuilder:
             "workspace_id": int(workspace_id),
             "project_id": int(project_id),
             "module_path": importer_module_path or "",
-            "page_metadata": page_metadata or {},
-            "render_context": await self._page_render_context(project_id, runtime_routes_override),
-            "dependency_identity": dependency_identity,
+            # 页面标题与备注只经 vue-router 的 route.meta 或 useCurrentPage 暴露；
+            # 不读取路由上下文的页面拿不到它们，变化不应让旧截图过期。
+            **({"page_metadata": page_metadata} if graph.reads_route_context and page_metadata else {}),
+            "render_context": resolved_identity.build_render_context(
+                reads_route_context=graph.reads_route_context,
+            ),
+            "dependency_identity": graph.dependency_tokens,
             "referenced_assets": referenced_assets,
             "compiler_identity": _compiler_identity(),
             "theme_style": theme_style_hash,
@@ -140,21 +194,41 @@ class CodeCheckFingerprintBuilder:
         }
         return compute_check_fingerprint(payload)
 
-    async def _page_render_context(self, project_id: int, runtime_routes_override: dict | None = None) -> dict[str, object]:
-        """将可被页面读取的项目配置与完整路由元数据纳入身份，避免标题/路由变化后复用旧图。"""
+    async def build_project_render_identity(
+        self,
+        project_id: int,
+        runtime_routes_override: dict[str, object] | None = None,
+    ) -> ProjectRenderIdentity:
+        """按项目解析渲染身份，供同项目多页面批量复用以避免逐页重复查询。
+
+        只纳入静态截图真正能读到的项目级输入：项目名（写入 ``document.title``）、
+        页码目录投影（仅对可读路由上下文的页面生效）、渲染档案与捕获策略。
+        画布尺寸、字号、描边与主题已由主题样式 hash 覆盖，不再重复计入。
+        """
         from app.core.config import get_settings
         from app.models.workspace import Project
-        from app.services.project_config_service import ProjectConfigService
         from app.services.project_route_service import ProjectRouteService
 
+        settings = get_settings()
         project = await self.session.get(Project, project_id)
         if project is None:
-            return {}
-        config = ProjectConfigService(self.session)
-        return {"app": await config.build_runtime_app_dict(project),
-                "routes": runtime_routes_override if runtime_routes_override is not None else await ProjectRouteService(self.session).build_runtime_route_config(project_id),
-                "renderer_profile": get_settings().render_profile_digest,
-                "capture_policy": CAPTURE_POLICY_VERSION}
+            return ProjectRenderIdentity(
+                app_title="",
+                route_catalog=None,
+                renderer_profile=settings.render_profile_digest,
+                capture_policy=CAPTURE_POLICY_VERSION,
+            )
+        raw_routes = (
+            runtime_routes_override
+            if runtime_routes_override is not None
+            else await ProjectRouteService(self.session).build_runtime_route_config(project_id)
+        )
+        return ProjectRenderIdentity(
+            app_title=str(project.name or ""),
+            route_catalog=project_route_catalog(raw_routes).to_identity_payload(),
+            renderer_profile=settings.render_profile_digest,
+            capture_policy=CAPTURE_POLICY_VERSION,
+        )
 
     async def build_component_fingerprint(
         self,
@@ -167,7 +241,7 @@ class CodeCheckFingerprintBuilder:
     ) -> str:
         """组件检查指纹：源码/schema/类型 + 依赖版本 + 引用资源 + Kit/编译器 + 主题 + 规则版本。"""
 
-        dependency_identity, asset_names = await self._resolve_module_graph_identity(
+        graph = await self._resolve_module_graph_identity(
             workspace_id=workspace_id,
             project_id=None,
             entry_content=source,
@@ -177,7 +251,7 @@ class CodeCheckFingerprintBuilder:
         )
         referenced_assets = await self._resolve_workspace_asset_tokens(
             workspace_id=workspace_id,
-            asset_names=asset_names,
+            asset_names=graph.asset_names,
         )
         payload = {
             "kind": "component",
@@ -186,7 +260,7 @@ class CodeCheckFingerprintBuilder:
             "component_type": component_type_value,
             "profile_key": profile_key,
             "workspace_id": int(workspace_id),
-            "dependency_identity": dependency_identity,
+            "dependency_identity": graph.dependency_tokens,
             "referenced_assets": referenced_assets,
             "compiler_identity": _compiler_identity(),
             "theme_style": await self._build_theme_style_hash(
@@ -209,11 +283,18 @@ class CodeCheckFingerprintBuilder:
         importer_module_path: str | None,
         allow_page_module_imports: bool,
         extra_asset_sources: list[str | None],
-    ) -> tuple[list[str], list[str]]:
-        """按 artifact 构建相同规则遍历模块图，输出依赖身份 token 与引用资源名。"""
+    ) -> ModuleGraphIdentity:
+        """按 artifact 构建相同规则遍历模块图，输出依赖身份 token、引用资源名与路由可达性。
+
+        路由可达性来自整个闭包（入口源码 + 递归组件 + 递归页面模块）的 import：
+        只要其中任一处引用 ``vue-router`` 或路由类 Runtime Kit 能力，页面就可能读取
+        当前路由、页码或路由目录，此时页码目录投影必须进入截图身份。
+        """
 
         tokens: set[str] = set()
         asset_names: set[str] = set()
+        kit_capability_names: set[str] = set()
+        bare_import_specifiers: set[str] = set()
         visited_component_version_ids: set[int] = set()
         visited_page_paths: set[str] = set()
         queued_component_version_ids: list[int] = []
@@ -222,15 +303,26 @@ class CodeCheckFingerprintBuilder:
         for name in _collect_source_asset_names(*extra_asset_sources):
             asset_names.add(name)
 
+        def record_parsed(parsed: object) -> None:
+            """把一次解析结果并入闭包身份：组件、页面模块、Kit 能力与裸导入。"""
+
+            for component_code, version_no in parsed.component_imports:
+                tokens.add(f"import:{component_code}:v{version_no}")
+            for runtime_dependency in parsed.runtime_local_imports:
+                kit_capability_names.add(runtime_dependency.name)
+                tokens.add(f"kit:{runtime_dependency.import_path}")
+            for bare_specifier in parsed.bare_imports:
+                bare_import_specifiers.add(bare_specifier)
+                tokens.add(f"bare:{bare_specifier}")
+            queued_page_paths.extend(parsed.page_module_imports)
+
         parsed = self.dependency_service.parse_dependencies(
             entry_content,
             source_label="代码检查指纹",
             importer_module_path=importer_module_path,
             allow_page_module_imports=allow_page_module_imports,
         )
-        for component_code, version_no in parsed.component_imports:
-            tokens.add(f"import:{component_code}:v{version_no}")
-        queued_page_paths.extend(parsed.page_module_imports)
+        record_parsed(parsed)
 
         # 直接组件引用解析到具体版本后，再按版本依赖索引递归展开。
         resolved = await self.dependency_service.resolve_component_dependencies(
@@ -248,9 +340,7 @@ class CodeCheckFingerprintBuilder:
                 importer_module_path=importer_path,
                 allow_page_module_imports=allow_page_module_imports,
             )
-            for component_code, version_no in nested.component_imports:
-                tokens.add(f"import:{component_code}:v{version_no}")
-            queued_page_paths.extend(nested.page_module_imports)
+            record_parsed(nested)
 
         while queued_component_version_ids:
             component_version_id = queued_component_version_ids.pop(0)
@@ -268,6 +358,8 @@ class CodeCheckFingerprintBuilder:
             # 依赖组件自身引用的资源也进入指纹，替换资源不得复用旧检查结果。
             for name in _collect_source_asset_names(version.content, version.preview_schema):
                 asset_names.add(name)
+            # 组件的 import 同样决定页面闭包能读到什么，必须参与路由可达性判定。
+            enqueue_parsed(version.content or "", None)
             for dependency_version_id in await self.module_dependency_repository.list_component_dependency_version_ids(
                 component_version_id
             ):
@@ -288,7 +380,14 @@ class CodeCheckFingerprintBuilder:
                     asset_names.add(name)
                 enqueue_parsed(page_content, page_path)
 
-        return sorted(tokens), sorted(asset_names)
+        return ModuleGraphIdentity(
+            dependency_tokens=sorted(tokens),
+            asset_names=sorted(asset_names),
+            reads_route_context=routes_need_screenshot_identity(
+                kit_capability_names=kit_capability_names,
+                bare_import_specifiers=bare_import_specifiers,
+            ),
+        )
 
     async def _resolve_page_module_identity(self, *, project_id: int | None, page_path: str) -> tuple[str, str | None]:
         """解析页面模块身份 token 与当前源码，供递归依赖展开。"""

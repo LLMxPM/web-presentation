@@ -333,11 +333,22 @@ async def test_auth_must_run_before_cache_lookup() -> None:
         code = "A"
 
     class _FakePageService:
+        """替身页面服务：记录鉴权调用，模拟当前用户对页面的工作空间有访问权。
+
+        真实 ``_ensure_page_access`` 会校验工作空间权限；本用例的目标是验证
+        「鉴权先于缓存查找」，因此让鉴权通过，由随后的 workspace 范围校验抛出 403。
+        """
+
+        access_checked = 0
+
         def __init__(self, *_args, **_kwargs) -> None:
             pass
 
         async def _get_page_or_raise(self, _page_id: int):
             return _FakePage()
+
+        async def _ensure_page_access(self, _page_model, *, user_id: int) -> None:
+            type(self).access_checked += 1
 
     import app.services.code_check_service as code_check_module
 
@@ -353,6 +364,8 @@ async def test_auth_must_run_before_cache_lookup() -> None:
             )
         assert exc_info.value.status_code == 403
         assert exc_info.value.code == "AI_PAGE_SCOPE_DENIED"
+        # 鉴权确实先执行，且缓存从未参与判定。
+        assert _FakePageService.access_checked >= 1
         assert spy.lookups == 0
     finally:
         code_check_module.PageService = original  # type: ignore[misc]

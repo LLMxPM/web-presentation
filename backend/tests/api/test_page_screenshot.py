@@ -1144,3 +1144,321 @@ async def test_page_list_should_not_share_screenshot_fingerprint_across_pages(
     assert list_response.status_code == 200
     listed_page = next(item for item in list_response.json()["items"] if item["id"] == asset_page["id"])
     assert listed_page["screenshot_is_latest"] is True
+
+
+async def _create_page_with_route_and_screenshot(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+    *,
+    workspace_id: int,
+    project_id: int,
+    title: str,
+    route: str,
+    page_content: str | None = None,
+) -> dict:
+    """创建绑定路由的 Vue 页面并完成一次截图，返回页面响应数据。"""
+
+    create_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": page_content or f"<template><div>{title}</div></template>",
+            "file_type": "vue",
+            "title": title,
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    page_data = create_response.json()
+
+    async def fake_create_page_preview(  # noqa: ANN001, ARG001
+        self,
+        page,
+        user_id,
+        *,
+        asset_delivery_mode="public",
+        asset_base_url_override=None,
+    ):
+        return PagePreviewResult(
+            file_path=f"src/views/{page.code}.vue",
+            preview_url="http://runtime.local/__preview?ticket=route-fingerprint",
+        )
+
+    async def fake_capture_preview(  # noqa: ANN001, ARG001
+        self,
+        preview_url,
+        viewport,
+        *,
+        extra_http_headers=None,
+        **kwargs,  # noqa: ANN001
+    ) -> bytes:
+        return b"route-fingerprint-png"
+
+    async def fake_put_object(self, storage_key: str, content: bytes, content_type: str | None = None) -> str:  # noqa: ANN001, ARG001
+        return storage_key
+
+    monkeypatch.setattr("app.services.page_screenshot_service.PagePreviewService.create_page_preview", fake_create_page_preview)
+    monkeypatch.setattr("app.services.page_screenshot_service.BrowserCaptureService.capture_preview", fake_capture_preview)
+    monkeypatch.setattr("app.services.page_screenshot_service.ObjectStorageService.put_object", fake_put_object)
+
+    route_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/routes",
+        json={
+            "routes": [
+                {
+                    "route_type": "page",
+                    "route": route,
+                    "order": 0,
+                    "hidden": False,
+                    "page_id": page_data["id"],
+                }
+            ]
+        },
+    )
+    assert route_response.status_code == 200, route_response.text
+
+    screenshot_response = await authenticated_client.post(
+        f"/api/pages/{page_data['id']}/screenshot",
+        json={},
+    )
+    assert screenshot_response.status_code == 200, screenshot_response.text
+    assert screenshot_response.json()["screenshot_is_latest"] is True
+    return page_data
+
+
+# 读取路由上下文的页面源码：目录、页码与当前页标题都可被页面渲染读取。
+ROUTE_READING_PAGE_SOURCE = """<template><div>{{ catalog.length }} / {{ page.totalPages.value }}</div></template>
+<script setup>
+import { useRouteCatalog } from '@runtime-kit/public/composables/page/useRouteCatalog.v1'
+import { useCurrentPage } from '@runtime-kit/public/composables/page/useCurrentPage.v1'
+const catalog = useRouteCatalog().catalogItems.value
+const page = useCurrentPage()
+</script>"""
+
+
+async def _screenshot_is_latest(authenticated_client: AsyncClient, page_id: int) -> bool:
+    """读取页面详情中的截图最新标记。"""
+
+    detail_response = await authenticated_client.get(f"/api/pages/{page_id}")
+    assert detail_response.status_code == 200
+    return bool(detail_response.json()["screenshot_is_latest"])
+
+
+async def test_screenshot_should_stay_latest_when_route_playback_settings_change(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """路由放映参数（翻页动画/推进/项目默认值）变化不应让旧截图过期。"""
+
+    workspace_id, project_id = await _create_workspace_project(authenticated_client, "路由放映截图")
+    page_data = await _create_page_with_route_and_screenshot(
+        authenticated_client,
+        monkeypatch,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        title="放映截图页面",
+        route="home",
+        page_content=ROUTE_READING_PAGE_SOURCE,
+    )
+
+    # 更新项目放映默认值。
+    slideshow_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={
+            "slideshow": {
+                "transition": {"effect": "push", "duration_ms": 800},
+                "advance": {"mode": "timer", "delay_ms": 9000, "media_timeout_ms": 450000},
+                "loop": True,
+                "auto_start": True,
+            }
+        },
+    )
+    assert slideshow_response.status_code == 200, slideshow_response.text
+
+    # 更新路由逐页放映覆盖（路由路径、页面绑定与标题保持不变）。
+    route_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/routes",
+        json={
+            "routes": [
+                {
+                    "route_type": "page",
+                    "route": "home",
+                    "order": 0,
+                    "hidden": False,
+                    "page_id": page_data["id"],
+                    "transition": {"effect": "fade", "duration_ms": 600},
+                    "advance": {"mode": "media_end", "delay_ms": 2000, "media_timeout_ms": 120000},
+                }
+            ]
+        },
+    )
+    assert route_response.status_code == 200, route_response.text
+
+    assert await _screenshot_is_latest(authenticated_client, page_data["id"]) is True
+
+
+async def test_screenshot_should_be_marked_outdated_when_route_title_changes(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """读取路由上下文的页面，标题变化后旧截图必须过期。"""
+
+    workspace_id, project_id = await _create_workspace_project(authenticated_client, "路由标题截图")
+    page_data = await _create_page_with_route_and_screenshot(
+        authenticated_client,
+        monkeypatch,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        title="标题截图页面",
+        route="home",
+        page_content=ROUTE_READING_PAGE_SOURCE,
+    )
+
+    update_response = await authenticated_client.patch(
+        f"/api/pages/{page_data['id']}",
+        json={"title": "改后的标题"},
+    )
+    assert update_response.status_code == 200, update_response.text
+
+    assert await _screenshot_is_latest(authenticated_client, page_data["id"]) is False
+
+
+async def test_screenshot_should_stay_latest_when_other_route_title_changes(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """调整其他页面标题不应让本页截图过期；目录项变化仍会反映在目录读取页上。
+
+    本页只渲染自身内容，不读取路由上下文，因此路由目录的任何变化都与它无关。
+    """
+
+    workspace_id, project_id = await _create_workspace_project(authenticated_client, "跨页标题截图")
+    page_data = await _create_page_with_route_and_screenshot(
+        authenticated_client,
+        monkeypatch,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        title="目标页面",
+        route="home",
+    )
+    other_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": "<template><div>other</div></template>",
+            "file_type": "vue",
+            "title": "其他页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert other_response.status_code == 200, other_response.text
+    other_page = other_response.json()
+
+    # 先补一条不改变本页页码的第二个路由，再改动其标题。
+    route_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/routes",
+        json={
+            "routes": [
+                {"route_type": "page", "route": "home", "order": 0, "hidden": False, "page_id": page_data["id"]},
+                {"route_type": "page", "route": "other", "order": 1, "hidden": False, "page_id": other_page["id"]},
+            ]
+        },
+    )
+    assert route_response.status_code == 200, route_response.text
+    # 本页不读取路由上下文，路由目录新增条目与其截图无关。
+    assert await _screenshot_is_latest(authenticated_client, page_data["id"]) is True
+
+    # 仅改另一个页面的标题：不读取路由上下文的页面应保持最新。
+    await authenticated_client.patch(f"/api/pages/{other_page['id']}", json={"title": "其他页面改名"})
+    assert await _screenshot_is_latest(authenticated_client, page_data["id"]) is True
+
+
+async def test_screenshot_should_follow_project_name_but_ignore_display_features(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """项目名写入浏览器标题，页面可读；模块入口不渲染的展示字段变化不应使截图过期。"""
+
+    workspace_id, project_id = await _create_workspace_project(authenticated_client, "项目展示截图")
+    page_data = await _create_page_with_route_and_screenshot(
+        authenticated_client,
+        monkeypatch,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        title="项目展示页面",
+        route="home",
+    )
+
+    # 描述、图标与菜单模式不进入模块入口渲染。
+    neutral_update = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={
+            "description": "改后的描述",
+            "configuration": {"mode": "patch", "presentation": {"menu_mode": "preview", "show_pdf_export_button": True}},
+        },
+    )
+    assert neutral_update.status_code == 200, neutral_update.text
+    assert await _screenshot_is_latest(authenticated_client, page_data["id"]) is True
+
+    # 项目名会写成 document.title，页面无需导入即可读取。
+    rename_response = await authenticated_client.patch(
+        f"/api/projects/{project_id}",
+        json={"name": "改名后的项目"},
+    )
+    assert rename_response.status_code == 200, rename_response.text
+    assert await _screenshot_is_latest(authenticated_client, page_data["id"]) is False
+
+
+async def test_screenshot_should_track_page_number_changes_only_for_route_readers(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """页码变化只对读取路由目录的页面生效，纯内容页面保持最新。"""
+
+    workspace_id, project_id = await _create_workspace_project(authenticated_client, "页码截图")
+    reader_page = await _create_page_with_route_and_screenshot(
+        authenticated_client,
+        monkeypatch,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        title="目录页面",
+        route="reader",
+        page_content=ROUTE_READING_PAGE_SOURCE,
+    )
+    plain_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": "<template><div>plain</div></template>",
+            "file_type": "vue",
+            "title": "纯内容页面",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert plain_response.status_code == 200, plain_response.text
+    plain_page = plain_response.json()
+
+    # 给纯内容页面截图：它不读路由，当前路由树对它没有意义。
+    plain_screenshot = await authenticated_client.post(f"/api/pages/{plain_page['id']}/screenshot", json={})
+    assert plain_screenshot.status_code == 200, plain_screenshot.text
+    assert plain_screenshot.json()["screenshot_is_latest"] is True
+
+    # 在目录页面之前插入一个新页面，使目录页面的页码从 1 变为 2。
+    route_response = await authenticated_client.put(
+        f"/api/projects/{project_id}/routes",
+        json={
+            "routes": [
+                {"route_type": "page", "route": "intro", "order": 0, "hidden": False, "page_id": plain_page["id"]},
+                {"route_type": "page", "route": "reader", "order": 1, "hidden": False, "page_id": reader_page["id"]},
+            ]
+        },
+    )
+    assert route_response.status_code == 200, route_response.text
+
+    # 目录页面能读到页码与目录变化，必须重截。
+    assert await _screenshot_is_latest(authenticated_client, reader_page["id"]) is False
+    # 纯内容页面读不到任何路由信息，保持最新。
+    assert await _screenshot_is_latest(authenticated_client, plain_page["id"]) is True
