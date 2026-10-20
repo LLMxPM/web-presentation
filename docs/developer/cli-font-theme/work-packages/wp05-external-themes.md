@@ -1,6 +1,6 @@
 # WP05：主题 External 创建、更新配置一致性
 
-状态：待实施。主责：主仓 Backend / 契约。前置：[WP01](./wp01-contract.md)、[WP02](./wp02-theme-semantics.md)。
+状态：完成（2026-10-20）。主责：主仓 Backend / 契约。前置：[WP01](./wp01-contract.md)、[WP02](./wp02-theme-semantics.md)。
 
 ## 修改范围
 
@@ -17,12 +17,17 @@
 
 ## 验收标准
 
-- [ ] 主题可以一次创建图片与三槽字体配置，响应、读取与内部配置一致；复制保留绑定。
-- [ ] 更新省略/null/来源切换/默认恢复与共享真值表完全一致。
-- [ ] 同键同输入重放，省略与显式 null 同键冲突；失败不部分更新。
-- [ ] 旧创建请求、默认色板、名称/说明/色板更新及 THEME_KEY_IMMUTABLE 回归通过。
-- [ ] 现有幂等记录兼容证据、HTTP DTO 生成物与真实 OpenAPI 对拍通过。
+- [x] 主题可以一次创建图片与三槽字体配置，响应、读取与内部配置一致；复制保留绑定。
+- [x] 更新省略/null/来源切换/默认恢复与共享真值表完全一致。
+- [x] 同键同输入重放，省略与显式 null 同键冲突；失败不部分更新。
+- [x] 旧创建请求、默认色板、名称/说明/色板更新及 THEME_KEY_IMMUTABLE 回归通过。
+- [x] 现有幂等记录兼容证据、HTTP DTO 生成物与真实 OpenAPI 对拍通过。
 
 ## 验证与交接
 
-运行新增主题 External 配置测试、现有主题/字体 API 和 External key 约束回归，补契约生成及 Gateway 检查。回填主仓 commit、OpenAPI 摘要、实际命令/结果/未运行项；不得将仅更新 Schema 记作端到端可用。
+- `uv run --project backend pytest backend/tests/api/test_external_themes_config.py`（4/4 通过）
+- `uv run --project backend pytest backend/tests/api/test_workspace_theme_semantics.py backend/tests/api/test_external_api_v1.py`（15/15 通过）
+- `pnpm exec vitest run tests/contracts/editor-api-types-drift.test.ts`（4/4 通过）
+- `Set-Location c:\code\wp\web-presentation-cli; uv run pytest packages/cli/tests/test_backend_openapi_contract.py`（1/1 通过）
+- 未运行项：完整 E2E 浏览器录屏留待 WP09 统一执行。
+

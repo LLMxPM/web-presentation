@@ -7535,7 +7535,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WorkspaceThemeUpdateRequest"
+                "$ref": "#/components/schemas/ExternalThemeUpdateRequest"
               }
             }
           }
@@ -33574,6 +33574,7 @@
             "type": "string",
             "maxLength": 64,
             "minLength": 1,
+            "pattern": "^[a-z0-9_-]+$",
             "title": "Key",
             "description": "主题唯一标识 (例如 light-corporate)"
           },
@@ -33597,18 +33598,124 @@
             "title": "Description",
             "description": "主题描述"
           },
-          "palette": {
+          "logo_asset_id": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Palette",
-            "description": "主题色板配置"
+            "title": "Logo Asset Id",
+            "description": "工作空间图片资源 ID（用于品牌 Logo）"
+          },
+          "invert_logo_asset_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invert Logo Asset Id",
+            "description": "工作空间图片资源 ID（用于深色/反色背景 Logo）"
+          },
+          "project_icon_asset_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Icon Asset Id",
+            "description": "工作空间图片资源 ID（用于项目图标/Favicon）"
+          },
+          "heading_font_family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading Font Family Id",
+            "description": "标题字体族 ID"
+          },
+          "body_font_family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Font Family Id",
+            "description": "正文字体族 ID"
+          },
+          "code_font_family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Font Family Id",
+            "description": "代码字体族 ID"
+          },
+          "heading_font_preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading Font Preset",
+            "description": "标题内置字体预设"
+          },
+          "body_font_preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Font Preset",
+            "description": "正文内置字体预设"
+          },
+          "code_font_preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Font Preset",
+            "description": "代码内置字体预设"
+          },
+          "palette": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemePalette"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "主题色板配置（缺省时自动填充默认调色板）"
           }
         },
         "additionalProperties": false,
@@ -33619,6 +33726,175 @@
         ],
         "title": "ExternalThemeCreateRequest",
         "description": "External API 主题创建请求（palette 缺省时自动填充默认调色板）。"
+      },
+      "ExternalThemeUpdateRequest": {
+        "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key",
+            "description": "主题 key（禁止修改）"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "主题展示名称"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "主题描述"
+          },
+          "logo_asset_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Asset Id",
+            "description": "工作空间图片资源 ID（用于品牌 Logo，传 null 清空）"
+          },
+          "invert_logo_asset_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invert Logo Asset Id",
+            "description": "工作空间图片资源 ID（用于反色 Logo，传 null 清空）"
+          },
+          "project_icon_asset_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Icon Asset Id",
+            "description": "工作空间图片资源 ID（用于项目图标，传 null 清空）"
+          },
+          "heading_font_family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading Font Family Id",
+            "description": "标题字体族 ID"
+          },
+          "body_font_family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Font Family Id",
+            "description": "正文字体族 ID"
+          },
+          "code_font_family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Font Family Id",
+            "description": "代码字体族 ID"
+          },
+          "heading_font_preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading Font Preset",
+            "description": "标题内置字体预设"
+          },
+          "body_font_preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Font Preset",
+            "description": "正文内置字体预设"
+          },
+          "code_font_preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Font Preset",
+            "description": "代码内置字体预设"
+          },
+          "palette": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemePalette"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "主题色板配置"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExternalThemeUpdateRequest",
+        "description": "External API 主题更新请求。"
       },
       "ExternalTransitionDurationRange": {
         "properties": {

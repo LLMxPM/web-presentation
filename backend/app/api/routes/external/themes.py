@@ -14,12 +14,13 @@ from app.schemas.external_api import (
     ExternalBatchArchiveRequest,
     ExternalBatchArchiveResponse,
     ExternalThemeCreateRequest,
+    ExternalThemeUpdateRequest,
 )
 from app.schemas.theme import (
     WorkspaceThemeCopyRequest,
     WorkspaceThemeCreateRequest,
     WorkspaceThemeItem,
-    WorkspaceThemeUpdateRequest,
+
 )
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
@@ -78,13 +79,22 @@ async def create_theme(
         key=payload.key,
         name=payload.name,
         description=payload.description,
+        logo_asset_id=payload.logo_asset_id,
+        invert_logo_asset_id=payload.invert_logo_asset_id,
+        project_icon_asset_id=payload.project_icon_asset_id,
+        heading_font_family_id=payload.heading_font_family_id,
+        body_font_family_id=payload.body_font_family_id,
+        code_font_family_id=payload.code_font_family_id,
+        heading_font_preset=payload.heading_font_preset,
+        body_font_preset=payload.body_font_preset,
+        code_font_preset=payload.code_font_preset,
         palette=payload.palette or default_palette,
     )
 
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="POST",
         path=request.url.path,
-        json_data=internal_payload.model_dump(mode="json"),
+        json_data=payload.model_dump(mode="json"),
     )
 
     async def _operation(record_id: int | None) -> tuple[int, WorkspaceThemeItem]:
@@ -153,7 +163,7 @@ async def copy_theme(
 async def update_theme(
     request: Request,
     theme_id: int,
-    payload: WorkspaceThemeUpdateRequest,
+    payload: ExternalThemeUpdateRequest,
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("theme.update"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
@@ -164,14 +174,15 @@ async def update_theme(
     fingerprint = IdempotencyService.calculate_request_fingerprint(
         http_method="PATCH",
         path=request.url.path,
-        json_data=payload.model_dump(mode="json"),
+        json_data=payload.model_dump(mode="json", exclude_unset=True),
     )
+    internal_payload = payload.to_workspace_update()
 
     async def _operation(record_id: int | None) -> tuple[int, WorkspaceThemeItem]:
         updated = await BusinessOperationService(session).update_theme(
             workspace_id=x_workspace_id,
             theme_id=theme_id,
-            payload=payload,
+            payload=internal_payload,
             operator_id=auth.user.id,
             commit=False,
         )

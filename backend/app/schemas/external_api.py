@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas import audio as audio_schema
 from app.schemas.audio import (
@@ -35,6 +35,14 @@ from app.schemas.slideshow import (
     TRANSITION_DURATION_MIN_MS,
     SlideshowSettings,
     default_slideshow_settings,
+)
+
+from app.core.platform_fonts import MONO_FONT_PRESETS, SANS_FONT_PRESETS
+from app.schemas.theme import (
+    ThemePalette,
+    WorkspaceThemeUpdateRequest,
+    _normalize_theme_key,
+    _validate_font_source,
 )
 
 T = TypeVar("T")
@@ -601,10 +609,72 @@ class ExternalThemeCreateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    key: str = Field(..., min_length=1, max_length=64, description="主题唯一标识 (例如 light-corporate)")
+    key: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$", description="主题唯一标识 (例如 light-corporate)")
     name: str = Field(..., min_length=1, max_length=128, description="主题展示名称")
     description: str | None = Field(default=None, max_length=2000, description="主题描述")
-    palette: dict[str, Any] | None = Field(default=None, description="主题色板配置")
+    logo_asset_id: int | None = Field(default=None, description="工作空间图片资源 ID（用于品牌 Logo）")
+    invert_logo_asset_id: int | None = Field(default=None, description="工作空间图片资源 ID（用于深色/反色背景 Logo）")
+    project_icon_asset_id: int | None = Field(default=None, description="工作空间图片资源 ID（用于项目图标/Favicon）")
+    heading_font_family_id: int | None = Field(default=None, description="标题字体族 ID")
+    body_font_family_id: int | None = Field(default=None, description="正文字体族 ID")
+    code_font_family_id: int | None = Field(default=None, description="代码字体族 ID")
+    heading_font_preset: str | None = Field(default=None, description="标题内置字体预设")
+    body_font_preset: str | None = Field(default=None, description="正文内置字体预设")
+    code_font_preset: str | None = Field(default=None, description="代码内置字体预设")
+    palette: ThemePalette | None = Field(default=None, description="主题色板配置（缺省时自动填充默认调色板）")
+
+    @field_validator("key", mode="before")
+    @classmethod
+    def normalize_key(cls, value: object) -> object:
+        """统一将主题 key 归一化为小写，减少编辑时的格式摩擦。"""
+        return _normalize_theme_key(value)
+
+    @model_validator(mode="after")
+    def validate_font_sources(self) -> "ExternalThemeCreateRequest":
+        """校验每个字体槽只能选择工作空间字体族或受支持的内置预设。"""
+        _validate_font_source("标题", self.heading_font_family_id, self.heading_font_preset, SANS_FONT_PRESETS)
+        _validate_font_source("正文", self.body_font_family_id, self.body_font_preset, SANS_FONT_PRESETS)
+        _validate_font_source("代码", self.code_font_family_id, self.code_font_preset, MONO_FONT_PRESETS)
+        return self
+
+
+class ExternalThemeUpdateRequest(BaseModel):
+    """External API 主题更新请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$", description="主题 key（禁止修改）")
+    name: str | None = Field(default=None, min_length=1, max_length=128, description="主题展示名称")
+    description: str | None = Field(default=None, max_length=2000, description="主题描述")
+    logo_asset_id: int | None = Field(default=None, description="工作空间图片资源 ID（用于品牌 Logo，传 null 清空）")
+    invert_logo_asset_id: int | None = Field(default=None, description="工作空间图片资源 ID（用于反色 Logo，传 null 清空）")
+    project_icon_asset_id: int | None = Field(default=None, description="工作空间图片资源 ID（用于项目图标，传 null 清空）")
+    heading_font_family_id: int | None = Field(default=None, description="标题字体族 ID")
+    body_font_family_id: int | None = Field(default=None, description="正文字体族 ID")
+    code_font_family_id: int | None = Field(default=None, description="代码字体族 ID")
+    heading_font_preset: str | None = Field(default=None, description="标题内置字体预设")
+    body_font_preset: str | None = Field(default=None, description="正文内置字体预设")
+    code_font_preset: str | None = Field(default=None, description="代码内置字体预设")
+    palette: ThemePalette | None = Field(default=None, description="主题色板配置")
+
+    @field_validator("key", mode="before")
+    @classmethod
+    def normalize_key(cls, value: object) -> object:
+        """统一将主题 key 归一化为小写，减少编辑时的格式摩擦。"""
+        return _normalize_theme_key(value)
+
+    @model_validator(mode="after")
+    def validate_font_sources(self) -> "ExternalThemeUpdateRequest":
+        """校验显式传入的字体族和内置预设不会互相冲突。"""
+        _validate_font_source("标题", self.heading_font_family_id, self.heading_font_preset, SANS_FONT_PRESETS)
+        _validate_font_source("正文", self.body_font_family_id, self.body_font_preset, SANS_FONT_PRESETS)
+        _validate_font_source("代码", self.code_font_family_id, self.code_font_preset, MONO_FONT_PRESETS)
+        return self
+
+    def to_workspace_update(self) -> WorkspaceThemeUpdateRequest:
+        """转换为内部主题更新请求模型，严格保留已提供字段集。"""
+        data = self.model_dump(exclude_unset=True)
+        return WorkspaceThemeUpdateRequest.model_validate(data)
 
 
 class ExternalStyleCreateRequest(BaseModel):

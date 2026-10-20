@@ -291,10 +291,10 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
         "theme.get", ("design-system:read",), description="获取主题详情"
     ),
     "theme.create": ExternalOperationSpec(
-        "theme.create", ("design-system:write",), requires_idempotency_key=True, description="创建新主题"
+        "theme.create", ("design-system:write",), requires_idempotency_key=True, description="创建新主题（支持图片与三槽字体配置，palette 缺省时填充默认色板）"
     ),
     "theme.update": ExternalOperationSpec(
-        "theme.update", ("design-system:write",), requires_idempotency_key=True, description="更新主题名称、描述或色板（禁止修改 key）"
+        "theme.update", ("design-system:write",), requires_idempotency_key=True, description="更新主题设计配置（支持图片槽位清空/替换、三槽字体真值表切换，禁止修改 key）"
     ),
     "theme.copy": ExternalOperationSpec(
         "theme.copy", ("design-system:write",), requires_idempotency_key=True, description="复制主题"
