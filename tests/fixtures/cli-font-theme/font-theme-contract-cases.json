@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "description": "CLI 字体管理与主题图片、字体配置的共享正反例与契约基线。权威说明位于 docs/developer/reference/external-agent-api.md。",
+  "presets": {
+    "sans": ["platform-sans", "system-ui"],
+    "mono": ["platform-mono", "monospace"],
+    "defaults": {
+      "heading": "platform-sans",
+      "body": "platform-sans",
+      "code": "platform-mono"
+    }
+  },
+  "font_register_cases": [
+    {
+      "name": "regular-400-normal",
+      "valid": true,
+      "input": {
+        "asset_id": 101,
+        "family_name": "Custom Sans",
+        "font_format": "woff2",
+        "font_weight": "400",
+        "font_style": "normal",
+        "font_display": "swap"
+      }
+    },
+    {
+      "name": "bold-700-normal",
+      "valid": true,
+      "input": {
+        "asset_id": 102,
+        "family_name": "Custom Sans",
+        "font_format": "woff2",
+        "font_weight": "700",
+        "font_style": "normal",
+        "font_display": "swap"
+      }
+    },
+    {
+      "name": "variable-weight-range",
+      "valid": true,
+      "input": {
+        "asset_id": 103,
+        "family_name": "Custom Variable",
+        "font_format": "woff2",
+        "font_weight": "100 900",
+        "font_style": "normal",
+        "font_display": "swap"
+      }
+    },
+    {
+      "name": "duplicate-face-conflict",
+      "valid": false,
+      "error": "FONT_FACE_CONFLICT",
+      "input": {
+        "asset_id": 104,
+        "family_name": "Custom Sans",
+        "font_format": "woff2",
+        "font_weight": "400",
+        "font_style": "normal",
+        "font_display": "swap"
+      }
+    },
+    {
+      "name": "duplicate-asset-conflict",
+      "valid": false,
+      "error": "FONT_ASSET_ALREADY_REGISTERED",
+      "input": {
+        "asset_id": 101,
+        "family_name": "Another Family",
+        "font_format": "woff2",
+        "font_weight": "400",
+        "font_style": "normal"
+      }
+    },
+    {
+      "name": "invalid-asset-type",
+      "valid": false,
+      "error": "INVALID_FONT_ASSET",
+      "input": {
+        "asset_id": 201,
+        "family_name": "Custom Sans",
+        "font_format": "woff2"
+      }
+    },
+    {
+      "name": "forbidden-status-injection",
+      "valid": false,
+      "error": "EXTRA_FORBIDDEN",
+      "input": {
+        "asset_id": 105,
+        "family_name": "Custom Sans",
+        "status": "disabled"
+      }
+    }
+  ],
+  "font_family_cases": [
+    {
+      "name": "rename-family-success",
+      "valid": true,
+      "input": {
+        "family_id": 1,
+        "name": "Renamed Custom Sans"
+      }
+    },
+    {
+      "name": "rename-family-conflict",
+      "valid": false,
+      "error": "FONT_FAMILY_NAME_CONFLICT",
+      "input": {
+        "family_id": 1,
+        "name": "Existing Family Name"
+      }
+    }
+  ],
+  "theme_font_cases": [
+    {
+      "name": "keep-unchanged-when-omitted",
+      "operation": "update",
+      "valid": true,
+      "input": {},
+      "expected_behavior": "所有槽位保持原样，不发生变更"
+    },
+    {
+      "name": "switch-to-custom-family",
+      "operation": "update",
+      "valid": true,
+      "input": {
+        "heading_font_family_id": 10
+      },
+      "expected_behavior": "标题槽绑定到字体族 10，heading_font_preset 自动置为 None"
+    },
+    {
+      "name": "switch-to-builtin-preset",
+      "operation": "update",
+      "valid": true,
+      "input": {
+        "heading_font_preset": "system-ui"
+      },
+      "expected_behavior": "标题槽绑定到预设 system-ui，heading_font_family_id 自动置为 None"
+    },
+    {
+      "name": "restore-default-both-null",
+      "operation": "update",
+      "valid": true,
+      "input": {
+        "heading_font_family_id": null,
+        "heading_font_preset": null
+      },
+      "expected_behavior": "标题槽恢复平台默认 platform-sans，family_id 置为 None"
+    },
+    {
+      "name": "error-single-null-family",
+      "operation": "update",
+      "valid": false,
+      "error": "INVALID_FONT_SOURCE_COMBINATION",
+      "input": {
+        "heading_font_family_id": null
+      },
+      "expected_behavior": "禁止单独传 null 字体族而不提供替代预设"
+    },
+    {
+      "name": "error-single-null-preset",
+      "operation": "update",
+      "valid": false,
+      "error": "INVALID_FONT_SOURCE_COMBINATION",
+      "input": {
+        "heading_font_preset": null
+      },
+      "expected_behavior": "禁止单独传 null 预设而不提供替代字体族"
+    },
+    {
+      "name": "error-mutually-exclusive-both-non-null",
+      "operation": "update",
+      "valid": false,
+      "error": "MUTUALLY_EXCLUSIVE_FONT_SOURCE",
+      "input": {
+        "heading_font_family_id": 10,
+        "heading_font_preset": "system-ui"
+      },
+      "expected_behavior": "禁止同时传入非空的字体族 ID 和预设名"
+    },
+    {
+      "name": "error-unsupported-preset-for-slot",
+      "operation": "update",
+      "valid": false,
+      "error": "UNSUPPORTED_FONT_PRESET",
+      "input": {
+        "heading_font_preset": "monospace"
+      },
+      "expected_behavior": "标题槽不支持 monospace 预设"
+    },
+    {
+      "name": "error-non-existent-or-archived-family",
+      "operation": "update",
+      "valid": false,
+      "error": "INVALID_FONT_FAMILY",
+      "input": {
+        "heading_font_family_id": 9999
+      },
+      "expected_behavior": "字体族不存在或已被归档无可用 face"
+    }
+  ],
+  "theme_image_cases": [
+    {
+      "name": "omit-images-keep-unchanged",
+      "operation": "update",
+      "valid": true,
+      "input": {},
+      "expected_behavior": "已有 logo_asset_id、invert_logo_asset_id、project_icon_asset_id 保持不变"
+    },
+    {
+      "name": "explicit-null-clear-all-images",
+      "operation": "update",
+      "valid": true,
+      "input": {
+        "logo_asset_id": null,
+        "invert_logo_asset_id": null,
+        "project_icon_asset_id": null
+      },
+      "expected_behavior": "三个槽位全部清空为 None，对应 logo_path、invert_logo_path、project_icon_name 同步清空为 None"
+    },
+    {
+      "name": "replace-logo-asset",
+      "operation": "update",
+      "valid": true,
+      "input": {
+        "logo_asset_id": 301
+      },
+      "expected_behavior": "logo_asset_id 更新为 301，logo_path 解析为新资产路径"
+    },
+    {
+      "name": "error-invalid-icon-asset-type",
+      "operation": "update",
+      "valid": false,
+      "error": "INVALID_THEME_ASSET_TYPE",
+      "input": {
+        "project_icon_asset_id": 401
+      },
+      "expected_behavior": "项目图标只接受 asset_type=icon，传入普通 image 拒绝"
+    },
+    {
+      "name": "error-archived-asset-reference",
+      "operation": "update",
+      "valid": false,
+      "error": "INVALID_THEME_ASSET",
+      "input": {
+        "logo_asset_id": 501
+      },
+      "expected_behavior": "引用的资产已处于归档状态或非当前工作空间，拒绝更新"
+    }
+  ],
+  "idempotency_cases": [
+    {
+      "name": "same-key-same-payload-replay",
+      "input_a": { "name": "Theme A", "logo_asset_id": null },
+      "input_b": { "name": "Theme A", "logo_asset_id": null },
+      "expected": "返回首次创建/更新结果，状态码 200/201"
+    },
+    {
+      "name": "same-key-different-payload-omit-vs-null",
+      "input_a": { "name": "Theme A" },
+      "input_b": { "name": "Theme A", "logo_asset_id": null },
+      "expected": "指纹不匹配，返回 409 IDEMPOTENCY_CONFLICT"
+    }
+  ]
+}

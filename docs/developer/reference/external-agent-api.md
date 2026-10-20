@@ -108,6 +108,8 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 
 `slideshow.audio` 声明音频能力（`schema_version=1`）：`audio_assets` 表示可上传和引用音频资源；`page_narration` 与 `audio_cues` 在对应阶段出口验收前保持 false。客户端只能在 `audio_cues=true` 时展示项目 cue 配置；后端写入校验独立于客户端开关。
 
+响应中的可选 `fonts` 声明字体预设能力：`presets.sans` 为 `["platform-sans", "system-ui"]`，`presets.mono` 为 `["platform-mono", "monospace"]`。来源统一以 Backend `app.core.platform_fonts` 为准，CLI 动态发现预设，不维护第二套手写枚举。
+
 ### 4.2 规范和 OpenAPI
 
 ```text
@@ -160,6 +162,12 @@ GET      /api/v1/assets/tags
 GET      /api/v1/runtime-kit
 GET      /api/v1/runtime-kit/{item}
 GET      /api/v1/fonts
+GET      /api/v1/fonts/{font_id}
+POST     /api/v1/fonts
+PATCH    /api/v1/fonts/{font_id}
+GET      /api/v1/font-families
+GET      /api/v1/font-families/{family_id}
+PATCH    /api/v1/font-families/{family_id}
 POST     /api/v1/validate/entity
 ```
 
@@ -189,6 +197,47 @@ POST     /api/v1/validate/entity
 - `audio_cues=false` 时，项目创建、项目更新、configuration 更新和模板导入携带非空 `cue_bindings` 返回 422 `AUDIO_CAPABILITY_UNAVAILABLE`；空 `cue_bindings` 与音量更新继续允许。`page_narration=false` 时，页面/组件保存拒绝 `purpose="narration"`，`audio_cues=false` 时拒绝 `useAudioCue`，`validate` 返回相同业务码。
 - 读取响应中的 `cue_bindings` 同时给出 `asset_id`、`asset_name`、`asset_type`、`asset_status` 与 `gain_percent`；写入只接受 `asset_id`、`key` 和 `gain_percent`，资源必须属于当前工作空间且为 active 的 audio 类型。
 - `ProjectItem` 的 `audio_settings` 使用 ID 形式返回绑定；需要逻辑名时读取项目 configuration 或资源列表。
+
+#### 字体与字体族管理（WP01 冻结）
+
+字体管理遵循“上传文件（asset）→ 注册 face（font）→ 聚合归属（family）”的分阶段模型：
+
+- `asset_id` 是基础文件资源 ID（`asset_type=font`，格式限 `.woff2`、`.woff`、`.ttf`、`.otf`）。通过 `POST /api/v1/assets` 上传文件获得，上传不等于注册。
+- `font_id` 是单个 `@font-face` 注册项 ID，关联物理 `asset_id` 与字体族名、`font_format`、`font_weight`、`font_style`、`font_display`。同一资源在同一工作空间内只能注册一次。
+- `family_id` 是字体族 ID，用于聚合多个字重/样式的 face，是主题字体槽绑定的唯一合法自定义族 ID（不能以 `asset_id` 或 `font_id` 代替）。
+- 接口与操作：
+  - `GET /api/v1/fonts`（operation `font.list`，scope `asset:read`）：分页查询已注册 face 列表。
+  - `GET /api/v1/fonts/{font_id}`（operation `font.get`，scope `asset:read`）：查询单项 face 详情。
+  - `POST /api/v1/fonts`（operation `font.register`，scope `asset:write`）：注册已有字体资源为 face。必须携带 `Idempotency-Key`。接受 `asset_id`、`family_name`，以及可选 `font_format`、`font_weight`（默认 400，支持数值或可变字重范围如 `"100 900"`）、`font_style`（默认 normal）、`font_display`（默认 swap）。禁止未知字段；不开放 `status` 参数（默认 active）。同资源重复注册返回 409 `FONT_ASSET_ALREADY_REGISTERED`，同族同字重与样式返回 409 `FONT_FACE_CONFLICT`，非 font/归档/历史资源返回 400 `INVALID_FONT_ASSET`。
+  - `PATCH /api/v1/fonts/{font_id}`（operation `font.update`，scope `asset:write`）：更新 face 配置或通过修改 `family_name` 移动所属族。必须携带 `Idempotency-Key`。禁止修改 `asset_id` 与 `status`。原族无剩余 face 时自动清理空族。
+  - `GET /api/v1/font-families`（operation `font_family.list`，scope `asset:read`）：分页查询字体族及其内嵌 faces 摘要。
+  - `GET /api/v1/font-families/{family_id}`（operation `font_family.get`，scope `asset:read`）：查询单个字体族详情及全部 faces。
+  - `PATCH /api/v1/font-families/{family_id}`（operation `font_family.rename`，scope `asset:write`）：重命名字体族。必须携带 `Idempotency-Key`。族名在当前空间内唯一，重名返回 409 `FONT_FAMILY_NAME_CONFLICT`；同事务级联更新引用该族的主题的对应字体标签。
+- 本期范围不包含：字体文件转码/子集化、在线下载、自动元数据推断、注销/停用/硬删除及内部 AI 工具扩权。
+
+#### 主题图片与字体配置（WP01 冻结）
+
+主题通过工作空间共享，支持图片（Logo、反色 Logo、项目图标）与三槽字体（标题、正文、代码）配置：
+
+- 接口与操作：
+  - `POST /api/v1/themes`（operation `theme.create`，scope `design-system:write`）：创建主题，必须携带 `Idempotency-Key`。支持一次性写入 `logo_asset_id`、`invert_logo_asset_id`、`project_icon_asset_id`，以及三槽字体配置。palette 省略时使用默认色板；主题 `key` 创建后不可变。
+  - `PATCH /api/v1/themes/{theme_id}`（operation `theme.update`，scope `design-system:write`）：部分更新主题配置，必须携带 `Idempotency-Key`。禁止修改 `key`。
+- 图片槽位语义（`logo_asset_id`、`invert_logo_asset_id`、`project_icon_asset_id`）：
+  - **字段省略**：保持当前绑定与持久化路径不变。
+  - **显式 `null`**：清空该图片槽位。同步清理持久化 `logo_path`、`invert_logo_path` 或 `project_icon_name` 为 null，禁止 Runtime 回退历史旧名称。
+  - **更新绑定**：传入真实资源 ID。资源必须属于当前空间、active 状态、非历史副本。Logo 允许 `image`/`icon`；项目图标只允许 `icon`，类型不符返回 400 `INVALID_THEME_ASSET_TYPE`。
+- 三槽字体配置真值表（以 `heading_font_family_id` 和 `heading_font_preset` 为例，正文/代码同理）：
+  - **双省略**：保持原槽位绑定不变。
+  - **双显式 `null`**：恢复系统默认预设（标题/正文恢复 `platform-sans`，代码恢复 `platform-mono`）。
+  - **仅传非空 `family_id`**：切换为自定义字体族，该槽 preset 自动置为 None。被引用的字体族必须存在且含有可用 active face，否则返回 400 `INVALID_FONT_FAMILY`。
+  - **仅传非空 `preset`**：切换为内置预设，该槽 family_id 自动置为 None。preset 必须属于 `platform_fonts.py` 规定集合（标题/正文限 `platform-sans`、`system-ui`；代码限 `platform-mono`、`monospace`），否则返回 422 `UNSUPPORTED_FONT_PRESET`。
+  - **单传 `null`**（仅传 family_id 为 null 或仅传 preset 为 null）：非法组合，返回 422 `INVALID_FONT_SOURCE_COMBINATION`。
+  - **双非空**（同时传有效 family_id 与 preset）：互斥冲突，返回 422 `MUTUALLY_EXCLUSIVE_FONT_SOURCE`。
+- 幂等与指纹策略：
+  - PATCH 更新指纹必须保留字段存在性（计算时使用 `exclude_unset=True`），确保“省略保留”与“显式 null 清空”产生不同的指纹；若复用同一 Idempotency-Key 提交不同载荷，返回 409 `IDEMPOTENCY_CONFLICT`。
+- 数据迁移与共享样例：
+  - 经评估，现有 `workspace_themes`、`workspace_font_families`、`workspace_font_configs` 表与唯一约束已完备，无需新增数据库表或迁移脚本。
+  - 完整正反例与共享契约测试用例位于主仓 `tests/fixtures/cli-font-theme/font-theme-contract-cases.json`。
 
 ### 5.2 页面和组件重任务
 
