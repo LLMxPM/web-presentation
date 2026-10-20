@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from app.schemas import audio as audio_schema
 from app.schemas.audio import (
@@ -37,13 +38,12 @@ from app.schemas.slideshow import (
     default_slideshow_settings,
 )
 
-from app.core.platform_fonts import MONO_FONT_PRESETS, SANS_FONT_PRESETS
 from app.schemas.theme import (
     ThemePalette,
     WorkspaceThemeUpdateRequest,
     _normalize_theme_key,
-    _validate_font_source,
 )
+from app.schemas.external_font_validation import validate_external_theme_fonts
 
 T = TypeVar("T")
 
@@ -183,11 +183,22 @@ class ExternalFontUpdateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    family_name: str | None = Field(default=None, min_length=1, max_length=255, description="移动到的目标字体族名")
-    font_format: str | None = Field(default=None, min_length=1, max_length=32, description="字体格式")
-    font_weight: str | None = Field(default=None, min_length=1, max_length=32, description="字重")
-    font_style: str | None = Field(default=None, min_length=1, max_length=32, description="字体样式")
-    font_display: str | None = Field(default=None, min_length=1, max_length=32, description="字体显示策略")
+    family_name: str | SkipJsonSchema[None] = Field(default=None, min_length=1, max_length=255, description="移动到的目标字体族名；可省略，不允许 null")
+    font_format: str | SkipJsonSchema[None] = Field(default=None, min_length=1, max_length=32, description="字体格式；可省略，不允许 null")
+    font_weight: str | SkipJsonSchema[None] = Field(default=None, min_length=1, max_length=32, description="字重；可省略，不允许 null")
+    font_style: str | SkipJsonSchema[None] = Field(default=None, min_length=1, max_length=32, description="字体样式；可省略，不允许 null")
+    font_display: str | SkipJsonSchema[None] = Field(default=None, min_length=1, max_length=32, description="字体显示策略；可省略，不允许 null")
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_null(cls, value: object) -> object:
+        """配置字段允许省略但不能清空，避免把非法 null 静默当成未修改。"""
+
+        if isinstance(value, dict):
+            for field in cls.model_fields:
+                if field in value and value[field] is None:
+                    raise ValueError(f"{field} 不允许为 null；不修改时请省略该字段。")
+        return value
 
 
 class ExternalCapabilitiesResponse(BaseModel):
@@ -632,9 +643,7 @@ class ExternalThemeCreateRequest(BaseModel):
     @model_validator(mode="after")
     def validate_font_sources(self) -> "ExternalThemeCreateRequest":
         """校验每个字体槽只能选择工作空间字体族或受支持的内置预设。"""
-        _validate_font_source("标题", self.heading_font_family_id, self.heading_font_preset, SANS_FONT_PRESETS)
-        _validate_font_source("正文", self.body_font_family_id, self.body_font_preset, SANS_FONT_PRESETS)
-        _validate_font_source("代码", self.code_font_family_id, self.code_font_preset, MONO_FONT_PRESETS)
+        validate_external_theme_fonts(self, partial=False)
         return self
 
 
@@ -666,9 +675,7 @@ class ExternalThemeUpdateRequest(BaseModel):
     @model_validator(mode="after")
     def validate_font_sources(self) -> "ExternalThemeUpdateRequest":
         """校验显式传入的字体族和内置预设不会互相冲突。"""
-        _validate_font_source("标题", self.heading_font_family_id, self.heading_font_preset, SANS_FONT_PRESETS)
-        _validate_font_source("正文", self.body_font_family_id, self.body_font_preset, SANS_FONT_PRESETS)
-        _validate_font_source("代码", self.code_font_family_id, self.code_font_preset, MONO_FONT_PRESETS)
+        validate_external_theme_fonts(self, partial=True)
         return self
 
     def to_workspace_update(self) -> WorkspaceThemeUpdateRequest:

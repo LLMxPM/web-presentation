@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.base import Base
 
 
 async def commit_end_read(session: AsyncSession) -> None:
@@ -58,3 +61,18 @@ async def acquire_admission_lock(
     current = getattr(state, version_attr, None) or 0
     setattr(state, version_attr, int(current) + 1)
     await session.flush()
+
+
+async def acquire_row_write_lock(session: AsyncSession, model: type[Base], row_id: int) -> None:
+    """用时间列自更新锁住已鉴权的 Timestamp 实体，不改业务值、不提交事务。
+
+    不更新主键，避免 PostgreSQL 与同事务幂等占位插入持有的外键 KEY SHARE 锁互相升级死锁。
+    显式自赋值也会抑制 updated_at 的 ORM onupdate，保持纯锁操作不修改更新时间。
+    """
+
+    identity = getattr(model, "id")
+    timestamp = getattr(model, "updated_at")
+    await session.execute(
+        update(model).where(identity == row_id).values(updated_at=timestamp)
+        .execution_options(synchronize_session=False)
+    )

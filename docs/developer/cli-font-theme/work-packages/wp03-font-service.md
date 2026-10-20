@@ -21,7 +21,7 @@
 - [x] 内部默认调用行为不变，face/族查询有空间隔离和标准不存在错误。
 - [x] 多字重、斜体、可变字重、移动归属、族改名与标签同步通过。
 - [x] 重复注册与并发唯一冲突不会留下空族、半条注册或损坏事务。
-- [x] SQLite 与 PostgreSQL 的事务/唯一性证据分别记录；缺环境明确记为未验证。
+- [x] SQLite 与 PostgreSQL 的事务/唯一性证据分别记录；后续真实 PG 并发证据见[真实验收记录](../live-validation-2026-10-20.md)。
 
 ## 验证与证据
 
@@ -32,4 +32,4 @@
 - 验证命令与结果：
   - `uv run --project backend pytest backend/tests/api/test_workspace_fonts.py backend/tests/unit/test_workspace_font_service_semantics.py backend/tests/unit/test_db_adapter_layer.py`：42 项全部通过。
   - `node node_modules/vitest/vitest.mjs run --config tests/config/vitest.config.ts tests/contracts/repository`：8 个测试文件、63 项全部通过。
-- 环境说明：已在当前 SQLite 环境完整验证事务回滚与唯一约束；PostgreSQL 环境当前本地未配置，明确标记为待联合验收（WP09）。External 路由待由 WP04 承接。
+- 后续真实 PG 测试修复并发注册裸 500：字体写入先取得工作空间时间列自更新锁，序列化唯一性检查与写入，兼容幂等占位的外键锁且不改变工作空间更新时间。3 个固定交错回归覆盖重复 face、不同字重归并、同资产并发；真实 CLI 并发也已通过。首轮 SQLite 记录保留，最终范围与证据以真实验收记录为准。

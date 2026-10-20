@@ -1230,11 +1230,11 @@ export type ExternalFontRegisterRequest = {
 }
 
 export type ExternalFontUpdateRequest = {
-  "family_name"?: (string) | (null)
-  "font_format"?: (string) | (null)
-  "font_weight"?: (string) | (null)
-  "font_style"?: (string) | (null)
-  "font_display"?: (string) | (null)
+  "family_name"?: string
+  "font_format"?: string
+  "font_weight"?: string
+  "font_style"?: string
+  "font_display"?: string
 }
 
 export type ExternalFontsCapabilities = {

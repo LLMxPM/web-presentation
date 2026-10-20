@@ -20,10 +20,10 @@ from app.schemas.theme import (
     WorkspaceThemeCopyRequest,
     WorkspaceThemeCreateRequest,
     WorkspaceThemeItem,
-
 )
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
+from app.services.theme_request_fingerprint import theme_create_fingerprints, theme_update_fingerprints
 from app.services.workspace_theme_service import WorkspaceThemeService
 
 router = APIRouter()
@@ -91,11 +91,7 @@ async def create_theme(
         palette=payload.palette or default_palette,
     )
 
-    fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="POST",
-        path=request.url.path,
-        json_data=payload.model_dump(mode="json"),
-    )
+    fingerprint, legacy_fingerprints = theme_create_fingerprints(request.url.path, payload, internal_payload)
 
     async def _operation(record_id: int | None) -> tuple[int, WorkspaceThemeItem]:
         created = await BusinessOperationService(session).create_theme(
@@ -113,6 +109,7 @@ async def create_theme(
         operation="theme.create",
         fingerprint=fingerprint,
         operation_func=_operation,
+        legacy_replay_fingerprints=legacy_fingerprints,
     )
     response.status_code = status_code
     return result if isinstance(result, WorkspaceThemeItem) else WorkspaceThemeItem.model_validate(result)
@@ -171,11 +168,7 @@ async def update_theme(
 ) -> WorkspaceThemeItem:
     """更新主题（禁止修改 key，支持 Idempotency-Key 幂等保护）。"""
 
-    fingerprint = IdempotencyService.calculate_request_fingerprint(
-        http_method="PATCH",
-        path=request.url.path,
-        json_data=payload.model_dump(mode="json", exclude_unset=True),
-    )
+    fingerprint, legacy_fingerprints = theme_update_fingerprints(request.url.path, payload)
     internal_payload = payload.to_workspace_update()
 
     async def _operation(record_id: int | None) -> tuple[int, WorkspaceThemeItem]:
@@ -195,6 +188,7 @@ async def update_theme(
         operation="theme.update",
         fingerprint=fingerprint,
         operation_func=_operation,
+        legacy_replay_fingerprints=legacy_fingerprints,
     )
     return result if isinstance(result, WorkspaceThemeItem) else WorkspaceThemeItem.model_validate(result)
 

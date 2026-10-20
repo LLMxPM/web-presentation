@@ -208,11 +208,11 @@ POST     /api/v1/validate/entity
 - 接口与操作：
   - `GET /api/v1/fonts`（operation `font.list`，scope `asset:read`）：分页查询已注册 face 列表。
   - `GET /api/v1/fonts/{font_id}`（operation `font.get`，scope `asset:read`）：查询单项 face 详情。
-  - `POST /api/v1/fonts`（operation `font.register`，scope `asset:write`）：注册已有字体资源为 face。必须携带 `Idempotency-Key`。接受 `asset_id`、`family_name`，以及可选 `font_format`、`font_weight`（默认 400，支持数值或可变字重范围如 `"100 900"`）、`font_style`（默认 normal）、`font_display`（默认 swap）。禁止未知字段；不开放 `status` 参数（默认 active）。同资源重复注册返回 409 `FONT_ASSET_ALREADY_REGISTERED`，同族同字重与样式返回 409 `FONT_FACE_CONFLICT`，非 font/归档/历史资源返回 400 `INVALID_FONT_ASSET`。
-  - `PATCH /api/v1/fonts/{font_id}`（operation `font.update`，scope `asset:write`）：更新 face 配置或通过修改 `family_name` 移动所属族。必须携带 `Idempotency-Key`。禁止修改 `asset_id` 与 `status`。原族无剩余 face 时自动清理空族。
+  - `POST /api/v1/fonts`（operation `font.register`，scope `asset:write`）：注册已有字体资源为 face。必须携带 `Idempotency-Key`。接受 `asset_id`、`family_name`，以及可选 `font_format`、`font_weight`（默认 400，支持数值或可变字重范围如 `"100 900"`）、`font_style`（默认 normal）、`font_display`（默认 swap）。禁止未知字段；不开放 `status` 参数（默认 active）。同资源重复注册返回 409 `FONT_CONFIG_ALREADY_EXISTS`，同族同字重与样式返回 409 `FONT_CONFIG_DUPLICATE_FACE`，非 font 返回 400 `FONT_ASSET_REQUIRED`，归档/历史资源返回 400 `FONT_ASSET_INVALID`。
+  - `PATCH /api/v1/fonts/{font_id}`（operation `font.update`，scope `asset:write`）：更新 face 配置或通过修改 `family_name` 移动所属族。必须携带 `Idempotency-Key`。禁止修改 `asset_id` 与 `status`。可写字段允许省略但拒绝显式 null（422）；原族未被主题引用且无剩余 face 时自动清理。不能移走仍被主题绑定字体族的最后一个可用 active face，返回 409 `FONT_CONFIG_IN_USE`；归档或资源失效的兄弟 face 不计作可用替代。
   - `GET /api/v1/font-families`（operation `font_family.list`，scope `asset:read`）：分页查询字体族及其内嵌 faces 摘要。
   - `GET /api/v1/font-families/{family_id}`（operation `font_family.get`，scope `asset:read`）：查询单个字体族详情及全部 faces。
-  - `PATCH /api/v1/font-families/{family_id}`（operation `font_family.rename`，scope `asset:write`）：重命名字体族。必须携带 `Idempotency-Key`。族名在当前空间内唯一，重名返回 409 `FONT_FAMILY_NAME_CONFLICT`；同事务级联更新引用该族的主题的对应字体标签。
+  - `PATCH /api/v1/font-families/{family_id}`（operation `font_family.rename`，scope `asset:write`）：重命名字体族。必须携带 `Idempotency-Key`。族名在当前空间内唯一，重名返回 409 `FONT_FAMILY_DUPLICATE_NAME`；同事务级联更新引用该族的主题的对应字体标签。
 - 本期范围不包含：字体文件转码/子集化、在线下载、自动元数据推断、注销/停用/硬删除及内部 AI 工具扩权。
 
 #### 主题图片与字体配置（WP01 冻结）
@@ -225,16 +225,18 @@ POST     /api/v1/validate/entity
 - 图片槽位语义（`logo_asset_id`、`invert_logo_asset_id`、`project_icon_asset_id`）：
   - **字段省略**：保持当前绑定与持久化路径不变。
   - **显式 `null`**：清空该图片槽位。同步清理持久化 `logo_path`、`invert_logo_path` 或 `project_icon_name` 为 null，禁止 Runtime 回退历史旧名称。
-  - **更新绑定**：传入真实资源 ID。资源必须属于当前空间、active 状态、非历史副本。Logo 允许 `image`/`icon`；项目图标只允许 `icon`，类型不符返回 400 `INVALID_THEME_ASSET_TYPE`。
+  - **更新绑定**：传入真实资源 ID。资源必须属于当前空间、active 状态、非历史副本。Logo 允许 `image`/`icon`；项目图标只允许 `icon`，类型/状态不符返回 400 `WORKSPACE_THEME_ASSET_INVALID`。
 - 三槽字体配置真值表（以 `heading_font_family_id` 和 `heading_font_preset` 为例，正文/代码同理）：
   - **双省略**：保持原槽位绑定不变。
   - **双显式 `null`**：恢复系统默认预设（标题/正文恢复 `platform-sans`，代码恢复 `platform-mono`）。
-  - **仅传非空 `family_id`**：切换为自定义字体族，该槽 preset 自动置为 None。被引用的字体族必须存在且含有可用 active face，否则返回 400 `INVALID_FONT_FAMILY`。
+  - **仅传非空 `family_id`**：切换为自定义字体族，该槽 preset 自动置为 None。被引用的字体族不存在时返回 400 `WORKSPACE_THEME_FONT_NOT_FOUND`，无可用 active face 时返回 400 `WORKSPACE_THEME_FONT_INVALID`。
   - **仅传非空 `preset`**：切换为内置预设，该槽 family_id 自动置为 None。preset 必须属于 `platform_fonts.py` 规定集合（标题/正文限 `platform-sans`、`system-ui`；代码限 `platform-mono`、`monospace`），否则返回 422 `UNSUPPORTED_FONT_PRESET`。
   - **单传 `null`**（仅传 family_id 为 null 或仅传 preset 为 null）：非法组合，返回 422 `INVALID_FONT_SOURCE_COMBINATION`。
   - **双非空**（同时传有效 family_id 与 preset）：互斥冲突，返回 422 `MUTUALLY_EXCLUSIVE_FONT_SOURCE`。
 - 幂等与指纹策略：
-  - PATCH 更新指纹必须保留字段存在性（计算时使用 `exclude_unset=True`），确保“省略保留”与“显式 null 清空”产生不同的指纹；若复用同一 Idempotency-Key 提交不同载荷，返回 409 `IDEMPOTENCY_CONFLICT`。
+  - PATCH 更新指纹使用版本化的显式字段集（`exclude_unset=True`），确保“省略保留”与“显式 null 清空”产生不同指纹；同键异载荷返回 409 `IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD`。
+  - 创建沿用默认色板补全后的内部载荷指纹，同时兼容曾使用外部 DTO 指纹的已完成结果。更新兼容上一版部分字段指纹；对最早的全量指纹，只为不含显式 null 的输入重放已完成结果。兼容匹配不重新执行写入，不接管未完成记录。
+  - 最早的全量指纹没有保存字段存在性，无法安全区分旧 null 请求的意图，此类输入保留 409；调用方应先查询目标核对结果，不能自动更换 key 重发。新版本记录不走这类有歧义的匹配。
 - 数据迁移与共享样例：
   - 经评估，现有 `workspace_themes`、`workspace_font_families`、`workspace_font_configs` 表与唯一约束已完备，无需新增数据库表或迁移脚本。
   - 完整正反例与共享契约测试用例位于主仓 `tests/fixtures/cli-font-theme/font-theme-contract-cases.json`。

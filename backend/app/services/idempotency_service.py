@@ -74,6 +74,7 @@ class IdempotencyService:
         operation: str,
         fingerprint: str,
         operation_func: Callable[[int | None], Coroutine[Any, Any, tuple[int, T]]],
+        legacy_replay_fingerprints: tuple[str, ...] = (),
     ) -> tuple[int, T]:
         """执行幂等操作：若未传 key 则直接在事务中执行；若传 key 则单事务先插入占位、执行并更新为 completed。"""
 
@@ -118,6 +119,7 @@ class IdempotencyService:
                 operation=operation,
                 fingerprint=fingerprint,
                 operation_func=operation_func,
+                legacy_replay_fingerprints=legacy_replay_fingerprints,
             )
 
         # 成功插入占位，在同一事务内执行核心业务
@@ -160,6 +162,7 @@ class IdempotencyService:
         operation: str,
         fingerprint: str,
         operation_func: Any,
+        legacy_replay_fingerprints: tuple[str, ...] = (),
     ) -> tuple[int, Any]:
         """处理已有幂等记录的重放或冲突；若已过期则复用并重写。"""
 
@@ -216,7 +219,12 @@ class IdempotencyService:
                 raise
 
         # 校验请求指纹一致性
-        if existing.request_fingerprint != fingerprint:
+        # 兼容指纹只能读取已完成的旧结果，不能据此接管或重新执行旧写入。
+        legacy_completed_replay = (
+            existing.status == "completed"
+            and existing.request_fingerprint in legacy_replay_fingerprints
+        )
+        if existing.request_fingerprint != fingerprint and not legacy_completed_replay:
             raise AppException(
                 status_code=409,
                 code="IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD",

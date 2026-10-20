@@ -43,6 +43,7 @@ from app.services.page_screenshot_fingerprint_service import (
 )
 from app.services.resource_reference_parser import ResourceReferenceParser
 from app.services.workspace_theme_service import WorkspaceThemeService
+from app.services.theme_asset_fingerprint import collect_theme_asset_identity
 
 _PAGE_MODULE_PATH_PATTERN = re.compile(r"^src/views/(?P<code>[A-Za-z0-9_-]+)\.(?P<file_type>[A-Za-z0-9]+)$")
 
@@ -448,7 +449,9 @@ class CodeCheckFingerprintBuilder:
         fingerprint_service = PageScreenshotFingerprintService(self.session)
         project = await self.session.get(Project, project_id) if project_id is not None else None
         if project is not None:
-            page_config_hash = (await fingerprint_service.build_project_snapshot(project)).config_hash
+            snapshot = await fingerprint_service.build_project_snapshot(project)
+            page_config_hash = snapshot.config_hash
+            theme_config = snapshot.theme_config
             theme_identity: dict[str, object] = {
                 "mode": "project",
                 "theme_key": project.theme_key,
@@ -477,6 +480,7 @@ class CodeCheckFingerprintBuilder:
                 "theme_config": theme_config,
             }
         else:
+            theme_config = {}
             page_config_hash = fingerprint_service.build_hash(
                 page_config=_default_page_config(),
                 theme_key=None,
@@ -490,6 +494,7 @@ class CodeCheckFingerprintBuilder:
             .where(WorkspaceFontConfig.status == RecordStatus.ACTIVE.value)
             .order_by(WorkspaceFontConfig.asset_name.asc())
         )
+        font_configs = font_rows.scalars().all()
         font_signatures = [
             {
                 "asset_name": row.asset_name,
@@ -499,12 +504,15 @@ class CodeCheckFingerprintBuilder:
                 "font_style": row.font_style,
                 "font_display": row.font_display,
             }
-            for row in font_rows.scalars().all()
+            for row in font_configs
         ]
         return _hash_json_payload({
             "page_config": page_config_hash,
             "theme_identity": theme_identity,
             "fonts": font_signatures,
+            "theme_assets": await collect_theme_asset_identity(
+                self.session, workspace_id=workspace_id, theme_config=theme_config, fonts=font_configs,
+            ),
         })
 
 

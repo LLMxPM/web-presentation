@@ -111,7 +111,12 @@ describe('runtime font registry', () => {
     expect(check).toHaveBeenCalledTimes(2)
   })
 
-  it('应根据预加载字体配置注入动态 @font-face', () => {
+  it.each([
+    ['woff2', 'woff2'],
+    ['woff', 'woff'],
+    ['ttf', 'truetype'],
+    ['otf', 'opentype'],
+  ])('应将预加载文件格式 %s 注册为 CSS 字体格式 %s', (fileFormat, cssFormat) => {
     setRuntimePreviewContext({
       artifactId: 'artifact_font',
       tenantId: 'tenant_font',
@@ -147,7 +152,7 @@ describe('runtime font registry', () => {
           'SourceHanSansSC-VF': {
             asset_name: 'SourceHanSansSC-VF',
             font_family: '思源黑体',
-            font_format: 'woff2',
+            font_format: fileFormat,
             font_weight: '100 900',
             font_style: 'normal',
             font_display: 'swap',
@@ -163,6 +168,7 @@ describe('runtime font registry', () => {
     expect(cssText).toContain("font-family: '思源黑体'")
     expect(cssText).toContain("url('https://assets.example/runtime-font/hash-source-han-sans')")
     expect(cssText).toContain("font-weight: 100 900;")
+    expect(cssText).toContain(`format('${cssFormat}')`)
   })
 
   it('应为同一字体族的多个 face 生成多条 @font-face 并原样写入范围字重', () => {

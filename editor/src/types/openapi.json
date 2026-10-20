@@ -32542,74 +32542,39 @@
       "ExternalFontUpdateRequest": {
         "properties": {
           "family_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
             "title": "Family Name",
-            "description": "移动到的目标字体族名"
+            "description": "移动到的目标字体族名；可省略，不允许 null"
           },
           "font_format": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
             "title": "Font Format",
-            "description": "字体格式"
+            "description": "字体格式；可省略，不允许 null"
           },
           "font_weight": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
             "title": "Font Weight",
-            "description": "字重"
+            "description": "字重；可省略，不允许 null"
           },
           "font_style": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
             "title": "Font Style",
-            "description": "字体样式"
+            "description": "字体样式；可省略，不允许 null"
           },
           "font_display": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
             "title": "Font Display",
-            "description": "字体显示策略"
+            "description": "字体显示策略；可省略，不允许 null"
           }
         },
         "additionalProperties": false,

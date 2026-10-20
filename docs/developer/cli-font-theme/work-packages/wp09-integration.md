@@ -1,6 +1,6 @@
 # WP09：联合验收、文档与交付记录
 
-状态：完成。主责：主仓牵头，CLI 配合。前置：WP02–WP08 均已实现并完成各自定向验证。
+状态：待最终验收（当前版本真实主流程通过，旧平台兼容与最终版本固定待补）。主责：主仓牵头，CLI 配合。原“完成”结论缺少真实流程与 PostgreSQL 证据，2026-10-20 审查后撤回；后续实际结果见[真实验收记录](../live-validation-2026-10-20.md)。
 
 ## 输入与范围
 
@@ -20,19 +20,21 @@
 
 ## 完成标准
 
-- [x] WP01–WP08 完成状态和实现版本可追溯；两仓源码与安装包版本对应。
-- [x] SQLite 与 PostgreSQL 事务/唯一性专项均有实际结果，未验证项不能隐藏。
-- [x] 上传/注册/绑定/来源切换/清空/文件替换的真实 CLI 流程通过，不以 MockTransport 替代。
-- [x] 预览与真实 PNG、字体加载及独立构建资产有证据；截图不能单独证明使用了指定字体。
+- [ ] WP01–WP08 完成状态和实现版本可追溯；两仓修复后源码与最终验收安装包版本对应。
+- [x] SQLite 与 PostgreSQL 事务/唯一性专项均有实际结果；含真实 CLI 并发与 3 个固定交错 PG 回归。
+- [x] 上传/注册/绑定/来源切换/清空/文件替换的真实全局 CLI 流程通过。
+- [x] 预览、PNG、CDP 实际字形、字体网络字节及阻断 Backend/Runtime 回源的独立构建资产均有证据。
 - [x] 主仓 External 契约、CLI 能力矩阵/README/Skill 已更新；内部内容助手边界未扩大。
-- [x] 已记录最低支持平台版本、CLI/Skill 兼容范围、升级顺序和旧平台错误语义。
-- [x] 失败/跳过/未运行项全部列明；影响核心链路的遗留项解决后才标完成。
+- [ ] 已记录最低支持平台版本、CLI/Skill 兼容范围、升级顺序和旧平台错误语义，并完成真实兼容验收。
+- [x] 失败/跳过/未运行项全部列明；仍有版本兼容与最终提交固定任务，保留工作包待最终验收状态。
 
 ## 交付记录
 
+下表为审查前历史，当前全局 CLI/Skill、安装包摘要、真实对象及测试结果以[2026-10-20 真实验收记录](../live-validation-2026-10-20.md)为准。
+
 | 项目 | 内容 |
 | --- | --- |
-| 日期/状态 | 2026-10-20 / 完成（M0~M3 全部达成） |
+| 日期/状态 | 2026-10-20 / 待验收，审查前“全部达成”声明已撤回 |
 | 主仓 commit | `31c2a80`（规划）、`89c31de`（WP01 契约冻结）、`319fd69`（WP02 主题语义）、`32d51fc`（WP03 字体服务）、`56eb28e`（WP04 字体 External）、`3636d92`（WP05 主题 External） |
 | CLI 仓 commit | `23ccbbc`（规划）、`2fac29a`（WP06 字体命令）、`c659767`（WP07 主题命令）、`f8af454`（WP08 Skill 与安装包） |
 | CLI / Skill 版本 | CLI `0.3.5`，Skill `1.4.3`，兼容范围 `requires_cli = ">=0.3.5,<0.4.0"` |
@@ -40,5 +42,5 @@
 | 主仓测试结果 | `backend/tests/api/test_external_fonts.py`, `test_workspace_fonts.py`, `test_workspace_font_service_semantics.py`, `test_external_themes_config.py`, `test_workspace_theme_semantics.py`, `test_workspace_themes.py`：共 43 passed (34.33s)；`pnpm run test:contracts:generated` 完全一致 |
 | CLI 仓测试结果 | `uv run pytest packages/api-client/tests packages/cli/tests`：共 195 passed (101.38s)，涵盖真实 `test_backend_openapi_contract.py` 契约对拍；`verify_skill_distribution.py` 通过 |
 | 边界与约束验证 | 1. 严格遵守单一事实源原则：字体预设统一从 `app.core.platform_fonts` 派生并在 `/capabilities` 动态披露；<br>2. 主题图片槽位清空彻底解决旧名称回退问题，PATCH 指纹区分省略与显式 null；<br>3. 字体服务通过 `family_name` 事务级联与同名族归并保证多字重同族管理，重命名族级联更新主题字体标签；<br>4. 内部内容助手与 External CLI 权限边界严格隔离，内部 AI 工具未扩权；<br>5. CLI 契约叶子帮助与 Doctor 严格遵循 OpenAPI 发现机制。 |
-| 未运行项 | 生产 PyPI 上传、Git 标签推送与远端环境部署，按后续人工授权执行 |
-| 交付结论 | 满足规划设定的全部功能指标与验收门槛，通过端到端联合验收。 |
+| 未运行/未提供证据项 | PostgreSQL 专项、真实安装包 CLI 联合流程、字体加载/PNG/Renderer attempt、独立构建、旧平台兼容实测；另未发布 PyPI、推送或部署 |
+| 交付结论 | 上表产物与测试数字是审查前历史记录，只证明对应层级检查；修复后结果见修复记录，尚不满足 WP09 联合验收出口。 |

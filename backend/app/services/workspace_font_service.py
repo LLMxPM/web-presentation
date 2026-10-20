@@ -10,10 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.db.tx import acquire_row_write_lock
 from app.models.asset import WorkspaceAsset
 from app.models.enums import AssetType, RecordStatus
 from app.models.font import WorkspaceFontConfig, WorkspaceFontFamily
-from app.models.workspace import Project
+from app.models.workspace import Project, Workspace
 from app.models.workspace_theme import WorkspaceTheme
 from app.schemas.asset import AssetFontConfigSummary
 from app.schemas.common import ListQuery, PagedResponse
@@ -26,6 +27,7 @@ from app.schemas.font import (
     WorkspaceFontFamilyUpdateRequest,
 )
 from app.services.workspace_theme_service import WorkspaceThemeService
+from app.services.font_reference_guard import ensure_font_face_can_leave_family, is_last_referenced_font_face
 from app.services.font_normalization import (
     FONT_DISPLAY_ALLOWED_VALUES,
     FONT_STYLE_ALLOWED_VALUES,
@@ -84,6 +86,7 @@ class WorkspaceFontService:
     ) -> WorkspaceFontConfigResponse:
         """创建新的工作空间字体配置。"""
 
+        await acquire_row_write_lock(self.session, Workspace, workspace_id)
         asset = await self._get_font_asset_or_raise(workspace_id, payload.asset_id)
         await self._ensure_asset_not_registered(workspace_id, asset.id)
         await self._ensure_asset_name_not_registered(workspace_id, asset.name)
@@ -128,6 +131,7 @@ class WorkspaceFontService:
     ) -> WorkspaceFontConfigResponse:
         """更新已有字体配置；修改 family_name 时把 face 移动到目标字体族（不存在时自动创建）。"""
 
+        await acquire_row_write_lock(self.session, Workspace, workspace_id)
         font_config = await self._get_font_config_or_raise(workspace_id, font_id)
         previous_family = font_config.family
         target_family = previous_family
@@ -142,6 +146,9 @@ class WorkspaceFontService:
             exclude_font_config_id=font_config.id,
         )
         family_changed = target_family.id != previous_family.id
+        disabling_face = payload.status is not None and payload.status.value != RecordStatus.ACTIVE.value
+        if family_changed or disabling_face:
+            await ensure_font_face_can_leave_family(self.session, font_config, target_family_id=target_family.id)
         if family_changed:
             font_config.family = target_family
         if payload.font_format is not None:
@@ -172,6 +179,7 @@ class WorkspaceFontService:
     async def delete_workspace_font(self, workspace_id: int, font_id: int) -> None:
         """删除字体配置；若所属字体族仍被主题引用且这是最后一个 face 则拒绝；删除后空族级联清理。"""
 
+        await acquire_row_write_lock(self.session, Workspace, workspace_id)
         font_config = await self._get_font_config_or_raise(workspace_id, font_id)
         family = font_config.family
         conflict_error = self._build_font_config_in_use_error(font_config)
@@ -232,6 +240,7 @@ class WorkspaceFontService:
     ) -> WorkspaceFontFamilyResponse:
         """重命名字体族，名称在工作空间内唯一（trim + 忽略大小写）。"""
 
+        await acquire_row_write_lock(self.session, Workspace, workspace_id)
         family = await self._get_family_or_raise(workspace_id, family_id)
         next_name = payload.name.strip()
         await self._ensure_family_name_available(workspace_id, next_name, exclude_family_id=family.id)
@@ -263,6 +272,7 @@ class WorkspaceFontService:
     async def delete_font_family(self, workspace_id: int, family_id: int) -> None:
         """删除字体族；仍有 face 或被主题绑定时拒绝删除。"""
 
+        await acquire_row_write_lock(self.session, Workspace, workspace_id)
         family = await self._get_family_or_raise(workspace_id, family_id)
         face_count = int(
             await self.session.scalar(
@@ -351,6 +361,7 @@ class WorkspaceFontService:
     ) -> WorkspaceFontConfig:
         """按离线包载荷注册字体文件（get-or-create 字体族，不提交事务），供导入包服务复用。"""
 
+        await acquire_row_write_lock(self.session, Workspace, workspace_id)
         family = await self._get_or_create_family(workspace_id, font_family)
         normalized_weight = self._normalize_font_weight(font_weight)
         normalized_style = self._normalize_font_style(font_style)
@@ -923,17 +934,7 @@ class WorkspaceFontService:
     async def _is_font_config_referenced(self, workspace_id: int, font_config: WorkspaceFontConfig) -> bool:
         """判断该 face 是否为被主题引用字体族的最后一个 face（此时不允许删除）。"""
 
-        if not await self.workspace_theme_service.is_font_referenced(workspace_id, font_config.family_id):
-            return False
-        sibling_count = int(
-            await self.session.scalar(
-                select(func.count(WorkspaceFontConfig.id))
-                .where(WorkspaceFontConfig.family_id == font_config.family_id)
-                .where(WorkspaceFontConfig.id != font_config.id)
-            )
-            or 0
-        )
-        return sibling_count == 0
+        return await is_last_referenced_font_face(self.session, font_config)
 
     @staticmethod
     def _build_font_config_in_use_error(font_config: WorkspaceFontConfig) -> AppException:

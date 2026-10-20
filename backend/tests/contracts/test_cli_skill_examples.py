@@ -9,6 +9,7 @@ import pytest
 from app.schemas.project_route import ProjectRouteTreeWriteRequest
 from app.schemas.audio import ProjectAudioSettings
 from app.schemas.theme import ThemePalette
+from app.schemas.external_api import ExternalFontRegisterRequest, ExternalThemeUpdateRequest
 from app.services.project_route_service import ProjectRouteService
 
 
@@ -63,3 +64,12 @@ def test_skill_theme_example_and_runtime_mapping(skill_paths):
         assert variable in runtime, variable
     for key, variable in [('primary', '--tw-color-text-primary'), ('accent1', '--tw-color-accent1')]:
         assert f"{key}: createColorScale('{variable}')" in runtime
+
+
+def test_skill_font_registration_and_theme_design_examples(skill_paths):
+    """字体注册与主题设计 JSON 必须通过真实 External DTO，而非只校验 Markdown 格式。"""
+
+    _, references = skill_paths
+    text = (references / 'cli-usage.md').read_text(encoding='utf-8')
+    ExternalFontRegisterRequest.model_validate(_json_example(text, {'asset_id', 'family_name', 'font_weight'}))
+    ExternalThemeUpdateRequest.model_validate(_json_example(text, {'logo_asset_id', 'heading_font_family_id', 'body_font_preset'}))

@@ -7,6 +7,13 @@ import { normalizeAssetKey, type RuntimeFontBundleItem } from '@/core/shared/run
 import { getRuntimePreloadedConfig, resolveResourcePath } from './path'
 
 const RUNTIME_FONT_STYLE_ID = 'runtime-dynamic-fonts'
+// Backend 保存文件格式；CSS format() 使用规范名称，不能直接写 ttf/otf 扩展名。
+const CSS_FONT_FORMATS: Record<string, string> = {
+  ttf: 'truetype',
+  otf: 'opentype',
+  woff: 'woff',
+  woff2: 'woff2',
+}
 const PLATFORM_SANS_FONT_URL = new URL(
   '../../assets/runtime-shell/fonts/SourceHanSansSC-VF.otf.woff2',
   import.meta.url,
@@ -167,7 +174,7 @@ function buildFontFaceRule(item: RuntimeFontBundleItem): string {
   return [
     '@font-face {',
     `  font-family: '${escapedFamily}';`,
-    `  src: url('${escapedUrl}') format('${item.font_format}');`,
+    `  src: url('${escapedUrl}') format('${CSS_FONT_FORMATS[item.font_format] ?? item.font_format}');`,
     `  font-weight: ${item.font_weight};`,
     `  font-style: ${item.font_style};`,
     `  font-display: ${item.font_display};`,

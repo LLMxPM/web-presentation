@@ -50,7 +50,7 @@
     {
       "name": "duplicate-face-conflict",
       "valid": false,
-      "error": "FONT_FACE_CONFLICT",
+      "error": "FONT_CONFIG_DUPLICATE_FACE",
       "input": {
         "asset_id": 104,
         "family_name": "Custom Sans",
@@ -63,7 +63,7 @@
     {
       "name": "duplicate-asset-conflict",
       "valid": false,
-      "error": "FONT_ASSET_ALREADY_REGISTERED",
+      "error": "FONT_CONFIG_ALREADY_EXISTS",
       "input": {
         "asset_id": 101,
         "family_name": "Another Family",
@@ -75,7 +75,7 @@
     {
       "name": "invalid-asset-type",
       "valid": false,
-      "error": "INVALID_FONT_ASSET",
+      "error": "FONT_ASSET_REQUIRED",
       "input": {
         "asset_id": 201,
         "family_name": "Custom Sans",
@@ -105,7 +105,7 @@
     {
       "name": "rename-family-conflict",
       "valid": false,
-      "error": "FONT_FAMILY_NAME_CONFLICT",
+      "error": "FONT_FAMILY_DUPLICATE_NAME",
       "input": {
         "family_id": 1,
         "name": "Existing Family Name"
@@ -193,7 +193,7 @@
       "name": "error-non-existent-or-archived-family",
       "operation": "update",
       "valid": false,
-      "error": "INVALID_FONT_FAMILY",
+      "error": "WORKSPACE_THEME_FONT_NOT_FOUND",
       "input": {
         "heading_font_family_id": 9999
       },
@@ -232,7 +232,7 @@
       "name": "error-invalid-icon-asset-type",
       "operation": "update",
       "valid": false,
-      "error": "INVALID_THEME_ASSET_TYPE",
+      "error": "WORKSPACE_THEME_ASSET_INVALID",
       "input": {
         "project_icon_asset_id": 401
       },
@@ -242,7 +242,7 @@
       "name": "error-archived-asset-reference",
       "operation": "update",
       "valid": false,
-      "error": "INVALID_THEME_ASSET",
+      "error": "WORKSPACE_THEME_ASSET_INVALID",
       "input": {
         "logo_asset_id": 501
       },
@@ -260,7 +260,7 @@
       "name": "same-key-different-payload-omit-vs-null",
       "input_a": { "name": "Theme A" },
       "input_b": { "name": "Theme A", "logo_asset_id": null },
-      "expected": "指纹不匹配，返回 409 IDEMPOTENCY_CONFLICT"
+      "expected": "指纹不匹配，返回 409 IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD"
     }
   ]
 }
