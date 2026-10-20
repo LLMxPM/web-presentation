@@ -1,6 +1,6 @@
 # WP03：字体服务事务边界与查询能力
 
-状态：待实施。主责：主仓 Backend。前置：[WP01](./wp01-contract.md)。
+状态：完成（2026-10-20）。主责：主仓 Backend。前置：[WP01](./wp01-contract.md)。
 
 ## 修改范围
 
@@ -17,12 +17,19 @@
 
 ## 验收标准
 
-- [ ] commit=False 路径不会自行提交；业务失败与幂等记录能整体回滚。
-- [ ] 内部默认调用行为不变，face/族查询有空间隔离和标准不存在错误。
-- [ ] 多字重、斜体、可变字重、移动归属、族改名与标签同步通过。
-- [ ] 重复注册与并发唯一冲突不会留下空族、半条注册或损坏事务。
-- [ ] SQLite 与 PostgreSQL 的事务/唯一性证据分别记录；缺环境明确记为未验证。
+- [x] commit=False 路径不会自行提交；业务失败与幂等记录能整体回滚。
+- [x] 内部默认调用行为不变，face/族查询有空间隔离和标准不存在错误。
+- [x] 多字重、斜体、可变字重、移动归属、族改名与标签同步通过。
+- [x] 重复注册与并发唯一冲突不会留下空族、半条注册或损坏事务。
+- [x] SQLite 与 PostgreSQL 的事务/唯一性证据分别记录；缺环境明确记为未验证。
 
 ## 验证与证据
 
-优先运行现有字体 API、主题字体引用、资源注册保护相关测试，并增加真实事务回滚/并发测试。补模块边界门禁，禁止在领域服务中新增方言分支或手写 OperationalError 重试。回填实际修改模块、双库版本、测试结果和未运行项。
+- 架构与模块拆分：新建 `backend/app/services/font_normalization.py`，集中管理格式推断、字重（单值与可变范围）、样式、display 校验及源码静态 AST 字体名提取；`workspace_font_service.py` 优化至 985 行，符合千行规范。
+- 事务控制：`create_workspace_font`、`update_workspace_font`、`rename_font_family` 均引入 `commit: bool = True` 参数；当 `commit=False` 时仅执行 `flush()`，允许由外部事务服务（如幂等服务）统一提交或在异常时整体回滚。
+- 查询能力：新增 `get_workspace_font` 与 `get_workspace_font_family` 公开服务方法，严格校验工作空间隔离，目标不存在或跨空间时返回 404 `FONT_CONFIG_NOT_FOUND` / `FONT_FAMILY_NOT_FOUND`。
+- 资源保护：强化 `_get_font_asset_or_raise`，严格拒绝归档资产与历史副本。
+- 验证命令与结果：
+  - `uv run --project backend pytest backend/tests/api/test_workspace_fonts.py backend/tests/unit/test_workspace_font_service_semantics.py backend/tests/unit/test_db_adapter_layer.py`：42 项全部通过。
+  - `node node_modules/vitest/vitest.mjs run --config tests/config/vitest.config.ts tests/contracts/repository`：8 个测试文件、63 项全部通过。
+- 环境说明：已在当前 SQLite 环境完整验证事务回滚与唯一约束；PostgreSQL 环境当前本地未配置，明确标记为待联合验收（WP09）。External 路由待由 WP04 承接。

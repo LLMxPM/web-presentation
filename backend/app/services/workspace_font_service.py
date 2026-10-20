@@ -26,18 +26,26 @@ from app.schemas.font import (
     WorkspaceFontFamilyUpdateRequest,
 )
 from app.services.workspace_theme_service import WorkspaceThemeService
-
-
-FONT_ASSET_CALL_PATTERN = re.compile(
-    r"\b(?:useAssetFontFamily|resolveAssetFontFamily)\s*\(\s*(?:'(?P<single>(?:\\.|[^'\\])*)'|\"(?P<double>(?:\\.|[^\"\\])*)\")",
-    flags=re.DOTALL,
+from app.services.font_normalization import (
+    FONT_DISPLAY_ALLOWED_VALUES,
+    FONT_STYLE_ALLOWED_VALUES,
+    FONT_WEIGHT_RANGE_PATTERN,
+    FONT_WEIGHT_VALUE_PATTERN,
+    build_font_entry_lookup_by_asset_name,
+    build_font_entry_lookup_by_family_name,
+    collect_declared_font_asset_names,
+    collect_declared_font_asset_names_from_modules,
+    infer_font_format,
+    normalize_font_asset_name,
+    normalize_font_asset_names,
+    normalize_font_display,
+    normalize_font_format,
+    normalize_font_style,
+    normalize_font_weight,
+    unescape_js_string_literal,
 )
 
-# @font-face 字段白名单校验，防止脏数据直接注入 Runtime 生成的 CSS。
-FONT_WEIGHT_VALUE_PATTERN = re.compile(r"^\d{1,4}$")
-FONT_WEIGHT_RANGE_PATTERN = re.compile(r"^(\d{1,4}) (\d{1,4})$")
-FONT_STYLE_ALLOWED_VALUES = {"normal", "italic", "oblique"}
-FONT_DISPLAY_ALLOWED_VALUES = {"auto", "block", "swap", "fallback", "optional"}
+
 
 
 class WorkspaceFontService:
@@ -71,6 +79,8 @@ class WorkspaceFontService:
         self,
         workspace_id: int,
         payload: WorkspaceFontConfigCreateRequest,
+        *,
+        commit: bool = True,
     ) -> WorkspaceFontConfigResponse:
         """创建新的工作空间字体配置。"""
 
@@ -98,8 +108,11 @@ class WorkspaceFontService:
             status=payload.status.value,
         )
         self.session.add(font_config)
-        await self.session.commit()
-        await self.session.refresh(font_config)
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(font_config)
+        else:
+            await self.session.flush()
         response = self._to_response(font_config)
         response.asset_url = self._build_asset_url(workspace_id, asset.file_hash)
         return response
@@ -109,6 +122,8 @@ class WorkspaceFontService:
         workspace_id: int,
         font_id: int,
         payload: WorkspaceFontConfigUpdateRequest,
+        *,
+        commit: bool = True,
     ) -> WorkspaceFontConfigResponse:
         """更新已有字体配置；修改 family_name 时把 face 移动到目标字体族（不存在时自动创建）。"""
 
@@ -142,8 +157,11 @@ class WorkspaceFontService:
         if family_changed:
             await self.session.flush()
             await self._cleanup_family_if_orphan(workspace_id, previous_family)
-        await self.session.commit()
-        await self.session.refresh(font_config)
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(font_config)
+        else:
+            await self.session.flush()
         asset = await self._get_font_asset_or_raise(workspace_id, font_config.asset_id)
         response = self._to_response(font_config)
         response.asset_url = self._build_asset_url(workspace_id, asset.file_hash)
@@ -207,6 +225,8 @@ class WorkspaceFontService:
         workspace_id: int,
         family_id: int,
         payload: WorkspaceFontFamilyUpdateRequest,
+        *,
+        commit: bool = True,
     ) -> WorkspaceFontFamilyResponse:
         """重命名字体族，名称在工作空间内唯一（trim + 忽略大小写）。"""
 
@@ -215,8 +235,11 @@ class WorkspaceFontService:
         await self._ensure_family_name_available(workspace_id, next_name, exclude_family_id=family.id)
         family.name = next_name
         await self._sync_theme_font_labels(workspace_id, family.id, next_name)
-        await self.session.commit()
-        await self.session.refresh(family)
+        if commit:
+            await self.session.commit()
+            await self.session.refresh(family)
+        else:
+            await self.session.flush()
         return (await self._to_family_responses(workspace_id, [family]))[0]
 
     async def _sync_theme_font_labels(self, workspace_id: int, family_id: int, family_name: str) -> None:
@@ -259,6 +282,22 @@ class WorkspaceFontService:
         await self.workspace_theme_service.purge_soft_deleted_theme_font_references(workspace_id, family.id)
         await self.session.delete(family)
         await self.session.commit()
+
+
+    async def get_workspace_font(self, workspace_id: int, font_id: int) -> WorkspaceFontConfigResponse:
+        """获取单个字体 face 配置详情。"""
+        font_config = await self._get_font_config_or_raise(workspace_id, font_id)
+        asset = await self._get_font_asset_or_raise(workspace_id, font_config.asset_id)
+        response = self._to_response(font_config)
+        assert response is not None
+        response.asset_url = self._build_asset_url(workspace_id, asset.file_hash)
+        return response
+
+    async def get_workspace_font_family(self, workspace_id: int, family_id: int) -> WorkspaceFontFamilyResponse:
+        """获取单个字体族详情及包含的全部 faces。"""
+        family = await self._get_family_or_raise(workspace_id, family_id)
+        responses = await self._to_family_responses(workspace_id, [family])
+        return responses[0]
 
     async def list_font_configs_for_family_ids(
         self,
@@ -431,37 +470,16 @@ class WorkspaceFontService:
             )
         return FontBundleResponse(items=resolved_items)
 
-    @staticmethod
-    def collect_declared_font_asset_names_from_modules(modules_data: Iterable[dict[str, str]]) -> list[str]:
-        """从模块源码列表中收集 Runtime Kit 字体资源静态声明。"""
-
-        return WorkspaceFontService.collect_declared_font_asset_names(
-            str(item.get("content") or "")
-            for item in modules_data
-        )
-
-    @staticmethod
-    def collect_declared_font_asset_names(sources: Iterable[str]) -> list[str]:
-        """从 Vue/TS 源码中收集 useAssetFontFamily/resolveAssetFontFamily 的静态资源名。"""
-
-        result: list[str] = []
-        seen: set[str] = set()
-        for source in sources:
-            for match in FONT_ASSET_CALL_PATTERN.finditer(str(source or "")):
-                raw_value = match.group("single") if match.group("single") is not None else match.group("double")
-                normalized_name = WorkspaceFontService._normalize_font_asset_name(
-                    WorkspaceFontService._unescape_js_string_literal(str(raw_value or ""))
-                )
-                if not normalized_name or normalized_name in seen:
-                    continue
-                seen.add(normalized_name)
-                result.append(normalized_name)
-        return result
+    collect_declared_font_asset_names_from_modules = staticmethod(collect_declared_font_asset_names_from_modules)
+    collect_declared_font_asset_names = staticmethod(collect_declared_font_asset_names)
+    _normalize_font_asset_names = staticmethod(normalize_font_asset_names)
+    _normalize_font_asset_name = staticmethod(normalize_font_asset_name)
+    _unescape_js_string_literal = staticmethod(unescape_js_string_literal)
+    _build_font_entry_lookup_by_asset_name = staticmethod(build_font_entry_lookup_by_asset_name)
+    _build_font_entry_lookup_by_family_name = staticmethod(build_font_entry_lookup_by_family_name)
 
     @staticmethod
     def _append_runtime_font_item(target: dict[str, dict[str, str]], item: dict[str, str]) -> None:
-        """把运行时字体条目按 asset_name 写入字体包。"""
-
         target[item["asset_name"]] = {
             "asset_name": item["asset_name"],
             "font_family": item["font_family"],
@@ -470,66 +488,6 @@ class WorkspaceFontService:
             "font_style": item["font_style"],
             "font_display": item["font_display"],
         }
-
-    @staticmethod
-    def _normalize_font_asset_names(values: Iterable[str]) -> list[str]:
-        """规范化并去重字体资源逻辑名。"""
-
-        result: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            normalized = WorkspaceFontService._normalize_font_asset_name(value)
-            if not normalized or normalized in seen:
-                continue
-            seen.add(normalized)
-            result.append(normalized)
-        return result
-
-    @staticmethod
-    def _normalize_font_asset_name(value: str) -> str:
-        """按 Runtime 资源 key 规则规范化字体资源逻辑名。"""
-
-        normalized = str(value or "").strip().replace("\\", "/").lstrip("./")
-        if not normalized or re.match(r"^https?://", normalized, flags=re.IGNORECASE):
-            return ""
-        return normalized
-
-    @staticmethod
-    def _unescape_js_string_literal(value: str) -> str:
-        """处理静态 JS 字符串字面量中的常见转义。"""
-
-        return (
-            str(value or "")
-            .replace("\\'", "'")
-            .replace('\\"', '"')
-            .replace("\\\\", "\\")
-        )
-
-    @staticmethod
-    def _build_font_entry_lookup_by_asset_name(
-        runtime_font_entries: list[dict[str, str]],
-    ) -> dict[str, dict[str, str]]:
-        """按资产逻辑名建立字体条目索引，便于源码显式声明直接命中字体资源。"""
-
-        return {
-            entry["asset_name"]: entry
-            for entry in runtime_font_entries
-            if entry.get("asset_name")
-        }
-
-    @staticmethod
-    def _build_font_entry_lookup_by_family_name(
-        runtime_font_entries: list[dict[str, str]],
-    ) -> dict[str, list[dict[str, str]]]:
-        """按字体族名聚合字体条目，主题 token 命中后可整族下发。"""
-
-        result: dict[str, list[dict[str, str]]] = {}
-        for entry in runtime_font_entries:
-            family_name = str(entry.get("font_family") or "").strip()
-            if not family_name:
-                continue
-            result.setdefault(family_name, []).append(entry)
-        return result
 
     async def _build_runtime_font_entries(
         self,
@@ -650,6 +608,10 @@ class WorkspaceFontService:
             raise AppException(status_code=404, code="ASSET_NOT_FOUND", detail="未找到目标静态资源。")
         if asset.asset_type != AssetType.FONT.value:
             raise AppException(status_code=400, code="FONT_ASSET_REQUIRED", detail="仅允许将字体资源注册为字体配置。")
+        if asset.status != RecordStatus.ACTIVE.value or asset.archived_at is not None:
+            raise AppException(status_code=400, code="FONT_ASSET_INVALID", detail="不能注册已归档的字体资产。")
+        if asset.history_kind is not None:
+            raise AppException(status_code=400, code="FONT_ASSET_INVALID", detail="不能注册字体资产的历史副本。")
         return asset
 
     async def _get_font_config_or_raise(self, workspace_id: int, font_id: int) -> WorkspaceFontConfig:
@@ -996,60 +958,23 @@ class WorkspaceFontService:
 
     @staticmethod
     def _infer_font_format(asset_name: str) -> str:
-        """根据资产文件名推断字体格式。"""
-
-        suffixes = [suffix.lstrip(".").lower() for suffix in Path(asset_name).suffixes]
-        for candidate in reversed(suffixes):
-            if candidate in {"woff2", "woff", "ttf", "otf"}:
-                return candidate
-        return "woff2"
+        return infer_font_format(asset_name)
 
     @staticmethod
     def _normalize_font_format(font_format: str) -> str:
-        """规范化字体格式字段。"""
-
-        normalized = str(font_format or "").strip().lower()
-        if normalized not in {"woff2", "woff", "ttf", "otf"}:
-            raise AppException(status_code=400, code="FONT_FORMAT_INVALID", detail="字体格式仅支持 woff2、woff、ttf、otf。")
-        return normalized
+        return normalize_font_format(font_format)
 
     @staticmethod
     def _normalize_font_weight(font_weight: str) -> str:
-        """规范化 font-weight，允许单值数字或可变字体范围 "min max"。"""
-
-        normalized = str(font_weight or "").strip()
-        if FONT_WEIGHT_VALUE_PATTERN.match(normalized):
-            return normalized
-        range_match = FONT_WEIGHT_RANGE_PATTERN.match(normalized)
-        if range_match and int(range_match.group(1)) <= int(range_match.group(2)):
-            return normalized
-        raise AppException(
-            status_code=400,
-            code="FONT_WEIGHT_INVALID",
-            detail='font-weight 仅支持数字（如 "400"）或可变字体范围（如 "100 900"，且最小值不大于最大值）。',
-        )
+        return normalize_font_weight(font_weight)
 
     @staticmethod
     def _normalize_font_style(font_style: str) -> str:
-        """规范化 font-style，仅允许 normal/italic/oblique。"""
-
-        normalized = str(font_style or "").strip().lower()
-        if normalized not in FONT_STYLE_ALLOWED_VALUES:
-            raise AppException(status_code=400, code="FONT_STYLE_INVALID", detail="font-style 仅支持 normal、italic、oblique。")
-        return normalized
+        return normalize_font_style(font_style)
 
     @staticmethod
     def _normalize_font_display(font_display: str) -> str:
-        """规范化 font-display，仅允许标准枚举值。"""
-
-        normalized = str(font_display or "").strip().lower()
-        if normalized not in FONT_DISPLAY_ALLOWED_VALUES:
-            raise AppException(
-                status_code=400,
-                code="FONT_DISPLAY_INVALID",
-                detail="font-display 仅支持 auto、block、swap、fallback、optional。",
-            )
-        return normalized
+        return normalize_font_display(font_display)
 
     @staticmethod
     def _build_asset_url(workspace_id: int, file_hash: str) -> str:
