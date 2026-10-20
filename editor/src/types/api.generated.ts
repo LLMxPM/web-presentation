@@ -1146,6 +1146,7 @@ export type ExternalCapabilitiesResponse = {
   "scopes": (string)[]
   "operations": (string)[]
   "slideshow"?: (ExternalSlideshowCapabilities) | (null)
+  "fonts"?: (ExternalFontsCapabilities) | (null)
 }
 
 export type ExternalComponentApplyEditsMutationRequest = {
@@ -1212,6 +1213,32 @@ export type ExternalErrorDetail = {
   "message": string
   "retryable"?: boolean
   "details"?: (Record<string, unknown>) | (null)
+}
+
+export type ExternalFontPresetsCapabilities = {
+  "sans": (string)[]
+  "mono": (string)[]
+}
+
+export type ExternalFontRegisterRequest = {
+  "asset_id": number
+  "family_name": string
+  "font_format"?: (string) | (null)
+  "font_weight"?: string
+  "font_style"?: string
+  "font_display"?: string
+}
+
+export type ExternalFontUpdateRequest = {
+  "family_name"?: (string) | (null)
+  "font_format"?: (string) | (null)
+  "font_weight"?: (string) | (null)
+  "font_style"?: (string) | (null)
+  "font_display"?: (string) | (null)
+}
+
+export type ExternalFontsCapabilities = {
+  "presets": ExternalFontPresetsCapabilities
 }
 
 export type ExternalMutationJobResponse = {

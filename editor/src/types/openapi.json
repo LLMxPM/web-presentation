@@ -567,10 +567,10 @@
     "/api/v1/fonts": {
       "get": {
         "tags": [
-          "External Catalog"
+          "External Fonts"
         ],
         "summary": "List Fonts",
-        "description": "查询工作空间注册字体。",
+        "description": "查询工作空间注册的字体 face 列表。",
         "operationId": "list_fonts_api_v1_fonts_get",
         "parameters": [
           {
@@ -663,6 +663,567 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PagedResponse_WorkspaceFontConfigResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "External Fonts"
+        ],
+        "summary": "Register Font",
+        "description": "对已上传的字体资源注册 face（支持 Idempotency-Key 幂等保护）。",
+        "operationId": "register_font_api_v1_fonts_post",
+        "parameters": [
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalFontRegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceFontConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fonts/{font_id}": {
+      "get": {
+        "tags": [
+          "External Fonts"
+        ],
+        "summary": "Get Font",
+        "description": "获取单个字体 face 配置详情。",
+        "operationId": "get_font_api_v1_fonts__font_id__get",
+        "parameters": [
+          {
+            "name": "font_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Font Id"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceFontConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "External Fonts"
+        ],
+        "summary": "Update Font",
+        "description": "更新字体 face 配置或移动所属族（支持 Idempotency-Key 幂等保护）。",
+        "operationId": "update_font_api_v1_fonts__font_id__patch",
+        "parameters": [
+          {
+            "name": "font_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Font Id"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalFontUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceFontConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/font-families": {
+      "get": {
+        "tags": [
+          "External Fonts"
+        ],
+        "summary": "List Font Families",
+        "description": "查询工作空间字体族列表及各族包含的 faces 摘要。",
+        "operationId": "list_font_families_api_v1_font_families_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keyword"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResponse_WorkspaceFontFamilyResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/font-families/{family_id}": {
+      "get": {
+        "tags": [
+          "External Fonts"
+        ],
+        "summary": "Get Font Family",
+        "description": "获取单个字体族详情及包含的全部 faces。",
+        "operationId": "get_font_family_api_v1_font_families__family_id__get",
+        "parameters": [
+          {
+            "name": "family_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Family Id"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceFontFamilyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "External Fonts"
+        ],
+        "summary": "Rename Font Family",
+        "description": "重命名字体族并级联同步相关主题字体标签（支持 Idempotency-Key 幂等保护）。",
+        "operationId": "rename_font_family_api_v1_font_families__family_id__patch",
+        "parameters": [
+          {
+            "name": "family_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Family Id"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "目标工作空间 ID",
+              "title": "X-Workspace-Id"
+            },
+            "description": "目标工作空间 ID"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceFontFamilyUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceFontFamilyResponse"
                 }
               }
             }
@@ -31370,6 +31931,17 @@
               }
             ],
             "description": "放映能力声明；null 表示服务端未声明该功能。"
+          },
+          "fonts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalFontsCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "字体系统能力声明"
           }
         },
         "additionalProperties": false,
@@ -31877,6 +32449,188 @@
         ],
         "title": "ExternalErrorDetail",
         "description": "External API 统一错误响应模型。"
+      },
+      "ExternalFontPresetsCapabilities": {
+        "properties": {
+          "sans": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sans",
+            "description": "无衬线/标准字体预设列表"
+          },
+          "mono": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mono",
+            "description": "等宽代码字体预设列表"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sans",
+          "mono"
+        ],
+        "title": "ExternalFontPresetsCapabilities",
+        "description": "字体预设能力声明。"
+      },
+      "ExternalFontRegisterRequest": {
+        "properties": {
+          "asset_id": {
+            "type": "integer",
+            "title": "Asset Id",
+            "description": "已上传的字体文件资产 ID"
+          },
+          "family_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Family Name",
+            "description": "目标字体族名"
+          },
+          "font_format": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Format",
+            "description": "字体格式，如 woff2/woff/ttf/otf"
+          },
+          "font_weight": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Font Weight",
+            "description": "字重数字或可变字重范围",
+            "default": "400"
+          },
+          "font_style": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Font Style",
+            "description": "字体样式 normal/italic/oblique",
+            "default": "normal"
+          },
+          "font_display": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Font Display",
+            "description": "字体显示策略",
+            "default": "swap"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "family_name"
+        ],
+        "title": "ExternalFontRegisterRequest",
+        "description": "External API 注册字体配置请求。"
+      },
+      "ExternalFontUpdateRequest": {
+        "properties": {
+          "family_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Name",
+            "description": "移动到的目标字体族名"
+          },
+          "font_format": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Format",
+            "description": "字体格式"
+          },
+          "font_weight": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Weight",
+            "description": "字重"
+          },
+          "font_style": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Style",
+            "description": "字体样式"
+          },
+          "font_display": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Display",
+            "description": "字体显示策略"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExternalFontUpdateRequest",
+        "description": "External API 更新字体配置请求。"
+      },
+      "ExternalFontsCapabilities": {
+        "properties": {
+          "presets": {
+            "$ref": "#/components/schemas/ExternalFontPresetsCapabilities",
+            "description": "服务端支持的内置字体预设"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "presets"
+        ],
+        "title": "ExternalFontsCapabilities",
+        "description": "字体系统能力声明。"
       },
       "ExternalMutationJobResponse": {
         "properties": {

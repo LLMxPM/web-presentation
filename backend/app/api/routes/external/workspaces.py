@@ -13,7 +13,13 @@ from app.core.external_operations import OPERATION_REGISTRY
 from app.db.session import get_db_session
 from app.models.enums import RecordStatus
 from app.models.workspace import Workspace, WorkspaceMember
-from app.schemas.external_api import ExternalCapabilitiesResponse, build_slideshow_capabilities
+from app.core.platform_fonts import MONO_FONT_PRESETS, SANS_FONT_PRESETS
+from app.schemas.external_api import (
+    ExternalCapabilitiesResponse,
+    ExternalFontPresetsCapabilities,
+    ExternalFontsCapabilities,
+    build_slideshow_capabilities,
+)
 from app.schemas.workspace import WorkspaceItem
 from app.services.workspace_service import WorkspaceService
 
@@ -77,4 +83,10 @@ async def get_workspace_capabilities(
         scopes=sorted(list(auth.scopes)),
         operations=sorted(available_ops),
         slideshow=build_slideshow_capabilities(),
+        fonts=ExternalFontsCapabilities(
+            presets=ExternalFontPresetsCapabilities(
+                sans=sorted(list(SANS_FONT_PRESETS)),
+                mono=sorted(list(MONO_FONT_PRESETS)),
+            )
+        ),
     )

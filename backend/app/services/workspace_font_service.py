@@ -113,6 +113,7 @@ class WorkspaceFontService:
             await self.session.refresh(font_config)
         else:
             await self.session.flush()
+            await self.session.refresh(font_config)
         response = self._to_response(font_config)
         response.asset_url = self._build_asset_url(workspace_id, asset.file_hash)
         return response
@@ -162,6 +163,7 @@ class WorkspaceFontService:
             await self.session.refresh(font_config)
         else:
             await self.session.flush()
+            await self.session.refresh(font_config)
         asset = await self._get_font_asset_or_raise(workspace_id, font_config.asset_id)
         response = self._to_response(font_config)
         response.asset_url = self._build_asset_url(workspace_id, asset.file_hash)
@@ -240,6 +242,7 @@ class WorkspaceFontService:
             await self.session.refresh(family)
         else:
             await self.session.flush()
+            await self.session.refresh(family)
         return (await self._to_family_responses(workspace_id, [family]))[0]
 
     async def _sync_theme_font_labels(self, workspace_id: int, family_id: int, family_name: str) -> None:

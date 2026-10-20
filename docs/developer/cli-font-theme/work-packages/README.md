@@ -17,7 +17,7 @@
 | WP01 | [契约、样例与兼容边界](./wp01-contract.md) | 主仓 | 无 | 完成 |
 | WP02 | [主题写入语义与引用校验](./wp02-theme-semantics.md) | 主仓 | WP01 | 完成 |
 | WP03 | [字体服务事务与查询](./wp03-font-service.md) | 主仓 | WP01 | 完成 |
-| WP04 | [字体 External API 与能力发现](./wp04-external-fonts.md) | 主仓 | WP01、WP03 | 待实施 |
+| WP04 | [字体 External API 与能力发现](./wp04-external-fonts.md) | 主仓 | WP01、WP03 | 完成 |
 | WP05 | [主题 External 配置一致性](./wp05-external-themes.md) | 主仓 | WP01、WP02 | 待实施 |
 | WP06 | [CLI 字体与字体族命令](https://github.com/LLMxPM/web-presentation-cli/blob/feature/cli-font-theme/docs/font-theme/work-packages/wp06-font-commands.md) | CLI | WP01、WP04 | 待实施 |
 | WP07 | [CLI 主题配置与输出](https://github.com/LLMxPM/web-presentation-cli/blob/feature/cli-font-theme/docs/font-theme/work-packages/wp07-theme-commands.md) | CLI | WP01、WP05 | 待实施 |

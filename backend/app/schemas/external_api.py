@@ -140,6 +140,48 @@ def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
     )
 
 
+class ExternalFontPresetsCapabilities(BaseModel):
+    """字体预设能力声明。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sans: list[str] = Field(description="无衬线/标准字体预设列表")
+    mono: list[str] = Field(description="等宽代码字体预设列表")
+
+
+class ExternalFontsCapabilities(BaseModel):
+    """字体系统能力声明。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    presets: ExternalFontPresetsCapabilities = Field(description="服务端支持的内置字体预设")
+
+
+class ExternalFontRegisterRequest(BaseModel):
+    """External API 注册字体配置请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    asset_id: int = Field(..., description="已上传的字体文件资产 ID")
+    family_name: str = Field(..., min_length=1, max_length=255, description="目标字体族名")
+    font_format: str | None = Field(default=None, max_length=32, description="字体格式，如 woff2/woff/ttf/otf")
+    font_weight: str = Field(default="400", min_length=1, max_length=32, description="字重数字或可变字重范围")
+    font_style: str = Field(default="normal", min_length=1, max_length=32, description="字体样式 normal/italic/oblique")
+    font_display: str = Field(default="swap", min_length=1, max_length=32, description="字体显示策略")
+
+
+class ExternalFontUpdateRequest(BaseModel):
+    """External API 更新字体配置请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    family_name: str | None = Field(default=None, min_length=1, max_length=255, description="移动到的目标字体族名")
+    font_format: str | None = Field(default=None, min_length=1, max_length=32, description="字体格式")
+    font_weight: str | None = Field(default=None, min_length=1, max_length=32, description="字重")
+    font_style: str | None = Field(default=None, min_length=1, max_length=32, description="字体样式")
+    font_display: str | None = Field(default=None, min_length=1, max_length=32, description="字体显示策略")
+
+
 class ExternalCapabilitiesResponse(BaseModel):
     """能力发现响应模型。"""
 
@@ -152,6 +194,10 @@ class ExternalCapabilitiesResponse(BaseModel):
     slideshow: ExternalSlideshowCapabilities | None = Field(
         default=None,
         description="放映能力声明；null 表示服务端未声明该功能。",
+    )
+    fonts: ExternalFontsCapabilities | None = Field(
+        default=None,
+        description="字体系统能力声明",
     )
 
 

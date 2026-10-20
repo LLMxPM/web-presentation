@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.api.routes.external.assets import router as assets_router
 from app.api.routes.external.catalog import router as catalog_router
+from app.api.routes.external.fonts import router as fonts_router
 from app.api.routes.external.components import router as components_router
 from app.api.routes.external.mutations import router as mutations_router
 from app.api.routes.external.pages import router as pages_router
@@ -21,6 +22,7 @@ v1_router = APIRouter(prefix="/v1")
 
 v1_router.include_router(system_router, tags=["External System"])
 v1_router.include_router(catalog_router, tags=["External Catalog"])
+v1_router.include_router(fonts_router, tags=["External Fonts"])
 v1_router.include_router(workspaces_router, prefix="/workspaces", tags=["External Workspaces"])
 v1_router.include_router(projects_router, prefix="/projects", tags=["External Projects"])
 v1_router.include_router(pages_router, tags=["External Pages"])

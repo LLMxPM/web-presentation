@@ -65,6 +65,24 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "font.list": ExternalOperationSpec(
         "font.list", ("asset:read",), description="查询工作空间注册字体"
     ),
+    "font.get": ExternalOperationSpec(
+        "font.get", ("asset:read",), description="获取单项字体 face 详情"
+    ),
+    "font.register": ExternalOperationSpec(
+        "font.register", ("asset:write",), requires_idempotency_key=True, description="注册字体文件为 face"
+    ),
+    "font.update": ExternalOperationSpec(
+        "font.update", ("asset:write",), requires_idempotency_key=True, description="更新字体 face 配置或调整归属字体族"
+    ),
+    "font_family.list": ExternalOperationSpec(
+        "font_family.list", ("asset:read",), description="查询工作空间字体族列表"
+    ),
+    "font_family.get": ExternalOperationSpec(
+        "font_family.get", ("asset:read",), description="获取单个字体族详情及 faces"
+    ),
+    "font_family.rename": ExternalOperationSpec(
+        "font_family.rename", ("asset:write",), requires_idempotency_key=True, description="重命名字体族"
+    ),
 
     # Project
     "project.list": ExternalOperationSpec(
@@ -364,6 +382,12 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "runtime_kit.list": ("GET", "/runtime-kit"),
     "runtime_kit.get": ("GET", "/runtime-kit/{item}"),
     "font.list": ("GET", "/fonts"),
+    "font.get": ("GET", "/fonts/{font_id}"),
+    "font.register": ("POST", "/fonts"),
+    "font.update": ("PATCH", "/fonts/{font_id}"),
+    "font_family.list": ("GET", "/font-families"),
+    "font_family.get": ("GET", "/font-families/{family_id}"),
+    "font_family.rename": ("PATCH", "/font-families/{family_id}"),
     "project.list": ("GET", "/projects"),
     "project.get": ("GET", "/projects/{project_id}"),
     "project.create": ("POST", "/projects"),
