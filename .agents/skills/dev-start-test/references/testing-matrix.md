@@ -137,6 +137,8 @@ test:backend
 - **CLI/Gateway 契约**：运行 `test:contracts:gateway` 与 `test:contracts:cli-skill`。
 - **跨多端或发布前**：运行 `pnpm run test:all`，再按上表补未覆盖门禁。
 - **WP01 动画技术原型**：按 [实验说明](../../../../tests/experiments/motion-wp01/README.md)准备隔离比较依赖，再运行 `node tests/experiments/motion-wp01/run.mjs`；使用独立浏览器、回环随机端口和生成素材，不 prepare E2E、不重置开发库。它不替代产品 Runtime/Renderer 门禁。
+- **Motion 实施回归**：按[回归说明](../../../../tests/experiments/motion-regression/README.md)运行 `node tests/experiments/motion-regression/run.mjs`，直接加载正式 Runtime 入口，覆盖真实视频调度、指定模式采样及 GLB 签名；需要已有 Playwright Chromium/ffmpeg，在回环随机端口运行，结束关闭浏览器与服务。不启动平台、不重置数据，不能替代 G1/G2 或远程 Renderer 验收。
+- **Motion 内容校验**：初始化、海报或准备逻辑变化时，运行 Runtime 的 `usePageTimeline.validation.test.ts`、`render-ready.test.ts`，Renderer 的 `test_motion_readiness.py` 与 Backend 的 `test_code_check.py`、缓存/指纹测试。涉及链路变化时，用已授权工作空间内现有页面的只读候选校验确认错误候选拒绝、合法候选通过，核对错误码与字段定位；不以编译成功、静态截图或本项回归代替动态验收，不重置开发数据。
 - **编排与 Vue SFC 创作选型**：按[功能夹具说明](../../../../tests/experiments/motion-authoring/README.md)准备固定候选版本，运行 `node tests/experiments/motion-authoring/run.mjs`；仅类型与功能核对，不采集性能，不运行上面的历史性能实验，也不重置业务数据。
 - **真实资源完整 SFC 创作对照**：按[完整故事夹具](../../../../tests/experiments/motion-story/README.md)运行 `prepare-assets.mjs`、`run.mjs`、`probe-events.mjs`；GSAP/Anime.js 的三路线六组合覆盖真实旁白、裁切视频、骨骼、静态状态和嵌套静默回调。素材可单独重建，不必运行历史性能实验；不启动业务服务或重置业务数据，不替代 Runtime/Renderer 产品验收。
 - **Luna 独立创作小样**：按[评测夹具](../../../../tests/experiments/motion-luna/README.md)使用 `evaluate.mjs` 对指定候选和未占用阶段名做独立类型/浏览器检查，不覆盖本地归档；历史逐阶段源码与评分只保留在本地证据目录，不随仓库提交。首轮真实失败和评测器注入的预期失败必须分开汇报，不算作生产回归。不启动业务服务、不运行性能基准，不替代正式 G2 模型创作验收。

@@ -19,11 +19,14 @@ interface ElementOwnership {
   token: symbol
   properties: Set<DomMotionProperty>
   values: DomMotionState
+  startMs: number
+  endMs: number
 }
 
 export interface ElementState {
   element: HTMLElement
-  owners: Map<DomMotionProperty, ElementOwnership>
+  owners: Map<DomMotionProperty, ElementOwnership[]>
+  positionMs: number
   original: {
     opacity: string
     translate: string
@@ -49,7 +52,7 @@ export class DomMotionCoordinator {
   private disposed = false
 
   /** 为轨道登记属性所有权，返回用于写入与释放的句柄。 */
-  acquire(element: HTMLElement, properties: DomMotionProperty[]): ElementOwnership {
+  acquire(element: HTMLElement, properties: DomMotionProperty[], startMs = 0, endMs = Infinity): ElementOwnership {
     if (this.disposed) {
       throw new MotionError(MOTION_ERROR_TARGET_INVALID, 'DOM 动效协调器已释放。')
     }
@@ -66,6 +69,7 @@ export class DomMotionCoordinator {
       state = {
         element,
         owners: new Map(),
+        positionMs: 0,
         original,
         base: {
           x: translate.x,
@@ -81,16 +85,18 @@ export class DomMotionCoordinator {
       token: Symbol('dom-motion-owner'),
       properties: new Set(properties),
       values: {},
+      startMs,
+      endMs,
     }
     for (const property of properties) {
       const existing = state.owners.get(property)
-      if (existing) {
+      if (existing?.some(owner => startMs < owner.endMs && owner.startMs < endMs)) {
         throw new MotionError(
           MOTION_ERROR_TARGET_INVALID,
           `DOM 目标的 ${property} 属性已被其它轨道占用。`,
         )
       }
-      state.owners.set(property, ownership)
+      state.owners.set(property, [...(existing ?? []), ownership].sort((a, b) => a.startMs - b.startMs))
     }
     if (!state.anyOwned) {
       element.style.setProperty('will-change', 'opacity, translate, scale, rotate')
@@ -100,9 +106,10 @@ export class DomMotionCoordinator {
   }
 
   /** 写入本轨道拥有的属性，并重新组合元素样式。 */
-  write(state: ElementState | null, ownership: ElementOwnership, values: DomMotionState): void {
+  write(state: ElementState | null, ownership: ElementOwnership, values: DomMotionState, positionMs = 0): void {
     if (!state || this.disposed) return
     ownership.values = { ...values }
+    state.positionMs = positionMs
     this.applyState(state)
   }
 
@@ -116,7 +123,9 @@ export class DomMotionCoordinator {
     const state = this.states.get(element)
     if (!state) return
     for (const property of ownership.properties) {
-      if (state.owners.get(property) === ownership) state.owners.delete(property)
+      const remaining = state.owners.get(property)?.filter(owner => owner !== ownership) ?? []
+      if (remaining.length) state.owners.set(property, remaining)
+      else state.owners.delete(property)
     }
     if (state.owners.size === 0) {
       this.restore(state)
@@ -131,7 +140,7 @@ export class DomMotionCoordinator {
   }
 
   private applyState(state: ElementState): void {
-    const opacityOwner = state.owners.get('opacity')
+    const opacityOwner = activeOwner(state, 'opacity')
     if (opacityOwner?.values.opacity !== undefined) {
       state.element.style.setProperty('opacity', String(opacityOwner.values.opacity))
     } else {
@@ -172,7 +181,13 @@ export class DomMotionCoordinator {
 }
 
 function ownerValue(state: ElementState, property: DomMotionProperty, fallback: number): number {
-  return state.owners.get(property)?.values[property] ?? fallback
+  return activeOwner(state, property)?.values[property] ?? fallback
+}
+
+/** 顺序段落按当前位置选择最近已开始的所有者；起点前使用第一段初态。 */
+function activeOwner(state: ElementState, property: DomMotionProperty): ElementOwnership | undefined {
+  const owners = state.owners.get(property) ?? []
+  return [...owners].reverse().find(owner => owner.startMs <= state.positionMs) ?? owners[0]
 }
 
 /** 恢复内联属性；原值为空时移除属性，避免空字符串残留。 */
@@ -272,14 +287,14 @@ export function createDomMotionAdapter(
     if (timeline && progressProxy) {
       timeline.progress(progress)
     }
-    coordinator.write(state, ownership, valuesAt(progress))
+    coordinator.write(state, ownership, valuesAt(progress), mode === 'reduced' ? Infinity : positionMs)
   }
 
   return {
     type: 'dom',
     async prepare() {
       element = resolveElement()
-      ownership = coordinator.acquire(element, track.properties)
+      ownership = coordinator.acquire(element, track.properties, track.startMs, track.endMs)
       state = coordinator.getState(element)
       timeline = buildTimeline()
       apply(track.startMs, context.visualMode)

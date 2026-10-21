@@ -166,6 +166,11 @@ export function createModelMotionAdapter(
         { fieldPath: `timeline.tracks.${track.id}.clip.name`, trackId: track.id },
       )
     }
+    if (track.clip.signature && track.clip.signature !== summary.signature) {
+      throw new MotionError(MOTION_ERROR_MODEL_REFERENCE_STALE, '动画片段内容已变化，请重新查询资源动作。', {
+        fieldPath: `timeline.tracks.${track.id}.clip.signature`, trackId: track.id,
+      })
+    }
     if (Math.abs(summary.durationMs - track.clip.durationMs) > 2) {
       throw new MotionError(
         MOTION_ERROR_MODEL_REFERENCE_STALE,

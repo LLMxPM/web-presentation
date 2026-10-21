@@ -71,9 +71,9 @@ function makeContext(root: HTMLElement, track: CompiledModelTrack, visualMode: M
   }
 }
 
-function installFakeHandle(element: HTMLElement, requests: ModelMotionApplyRequest[]): void {
+function installFakeHandle(element: HTMLElement, requests: ModelMotionApplyRequest[], signature = 'current-signature'): void {
   const handle: ModelMotionHandle = {
-    listAnimations: () => [{ index: 0, name: 'Spin', durationMs: 2000, channelCount: 3 }],
+    listAnimations: () => [{ index: 0, name: 'Spin', durationMs: 2000, channelCount: 3, signature }],
     applyAt: (request) => {
       requests.push(request)
       return {
@@ -123,6 +123,20 @@ describe('resolveModelElement', () => {
 })
 
 describe('createModelMotionAdapter', () => {
+  it('相同名称和时长的动作被替换后，旧签名明确失效', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div data-runtime-kit-media-kind="model3d" data-runtime-asset-name="product" data-runtime-model-state="ready"></div>'
+    const element = root.firstElementChild as HTMLElement
+    installFakeHandle(element, [])
+    const stale = modelTrack({ clip: { index: 0, name: 'Spin', durationMs: 2000, signature: 'old-signature' } })
+    const adapter = createModelMotionAdapter(makeContext(root, stale))
+    await expect(adapter.prepare()).rejects.toMatchObject({ code: MOTION_ERROR_MODEL_REFERENCE_STALE })
+    adapter.dispose()
+    const valid = modelTrack({ clip: { ...stale.clip, signature: 'current-signature' } })
+    const current = createModelMotionAdapter(makeContext(root, valid))
+    await expect(current.prepare()).resolves.toBeUndefined()
+    current.dispose()
+  })
   it('准备后按逻辑位置应用片段与整体变换', async () => {
     const root = document.createElement('div')
     root.innerHTML = '<div data-runtime-kit-media-kind="model3d" data-runtime-asset-name="product" data-runtime-model-state="ready"><div data-runtime-model-state="ready"></div></div>'

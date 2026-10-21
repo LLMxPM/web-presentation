@@ -49,6 +49,8 @@ export interface MotionTransportOptions {
   scheduler?: MotionScheduler
   now?: () => number
   onState?: (snapshot: MotionTransportSnapshot) => void
+  /** 由原生创作入口构造，仍由本 transport 统一采样和释放。 */
+  visualAdapter?: MotionTrackAdapter
 }
 
 export interface MotionTransport {
@@ -73,7 +75,7 @@ export interface MotionTransport {
 }
 
 interface AdapterEntry {
-  track: CompiledMotionTrack
+  track: Pick<CompiledMotionTrack, 'id' | 'type' | 'startMs' | 'endMs' | 'required'>
   adapter: MotionTrackAdapter
 }
 
@@ -95,9 +97,10 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   let positionMs = 0
   let revision = 0
   let muted = options.muted === true
-  let allowMediaPlayback = options.allowMediaPlayback !== false
+  const allowMediaPlayback = options.allowMediaPlayback !== false
   let errorCode: string | null = null
   let errorMessage = ''
+  let lastError: MotionError | null = null
   let disposed = false
   let preparing = false
   let prepared = false
@@ -113,6 +116,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   let lastEmittedPhase: MotionRunPhase | null = null
   let entries: AdapterEntry[] = []
   const completedTrackIds = new Set<string>()
+  const playingAdapters = new Set<MotionTrackAdapter>()
   const stateListeners = new Set<(snapshot: MotionTransportSnapshot) => void>()
   let primaryTrack: CompiledMediaTrack | null = null
   let primaryAdapter: MotionTrackAdapter | null = null
@@ -177,12 +181,15 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     emit()
   }
 
-  function setPhase(next: MotionRunPhase, error?: unknown): void {    phase = next
+  function setPhase(next: MotionRunPhase, error?: unknown): void {
+    phase = next
     if (error === undefined) {
       errorCode = null
       errorMessage = ''
+      lastError = null
     } else {
       const motionError = toMotionError(error)
+      lastError = motionError
       errorCode = motionError.code
       errorMessage = motionError.message
     }
@@ -193,6 +200,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     const motionError = toMotionError(error)
     intent = 'stopped'
     cancelTick()
+    pauseAdapters()
     setPhase('error', motionError)
   }
 
@@ -237,8 +245,8 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     return applyChain
   }
 
-  async function applyAtPosition(position: number, revisionAtRequest: number): Promise<void> {
-    const applyOptions: MotionAdapterApplyOptions = { positionMs: position, visualMode }
+  async function applyAtPosition(position: number, revisionAtRequest: number, mode = visualMode, forceSeek = false): Promise<void> {
+    const applyOptions: MotionAdapterApplyOptions = { positionMs: position, visualMode: mode, forceSeek }
     for (const entry of entries) {
       if (disposed || revisionAtRequest !== revision) return
       await entry.adapter.applyAt(applyOptions)
@@ -253,12 +261,26 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   }
 
   async function startAdapters(): Promise<void> {
+    const playRevision = revision
     for (const entry of entries) {
       if (disposed || intent !== 'playing') return
+      // 只有当前区间内的媒体才能播放；采样方法始终只负责状态写入。
+      if (positionMs < entry.track.startMs || positionMs >= entry.track.endMs) {
+        entry.adapter.pause?.()
+        playingAdapters.delete(entry.adapter)
+        continue
+      }
+      if (!entry.adapter.play || playingAdapters.has(entry.adapter)) continue
       try {
-        await entry.adapter.play?.()
+        await entry.adapter.play()
+        if (disposed || intent !== 'playing' || playRevision !== revision) {
+          entry.adapter.pause?.()
+          return
+        }
+        playingAdapters.add(entry.adapter)
       } catch (error) {
         if (isMotionError(error) && error.code === MOTION_ERROR_MEDIA_BLOCKED) {
+          pauseAdapters()
           setPhase('blocked', error)
           cancelTick()
           return
@@ -269,6 +291,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   }
 
   function pauseAdapters(): void {
+    playingAdapters.clear()
     for (const entry of entries) {
       try {
         entry.adapter.pause?.()
@@ -307,6 +330,9 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
           ownership,
         }),
       }))
+      if (options.visualAdapter && plan.visual) {
+        entries.push({ track: { id: 'motion-visual', type: 'dom', startMs: 0, endMs: plan.visual.durationMs, required: true }, adapter: options.visualAdapter })
+      }
       primaryTrack = plan.tracks.find((track): track is CompiledMediaTrack => (
         track.type !== 'dom' && track.type !== 'model3d' && track.id === plan.primaryClockTrackId
       )) ?? null
@@ -363,6 +389,8 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
       if (phase === 'buffering') setPhase('ready')
 
       await requestApply(positionMs)
+      await startAdapters()
+      if (phase === 'blocked' || isErrorPhase()) return
       notifyIfChanged()
 
       if (disposed || intent !== 'playing') return
@@ -387,6 +415,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   function pauseNonPrimaryAdapters(): void {
     for (const entry of entries) {
       if (entry.adapter === primaryAdapter) continue
+      playingAdapters.delete(entry.adapter)
       try {
         entry.adapter.pause?.()
       } catch {
@@ -435,19 +464,21 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     pauseAdapters()
     setPhase('seeking')
     try {
-      await applyAtPosition(clamped, requestRevision)
+      await applyChain
+      await applyAtPosition(clamped, requestRevision, visualMode, true)
     } catch (error) {
       if (!disposed && requestRevision === revision) fail(error)
       return
     }
     if (disposed || requestRevision !== revision) return
     resetAnchor(clamped)
+    primaryHandover = Boolean(primaryTrack && clamped >= primaryTrack.endMs)
     completedTrackIds.clear()
     if (intent === 'playing') {
       setPhase('ready')
       try {
         await startAdapters()
-        scheduleTick()
+        if (phase !== 'blocked') scheduleTick()
       } catch (error) {
         if (requestRevision === revision) fail(error)
       }
@@ -464,6 +495,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
 
   async function prepare(): Promise<void> {
     await prepareInternal()
+    if (phase === 'error' && lastError) throw lastError
   }
 
   async function play(): Promise<boolean> {
@@ -535,7 +567,8 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     const previousIntent = intent
     intent = 'paused'
     try {
-      await applyAtPosition(clamped, requestRevision)
+      await applyChain
+      await applyAtPosition(clamped, requestRevision, sampleVisualMode, true)
       if (disposed || requestRevision !== revision) {
         throw new MotionError(MOTION_ERROR_SNAPSHOT_UNAVAILABLE, '采样已被更新的定位请求取代。')
       }
@@ -570,6 +603,8 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
       }
     }
     entries = []
+    // 尚未 prepare 就卸载时，原生视觉也已经创建，仍需释放作用域。
+    options.visualAdapter?.dispose()
     primaryAdapter = null
     primaryTrack = null
     if (ownsRegistry) ownership.dispose()

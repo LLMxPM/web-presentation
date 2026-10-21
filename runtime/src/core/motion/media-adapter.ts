@@ -113,11 +113,12 @@ export function createMediaMotionAdapter(
   async function waitForMetadata(): Promise<void> {
     const media = ensureElement()
     if (media.readyState >= 1 && Number.isFinite(media.duration) && media.duration > 0) {
-      return
+      // metadata 已缓存时也必须继续核对裁切边界。
+    } else {
+      await waitForEvent(media, ['loadedmetadata', 'canplay'], 'error', deadlineMs, () => {
+        return media.readyState >= 1 && Number.isFinite(media.duration) && media.duration > 0
+      })
     }
-    await waitForEvent(media, ['loadedmetadata', 'canplay'], 'error', deadlineMs, () => {
-      return media.readyState >= 1 && Number.isFinite(media.duration) && media.duration > 0
-    })
     if (!Number.isFinite(media.duration) || media.duration <= 0) {
       throw new MotionError(MOTION_ERROR_DURATION_UNRESOLVED, `媒体资源 ${track.asset} 没有可用时长。`, {
         trackId: track.id,
@@ -226,8 +227,8 @@ export function createMediaMotionAdapter(
       await waitForMetadata()
       await applyPosition(track.startMs, context.visualMode, true)
     },
-    async applyAt({ positionMs, visualMode: mode }) {
-      await applyPosition(positionMs, mode)
+    async applyAt({ positionMs, visualMode: mode, forceSeek }) {
+      await applyPosition(positionMs, mode, forceSeek)
     },
     async play() {
       if (disposed || !context.allowMediaPlayback) return

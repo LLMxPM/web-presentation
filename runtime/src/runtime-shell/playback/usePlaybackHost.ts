@@ -18,7 +18,7 @@ import {
   type PageMediaSession,
   type PageMediaSnapshot,
 } from '@/core/media/page-media-session'
-import { readPageMotionHandle, type PageMotionHandle } from '@/core/motion/page-motion-contract'
+import { findPageMotionHandle, type PageMotionHandle } from '@/core/motion/page-motion-contract'
 import type { CompiledMotionPlan, MotionTransportSnapshot } from '@/core/motion/types'
 import { PlaybackController, type PlaybackPage, type PlaybackSnapshot } from './playback-controller'
 import { useScreenWakeLock, type WakeLockState } from './useScreenWakeLock'
@@ -186,7 +186,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   /** 读取页面根注册的时间轴句柄并订阅状态；旧页面句柄不保留。 */
   function attachPageMotion(root: HTMLElement, path: string, generation: number): PageMotionHandle | null {
     disposePageMotion()
-    const handle = readPageMotionHandle(root)
+    const handle = findPageMotionHandle(root)
     if (!handle) return null
     motionHandle = handle
     motionPath = path

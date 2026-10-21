@@ -14,6 +14,8 @@ export interface ModelAnimationSummary {
   name: string | null
   durationMs: number
   channelCount: number
+  /** 从本次加载的真实文件重建，算法与 Backend animation_analysis_version=2 一致。 */
+  signature?: string | null
 }
 
 export interface ModelMotionApplyRequest {

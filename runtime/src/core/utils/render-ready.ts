@@ -1,6 +1,14 @@
 /**
  * 文件用途：Runtime 强制渲染就绪协议 render-ready.v1/v2 的唯一宿主实现。
  */
+import { settleMotionReadiness } from '@/core/motion/readiness'
+
+export interface RenderContentException {
+  code: string
+  message: string
+  fieldPath?: string | null
+  trackId?: string | null
+}
 
 export const RENDER_READY_PROTOCOL = 'render-ready.v1'
 export const RENDER_READY_PROTOCOL_V2 = 'render-ready.v2'
@@ -42,7 +50,7 @@ export interface RenderReadyBridge {
   scenarios: Array<{ key: string }>
   lastScenarioRequestId: string | null
   lastScenarioAck: { requestId: string; ok: boolean; scenarioKey: string } | null
-  contentExceptions: Array<{ code: string; message: string }>
+  contentExceptions: RenderContentException[]
 }
 
 declare global {
@@ -143,6 +151,14 @@ export async function markRenderPreviewMounted(options?: {
   const fontsReady = typeof document !== 'undefined' && document.fonts?.ready
     ? await document.fonts.ready.then(() => true).catch(() => false)
     : true
+  const context = options?.executionContext ?? window.__RENDER_READY__?.executionContext
+  const scope = document.querySelector('.runtime-page-print-source, .runtime-view-preview-source') ?? document
+  const motionErrors = await settleMotionReadiness(scope, ['capture', 'export', 'thumbnail'].includes(context ?? ''))
+  if (motionErrors.length) {
+    updateRenderReadyHost({
+      contentExceptions: [...(window.__RENDER_READY__?.contentExceptions ?? []), ...motionErrors].slice(-20),
+    })
+  }
   let visualAssets: RenderReadyBridge['visualAssets'] = {
     ready: true,
     loaded: 0,
@@ -177,7 +193,7 @@ export async function markRenderPreviewMounted(options?: {
     message: visualAssets.ready ? null : '视觉资源未在限定时间内就绪',
   })
   // 兼容既有 Editor 截图探针。
-  window.__EDITOR_RUNTIME_PREVIEW_READY__ = visualAssets.ready
+  window.__EDITOR_RUNTIME_PREVIEW_READY__ = visualAssets.ready && !window.__RENDER_READY__?.contentExceptions.length
 }
 
 /**

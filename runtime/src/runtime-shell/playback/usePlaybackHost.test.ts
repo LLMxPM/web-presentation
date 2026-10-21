@@ -495,8 +495,11 @@ describe('usePlaybackHost 自动开始与就绪', () => {
 
 /** 在放映页注册可控时间轴句柄，模拟页面组件持有的 transport；仅实现宿主实际读取的接口。 */
 function attachTestMotion(path: string) {
-  const page = document.querySelector(`[data-runtime-route-path="${path}"]`)
-  if (!page) throw new Error(`页面 ${path} 不存在`)
+  const wrapper = document.querySelector(`[data-runtime-route-path="${path}"]`)
+  if (!wrapper) throw new Error(`页面 ${path} 不存在`)
+  // 与 RuntimePageStage 一致：宿主包装层内才是 SFC 自己的根。
+  const page = document.createElement('section')
+  wrapper.append(page)
   const plan = compilePageTimeline({
     schemaVersion: 1,
     timelineId: `timeline-${path.slice(1)}`,

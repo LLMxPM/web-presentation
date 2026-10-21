@@ -69,7 +69,7 @@ flowchart TB
 | G1 | WP02–WP09 | 内部测试可走通 DOM、媒体、模型、放映与取帧；不开放公共能力 |
 | G2 | WP10–WP12，并复核全部前置 | Editor、模型、CLI/MCP、独立构建与真实 Renderer 联合验收后开放 |
 
-[WP01](./work-packages/wp01-baseline-engine-spike.md) 已完成，下一步进入 WP02 正式定义契约和规范计划。WP03 完成后推进执行适配器，不用工作包数量推算交付日期。
+WP01–WP11 已有内部实现；2026-10-21 实施评审修复与实际验证记录见 [WP12](./work-packages/wp12-integration-release.md)。G1/G2 尚未关闭，能力保持关闭，不用工作包数量推算交付日期。
 
 ## 延续与维护
 

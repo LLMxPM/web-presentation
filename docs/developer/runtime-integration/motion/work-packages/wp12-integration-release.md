@@ -40,3 +40,61 @@ Firefox/WebKit、移动端或特定编码未完成验收时在支持矩阵中列
   - 暂停响应、同步漂移、温缓存定位、确定采样、64 轨道/32 目标/30 分钟规模与 100 次进出清理指标未采集；G0 的性能后置不免除 G2 复测。
   - 回退演练未执行。当前没有用户可见开放，回退即维持 flags=false 且不发布新客户端；开放后必须验证旧 v1 内容、旧 Runtime、旧 Worker 与混版派发的明确失败或降级路径。
 - 能力开放时间及文档版本：未开放，无承诺日期；必须先补齐 G1/G2 真实证据并完成 WP10 的生产裁剪入口加载验证。
+
+## 2026-10-21 实施评审修复
+
+本轮在主仓 `a6e865a` 基线上修复九项实现问题，保持能力关闭，未将局部回归记作 G1/G2 通过。
+
+| 问题 | 修复与回归 |
+| :--- | :--- |
+| 默认入口偏离 G0，只有 JSON 视觉轨道 | `usePageTimeline.v1` 接入 `define`、有限资源 builder 与受控 GSAP 原生视觉；覆盖标签、错峰、函数复用、纯视觉与释放 |
+| Runtime 捕获回执字段与 Renderer 不一致 | 在执行器边界将 camelCase 转换为控制协议 snake_case；Renderer 使用真实桥接形状测试 |
+| 放映宿主只读包装根，遗漏页面句柄 | 在宿主范围内发现页面句柄；宿主测试将句柄挂到内层 SFC 根 |
+| 延后媒体提前播放、到点不启动 | 仅在轨道有效区间播放；覆盖暂停、定位、恢复与结束后暂停 |
+| 指定 full 采样实际仍用 reduced | 将采样模式传入所有适配器，不修改会话偏好；核对回执与实际中间态 |
+| 同元素同属性永久独占 | 属性所有权按时间区间登记，允许非重叠入场/出场；覆盖间隙及乱序定位 |
+| 主媒体交接后重播仍走墙钟 | 定位时复位交接状态，重播重新读取媒体时钟及缓冲状态 |
+| 动作引用未校验语义签名 | 从实际 GLB accessor 字节重建 v2 签名，与 Backend 共享 LINEAR/STEP/CUBICSPLINE 夹具；同名同时长内容变化也拒绝旧引用 |
+| 挂载计数污染计划身份 | 元素绑定改为 root 内稳定 key，视觉使用稳定结构路径；重复挂载的计划与采样摘要一致 |
+
+动作签名同时覆盖普通 HTTP 缺少 SubtleCrypto 的环境；回退计算与标准 SHA-256 多分组/填充边界对拍。
+
+本轮证据：
+
+- Runtime 全量：165 files，1314 passed / 3 skipped；随后补充 HTTP 签名回归，motion/宿主/入口/签名定向 12 files / 106 passed。
+- Runtime 正式 `build`（含 `vue-tsc -b`）通过；保留已有大 chunk 与插件耗时提示。
+- 本轮新增 Runtime 模块与测试的 ESLint 检查通过；最终原生视觉摘要整理后，3 项原生视觉回归再次通过。
+- Backend 模型 GLB、Runtime Kit 与模块边界：86 passed。
+- 仓库文档、环境与开发工具契约：8 files / 63 passed。
+- Renderer 全套与 render-contracts：75 passed；合跑配置有既有 pytest marker 和 Windows subprocess 清理提示，退出码为 0。
+- [隔离 Chromium 回归](../../../../../tests/experiments/motion-regression/README.md)：`node tests/experiments/motion-regression/run.mjs` 通过，Chromium `148.0.7778.96`。真实视频延后播放/暂停/定位/重播/完成、full 250ms 采样 opacity=0.5、三个真实 GLB 签名及卸载通过，未处理页面异常为 0。开发脚本首次曾等待完成超时，随后两次复跑及保存后的脚本均通过；保留此记录，不作为稳定性门禁已完成的证据。
+- 截图和 JSON 回执保存在本地 `.tmp/motion-fix-browser/`，构建日志为 `.tmp/motion-fix-build.log`；二进制、缓存和构建产物不入库。
+
+本轮未运行完整 E2E、真实远程 Renderer 链路、双窗口、跨域票据/HEAD/Range、生产裁剪镜像、100 次进出、30 分钟循环、Firefox/WebKit 或 G2 模型八任务基准。平台服务及配置的远程基础依赖探测不可达，本轮使用隔离浏览器且未启动平台服务、未重置数据；这些验收仍是开放前置。
+
+### 本地人工试用准备
+
+用户随后明确选择“使用新 motion，允许准备本地内测入口”，要求三个项目外 Luna 新会话在 20261021-1/2/3 工作空间创作业务产物，由用户自行验收。该授权用于本地试用，不改变 G1/G2 结论。
+
+本地 `.tmp/motion-local-trial/local_motion_trial.py` 启动入口要求 `WP_LOCAL_MOTION_TRIAL=1`，仅对该 Backend 进程启用 timeline、指定状态捕获、timeline_end 并在内存能力目录披露四个内部入口；正式源码常量与 Runtime manifest 仍默认关闭。恢复普通 `app.main:app` 启动入口即撤销本地披露。该目录不入库、不随镜像交付。
+
+创作规范更新为资源 builder + 原生视觉；CLI 从最新开发源码重装，全局 Skill 更新至包含 Motion 创作说明的 1.4.5。未开展 G1/G2 或代替用户作成品验收。
+
+首轮三个创作会话均反馈能力已启用但入口随后不可见。定位到临时启动入口只修改缓存清单，而 `load_runtime_kit_manifest` 的单项 LRU 缓存会因无参、显式 None 等调用方式切换被淘汰，后续从磁盘重读关闭值。已改为本地加载包装器在每次加载后对副本应用内测披露，不再依赖某一缓存对象存活；正式 manifest 文件不变。该问题属于本地试用准备错误，不记作模型创作失败或 G1/G2 结论。
+
+修复后从 Luna 的项目外工作目录对三个空间各执行两轮“项目详情→页面规范→完整能力清单→精确入口→能力声明”只读交错查询，六轮均能持续读取四个入口及 enabled=true。已通知原三个 Luna 会话在项目 135/136/137 的已有页面上继续补齐动画，后续仍由用户验收。
+
+### 海报越界与内容校验闭环
+
+用户反馈三份产物均无动画后，将处理范围缩至一份。只修复工作空间 46 的项目 135：四个动画页的 `poster.atMs` 超过实际时长，导致初始化失败；改为视觉末尾的 `readable` 标签与 `applyPoster: true`。真实项目窗口预览保持海报，进入放映后四页均观察到随时间变化并抵达 completed，重新进入可重播；另外两个项目未修改。这是指定产物的故障复核，成品仍由用户验收。
+
+平台侧补齐错误闭环：Runtime 登记并等待目标画布的时间轴初始化，在静态上下文准备和采样海报；内容错误通过 `render-ready.contentExceptions` 返回 Renderer。诊断返回 severity=error，截图拒绝成功产物；保留错误码、字段与轨道定位，Backend 返回失败且不可作为基础设施问题盲目重试。代码检查规则版本同步更新，避免继续命中历史误报通过缓存。CLI 全局 Skill 更新至 1.4.6，推荐末尾标签而非猜固定海报毫秒数。
+
+本轮验证：
+
+- Runtime 全量 166 files / 1321 passed / 3 skipped；正式类型检查、构建与相关文件 ESLint 通过。
+- Renderer 全套与 render-contracts 共 78 passed；保留已有 Windows subprocess 清理提示。
+- Backend 代码检查、缓存与指纹共 35 passed；能力目录与 CLI Skill 示例契约另 19 passed，Runtime 目录及内容校验最终定向 21 passed；仓库契约 63 passed。CLI Skill 管理/诊断/字体工作流共 27 passed；wheel/sdist 内容和哈希验证通过，全局 Skill 状态为 1.4.6/up_to_date。
+- 复用本地服务，通过真实 CLI → Backend → Renderer → Runtime 链路只读校验页面 736 的候选：3000ms 海报、2570ms 实际时长返回 `valid=false`、`TIMELINE_SCHEMA_INVALID`、`timeline.poster.atMs` 及实际范围；合法 `readable` 标签候选返回 `valid=true`、无警告。证据位于本地 `.tmp/motion-project135/*-poster-validation.json`，候选校验未修改现有页面版本。
+
+仅重启已确认归属的 Backend 与 Renderer 加载修复，保留本地授权试用入口，未修改 `.env` 或重置开发数据。未开展完整 E2E、G1/G2、生产裁剪镜像或长时间稳定性验收，正式默认开关仍关闭。

@@ -10,6 +10,7 @@
 
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { ModelCache, type DisposableModelResource } from './model-cache'
+import { readAnimationSignatures } from './motion/animation-signatures'
 
 /** 引擎与渲染策略身份，参与缓存分区与日志。 */
 export const MODEL3D_ENGINE_POLICY = {
@@ -39,6 +40,7 @@ export interface ParsedModelResource extends DisposableModelResource {
   scenes: import('three').Group[]
   cameras: import('three').Camera[]
   animations: import('three').AnimationClip[]
+  animationSignatures?: Array<string | null>
 }
 
 /**
@@ -162,6 +164,7 @@ export async function parseGlbToResource(buffer: ArrayBuffer, engine: Model3dEng
     scenes,
     cameras: gltf.cameras ?? [],
     animations: gltf.animations ?? [],
+    animationSignatures: gltf.animations?.length ? await readAnimationSignatures(gltf.parser) : [],
     dispose: () => {
       for (const scene of scenes) {
         disposeObject3DResources(scene)

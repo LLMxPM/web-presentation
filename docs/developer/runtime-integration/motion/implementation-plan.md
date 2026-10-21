@@ -13,7 +13,7 @@
 | 创作与公开交付 | WP10、WP11 | 统一 Runtime Kit 入口、预览控件、模型指南、External API 与客户端适配 |
 | 联合验收 | WP12 | 跨域真实预览、远程 Renderer、独立构建、模型创作基准与兼容矩阵，关闭 G2 |
 
-WP01 已选择 GSAP，原生视觉段落＋有限资源 builder 为单一默认方向，进入 WP02。Anime.js/Motion/WAAPI 的研究材料保留，不并行实施多套主引擎。新增库仍只在忽略的实验包中，正式依赖与公共 manifest 尚未变更。
+WP01 已选择 GSAP，原生视觉段落＋有限资源 builder 为单一默认方向。2026-10-21 评审修复已接入正式 Runtime 的 `usePageTimeline.v1`；GSAP 3.15.0 为生产依赖，manifest 入口保持 internal-only。Anime.js/Motion/WAAPI 的研究材料保留，不并行实施多套主引擎。实现不等于 G1/G2 验收通过。
 
 ## 模块边界
 

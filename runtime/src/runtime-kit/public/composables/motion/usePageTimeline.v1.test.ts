@@ -52,6 +52,49 @@ afterEach(() => {
 })
 
 describe('usePageTimeline.v1', () => {
+  it('同源码 ref 绑定重复挂载后的计划与状态摘要保持一致', async () => {
+    const digests: string[] = []
+    for (let index = 0; index < 2; index++) {
+      let api!: UsePageTimelineApi
+      const host = document.createElement('div')
+      document.body.append(host)
+      const app = createApp(defineComponent({ setup() {
+        const root = ref<HTMLElement | null>(null)
+        const title = ref<HTMLElement | null>(null)
+        api = usePageTimeline({ root, bindings: { title }, applyPoster: false, definition: {
+          schemaVersion: 1, timelineId: 'stable', tracks: [{ type: 'dom', id: 'title', target: 'title', preset: 'fade', durationMs: 1000 }],
+        } })
+        return () => h('section', { ref: root }, [h('h1', { ref: title }, '标题')])
+      } }))
+      app.mount(host)
+      await api.ready
+      digests.push(JSON.stringify([api.plan.value?.planDigest, (await api.sampleAt(500)).stateDigest]))
+      app.unmount()
+      host.remove()
+    }
+    expect(digests[0]).toBe(digests[1])
+  })
+
+  it('公开原生填充入口支持纯视觉、getter 根与默认 poster', async () => {
+    initializeRuntimeExecution('?runtimeMode=cards')
+    let api!: UsePageTimelineApi
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(defineComponent({ setup() {
+      const root = ref<HTMLElement | null>(null)
+      api = usePageTimeline({ root: () => root.value, bindings: {}, timelineId: 'native', poster: { atMs: 500 },
+        define: context => ({ plan: context.resources().build(), visual(timeline) {
+          timeline.fromTo('.title', { opacity: 0 }, { opacity: 1, duration: 1 }, 0)
+        } }),
+      })
+      return () => h('section', { ref: root }, [h('h1', { class: 'title' }, '标题')])
+    } }))
+    app.mount(host)
+    await api.ready
+    expect(api.plan.value?.visual?.durationMs).toBe(1000)
+    expect(Number(host.querySelector('h1')!.style.opacity)).toBeCloseTo(0.5)
+    app.unmount()
+  })
   it('把绑定 key 翻译为选择器并在页面根注册句柄', async () => {
     const mounted = mountTimeline({
       definition: {
@@ -86,7 +129,7 @@ describe('usePageTimeline.v1', () => {
     })
     await flushAsync()
 
-    expect(title.getAttribute(BINDING_ATTR)).toMatch(/^motion-\d+-\d+$/)
+    expect(title.getAttribute(BINDING_ATTR)).toBe('binding-title')
     const pageRoot = mounted.root
     expect(readPageMotionHandle(pageRoot)?.plan.tracks[0]).toMatchObject({
       target: `[${BINDING_ATTR}="${title.getAttribute(BINDING_ATTR)}"]`,

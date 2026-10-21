@@ -221,6 +221,8 @@ export interface CompiledMotionPlan {
   requiredTrackIds: string[]
   labels: Record<string, number>
   tracks: CompiledMotionTrack[]
+  /** Runtime 拥有的原生视觉段落；只保存规范身份，不序列化作者函数或元素。 */
+  visual?: { durationMs: number; digest: string; labels: Record<string, number> }
 }
 
 export type MotionPlaybackIntent = 'stopped' | 'playing' | 'paused'

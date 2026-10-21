@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from render_contracts.constants import RUNTIME_RENDER_PROTOCOL_VERSION, RUNTIME_RENDER_PROTOCOL_VERSION_V2
+from render_contracts.schema import DiagnosticItem
 
 RUNTIME_READY_PROTOCOL = RUNTIME_RENDER_PROTOCOL_VERSION
 
@@ -44,6 +45,9 @@ async def wait_for_render_ready(
           }
           if (bridge.initFailed) {
             return { ok: false, message: bridge.message || '预览初始化失败' };
+          }
+          if (Array.isArray(bridge.contentExceptions) && bridge.contentExceptions.length) {
+            return { ok: false, message: '页面内容初始化或准备失败', contentErrors: bridge.contentExceptions.slice(0, 20) };
           }
           const fontsReady = bridge.fonts && bridge.fonts.ready;
           const visualReady = !bridge.visualAssets || bridge.visualAssets.ready !== false;
@@ -91,6 +95,30 @@ async def wait_for_render_ready(
             "inputDigest": expected_input_digest,
         },
     )
+
+
+def content_diagnostics_from_ready(ready: dict[str, Any]) -> list[DiagnosticItem]:
+    """将 Runtime 内容错误映射为诊断；保留定位且限制条数/长度，不误报基础设施不可用。"""
+    raw_errors = ready.get("contentErrors")
+    if not isinstance(raw_errors, list):
+        return []
+    diagnostics = []
+    for item in raw_errors[:20]:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code") or "RENDER_CONTENT_ERROR")[:64]
+        message = str(item.get("message") or "页面内容初始化或准备失败。")[:300]
+        evidence = {}
+        for source, target in (("fieldPath", "field_path"), ("trackId", "track_id")):
+            if item.get(source):
+                evidence[target] = str(item[source])[:160]
+        location = "; ".join(f"{key}={value}" for key, value in evidence.items())
+        diagnostics.append(DiagnosticItem(
+            severity="error", code=code,
+            message=f"{message} ({location})" if location else message,
+            evidence=evidence,
+        ))
+    return diagnostics
 
 
 def normalize_runtime_route(value: str) -> str:

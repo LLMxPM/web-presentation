@@ -50,14 +50,6 @@ const PRESET_STATES: Record<DomMotionPreset, { from: DomMotionState; to: DomMoti
   'scale-in': { from: { opacity: 0, scale: 0.96 }, to: { opacity: 1, scale: 1 } },
 }
 
-const DOM_PROPERTY_DEFAULTS: Required<DomMotionState> = {
-  opacity: 1,
-  x: 0,
-  y: 0,
-  scale: 1,
-  rotation: 0,
-}
-
 const DOM_PROPERTIES: DomMotionProperty[] = ['opacity', 'x', 'y', 'scale', 'rotation']
 
 const MODEL_TRANSFORM_DEFAULTS: Required<ModelMotionTransformState> = {
@@ -72,6 +64,9 @@ const MODEL_TRANSFORM_DEFAULTS: Required<ModelMotionTransformState> = {
 export interface CompileMotionOptions {
   /** 兼容未标注版本的历史调用；缺省要求显式 schemaVersion=1。 */
   allowMissingSchemaVersion?: boolean
+  /** 内部资源预编译允许空计划；最终计划必须包含有限资源或原生视觉。 */
+  allowEmpty?: boolean
+  visual?: CompiledMotionPlan['visual']
 }
 
 /**
@@ -106,7 +101,7 @@ export function compilePageTimeline(
   if (!Array.isArray(rawTracks)) {
     throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, 'tracks 必须是数组。', { fieldPath: 'timeline.tracks' })
   }
-  if (rawTracks.length === 0) {
+  if (rawTracks.length === 0 && !options.allowEmpty && !options.visual?.durationMs) {
     throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, '时间轴至少需要一个轨道。', { fieldPath: 'timeline.tracks' })
   }
   if (rawTracks.length > MAX_MOTION_TRACKS) {
@@ -125,6 +120,9 @@ export function compilePageTimeline(
       throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, '轨道必须是对象。', { fieldPath: path })
     }
     const id = requireString(track.id, `${path}.id`, 64)
+    if (options.visual && id === 'motion-visual') {
+      throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, 'motion-visual 是 Runtime 保留轨道 id。', { fieldPath: `${path}.id` })
+    }
     if (!TRACK_ID_PATTERN.test(id)) {
       throw new MotionError(
         MOTION_ERROR_SCHEMA_INVALID,
@@ -186,7 +184,7 @@ export function compilePageTimeline(
     const endBehavior = resolveEndBehavior(track, path)
     const role = resolveRole(track, path)
     const required = resolveRequired(track, role)
-    let durationMs = 0
+    let durationMs: number
     let startMs = 0
     let compiled: CompiledMotionTrack
 
@@ -326,9 +324,10 @@ export function compilePageTimeline(
   validateExclusiveTargets(tracks)
 
   const requiredTracks = tracks.filter(track => track.required)
-  const durationMs = requiredTracks.length > 0
+  const resourceDurationMs = requiredTracks.length > 0
     ? Math.max(...requiredTracks.map(track => track.endMs))
-    : Math.max(...tracks.map(track => track.endMs))
+    : Math.max(0, ...tracks.map(track => track.endMs))
+  const durationMs = Math.max(resourceDurationMs, options.visual?.durationMs ?? 0)
   if (durationMs > MAX_MOTION_DURATION_MS) {
     throw new MotionError(
       MOTION_ERROR_SCHEMA_INVALID,
@@ -345,6 +344,12 @@ export function compilePageTimeline(
     if (track.label !== undefined) labelTimes[track.label] = compiled.startMs
   })
   const sortedLabels: Record<string, number> = {}
+  for (const [label, time] of Object.entries(options.visual?.labels ?? {})) {
+    if (labelTimes[label] !== undefined && labelTimes[label] !== time) {
+      throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, `视觉标签 ${label} 覆盖了资源标签。`)
+    }
+    labelTimes[label] = time
+  }
   for (const key of Object.keys(labelTimes).sort()) sortedLabels[key] = labelTimes[key]
 
   const posterTimeMs = resolvePosterTime(definition.poster, sortedLabels, durationMs)
@@ -355,9 +360,10 @@ export function compilePageTimeline(
     durationMs,
     posterTimeMs,
     primaryClockTrackId,
-    requiredTrackIds: requiredTracks.map(track => track.id),
+    requiredTrackIds: [...requiredTracks.map(track => track.id), ...(options.visual ? ['motion-visual'] : [])],
     labels: sortedLabels,
     tracks,
+    ...(options.visual ? { visual: options.visual } : {}),
   }
   return {
     ...body,
@@ -723,8 +729,8 @@ function resolvePosterTime(
     }
   }
   if (timeMs < 0 || timeMs > durationMs) {
-    throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, `海报时间必须在 0–${durationMs} 毫秒之间。`, {
-      fieldPath: 'timeline.poster',
+    throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, `海报时间 ${timeMs} 毫秒超出 0–${durationMs} 毫秒范围；可在视觉末尾登记标签并用 poster.atLabel 引用。`, {
+      fieldPath: poster?.atMs !== undefined ? 'timeline.poster.atMs' : 'timeline.poster.atLabel',
     })
   }
   return timeMs

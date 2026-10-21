@@ -1938,17 +1938,17 @@
         "previewable": false,
         "recommendation_level": "internal-only",
         "display_name": "页内时间轴",
-        "summary": "接收静态 definition 与目标 bindings，编译确定性计划并注册唯一 transport；返回只读状态和受控播放接口。",
+        "summary": "通过 define 返回有限资源 builder 计划与原生 GSAP 视觉填充函数；Runtime 托管暂停时间轴、作用域、采样和唯一 transport。",
         "tags": ["timeline"],
         "usage": [
-          "import { usePageTimeline } from '@runtime-kit/public/composables/motion/usePageTimeline.v1'",
-          "const title = ref<HTMLElement | null>(null)",
-          "const timeline = usePageTimeline({ root: pageRoot, bindings: { title }, definition: { schemaVersion: 1, timelineId: 'intro', tracks: [{ type: 'dom', id: 'title-in', target: 'title', preset: 'fade-up', durationMs: 400 }] } })",
+          "import { usePageTimeline, seconds } from '@runtime-kit/public/composables/motion/usePageTimeline.v1'",
+          "const pageRoot = ref<HTMLElement | null>(null)",
+          "const timeline = usePageTimeline({ root: pageRoot, bindings: {}, timelineId: 'intro', applyPoster: true, poster: { atLabel: 'readable' }, define: ctx => ({ plan: ctx.resources().build(), visual(tl) { tl.fromTo('.title', { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: seconds(400) }, 0); tl.addLabel('readable') } }) })",
           "// 放映宿主负责播放；timeline.state 只读，调试时可使用 timeline.pause()/seek() 等受控接口。"
         ],
         "returns": "对象：plan、state、error、ready 及 prepare/play/pause/resume/restart/seek/sampleAt/setMuted/setVisualMode/dispose。",
         "return_example": ["timeline.state.value?.positionMs // 400", "timeline.plan.value?.planDigest // 'fnv1a-...'"],
-        "constraints": ["每个页面最多注册一个时间轴；组件片段必须由页面合并，不能创建第二个全局播放者。", "definition 为静态数据，不接受函数、URL、私有对象或运行中替换；DOM 轨道 target 必须是 bindings 的 key。", "动作片段、资源时长与签名必须来自真实资源查询；运行错误带 code、trackId 或 fieldPath。", "当前为内部受控入口，G2 前不进入普通模型能力目录。"],
+        "constraints": ["每个页面最多注册一个时间轴；组件片段必须通过填充函数合并，不能创建第二个全局播放者。", "define 仅在挂载时执行一次；原生视觉支持显式 fromTo、addLabel、位置字符串、数值 stagger 和段落函数复用，属性限 opacity/x/y/scale/rotation；禁止回调、插件、无限重复和外部目标。", "资源和捕获统一毫秒，GSAP 原生参数用秒，使用 seconds(ms) 转换；资源 id 自动登记为视觉标签。", "可读海报优先引用视觉末尾的 addLabel 标签，窗口预览需要时设置 applyPoster=true；poster 必须处于真实 0–durationMs 范围，初始化或准备失败必须按内容诊断修复。", "动作片段、资源时长与签名必须来自真实资源查询；运行错误带 code、trackId 或 fieldPath。", "当前为内部受控入口，G2 前不进入普通模型能力目录。"],
         "audiences": ["backend", "agent"]
       }
     }

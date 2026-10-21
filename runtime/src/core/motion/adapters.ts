@@ -31,6 +31,8 @@ export interface MotionAdapterApplyOptions {
   /** 逻辑时间（毫秒），可位于轨道区间外；适配器按区间钳制。 */
   positionMs: number
   visualMode: MotionVisualMode
+  /** 定位/捕获必须精确 seek，不能复用实时漂移容差。 */
+  forceSeek?: boolean
 }
 
 /** 适配器提供的真实媒体时钟；transport 只在主媒体轨道上消费。 */

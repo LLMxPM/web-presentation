@@ -1,6 +1,6 @@
 # 首期编排创作契约方向
 
-状态：G0 已选定 GSAP 与“受控原生视觉＋资源 builder”，详见[G0 决定](./g0-decision.md)。本文固定职责与形状，正式字段、方法名和公开 `.vN` import 由 WP02/WP10 定义，当前没有新公共能力。[此前 JSON 草案](./authoring-json-draft.md)保留为历史设计资料，不再作为唯一创作入口或直接实施的 Schema。
+状态：G0 已选定 GSAP 与“受控原生视觉＋资源 builder”，详见[G0 决定](./g0-decision.md)。2026-10-21 评审修复已将该形状接入 `usePageTimeline.v1`；入口仍为 internal-only，G1/G2 尚未关闭。[此前 JSON 草案](./authoring-json-draft.md)不作为默认创作入口；内部旧 `definition` 仅为既有夹具兼容。
 
 ## 一份 SFC，两类定义
 
@@ -9,22 +9,32 @@
 - 两类定义都保存在现有 Vue SFC 版本中，不增加第二份 Editor 时间轴数据或数据库表。规范化资源计划可序列化，视觉函数仍是源码；Backend 不通过正则假装完整解析任意 JavaScript。
 - 不把所有视觉属性、缓动和复用重新包装成完整 JSON DSL。机器 Schema 应覆盖真实可校验资源与规范计划，视觉语法/属性边界由 WP02 明确。
 
-研究形状示意，不能作为当前平台调用：
+内部受控样例写法（能力开放前不能向普通模型推荐）：
 
 ```ts
-const story = useGsapStory(stage, props, ctx => {
-  const plan = ctx.resources()
-    .voice('voice')
-    .clip('model', queriedClipRef, { atMs: detailStartMs })
-    .video('demo', { inMs: 1000, outMs: 3000 }, { after: 'model', offsetMs: 200 })
-    .build()
-  return {
-    plan,
-    visual(timeline) {
-      timeline.fromTo('.title', { opacity: 0, y: 32 },
-        { opacity: 1, y: 0, duration: seconds(400) }, 0)
-      // 资源 id 自动登记成标签，可以使用 'model'、'demo' 作为插入点。
-    },
+import { usePageTimeline, seconds } from '@runtime-kit/public/composables/motion/usePageTimeline.v1'
+
+const story = usePageTimeline({
+  root: pageRoot,
+  bindings: {},
+  applyPoster: true,
+  timelineId: 'product-story',
+  poster: { atLabel: 'readable' },
+  define(ctx) {
+    return {
+      plan: ctx.resources()
+        .voice('voice', { asset: 'voice', outMs: queriedVoiceDurationMs })
+        .clip('model', queriedClipRef, { asset: 'product', startMs: detailStartMs })
+        .video('demo', { asset: 'demo', inMs: 1000, outMs: 3000, afterTrack: 'model', offsetMs: 200 })
+        .build(),
+      visual(timeline) {
+        timeline.fromTo('.title', { opacity: 0, y: 32 },
+          { opacity: 1, y: 0, duration: seconds(400) }, 0)
+        timeline.fromTo('.card', { opacity: 0 },
+          { opacity: 1, duration: seconds(300), stagger: seconds(100) }, 'demo')
+        timeline.addLabel('readable')
+      },
+    }
   }
 })
 ```
@@ -51,5 +61,15 @@ const story = useGsapStory(stage, props, ctx => {
 4. 函数构造异常、首次准备、取消与旧回执，统一生命周期和错误语义。研究 helper 不能代替生产 transport 的完整状态协议。
 5. 后端源码边界校验、受信 Runtime/Renderer 执行回执与规范计划 Schema；不得在 Backend 内运行浏览器或执行任意 Vue。
 6. 有界 code/fieldPath/trackId，Schema 单一源、生成类型与正反例；公开入口遵守 Runtime Kit `.vN` 和 manifest 规则，v1 既有内容不被改写。
+
+## 当前内部实现边界
+
+- `define` 在页面挂载时执行一次，返回资源计划与视觉填充函数；纯视觉可使用空资源 builder。`voice/audio/video/clip` 的裁切、速率、有限重复和依赖继续复用同一规范计划编译器。
+- 原生视觉支持 GSAP 3 的显式 `fromTo`、`addLabel`、原生位置字符串、非负数值 `stagger` 与填充函数复用。`from/to` 必须提供相同属性，当前支持 opacity/x/y/scale/rotation；duration 与 stagger 用秒，资源/定位仍用毫秒。
+- Runtime 创建暂停时间轴并预置最早段落初态；同属性顺序段落允许，重叠明确拒绝。当前不开放 `to/from/call/add`、外部时间轴、回调、插件、无限重复及作用域外目标，不能将窄接口描述成 GSAP 全库支持。
+- 视觉规范身份包含稳定元素路径、区间、属性、缓动与标签；资源目标绑定使用 root 内稳定 key，不包含挂载计数。捕获的 visualMode 直接传入适配器，与系统偏好和声音许可分离。
+- 动作签名从实际加载的 GLB accessor 字节重建，与 Backend `animation_analysis_version=2` 共享夹具对拍；同名同长度的动作替换也会令旧引用失效。
+- 可读海报优先引用视觉末尾的标签，避免修改错峰数量或时长后固定 `poster.atMs` 越界；需要窗口预览先显示完整海报时显式设置 `applyPoster: true`，放映宿主开始播放时回到起点。海报必须处于真实计划的 `0–durationMs` 范围内，不能额外加等待值或静默截断。
+- 时间轴初始化与静态准备纳入 `render-ready` 内容检查：只等待目标画布内的实例，卸载注销；捕获、导出、缩略图静默准备并采样海报。失败通过有界 `contentExceptions` 传给 Renderer，保留 code/fieldPath/trackId；页面诊断返回 error，截图拒绝成功产物，Backend 不得继承编译通过结果。此检查不代替动态播放验收。
 
 正式契约继续遵守[运行与捕获契约](./runtime-contract.md)中的唯一所有者、策略独立、身份与发布围栏。产品规模和性能预算留后续复核，不从第一轮历史数字默认为已冻结。

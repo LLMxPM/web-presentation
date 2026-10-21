@@ -1192,6 +1192,7 @@ function listModelAnimations(): ModelAnimationSummary[] {
     name: clip.name ? String(clip.name) : null,
     durationMs: Math.max(0, clip.duration * 1000),
     channelCount: clip.tracks.length,
+    signature: activeParsedResource?.animationSignatures?.[index] ?? null,
   }))
 }
 

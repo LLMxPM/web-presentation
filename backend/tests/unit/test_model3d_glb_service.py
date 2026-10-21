@@ -6,6 +6,7 @@ import base64
 import json
 import struct
 import zlib
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +16,15 @@ from app.services.model3d_glb_service import Model3dGlbService
 
 _JSON_CHUNK_TYPE = 0x4E4F534A
 _BIN_CHUNK_TYPE = 0x004E4942
+
+
+def test_animation_signatures_match_runtime_shared_cases() -> None:
+    """三种插值的真实 accessor 字节与 Runtime 共享签名，防止算法跨端漂移。"""
+    fixture = Path(__file__).resolve().parents[3] / "tests/fixtures/model-animation-signature-cases.json"
+    for case in json.loads(fixture.read_text(encoding="utf-8")):
+        binary = base64.b64decode(case["buffer_base64"])
+        summary = Model3dGlbService.analyze(_build_glb(case["gltf"], binary))
+        assert summary["animations"][0]["signature"] == case["signature"], case["name"]
 
 
 def _pad4(data: bytes, pad: bytes = b"\x00") -> bytes:

@@ -508,6 +508,39 @@ async def test_page_code_check_should_append_render_warning_after_runtime_passed
     assert fake_render.calls
 
 
+async def test_page_code_check_motion_initialization_error_must_fail(
+    authenticated_client: AsyncClient,
+) -> None:
+    """编译通过但时间轴初始化失败时拒绝成功，保留模型可修复的字段与时长。"""
+    workspace_id = await _create_workspace(authenticated_client, "Motion 内容错误工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "Motion 内容错误项目")
+    response = await authenticated_client.post("/api/pages", json={
+        "workspace_id": workspace_id, "project_id": project_id, "title": "时间轴错误页",
+        "page_content": "<template><main>原页面</main></template>", "file_type": "vue", "status": "active",
+    })
+    assert response.status_code == 200
+    diagnostic = {
+        "severity": "error", "code": "TIMELINE_SCHEMA_INVALID",
+        "message": "海报时间 3000 毫秒超出 0–2570 毫秒范围 (field_path=timeline.poster.atMs)",
+        "evidence": {"field_path": "timeline.poster.atMs"},
+    }
+    async with get_session_factory()() as session:
+        result = await CodeCheckService(
+            session, runtime_client=FakeRuntimeDiagnosticsClient(),
+            render_diagnostics_service=FakePageRenderDiagnosticsService([diagnostic]),
+        ).check_page_code(
+            page_id=response.json()["id"], workspace_id=workspace_id, user_id=1,
+            content="<template><main>候选页面</main></template>",
+        )
+    assert result["success"] is False
+    assert result["valid"] is False
+    assert result["status"] == "failed"
+    assert result["retryable"] is False
+    assert result["stages"] == {"compile": "passed", "render": "failed"}
+    assert result["diagnostics"] == [diagnostic]
+    assert "代码检查通过" not in result["summary"]
+
+
 async def test_page_code_check_render_unavailable_must_not_report_passed(
     authenticated_client: AsyncClient,
 ) -> None:

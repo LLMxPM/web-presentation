@@ -24,6 +24,7 @@ from render_contracts.errors import (
     ERROR_CODE_ASSET_NOT_READY,
     ERROR_CODE_CANCELLED,
     ERROR_CODE_CONTRACT_MISMATCH,
+    ERROR_CODE_CONTENT_ERROR,
     ERROR_CODE_DEADLINE_EXCEEDED,
     ERROR_CODE_INPUT_EXPIRED,
     ERROR_CODE_INTERNAL_ERROR,
@@ -35,6 +36,7 @@ from render_contracts.errors import (
 )
 from render_contracts.motion import AppliedMotion
 from render_contracts.schema import ArtifactDescriptor, DiagnosticItem, ExecutionResult
+from render_contracts.screenshot import ScreenshotPhaseResult
 from render_contracts.tokens import sha256_hex
 
 from wp_renderer.engine.joint_capture import append_screenshot
@@ -43,6 +45,7 @@ from wp_renderer.engine.layout_scripts import (
     build_page_render_layout_script,
 )
 from wp_renderer.engine.render_ready import (
+    content_diagnostics_from_ready,
     validate_static_render_bridge,
     wait_for_render_ready,
 )
@@ -220,6 +223,17 @@ class RenderExecutor:
                 stage="ready",
             )
             if not ready.get("ok"):
+                content_errors = content_diagnostics_from_ready(ready)
+                if content_errors:
+                    if request.operation in {OPERATION_PAGE_DIAGNOSE, OPERATION_COMPONENT_DIAGNOSE}:
+                        return replace(self._base_result(), diagnostics=content_errors, screenshot=(
+                            ScreenshotPhaseResult("skipped", ERROR_CODE_CONTENT_ERROR, False)
+                            if request.operation_options.get("capture_screenshot", False) else None
+                        ))
+                    raise RenderExecutionError(RenderError.from_code(
+                        ERROR_CODE_CONTENT_ERROR,
+                        message=f"{content_errors[0].code}: {content_errors[0].message}", stage="ready",
+                    ))
                 detail = str(ready.get("message") or "Runtime 渲染协议未就绪。")
                 extra = []
                 for key in ("url", "hasBridge", "bridge", "bodyStart", "htmlStart", "scripts", "resources"):
@@ -474,7 +488,16 @@ class RenderExecutor:
                 RenderError.from_code(ERROR_CODE_ASSET_NOT_READY, message="时间轴采样回执无效。", stage="ready")
             )
         try:
-            applied = AppliedMotion.from_dict(receipt)
+            # Runtime 桥使用 camelCase；仅在执行器边界转换一次，控制协议保持 snake_case。
+            applied = AppliedMotion.from_dict({
+                "status": receipt.get("status"),
+                "timeline_id": receipt.get("timelineId"),
+                "plan_digest": receipt.get("planDigest"),
+                "sampled_time_ms": receipt.get("sampledTimeMs"),
+                "state_digest": receipt.get("stateDigest"),
+                "visual_mode": receipt.get("visualMode"),
+                "message": receipt.get("message"),
+            })
         except RenderContractError as exc:
             raise RenderExecutionError(
                 RenderError.from_code(

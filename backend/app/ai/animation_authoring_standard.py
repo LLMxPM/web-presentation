@@ -7,9 +7,11 @@ ANIMATION_AUTHORING_STANDARD = """
 
 - 页内元素动效可使用 CSS transition、@keyframes、Vue Transition/TransitionGroup 和页面自身的响应式状态；首次挂载需要过渡时显式使用 appear。数字变化、SVG 路径等可由局部 JavaScript 或浏览器原生动画 API 实现；定时器、requestAnimationFrame、动画实例和事件监听必须在卸载时清理，不修改宿主或其它页面的全局状态。
 - 需要统一时钟、音视频定位或三维片段采样时，先调用 `runtime_kit.query`（`list`/`detail`）查询 `usePageTimeline` 与 `AssetVideo.v2`、`AssetAudio.v2`、`AssetModel.v2`。只有查询结果明确返回该能力且可用时，才可按其 `import_path` 创建定义；未返回、`enabled=false` 或只存在于文档时视为未开放，不得凭记忆导入未登记的 Runtime Kit 路径，也不得改用未注册的 GSAP、Motion、Lottie 等动画库。
-- 当前时间轴公共入口与三个 `Asset*.v2` 处于内部关闭状态（G2 前不进入普通模型能力目录）。未开放时应继续使用 CSS/原生动画或既有的 `AssetVideo.v1`、`AssetAudio.v1`、`AssetModel.v1` 静态/手动能力，并明确告知用户当前不支持统一页内编排，不伪造已经可用的时间轴示例。
-- 可用时，页面只声明一个静态 `definition` 与目标 `bindings`，通过 `usePageTimeline({ root, bindings, definition })` 注册。DOM 轨道 `target` 必须是 `bindings` 的 key；音视频与模型轨道用 `asset` 指向资源逻辑名，并由 `AssetVideo.v2`、`AssetAudio.v2`、`AssetModel.v2` 渲染。定义不接受函数、URL、私有对象或运行中替换；`timelineId` 保持稳定，页面最多一个时间轴，组件片段由页面合并。
-- 轨道使用稳定 `id`、绝对 `startMs` 或 `afterTrack`/`offsetMs` 表达并行与顺延；`poster` 只声明默认静态位置，`atMs` 与 `atLabel` 互斥。DOM 首期只支持 `opacity`、`x`、`y`、`scale`、`rotation` 与 `fade`/`fade-up`/`scale-in` 预设；需要其它属性时明确列为未支持，不写无法校验的任意样式。
+- 时间轴公共入口与三个 `Asset*.v2` 默认关闭，实际以当前服务能力查询为准；用户授权的本地内测可提前披露，但不代表通过 G1/G2 或正式发布。未开放时继续使用 CSS/原生动画或既有 v1 静态/手动能力，不伪造已经可用的时间轴示例。
+- 可用时，页面通过 `usePageTimeline({ root: pageRoot, bindings: {}, timelineId, poster, define(ctx) { return { plan: ctx.resources().build(), visual(tl) { /* 填充原生视觉 */ } } } })` 注册唯一时间轴。`define` 挂载时只执行一次；资源 builder 支持 voice/audio/video/clip，真实资源用逻辑名，媒体和模型由对应 `Asset*.v2` 渲染。纯视觉使用空资源计划，旧静态 definition 仅兼容已有内部内容，不作为默认创作入口。
+- 原生视觉只使用受控时间轴的显式 `fromTo`、`addLabel`、GSAP 原生位置字符串、非负数值 stagger 与段落函数复用；支持 opacity/x/y/scale/rotation，from/to 提供相同属性和正数 duration。禁止直接导入 GSAP、另建时钟、call/add/to/from、回调、插件、无限重复或 root 外元素；Runtime 托管初态、暂停、采样和释放。
+- 资源轨道使用稳定 id、startMs 或 afterTrack/offsetMs 表达并行与顺延；资源 id 自动成为视觉标签。资源/transport 用毫秒，原生视觉 duration、stagger 和位置用秒，从同一个 usePageTimeline.v1 路径导入 seconds(ms) 转换。poster 的 atMs 与 atLabel 互斥，选择可读的稳定画面；同元素同属性非重叠段落允许，重叠段落必须修正。
+- 默认在全部视觉段落末尾登记 `tl.addLabel('readable')`，用 `poster: { atLabel: 'readable' }` 引用可读终态；窗口项目预览需要预先显示海报时使用 applyPoster=true。不要猜固定 poster.atMs 或在末尾额外加等待时间，海报必须位于真实 0–durationMs 范围内；初始化/准备失败属于内容校验错误，应按 code、fieldPath 和实际时长修正。
 - 三维片段只使用资源详情 `analysis_metadata.model3d.animations` 中真实返回的动作：`supported=true`，引用其 `index`、`signature` 与 `duration_ms`，裁切终点不得超出真实时长。`supported=false`、未分析、只有动画数量或只凭 GLB 文件含动画数据都不能宣称可播放；动作签名或资源版本变化后必须重新查询，不复用过期引用。
 - 动效应服务于内容表达和操作反馈；入场、强调、退场、错峰与循环按需要选择，不默认让正文和标题反复隐藏重播。定位变换与动画变换使用不同包裹层，避免动画 transform 覆盖居中、旋转等既有布局。
 - 页内动画与项目 none/fade/push 翻页过渡分别控制。只有放映能力明确声明 `timeline_end`（`advance_modes` 包含且 `schema_version >= 3`）时才能写入该推进模式与 `timeline_timeout_ms`；未声明时写入会被拒绝，应保留 manual/timer/media_end 并明确说明，不得静默替换为 timer。

@@ -1,0 +1,416 @@
+[
+  {
+    "name": "LINEAR",
+    "gltf": {
+      "asset": {
+        "version": "2.0"
+      },
+      "buffers": [
+        {
+          "byteLength": 142
+        }
+      ],
+      "bufferViews": [
+        {
+          "buffer": 0,
+          "byteOffset": 0,
+          "byteLength": 36
+        },
+        {
+          "buffer": 0,
+          "byteOffset": 36,
+          "byteLength": 8
+        },
+        {
+          "buffer": 0,
+          "byteOffset": 44,
+          "byteLength": 24
+        },
+        {
+          "buffer": 0,
+          "byteOffset": 68,
+          "byteLength": 74
+        }
+      ],
+      "accessors": [
+        {
+          "bufferView": 0,
+          "byteOffset": 0,
+          "componentType": 5126,
+          "count": 3,
+          "type": "VEC3",
+          "min": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "max": [
+            1.0,
+            1.0,
+            0.0
+          ]
+        },
+        {
+          "bufferView": 1,
+          "componentType": 5126,
+          "count": 2,
+          "type": "SCALAR"
+        },
+        {
+          "bufferView": 2,
+          "componentType": 5126,
+          "count": 2,
+          "type": "VEC3"
+        }
+      ],
+      "meshes": [
+        {
+          "primitives": [
+            {
+              "attributes": {
+                "POSITION": 0
+              },
+              "material": 0
+            }
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "mesh": 0
+        }
+      ],
+      "scenes": [
+        {
+          "nodes": [
+            0
+          ]
+        }
+      ],
+      "scene": 0,
+      "animations": [
+        {
+          "name": "Idle",
+          "samplers": [
+            {
+              "input": 1,
+              "output": 2,
+              "interpolation": "LINEAR"
+            }
+          ],
+          "channels": [
+            {
+              "sampler": 0,
+              "target": {
+                "node": 0,
+                "path": "translation"
+              }
+            }
+          ]
+        }
+      ],
+      "images": [
+        {
+          "bufferView": 3,
+          "mimeType": "image/png"
+        }
+      ],
+      "samplers": [
+        {}
+      ],
+      "textures": [
+        {
+          "source": 0,
+          "sampler": 0
+        }
+      ],
+      "materials": [
+        {
+          "pbrMetallicRoughness": {
+            "baseColorTexture": {
+              "index": 0
+            }
+          }
+        }
+      ]
+    },
+    "buffer_base64": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAQAAAQECJUE5HDQoaCgAAAA1JSERSAAAAAgAAAAIIBgAAAHK2DSQAAAARSURBVHicY/jPwPAfhBlgDABHygf5Z1lutwAAAABJRU5ErkJggg==",
+    "signature": "767fc00c9fa8db5487ef012648b75443"
+  },
+  {
+    "name": "STEP",
+    "gltf": {
+      "asset": {
+        "version": "2.0"
+      },
+      "buffers": [
+        {
+          "byteLength": 142
+        }
+      ],
+      "bufferViews": [
+        {
+          "buffer": 0,
+          "byteOffset": 0,
+          "byteLength": 36
+        },
+        {
+          "buffer": 0,
+          "byteOffset": 36,
+          "byteLength": 8
+        },
+        {
+          "buffer": 0,
+          "byteOffset": 44,
+          "byteLength": 24
+        },
+        {
+          "buffer": 0,
+          "byteOffset": 68,
+          "byteLength": 74
+        }
+      ],
+      "accessors": [
+        {
+          "bufferView": 0,
+          "byteOffset": 0,
+          "componentType": 5126,
+          "count": 3,
+          "type": "VEC3",
+          "min": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "max": [
+            1.0,
+            1.0,
+            0.0
+          ]
+        },
+        {
+          "bufferView": 1,
+          "componentType": 5126,
+          "count": 2,
+          "type": "SCALAR"
+        },
+        {
+          "bufferView": 2,
+          "componentType": 5126,
+          "count": 2,
+          "type": "VEC3"
+        }
+      ],
+      "meshes": [
+        {
+          "primitives": [
+            {
+              "attributes": {
+                "POSITION": 0
+              },
+              "material": 0
+            }
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "mesh": 0
+        }
+      ],
+      "scenes": [
+        {
+          "nodes": [
+            0
+          ]
+        }
+      ],
+      "scene": 0,
+      "animations": [
+        {
+          "name": "Idle",
+          "samplers": [
+            {
+              "input": 1,
+              "output": 2,
+              "interpolation": "STEP"
+            }
+          ],
+          "channels": [
+            {
+              "sampler": 0,
+              "target": {
+                "node": 0,
+                "path": "translation"
+              }
+            }
+          ]
+        }
+      ],
+      "images": [
+        {
+          "bufferView": 3,
+          "mimeType": "image/png"
+        }
+      ],
+      "samplers": [
+        {}
+      ],
+      "textures": [
+        {
+          "source": 0,
+          "sampler": 0
+        }
+      ],
+      "materials": [
+        {
+          "pbrMetallicRoughness": {
+            "baseColorTexture": {
+              "index": 0
+            }
+          }
+        }
+      ]
+    },
+    "buffer_base64": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAQAAAQECJUE5HDQoaCgAAAA1JSERSAAAAAgAAAAIIBgAAAHK2DSQAAAARSURBVHicY/jPwPAfhBlgDABHygf5Z1lutwAAAABJRU5ErkJggg==",
+    "signature": "98decb6d6069e687c93e74490b210f5f"
+  },
+  {
+    "name": "CUBICSPLINE",
+    "gltf": {
+      "asset": {
+        "version": "2.0"
+      },
+      "buffers": [
+        {
+          "byteLength": 190
+        }
+      ],
+      "bufferViews": [
+        {
+          "buffer": 0,
+          "byteOffset": 0,
+          "byteLength": 36
+        },
+        {
+          "buffer": 0,
+          "byteOffset": 36,
+          "byteLength": 8
+        },
+        {
+          "buffer": 0,
+          "byteOffset": 44,
+          "byteLength": 72
+        },
+        {
+          "buffer": 0,
+          "byteOffset": 116,
+          "byteLength": 74
+        }
+      ],
+      "accessors": [
+        {
+          "bufferView": 0,
+          "byteOffset": 0,
+          "componentType": 5126,
+          "count": 3,
+          "type": "VEC3",
+          "min": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "max": [
+            1.0,
+            1.0,
+            0.0
+          ]
+        },
+        {
+          "bufferView": 1,
+          "componentType": 5126,
+          "count": 2,
+          "type": "SCALAR"
+        },
+        {
+          "bufferView": 2,
+          "componentType": 5126,
+          "count": 6,
+          "type": "VEC3"
+        }
+      ],
+      "meshes": [
+        {
+          "primitives": [
+            {
+              "attributes": {
+                "POSITION": 0
+              },
+              "material": 0
+            }
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "mesh": 0
+        }
+      ],
+      "scenes": [
+        {
+          "nodes": [
+            0
+          ]
+        }
+      ],
+      "scene": 0,
+      "animations": [
+        {
+          "name": "Idle",
+          "samplers": [
+            {
+              "input": 1,
+              "output": 2,
+              "interpolation": "CUBICSPLINE"
+            }
+          ],
+          "channels": [
+            {
+              "sampler": 0,
+              "target": {
+                "node": 0,
+                "path": "translation"
+              }
+            }
+          ]
+        }
+      ],
+      "images": [
+        {
+          "bufferView": 3,
+          "mimeType": "image/png"
+        }
+      ],
+      "samplers": [
+        {}
+      ],
+      "textures": [
+        {
+          "source": 0,
+          "sampler": 0
+        }
+      ],
+      "materials": [
+        {
+          "pbrMetallicRoughness": {
+            "baseColorTexture": {
+              "index": 0
+            }
+          }
+        }
+      ]
+    },
+    "buffer_base64": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAQAAAQEAAAAAAAAAAAAAAAACJUE5HDQoaCgAAAA1JSERSAAAAAgAAAAIIBgAAAHK2DSQAAAARSURBVHicY/jPwPAfhBlgDABHygf5Z1lutwAAAABJRU5ErkJggg==",
+    "signature": "ad060f0f9136225e89d4d1d06982dcb8"
+  }
+]

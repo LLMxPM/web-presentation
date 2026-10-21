@@ -49,11 +49,11 @@ async def test_apply_motion_snapshot_checks_receipt_and_records_state() -> None:
                 "available": True,
                 "receipt": {
                     "status": "applied",
-                    "timeline_id": "intro",
-                    "plan_digest": "plan-1",
-                    "sampled_time_ms": 500,
-                    "state_digest": "state-1",
-                    "visual_mode": "reduced",
+                    "timelineId": "intro",
+                    "planDigest": "plan-1",
+                    "sampledTimeMs": 500,
+                    "stateDigest": "state-1",
+                    "visualMode": "reduced",
                 },
             }
 
@@ -90,11 +90,11 @@ async def test_apply_motion_snapshot_rejects_missing_bridge_or_mismatched_receip
                 "available": True,
                 "receipt": {
                     "status": "applied",
-                    "timeline_id": "other",
-                    "plan_digest": "plan-1",
-                    "sampled_time_ms": 500,
-                    "state_digest": "state-1",
-                    "visual_mode": "reduced",
+                    "timelineId": "other",
+                    "planDigest": "plan-1",
+                    "sampledTimeMs": 500,
+                    "stateDigest": "state-1",
+                    "visualMode": "reduced",
                 },
             }
 

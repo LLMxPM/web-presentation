@@ -5,18 +5,21 @@
  * 页面最多注册一个时间轴，宿主只通过窄句柄读取状态与发送播放命令。
  */
 
-import { onBeforeUnmount, onMounted, shallowReadonly, shallowRef, unref, type MaybeRefOrGetter, type Ref } from 'vue'
+import { onBeforeUnmount, onMounted, shallowReadonly, shallowRef, toValue, unref, type MaybeRefOrGetter, type Ref } from 'vue'
 
 import { getRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
 import { compilePageTimeline } from '@/core/motion/compile'
 import { createDefaultMotionAdapterFactory } from '@/core/motion/default-adapters'
-import { MOTION_ERROR_SCHEMA_INVALID, MOTION_ERROR_TARGET_INVALID, MotionError, toMotionError } from '@/core/motion/errors'
+import { createNativeVisual, type NativeVisualBuilder } from '@/core/motion/native-visual'
+import { createMotionResourceBuilder, type MotionResourceBuilder } from '@/core/motion/resource-builder'
+import { registerMotionReadiness } from '@/core/motion/readiness'
+import { MOTION_ERROR_TARGET_INVALID, MotionError, toMotionError } from '@/core/motion/errors'
 import {
   createPageMotionHandle,
   type PageMotionHandle,
 } from '@/core/motion/page-motion-contract'
 import type { MotionSampleResult } from '@/core/motion/sampling'
-import { createMotionTransport, type MotionTransport } from '@/core/motion/transport'
+import { createMotionTransport } from '@/core/motion/transport'
 import type {
   CompiledMotionPlan,
   DomMotionTrackDefinition,
@@ -25,11 +28,16 @@ import type {
   MotionTransportSnapshot,
   MotionVisualMode,
   PageTimelineDefinition,
+  MotionPosterDefinition,
+  MotionTrackDefinition,
 } from '@/core/motion/types'
+
+export { seconds } from '@/core/motion/native-visual'
+export type { NativeVisualTimeline } from '@/core/motion/native-visual'
+export type { MotionResourceBuilder } from '@/core/motion/resource-builder'
 
 /** 组件实例写入的临时绑定属性；卸载时只清理本次写入的值。 */
 const MOTION_BINDING_ATTR = 'data-runtime-motion-binding'
-let bindingSequence = 0
 
 export type PageTimelineBinding = string | HTMLElement | Ref<HTMLElement | null | undefined>
 export type PageTimelineBindingMap = Record<string, PageTimelineBinding>
@@ -48,9 +56,12 @@ export interface PageTimelineAuthoringDefinition<K extends string> extends Omit<
   tracks: PublicMotionTrackDefinition<K>[]
 }
 
-export interface UsePageTimelineOptions<K extends string, B extends PageTimelineBindingMap> {
-  /** 页面内唯一的静态定义；不随响应式数据重编译，避免运行中替换计划身份。 */
-  definition: PageTimelineAuthoringDefinition<K>
+export interface PageTimelineAuthoringContext {
+  readonly root: HTMLElement
+  resources(): MotionResourceBuilder
+}
+
+interface PageTimelineCommonOptions<B extends PageTimelineBindingMap> {
   /** 目标 key 到 CSS 选择器、元素或元素 ref 的绑定。 */
   bindings: B
   /** 页面根节点；时间轴句柄注册在这里供放映宿主发现。 */
@@ -64,6 +75,13 @@ export interface UsePageTimelineOptions<K extends string, B extends PageTimeline
   /** 组件预览中是否自动应用 poster；缺省仅在交互式预览开启。 */
   applyPoster?: boolean
 }
+
+/** 默认创作采用资源 builder 与原生视觉；旧 definition 仅兼容内部已有夹具。 */
+export type UsePageTimelineOptions<K extends string, B extends PageTimelineBindingMap> = PageTimelineCommonOptions<B> & (
+  | { definition: PageTimelineAuthoringDefinition<K>; define?: never; timelineId?: never; poster?: never }
+  | { definition?: never; timelineId: string; poster?: MotionPosterDefinition
+      define(context: PageTimelineAuthoringContext): { plan: MotionTrackDefinition[]; visual: NativeVisualBuilder } }
+)
 
 export interface UsePageTimelineApi {
   plan: Readonly<Ref<CompiledMotionPlan | null>>
@@ -92,9 +110,7 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
   const plan = shallowRef<CompiledMotionPlan | null>(null)
   const state = shallowRef<MotionTransportSnapshot | null>(null)
   const error = shallowRef<MotionError | null>(null)
-  const instanceToken = `motion-${++bindingSequence}`
   const markerElements: Array<{ element: HTMLElement; value: string }> = []
-  let transport: MotionTransport | null = null
   let handle: PageMotionHandle | null = null
   let disposed = false
   let resolveReady: () => void = () => {}
@@ -105,6 +121,15 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
   })
   // 页面不消费 ready 时也不能产生未处理拒绝。
   void ready.catch(() => {})
+  const unregisterReadiness = registerMotionReadiness({
+    root: () => toValue(options.root),
+    ready,
+    async prepareStatic() {
+      const current = ensureHandle()
+      await current.prepare()
+      await current.sampleAt(current.plan.posterTimeMs, 'full')
+    },
+  })
 
   function ensureHandle(): PageMotionHandle {
     if (!handle || disposed) {
@@ -123,7 +148,7 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
   }
 
   /** 把绑定值收敛为当前页面可查询的 CSS 选择器；元素绑定写入实例级临时属性。 */
-  function resolveBinding(key: string, raw: PageTimelineBinding, index: number): string {
+  function resolveBinding(key: string, raw: PageTimelineBinding): string {
     if (typeof raw === 'string') {
       const selector = raw.trim()
       if (!selector) {
@@ -139,7 +164,8 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
         fieldPath: `bindings.${key}`,
       })
     }
-    const value = `${instanceToken}-${index}`
+    // 查询始终限定在本页 root 内，身份使用稳定 key，不掺入挂载次数。
+    const value = `binding-${encodeURIComponent(key)}`
     element.setAttribute(MOTION_BINDING_ATTR, value)
     markerElements.push({ element, value })
     return `[${MOTION_BINDING_ATTR}="${value}"]`
@@ -187,18 +213,34 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
   /** 安装 transport、注册句柄，并在交互式预览中先固化 poster。 */
   async function mountTimeline(): Promise<void> {
     if (disposed) return
-    const root = unref(options.root)
+    const root = toValue(options.root)
     if (!(root instanceof HTMLElement)) {
       throw new MotionError(MOTION_ERROR_TARGET_INVALID, '页面时间轴缺少有效根节点。', {
         fieldPath: 'root',
       })
     }
     const selectors = new Map<string, string>()
-    Object.entries(options.bindings).forEach(([key, value], index) => {
-      selectors.set(key, resolveBinding(key, value, index))
+    Object.entries(options.bindings).forEach(([key, value]) => {
+      selectors.set(key, resolveBinding(key, value))
     })
-    const internalDefinition = toInternalDefinition(options.definition, selectors)
-    const compiled = compilePageTimeline(internalDefinition)
+    const story = options.define?.({ root, resources: createMotionResourceBuilder })
+    const definition = options.definition ?? {
+      schemaVersion: 1 as const, timelineId: options.timelineId!, tracks: story!.plan, poster: options.poster,
+    }
+    const internalDefinition = toInternalDefinition(definition as PageTimelineAuthoringDefinition<Extract<keyof B, string>>, selectors)
+    let nativeVisual: ReturnType<typeof createNativeVisual> | undefined
+    let compiled: CompiledMotionPlan
+    try {
+      if (story) {
+        const resources = compilePageTimeline({ ...internalDefinition, poster: undefined }, { allowEmpty: true })
+        nativeVisual = createNativeVisual(root, resources.labels, story.visual)
+      }
+      compiled = compilePageTimeline(internalDefinition, { visual: nativeVisual?.plan })
+    } catch (cause) {
+      nativeVisual?.adapter.dispose()
+      clearBindings()
+      throw cause
+    }
     const policy = getRuntimeExecutionPolicy()
     const visualMode = resolveVisualMode()
     const createdTransport = createMotionTransport({
@@ -207,6 +249,7 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
       pagePath: options.pagePath ?? '',
       generation: 1,
       createAdapter: createDefaultMotionAdapterFactory(),
+      visualAdapter: nativeVisual?.adapter,
       visualMode,
       allowMediaPlayback: policy.allowMediaPlayback,
       muted: options.muted === true,
@@ -220,19 +263,14 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
         }
       },
     })
-    transport = createdTransport
     plan.value = compiled
     handle = createPageMotionHandle(root, createdTransport)
     state.value = createdTransport.getSnapshot()
     const shouldApplyPoster = options.applyPoster
       ?? policy.kind === 'interactive-preview'
     if (shouldApplyPoster) {
-      try {
-        await createdTransport.prepare()
-        await createdTransport.sampleAt(compiled.posterTimeMs, visualMode)
-      } catch (cause) {
-        error.value = toMotionError(cause)
-      }
+      await createdTransport.prepare()
+      await createdTransport.sampleAt(compiled.posterTimeMs, visualMode)
     }
   }
 
@@ -253,9 +291,9 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
   function dispose(): void {
     if (disposed) return
     disposed = true
+    unregisterReadiness()
     handle?.dispose()
     handle = null
-    transport = null
     clearBindings()
     state.value = null
   }
