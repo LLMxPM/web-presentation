@@ -7,6 +7,7 @@
   <ModelViewer
     v-if="canRender"
     v-bind="safeAttrs()"
+    :data-runtime-asset-name="props.name"
     :name="props.name"
     :src="src"
     :scene-index="props.sceneIndex"
@@ -19,7 +20,7 @@
     :interactive="props.interactive"
     :fallback="fallbackMessage"
   />
-  <div v-else class="asset-model__fallback" v-bind="safeAttrs()">{{ fallbackMessage }}</div>
+  <div v-else class="asset-model__fallback" v-bind="safeAttrs()" :data-runtime-asset-name="props.name">{{ fallbackMessage }}</div>
 </template>
 
 <script setup lang="ts">

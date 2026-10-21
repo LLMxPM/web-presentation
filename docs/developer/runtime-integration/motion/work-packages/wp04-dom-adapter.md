@@ -1,6 +1,6 @@
 # WP04 DOM 动效适配器
 
-状态：待实施。主责：Runtime。前置：[WP03](./wp03-transport-targets.md)。
+状态：待验收（代码与单测完成，真实 Chromium 帧比对未执行）。主责：Runtime。前置：[WP03](./wp03-transport-targets.md)。
 
 ## 输入与落点
 
@@ -27,6 +27,6 @@
 
 ## 实施记录
 
-- 代码版本与执行器版本：待回填。
-- 实际命令、结果、帧证据与清理结果：待回填。
-- 未覆盖项：待回填。
+- 代码版本与执行器版本：`runtime/src/core/motion/dom-adapter.ts`，GSAP 3.15.0；GSAP 只做有限段落缓动，样式写入独立 `translate/scale/rotate` 属性，不覆盖页面 `transform`。
+- 实际命令、结果、帧证据与清理结果：`pnpm --filter web-runtime-vue exec vitest run src/core/motion`，WP04 5 项通过；覆盖乱序采样一致、reduced 终态、多轨道属性合并与释放后样式恢复。
+- 未覆盖项：真实 Chromium 的 t=0/中间帧/结束帧像素比对与 freeze 后截图尚未执行；`applyAt` 的缓动与样式组合需在 WP12 真实页面复核。

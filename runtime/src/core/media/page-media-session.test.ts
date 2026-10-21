@@ -106,6 +106,22 @@ describe('createPageMediaSession', () => {
     session.dispose()
   })
 
+  it('已由页内时间轴独占的媒体不收集、不停播也不归零', () => {
+    const root = createRoot()
+    const owned = createMedia(root, { playing: true })
+    createMedia(root)
+    const session = createPageMediaSession({
+      root,
+      generation: 1,
+      isExternallyOwned: element => element === owned.element,
+    })
+
+    expect(session.getSnapshot().targets).toHaveLength(1)
+    session.dispose()
+    expect(owned.pause).not.toHaveBeenCalled()
+    expect(owned.isPaused()).toBe(false)
+  })
+
   it('动态增删目标并停掉被移除的媒体', () => {
     const root = createRoot()
     const first = createMedia(root)

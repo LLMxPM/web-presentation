@@ -71,6 +71,14 @@ import {
   type OrthoFrustum,
 } from './model3d/camera-fit'
 import { DEFAULT_MODEL_FALLBACK_MESSAGE, buildModelViewIdentityKey, normalizeModelViewOptions, isTransparentBackground, parseBackgroundColor } from './model3d/view-options'
+import {
+  MODEL_MOTION_HANDLE_KEY,
+  buildModelMotionStateKey,
+  type ModelAnimationSummary,
+  type ModelMotionApplyRequest,
+  type ModelMotionHandle,
+  type ModelMotionStateDetails,
+} from './model3d/motion/motion-contract'
 
 defineOptions({ inheritAttrs: false })
 
@@ -169,6 +177,16 @@ let activeStaticFrameSrc = ''
 let activeStaticFrameViewKey = ''
 /** 已注册到根元素的采集句柄；卸载时按同一引用注销。 */
 let registeredStaticFrameHandle: ModelStaticFrameHandle | null = null
+
+// —— 每实例动作状态（Mixer/包装节点不进入共享缓存） ——
+let activeParsedResource: ParsedModelResource | null = null
+let motionMixer: ThreeNamespace.AnimationMixer | null = null
+let motionAction: ThreeNamespace.AnimationAction | null = null
+let motionWrapper: ThreeNamespace.Group | null = null
+let motionClipIndex: number | null = null
+/** 当前动作时刻与整体变换的身份键；参与静态帧缓存分区。 */
+let activeMotionStateKey = ''
+let registeredMotionHandle: ModelMotionHandle | null = null
 
 /**
  * 有界化错误/诊断文案，避免超长消息进入探针。
@@ -389,6 +407,12 @@ function teardownInstance(): void {
 
   activeCamera = null
   activeScene = null
+  activeParsedResource = null
+  motionAction = null
+  motionMixer = null
+  motionWrapper = null
+  motionClipIndex = null
+  activeMotionStateKey = ''
   autoFitSphere = null
   orthoSourceFrustum = null
   cameraMode = 'auto'
@@ -949,8 +973,18 @@ async function startLoad(token: number): Promise<void> {
 
   const sourceScene = selectScene(parsed, options.sceneIndex, localEngine)
   const renderScene = new localEngine.THREE.Scene()
-  renderScene.add(cloneSceneForInstance(sourceScene, localEngine))
+  const instanceRoot = cloneSceneForInstance(sourceScene, localEngine)
+  // 整体变换应用在包装节点上，不覆盖片段内部骨骼/节点动画。
+  const wrapper = new localEngine.THREE.Group()
+  wrapper.name = 'runtime-model-motion-wrapper'
+  wrapper.add(instanceRoot)
+  renderScene.add(wrapper)
   activeScene = renderScene
+  activeParsedResource = parsed
+  motionWrapper = wrapper
+  if (parsed.animations.length > 0) {
+    motionMixer = new localEngine.THREE.AnimationMixer(instanceRoot)
+  }
   applyLighting(renderScene, options.lighting, localEngine)
   activeCamera = resolveCamera({ sourceScene, renderScene, parsed, options, aspect, engineRef: localEngine })
 
@@ -1028,6 +1062,7 @@ watch(
 onMounted(async () => {
   await nextTick()
   installStaticFrameHandle()
+  installMotionHandle()
   if (viewerRoot.value && typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => handleResize())
     resizeObserver.observe(viewerRoot.value)
@@ -1059,6 +1094,7 @@ onBeforeUnmount(() => {
   disposed = true
   requestToken += 1
   uninstallStaticFrameHandle()
+  uninstallMotionHandle()
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
@@ -1116,6 +1152,7 @@ function describeStaticFrame(): ModelStaticFrameIdentity | null {
     viewKey: buildModelCameraViewKey(activeStaticFrameViewKey, context.camera),
     frameWidth: context.canvas.width,
     frameHeight: context.canvas.height,
+    motionKey: activeMotionStateKey || undefined,
   }
 }
 
@@ -1143,6 +1180,105 @@ function captureStaticFrame(): ModelStaticFrameCapture | null {
   } catch {
     return null
   }
+}
+
+/**
+ * 读取当前实例可用动画摘要；未加载完成时返回空数组。
+ */
+function listModelAnimations(): ModelAnimationSummary[] {
+  if (!activeParsedResource) return []
+  return activeParsedResource.animations.map((clip, index) => ({
+    index,
+    name: clip.name ? String(clip.name) : null,
+    durationMs: Math.max(0, clip.duration * 1000),
+    channelCount: clip.tracks.length,
+  }))
+}
+
+/**
+ * 指定时刻重建模型姿态并显式绘制。
+ * 约束：片段索引与声明时长必须匹配当前资源；失败时抛错，不隐式取第一个片段。
+ */
+function applyModelMotion(request: ModelMotionApplyRequest): ModelMotionStateDetails {
+  if (!engine || !activeParsedResource || !motionMixer || !motionWrapper) {
+    throw new Error('模型动作尚未就绪。')
+  }
+  const clip = activeParsedResource.animations[request.clipIndex]
+  if (!clip) {
+    throw new Error(`动画片段索引 ${request.clipIndex} 不存在。`)
+  }
+  if (request.clipName && clip.name && request.clipName !== clip.name) {
+    throw new Error(`动画片段名称已变化：期望 ${request.clipName}，实际 ${clip.name}。`)
+  }
+  const actualDurationMs = clip.duration * 1000
+  if (Math.abs(actualDurationMs - request.clipDurationMs) > 2) {
+    throw new Error(`动画片段时长已变化：期望 ${request.clipDurationMs}ms，实际 ${actualDurationMs.toFixed(0)}ms。`)
+  }
+  if (motionClipIndex !== request.clipIndex) {
+    motionAction?.stop()
+    const action = motionMixer.clipAction(clip)
+    action.reset()
+    action.setLoop(engine.THREE.LoopOnce, 1)
+    action.clampWhenFinished = true
+    action.enabled = true
+    action.setEffectiveWeight(1)
+    action.play()
+    motionAction = action
+    motionClipIndex = request.clipIndex
+  }
+  if (!motionAction) {
+    throw new Error('模型动作初始化失败。')
+  }
+  const seconds = Math.min(Math.max(request.clipTimeMs / 1000, 0), clip.duration)
+  motionAction.paused = true
+  motionAction.enabled = true
+  motionAction.setEffectiveWeight(1)
+  motionAction.time = seconds
+  motionMixer.update(0)
+
+  motionWrapper.position.set(request.transform.x, request.transform.y, request.transform.z)
+  motionWrapper.scale.setScalar(request.transform.scale)
+  motionWrapper.rotation.set(0, request.transform.rotationY * Math.PI / 180, 0)
+  motionWrapper.updateMatrixWorld(true)
+
+  activeMotionStateKey = buildModelMotionStateKey(request.clipIndex, seconds * 1000, request.transform)
+  renderFrame()
+
+  return {
+    clipIndex: request.clipIndex,
+    clipName: clip.name ? String(clip.name) : null,
+    clipTimeMs: seconds * 1000,
+    clipDurationMs: actualDurationMs,
+    actionTimeMs: motionAction.time * 1000,
+    actionWeight: motionAction.getEffectiveWeight(),
+    transform: request.transform,
+  }
+}
+
+/**
+ * 注册动作句柄；卸载或重新加载期间句柄仍存在，但未就绪时 applyAt 会明确失败。
+ */
+function installMotionHandle(): void {
+  const root = viewerRoot.value
+  if (!root) return
+  const handle: ModelMotionHandle = {
+    listAnimations: listModelAnimations,
+    applyAt: applyModelMotion,
+  }
+  ;(root as unknown as Record<string, unknown>)[MODEL_MOTION_HANDLE_KEY] = handle
+  registeredMotionHandle = handle
+}
+
+/** 只注销本实例注册的动作句柄。 */
+function uninstallMotionHandle(): void {
+  const root = viewerRoot.value
+  if (root) {
+    const record = root as unknown as Record<string, unknown>
+    if (record[MODEL_MOTION_HANDLE_KEY] === registeredMotionHandle) {
+      delete record[MODEL_MOTION_HANDLE_KEY]
+    }
+  }
+  registeredMotionHandle = null
 }
 
 /**

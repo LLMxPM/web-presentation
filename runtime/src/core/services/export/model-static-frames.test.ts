@@ -305,7 +305,7 @@ describe('静态帧缓存分区', () => {
     expect(second.captures).toBe(1)
   })
 
-  it('缓存键应拼接资源身份、视角键与帧尺寸', () => {
+  it('缓存键应拼接资源身份、视角键、动作状态与帧尺寸', () => {
     const identity: ModelStaticFrameIdentity = {
       resourceName: 'product',
       resourceSrc: 'src.glb',
@@ -315,11 +315,12 @@ describe('静态帧缓存分区', () => {
     }
 
     const key = buildModelStaticFrameCacheKey(identity)
-    expect(key).toBe(JSON.stringify(['product', 'src.glb', 'vk', 640, 400]))
+    expect(key).toBe(JSON.stringify(['product', 'src.glb', 'vk', '', 640, 400]))
     expect(buildModelStaticFrameCacheKey({ ...identity, viewKey: 'vk2' })).not.toBe(key)
     expect(buildModelStaticFrameCacheKey({ ...identity, frameWidth: 641 })).not.toBe(key)
     expect(buildModelStaticFrameCacheKey({ ...identity, resourceName: 'other' })).not.toBe(key)
     expect(buildModelStaticFrameCacheKey({ ...identity, resourceSrc: 'other.glb' })).not.toBe(key)
+    expect(buildModelStaticFrameCacheKey({ ...identity, motionKey: '[0,500,0,0,0,1,0]' })).not.toBe(key)
   })
 
   it('ModelStaticFrameCache 应按容量 LRU 淘汰并支持命中刷新', () => {

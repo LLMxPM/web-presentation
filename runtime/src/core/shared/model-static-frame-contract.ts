@@ -41,6 +41,8 @@ export interface ModelStaticFrameIdentity {
   frameWidth: number
   /** 帧像素高度。 */
   frameHeight: number
+  /** 动作片段、片段内时刻与整体变换身份；无动作时省略，保持旧缓存键兼容。 */
+  motionKey?: string
 }
 
 /** 采集结果：当前帧 PNG dataURL 与采集时刻的实例身份。 */

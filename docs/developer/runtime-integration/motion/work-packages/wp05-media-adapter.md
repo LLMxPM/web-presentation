@@ -1,6 +1,6 @@
 # WP05 音视频同步适配器
 
-状态：待实施。主责：Runtime media。前置：[WP03](./wp03-transport-targets.md)。
+状态：待验收（代码与单测完成，真实媒体/HTTP Range 未执行）。主责：Runtime media。前置：[WP03](./wp03-transport-targets.md)。
 
 ## 输入与落点
 
@@ -27,6 +27,6 @@
 
 ## 实施记录
 
-- 代码版本与测试媒体身份：待回填。
-- 实际命令、结果、时序和声音/静音证据：待回填。
-- 未覆盖项：待回填。
+- 代码版本与测试媒体身份：`runtime/src/core/motion/media-adapter.ts`；按 `data-runtime-asset-name` 定位 AssetAudio/AssetVideo，显式 selector 优先。
+- 实际命令、结果、时序和声音/静音证据：`pnpm --filter web-runtime-vue exec vitest run src/core/motion`，WP05 6 项通过；覆盖裁切/重复/速率映射、资源定位与 PageMediaSession 独占过滤。
+- 未覆盖项：真实浏览器 autoplay 拒绝、缓冲恢复、seeked/rVFC 帧确认、HTTP HEAD/Range 与漂移数据尚未采集；当前 drift 阈值 120ms 仅作为实现常量，待 WP12 实测调整。

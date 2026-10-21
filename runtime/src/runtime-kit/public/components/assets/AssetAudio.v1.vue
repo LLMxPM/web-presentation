@@ -73,6 +73,8 @@ const attrs = useAttrs()
 const forwardedAttrs = computed(() => {
   const result = { ...attrs }
   delete result.autoplay
+  // 编排适配器按资源逻辑名定位媒体；显式覆盖防止页面属性伪造目标。
+  result['data-runtime-asset-name'] = props.name
   return result
 })
 

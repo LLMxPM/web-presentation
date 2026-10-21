@@ -1,6 +1,6 @@
 # WP06 三维动作适配器
 
-状态：待实施。主责：Runtime model3d。前置：[WP03](./wp03-transport-targets.md)。
+状态：待验收（代码与单测完成，真实 WebGL 未执行）。主责：Runtime model3d。前置：[WP03](./wp03-transport-targets.md)。
 
 ## 输入与落点
 
@@ -27,6 +27,6 @@
 
 ## 实施记录
 
-- 代码版本与 GLB 样本身份：待回填。
-- 实际命令、结果、状态/帧与资源释放证据：待回填。
-- 未覆盖项：待回填。
+- 代码版本与 GLB 样本身份：`runtime/src/core/motion/model-adapter.ts`、`runtime/src/runtime-kit/internal/renderers/model3d/motion/motion-contract.ts`；ModelViewer 新增每实例 Mixer、整体包装节点与 `__runtimeModelMotionHandleV1` 句柄。
+- 实际命令、结果、状态/帧与资源释放证据：`pnpm --filter web-runtime-vue exec vitest run src/core/motion`，WP06 6 项通过；假句柄验证片段索引/名称/时长失效、裁切重复映射与 reduced 结束姿态。
+- 未覆盖项：真实 WebGL 两实例不同姿态、上下文丢失与 100 次进出清理未执行；静态帧身份已加入 `motionKey`，需在 WP09/WP12 用真实模型帧验证。

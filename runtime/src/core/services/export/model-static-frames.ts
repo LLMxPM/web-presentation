@@ -42,6 +42,7 @@ const preparedModelRoots = new WeakSet<Element>()
  * 键组成与需求字段一一对应：
  * - 资源身份：resourceName + resourceSrc（同名不同版本不共用）；
  * - 实例视角与背景策略：viewKey（ModelViewer 从规范化参数、实际相机姿态与投影派生）；
+ * - 动作状态：motionKey（片段索引、片段内时刻与整体包装变换）；
  * - 视口尺寸 + DPR/scale：frameWidth × frameHeight（画布缓冲区像素 = 视口 CSS 尺寸 × 已收敛 DPR）。
  * @param identity 实例帧身份
  * @returns 稳定的字符串键
@@ -51,6 +52,7 @@ export function buildModelStaticFrameCacheKey(identity: ModelStaticFrameIdentity
     identity.resourceName,
     identity.resourceSrc,
     identity.viewKey,
+    identity.motionKey ?? '',
     identity.frameWidth,
     identity.frameHeight,
   ])
@@ -329,7 +331,8 @@ function normalizeIdentity(candidate: ModelStaticFrameIdentity | null): ModelSta
   if (frameWidth <= 1 || frameHeight <= 1) {
     return null
   }
-  return { resourceName, resourceSrc, viewKey, frameWidth, frameHeight }
+  const motionKey = typeof candidate.motionKey === 'string' && candidate.motionKey ? candidate.motionKey : undefined
+  return { resourceName, resourceSrc, viewKey, frameWidth, frameHeight, ...(motionKey ? { motionKey } : {}) }
 }
 
 /**

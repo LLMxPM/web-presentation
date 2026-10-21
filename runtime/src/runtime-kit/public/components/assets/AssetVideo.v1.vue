@@ -2,7 +2,7 @@
   文件用途：AssetVideo — 基于 manifest 资源名称渲染 Backend 托管视频。
 -->
 <template>
-  <VideoViewer :src="src" :poster="posterSrc" v-bind="$attrs">
+  <VideoViewer :src="src" :poster="posterSrc" v-bind="$attrs" :data-runtime-asset-name="props.name">
     <template #fallback>
       <slot v-if="$slots.fallback" name="fallback" />
       <div v-else class="asset-video__fallback">{{ fallbackMessage }}</div>

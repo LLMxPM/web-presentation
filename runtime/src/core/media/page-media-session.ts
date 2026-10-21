@@ -63,6 +63,8 @@ export interface PageMediaSessionOptions {
   allowPlayback?: boolean
   onEvent?: (event: PageMediaEvent) => void
   observeMutations?: boolean
+  /** 判断元素是否已由页内时间轴独占；true 时本会话不收集、不暂停、不归零。 */
+  isExternallyOwned?: (element: HTMLMediaElement) => boolean
 }
 
 export interface PageMediaSession {
@@ -119,6 +121,7 @@ const NARRATION_LOOP_MESSAGE = '页面旁白不允许循环播放。'
 export function createPageMediaSession(options: PageMediaSessionOptions): PageMediaSession {
   const { root, generation, onEvent } = options
   const allowPlayback = options.allowPlayback ?? true
+  const isExternallyOwned = options.isExternallyOwned ?? (() => false)
   const media = new Map<string, MediaState>()
   const ids = new WeakMap<HTMLMediaElement, string>()
   const listeners = new Map<HTMLMediaElement, Record<string, EventListener>>()
@@ -269,13 +272,16 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
 
   function refresh(): void {
     if (disposed) return
-    const found = new Set([...root.querySelectorAll<HTMLMediaElement>(MEDIA_SELECTOR)])
+    const found = new Set(
+      [...root.querySelectorAll<HTMLMediaElement>(MEDIA_SELECTOR)].filter(element => !isExternallyOwned(element)),
+    )
     let changed = false
 
     for (const [id, state] of media) {
       if (!found.has(state.element)) {
         unbind(state.element)
-        if (!state.element.paused) state.element.pause()
+        // 已交给时间轴的媒体只解除监听，不停播、不归零，避免两个控制器争夺同一元素。
+        if (!isExternallyOwned(state.element) && !state.element.paused) state.element.pause()
         media.delete(id)
         changed = true
         continue
@@ -459,6 +465,7 @@ export function createPageMediaSession(options: PageMediaSessionOptions): PageMe
     observer = null
     for (const state of media.values()) {
       unbind(state.element)
+      if (isExternallyOwned(state.element)) continue
       if (!state.element.paused) state.element.pause()
       try {
         // 离页释放时归零，返回同一页面实例时不继承旧播放位置。
