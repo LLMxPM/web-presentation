@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -11,6 +12,8 @@ from collections.abc import Iterable
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from render_contracts.tokens import sha256_hex
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
@@ -23,9 +26,11 @@ from app.db.retry import (
 from app.models.enums import PageFileType, RecordStatus
 from app.models.page import Page
 from app.models.page_screenshot_job import PageScreenshotJob
+from app.schemas import timeline as timeline_schema
 from app.schemas.page import (
     PageScreenshotJobGroupResponse,
     PageScreenshotJobResponse,
+    PageScreenshotMotionSnapshot,
 )
 from app.services.auth_service import AuthContext
 from app.services.capture_viewport_resolver import CaptureViewport
@@ -85,14 +90,23 @@ class PageScreenshotJobService:
         current: AuthContext,
         viewport_width: int | None = None,
         viewport_height: int | None = None,
+        target_page_version_no: int | None = None,
+        motion_snapshot: PageScreenshotMotionSnapshot | None = None,
         source: str = "manual",
         commit: bool = True,
     ) -> PageScreenshotJobResponse:
-        """创建或复用单页截图任务。"""
+        """创建或复用单页截图任务；临时选择器不提升默认截图指针。"""
 
         page = await self.page_service._get_page_or_raise(page_id)
         await self.page_service._ensure_page_access(page, user_id=current.user.id)
         self.screenshot_service._validate_page_screenshot_supported(page)
+        if target_page_version_no is not None and int(target_page_version_no) != int(page.current_version_no):
+            raise AppException(
+                status_code=409,
+                code="PAGE_SCREENSHOT_TARGET_VERSION_CONFLICT",
+                detail="请求的页面版本已不是当前版本，请重新读取页面后重试。",
+            )
+        motion_payload, motion_hash = self._resolve_motion_snapshot(motion_snapshot)
         snapshot = await self.screenshot_service.screenshot_fingerprint_service.build_page_snapshot(page)
         viewport = self.screenshot_service.viewport_resolver.resolve(
             page,
@@ -108,6 +122,8 @@ class PageScreenshotJobService:
             config_hash=snapshot.config_hash,
             viewport=viewport,
             job_group_id=None,
+            motion_snapshot=motion_payload,
+            motion_snapshot_hash=motion_hash,
         )
         if commit:
             await self.session.commit()
@@ -119,6 +135,24 @@ class PageScreenshotJobService:
             # refresh 会打开新的只读事务；同步等待前立即结束它，避免 SQLite 读事务滞留。
             await self.session.rollback()
         return response
+
+    @staticmethod
+    def _resolve_motion_snapshot(
+        snapshot: PageScreenshotMotionSnapshot | None,
+    ) -> tuple[dict[str, object] | None, str]:
+        """校验临时采样能力并生成稳定去重身份；能力关闭时明确拒绝而不是丢弃选择器。"""
+
+        if snapshot is None:
+            return None, ""
+        if not timeline_schema.TIMELINE_CAPTURE_SNAPSHOT_ENABLED:
+            raise AppException(
+                status_code=409,
+                code="TIMELINE_UNSUPPORTED",
+                detail="当前未开放页内时间轴临时截图（capability=timeline.capture_snapshot）。",
+            )
+        payload = snapshot.to_contract().to_dict()
+        identity = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return payload, sha256_hex(identity)
 
     async def create_batch_refresh_screenshot_jobs(
         self,
@@ -407,7 +441,21 @@ class PageScreenshotJobService:
                 target_page_version_no=job.target_page_version_no,
                 config_hash=job.config_hash,
                 viewport=CaptureViewport(width=job.viewport_width, height=job.viewport_height),
+                motion_snapshot=(
+                    dict(job.motion_snapshot_json)
+                    if isinstance(job.motion_snapshot_json, dict)
+                    else None
+                ),
+                motion_snapshot_hash=job.motion_snapshot_hash,
             )
+            if job.motion_snapshot_json is not None:
+                status = str((artifact.applied_motion or {}).get("status") or "")
+                if status != "applied":
+                    raise AppException(
+                        status_code=422,
+                        code="TIMELINE_SNAPSHOT_UNAVAILABLE",
+                        detail="页面未返回指定时间点的采样回执，临时截图不发布。",
+                    )
         except Exception as error:  # noqa: BLE001
             await self.session.rollback()
             await self._mark_job_failed_or_retry(job_id=job_id, worker_id=owner, error=error)
@@ -461,6 +509,8 @@ class PageScreenshotJobService:
         operator_id = int(job.created_by or 0)
         # 后续快照校验会 expire_all()，日志不能再读取可能触发异步懒加载的 ORM 属性。
         attempt_count = int(job.attempt_count)
+        temporary = job.motion_snapshot_json is not None
+        applied_motion = artifact.applied_motion
         async def _publish(_: AsyncSession) -> None:
             """在一个短事务内发布已捕获产物；快照过期或失去租约时放弃本次发布。"""
 
@@ -471,27 +521,29 @@ class PageScreenshotJobService:
                 await self._mark_job_stale(job_id=job_id, worker_id=worker_id)
                 return
             published_at = utc_now()
-            page_updated = await self.session.execute(
-                update(Page)
-                .where(
-                    Page.id == page_id,
-                    Page.current_version_no == artifact.page_version_no,
+            if not temporary:
+                # 默认截图才提升页面指针；临时时间点截图只保存在任务结果中。
+                page_updated = await self.session.execute(
+                    update(Page)
+                    .where(
+                        Page.id == page_id,
+                        Page.current_version_no == artifact.page_version_no,
+                    )
+                    .values(
+                        screenshot_storage_key=artifact.storage_key,
+                        screenshot_version_no=artifact.page_version_no,
+                        screenshot_config_hash=artifact.config_hash,
+                        screenshot_viewport_width=artifact.viewport_width,
+                        screenshot_viewport_height=artifact.viewport_height,
+                        screenshot_updated_at=published_at,
+                        updated_by=operator_id,
+                    )
+                    .execution_options(synchronize_session=False)
                 )
-                .values(
-                    screenshot_storage_key=artifact.storage_key,
-                    screenshot_version_no=artifact.page_version_no,
-                    screenshot_config_hash=artifact.config_hash,
-                    screenshot_viewport_width=artifact.viewport_width,
-                    screenshot_viewport_height=artifact.viewport_height,
-                    screenshot_updated_at=published_at,
-                    updated_by=operator_id,
-                )
-                .execution_options(synchronize_session=False)
-            )
-            if (page_updated.rowcount or 0) != 1:
-                await self.session.rollback()
-                await self._mark_job_stale(job_id=job_id, worker_id=worker_id)
-                return
+                if (page_updated.rowcount or 0) != 1:
+                    await self.session.rollback()
+                    await self._mark_job_stale(job_id=job_id, worker_id=worker_id)
+                    return
             if self._is_lease_lost(lease_lost):
                 await self.session.rollback()
                 return
@@ -510,6 +562,9 @@ class PageScreenshotJobService:
                     "lease_expires_at": None,
                     "heartbeat_at": None,
                     "finished_at": published_at,
+                    "result_storage_key": artifact.storage_key,
+                    "result_sha256": artifact.sha256,
+                    "result_applied_motion_json": applied_motion,
                 },
             )
             if not completed:
@@ -524,6 +579,7 @@ class PageScreenshotJobService:
                     "job_id": job_id,
                     "page_id": page_id,
                     "attempt_count": attempt_count,
+                    "temporary_motion": temporary,
                     "duration_ms": round((time.monotonic() - execution_started_at) * 1000, 2),
                 },
             )
@@ -635,14 +691,17 @@ class PageScreenshotJobService:
         config_hash: str,
         viewport: CaptureViewport,
         job_group_id: str | None,
+        motion_snapshot: dict[str, object] | None = None,
+        motion_snapshot_hash: str = "",
     ) -> PageScreenshotJob:
-        """按页面、配置和视口复用活跃任务；不存在时创建新任务。"""
+        """按页面、配置、视口与选择器复用活跃任务；不存在时创建新任务。"""
 
         existing = await self._get_active_job(
             page_id=page.id,
             target_page_version_no=target_page_version_no,
             config_hash=config_hash,
             viewport=viewport,
+            motion_snapshot_hash=motion_snapshot_hash,
         )
         if existing is not None:
             if job_group_id and not existing.job_group_id:
@@ -663,6 +722,8 @@ class PageScreenshotJobService:
                     viewport_height=viewport.height,
                     target_page_version_no=target_page_version_no,
                     config_hash=config_hash,
+                    motion_snapshot_json=motion_snapshot,
+                    motion_snapshot_hash=motion_snapshot_hash,
                     status="pending",
                     attempt_count=0,
                     created_by=created_by,
@@ -675,6 +736,7 @@ class PageScreenshotJobService:
                 target_page_version_no=target_page_version_no,
                 config_hash=config_hash,
                 viewport=viewport,
+                motion_snapshot_hash=motion_snapshot_hash,
             )
             if job is None:
                 raise
@@ -689,8 +751,9 @@ class PageScreenshotJobService:
         target_page_version_no: int,
         config_hash: str,
         viewport: CaptureViewport,
+        motion_snapshot_hash: str = "",
     ) -> PageScreenshotJob | None:
-        """读取同页面、同配置、同视口仍在执行链路中的截图任务。"""
+        """读取同页面、同配置、同视口与同选择器仍在执行链路中的截图任务。"""
 
         stmt = (
             select(PageScreenshotJob)
@@ -700,6 +763,7 @@ class PageScreenshotJobService:
                 PageScreenshotJob.config_hash == config_hash,
                 PageScreenshotJob.viewport_width == viewport.width,
                 PageScreenshotJob.viewport_height == viewport.height,
+                PageScreenshotJob.motion_snapshot_hash == motion_snapshot_hash,
                 PageScreenshotJob.status.in_(ACTIVE_SCREENSHOT_JOB_STATUSES),
             )
             .order_by(PageScreenshotJob.created_at.asc(), PageScreenshotJob.id.asc())

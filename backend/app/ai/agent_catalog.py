@@ -177,7 +177,7 @@ page_content 要写成完整、可运行的 Vue SFC 文件源码，组件 conten
 
 页面与组件只能使用工具返回的版本化 Runtime Kit 能力、已发布工作空间组件、可见工作空间资源和自身代码。使用组件前读取真实 import_path、版本和使用契约。
 
-引用三维模型时，按“查询模型 → 读取渲染契约 → 配置视角”的顺序使用：先查询 active model3d 资源，再读取 Runtime Kit 当前的 AssetModel 契约，只为真实资源 name 传展示参数；不得把 URL、本地路径、GLB 文本或 base64 当作资源名。相机索引与显式位置/目标互斥，位置和目标必须成对提供且不重合；容器必须用完整静态 class 声明明确宽高。当前只展示静态姿态，资源包含动画数据不代表支持动画播放；截图复核时检查模型、材质、光照和视角是否真实呈现。
+引用三维模型时，按“查询模型 → 读取渲染契约 → 配置视角”的顺序使用：先查询 active model3d 资源，再读取 Runtime Kit 当前的 AssetModel 契约，只为真实资源 name 传展示参数；不得把 URL、本地路径、GLB 文本或 base64 当作资源名。相机索引与显式位置/目标互斥，位置和目标必须成对提供且不重合；容器必须用完整静态 class 声明明确宽高。使用 AssetModel.v1 时只展示静态姿态，资源包含动画数据不代表支持动画播放；只有时间轴能力开放并改用 AssetModel.v2 + 真实动作摘要时才可按引用播放。截图复核时检查模型、材质、光照和视角是否真实呈现。
 
 项目和样式的完整 presentation 与 suggested_components 通过 get_entity 的 configuration 视图读取。准备修改项目展示配置、样式配置或建议组件前，先读取最新 configuration 快照。页面与组件的页面布局、组件契约、主题、字体、资源和 Icon 具体使用规范通过 get_code_standards 按类型查询。
 

@@ -287,6 +287,21 @@ GET  /api/v1/pages/{page_id}/screenshot
 
 截图任务由主仓通过预览队列完成；首版不暴露 Build 执行、构建状态、产物下载或 Restore operation。
 
+需要等待明确任务终态或读取指定时间轴状态时使用异步截图任务：
+
+```text
+POST /api/v1/pages/{page_id}/screenshot-jobs
+GET  /api/v1/pages/{page_id}/screenshot-jobs/{job_id}
+GET  /api/v1/pages/{page_id}/screenshot-jobs/{job_id}/content
+```
+
+- 创建请求必须携带 `Idempotency-Key`，请求体包含 `viewport_width`、`viewport_height`，可选 `target_page_version_no` 与 `motion_snapshot`。目标版本与页面当前版本不一致时返回 409 `PAGE_SCREENSHOT_TARGET_VERSION_CONFLICT`，不会静默截取新版本。
+- `motion_snapshot` 必须提供 `timeline_id`，并在 `at_ms` 与 `at_label` 中二选一；`offset_ms` 只能与 `at_label` 同时使用，`visual_mode` 为 `full | reduced`。当前 `timeline.capture_snapshot` 能力关闭，携带该字段返回 409 `TIMELINE_UNSUPPORTED`，不会降级成默认截图或只丢弃选择器重试。
+- 不携带 `motion_snapshot` 的任务成功后按既有语义推进页面默认截图指针；携带 `motion_snapshot` 的临时任务只保存本次结果，不更新默认指针，也不会让读取 latest 的客户端拿到临时帧。显式选择器要求执行回执 `applied_motion.status=applied`，否则任务以 422 `TIMELINE_SNAPSHOT_UNAVAILABLE` 失败，不返回未采样截图。
+- 状态响应包含 `status`、回显的 `motion_snapshot`、成功时的 `result`（`screenshot_id`、`content_url`、`version_no`、宽高与有界 `applied_motion`）和失败时的 `error`。任务必须属于路径中的页面，否则返回 404 `PAGE_SCREENSHOT_JOB_NOT_FOUND`。
+- 内容接口仅在任务成功后返回 PNG，未成功返回 409 `PAGE_SCREENSHOT_JOB_NOT_READY`，不回退默认最新截图。响应携带 `X-Page-ID`、`X-Page-Version-No` 与 `X-Screenshot-Id`。
+- 时间轴截图只提供指定时刻的静态视觉证据，`applied_motion` 描述采样状态，不代表声音已播放、动画已在用户设备上验证或 reduced 视觉模式符合预期；这些结论仍需真实预览或放映观察。
+
 ### 5.4 幂等和归档
 
 - 所有会改变业务数据或创建、取消、人工重试任务的请求必须遵守 operation 注册表中的 `Idempotency-Key` 要求。相同 key、operation 和请求指纹重放首次响应；不同请求复用 key 返回 409；首个请求仍在执行时返回 409、`Retry-After` 和可重试标记。

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.services.capture_viewport_resolver import CaptureViewport
-from app.services.rendering.domain_facade import RenderDomainFacade
+from app.services.rendering.domain_facade import PageCaptureOutcome, RenderDomainFacade
 from app.services.rendering.errors import render_error_to_app_exception
 from render_contracts.errors import RenderError, RenderExecutionError
 
@@ -68,6 +68,39 @@ class BrowserCaptureService:
     ) -> bytes:
         """打开预览地址并按给定视口生成截图内容。"""
 
+        outcome = await self.capture_preview_result(
+            preview_url,
+            viewport,
+            extra_http_headers=extra_http_headers,
+            logical_owner_key=logical_owner_key,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            page_id=page_id,
+            artifact_id=artifact_id,
+            preview_token=preview_token,
+            session=session,
+            facade=facade,
+        )
+        return outcome.content
+
+    async def capture_preview_result(
+        self,
+        preview_url: str,
+        viewport: CaptureViewport,
+        *,
+        extra_http_headers: Mapping[str, str] | None = None,
+        logical_owner_key: str | None = None,
+        workspace_id: int | None = None,
+        project_id: int | None = None,
+        page_id: int | None = None,
+        artifact_id: str | None = None,
+        preview_token: str | None = None,
+        motion_snapshot: Mapping[str, object] | None = None,
+        session: AsyncSession | None = None,
+        facade: RenderDomainFacade | None = None,
+    ) -> PageCaptureOutcome:
+        """打开预览地址生成截图，并返回显式时间轴选择器的采样回执。"""
+
         if workspace_id is None or int(workspace_id) <= 0:
             raise AppException(
                 status_code=500,
@@ -86,7 +119,7 @@ class BrowserCaptureService:
         owner_key = (logical_owner_key or f"page-screenshot:{safe_url}:{viewport.width}x{viewport.height}")[:128]
         timeout = float(self.settings.render_request_timeout_seconds)
         try:
-            return await target_facade.capture_page_preview(
+            return await target_facade.capture_page_preview_result(
                 preview_url=preview_url,
                 viewport={"width": viewport.width, "height": viewport.height, "device_scale_factor": 1},
                 logical_owner_key=owner_key,
@@ -97,6 +130,7 @@ class BrowserCaptureService:
                 preview_token=preview_token,
                 extra_http_headers=extra_http_headers,
                 timeout_seconds=timeout,
+                motion_snapshot=motion_snapshot,
             )
         except AppException:
             raise

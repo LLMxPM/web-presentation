@@ -18,6 +18,10 @@ from app.schemas.audio import (
     default_project_audio_settings,
 )
 from app.schemas.mutation_result import ExternalMutationResult
+from app.schemas.page import (
+    PageScreenshotJobStatus,
+    PageScreenshotMotionSnapshot,
+)
 from app.schemas.presentation_style import (
     ProjectCreateConfiguration,
     ProjectDefaultConfiguration,
@@ -274,6 +278,51 @@ class ExternalPageMetadataUpdateRequest(BaseModel):
         if "title" in self.model_fields_set and self.title is None:
             raise ValueError("title 不能为 null。")
         return self
+
+
+class ExternalPageScreenshotJobCreateRequest(BaseModel):
+    """External 临时页面截图任务请求；未提供选择器时按默认 poster 刷新最新截图。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    viewport_width: int | None = Field(default=None, ge=1, le=8192)
+    viewport_height: int | None = Field(default=None, ge=1, le=8192)
+    target_page_version_no: int | None = Field(default=None, ge=1, description="显式页面版本；与当前版本不一致时返回 409。")
+    motion_snapshot: PageScreenshotMotionSnapshot | None = Field(
+        default=None,
+        description="临时时间点或标签选择器；提供时不提升页面默认截图指针。",
+    )
+
+
+class ExternalPageScreenshotJobResult(BaseModel):
+    """成功任务的可读结果摘要；content_url 仍需当前身份与页面权限。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    screenshot_id: str = Field(description="截图内容 SHA-256，可用于既有截图内容接口")
+    content_url: str = Field(description="受保护的任务内容读取地址")
+    version_no: int = Field(description="捕获对应的页面版本")
+    width: int
+    height: int
+    applied_motion: dict[str, Any] | None = Field(default=None, description="有界时间轴采样回执")
+
+
+class ExternalPageScreenshotJobResponse(BaseModel):
+    """External 截图任务状态；不返回存储键、渲染票据或原始字节。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: int
+    page_id: int
+    workspace_id: int | None
+    status: PageScreenshotJobStatus
+    motion_snapshot: dict[str, Any] | None = Field(default=None, description="请求的规范化选择器")
+    result: ExternalPageScreenshotJobResult | None = None
+    error: ExternalErrorDetail | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    cancel_requested_at: datetime | None = None
 
 
 class ExternalAudioCueBinding(BaseModel):

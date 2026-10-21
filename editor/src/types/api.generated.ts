@@ -1300,6 +1300,36 @@ export type ExternalPageMetadataUpdateRequest = {
   "speaker_notes"?: (string) | (null)
 }
 
+export type ExternalPageScreenshotJobCreateRequest = {
+  "viewport_width"?: (number) | (null)
+  "viewport_height"?: (number) | (null)
+  "target_page_version_no"?: (number) | (null)
+  "motion_snapshot"?: (PageScreenshotMotionSnapshot) | (null)
+}
+
+export type ExternalPageScreenshotJobResponse = {
+  "job_id": number
+  "page_id": number
+  "workspace_id": (number) | (null)
+  "status": "pending" | "running" | "succeeded" | "failed" | "skipped" | "cancelled"
+  "motion_snapshot"?: (Record<string, unknown>) | (null)
+  "result"?: (ExternalPageScreenshotJobResult) | (null)
+  "error"?: (ExternalErrorDetail) | (null)
+  "created_at": string
+  "started_at"?: (string) | (null)
+  "finished_at"?: (string) | (null)
+  "cancel_requested_at"?: (string) | (null)
+}
+
+export type ExternalPageScreenshotJobResult = {
+  "screenshot_id": string
+  "content_url": string
+  "version_no": number
+  "width": number
+  "height": number
+  "applied_motion"?: (Record<string, unknown>) | (null)
+}
+
 export type ExternalPreviewArtifactCreateRequest = {
   "route"?: (string) | (null)
 }
@@ -1689,6 +1719,8 @@ export type PageScreenshotJobGroupResponse = {
 export type PageScreenshotJobRequest = {
   "viewport_width"?: (number) | (null)
   "viewport_height"?: (number) | (null)
+  "target_page_version_no"?: (number) | (null)
+  "motion_snapshot"?: (PageScreenshotMotionSnapshot) | (null)
 }
 
 export type PageScreenshotJobResponse = {
@@ -1702,6 +1734,9 @@ export type PageScreenshotJobResponse = {
   "viewport_height": number
   "target_page_version_no": number
   "config_hash": string
+  "motion_snapshot"?: (Record<string, unknown>) | (null)
+  "result_screenshot_id"?: (string) | (null)
+  "applied_motion"?: (Record<string, unknown>) | (null)
   "status": "pending" | "running" | "succeeded" | "failed" | "skipped" | "cancelled"
   "attempt_count": number
   "error_code": (string) | (null)
@@ -1712,6 +1747,14 @@ export type PageScreenshotJobResponse = {
   "started_at": (string) | (null)
   "finished_at": (string) | (null)
   "cancel_requested_at": (string) | (null)
+}
+
+export type PageScreenshotMotionSnapshot = {
+  "timeline_id": string
+  "at_ms"?: (number) | (null)
+  "at_label"?: (string) | (null)
+  "offset_ms"?: (number) | (null)
+  "visual_mode"?: "full" | "reduced"
 }
 
 export type PageScreenshotRequest = {

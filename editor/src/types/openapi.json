@@ -3842,10 +3842,359 @@
         ],
         "responses": {
           "200": {
+            "description": "最新页面 PNG；可能等待持久队列刷新截图。",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "X-Page-ID": {
+                "description": "页面 ID",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Page-Version-No": {
+                "description": "截图对应页面版本",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pages/{page_id}/screenshot-jobs": {
+      "post": {
+        "tags": [
+          "External Pages"
+        ],
+        "summary": "Create Page Screenshot Job External",
+        "description": "提交页面截图任务；提供 motion_snapshot 时只返回临时帧，不更新默认截图。",
+        "operationId": "create_page_screenshot_job_external_api_v1_pages__page_id__screenshot_jobs_post",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Workspace-Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalPageScreenshotJobCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalPageScreenshotJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pages/{page_id}/screenshot-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "External Pages"
+        ],
+        "summary": "Get Page Screenshot Job External",
+        "description": "查询指定页面的截图任务状态；任务必须属于路径中的页面。",
+        "operationId": "get_page_screenshot_job_external_api_v1_pages__page_id__screenshot_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Workspace-Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalPageScreenshotJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pages/{page_id}/screenshot-jobs/{job_id}/content": {
+      "get": {
+        "tags": [
+          "External Pages"
+        ],
+        "summary": "External API 读取页面截图任务内容",
+        "description": "读取已成功任务对应的 PNG；未成功时返回 409，不回退默认最新截图。",
+        "operationId": "get_page_screenshot_job_content_external_api_v1_pages__page_id__screenshot_jobs__job_id__content_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Workspace-Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务成功后的页面 PNG；未成功返回 409。",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "X-Page-ID": {
+                "description": "页面 ID",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Page-Version-No": {
+                "description": "截图对应页面版本",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Screenshot-Id": {
+                "description": "截图内容 SHA-256",
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -16604,7 +16953,7 @@
           "pages"
         ],
         "summary": "Create Page Screenshot Job",
-        "description": "为指定页面创建或复用截图队列任务。",
+        "description": "为指定页面创建或复用截图队列任务；临时选择器不提升默认截图。",
         "operationId": "create_page_screenshot_job_api_pages__page_id__screenshot_jobs_post",
         "parameters": [
           {
@@ -16650,6 +16999,108 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PageScreenshotJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pages/{page_id}/screenshot-jobs/{job_id}/content": {
+      "get": {
+        "tags": [
+          "pages"
+        ],
+        "summary": "受保护的页面截图任务读取接口",
+        "description": "读取指定截图任务的结果；未成功时返回 409，不回退默认最新截图。",
+        "operationId": "get_page_screenshot_job_content_api_pages__page_id__screenshot_jobs__job_id__content_get",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Download"
+            }
+          },
+          {
+            "name": "wp_user_session",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Wp User Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务成功后的页面 PNG；未成功返回 409。",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "X-Page-ID": {
+                "description": "页面 ID",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Page-Version-No": {
+                "description": "截图对应页面版本",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Screenshot-Id": {
+                "description": "截图内容 SHA-256",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -33042,6 +33493,235 @@
         "title": "ExternalPageMetadataUpdateRequest",
         "description": "External API 页面轻量元数据更新请求，禁止绕过 Mutation 写入源码。"
       },
+      "ExternalPageScreenshotJobCreateRequest": {
+        "properties": {
+          "viewport_width": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8192,
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewport Width"
+          },
+          "viewport_height": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8192,
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewport Height"
+          },
+          "target_page_version_no": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Page Version No",
+            "description": "显式页面版本；与当前版本不一致时返回 409。"
+          },
+          "motion_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageScreenshotMotionSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "临时时间点或标签选择器；提供时不提升页面默认截图指针。"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExternalPageScreenshotJobCreateRequest",
+        "description": "External 临时页面截图任务请求；未提供选择器时按默认 poster 刷新最新截图。"
+      },
+      "ExternalPageScreenshotJobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "title": "Job Id"
+          },
+          "page_id": {
+            "type": "integer",
+            "title": "Page Id"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "succeeded",
+              "failed",
+              "skipped",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "motion_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motion Snapshot",
+            "description": "请求的规范化选择器"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalPageScreenshotJobResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "cancel_requested_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Requested At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job_id",
+          "page_id",
+          "workspace_id",
+          "status",
+          "created_at"
+        ],
+        "title": "ExternalPageScreenshotJobResponse",
+        "description": "External 截图任务状态；不返回存储键、渲染票据或原始字节。"
+      },
+      "ExternalPageScreenshotJobResult": {
+        "properties": {
+          "screenshot_id": {
+            "type": "string",
+            "title": "Screenshot Id",
+            "description": "截图内容 SHA-256，可用于既有截图内容接口"
+          },
+          "content_url": {
+            "type": "string",
+            "title": "Content Url",
+            "description": "受保护的任务内容读取地址"
+          },
+          "version_no": {
+            "type": "integer",
+            "title": "Version No",
+            "description": "捕获对应的页面版本"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "applied_motion": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Motion",
+            "description": "有界时间轴采样回执"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "screenshot_id",
+          "content_url",
+          "version_no",
+          "width",
+          "height"
+        ],
+        "title": "ExternalPageScreenshotJobResult",
+        "description": "成功任务的可读结果摘要；content_url 仍需当前身份与页面权限。"
+      },
       "ExternalPreviewArtifactCreateRequest": {
         "properties": {
           "route": {
@@ -35547,11 +36227,33 @@
               }
             ],
             "title": "Viewport Height"
+          },
+          "target_page_version_no": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Page Version No"
+          },
+          "motion_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageScreenshotMotionSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
         "title": "PageScreenshotJobRequest",
-        "description": "创建单页截图任务请求，允许显式传入本次截图视口。"
+        "description": "创建单页截图任务请求，允许显式传入本次截图视口与临时采样选择器。"
       },
       "PageScreenshotJobResponse": {
         "properties": {
@@ -35615,6 +36317,41 @@
           "config_hash": {
             "type": "string",
             "title": "Config Hash"
+          },
+          "motion_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motion Snapshot"
+          },
+          "result_screenshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Screenshot Id"
+          },
+          "applied_motion": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Motion"
           },
           "status": {
             "type": "string",
@@ -35736,7 +36473,72 @@
           "cancel_requested_at"
         ],
         "title": "PageScreenshotJobResponse",
-        "description": "页面截图任务响应。"
+        "description": "页面截图任务响应；临时选择器与结果摘要均不包含存储键或执行票据。"
+      },
+      "PageScreenshotMotionSnapshot": {
+        "properties": {
+          "timeline_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timeline Id"
+          },
+          "at_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3600000,
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At Ms"
+          },
+          "at_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At Label"
+          },
+          "offset_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3600000,
+                "minimum": -3600000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset Ms"
+          },
+          "visual_mode": {
+            "type": "string",
+            "enum": [
+              "full",
+              "reduced"
+            ],
+            "title": "Visual Mode",
+            "default": "full"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "timeline_id"
+        ],
+        "title": "PageScreenshotMotionSnapshot",
+        "description": "临时截图选择器；显式时间点或标签二选一，只用于采样，不授予播放许可。"
       },
       "PageScreenshotRequest": {
         "properties": {

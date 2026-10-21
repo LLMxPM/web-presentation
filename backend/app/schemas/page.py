@@ -1,9 +1,11 @@
 """文件功能：定义工作空间页面资源库的请求与响应模型。"""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from render_contracts.errors import RenderContractError
+from render_contracts.motion import MAX_MOTION_TIME_MS, MotionSnapshot
 
 from app.models.enums import PageFileType, PageVersionStorageType, RecordStatus
 from app.schemas.common import ListQuery, SchemaBase
@@ -179,15 +181,52 @@ PageScreenshotJobStatus = Literal["pending", "running", "succeeded", "failed", "
 PageScreenshotJobGroupStatus = Literal["pending", "running", "succeeded", "failed", "partial", "cancelled"]
 
 
+class PageScreenshotMotionSnapshot(BaseModel):
+    """临时截图选择器；显式时间点或标签二选一，只用于采样，不授予播放许可。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    timeline_id: str = Field(min_length=1, max_length=128)
+    at_ms: int | None = Field(default=None, ge=0, le=MAX_MOTION_TIME_MS)
+    at_label: str | None = Field(default=None, min_length=1, max_length=128)
+    offset_ms: int | None = Field(default=None, ge=-MAX_MOTION_TIME_MS, le=MAX_MOTION_TIME_MS)
+    visual_mode: Literal["full", "reduced"] = "full"
+
+    @model_validator(mode="after")
+    def validate_selector(self) -> "PageScreenshotMotionSnapshot":
+        """复用契约选择器校验，避免 HTTP 与 Renderer 对互斥字段理解不同。"""
+
+        try:
+            self.to_contract().validate()
+        except RenderContractError as error:
+            raise ValueError(str(error)) from error
+        if self.at_ms is None and self.at_label is None:
+            raise ValueError("临时截图必须提供 at_ms 或 at_label。")
+        return self
+
+    def to_contract(self) -> MotionSnapshot:
+        """转换为 Renderer 协议选择器；未声明字段保持缺省，形成稳定身份。"""
+
+        return MotionSnapshot(
+            timeline_id=self.timeline_id,
+            at_ms=self.at_ms,
+            at_label=self.at_label,
+            offset_ms=self.offset_ms,
+            visual_mode=self.visual_mode,
+        )
+
+
 class PageScreenshotJobRequest(BaseModel):
-    """创建单页截图任务请求，允许显式传入本次截图视口。"""
+    """创建单页截图任务请求，允许显式传入本次截图视口与临时采样选择器。"""
 
     viewport_width: int | None = Field(default=None, ge=1, le=8192)
     viewport_height: int | None = Field(default=None, ge=1, le=8192)
+    target_page_version_no: int | None = Field(default=None, ge=1)
+    motion_snapshot: PageScreenshotMotionSnapshot | None = None
 
 
 class PageScreenshotJobResponse(SchemaBase):
-    """页面截图任务响应。"""
+    """页面截图任务响应；临时选择器与结果摘要均不包含存储键或执行票据。"""
 
     id: int
     job_group_id: str | None
@@ -199,6 +238,9 @@ class PageScreenshotJobResponse(SchemaBase):
     viewport_height: int
     target_page_version_no: int
     config_hash: str
+    motion_snapshot: dict[str, Any] | None = None
+    result_screenshot_id: str | None = None
+    applied_motion: dict[str, Any] | None = None
     status: PageScreenshotJobStatus
     attempt_count: int
     error_code: str | None

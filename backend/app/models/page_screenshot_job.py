@@ -1,8 +1,9 @@
 """文件功能：定义页面截图异步任务模型，用于队列化截图执行和进度查询。"""
 
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -18,7 +19,14 @@ class PageScreenshotJob(TimestampMixin, Base):
     __table_args__ = (
         partial_index(
             "ix_page_screenshot_jobs_dedupe_active",
-            ("page_id", "target_page_version_no", "config_hash", "viewport_width", "viewport_height"),
+            (
+                "page_id",
+                "target_page_version_no",
+                "config_hash",
+                "viewport_width",
+                "viewport_height",
+                "motion_snapshot_hash",
+            ),
             "status IN ('pending', 'running')",
             unique=True,
         ),
@@ -35,6 +43,12 @@ class PageScreenshotJob(TimestampMixin, Base):
     # 入队时固定的页面版本，避免旧任务在页面编辑后覆盖新版本截图。
     target_page_version_no: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     config_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # 临时时间点截图与默认截图使用同一队列；空串表示默认 poster，避免改变既有去重语义。
+    motion_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    motion_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
+    result_storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    result_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result_applied_motion_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="pending")
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
@@ -46,3 +60,21 @@ class PageScreenshotJob(TimestampMixin, Base):
     created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    @property
+    def motion_snapshot(self) -> dict[str, Any] | None:
+        """响应只暴露规范化选择器，不暴露内部列名。"""
+
+        return self.motion_snapshot_json
+
+    @property
+    def result_screenshot_id(self) -> str | None:
+        """成功结果以内容 hash 标识，与既有截图内容接口一致。"""
+
+        return self.result_sha256
+
+    @property
+    def applied_motion(self) -> dict[str, Any] | None:
+        """返回有界采样回执；未采样或旧任务为 null。"""
+
+        return self.result_applied_motion_json

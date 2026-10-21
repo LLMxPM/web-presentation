@@ -50,7 +50,7 @@ _PAGE_CODE_STANDARD = """
 - 资源槽位应匹配资源近似宽高比；完整展示优先 contain，只有用户明确要求时才使用 cover，避免裁切关键信息。
 - AssetImage、AssetVideo、AssetAudio、AssetModel、AssetDrawio、AssetMermaid、AssetChart 和 AssetFormula 的资源容器必须通过完整静态 class 声明明确宽高；不要给 Asset* 传 style，也不要只依赖内容自由撑高、min-h、max-height 或外层 overflow-hidden。AssetImage 的 class 作用于外层图片框，图片内容使用 `fit="contain"`/`fit="cover"` 和 `position` 控制；纵向长图必须在 AssetImage 自身 class 上提供确定高度，例如 `h-[500px]` 或 `h-full` 且父级高度明确。
 - 音频只使用 active asset_type=audio 资源并通过 `AssetAudio.v1` 传入资源 name；内容音频使用 `purpose="content"`，由用户手动播放。生成页面旁白前必须先查询 Runtime Kit 能力：只有 `AssetAudio.v1` 摘要明确声明旁白自动播放已开放时才使用 `purpose="narration"`；能力未开放时只使用 content 或明确告知用户当前不支持旁白，不得宣称自动播放。组件不暴露 autoplay；旁白不得设置 loop，同一实际页面最多一个旁白目标；计时推进可能在旁白结束前翻页，旁白页面优先使用 media_end 推进。
-- 三维模型只使用 active asset_type=model3d 资源，并通过 Runtime Kit 的 AssetModel 传入真实资源 name；不得向 name 传 URL、本地路径、GLB 文本或 base64。首期只支持自包含 GLB；资源含动画数据不代表支持动画播放，页面展示的是静态姿态。
+- 三维模型只使用 active asset_type=model3d 资源，并通过 Runtime Kit 的 AssetModel 传入真实资源 name；不得向 name 传 URL、本地路径、GLB 文本或 base64。首期只支持自包含 GLB；资源含动画数据不代表支持动画播放：使用 AssetModel.v1 时页面展示静态姿态，只有时间轴能力开放并改用 AssetModel.v2 + 真实动作查询时才可声明片段播放。
 - 使用 AssetModel 前读取当前版本化契约，按“查询模型 → 读取渲染契约 → 配置视角”的顺序确认场景与相机参数：cameraIndex 与显式 cameraPosition/cameraTarget 互斥，后两者必须成对且不重合；显式无效选择会报错，留空时使用源相机或自动取景。容器仍需用完整静态 class 声明明确宽高；截图复核模型、材质、光照和视角是否真实呈现。
 - 替换三维资源文件会同步影响当前和历史页面预览；独立构建保留当次构建的资源快照。替换模型不需要修改页面源码中的资源 name，但需要重新截图确认视觉结果。
 - Icon、AssetImage、AssetVideo、AssetAudio、AssetModel 等组件的 name 优先使用字符串字面量，或来自同一 Vue 文件顶层可静态枚举的对象/数组，便于构建精确收集资源依赖。确需动态资源名时，必须保证候选名称都是当前工作空间 active 资源，并在项目 build_extra_assets_json 中补齐所有可能引用的资源；仅保存或预览成功不代表独立构建包含这些资源。不得引用其他工作空间或构建时不属于当前工作空间的名称。

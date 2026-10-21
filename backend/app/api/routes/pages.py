@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, get_page_list_query
+from app.core.exceptions import AppException
 from app.db.session import get_db_session
 from app.schemas.common import MessageResponse, PagedResponse
 from app.schemas.page import (
@@ -279,14 +280,72 @@ async def create_page_screenshot_job(
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> PageScreenshotJobResponse:
-    """为指定页面创建或复用截图队列任务。"""
+    """为指定页面创建或复用截图队列任务；临时选择器不提升默认截图。"""
 
     return await PageScreenshotJobService(session).create_page_screenshot_job(
         page_id=page_id,
         current=current,
         viewport_width=payload.viewport_width,
         viewport_height=payload.viewport_height,
+        target_page_version_no=payload.target_page_version_no,
+        motion_snapshot=payload.motion_snapshot,
     )
+
+
+@router.get(
+    "/{page_id}/screenshot-jobs/{job_id}/content",
+    summary="受保护的页面截图任务读取接口",
+    responses={200: {
+        "description": "任务成功后的页面 PNG；未成功返回 409。",
+        "content": {"image/png": {"schema": {"type": "string", "format": "binary"}}},
+        "headers": {
+            "X-Page-ID": {"description": "页面 ID", "schema": {"type": "integer"}},
+            "X-Page-Version-No": {"description": "截图对应页面版本", "schema": {"type": "integer"}},
+            "X-Screenshot-Id": {"description": "截图内容 SHA-256", "schema": {"type": "string"}},
+        },
+    }},
+)
+@router.head(
+    "/{page_id}/screenshot-jobs/{job_id}/content",
+    include_in_schema=False,
+)
+async def get_page_screenshot_job_content(
+    page_id: int,
+    job_id: int,
+    request: Request,
+    current: Annotated[AuthContext, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    download: int = 0,
+):
+    """读取指定截图任务的结果；未成功时返回 409，不回退默认最新截图。"""
+
+    from app.services.file_auth_service import FileAuthService
+    from app.services.object_storage_service import ObjectStorageService
+
+    page = await PageService(session).get_model(page_id, user_id=current.user.id)
+    job = await PageScreenshotJobService(session).get_job_by_id(job_id)
+    if int(job.page_id) != int(page_id) or int(job.workspace_id or 0) != int(page.workspace_id or 0):
+        raise AppException(status_code=404, code="PAGE_SCREENSHOT_JOB_NOT_FOUND", detail="截图任务不存在。")
+    if job.status != "succeeded" or not job.result_storage_key or not job.result_sha256:
+        raise AppException(
+            status_code=409,
+            code="PAGE_SCREENSHOT_JOB_NOT_READY",
+            detail="截图任务尚未成功完成，请等待任务终态后重试。",
+        )
+    response = await FileAuthService.serve_protected_file(
+        request=request,
+        open_file=ObjectStorageService().open_object_for_read(
+            job.result_storage_key, expected_sha256=job.result_sha256
+        ),
+        etag=job.result_sha256,
+        media_type="image/png",
+        original_name=f"page-{page.id}-{job.result_sha256[:8]}.png",
+        is_download=download == 1,
+    )
+    response.headers["X-Page-ID"] = str(page.id)
+    response.headers["X-Page-Version-No"] = str(job.target_page_version_no)
+    response.headers["X-Screenshot-Id"] = job.result_sha256
+    return response
 
 
 @router.delete("/{page_id}", response_model=MessageResponse)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -43,6 +44,14 @@ from app.services.runtime_artifact_store import RuntimeArtifactStore
 logger = logging.getLogger(__name__)
 
 
+@dataclass(slots=True, frozen=True)
+class PageCaptureOutcome:
+    """页面捕获产物与可选时间轴回执；回执不包含 DOM、场景或执行票据。"""
+
+    content: bytes
+    applied_motion: dict[str, Any] | None = None
+
+
 class RenderDomainFacade:
     """把截图、页面诊断、组件诊断统一走远程渲染执行链路。"""
 
@@ -78,6 +87,42 @@ class RenderDomainFacade:
     ) -> bytes:
         """执行 page.capture 并返回 PNG 字节。"""
 
+        outcome = await self.capture_page_preview_result(
+            preview_url=preview_url,
+            viewport=viewport,
+            logical_owner_key=logical_owner_key,
+            business_stage=business_stage,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            page_id=page_id,
+            artifact_id=artifact_id,
+            preview_token=preview_token,
+            extra_http_headers=extra_http_headers,
+            timeout_seconds=timeout_seconds,
+        )
+        return outcome.content
+
+    async def capture_page_preview_result(
+        self,
+        *,
+        preview_url: str,
+        viewport: Mapping[str, int | float],
+        logical_owner_key: str,
+        business_stage: str = "page.screenshot",
+        workspace_id: int,
+        project_id: int | None = None,
+        page_id: int | None = None,
+        artifact_id: str | None = None,
+        preview_token: str | None = None,
+        extra_http_headers: Mapping[str, str] | None = None,
+        timeout_seconds: float | None = None,
+        motion_snapshot: Mapping[str, Any] | None = None,
+    ) -> PageCaptureOutcome:
+        """执行 page.capture，返回 PNG 与显式选择器对应的采样回执。"""
+
+        operation_options: dict[str, Any] = {"capture": "png"}
+        if motion_snapshot is not None:
+            operation_options["motion_snapshot"] = dict(motion_snapshot)
         payload = await self._execute(
             operation=OPERATION_PAGE_CAPTURE,
             logical_owner_key=logical_owner_key,
@@ -92,25 +137,30 @@ class RenderDomainFacade:
             preview_token=preview_token,
             extra_http_headers=extra_http_headers,
             # 鉴权头不进入 operation_options，避免明文落库。
-            operation_options={
-                "capture": "png",
-            },
+            operation_options=operation_options,
             timeout_seconds=timeout_seconds,
         )
         object_refs = payload.get("_object_refs") or {}
         png_ref = object_refs.get("page.png") or object_refs.get("screenshot.png")
+        content: bytes | None = None
         if isinstance(png_ref, dict):
             storage_key = png_ref.get("storage_key")
             if storage_key:
                 from app.services.object_storage_service import ObjectStorageService
 
-                return await ObjectStorageService().read_object(str(storage_key))
-            if png_ref.get("content"):
-                return bytes.fromhex(str(png_ref["content"]))
-        raise AppException(
-            status_code=502,
-            code="RENDER_RESULT_LOST",
-            detail="渲染成功但未返回可用截图产物。",
+                content = await ObjectStorageService().read_object(str(storage_key))
+            elif png_ref.get("content"):
+                content = bytes.fromhex(str(png_ref["content"]))
+        if content is None:
+            raise AppException(
+                status_code=502,
+                code="RENDER_RESULT_LOST",
+                detail="渲染成功但未返回可用截图产物。",
+            )
+        raw_motion = payload.get("applied_motion")
+        return PageCaptureOutcome(
+            content=content,
+            applied_motion=dict(raw_motion) if isinstance(raw_motion, Mapping) else None,
         )
 
     async def diagnose_page_preview(
