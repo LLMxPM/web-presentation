@@ -557,6 +557,7 @@ export type AssetModel3dAnalysisPayload = {
   "default_scene_index"?: (number) | (null)
   "cameras"?: (AssetModel3dCameraSummary)[]
   "animations"?: (AssetModel3dAnimationSummary)[]
+  "animation_analysis_version"?: number
   "extensions_used"?: (string)[]
   "extensions_required"?: (string)[]
   "validation_profile"?: string
@@ -567,6 +568,11 @@ export type AssetModel3dAnimationSummary = {
   "index": number
   "name"?: (string) | (null)
   "channel_count"?: number
+  "duration_ms"?: number
+  "target_paths"?: (string)[]
+  "supported"?: boolean
+  "unsupported_reasons"?: (string)[]
+  "signature"?: string
 }
 
 export type AssetModel3dCameraSummary = {
@@ -1147,6 +1153,7 @@ export type ExternalCapabilitiesResponse = {
   "operations": (string)[]
   "slideshow"?: (ExternalSlideshowCapabilities) | (null)
   "fonts"?: (ExternalFontsCapabilities) | (null)
+  "timeline"?: (ExternalTimelineCapabilities) | (null)
 }
 
 export type ExternalComponentApplyEditsMutationRequest = {
@@ -1414,6 +1421,14 @@ export type ExternalThemeUpdateRequest = {
   "body_font_preset"?: (string) | (null)
   "code_font_preset"?: (string) | (null)
   "palette"?: (ThemePalette) | (null)
+}
+
+export type ExternalTimelineCapabilities = {
+  "schema_version": number
+  "enabled": boolean
+  "track_types": (string)[]
+  "capture_snapshot": boolean
+  "advance_modes": (string)[]
 }
 
 export type ExternalTransitionDurationRange = {

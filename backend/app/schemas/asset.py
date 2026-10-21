@@ -57,11 +57,16 @@ class AssetModel3dCameraSummary(BaseModel):
 
 
 class AssetModel3dAnimationSummary(BaseModel):
-    """三维资源内保留的动画摘要；首期只展示摘要，不播放。"""
+    """三维资源内动作摘要；supported=false 时不得作为可执行动作推荐。"""
 
     index: int = Field(ge=0)
     name: str | None = None
     channel_count: int = Field(default=0, ge=0)
+    duration_ms: int = Field(default=0, ge=0)
+    target_paths: list[str] = Field(default_factory=list)
+    supported: bool = False
+    unsupported_reasons: list[str] = Field(default_factory=list)
+    signature: str = ""
 
 
 class AssetModel3dAnalysisPayload(BaseModel):
@@ -73,6 +78,8 @@ class AssetModel3dAnalysisPayload(BaseModel):
     default_scene_index: int | None = Field(default=None, ge=0)
     cameras: list[AssetModel3dCameraSummary] = Field(default_factory=list)
     animations: list[AssetModel3dAnimationSummary] = Field(default_factory=list)
+    # 旧记录缺省为 0：资源详情仍可读，但动作按未分析处理，不宣称可执行。
+    animation_analysis_version: int = Field(default=0, ge=0)
     extensions_used: list[str] = Field(default_factory=list)
     extensions_required: list[str] = Field(default_factory=list)
     validation_profile: str = "model3d-glb-v2"

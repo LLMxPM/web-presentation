@@ -20,6 +20,7 @@ from app.schemas.external_api import (
     ExternalFontsCapabilities,
     build_slideshow_capabilities,
 )
+from app.schemas.timeline import build_timeline_capabilities
 from app.schemas.workspace import WorkspaceItem
 from app.services.workspace_service import WorkspaceService
 
@@ -83,6 +84,7 @@ async def get_workspace_capabilities(
         scopes=sorted(list(auth.scopes)),
         operations=sorted(available_ops),
         slideshow=build_slideshow_capabilities(),
+        timeline=build_timeline_capabilities(),
         fonts=ExternalFontsCapabilities(
             presets=ExternalFontPresetsCapabilities(
                 sans=sorted(list(SANS_FONT_PRESETS)),

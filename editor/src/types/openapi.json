@@ -23096,6 +23096,28 @@
         }
       }
     },
+    "/api/system/timeline-capabilities": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get Timeline Capabilities",
+        "description": "返回页内编排能力声明；G2 前 enabled=false，不宣称可执行。",
+        "operationId": "get_timeline_capabilities_api_system_timeline_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalTimelineCapabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/template-package/export/validate": {
       "post": {
         "tags": [
@@ -28386,6 +28408,12 @@
             "type": "array",
             "title": "Animations"
           },
+          "animation_analysis_version": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Animation Analysis Version",
+            "default": 0
+          },
           "extensions_used": {
             "items": {
               "type": "string"
@@ -28440,6 +28468,36 @@
             "minimum": 0,
             "title": "Channel Count",
             "default": 0
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Duration Ms",
+            "default": 0
+          },
+          "target_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Target Paths"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported",
+            "default": false
+          },
+          "unsupported_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unsupported Reasons"
+          },
+          "signature": {
+            "type": "string",
+            "title": "Signature",
+            "default": ""
           }
         },
         "type": "object",
@@ -28447,7 +28505,7 @@
           "index"
         ],
         "title": "AssetModel3dAnimationSummary",
-        "description": "三维资源内保留的动画摘要；首期只展示摘要，不播放。"
+        "description": "三维资源内动作摘要；supported=false 时不得作为可执行动作推荐。"
       },
       "AssetModel3dCameraSummary": {
         "properties": {
@@ -31942,6 +32000,17 @@
               }
             ],
             "description": "字体系统能力声明"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalTimelineCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "页内编排能力声明；null 表示服务端未声明该功能。"
           }
         },
         "additionalProperties": false,
@@ -33860,6 +33929,47 @@
         "type": "object",
         "title": "ExternalThemeUpdateRequest",
         "description": "External API 主题更新请求。"
+      },
+      "ExternalTimelineCapabilities": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "track_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Track Types"
+          },
+          "capture_snapshot": {
+            "type": "boolean",
+            "title": "Capture Snapshot"
+          },
+          "advance_modes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Advance Modes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "enabled",
+          "track_types",
+          "capture_snapshot",
+          "advance_modes"
+        ],
+        "title": "ExternalTimelineCapabilities",
+        "description": "编排能力基线；enabled=false 时客户端不得声明可执行。"
       },
       "ExternalTransitionDurationRange": {
         "properties": {

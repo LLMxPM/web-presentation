@@ -356,6 +356,9 @@ async def test_access_tokens_scopes_and_capabilities(authenticated_client: Async
     assert "project.get" in cap_data["operations"]
     assert "page.get" in cap_data["operations"]
     assert "validate.entity" in cap_data["operations"]
+    assert cap_data["timeline"]["enabled"] is False
+    assert cap_data["timeline"]["track_types"] == []
+    assert cap_data["timeline"]["advance_modes"] == []
 
 
 @pytest.mark.asyncio

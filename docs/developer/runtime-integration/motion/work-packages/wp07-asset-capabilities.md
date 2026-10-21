@@ -1,6 +1,6 @@
 # WP07 资产摘要与能力契约
 
-状态：待实施。主责：Backend / 契约。前置：[WP02](./wp02-contracts-plan-compiler.md)。
+状态：完成（受限分析与能力关闭；未对真实历史资源执行批量回填）。主责：Backend / 契约。前置：[WP02](./wp02-contracts-plan-compiler.md)。
 
 ## 输入与落点
 
@@ -27,6 +27,6 @@ Backend 单元/API/契约覆盖 A05、A14，包含纹理变更但动作不变、
 
 ## 实施记录
 
-- 代码版本、分析策略与升级范围：待回填。
-- 实际命令、通过/失败数量与正反例：待回填。
-- 未覆盖项：待回填。
+- 代码版本、分析策略与升级范围：`ANIMATION_ANALYSIS_VERSION=2`；动作摘要新增真实时长、target_paths、supported、unsupported_reasons 与 32 位语义签名。旧记录缺省 supported=false，不宣称可执行；`backend/app/scripts/backfill_model3d_animation_analysis.py` 提供 1–200 条的 dry-run/按批写库。
+- 实际命令、通过/失败数量与正反例：`uv run --project backend pytest ... test_model3d_glb_service.py test_model3d_analysis_schema.py test_system_timeline_capabilities.py`，共 73 项通过；纹理变更签名稳定、动作值变更签名变化、非单调输入/输出数量不符/未知插值均标记不可执行。
+- 未覆盖项：未对真实历史工作空间执行批量回填；`timeline` 能力默认关闭，`timeline_end` 写入门禁与开放列表由 WP08/G2 处理。

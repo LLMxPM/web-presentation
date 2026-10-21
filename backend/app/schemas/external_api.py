@@ -24,6 +24,7 @@ from app.schemas.presentation_style import (
     StyleConfiguration,
 )
 from app.schemas.project_app_config import ProjectMenuMode
+from app.schemas.timeline import ExternalTimelineCapabilities
 from app.schemas.slideshow import (
     ADVANCE_DELAY_MAX_MS,
     ADVANCE_DELAY_MIN_MS,
@@ -217,6 +218,10 @@ class ExternalCapabilitiesResponse(BaseModel):
     fonts: ExternalFontsCapabilities | None = Field(
         default=None,
         description="字体系统能力声明",
+    )
+    timeline: ExternalTimelineCapabilities | None = Field(
+        default=None,
+        description="页内编排能力声明；null 表示服务端未声明该功能。",
     )
 
 

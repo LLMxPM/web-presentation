@@ -152,7 +152,16 @@ def test_glb_with_camera_animation_and_embedded_texture() -> None:
 
     summary = Model3dGlbService.analyze(_build_glb(gltf, buffer))
     assert summary["cameras"] == [{"index": 0, "name": "MainCam", "type": "perspective"}]
-    assert summary["animations"] == [{"index": 0, "name": "Idle", "channel_count": 1}]
+    [animation] = summary["animations"]
+    assert animation["index"] == 0
+    assert animation["name"] == "Idle"
+    assert animation["channel_count"] == 1
+    assert animation["duration_ms"] == 1000
+    assert animation["target_paths"] == ["translation"]
+    assert animation["supported"] is True
+    assert animation["unsupported_reasons"] == []
+    assert len(animation["signature"]) == 32
+    assert summary["animation_analysis_version"] == 2
 
 
 def test_data_uri_buffer_is_self_contained_and_valid() -> None:
@@ -612,3 +621,122 @@ def test_rejects_animation_target_path_invalid() -> None:
     ]
     gltf["animations"] = [{"samplers": [{"input": 1, "output": 1}], "channels": [{"sampler": 0, "target": {"node": 0, "path": "opacity"}}]}]
     _assert_rejected(_build_glb(gltf, payload), "MODEL3D_FORMAT_INVALID")
+
+
+def _animated_gltf(
+    *,
+    times: list[float],
+    translations: list[tuple[float, float, float]],
+    interpolation: str | None = None,
+    output_count: int | None = None,
+    png_size: tuple[int, int] = (2, 2),
+) -> tuple[dict, bytes]:
+    """构造带真实动画采样数据的自包含 GLB 描述。"""
+
+    positions = _triangle_position_bytes()
+    time_bytes = struct.pack(f"<{len(times)}f", *times)
+    translation_values = list(translations)
+    if output_count is not None:
+        if output_count < len(translation_values):
+            translation_values = translation_values[:output_count]
+        else:
+            translation_values.extend([(0.0, 0.0, 0.0)] * (output_count - len(translation_values)))
+    translation_bytes = b"".join(struct.pack("<3f", *value) for value in translation_values)
+    png = _png_bytes(*png_size)
+    buffer = positions + time_bytes + translation_bytes + png
+    views = [
+        (0, len(positions)),
+        (len(positions), len(time_bytes)),
+        (len(positions) + len(time_bytes), len(translation_bytes)),
+        (len(positions) + len(time_bytes) + len(translation_bytes), len(png)),
+    ]
+    gltf = _minimal_gltf(len(buffer))
+    gltf["bufferViews"] = [{"buffer": 0, "byteOffset": offset, "byteLength": length} for offset, length in views]
+    gltf["accessors"] = [
+        gltf["accessors"][0],
+        {"bufferView": 1, "componentType": 5126, "count": len(times), "type": "SCALAR"},
+        {"bufferView": 2, "componentType": 5126, "count": len(translation_values), "type": "VEC3"},
+    ]
+    sampler = {"input": 1, "output": 2}
+    if interpolation is not None:
+        sampler["interpolation"] = interpolation
+    gltf["animations"] = [
+        {
+            "name": "Idle",
+            "samplers": [sampler],
+            "channels": [{"sampler": 0, "target": {"node": 0, "path": "translation"}}],
+        }
+    ]
+    gltf["images"] = [{"bufferView": 3, "mimeType": "image/png"}]
+    gltf["samplers"] = [{}]
+    gltf["textures"] = [{"source": 0, "sampler": 0}]
+    gltf["materials"] = [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}]
+    gltf["meshes"][0]["primitives"][0]["material"] = 0
+    return gltf, buffer
+
+
+def test_animation_signature_ignores_texture_changes() -> None:
+    """纹理变化但动作不变时动作签名保持一致。"""
+
+    gltf_a, buffer_a = _animated_gltf(times=[0.0, 1.0], translations=[(0, 0, 0), (1, 0, 0)], png_size=(2, 2))
+    gltf_b, buffer_b = _animated_gltf(times=[0.0, 1.0], translations=[(0, 0, 0), (1, 0, 0)], png_size=(2, 3))
+    signature_a = Model3dGlbService.analyze(_build_glb(gltf_a, buffer_a))["animations"][0]["signature"]
+    signature_b = Model3dGlbService.analyze(_build_glb(gltf_b, buffer_b))["animations"][0]["signature"]
+    assert signature_a == signature_b
+
+
+def test_animation_signature_changes_with_action_values() -> None:
+    """同一索引的动作值变化时必须产生不同签名。"""
+
+    gltf_a, buffer_a = _animated_gltf(times=[0.0, 1.0], translations=[(0, 0, 0), (1, 0, 0)])
+    gltf_b, buffer_b = _animated_gltf(times=[0.0, 1.0], translations=[(0, 0, 0), (2, 0, 0)])
+    summary_a = Model3dGlbService.analyze(_build_glb(gltf_a, buffer_a))
+    summary_b = Model3dGlbService.analyze(_build_glb(gltf_b, buffer_b))
+    assert summary_a["animations"][0]["signature"] != summary_b["animations"][0]["signature"]
+    assert summary_a["animations"][0]["duration_ms"] == 1000
+
+
+def test_animation_non_monotonic_input_is_unsupported() -> None:
+    """输入时间非递增时动作不可执行，但资源仍可读取。"""
+
+    gltf, buffer = _animated_gltf(times=[1.0, 0.0], translations=[(0, 0, 0), (1, 0, 0)])
+    animation = Model3dGlbService.analyze(_build_glb(gltf, buffer))["animations"][0]
+    assert animation["supported"] is False
+    assert "NON_MONOTONIC_INPUT" in animation["unsupported_reasons"]
+    assert animation["signature"] == ""
+
+
+def test_animation_output_count_mismatch_is_unsupported() -> None:
+    """LINEAR 输出数量与输入不一致时动作不可执行。"""
+
+    gltf, buffer = _animated_gltf(times=[0.0, 1.0], translations=[(0, 0, 0), (1, 0, 0)], output_count=3)
+    animation = Model3dGlbService.analyze(_build_glb(gltf, buffer))["animations"][0]
+    assert animation["supported"] is False
+    assert "OUTPUT_COUNT_MISMATCH" in animation["unsupported_reasons"]
+
+
+def test_animation_unknown_interpolation_is_unsupported() -> None:
+    """未知插值不伪装成可用动作。"""
+
+    gltf, buffer = _animated_gltf(
+        times=[0.0, 1.0],
+        translations=[(0, 0, 0), (1, 0, 0)],
+        interpolation="CUSTOM",
+    )
+    animation = Model3dGlbService.analyze(_build_glb(gltf, buffer))["animations"][0]
+    assert animation["supported"] is False
+    assert "INTERPOLATION_UNSUPPORTED" in animation["unsupported_reasons"]
+
+
+def test_animation_cubic_spline_output_count() -> None:
+    """CUBICSPLINE 输出按输入数量的 3 倍校验。"""
+
+    gltf, buffer = _animated_gltf(
+        times=[0.0, 1.0],
+        translations=[(0, 0, 0), (0.5, 0, 0), (1, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0)],
+        interpolation="CUBICSPLINE",
+        output_count=6,
+    )
+    animation = Model3dGlbService.analyze(_build_glb(gltf, buffer))["animations"][0]
+    assert animation["supported"] is True
+    assert animation["duration_ms"] == 1000

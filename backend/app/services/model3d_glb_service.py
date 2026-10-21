@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import math
 import re
@@ -36,6 +37,39 @@ _ACCESSOR_TYPE_COMPONENTS = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT2
 _INDEX_COMPONENT_TYPES = {5121, 5123, 5125}
 _PRIMITIVE_MODES = {0, 1, 2, 3, 4, 5, 6}
 _ANIMATION_TARGET_PATHS = {"translation", "rotation", "scale", "weights"}
+_ANIMATION_INTERPOLATIONS = {"LINEAR", "STEP", "CUBICSPLINE"}
+_ANIMATION_OUTPUT_TYPES = {
+    "translation": "VEC3",
+    "rotation": "VEC4",
+    "scale": "VEC3",
+    "weights": "SCALAR",
+}
+
+# 动作分析策略版本：旧记录缺少该版本时按未分析处理，不宣称动作可执行。
+ANIMATION_ANALYSIS_VERSION = 2
+MAX_ANIMATION_SAMPLERS = 256
+MAX_ANIMATION_CHANNELS = 512
+MAX_ANIMATION_SAMPLES = 200_000
+MAX_ANIMATION_DURATION_MS = 3_600_000
+
+# 动作不可执行的有界原因词汇；进入资源详情与能力声明。
+ANIMATION_REASON_EMPTY_CHANNELS = "EMPTY_CHANNELS"
+ANIMATION_REASON_INTERPOLATION_UNSUPPORTED = "INTERPOLATION_UNSUPPORTED"
+ANIMATION_REASON_ACCESSOR_UNSUPPORTED = "ACCESSOR_UNSUPPORTED"
+ANIMATION_REASON_NON_MONOTONIC_INPUT = "NON_MONOTONIC_INPUT"
+ANIMATION_REASON_OUTPUT_COUNT_MISMATCH = "OUTPUT_COUNT_MISMATCH"
+ANIMATION_REASON_DUPLICATE_CHANNEL_TARGET = "DUPLICATE_CHANNEL_TARGET"
+ANIMATION_REASON_DURATION_EXCEEDS_LIMIT = "DURATION_EXCEEDS_LIMIT"
+ANIMATION_REASON_TARGET_UNSUPPORTED = "TARGET_UNSUPPORTED"
+
+
+@dataclass(frozen=True, slots=True)
+class _AnimationAccessorData:
+    """动画 accessor 的元素字节与不可执行原因。"""
+
+    elements: tuple[bytes, ...]
+    count: int
+    reason: str | None
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _JPEG_SOF_MARKERS = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
@@ -146,8 +180,8 @@ class Model3dGlbService:
         if len(content) > resolved_policy.max_file_bytes:
             raise _limit_exceeded(f"三维资源文件超过上限 {resolved_policy.max_file_bytes} 字节。")
         container = cls._parse_container(content, policy=resolved_policy)
-        warnings = cls._validate_json_structure(container.json_data, container.bin_bytes, policy=resolved_policy)
-        return cls._build_summary(container.json_data, warnings, policy=resolved_policy)
+        warnings, animations = cls._validate_json_structure(container.json_data, container.bin_bytes, policy=resolved_policy)
+        return cls._build_summary(container.json_data, warnings, animations, policy=resolved_policy)
 
     # ------------------------------------------------------------------
     # 容器层
@@ -224,8 +258,8 @@ class Model3dGlbService:
         bin_bytes: bytes,
         *,
         policy: Model3dAcceptancePolicy,
-    ) -> list[str]:
-        """校验 glTF JSON 结构与引用范围，返回可选扩展降级提示。"""
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        """校验 glTF JSON 结构与引用范围，返回扩展降级提示与动作摘要。"""
 
         cls._validate_asset(root)
         warnings = cls._validate_extensions(root, policy)
@@ -245,9 +279,9 @@ class Model3dGlbService:
         cls._validate_textures(root, images)
         cls._validate_materials(root)
         cls._validate_cameras(root)
-        cls._validate_animations(root)
+        animations = cls._analyze_animations(root, accessors, buffers, views)
         cls._validate_texture_budget(images, policy)
-        return warnings
+        return warnings, animations
 
     @staticmethod
     def _validate_asset(root: dict[str, Any]) -> None:
@@ -719,14 +753,26 @@ class Model3dGlbService:
                     raise _format_invalid(f"cameras[{index}] 正交 znear/zfar 非法。")
 
     @classmethod
-    def _validate_animations(cls, root: dict[str, Any]) -> None:
-        """校验 animations 通道与采样器引用。"""
+    def _analyze_animations(
+        cls,
+        root: dict[str, Any],
+        accessors: list[dict[str, Any]],
+        buffers: list[_BufferInfo],
+        views: list[_BufferViewInfo],
+    ) -> list[dict[str, Any]]:
+        """校验动画通道并生成带真实时长、语义签名与支持状态的摘要。
+
+        只读取有限的输入/输出 accessor 字节，不解码整条轨道到 Python 数组；
+        不支持的数据形状标记为 supported=false，文件结构本身非法才抛格式错误。
+        """
 
         animations = root.get("animations", [])
         if not isinstance(animations, list):
             raise _format_invalid("animations 必须是数组。")
         node_count = len(root.get("nodes", []) or [])
-        accessor_count = len(root.get("accessors", []) or [])
+        accessor_count = len(accessors)
+        summaries: list[dict[str, Any]] = []
+
         for index, animation in enumerate(animations):
             if not isinstance(animation, dict):
                 raise _format_invalid(f"animations[{index}] 必须是对象。")
@@ -734,6 +780,16 @@ class Model3dGlbService:
             channels = animation.get("channels", [])
             if not isinstance(samplers, list) or not isinstance(channels, list):
                 raise _format_invalid(f"animations[{index}] 的 channels/samplers 必须是数组。")
+            if len(samplers) > MAX_ANIMATION_SAMPLERS:
+                raise _limit_exceeded(f"animations[{index}] 的 sampler 数超过 {MAX_ANIMATION_SAMPLERS} 上限。")
+            if len(channels) > MAX_ANIMATION_CHANNELS:
+                raise _limit_exceeded(f"animations[{index}] 的 channel 数超过 {MAX_ANIMATION_CHANNELS} 上限。")
+
+            reasons: set[str] = set()
+            sampler_inputs: dict[int, _AnimationAccessorData] = {}
+            sampler_interpolations: dict[int, str] = {}
+            duration_ms = 0
+
             for sampler_index, sampler in enumerate(samplers):
                 if not isinstance(sampler, dict):
                     raise _format_invalid(f"animations[{index}].samplers[{sampler_index}] 必须是对象。")
@@ -741,6 +797,44 @@ class Model3dGlbService:
                     reference = sampler.get(key)
                     if not _is_int(reference) or not 0 <= reference < accessor_count:
                         raise _format_invalid(f"animations[{index}].samplers[{sampler_index}].{key} 索引越界。")
+                interpolation = str(sampler.get("interpolation") or "LINEAR")
+                if interpolation not in _ANIMATION_INTERPOLATIONS:
+                    reasons.add(ANIMATION_REASON_INTERPOLATION_UNSUPPORTED)
+                    continue
+                sampler_interpolations[sampler_index] = interpolation
+
+                input_data = cls._read_animation_accessor(sampler["input"], accessors, buffers, views)
+                if input_data.reason:
+                    reasons.add(input_data.reason)
+                    sampler_inputs[sampler_index] = input_data
+                    continue
+                accessor = accessors[sampler["input"]]
+                if accessor["type"] != "SCALAR":
+                    reasons.add(ANIMATION_REASON_ACCESSOR_UNSUPPORTED)
+                    sampler_inputs[sampler_index] = input_data
+                    continue
+                if input_data.count <= 0:
+                    reasons.add(ANIMATION_REASON_NON_MONOTONIC_INPUT)
+                    sampler_inputs[sampler_index] = input_data
+                    continue
+                if input_data.count > MAX_ANIMATION_SAMPLES:
+                    raise _limit_exceeded(
+                        f"animations[{index}].samplers[{sampler_index}] 的采样数超过 {MAX_ANIMATION_SAMPLES} 上限。"
+                    )
+                times = [struct.unpack("<f", element)[0] for element in input_data.elements]
+                if not all(_is_finite_number(value) for value in times):
+                    raise _format_invalid(f"animations[{index}].samplers[{sampler_index}] 输入时间包含非有限值。")
+                if any(current <= previous for previous, current in zip(times, times[1:])):
+                    reasons.add(ANIMATION_REASON_NON_MONOTONIC_INPUT)
+                sampler_inputs[sampler_index] = input_data
+                duration_ms = max(duration_ms, round(max(times) * 1000))
+
+            if duration_ms > MAX_ANIMATION_DURATION_MS:
+                reasons.add(ANIMATION_REASON_DURATION_EXCEEDS_LIMIT)
+
+            descriptors: list[tuple[int, str, int, str]] = []
+            seen_targets: set[tuple[int, str]] = set()
+            hasher = hashlib.sha256()
             for channel_index, channel in enumerate(channels):
                 if not isinstance(channel, dict):
                     raise _format_invalid(f"animations[{index}].channels[{channel_index}] 必须是对象。")
@@ -758,6 +852,90 @@ class Model3dGlbService:
                 target_path = target.get("path")
                 if not isinstance(target_path, str) or target_path not in _ANIMATION_TARGET_PATHS:
                     raise _format_invalid(f"animations[{index}].channels[{channel_index}].target.path 取值非法。")
+                if not _is_int(node_reference):
+                    reasons.add(ANIMATION_REASON_TARGET_UNSUPPORTED)
+                    continue
+                target_key = (int(node_reference), target_path)
+                if target_key in seen_targets:
+                    reasons.add(ANIMATION_REASON_DUPLICATE_CHANNEL_TARGET)
+                seen_targets.add(target_key)
+
+                interpolation = sampler_interpolations.get(sampler_reference)
+                if interpolation is None:
+                    continue
+                expected_type = _ANIMATION_OUTPUT_TYPES[target_path]
+                output_data = cls._read_animation_accessor(samplers[sampler_reference]["output"], accessors, buffers, views)
+                output_accessor = accessors[samplers[sampler_reference]["output"]]
+                if output_data.reason:
+                    reasons.add(output_data.reason)
+                    continue
+                if output_accessor["type"] != expected_type:
+                    reasons.add(ANIMATION_REASON_ACCESSOR_UNSUPPORTED)
+                    continue
+                input_count = sampler_inputs.get(sampler_reference, _AnimationAccessorData((), 0, None)).count
+                expected_count = input_count * 3 if interpolation == "CUBICSPLINE" else input_count
+                if output_data.count != expected_count:
+                    reasons.add(ANIMATION_REASON_OUTPUT_COUNT_MISMATCH)
+                    continue
+
+                descriptors.append((int(node_reference), target_path, sampler_reference, interpolation))
+                hasher.update(f"{node_reference}|{target_path}|{interpolation}|".encode())
+                for element in sampler_inputs.get(sampler_reference, _AnimationAccessorData((), 0, None)).elements:
+                    hasher.update(element)
+                for element in output_data.elements:
+                    hasher.update(element)
+
+            if not channels:
+                reasons.add(ANIMATION_REASON_EMPTY_CHANNELS)
+
+            descriptors.sort()
+            for node, path, sampler_index, interpolation in descriptors:
+                hasher.update(f"\nchannel:{node}:{path}:{sampler_index}:{interpolation}".encode())
+            supported = not reasons
+            target_paths = sorted({descriptor[1] for descriptor in descriptors})
+            name = animation.get("name")
+            summaries.append(
+                {
+                    "index": index,
+                    "name": str(name) if isinstance(name, str) and name.strip() else None,
+                    "channel_count": len(channels),
+                    "duration_ms": duration_ms,
+                    "target_paths": target_paths,
+                    "supported": supported,
+                    "unsupported_reasons": sorted(reasons),
+                    "signature": hasher.hexdigest()[:32] if supported else "",
+                }
+            )
+        return summaries
+
+    @staticmethod
+    def _read_animation_accessor(
+        accessor_index: int,
+        accessors: list[dict[str, Any]],
+        buffers: list[_BufferInfo],
+        views: list[_BufferViewInfo],
+    ) -> _AnimationAccessorData:
+        """读取动画 accessor 的元素字节；sparse 与非 FLOAT 标记为不可执行。"""
+
+        accessor = accessors[accessor_index]
+        count = int(accessor.get("count") or 0)
+        if accessor.get("sparse") is not None or accessor.get("bufferView") is None:
+            return _AnimationAccessorData((), count, ANIMATION_REASON_ACCESSOR_UNSUPPORTED)
+        if accessor.get("componentType") != 5126:
+            return _AnimationAccessorData((), count, ANIMATION_REASON_ACCESSOR_UNSUPPORTED)
+        accessor_type = str(accessor.get("type") or "")
+        if accessor_type not in _ACCESSOR_TYPE_COMPONENTS:
+            return _AnimationAccessorData((), count, ANIMATION_REASON_ACCESSOR_UNSUPPORTED)
+        view = views[int(accessor["bufferView"])]
+        data = buffers[view.buffer_index].data
+        element_bytes = 4 * _ACCESSOR_TYPE_COMPONENTS[accessor_type]
+        stride = view.byte_stride or element_bytes
+        base = view.byte_offset + int(accessor.get("byteOffset", 0))
+        elements = tuple(
+            data[base + item * stride:base + item * stride + element_bytes]
+            for item in range(count)
+        )
+        return _AnimationAccessorData(elements, count, None)
 
     @classmethod
     def _validate_texture_budget(cls, images: list[_ImageInfo], policy: Model3dAcceptancePolicy) -> None:
@@ -816,7 +994,13 @@ class Model3dGlbService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_summary(root: dict[str, Any], warnings: list[str], *, policy: Model3dAcceptancePolicy) -> dict[str, Any]:
+    def _build_summary(
+        root: dict[str, Any],
+        warnings: list[str],
+        animations: list[dict[str, Any]],
+        *,
+        policy: Model3dAcceptancePolicy,
+    ) -> dict[str, Any]:
         """组装分析摘要（对应 AssetModel3dAnalysisPayload）。"""
 
         cameras = []
@@ -829,16 +1013,6 @@ class Model3dGlbService:
                     "type": str(camera.get("type") or "perspective"),
                 }
             )
-        animations = []
-        for index, animation in enumerate(root.get("animations", []) or []):
-            name = animation.get("name")
-            animations.append(
-                {
-                    "index": index,
-                    "name": str(name) if isinstance(name, str) and name.strip() else None,
-                    "channel_count": len(animation.get("channels", []) or []),
-                }
-            )
         scenes = root.get("scenes", []) or []
         default_scene = root.get("scene")
         return {
@@ -848,6 +1022,7 @@ class Model3dGlbService:
             "default_scene_index": int(default_scene) if _is_int(default_scene) else None,
             "cameras": cameras,
             "animations": animations,
+            "animation_analysis_version": ANIMATION_ANALYSIS_VERSION,
             "extensions_used": [str(item) for item in root.get("extensionsUsed", []) or []],
             "extensions_required": [str(item) for item in root.get("extensionsRequired", []) or []],
             "validation_profile": policy.validation_profile,
