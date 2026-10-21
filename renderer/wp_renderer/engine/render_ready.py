@@ -1,10 +1,12 @@
-"""文件功能：Runtime 强制就绪协议 render-ready.v1 的等待与核对逻辑。"""
+"""文件功能：Runtime 强制就绪协议 render-ready.v1/v2 的等待与核对逻辑。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-RUNTIME_READY_PROTOCOL = "render-ready.v1"
+from render_contracts.constants import RUNTIME_RENDER_PROTOCOL_VERSION, RUNTIME_RENDER_PROTOCOL_VERSION_V2
+
+RUNTIME_READY_PROTOCOL = RUNTIME_RENDER_PROTOCOL_VERSION
 
 
 async def wait_for_render_ready(
@@ -13,6 +15,7 @@ async def wait_for_render_ready(
     timeout_ms: int,
     expected_artifact_id: str | None = None,
     expected_input_digest: str | None = None,
+    protocol: str = RUNTIME_READY_PROTOCOL,
 ) -> dict[str, Any]:
     """等待宿主协议就绪；禁止用 #app 子节点、固定 sleep 或 networkidle 替代。"""
 
@@ -66,7 +69,7 @@ async def wait_for_render_ready(
       } catch (e) {}
       return {
         ok: false,
-        message: '等待 render-ready.v1 协议超时',
+        message: '等待 ' + protocol + ' 协议超时',
         url: String(location.href || ''),
         hasBridge: Boolean(window.__RENDER_READY__),
         bridge: window.__RENDER_READY__
@@ -83,7 +86,7 @@ async def wait_for_render_ready(
         expression,
         {
             "timeoutMs": int(timeout_ms),
-            "protocol": RUNTIME_READY_PROTOCOL,
+            "protocol": protocol,
             "artifactId": expected_artifact_id,
             "inputDigest": expected_input_digest,
         },

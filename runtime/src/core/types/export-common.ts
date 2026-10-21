@@ -58,6 +58,8 @@ export interface CaptureOptions {
   fullBleed?: boolean
   /** 指定要捕获的运行时页面路由，导出多页时用于避免截错过渡页 */
   routePath?: string
+  /** 指定时间轴时刻/标签；缺省使用页面 poster */
+  motionSnapshot?: import('@/core/motion/capture-bridge').CaptureMotionSnapshot
   /** 取消信号：中止离屏页面准备与截图等待 */
   signal?: AbortSignal
   /** 当目标所在页面已确认加载完成时跳过全局页面就绪与 500ms 固定等待（用于 PPTX 局部元素光栅化） */

@@ -52,6 +52,7 @@ def set_self_check(result: RendererSelfCheck) -> None:
 
 
 @router.get("/internal/render/v1/capabilities")
+@router.get("/internal/render/v2/capabilities")
 async def capabilities(_subject: str = Depends(require_service_token)) -> dict[str, Any]:
     """返回 Worker 能力、协议版本与槽位状态。"""
 
@@ -84,6 +85,7 @@ async def readyz() -> JSONResponse:
 
 
 @router.post("/internal/render/v1/executions")
+@router.post("/internal/render/v2/executions")
 async def accept_execution(
     payload: dict[str, Any],
     _subject: str = Depends(require_service_token),
@@ -117,6 +119,7 @@ async def accept_execution(
 
 
 @router.get("/internal/render/v1/executions/{attempt_id}")
+@router.get("/internal/render/v2/executions/{attempt_id}")
 async def get_execution(
     attempt_id: str,
     _subject: str = Depends(require_service_token),
@@ -136,6 +139,7 @@ async def get_execution(
 
 
 @router.put("/internal/render/v1/executions/{attempt_id}/cancellation")
+@router.put("/internal/render/v2/executions/{attempt_id}/cancellation")
 async def cancel_execution(
     attempt_id: str,
     payload: dict[str, Any] | None = None,
@@ -148,6 +152,7 @@ async def cancel_execution(
 
 
 @router.get("/internal/render/v1/executions/{attempt_id}/artifacts/{name}")
+@router.get("/internal/render/v2/executions/{attempt_id}/artifacts/{name}")
 async def get_artifact(
     attempt_id: str,
     name: str,
@@ -199,6 +204,7 @@ async def get_artifact(
 
 
 @router.put("/internal/render/v1/executions/{attempt_id}/result-consumption")
+@router.put("/internal/render/v2/executions/{attempt_id}/result-consumption")
 async def confirm_consumption(
     attempt_id: str,
     payload: dict[str, Any] | None = None,

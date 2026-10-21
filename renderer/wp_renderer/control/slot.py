@@ -16,6 +16,8 @@ from render_contracts.constants import (
     ATTEMPT_STATUS_TERMINAL,
     RESOURCE_STATE_RELEASED,
     RESOURCE_STATE_RETAINED,
+    SUPPORTED_CONTROL_PROTOCOL_VERSIONS,
+    SUPPORTED_RUNTIME_RENDER_PROTOCOL_VERSIONS,
 )
 from render_contracts.errors import (
     ERROR_CODE_BROWSER_LOST,
@@ -87,6 +89,8 @@ class SlotController:
             "worker_epoch": self.worker_epoch,
             "protocol_version": self.settings.protocol_version,
             "runtime_render_protocol_version": self.settings.runtime_protocol_version,
+            "supported_protocol_versions": list(SUPPORTED_CONTROL_PROTOCOL_VERSIONS),
+            "supported_runtime_protocol_versions": list(SUPPORTED_RUNTIME_RENDER_PROTOCOL_VERSIONS),
             "result_schema_version": self.settings.result_schema_version,
             "render_profile_digest": self.settings.render_profile_digest,
             "environment_summary": {

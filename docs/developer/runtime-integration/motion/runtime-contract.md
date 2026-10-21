@@ -115,7 +115,7 @@ render-contracts 的 Python DTO 与 JSON Schema 同时演进，Backend 按 Worke
 
 ## HTTP 联调草案
 
-以下为待实现的路径与字段，WP09/WP11 联动 OpenAPI、权限目录和客户端后才能调用。HTTP 使用 snake_case，Runtime 选择器使用上文 camelCase，转换只维护一处。
+内部 v2 路径与捕获选择器已由 WP09 实施；外部异步截图与客户端透传仍待 WP11 联动 OpenAPI、权限目录和客户端后才能调用。HTTP 使用 snake_case，Runtime 选择器使用 camelCase，Renderer 与 Runtime 边界只做一次显式转换。
 
 | 用途 | 路径与语义 |
 | :--- | :--- |

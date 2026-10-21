@@ -1,6 +1,6 @@
 # WP09 捕获协议与静态导出
 
-状态：待实施。主责：render-contracts / Renderer / Backend / Runtime。前置：[WP04](./wp04-dom-adapter.md)、[WP05](./wp05-media-adapter.md)、[WP06](./wp06-model-adapter.md)、[WP07](./wp07-asset-capabilities.md)。
+状态：待验收（协议、Renderer 与 Runtime 捕获桥已实施；真实链路取帧证据待补）。主责：render-contracts / Renderer / Backend / Runtime。前置：[WP04](./wp04-dom-adapter.md)、[WP05](./wp05-media-adapter.md)、[WP06](./wp06-model-adapter.md)、[WP07](./wp07-asset-capabilities.md)。
 
 ## 输入与落点
 
@@ -27,6 +27,17 @@
 
 ## 实施记录
 
-- 代码版本、协议和身份规则版本：待回填。
-- 实际命令、结果、产物位置与清理证据：待回填。
-- 未覆盖项：待回填。
+- 代码版本、协议和身份规则版本：
+  - 控制协议 `internal/render/v2`、Runtime 就绪协议 `render-ready.v2`、Runtime 捕获桥 `motion-snapshot.v1`；v1 路径与旧请求继续可用。
+  - `ExecutionRequest.motion_snapshot` 支持 `at_ms` 与 `at_label + offset_ms` 互斥选择，`visual_mode` 为 `full|reduced`；`ExecutionResult.applied_motion` 回执有界，显式选择器要求 `status=applied` 且 timeline/采样时间一致。
+  - Renderer 能力同时公布 `supported_protocol_versions` 与 `supported_runtime_protocol_versions`；Backend 仅在页面捕获/诊断且 Worker 支持 v2 时派发 v2，显式选择器遇到 v1 Worker 或 Runtime 不声明 v2 均以契约不匹配失败，不静默降级。
+  - 预览地址附加 `runtimeCaptureProtocol=2`，Runtime 按该标记初始化 v2 桥；Renderer 在静态准备与视觉资源就绪之后采样时间轴并截图，导出路径在同一采样后再准备静态模型帧。
+  - 支持 v2 的 Worker 执行默认截图时同样通过 poster 采样；旧 Worker 或旧 Runtime 保留原有静态行为。PNG/PDF/PPTX 未指定选择器时使用页面 poster，旧页面无时间轴桥时保留静态默认，显式指定时间轴则失败。
+- 实际命令、结果、产物位置与清理证据：
+  - `uv run pytest packages/render-contracts/tests -q` → 30 passed。
+  - `uv run pytest renderer/tests/test_motion_capture.py renderer/tests/test_static_capture.py -q` → 12 passed；`uv run pytest renderer/tests -q --ignore=renderer/tests/test_startup_check.py` → 41 passed。
+  - `uv run --project backend pytest -c backend/pyproject.toml backend/tests/unit/test_render_motion_dispatch.py backend/tests/unit/test_render_control_plane.py backend/tests/unit/test_render_lifecycle.py backend/tests/unit/test_render_static_navigation.py backend/tests/unit/test_render_attempt_late_failure.py backend/tests/unit/test_render_result_conflict.py -q` → 58 passed。
+  - `pnpm --filter web-runtime-vue exec vitest run src/core/motion/capture-bridge.test.ts src/core/utils/render-ready.test.ts src/core/services/export/OffscreenPageStage.test.ts` → 14 passed；Runtime `vue-tsc --noEmit` 通过。
+- 未覆盖项：
+  - 尚未运行 Backend → Renderer → 独立 Runtime 的真实 PNG/PDF/PPTX 取帧与目检，视频中间帧、模型姿态、同刻重复/乱序、取消与临时产物清理只有单元/契约证据。
+  - 外部异步截图任务与临时选择器持久化归 WP11；当前默认截图任务不接收选择器，因此不存在临时帧覆盖默认指针的路径，但也没有真实任务侧身份对拍。

@@ -14,7 +14,9 @@ from render_contracts.constants import (
     OPERATION_PAGE_CAPTURE,
     OPERATION_PAGE_DIAGNOSE,
     PROTOCOL_VERSION,
+    PROTOCOL_VERSION_V2,
     RUNTIME_RENDER_PROTOCOL_VERSION,
+    RUNTIME_RENDER_PROTOCOL_VERSION_V2,
     SCHEDULE_CATEGORY_BACKGROUND,
     SCHEDULE_CATEGORY_INTERACTIVE,
 )
@@ -30,6 +32,7 @@ from render_contracts.errors import (
     RenderError,
     RenderExecutionError,
 )
+from render_contracts.motion import MotionSnapshot
 from render_contracts.schema import ExecutionRequest, SnapshotRef, ViewportSpec
 from render_contracts.tokens import AdmissionTicket
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -349,7 +352,11 @@ class RenderCoordinator:
                 await session.commit()
                 capabilities = await self.client.fetch_capabilities(endpoint)
                 self.client.validate_profile(capabilities, request.render_profile_digest)
-                execution_request = self._build_execution_request(request=request, attempt=attempt)
+                execution_request = self._build_execution_request(
+                    request=request,
+                    attempt=attempt,
+                    capabilities=capabilities,
+                )
                 dispatched = await repository.mark_attempt_dispatched(
                     attempt.id,
                     worker_id=attempt.worker_id or "",
@@ -608,8 +615,14 @@ class RenderCoordinator:
             )
             await session.commit()
 
-    def _build_execution_request(self, *, request: Any, attempt: Any) -> ExecutionRequest:
-        """把持久化请求与 attempt 转为契约执行请求。"""
+    def _build_execution_request(
+        self,
+        *,
+        request: Any,
+        attempt: Any,
+        capabilities: Any = None,
+    ) -> ExecutionRequest:
+        """把持久化请求与 attempt 转为契约执行请求；显式选择器要求 v2 Worker。"""
 
         snapshot_ref = SnapshotRef.from_dict(dict(request.snapshot_ref or {}))
         viewport = ViewportSpec.from_dict(dict(request.viewport or {}))
@@ -644,12 +657,50 @@ class RenderCoordinator:
             else None
         )
         static_capture = is_static_capture_operation(request.operation)
+        raw_motion = dict(request.operation_options or {}).get("motion_snapshot")
+        motion_snapshot = MotionSnapshot.from_dict(dict(raw_motion)) if isinstance(raw_motion, dict) else None
+        page_operation = request.operation in {OPERATION_PAGE_CAPTURE, OPERATION_PAGE_DIAGNOSE}
+        if motion_snapshot is not None and not page_operation:
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_CONTRACT_MISMATCH,
+                    message="motion_snapshot 只支持页面捕获与页面诊断。",
+                    stage="dispatch",
+                )
+            )
+        worker_supports_v2 = bool(capabilities and capabilities.supports_protocol(PROTOCOL_VERSION_V2))
+        use_v2 = page_operation and (
+            motion_snapshot is not None or (capabilities is not None and worker_supports_v2)
+        )
+        if use_v2 and capabilities is not None and not worker_supports_v2:
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_CONTRACT_MISMATCH,
+                    message="没有声明 internal/render/v2 的 Renderer，无法应用时间轴捕获选择器。",
+                    stage="dispatch",
+                )
+            )
+        if use_v2 and capabilities is not None and not capabilities.supports_runtime_protocol(
+            RUNTIME_RENDER_PROTOCOL_VERSION_V2
+        ):
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_CONTRACT_MISMATCH,
+                    message="Renderer 未声明 render-ready.v2，无法核对时间轴状态回执。",
+                    stage="dispatch",
+                )
+            )
+        contract_version = PROTOCOL_VERSION_V2 if use_v2 else PROTOCOL_VERSION
+        runtime_protocol_version = (
+            RUNTIME_RENDER_PROTOCOL_VERSION_V2 if use_v2 else RUNTIME_RENDER_PROTOCOL_VERSION
+        )
         if preview_url:
             navigation_url = _ensure_render_identity_query(
                 preview_url,
                 input_digest=request.input_digest,
                 artifact_id=str(snap.get("artifact_id") or ""),
                 static_capture=static_capture,
+                capture_protocol=runtime_protocol_version,
             )
         else:
             navigation_url = RenderSnapshotService.build_preview_navigation_url(
@@ -658,19 +709,20 @@ class RenderCoordinator:
                 preview_token=preview_token,
                 input_digest=request.input_digest,
                 static_capture=static_capture,
+                capture_protocol=runtime_protocol_version,
             )
         preview_access = PreviewAccessType(
             navigation_base_url=navigation_url,
             preview_token=preview_token,
             artifact_id=str(snap.get("artifact_id") or ""),
             expires_at=str(snap.get("expires_at") or ""),
-            runtime_protocol_version=RUNTIME_RENDER_PROTOCOL_VERSION,
+            runtime_protocol_version=runtime_protocol_version,
             asset_base_url=self.targets.asset_base_url(),
             platform_asset_base_url=self.targets.platform_asset_base_url(),
             extra_http_headers=extra_http_headers,
         )
         return ExecutionRequest(
-            contract_version=PROTOCOL_VERSION,
+            contract_version=contract_version,
             operation=request.operation,
             request_id=str(request.id),
             attempt_id=attempt.attempt_uid,
@@ -687,6 +739,7 @@ class RenderCoordinator:
             admission_ticket=ticket,
             preview_access=preview_access,
             render_category=request.schedule_category or SCHEDULE_CATEGORY_BACKGROUND,
+            motion_snapshot=motion_snapshot if use_v2 else None,
         )
 
     def _endpoint_for_worker(self, worker_id: str | None):
@@ -743,8 +796,9 @@ def _ensure_render_identity_query(
     input_digest: str,
     artifact_id: str,
     static_capture: bool = False,
+    capture_protocol: str | None = None,
 ) -> str:
-    """在已有预览 URL 上补齐 input_digest、artifact 与捕获标记，供 render-ready.v1 硬核对。
+    """在已有预览 URL 上补齐 input_digest、artifact 与捕获标记，供 render-ready 硬核对。
 
     Runtime 从 location.search 读取 artifact/input_digest 写入协议桥；仅放请求头
     会导致 bridge.artifactId 为空，Renderer 校验失败。页面捕获/诊断必须显式固定
@@ -767,6 +821,9 @@ def _ensure_render_identity_query(
             changed = True
         if static_capture and query.get("runtimeCapture") != "1":
             query["runtimeCapture"] = "1"
+            changed = True
+        if capture_protocol == RUNTIME_RENDER_PROTOCOL_VERSION_V2 and query.get("runtimeCaptureProtocol") != "2":
+            query["runtimeCaptureProtocol"] = "2"
             changed = True
         if not changed:
             return preview_url

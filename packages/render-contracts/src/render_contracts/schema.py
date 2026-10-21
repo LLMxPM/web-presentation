@@ -15,9 +15,11 @@ from render_contracts.constants import (
     DEFAULT_MAX_PNG_BYTES,
     PROTOCOL_VERSION,
     RESULT_SCHEMA_VERSION,
+    SUPPORTED_CONTROL_PROTOCOL_VERSIONS,
     SUPPORTED_OPERATIONS,
 )
 from render_contracts.errors import RenderContractError, parse_bool
+from render_contracts.motion import AppliedMotion, MotionSnapshot
 from render_contracts.screenshot import ScreenshotPhaseResult
 from render_contracts.tokens import AdmissionTicket, PreviewAccess
 
@@ -127,14 +129,19 @@ class ExecutionRequest:
     admission_ticket: AdmissionTicket
     preview_access: PreviewAccess
     render_category: str = "background"
+    motion_snapshot: MotionSnapshot | None = None
 
     def validate(self) -> None:
         """校验契约版本、操作类型与关键身份字段。"""
 
-        if self.contract_version != PROTOCOL_VERSION:
+        if self.contract_version not in SUPPORTED_CONTROL_PROTOCOL_VERSIONS:
             raise RenderContractError(
-                f"契约版本不匹配：期望 {PROTOCOL_VERSION}，实际 {self.contract_version}。",
+                f"契约版本不匹配：期望 {SUPPORTED_CONTROL_PROTOCOL_VERSIONS}，实际 {self.contract_version}。",
             )
+        if self.contract_version == PROTOCOL_VERSION and self.motion_snapshot is not None:
+            raise RenderContractError("motion_snapshot 只能用于 internal/render/v2。")
+        if self.motion_snapshot is not None:
+            self.motion_snapshot.validate()
         if self.operation not in SUPPORTED_OPERATIONS:
             raise RenderContractError(f"未知渲染操作：{self.operation}")
         if not self.request_id or not self.attempt_id or not self.request_digest:
@@ -182,6 +189,7 @@ class ExecutionRequest:
             "admission_ticket": self.admission_ticket.to_dict(),
             "preview_access": self.preview_access.to_dict(),
             "render_category": self.render_category,
+            **({"motion_snapshot": self.motion_snapshot.to_dict()} if self.motion_snapshot else {}),
         }
 
     @classmethod
@@ -206,6 +214,11 @@ class ExecutionRequest:
             admission_ticket=AdmissionTicket.from_dict(dict(payload.get("admission_ticket") or {})),
             preview_access=PreviewAccess.from_dict(dict(payload.get("preview_access") or {})),
             render_category=str(payload.get("render_category") or "background"),
+            motion_snapshot=(
+                MotionSnapshot.from_dict(dict(payload["motion_snapshot"]))
+                if payload.get("motion_snapshot") is not None
+                else None
+            ),
         )
 
 
@@ -322,6 +335,7 @@ class ExecutionResult:
     resource_state: str = "released"
     truncated: bool = False
     screenshot: ScreenshotPhaseResult | None = None
+    applied_motion: AppliedMotion | None = None
 
     def to_dict(self) -> dict[str, object]:
         """序列化执行结果。"""
@@ -347,6 +361,7 @@ class ExecutionResult:
             "resource_state": self.resource_state,
             "truncated": self.truncated,
             "screenshot": self.screenshot.to_dict() if self.screenshot else None,
+            "applied_motion": self.applied_motion.to_dict() if self.applied_motion else None,
         }
 
     @classmethod
@@ -425,6 +440,11 @@ class ExecutionResult:
             resource_state=resource_state,
             truncated=parse_bool(payload.get("truncated", False)),
             screenshot=(ScreenshotPhaseResult.from_dict(dict(payload["screenshot"])) if payload.get("screenshot") is not None else None),
+            applied_motion=(
+                AppliedMotion.from_dict(dict(payload["applied_motion"]))
+                if payload.get("applied_motion") is not None
+                else None
+            ),
         )
 
 
@@ -442,20 +462,44 @@ class WorkerCapabilities:
     limits: dict[str, Any]
     slot_state: str
     slot_generation: int = 0
+    supported_protocol_versions: tuple[str, ...] = ()
+    supported_runtime_protocol_versions: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "WorkerCapabilities":
-        """从字典解析能力响应。"""
+        """从字典解析能力响应；旧 Worker 只公布单版本。"""
 
+        protocol_version = str(payload.get("protocol_version") or "")
+        runtime_protocol_version = str(payload.get("runtime_render_protocol_version") or "")
+        raw_control = payload.get("supported_protocol_versions")
+        raw_runtime = payload.get("supported_runtime_protocol_versions")
+        control_versions = tuple(str(item) for item in raw_control) if isinstance(raw_control, list) else ()
+        runtime_versions = tuple(str(item) for item in raw_runtime) if isinstance(raw_runtime, list) else ()
         return cls(
             worker_id=str(payload.get("worker_id") or ""),
             worker_epoch=str(payload.get("worker_epoch") or ""),
-            protocol_version=str(payload.get("protocol_version") or ""),
-            runtime_render_protocol_version=str(payload.get("runtime_render_protocol_version") or ""),
+            protocol_version=protocol_version,
+            runtime_render_protocol_version=runtime_protocol_version,
             result_schema_version=str(payload.get("result_schema_version") or ""),
             render_profile_digest=str(payload.get("render_profile_digest") or ""),
             environment_summary=dict(payload.get("environment_summary") or {}),
             limits=dict(payload.get("limits") or {}),
             slot_state=str(payload.get("slot_state") or "unknown"),
             slot_generation=int(payload.get("slot_generation") or 0),
+            supported_protocol_versions=control_versions or ((protocol_version,) if protocol_version else ()),
+            supported_runtime_protocol_versions=(
+                runtime_versions or ((runtime_protocol_version,) if runtime_protocol_version else ())
+            ),
+        )
+
+    def supports_protocol(self, version: str) -> bool:
+        """判断 Worker 是否声明支持指定控制协议版本。"""
+
+        return version in (self.supported_protocol_versions or (self.protocol_version,))
+
+    def supports_runtime_protocol(self, version: str) -> bool:
+        """判断 Worker 是否声明支持指定 Runtime 就绪协议版本。"""
+
+        return version in (
+            self.supported_runtime_protocol_versions or (self.runtime_render_protocol_version,)
         )

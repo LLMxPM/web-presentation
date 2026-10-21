@@ -1,11 +1,24 @@
 /**
- * 文件用途：Runtime 强制渲染就绪协议 render-ready.v1 的唯一宿主实现。
+ * 文件用途：Runtime 强制渲染就绪协议 render-ready.v1/v2 的唯一宿主实现。
  */
 
 export const RENDER_READY_PROTOCOL = 'render-ready.v1'
+export const RENDER_READY_PROTOCOL_V2 = 'render-ready.v2'
+
+export interface RenderReadyMotionState {
+  status: 'applied' | 'skipped' | 'degraded'
+  timelineId?: string
+  planDigest?: string
+  sampledTimeMs?: number
+  stateDigest?: string
+  visualMode?: 'full' | 'reduced'
+  message?: string
+}
 
 export interface RenderReadyBridge {
   protocol: string
+  protocolVersions: string[]
+  motion: RenderReadyMotionState | null
   artifactId: string | null
   inputDigest: string | null
   runtimeBuildId: string | null
@@ -44,11 +57,12 @@ declare global {
       slots?: Record<string, unknown> | null
       mocks?: Record<string, unknown> | null
     }) => Promise<{ requestId: string; ok: boolean; scenarioKey: string }>
+    __RUNTIME_APPLY_MOTION_SNAPSHOT__?: (request?: unknown) => Promise<RenderReadyMotionState>
   }
 }
 
 /**
- * 初始化 render-ready.v1 宿主桥；禁止用 #app 子节点或固定 sleep 替代协议。
+ * 初始化 render-ready 宿主桥；禁止用 #app 子节点或固定 sleep 替代协议。
  */
 export function initializeRenderReadyHost(meta?: {
   artifactId?: string | null
@@ -56,12 +70,15 @@ export function initializeRenderReadyHost(meta?: {
   runtimeBuildId?: string | null
   executionContext?: string | null
   entryPath?: string | null
+  protocol?: string | null
 }): void {
   if (typeof window === 'undefined') {
     return
   }
   window.__RENDER_READY__ = {
-    protocol: RENDER_READY_PROTOCOL,
+    protocol: meta?.protocol === RENDER_READY_PROTOCOL_V2 ? RENDER_READY_PROTOCOL_V2 : RENDER_READY_PROTOCOL,
+    protocolVersions: [RENDER_READY_PROTOCOL, RENDER_READY_PROTOCOL_V2],
+    motion: null,
     artifactId: meta?.artifactId ?? null,
     inputDigest: meta?.inputDigest ?? null,
     runtimeBuildId: meta?.runtimeBuildId ?? null,
@@ -91,7 +108,9 @@ export function updateRenderReadyHost(patch: Partial<RenderReadyBridge>): void {
   window.__RENDER_READY__ = {
     ...current,
     ...patch,
-    protocol: RENDER_READY_PROTOCOL,
+    protocol: patch.protocol ?? current.protocol ?? RENDER_READY_PROTOCOL,
+    protocolVersions: [RENDER_READY_PROTOCOL, RENDER_READY_PROTOCOL_V2],
+    motion: patch.motion === undefined ? current.motion ?? null : patch.motion,
     fonts: { ...current.fonts, ...(patch.fonts ?? {}) },
     visualAssets: { ...current.visualAssets, ...(patch.visualAssets ?? {}) },
   }
@@ -107,6 +126,7 @@ export async function markRenderPreviewMounted(options?: {
   executionContext?: string | null
   entryPath?: string | null
   routePath?: string | null
+  protocol?: string | null
 }): Promise<void> {
   if (typeof window === 'undefined') {
     return
@@ -117,6 +137,7 @@ export async function markRenderPreviewMounted(options?: {
       inputDigest: options?.inputDigest ?? null,
       executionContext: options?.executionContext ?? null,
       entryPath: options?.entryPath ?? null,
+      protocol: options?.protocol ?? null,
     })
   }
   const fontsReady = typeof document !== 'undefined' && document.fonts?.ready

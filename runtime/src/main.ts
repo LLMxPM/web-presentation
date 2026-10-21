@@ -7,6 +7,7 @@ import { createApp, nextTick } from 'vue'
 import App from './App.vue'
 import { loadThemeConfigs } from './core/composables/useTheme'
 import { registerPageVisualEditSelectionBridge } from './core/visual-edit/browser/selection-bridge'
+import { installCaptureMotionBridge } from './core/motion/capture-bridge'
 import { initializeStaticIcons } from './core/utils/static-icons'
 import { initializeConfig } from './core/utils/config'
 import { initializeRuntimeFaviconSync } from './core/utils/favicon'
@@ -20,6 +21,7 @@ import { registerEditorVisualAssetProbe } from './core/utils/visual-assets'
 import {
   initializeRenderReadyHost,
   markRenderPreviewMounted,
+  RENDER_READY_PROTOCOL_V2,
   markRenderReadyFailure,
 } from './core/utils/render-ready'
 import { installRuntimeClientLogger, reportRuntimeClientError } from './core/utils/client-logger'
@@ -67,13 +69,18 @@ async function initializeApp(): Promise<void> {
   const executionPolicy = initializeRuntimeExecution(window.location.search, getRuntimePreviewContext())
   installMediaPlaybackGuard({ fallbackMode: mediaPlaybackMode(executionPolicy) })
   const previewEntryPath = getPreviewEntryNavigationPath()
+  const captureProtocol = new URLSearchParams(window.location.search).get('runtimeCaptureProtocol') === '2'
+    ? RENDER_READY_PROTOCOL_V2
+    : undefined
   initializeRenderReadyHost({
     artifactId: new URLSearchParams(window.location.search).get('artifact'),
     inputDigest: new URLSearchParams(window.location.search).get('input_digest'),
     executionContext: executionPolicy.kind,
     entryPath: previewEntryPath,
+    protocol: captureProtocol,
   })
   registerEditorVisualAssetProbe()
+  installCaptureMotionBridge()
 
   try {
     await initializeConfig()
@@ -110,6 +117,7 @@ async function initializeApp(): Promise<void> {
       executionContext: executionPolicy.kind,
       entryPath: previewEntryPath,
       routePath: router.currentRoute.value.path,
+      protocol: captureProtocol,
     })
     // 以协议状态为准：视觉资源失败时 markRenderPreviewMounted 会写 false，不得无条件覆盖。
     setEditorRuntimePreviewReady(window.__EDITOR_RUNTIME_PREVIEW_READY__ !== false)

@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
+from render_contracts.constants import RUNTIME_RENDER_PROTOCOL_VERSION_V2
 from render_contracts.tokens import PreviewAccess, canonical_json, sha256_hex
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -269,6 +270,7 @@ class RenderSnapshotService:
         preview_token: str,
         input_digest: str | None = None,
         static_capture: bool = False,
+        capture_protocol: str | None = None,
     ) -> str:
         """拼接受保护预览导航地址，并携带捕获标记供 Runtime 固定静态执行上下文。"""
 
@@ -278,6 +280,8 @@ class RenderSnapshotService:
             params["input_digest"] = input_digest
         if static_capture:
             params["runtimeCapture"] = "1"
+        if capture_protocol == RUNTIME_RENDER_PROTOCOL_VERSION_V2:
+            params["runtimeCaptureProtocol"] = "2"
         query = urlencode(params)
         parts = urlsplit(f"{base}/preview")
         return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))

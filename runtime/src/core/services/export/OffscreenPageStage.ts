@@ -7,7 +7,12 @@ import { ModelStaticFrameCache, cleanupModelStaticFrames, prepareModelStaticFram
 
 export interface RuntimeCaptureRoute { path: string; hash: string }
 export interface OffscreenPreparedPage { element: HTMLElement; cleanup: () => void }
-export interface OffscreenPrepareOptions { signal?: AbortSignal; timeoutMs?: number }
+export interface OffscreenPrepareOptions {
+  signal?: AbortSignal
+  timeoutMs?: number
+  /** 指定时刻/标签采样；缺省使用页面 poster。 */
+  motionSnapshot?: import('@/core/motion/capture-bridge').CaptureMotionSnapshot
+}
 export interface OffscreenPageStage {
   preparePage: (route: string, options?: OffscreenPrepareOptions) => Promise<OffscreenPreparedPage>
   capture: (route: string, options?: CaptureOptions) => Promise<HTMLCanvasElement>
@@ -70,6 +75,28 @@ export function pauseOffscreenMedia(root: HTMLElement): void {
 }
 
 
+/**
+ * 通过 iframe 自身安装的桥采样时间轴；缺省 poster 在没有桥的旧页面保持静态兜底。
+ * @param win 离屏 iframe 窗口
+ * @param snapshot 捕获选择器
+ */
+async function applyOffscreenMotionSnapshot(
+  win: Window,
+  snapshot: import('@/core/motion/capture-bridge').CaptureMotionSnapshot | undefined,
+): Promise<void> {
+  const apply = (win as Window & {
+    __RUNTIME_APPLY_MOTION_SNAPSHOT__?: (request?: unknown) => Promise<{ status?: string; message?: string }>
+  }).__RUNTIME_APPLY_MOTION_SNAPSHOT__
+  if (!apply) {
+    if (snapshot?.timelineId) throw new Error('导出页面未提供时间轴采样能力。')
+    return
+  }
+  const receipt = await apply(snapshot ?? {})
+  if (snapshot?.timelineId && receipt?.status !== 'applied') {
+    throw new Error(receipt?.message || '导出页面未能应用指定时间轴状态。')
+  }
+}
+
 /** 创建可复用捕获舞台，调用方必须在 finally 中释放。 */
 export function createOffscreenPageStage(): OffscreenPageStage {
   const frame = document.createElement('iframe')
@@ -121,6 +148,7 @@ export function createOffscreenPageStage(): OffscreenPageStage {
           throwIfExportAborted(signal)
           await freezeDocumentAnimationsToFinalState(doc)
           pauseOffscreenMedia(target)
+          await applyOffscreenMotionSnapshot(win, options?.motionSnapshot)
           // 页面就绪后逐实例准备静态帧：克隆与转换阶段看到的是 PNG 覆盖图，而不是空白 WebGL 画布。
           const staticFrames = prepareModelStaticFrames(target, { cache: staticFrameCache })
           cleanupModelStaticFrames(activeStaticFrameHandle)
@@ -135,7 +163,10 @@ export function createOffscreenPageStage(): OffscreenPageStage {
 
   /** 在已就绪页面节点上捕获，截图完成后归还页面句柄。 */
   async function capture(route: string, options?: CaptureOptions): Promise<HTMLCanvasElement> {
-    const prepared = await preparePage(route, { signal: options?.signal })
+    const prepared = await preparePage(route, {
+      signal: options?.signal,
+      motionSnapshot: options?.motionSnapshot,
+    })
     try { return await pageCaptureService.captureElement(prepared.element, options) }
     finally { prepared.cleanup() }
   }

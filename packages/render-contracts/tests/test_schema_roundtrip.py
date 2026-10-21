@@ -7,6 +7,7 @@ AGENTS.md 要求 DTO 与 JSON Schema 双份事实源同步维护并补充对拍�
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 import sys
 from typing import Any
@@ -18,10 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from render_contracts.constants import (  # noqa: E402
     ADMISSION_TICKET_VERSION,
     PROTOCOL_VERSION,
+    PROTOCOL_VERSION_V2,
     RESULT_SCHEMA_VERSION,
     SUPPORTED_OPERATIONS,
 )
 from render_contracts.errors import (  # noqa: E402
+    RenderContractError,
     CATEGORY_CANCELLATION,
     CATEGORY_CAPACITY,
     CATEGORY_CONFIGURATION,
@@ -42,6 +45,7 @@ from render_contracts.errors import (  # noqa: E402
     error_http_status_table,
     http_status_for_error_code,
 )
+from render_contracts.motion import AppliedMotion, MotionSnapshot  # noqa: E402
 from render_contracts.schema import (  # noqa: E402
     ArtifactDescriptor,
     DiagnosticItem,
@@ -49,6 +53,7 @@ from render_contracts.schema import (  # noqa: E402
     ExecutionResult,
     SnapshotRef,
     ViewportSpec,
+    WorkerCapabilities,
 )
 from render_contracts.tokens import (  # noqa: E402
     AdmissionTicket,
@@ -287,3 +292,100 @@ def test_error_http_status_map_matches_json_schema() -> None:
         assert http_status_for_error_code(code) == status
         assert 400 <= status <= 599
     assert http_status_for_error_code("RENDER_UNKNOWN_CODE") == 500
+
+
+def test_v2_request_with_motion_snapshot_roundtrip_matches_json_schema() -> None:
+    """v2 请求可携带互斥时间选择器，v1 请求拒绝该字段。"""
+
+    snapshot = MotionSnapshot(timeline_id="intro", at_label="detail", offset_ms=600, visual_mode="reduced")
+    request = replace(
+        _request(),
+        contract_version=PROTOCOL_VERSION_V2,
+        motion_snapshot=snapshot,
+    )
+    schema = _load_schema("execution-request.v2.json")
+    payload = request.to_dict()
+    _validate_required_and_types(payload, schema, label="ExecutionRequestV2")
+    assert payload["motion_snapshot"] == {
+        "timeline_id": "intro",
+        "at_label": "detail",
+        "offset_ms": 600,
+        "visual_mode": "reduced",
+    }
+    assert ExecutionRequest.from_dict(payload).to_dict() == payload
+
+    with pytest.raises(RenderContractError, match="internal/render/v2"):
+        replace(_request(), motion_snapshot=snapshot).validate()
+
+
+def test_motion_snapshot_rejects_ambiguous_or_out_of_range_selection() -> None:
+    """时间选择器必须互斥、有界且只接受已知视觉模式。"""
+
+    with pytest.raises(RenderContractError, match="互斥"):
+        MotionSnapshot(at_ms=100, at_label="detail").validate()
+    with pytest.raises(RenderContractError, match="offset_ms"):
+        MotionSnapshot(offset_ms=100).validate()
+    with pytest.raises(RenderContractError, match="visual_mode"):
+        MotionSnapshot(visual_mode="fast").validate()
+    with pytest.raises(RenderContractError, match="at_ms"):
+        MotionSnapshot(at_ms=-1).validate()
+
+
+def test_v2_result_applied_motion_roundtrip_and_required_fields() -> None:
+    """v2 结果携带状态回执；applied 必须包含计划、时间与状态摘要。"""
+
+    applied = AppliedMotion(
+        status="applied",
+        timeline_id="intro",
+        plan_digest="plan-1",
+        sampled_time_ms=400,
+        state_digest="state-1",
+        visual_mode="full",
+    )
+    result = replace(_result(), applied_motion=applied)
+    payload = result.to_dict()
+    schema = _load_schema("execution-result.v2.json")
+    _validate_required_and_types(payload, schema, label="ExecutionResultV2")
+    assert ExecutionResult.from_dict(payload).to_dict() == payload
+
+    with pytest.raises(RenderContractError, match="缺少"):
+        AppliedMotion(status="applied", timeline_id="intro").validate()
+    assert AppliedMotion.from_dict({"status": "skipped"}).to_dict() == {"status": "skipped"}
+
+
+def test_worker_capabilities_support_versions_default_to_single_protocol() -> None:
+    """旧 Worker 只公布单版本；新 Worker 可声明 v1/v2 并参与派发判断。"""
+
+    legacy = WorkerCapabilities.from_dict(
+        {
+            "worker_id": "w-1",
+            "worker_epoch": "e-1",
+            "protocol_version": PROTOCOL_VERSION,
+            "runtime_render_protocol_version": "render-ready.v1",
+            "result_schema_version": RESULT_SCHEMA_VERSION,
+            "render_profile_digest": "prof",
+            "environment_summary": {},
+            "limits": {},
+            "slot_state": "idle",
+        }
+    )
+    assert legacy.supports_protocol(PROTOCOL_VERSION)
+    assert not legacy.supports_protocol(PROTOCOL_VERSION_V2)
+
+    modern = WorkerCapabilities.from_dict(
+        {
+            "worker_id": "w-2",
+            "worker_epoch": "e-2",
+            "protocol_version": PROTOCOL_VERSION,
+            "runtime_render_protocol_version": "render-ready.v1",
+            "supported_protocol_versions": [PROTOCOL_VERSION, PROTOCOL_VERSION_V2],
+            "supported_runtime_protocol_versions": ["render-ready.v1", "render-ready.v2"],
+            "result_schema_version": RESULT_SCHEMA_VERSION,
+            "render_profile_digest": "prof",
+            "environment_summary": {},
+            "limits": {},
+            "slot_state": "idle",
+        }
+    )
+    assert modern.supports_protocol(PROTOCOL_VERSION_V2)
+    assert modern.supports_runtime_protocol("render-ready.v2")

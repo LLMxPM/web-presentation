@@ -13,9 +13,12 @@ from app.services.rendering.target_resolver import WorkerEndpoint
 from render_contracts.constants import (
     ENDPOINT_CAPABILITIES,
     ENDPOINT_EXECUTIONS,
+    ENDPOINT_EXECUTIONS_V2,
     PROTOCOL_VERSION,
+    PROTOCOL_VERSION_V2,
     RESULT_SCHEMA_VERSION,
     RUNTIME_RENDER_PROTOCOL_VERSION,
+    RUNTIME_RENDER_PROTOCOL_VERSION_V2,
 )
 from render_contracts.errors import (
     ERROR_CODE_CONTRACT_MISMATCH,
@@ -71,7 +74,10 @@ class RendererClient:
                 )
             )
         capabilities = WorkerCapabilities.from_dict(response.json())
-        if capabilities.protocol_version and capabilities.protocol_version != PROTOCOL_VERSION:
+        if capabilities.protocol_version and capabilities.protocol_version not in (
+            PROTOCOL_VERSION,
+            PROTOCOL_VERSION_V2,
+        ):
             raise RenderExecutionError(
                 RenderError.from_code(
                     ERROR_CODE_CONTRACT_MISMATCH,
@@ -92,7 +98,8 @@ class RendererClient:
     async def dispatch_execution(self, endpoint: WorkerEndpoint, request: ExecutionRequest) -> ExecutionReceipt:
         """派发 attempt；429 表示明确未接管。"""
 
-        url = f"{endpoint.base_url}{ENDPOINT_EXECUTIONS}"
+        endpoint_path = ENDPOINT_EXECUTIONS_V2 if request.contract_version == PROTOCOL_VERSION_V2 else ENDPOINT_EXECUTIONS
+        url = f"{endpoint.base_url}{endpoint_path}"
         headers = {SERVICE_AUTH_HEADER: self.credentials.issue_service_token(worker_id=endpoint.worker_id)}
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -270,7 +277,10 @@ class RendererClient:
                 )
             )
         runtime_version = capabilities.runtime_render_protocol_version
-        if runtime_version and runtime_version != RUNTIME_RENDER_PROTOCOL_VERSION:
+        if runtime_version and runtime_version not in (
+            RUNTIME_RENDER_PROTOCOL_VERSION,
+            RUNTIME_RENDER_PROTOCOL_VERSION_V2,
+        ):
             raise RenderExecutionError(
                 RenderError.from_code(
                     ERROR_CODE_CONTRACT_MISMATCH,

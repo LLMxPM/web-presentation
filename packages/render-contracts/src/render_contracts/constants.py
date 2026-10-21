@@ -6,7 +6,15 @@ from typing import Final
 
 PROTOCOL_VERSION: Final[str] = "internal/render/v1"
 PROTOCOL_PATH_PREFIX: Final[str] = "/internal/render/v1"
+PROTOCOL_VERSION_V2: Final[str] = "internal/render/v2"
+PROTOCOL_PATH_PREFIX_V2: Final[str] = "/internal/render/v2"
 RUNTIME_RENDER_PROTOCOL_VERSION: Final[str] = "render-ready.v1"
+RUNTIME_RENDER_PROTOCOL_VERSION_V2: Final[str] = "render-ready.v2"
+SUPPORTED_CONTROL_PROTOCOL_VERSIONS: Final[tuple[str, ...]] = (PROTOCOL_VERSION, PROTOCOL_VERSION_V2)
+SUPPORTED_RUNTIME_RENDER_PROTOCOL_VERSIONS: Final[tuple[str, ...]] = (
+    RUNTIME_RENDER_PROTOCOL_VERSION,
+    RUNTIME_RENDER_PROTOCOL_VERSION_V2,
+)
 RESULT_SCHEMA_VERSION: Final[str] = "render-result.v1"
 LAYOUT_ANALYSIS_SCHEMA_VERSION: Final[int] = 3
 COMPONENT_SCENARIO_PROTOCOL_VERSION: Final[str] = "component-scenarios.v1"
@@ -87,5 +95,7 @@ DEFAULT_MAX_COMPONENT_SCENARIOS: Final[int] = 16
 # HTTP 端点路径（相对协议前缀）
 ENDPOINT_CAPABILITIES: Final[str] = f"{PROTOCOL_PATH_PREFIX}/capabilities"
 ENDPOINT_EXECUTIONS: Final[str] = f"{PROTOCOL_PATH_PREFIX}/executions"
+ENDPOINT_CAPABILITIES_V2: Final[str] = f"{PROTOCOL_PATH_PREFIX_V2}/capabilities"
+ENDPOINT_EXECUTIONS_V2: Final[str] = f"{PROTOCOL_PATH_PREFIX_V2}/executions"
 ENDPOINT_LIVEZ: Final[str] = "/livez"
 ENDPOINT_READYZ: Final[str] = "/readyz"

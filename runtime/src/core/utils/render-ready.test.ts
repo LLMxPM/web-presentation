@@ -5,6 +5,7 @@ import {
   initializeRenderReadyHost,
   markRenderPreviewMounted,
   RENDER_READY_PROTOCOL,
+  RENDER_READY_PROTOCOL_V2,
 } from './render-ready'
 
 afterEach(() => {
@@ -29,6 +30,20 @@ describe('render-ready 静态捕获信息', () => {
       entryPath: '/cover',
       routePath: null,
       mounted: false,
+    })
+  })
+
+  it('捕获协议 v2 记录双版本能力与时间轴回执位置', () => {
+    initializeRenderReadyHost({
+      executionContext: 'capture',
+      entryPath: '/cover',
+      protocol: RENDER_READY_PROTOCOL_V2,
+    })
+
+    expect(window.__RENDER_READY__).toMatchObject({
+      protocol: RENDER_READY_PROTOCOL_V2,
+      protocolVersions: [RENDER_READY_PROTOCOL, RENDER_READY_PROTOCOL_V2],
+      motion: null,
     })
   })
 

@@ -15,7 +15,10 @@ from render_contracts.constants import (
     OPERATION_COMPONENT_DIAGNOSE,
     OPERATION_PAGE_CAPTURE,
     OPERATION_PAGE_DIAGNOSE,
+    PROTOCOL_VERSION_V2,
     RESULT_SCHEMA_VERSION,
+    RUNTIME_RENDER_PROTOCOL_VERSION,
+    RUNTIME_RENDER_PROTOCOL_VERSION_V2,
 )
 from render_contracts.errors import (
     ERROR_CODE_ASSET_NOT_READY,
@@ -26,9 +29,11 @@ from render_contracts.errors import (
     ERROR_CODE_INTERNAL_ERROR,
     ERROR_CODE_OUTPUT_LIMIT_EXCEEDED,
     ERROR_CODE_PROFILE_MISMATCH,
+    RenderContractError,
     RenderError,
     RenderExecutionError,
 )
+from render_contracts.motion import AppliedMotion
 from render_contracts.schema import ArtifactDescriptor, DiagnosticItem, ExecutionResult
 from render_contracts.tokens import sha256_hex
 
@@ -164,6 +169,7 @@ class RenderExecutor:
         self._unsettled_tasks: set[asyncio.Future[Any]] = set()
         self._browser_launch_count = 0
         self._navigation_count = 0
+        self._applied_motion: AppliedMotion | None = None
 
     async def execute(self, *, artifact_dir: Path) -> ExecutionResult:
         """按 operation 执行页面截图、页面诊断或组件诊断；全程受硬期限与取消约束。"""
@@ -198,12 +204,18 @@ class RenderExecutor:
             )
             self._check_cancel(stage="ready")
             ready_timeout_ms = max(1, min(self._deadline.remaining_ms() - 500, self._deadline.remaining_ms()))
+            runtime_protocol = (
+                RUNTIME_RENDER_PROTOCOL_VERSION_V2
+                if request.contract_version == PROTOCOL_VERSION_V2
+                else RUNTIME_RENDER_PROTOCOL_VERSION
+            )
             ready = await self._await_bounded(
                 wait_for_render_ready(
                     self._page,
                     timeout_ms=ready_timeout_ms,
                     expected_artifact_id=request.snapshot_ref.artifact_id,
                     expected_input_digest=request.input_digest,
+                    protocol=runtime_protocol,
                 ),
                 stage="ready",
             )
@@ -226,6 +238,8 @@ class RenderExecutor:
             self._check_cancel(stage="ready")
             await self._wait_visual_assets(request)
             await self._prepare_static_capture(request, ready)
+            if request.contract_version == PROTOCOL_VERSION_V2:
+                await self._apply_motion_snapshot(request)
             self._check_cancel(stage="capture")
             if request.operation == OPERATION_PAGE_CAPTURE:
                 return await self._await_bounded(self._capture_page(artifact_dir), stage="capture")
@@ -396,6 +410,110 @@ class RenderExecutor:
                 )
             )
 
+    async def _apply_motion_snapshot(self, request: Any) -> None:
+        """通过 Runtime 捕获桥采样并固化指定时刻；旧页面无时间轴时保留静态默认。"""
+
+        snapshot = request.motion_snapshot
+        # Runtime 捕获桥按 camelCase 读取选择器，契约 DTO 仍保持 snake_case。
+        selector = (
+            {
+                "timelineId": snapshot.timeline_id,
+                "atMs": snapshot.at_ms,
+                "atLabel": snapshot.at_label,
+                "offsetMs": snapshot.offset_ms,
+                "visualMode": snapshot.visual_mode,
+            }
+            if snapshot is not None
+            else {}
+        )
+        selector = {key: value for key, value in selector.items() if value is not None}
+        raw = await self._await_bounded(
+            self._page.evaluate(
+                """
+                async (selection) => {
+                  const apply = window.__RUNTIME_APPLY_MOTION_SNAPSHOT__;
+                  if (typeof apply !== 'function') return { available: false };
+                  try {
+                    const receipt = await apply(selection);
+                    return { available: true, receipt };
+                  } catch (error) {
+                    return {
+                      available: true,
+                      error: String(error && error.message ? error.message : error || '时间轴采样失败'),
+                      code: String(error && error.code ? error.code : 'TIMELINE_SNAPSHOT_UNAVAILABLE'),
+                    };
+                  }
+                }
+                """,
+                selector,
+            ),
+            stage="ready",
+        )
+        if not isinstance(raw, dict) or not raw.get("available"):
+            if request.motion_snapshot is not None:
+                raise RenderExecutionError(
+                    RenderError.from_code(
+                        ERROR_CODE_ASSET_NOT_READY,
+                        message="Runtime 未提供时间轴采样能力。",
+                        stage="ready",
+                    )
+                )
+            self._applied_motion = AppliedMotion(status="skipped", message="页面未提供时间轴采样桥。")
+            return
+        if raw.get("error"):
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_ASSET_NOT_READY,
+                    message=f"{raw.get('code') or 'TIMELINE_SNAPSHOT_UNAVAILABLE'}：{raw.get('error')}",
+                    stage="ready",
+                )
+            )
+        receipt = raw.get("receipt")
+        if not isinstance(receipt, dict):
+            raise RenderExecutionError(
+                RenderError.from_code(ERROR_CODE_ASSET_NOT_READY, message="时间轴采样回执无效。", stage="ready")
+            )
+        try:
+            applied = AppliedMotion.from_dict(receipt)
+        except RenderContractError as exc:
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_ASSET_NOT_READY,
+                    message=f"时间轴采样回执无效：{exc}",
+                    stage="ready",
+                )
+            ) from exc
+        expected_timeline = request.motion_snapshot.timeline_id if request.motion_snapshot else None
+        if expected_timeline and applied.timeline_id != expected_timeline:
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_ASSET_NOT_READY,
+                    message="时间轴采样回执与请求目标不一致。",
+                    stage="ready",
+                )
+            )
+        if request.motion_snapshot is not None and applied.status != "applied":
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_ASSET_NOT_READY,
+                    message=applied.message or "页面未应用指定时间轴状态。",
+                    stage="ready",
+                )
+            )
+        if (
+            request.motion_snapshot is not None
+            and request.motion_snapshot.at_ms is not None
+            and applied.sampled_time_ms != request.motion_snapshot.at_ms
+        ):
+            raise RenderExecutionError(
+                RenderError.from_code(
+                    ERROR_CODE_ASSET_NOT_READY,
+                    message="时间轴采样时间与请求不一致。",
+                    stage="ready",
+                )
+            )
+        self._applied_motion = applied
+
     async def _wait_visual_assets(self, request: Any) -> None:
         """等待图片/背景图等视觉资源就绪；等待上限不得超过剩余硬期限。"""
 
@@ -545,6 +663,7 @@ class RenderExecutor:
             # 产物尚在 retained 状态，cleaned_at 留空，resource_state 与真实状态一致。
             cleaned_at="",
             resource_state="retained",
+            applied_motion=self._applied_motion,
         )
 
     async def shutdown(self) -> None:

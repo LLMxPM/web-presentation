@@ -5,8 +5,12 @@ from render_contracts.constants import (
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     DEFAULT_RESULT_TTL_SECONDS,
     PROTOCOL_VERSION,
+    PROTOCOL_VERSION_V2,
     RESULT_SCHEMA_VERSION,
     RUNTIME_RENDER_PROTOCOL_VERSION,
+    RUNTIME_RENDER_PROTOCOL_VERSION_V2,
+    SUPPORTED_CONTROL_PROTOCOL_VERSIONS,
+    SUPPORTED_RUNTIME_RENDER_PROTOCOL_VERSIONS,
 )
 from render_contracts.errors import (
     RenderContractError,
@@ -15,6 +19,7 @@ from render_contracts.errors import (
     error_http_status_table,
     http_status_for_error_code,
 )
+from render_contracts.motion import AppliedMotion, MotionSnapshot
 from render_contracts.schema import (
     ArtifactDescriptor,
     DiagnosticItem,
@@ -38,8 +43,12 @@ from render_contracts.tokens import (
 
 __all__ = [
     "PROTOCOL_VERSION",
+    "PROTOCOL_VERSION_V2",
+    "SUPPORTED_CONTROL_PROTOCOL_VERSIONS",
     "RESULT_SCHEMA_VERSION",
     "RUNTIME_RENDER_PROTOCOL_VERSION",
+    "RUNTIME_RENDER_PROTOCOL_VERSION_V2",
+    "SUPPORTED_RUNTIME_RENDER_PROTOCOL_VERSIONS",
     "DEFAULT_REQUEST_TIMEOUT_SECONDS",
     "DEFAULT_MAX_ATTEMPTS",
     "DEFAULT_RESULT_TTL_SECONDS",
@@ -56,6 +65,8 @@ __all__ = [
     "ArtifactDescriptor",
     "DiagnosticItem",
     "WorkerCapabilities",
+    "MotionSnapshot",
+    "AppliedMotion",
     "AdmissionTicket",
     "PreviewAccess",
     "compute_request_digest",

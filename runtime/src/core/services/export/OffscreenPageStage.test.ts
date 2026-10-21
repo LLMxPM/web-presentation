@@ -77,6 +77,40 @@ describe('OffscreenPageStage 静态帧准备', () => {
     expect(root.querySelector('audio')?.hasAttribute('autoplay')).toBe(false)
   })
 
+  it('preparePage 应通过页面桥应用指定时间轴状态后再准备静态帧', async () => {
+    const stage = createOffscreenPageStage()
+    const iframe = document.querySelector('iframe') as HTMLIFrameElement
+    const calls: unknown[] = []
+
+    const pending = stage.preparePage('/motion-page', {
+      motionSnapshot: { timelineId: 'intro', atMs: 500, visualMode: 'reduced' },
+    })
+    setTimeout(() => {
+      const curDoc = iframe.contentDocument!
+      curDoc.open()
+      curDoc.write('<!doctype html><html><head></head><body></body></html>')
+      curDoc.close()
+      const curWin = iframe.contentWindow as unknown as {
+        __EDITOR_RUNTIME_PREVIEW_READY__: boolean
+        __RUNTIME_APPLY_MOTION_SNAPSHOT__: (request: unknown) => Promise<unknown>
+      }
+      const page = curDoc.createElement('div')
+      page.className = 'runtime-page-print-source'
+      page.dataset.runtimeRoutePath = '/motion-page'
+      page.dataset.runtimeCaptureTicket = new URLSearchParams(iframe.contentWindow!.location.hash.split('?')[1]).get('runtimeCaptureTicket') || ''
+      curDoc.body.appendChild(page)
+      curWin.__RUNTIME_APPLY_MOTION_SNAPSHOT__ = async request => {
+        calls.push(request)
+        return { status: 'applied', timelineId: 'intro', sampledTimeMs: 500 }
+      }
+      curWin.__EDITOR_RUNTIME_PREVIEW_READY__ = true
+    }, 20)
+
+    await pending
+    expect(calls).toEqual([{ timelineId: 'intro', atMs: 500, visualMode: 'reduced' }])
+    stage.dispose()
+  })
+
   it('preparePage 应准备覆盖图，cleanup 后 iframe 页面无残留', async () => {
     const stage = createOffscreenPageStage()
     const iframe = document.querySelector('iframe') as HTMLIFrameElement
