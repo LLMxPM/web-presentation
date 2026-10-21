@@ -1,0 +1,13 @@
+/* 文件功能：完整故事研究夹具的固定捕获样式，不影响产品主题或性能选型。 */
+* { box-sizing: border-box; }
+body { margin: 0; background: #0c1420; color: #f2f6fc; font-family: Arial, 'Microsoft YaHei', sans-serif; }
+.story { width: 940px; height: 540px; padding: 36px 42px; overflow: hidden; background: linear-gradient(130deg, #172840, #101924); }
+.eyebrow { margin: 0 0 18px; color: #6de6d4; letter-spacing: 3px; font-size: 14px; }
+.title { margin: 0; font-size: 30px; font-weight: 600; }
+.cards { display: flex; gap: 14px; margin: 26px 0; }
+.card { flex: 1; padding: 16px; border: 1px solid #3e526f; border-radius: 10px; background: #253752; }
+.panels { display: grid; grid-template-columns: 400px 320px; gap: 70px; align-items: center; }
+canvas, video { display: block; background: #182335; border-radius: 8px; }
+.panels p { height: 36px; font-size: 13px; color: #96e6da; }
+/* 所有路线固定相同合成提示，取消动画前后维持文字栅格条件；本轮不评价该提示的性能。 */
+.title, .card, .clip-caption, .demo-caption { will-change: transform, opacity; }

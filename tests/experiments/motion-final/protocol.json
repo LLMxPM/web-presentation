@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-21",
+  "model": "gpt-6-luna",
+  "reasoningEffort": "medium",
+  "context": "八个 fork_turns=none 的全新上下文，每类任务独立重复两次",
+  "cases": [{"id":"a1","task":"A","detail":1200},{"id":"a2","task":"A","detail":1200},{"id":"b1","task":"B","detail":1700},{"id":"b2","task":"B","detail":1700},{"id":"c1","task":"C","detail":1200,"callouts":true},{"id":"c2","task":"C","detail":1200,"callouts":true},{"id":"d1","task":"D","detail":1200},{"id":"d2","task":"D","detail":1200}],
+  "seed": "A 的第一个按 id 排序的通过版本，统一提供 B/C/D；D 仅注入一次 .clip-caption -> .clip-captino",
+  "acceptance": {"initialPassAtLeast":7,"afterOneFeedbackMustPass":8},
+  "repair": "每候选最多一轮有界错误反馈，仍由原 Luna 修改；父模型不修候选",
+  "frozenInputs": "适配层自检后冻结评分输入，所有候选先封存再测，后续不可改夹具掩盖失败",
+  "license": "用户于2026-10-21明确确认许可没有问题；本轮不再设许可确认阻塞",
+  "excluded": ["性能排名或预算冻结","完整产品部署/Renderer验收","正式G2模型基准"]
+}

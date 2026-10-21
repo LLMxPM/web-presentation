@@ -26,6 +26,7 @@
 | 文档 | 内容 |
 | :--- | :--- |
 | [SaaS 运行时架构与时序](./integration/runtime-architecture.md) | 预览上下文与运行时边界 |
+| [页内动画三维动作与媒体编排首期规划](../runtime-integration/motion/README.md) | 统一播放控制、媒体时钟、模型动作与静态采样；含契约和工作包，待实施 |
 | [翻页动画与自动放映 Runtime 计划](../runtime-integration/slideshow/runtime.md) | 过渡完成信号、计时调度、媒体生命周期、双窗口和禁播上下文；待实施 |
 | [鉴权与安全契约](./integration/auth-and-security.md) | 令牌、访问范围与安全约束 |
 | [Backend 对接 API](./integration/backend-api.md) | Runtime 消费的 Backend 接口 |

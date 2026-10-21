@@ -73,6 +73,13 @@ tmp/
 temp/
 .tmp/
 *.tmp
-# 测试机可再生产物不入库；摘要记录 sha256
-docs/archive/architecture-2026-09/runs/**/build.zip
+# 动画实验的运行证据只留在本地，仓库只保留可重跑夹具、协议和候选
+tests/experiments/**/evidence/
+# 测试机可再生产物不入库；历史演练只保留 summary.md 与 evidence-manifest，摘要记录 sha256
+docs/archive/architecture-2026-09/runs/**/*.zip
+docs/archive/architecture-2026-09/runs/**/*.png
+docs/archive/architecture-2026-09/runs/**/*.log
+docs/archive/architecture-2026-09/runs/**/*.txt
+docs/archive/architecture-2026-09/runs/**/*.json
+!docs/archive/architecture-2026-09/runs/**/evidence-manifest.json
 .workbuddy/

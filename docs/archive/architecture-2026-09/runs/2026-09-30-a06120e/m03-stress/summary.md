@@ -2,7 +2,7 @@
 
 > 拓扑：真双容器（platform-lite + renderer）· 2C/3.8GiB · `RENDER_GLOBAL_CONCURRENCY=1` · `PAGE_SCREENSHOT_QUEUE_CONCURRENCY=1` · `RUNTIME_VITE_TASK_CONCURRENCY=1`  
 > 混合负载：截图 : 页更 : 构建 ≈ 4:2:1 · 16 个测试用户  
-> 证据：`stress-report.json` 与各档 `*-samples.json`
+> 本地证据（未入库）：`stress-report.json` 与各档 `*-samples.json`；本文保留结论和文件名。
 
 ## 1. 阶梯结果
 

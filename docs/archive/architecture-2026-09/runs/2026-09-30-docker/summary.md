@@ -1,10 +1,12 @@
 # 本地 Docker 架构演练（2026-09-30 至 2026-10-01）
 
+> 原始逐次 JSON、截图与日志未入库；本文保留结论和本地归档文件名，校验和以正文记录为准。
+
 本轮在 Docker Desktop 的 Linux amd64 环境验证 W05 修复，使用独立 Compose 项目 `wp-arch-drill-adc5a2ca`。Docker 分配 16 CPU、约 14 GiB 内存；专属 PostgreSQL 16、Redis 7、签名密钥和数据卷不复用已有开发容器。没有推送镜像、发布或修改业务数据库。
 
-Runtime/Lite 候选先为 `43c6515`，真实截图链路暴露固定挂载入口的 403，修复后 Runtime 来源为 `e82c793`。普通 Run 与旧 ORM 演练使用 `aab57cd` 对应 Lite 镜像，只运行 uvicorn；随后独立任务竞争暴露 Renderer 迟到失败覆盖终态，最终 Backend/Lite 更新为 `a0779df`。AI 生产代码和 Runtime 源码在这次 Backend 修复中未变，镜像分别留证，见[来源与锁文件](./records/sources.json)。精确 image ID、数据库 revision 和清理前实际拓扑见 [environment.json](./records/environment.json)，本地 image ID 不代表 Registry 已验收。
+Runtime/Lite 候选先为 `43c6515`，真实截图链路暴露固定挂载入口的 403，修复后 Runtime 来源为 `e82c793`。普通 Run 与旧 ORM 演练使用 `aab57cd` 对应 Lite 镜像，只运行 uvicorn；随后独立任务竞争暴露 Renderer 迟到失败覆盖终态，最终 Backend/Lite 更新为 `a0779df`。AI 生产代码和 Runtime 源码在这次 Backend 修复中未变，镜像分别留证，见来源与锁文件（`sources.json`）。精确 image ID、数据库 revision 和清理前实际拓扑见 `environment.json`，本地 image ID 不代表 Registry 已验收。
 
-Renderer 使用 `wp-renderer-drill:local`（`sha256:0dd732573c943b263ecfbbb8ec895d89279769b7d8d5d580a419ee5004d35589`）：冻结依赖及 Python 安装层复用官方 Dockerfile，系统包与 Chromium 通过本机临时缓存下载，上游保持 HTTPS/TLS 与 APT 完整性校验，源码及最终 CMD 沿用生产入口。构建差异与浏览器包摘要见[下载配置](./records/renderer-build-profile.json)和[有效构建文件](./records/Renderer.cache.Dockerfile.txt)。官方默认下载构建停在 Chromium 40%，随后终止；**本轮 Renderer 执行验证不关闭官方默认配方或 Registry 发布门**。
+Renderer 使用 `wp-renderer-drill:local`（`sha256:0dd732573c943b263ecfbbb8ec895d89279769b7d8d5d580a419ee5004d35589`）：冻结依赖及 Python 安装层复用官方 Dockerfile，系统包与 Chromium 通过本机临时缓存下载，上游保持 HTTPS/TLS 与 APT 完整性校验，源码及最终 CMD 沿用生产入口。构建差异与浏览器包摘要见下载配置（`renderer-build-profile.json`）和有效构建文件（`Renderer.cache.Dockerfile.txt`）。官方默认下载构建停在 Chromium 40%，随后终止；**本轮 Renderer 执行验证不关闭官方默认配方或 Registry 发布门**。
 
 | 交付镜像 | 实际本地 image ID | 本轮用途 |
 | :--- | :--- | :--- |
@@ -18,20 +20,20 @@ Renderer 使用 `wp-renderer-drill:local`（`sha256:0dd732573c943b263ecfbbb8ec89
 
 | 关联项 | 场景与实际结果 | 原始小型记录 |
 | :--- | :--- | :--- |
-| W05b / M04 owner | 真实普通 Run，无 SSE；强杀 A 后同 hostname/PID=1 重启，13.299 秒收敛为 `AI_RUN_PROCESS_STOPPED`，只有一次终态；B 静默运行受保护，同会话可启动新 Run | [owner.json](./records/owner.json) |
-| W05b / M04 迟到结果 | `docker pause` 后 11.635 秒收敛；unpause 并释放真实模型流后，旧 Run 的事件序号与终态计数不变，失效写围栏拒绝迟到提交 | [owner-pause.json](./records/owner-pause.json) |
-| W05b / M04 重建 | 改变 hostname、重建容器，PID 仍为 1，新 UUID 区分身份；11.479 秒收敛，会话可继续，B 未误杀 | [owner-hostname.json](./records/owner-hostname.json) |
-| W05a / M05 旧 ORM | 专属真实 PG 从 `20260926_0100` 前滚至 `20260930_0300`；实际 `4c7eee8` app 源码完成页面入队幂等、完整 Batch SELECT/INSERT/UPDATE、过期 Batch 清扫及 Run 取消 | [legacy-postgres.json](./records/legacy-postgres.json) |
-| W05a / M05 旧迁移器 | 实际旧 Alembic 对 `20260930_0300` 返回非零（255），明确拒绝未知 revision | [legacy-migrator.json](./records/legacy-migrator.json) |
-| W05c / M05 正常同版 iframe | 浏览器从正常预览 API 返回的入口导航，57 条响应；子请求覆盖两个同版副本，scoped CSS 实际颜色/间距正确，字体解析完成，身份一致，无失败网络请求或页面异常 | [browser-same.json](./records/browser-same.json) |
-| W05c / M05 正常跨版 iframe | HTML 绑定 A（当前候选），子请求强制落到真实旧镜像 `wp-runtime-w05c:local`（`aab57cd`）的 B；main.ts、Tailwind CSS、Vite 均为 409，目标页面未加载；没有手工版本头 | [browser-cross.json](./records/browser-cross.json) |
-| W04 / M01 Runtime/Lite 入口 | 生产依赖裁剪后实际入口健康；真实模块/CSS/Vite HTTP 与跨版 HMR Upgrade 拒绝通过，两镜像指纹一致 | [Runtime](./records/image-runtime.json)、[Lite](./records/image-lite.json) |
-| W04 / M01 Renderer 入口 | 镜像实际 CMD，真实控制 API/默认执行器截图，PNG 像素及摘要校验，消费确认后槽位 idle | [Renderer](./records/image-renderer.json) |
-| W04 / M01 凭证负例 | Runtime/Renderer 各自缺配置、不存在文件、0400 空文件，六种实际 CMD 启动均非零拒绝 | [credentials.json](./records/credentials.json) |
-| W04 / M01 完整链路 | 最终 Backend 候选、新页面 10；经 Gateway 产生截图 Job 11 与构建 Job 10，PNG 1920×1080/22589 字节，ZIP 15220410 字节，版本/尺寸/摘要均通过；已查看 PNG，目标标题与正文正确 | [pipeline.json](./records/pipeline.json) |
-| W04 / M01 构建入口 | 从实际 ZIP 安全解压后用 HTTP 加载，12 条浏览器响应；目标页面及 scoped CSS 生效，字体就绪，无失败请求或页面异常 | [browser-build.json](./records/browser-build.json) |
-| M04 独立任务竞争 | 四个不同项目/页面，各自一次入队构建与截图；Build Job 6–9、截图 Job 7–10 全部一次成功，两个 Build/两个 Renderer 均执行；产物下载摘要正确，四个 render attempt 全部释放 | [jobs.json](./records/jobs.json) |
-| M04 Worker 摘除门禁 | 两个 Worker 的只读摘除检查均通过，无未释放 attempt | [worker-removal.json](./records/worker-removal.json) |
+| W05b / M04 owner | 真实普通 Run，无 SSE；强杀 A 后同 hostname/PID=1 重启，13.299 秒收敛为 `AI_RUN_PROCESS_STOPPED`，只有一次终态；B 静默运行受保护，同会话可启动新 Run | `owner.json` |
+| W05b / M04 迟到结果 | `docker pause` 后 11.635 秒收敛；unpause 并释放真实模型流后，旧 Run 的事件序号与终态计数不变，失效写围栏拒绝迟到提交 | `owner-pause.json` |
+| W05b / M04 重建 | 改变 hostname、重建容器，PID 仍为 1，新 UUID 区分身份；11.479 秒收敛，会话可继续，B 未误杀 | `owner-hostname.json` |
+| W05a / M05 旧 ORM | 专属真实 PG 从 `20260926_0100` 前滚至 `20260930_0300`；实际 `4c7eee8` app 源码完成页面入队幂等、完整 Batch SELECT/INSERT/UPDATE、过期 Batch 清扫及 Run 取消 | `legacy-postgres.json` |
+| W05a / M05 旧迁移器 | 实际旧 Alembic 对 `20260930_0300` 返回非零（255），明确拒绝未知 revision | `legacy-migrator.json` |
+| W05c / M05 正常同版 iframe | 浏览器从正常预览 API 返回的入口导航，57 条响应；子请求覆盖两个同版副本，scoped CSS 实际颜色/间距正确，字体解析完成，身份一致，无失败网络请求或页面异常 | `browser-same.json` |
+| W05c / M05 正常跨版 iframe | HTML 绑定 A（当前候选），子请求强制落到真实旧镜像 `wp-runtime-w05c:local`（`aab57cd`）的 B；main.ts、Tailwind CSS、Vite 均为 409，目标页面未加载；没有手工版本头 | `browser-cross.json` |
+| W04 / M01 Runtime/Lite 入口 | 生产依赖裁剪后实际入口健康；真实模块/CSS/Vite HTTP 与跨版 HMR Upgrade 拒绝通过，两镜像指纹一致 | Runtime（`image-runtime.json`）、Lite（`image-lite.json`） |
+| W04 / M01 Renderer 入口 | 镜像实际 CMD，真实控制 API/默认执行器截图，PNG 像素及摘要校验，消费确认后槽位 idle | Renderer（`image-renderer.json`） |
+| W04 / M01 凭证负例 | Runtime/Renderer 各自缺配置、不存在文件、0400 空文件，六种实际 CMD 启动均非零拒绝 | `credentials.json` |
+| W04 / M01 完整链路 | 最终 Backend 候选、新页面 10；经 Gateway 产生截图 Job 11 与构建 Job 10，PNG 1920×1080/22589 字节，ZIP 15220410 字节，版本/尺寸/摘要均通过；已查看 PNG，目标标题与正文正确 | `pipeline.json` |
+| W04 / M01 构建入口 | 从实际 ZIP 安全解压后用 HTTP 加载，12 条浏览器响应；目标页面及 scoped CSS 生效，字体就绪，无失败请求或页面异常 | `browser-build.json` |
+| M04 独立任务竞争 | 四个不同项目/页面，各自一次入队构建与截图；Build Job 6–9、截图 Job 7–10 全部一次成功，两个 Build/两个 Renderer 均执行；产物下载摘要正确，四个 render attempt 全部释放 | `jobs.json` |
+| M04 Worker 摘除门禁 | 两个 Worker 的只读摘除检查均通过，无未释放 attempt | `worker-removal.json` |
 
 owner 演练采用 TTL/心跳/扫描 12/2/1 秒，预算 16 秒，包含事务与采样容差；这不是默认生产配置或容量 SLA。模型流只指向本地 fixture，但经过真实 API、适配器和后台执行器。paused / waiting_external / 有效 Batch 续跑租约的完整保护矩阵尚未覆盖。
 
@@ -47,11 +49,11 @@ owner 演练采用 TTL/心跳/扫描 12/2/1 秒，预算 16 秒，包含事务�
 2. 版本中的 `+` 被 Vite 字体 URL 重复编码，静态资源误报跨版。`0543f5a` 改用 URL 安全的 `v1.<base64url>` 路径段，签名中的指纹原文保持原语义。
 3. scoped CSS 请求落到未加载主模块的副本，Vue descriptor 缺失，尝试读取虚拟文件路径并返回 500。`1bc9ed0` 在合法 ctx 验签后加载该 SFC，恢复本副本描述符；SaaS 解析先于 Vue 接管子请求。
 4. ctx 追加到 `lang.css` 后使 Vite 不再把子模块当样式处理；响应虽为 200，浏览器 import 原始 CSS 仍出现语法错误。`43c6515` 前置 ctx，回归同时检查 Vite JS 样式模块，不能只断言 HTTP 200。
-5. 正常浏览器入口通过后，真实 Renderer 从 `/runtime/__preview` 导航被误判为独立 SPA，返回 403，导致截图等待协议超时。`e82c793` 共用固定挂载/版本路径解析，受保护入口继续验签，独立页面继续拒绝；旧探针失败保留在[首轮记录](./records/pipeline-before-mounted-preview-fix.json)。
+5. 正常浏览器入口通过后，真实 Renderer 从 `/runtime/__preview` 导航被误判为独立 SPA，返回 403，导致截图等待协议超时。`e82c793` 共用固定挂载/版本路径解析，受保护入口继续验签，独立页面继续拒绝；旧探针失败保留在首轮记录（`pipeline-before-mounted-preview-fix.json`）。
 
 Renderer 首次构建另因默认 Debian HTTP 源失败；`25824b2` 默认使用 HTTPS，并把 Python 同步拆成独立缓存层，避免重试浏览器依赖时重新下载 Python wheel。
 
-独立任务正常竞争首次失败于清理断言：八个业务 Job 均成功，但一个 attempt 被另一协调器的迟到 410 改回 `unknown/pending`，占用已经为 0。`a0779df` 将失败状态与错误字段写入放到占用条件更新成功后，避免 ORM 自动 flush 绕过围栏；真实双会话回归在修复前两种 release 分支均失败，修复后通过。修复前[完整样本](./records/jobs-before-render-cas-fix.json)及[异常字段](./records/render-cas-before-fix.json)保留，修复后重新创建四个独立项目复测，未修改历史记录冒充通过。
+独立任务正常竞争首次失败于清理断言：八个业务 Job 均成功，但一个 attempt 被另一协调器的迟到 410 改回 `unknown/pending`，占用已经为 0。`a0779df` 将失败状态与错误字段写入放到占用条件更新成功后，避免 ORM 自动 flush 绕过围栏；真实双会话回归在修复前两种 release 分支均失败，修复后通过。修复前完整样本（`jobs-before-render-cas-fix.json`）及异常字段（`render-cas-before-fix.json`）保留，修复后重新创建四个独立项目复测，未修改历史记录冒充通过。
 
 ## 测试与执行收口
 
@@ -64,7 +66,7 @@ Renderer 首次构建另因默认 Debian HTTP 源失败；`25824b2` 默认使用
 
 本轮修复按问题分别提交：`8407ae6`、`0543f5a`、`25824b2`、`1bc9ed0`、`43c6515`、`e82c793`、`a0779df`。可重跑脚本为 `44fa476`，证据与计划作独立文档提交，未推送远端。
 
-演练结束前执行双 Worker 摘除检查，再使用 `cleanup` 删除本项目容器与卷，见[清理记录](./records/cleanup.json)。开发 PostgreSQL/Redis 继续运行；临时下载服务已停止。没有推送或发布，镜像与可再生成的本地证据保留供复查。
+演练结束前执行双 Worker 摘除检查，再使用 `cleanup` 删除本项目容器与卷，见清理记录（`cleanup.json`）。开发 PostgreSQL/Redis 继续运行；临时下载服务已停止。没有推送或发布，镜像与可再生成的本地证据保留供复查。
 
 ## 重跑与剩余验收
 

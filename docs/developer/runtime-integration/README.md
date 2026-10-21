@@ -7,6 +7,7 @@ Runtime 接入文档说明平台如何组织和调用 `runtime/` 服务，以及
 | 文档 | 内容 |
 | :--- | :--- |
 | [运行时开发与维护](./runtime-workflow.md) | Runtime 本地开发、质量门禁、契约验证与构建部署 |
+| [页内动画三维动作与媒体编排首期规划](./motion/README.md) | 统一时间轴、音视频同步、模型动作、确定取帧、模型创作基准与 12 个工作包；待实施 |
 | [翻页动画与自动放映实施计划](./slideshow/README.md) | 项目与路由配置、Backend/Editor/Runtime/Renderer、CLI/MCP 和分阶段验收；待实施 |
 | [音频资源、页面旁白与交互音效实施计划](./audio/README.md) | `audio` 资源、`AssetAudio.v1`、旁白生命周期、切页/点击 cue、静态执行隔离和 20 个工作包；待实施 |
 | [用户文件存储鉴权与缓存实施规划](./file-storage-auth-cache-plan.md) | 当前文件读取链路、artifact 与任务授权、缓存和存储边界、12 个工作包及发布验收；待实施 |

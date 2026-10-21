@@ -1,0 +1,8 @@
+/* 文件功能：统一选型样例的基础视觉，避免框架组件样式差异干扰功能核对。 */
+body { margin: 0; padding: 16px; background: #13202e; color: #e4f1ff; font-family: Arial, sans-serif; }
+main { display: flex; gap: 18px; flex-wrap: wrap; }
+.scene { width: 420px; min-height: 260px; padding: 16px; border: 1px solid #50718a; }
+.title { margin: 0 0 20px; }
+.cards { display: flex; gap: 12px; }
+.card, .demo, .interactive-card { padding: 12px; background: #264a64; }
+.demo { margin-top: 12px; }

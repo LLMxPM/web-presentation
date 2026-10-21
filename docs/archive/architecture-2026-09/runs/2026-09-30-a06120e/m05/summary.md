@@ -6,6 +6,8 @@
 > **N 镜像**：`platform-m04` / `web-runtime-vue:m04` / `renderer:m01-f9dbg`  
 > **N-1 镜像**：`platform-n1` / `web-runtime-vue:n1`（worktree `/data/wp-n1`）  
 > **隔离库**：`web_presentation_m05n1`（从主库拷贝，专供 D/E/中断演练）
+>
+> 原始逐次 JSON、截图与日志未入库；本文保留结论和本地归档文件名。
 
 ## 1. 版本清单
 

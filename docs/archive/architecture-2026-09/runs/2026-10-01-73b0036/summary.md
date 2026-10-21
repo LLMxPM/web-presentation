@@ -1,12 +1,14 @@
 # M05 完整旧镜像、迁移与产物组合（2026-10-01）
 
+> 原始逐次 JSON、截图与日志未入库；本文保留结论和本地归档文件名，校验和见 `records/evidence-manifest.json`。
+
 本轮由 Codex 在本机 Docker Desktop/Linux amd64 执行 M05，实机时间为 2026-10-01 06:57–08:31（Asia/Shanghai）。固定样本的完整入口、迁移中断/应用回滚及公共能力/产物组合已完成，专属项目已清理。基线为 `73b003680827b11a1fae0bbc31207d103bf0f349`，N 候选包含本轮迁移事务与 Renderer HTTP 错误映射补丁；测试时尚未提交，没有推送或发布。N-1 固定 `4c7eee809d19a268e2c919ed5865a62ca388e6df`，从 Git 对象导出完整源码，使用其原始 Dockerfile、`uv.lock`、`pnpm-lock.yaml` 和交付 CMD 构建四种镜像。
 
 ## 环境与来源
 
 专属项目 `wp-arch-drill-1594afc0` 使用独立 PostgreSQL 16、Redis 7、数据卷、签名密钥与回环端口，未连接开发数据库/Redis。主拓扑为双 Backend、双 Preview、双 Build、双 Renderer、单 Check、Gateway 与受控模型服务；M05 另建 PG `m05_pg` 和 SQLite `m05.db`，分别运行完整 platform/Lite 入口。三个库使用同一组 Worker，场景串行执行，不是多数据库共享 Worker 的生产承诺。
 
-完整旧镜像使用自己的依赖，已经与当前依赖的旧源码领域探针区分。旧来源与依赖锁见[旧镜像构建身份](./records/n1-images.json)，源码及公共 Kit 摘要见[来源对拍](./records/m05-provenance.json)，本轮修改文件/构建日志摘要见[候选来源](./records/sources.json)；继承的 uv 基镜像 OCI revision 不能代表应用来源。N Runtime 复用 `e82c793` 对应镜像，公开 Kit 和源码未改动。
+完整旧镜像使用自己的依赖，已经与当前依赖的旧源码领域探针区分。旧来源与依赖锁见旧镜像构建身份（`n1-images.json`），源码及公共 Kit 摘要见来源对拍（`m05-provenance.json`），本轮修改文件/构建日志摘要见候选来源（`sources.json`）；继承的 uv 基镜像 OCI revision 不能代表应用来源。N Runtime 复用 `e82c793` 对应镜像，公开 Kit 和源码未改动。
 
 | 最终 N 镜像 | 实际本地 ID |
 | :--- | :--- |
@@ -60,15 +62,15 @@
 
 各 Job ID 按所在数据库区分。两个不支持截图组合使用 20 秒请求期限，最终 Job 为 failed / `RENDER_DEADLINE_EXCEEDED`，RenderRequest 为 expired/cancelled 且 result 为空，占用释放；先前默认期限探针的真实 `RENDER_ASSET_NOT_READY` 与 180 秒等待超时也保留，随后普通取消完成。独立 ZIP 成功不计为预览/截图整链路成功。
 
-六个成功 PNG 的摘要均为 `7ab1bee0b2c6dec4d00e3854452f804413fba2840e3b0db3027310e312cdc158`。完整旧两种入口的原 ZIP，在切回最终 N 应用后从同一 Job 的认证产物接口重新下载，摘要和字节数完全不变，再加载原解压目录，见[旧 platform 产物](./records/m05-platform-old-artifact-on-n.json)与[旧 Lite 产物](./records/m05-lite-old-artifact-on-n.json)。已查看 N 与旧 PNG，标题、中文表格及尺寸正确。
+六个成功 PNG 的摘要均为 `7ab1bee0b2c6dec4d00e3854452f804413fba2840e3b0db3027310e312cdc158`。完整旧两种入口的原 ZIP，在切回最终 N 应用后从同一 Job 的认证产物接口重新下载，摘要和字节数完全不变，再加载原解压目录，见旧 platform 产物（`m05-platform-old-artifact-on-n.json`）与旧 Lite 产物（`m05-lite-old-artifact-on-n.json`）。已查看 N 与旧 PNG，标题、中文表格及尺寸正确。
 
-版本组合的正常预览、协议负例、实际 PNG/ZIP、产物 HTTP 加载分别记录，见[组合汇总](./records/m05-combinations.json)和[最终两种 N 入口](./records/m05-current-entries.json)。已通过且候选/页面版本/原产物一致的记录标为复用，不计新执行；旧 Lite 只定向复测其配置与产物，保留此前失败。Runtime 缺发布身份与 Renderer 错误协议属于独立边界。更早的 `4c7eee8` Runtime 没有当前完整版本路由门禁，继续整池排空切换，不承诺任意旧版本同池混跑。
+版本组合的正常预览、协议负例、实际 PNG/ZIP、产物 HTTP 加载分别记录，见组合汇总（`m05-combinations.json`）和最终两种 N 入口（`m05-current-entries.json`）。已通过且候选/页面版本/原产物一致的记录标为复用，不计新执行；旧 Lite 只定向复测其配置与产物，保留此前失败。Runtime 缺发布身份与 Renderer 错误协议属于独立边界。更早的 `4c7eee8` Runtime 没有当前完整版本路由门禁，继续整池排空切换，不承诺任意旧版本同池混跑。
 
 ## 验证与后续范围
 
 Backend 迁移/兼容/SQLite/DB 边界最小集合 31 项通过、2 项按原测试条件跳过；Renderer 全部 27 项通过，最终测试夹具隔离调整后的新增三项再次通过；render-contracts 22 项通过。Windows Renderer 单测出现既有 asyncio 子进程 transport 关闭警告，真实 Linux Worker 资源状态另以实际探针核对。
 
-最终 Ruff、Node 语法检查、repository 13 项和 `git diff --check` 通过，实际命令与范围见[测试记录](./records/tests.json)。最终两个 Worker 均 idle、PID 1 为 tini，浏览器/驱动/僵尸与临时文件均为空，见[资源探针](./records/m05-final-workers.json)。三个专属数据库×两个 Worker 的六项只读摘除门禁全部通过；随后只删除本项目容器/卷，均无残留，见[门禁](./records/worker-removal.json)及[清理](./records/cleanup.json)。原开发 PostgreSQL/Redis 仍运行且健康。
+最终 Ruff、Node 语法检查、repository 13 项和 `git diff --check` 通过，实际命令与范围见测试记录（`tests.json`）。最终两个 Worker 均 idle、PID 1 为 tini，浏览器/驱动/僵尸与临时文件均为空，见资源探针（`m05-final-workers.json`）。三个专属数据库×两个 Worker 的六项只读摘除门禁全部通过；随后只删除本项目容器/卷，均无残留，见门禁（`worker-removal.json`）及清理（`cleanup.json`）。原开发 PostgreSQL/Redis 仍运行且健康。
 
 没有变更 HTTP DTO、渲染 DTO、Runtime Kit 清单或公开路径，没有新增生成物。没有无理由重复上一轮 85 项 Backend 和 41 项根 contracts。完整 M02、M04 外部交接/Batch 一次消费及构建故障、正式容量、M06 Registry/arm64/最终模板、M07 恢复和 M08 行为/跨仓门继续开放。
 

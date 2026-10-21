@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-21",
+  "requestedModel": "gpt-6-luna",
+  "reasoningEffort": "medium",
+  "context": "每个候选单独 fork_turns=none 的 collaboration 子智能体；模型通过显式工具参数指定，服务端内部版本/seed/token 用量未提供",
+  "cases": ["gsap-native", "anime-native", "gsap-builder", "anime-builder"],
+  "sampling": "每组合一个独立上下文，小样试验；不计算显著性或泛化为所有弱模型",
+  "sourceAccess": "仅任务包、SDK、固定模板、共享契约及候选官方文档/类型；共享文件系统由指令约束，没有进程级读取隔离",
+  "stages": [
+    { "id": "a0", "task": "首次生成固定故事", "defaultDetailMs": 1200 },
+    { "id": "b0", "task": "将默认模型段落起点从 1200 改到 1700，保持前序及旁白，后继随动", "defaultDetailMs": 1700 },
+    { "id": "c0", "task": "同一函数复用两组 callout：各在 model/demo 开始后 100ms 起，三 chip 时长 200ms、错峰 80ms、opacity0到1与y12到0", "defaultDetailMs": 1700 },
+    { "id": "d0", "task": "评测器统一把 clip-caption selector 改成 clip-captino，记录故障与有界反馈后由原 Luna 修复", "defaultDetailMs": 1700 }
+  ],
+  "repairPolicy": "每个阶段最多一轮有界错误反馈，由原 Luna 改自己候选；不由父模型修代码；失败后保留原始结果并停止该候选后续任务",
+  "tests": ["严格Vue/TS", "实际DOM透明度和位移", "实际视频帧与骨骼", "乱序恢复", "双实例作用域", "固定样式捕获", "过期clip反馈", "原生时间轴静默采样", "资源控制权审查"],
+  "excluded": ["性能与包体比较", "生产服务/数据库", "独立API供应商统计", "广泛模型排名"],
+  "setupCorrection": "首次评分前 SDK 补充 Draft 类型重导出，保证 native 两候选获得任务中所需类型；未修改任何候选源码，不计为模型修复"
+}

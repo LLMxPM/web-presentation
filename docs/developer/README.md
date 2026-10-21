@@ -11,6 +11,7 @@
 | [本地开发指南](./getting-started.md) | 本地依赖、四个应用服务启动和常用诊断命令 |
 | [平台架构总览](./architecture/overview.md) | 平台目标、控制面/数据面关系、模块职责和主流程 |
 | [模块边界](./architecture/module-boundaries.md) | Backend、Editor、Runtime、Renderer、Infra 的修改边界 |
+| [页内动画三维动作与媒体编排首期规划](./runtime-integration/motion/README.md) | 首期范围、创作与运行契约、12 个工作包、模型创作基准和发布验收；待实施 |
 | [翻页动画与自动放映实施计划](./runtime-integration/slideshow/README.md) | Backend 配置契约、各模块工作包、实施顺序和联调验收；待实施 |
 | [用户文件存储鉴权与缓存实施规划](./runtime-integration/file-storage-auth-cache-plan.md) | 预览、截图、构建的文件链路，票据授权、浏览器与 Backend 缓存、迁移和验收；待实施 |
 | [页面校验截图复用与智能体引导优化计划](./runtime-integration/page-validation-screenshot-agent-guidance-plan.md) | 图标与契约发现、恢复指引、同次渲染产图、版本发布和跨仓验收；待实施 |

@@ -1,0 +1,5 @@
+/* 文件功能：为后续可复用 callout 任务提供固定画布，不改变动画初态。 */
+.story { height: 650px; }
+.callouts { display: grid; grid-template-columns: 400px 320px; gap: 70px; margin-top: 28px; }
+.callouts > div { display: flex; gap: 6px; }
+.chip { display: inline-block; border: 1px solid #466781; border-radius: 6px; padding: 8px; font-size: 12px; will-change: opacity, transform; }

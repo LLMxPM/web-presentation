@@ -1,5 +1,7 @@
 # W05a/b/c 本地实施与验证记录
 
+> 原始镜像元数据 JSON 未入库；本文保留结论和本地归档文件名。
+
 日期：2026-09-30。最终代码候选：`aab57cd`（`dev`）；本记录后续提交只补证据与计划状态。环境为 Windows 开发机 + Docker Desktop 29.3.1 的 Linux amd64 容器，未作为 2C4G 容量环境或真实多副本测试机。没有推送、发布或在开发/业务数据库执行迁移。
 
 ## 1. 分步提交与范围
@@ -51,9 +53,9 @@ Runtime 定向 Vitest 使用测试进程 `RUNTIME_ROLE=preview` 避免启动真�
 
 本地构建命令为 `docker build -f runtime/Dockerfile -t wp-runtime-w05c:local .` 与 `docker build -f deploy/docker/Dockerfile.lite -t wp-lite-w05c:local .`，源代码为 `aab57cd`。镜像以生产依赖裁剪后的真实入口启动，探针容器 `--network none`，不挂载业务目录、不公开主机端口，结束后删除。
 
-- Runtime 最终镜像构建、健康、实际模块/CSS/Vite、跨版 HTTP 409 与 HMR Upgrade 拒绝通过。原始元数据见 [runtime-image.json](./runtime-image.json)。
+- Runtime 最终镜像构建、健康、实际模块/CSS/Vite、跨版 HTTP 409 与 HMR Upgrade 拒绝通过。原始元数据见 `runtime-image.json`。
 - Runtime 镜像另用临时容器删除内置身份文件、清空覆盖值，实际 Vite 启动返回非零并报告“缺少构建身份”；负例通过。
-- Lite 最终镜像的真实 Backend/Runtime/Gateway 入口、模块/CSS/Vite、跨版 HTTP 与 HMR 拒绝通过。原始元数据见 [lite-image.json](./lite-image.json)。
+- Lite 最终镜像的真实 Backend/Runtime/Gateway 入口、模块/CSS/Vite、跨版 HTTP 与 HMR 拒绝通过。原始元数据见 `lite-image.json`。
 - 两种交付形态的 Runtime 发布指纹一致：`1.0.0+sha256-5b25ba86fd930b3ac8d82113d0bd2533b75263deb4cc1a536149702094795db4`。镜像分别按各自 Dockerfile 独立构建，副本/镜像外壳差异未混入 Runtime 发布身份。
 
 原始 `image_id` / `repo_digests` 属于本地构建，不表示远端 registry 已发布或可拉取。此处没有运行 Renderer，也没有获得新的真实截图/构建 ZIP，不能关闭 M01/M06。

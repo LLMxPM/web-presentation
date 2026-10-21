@@ -136,6 +136,11 @@ test:backend
 - **文档、部署、仓库边界**：运行 `test:repository`；涉及 Docker/compose 时补对应契约测试。
 - **CLI/Gateway 契约**：运行 `test:contracts:gateway` 与 `test:contracts:cli-skill`。
 - **跨多端或发布前**：运行 `pnpm run test:all`，再按上表补未覆盖门禁。
+- **WP01 动画技术原型**：按 [实验说明](../../../../tests/experiments/motion-wp01/README.md)准备隔离比较依赖，再运行 `node tests/experiments/motion-wp01/run.mjs`；使用独立浏览器、回环随机端口和生成素材，不 prepare E2E、不重置开发库。它不替代产品 Runtime/Renderer 门禁。
+- **编排与 Vue SFC 创作选型**：按[功能夹具说明](../../../../tests/experiments/motion-authoring/README.md)准备固定候选版本，运行 `node tests/experiments/motion-authoring/run.mjs`；仅类型与功能核对，不采集性能，不运行上面的历史性能实验，也不重置业务数据。
+- **真实资源完整 SFC 创作对照**：按[完整故事夹具](../../../../tests/experiments/motion-story/README.md)运行 `prepare-assets.mjs`、`run.mjs`、`probe-events.mjs`；GSAP/Anime.js 的三路线六组合覆盖真实旁白、裁切视频、骨骼、静态状态和嵌套静默回调。素材可单独重建，不必运行历史性能实验；不启动业务服务或重置业务数据，不替代 Runtime/Renderer 产品验收。
+- **Luna 独立创作小样**：按[评测夹具](../../../../tests/experiments/motion-luna/README.md)使用 `evaluate.mjs` 对指定候选和未占用阶段名做独立类型/浏览器检查，不覆盖本地归档；历史逐阶段源码与评分只保留在本地证据目录，不随仓库提交。首轮真实失败和评测器注入的预期失败必须分开汇报，不算作生产回归。不启动业务服务、不运行性能基准，不替代正式 G2 模型创作验收。
+- **GSAP/G0 最终收口**：按[固定适配模板夹具](../../../../tests/experiments/motion-final/README.md)运行 `evaluate.mjs` 与 `production.mjs`；八个新 Luna 上下文的生成/修改/复用/修复首次提交及静态构建均8/8通过。裁剪验证使用 `prepare-production.mjs`、真实 `pnpm --prod` 和 `production.mjs`，Vite/插件/TypeScript保留为执行依赖、vue-tsc裁掉。研究包误裁TypeScript的失败只保留在本地归档，不能覆盖原始评分；不启动产品服务，不替代完整镜像/G1/G2或性能门禁。
 
 ## 4. 专项环境与交付前验证
 

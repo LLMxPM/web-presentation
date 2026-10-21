@@ -9,6 +9,8 @@
 > - **2 Renderer**（renderer-1/2，共享服务凭证）
 > - Gateway :18080（backend RR + runtime-preview RR，含 `max_fails` 摘流）
 > **镜像**：`platform-m04` / `web-runtime-vue:m04` / `renderer:m01-f9dbg`（源码构建）
+>
+> 原始逐次 JSON、截图与日志未入库；本文保留结论和本地归档文件名。
 
 ## 1. 场景结果
 
