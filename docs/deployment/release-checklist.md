@@ -77,6 +77,22 @@ Backend `capabilities.slideshow` 已声明 `advance_modes` 为 `manual`/`timer`�
 
 ---
 
+## 6. 页内动画与时间轴能力开放门禁
+
+**状态**：能力关闭（2026-10-21），G1/G2 未关闭。
+
+首期编排 WP01–WP12 的代码、契约与客户端适配已实施，但真实浏览器、远程 Renderer、跨域双窗口、指定状态截图、生产依赖裁剪镜像、混版派发、30 分钟循环与八任务模型基准尚未执行。当前 `TIMELINE_CAPABILITY_ENABLED`、`TIMELINE_CAPTURE_SNAPSHOT_ENABLED` 均为 false，放映 `advance_modes` 不含 `timeline_end`。
+
+**发布要求**：
+
+- 开放上述 flags 前，必须先取得 [G1/G2 验收](../developer/runtime-integration/motion/acceptance.md)真实证据，并在同一批部署中验证 Backend、Runtime、Renderer、CLI/MCP 的版本与能力一致。
+- 临时时间轴截图不得更新页面默认截图；旧 v1 页面、旧 Worker 与旧 Runtime 遇到新请求必须明确失败，不能丢字段执行。
+- 开放后才同步用户文档、顶层 README 与支持矩阵；Firefox/WebKit、移动端和未验证编码不得对外宣称。
+
+**下一步**：按 WP12 记录补齐真实链路与模型基准，再单独提交能力开放变更。
+
+---
+
 ## 使用说明
 
 - 以上事项的完整历史记录保留在 [`docs/archive/architecture-2026-09/`](../archive/architecture-2026-09/README.md)。
