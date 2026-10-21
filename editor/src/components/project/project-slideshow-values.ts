@@ -5,12 +5,13 @@
 import type { SlideshowCapabilities, SlideshowSettings } from '@/types/api'
 
 export type SlideshowEffect = 'none' | 'fade' | 'push'
-export type SlideshowAdvanceMode = 'manual' | 'timer' | 'media_end'
+export type SlideshowAdvanceMode = 'manual' | 'timer' | 'media_end' | 'timeline_end'
 
 export const ADVANCE_MODE_LABELS: Record<SlideshowAdvanceMode, string> = {
   manual: '手动翻页',
   timer: '定时翻页',
   media_end: '媒体结束',
+  timeline_end: '页内时间轴结束',
 }
 
 export const TRANSITION_EFFECT_LABELS: Record<SlideshowEffect, string> = {
@@ -31,13 +32,14 @@ export interface SlideshowDraft {
   advanceMode: SlideshowAdvanceMode
   delaySeconds: string
   mediaTimeoutSeconds?: string
+  timelineTimeoutSeconds?: string
   loop: boolean
   autoStart: boolean
 }
 
 export const DEFAULT_SLIDESHOW_SETTINGS: SlideshowSettings = {
   transition: { effect: 'fade', duration_ms: 400 },
-  advance: { mode: 'manual', delay_ms: 5000, media_timeout_ms: 300000 },
+  advance: { mode: 'manual', delay_ms: 5000, media_timeout_ms: 300000, timeline_timeout_ms: 300000 },
   loop: false,
   auto_start: false,
 }
@@ -48,6 +50,8 @@ export const ADVANCE_DELAY_MIN_MS = 1000
 export const ADVANCE_DELAY_MAX_MS = 3_600_000
 export const MEDIA_TIMEOUT_MIN_MS = 1000
 export const MEDIA_TIMEOUT_MAX_MS = 3_600_000
+export const TIMELINE_TIMEOUT_MIN_MS = 1000
+export const TIMELINE_TIMEOUT_MAX_MS = 3_600_000
 
 /**
  * 判断服务端是否已开放媒体结束模式；能力缺失或读取失败时按未开放处理。
@@ -55,6 +59,11 @@ export const MEDIA_TIMEOUT_MAX_MS = 3_600_000
  */
 export function isMediaEndAdvanceAvailable(capabilities?: SlideshowCapabilities | null): boolean {
   return capabilities?.advance_modes.includes('media_end') ?? false
+}
+
+/** 判断服务端是否已开放页内时间轴结束模式；G2 前能力列表不会包含该值。 */
+export function isTimelineEndAdvanceAvailable(capabilities?: SlideshowCapabilities | null): boolean {
+  return capabilities?.advance_modes.includes('timeline_end') ?? false
 }
 
 /**
@@ -70,6 +79,9 @@ export function buildAdvanceModeOptions(
   ]
   if (isMediaEndAdvanceAvailable(capabilities)) {
     options.push({ label: ADVANCE_MODE_LABELS.media_end, value: 'media_end' })
+  }
+  if (isTimelineEndAdvanceAvailable(capabilities)) {
+    options.push({ label: ADVANCE_MODE_LABELS.timeline_end, value: 'timeline_end' })
   }
   return options
 }
@@ -106,6 +118,7 @@ export function createSlideshowDraft(settings?: SlideshowSettings | null): Slide
     advanceMode: resolved.advance.mode,
     delaySeconds: formatMillisecondsAsSeconds(resolved.advance.delay_ms),
     mediaTimeoutSeconds: formatMillisecondsAsSeconds(resolved.advance.media_timeout_ms ?? 300000),
+    timelineTimeoutSeconds: formatMillisecondsAsSeconds(resolved.advance.timeline_timeout_ms ?? 300000),
     loop: resolved.loop,
     autoStart: resolved.auto_start,
   }
@@ -136,9 +149,20 @@ export function normalizeSlideshowDraft(draft: SlideshowDraft): SlideshowSetting
     MEDIA_TIMEOUT_MAX_MS,
     DEFAULT_SLIDESHOW_SETTINGS.advance.media_timeout_ms ?? 300000,
   )
+  const timelineTimeoutMs = clampMilliseconds(
+    draft.timelineTimeoutSeconds === undefined ? null : parseSecondsToMilliseconds(draft.timelineTimeoutSeconds),
+    TIMELINE_TIMEOUT_MIN_MS,
+    TIMELINE_TIMEOUT_MAX_MS,
+    DEFAULT_SLIDESHOW_SETTINGS.advance.timeline_timeout_ms ?? 300000,
+  )
   return {
     transition: { effect: draft.effect, duration_ms: durationMs },
-    advance: { mode: draft.advanceMode, delay_ms: delayMs, media_timeout_ms: mediaTimeoutMs },
+    advance: {
+      mode: draft.advanceMode,
+      delay_ms: delayMs,
+      media_timeout_ms: mediaTimeoutMs,
+      timeline_timeout_ms: timelineTimeoutMs,
+    },
     loop: draft.loop,
     auto_start: draft.autoStart,
   }

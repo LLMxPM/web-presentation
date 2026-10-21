@@ -19,12 +19,14 @@ export interface TransitionStartedEvent {
   effect: 'none' | 'fade' | 'push'
 }
 
-/** 页面停留与翻页推进配置；旧产物可能缺少 mediaTimeoutMs。 */
-export type PageAdvanceMode = 'manual' | 'timer' | 'media_end'
+/** 页面停留与翻页推进配置；旧产物可能缺少 mediaTimeoutMs/timelineTimeoutMs。 */
+export type PageAdvanceMode = 'manual' | 'timer' | 'media_end' | 'timeline_end'
 
 export interface PageAdvanceConfig {
   mode: PageAdvanceMode
   delayMs: number
   /** media_end 等待上限；其它模式保留同一结构供往返与显示。 */
   mediaTimeoutMs?: number
+  /** timeline_end 实际播放时间预算；用户暂停、后台与缓冲不消耗。 */
+  timelineTimeoutMs?: number
 }

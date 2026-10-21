@@ -9,7 +9,7 @@ import ProjectRouteBatchSlideshowDialog from './ProjectRouteBatchSlideshowDialog
 
 const defaults: SlideshowSettings = {
   transition: { effect: 'fade', duration_ms: 400 },
-  advance: { mode: 'timer', delay_ms: 5000, media_timeout_ms: 300000 },
+  advance: { mode: 'timer', delay_ms: 5000, media_timeout_ms: 300000, timeline_timeout_ms: 300000 },
   loop: false,
   auto_start: false,
 }
@@ -108,7 +108,7 @@ describe('ProjectRouteBatchSlideshowDialog', () => {
 
     expect((emitted('apply') as Array<[unknown]>).at(-1)?.[0]).toEqual({
       transition: { effect: 'fade', duration_ms: 400 },
-      advance: { mode: 'timer', delay_ms: 5000, media_timeout_ms: 300000 },
+      advance: { mode: 'timer', delay_ms: 5000, media_timeout_ms: 300000, timeline_timeout_ms: 300000 },
     })
   })
 
@@ -136,7 +136,7 @@ describe('ProjectRouteBatchSlideshowDialog', () => {
     await fireEvent.click(screen.getByRole('button', { name: '应用' }))
 
     expect((emitted('apply') as Array<[unknown]>).at(-1)?.[0]).toEqual({
-      advance: { mode: 'media_end', delay_ms: 6000, media_timeout_ms: 300000 },
+      advance: { mode: 'media_end', delay_ms: 6000, media_timeout_ms: 300000, timeline_timeout_ms: 300000 },
     })
   })
 })

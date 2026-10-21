@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import PresenterDisplayView from './PresenterDisplayView.vue'
 
 const presenterFixture = vi.hoisted(() => ({
-  commandHandler: null as null | ((action: string, autoAdvance?: boolean) => void),
+  commandHandler: null as null | ((action: string, details?: { autoAdvance?: boolean; positionMs?: number; seekRevision?: number }) => void),
   postPlaybackState: vi.fn(),
   updatePlayback: vi.fn(),
 }))
@@ -24,6 +24,7 @@ const playbackFixture = vi.hoisted(() => ({
   retry: vi.fn(),
   next: vi.fn(),
   setAutoAdvance: vi.fn(),
+  seekMotion: vi.fn().mockResolvedValue(true),
 }))
 
 const routeFixture = vi.hoisted(() => ({
@@ -42,7 +43,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/runtime-shell/presenter/usePresenterController', () => ({
-  usePresenterController: (options: { onPlaybackCommand?: (action: string, autoAdvance?: boolean) => void }) => {
+  usePresenterController: (options: { onPlaybackCommand?: (action: string, details?: { autoAdvance?: boolean; positionMs?: number; seekRevision?: number }) => void }) => {
     presenterFixture.commandHandler = options.onPlaybackCommand ?? null
     return {
       currentPage: {
@@ -67,12 +68,14 @@ vi.mock('@/runtime-shell/playback/usePlaybackHost', async () => {
       return {
         snapshot: ref(null),
         errorMessage: ref(''),
+        motion: ref(null),
         start: playbackFixture.start,
         pause: playbackFixture.pause,
         resume: playbackFixture.resume,
         stop: playbackFixture.stop,
         retry: playbackFixture.retry,
         next: playbackFixture.next,
+        seekMotion: playbackFixture.seekMotion,
         setAutoAdvance: playbackFixture.setAutoAdvance,
         refresh: vi.fn(),
       }
@@ -235,13 +238,16 @@ describe('PresenterDisplayView', () => {
     presenterFixture.commandHandler?.('resume')
     presenterFixture.commandHandler?.('next')
     presenterFixture.commandHandler?.('stop')
-    presenterFixture.commandHandler?.('set-auto-advance', false)
+    presenterFixture.commandHandler?.('set-auto-advance', { autoAdvance: false })
 
     expect(playbackFixture.pause).toHaveBeenCalledTimes(1)
     expect(playbackFixture.resume).toHaveBeenCalledTimes(1)
     expect(playbackFixture.next).toHaveBeenCalledTimes(1)
     expect(playbackFixture.stop).toHaveBeenCalledTimes(1)
     expect(playbackFixture.setAutoAdvance).toHaveBeenCalledWith(false)
+
+    presenterFixture.commandHandler?.('seek', { positionMs: 1200, seekRevision: 3 })
+    expect(playbackFixture.seekMotion).toHaveBeenCalledWith(1200)
 
     app.unmount()
   })

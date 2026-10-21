@@ -1,6 +1,6 @@
 # 首期编排工作包执行清单
 
-状态：WP01–WP03、WP07 完成，WP04–WP06 待验收；WP08–WP12 待实施，共 12 个工作包。每包对应一个可独立评审的提交或 PR；领取和完成记录写在本仓卡片，不自动派发智能体或创建新的用户聊天。
+状态：WP01–WP03、WP07 完成；WP04–WP06、WP08 待验收；WP09–WP12 待实施，共 12 个工作包。每包对应一个可独立评审的提交或 PR；领取和完成记录写在本仓卡片，不自动派发智能体或创建新的用户聊天。
 
 字段事实源为 [创作契约](../authoring-contract.md)，执行事实源为 [运行契约](../runtime-contract.md)。测试场景见 [验收计划](../acceptance.md)，实际命令选择遵守 [dev-start-test](../../../../../.agents/skills/dev-start-test/SKILL.md)。
 
@@ -15,7 +15,7 @@
 | [WP05 音视频同步适配器](./wp05-media-adapter.md) | Runtime media | WP03 | 主媒体、缓冲、裁切、异步定位与独占控制 |
 | [WP06 三维动作适配器](./wp06-model-adapter.md) | Runtime model3d | WP03 | 单片段、整体变换、多实例与指定姿态 |
 | [WP07 资产摘要与能力契约](./wp07-asset-capabilities.md) | Backend / 契约 | WP02 | 动作元数据、资源版本、能力门禁与生成类型 |
-| [WP08 放映宿主与双窗口](./wp08-host-slideshow-sync.md) | Runtime shell / Backend | WP04–WP07 | 生命周期、timeline_end、presenter v4 |
+| [WP08 放映宿主与双窗口](./wp08-host-slideshow-sync.md) | Runtime shell / Backend | WP04–WP07 | 完成：生命周期、timeline_end、presenter v4（真实双窗口待验收） |
 | [WP09 捕获协议与静态导出](./wp09-capture-export.md) | render-contracts / Renderer / Backend / Runtime | WP04–WP07 | 渲染 v2、状态固化、身份与产物隔离 |
 | [WP10 公共入口与预览控制](./wp10-runtime-kit-editor.md) | Runtime Kit / Editor | WP08、WP09 | 一个创作入口、Asset*.v2、预览与表单 |
 | [WP11 模型与外部客户端](./wp11-agents-clients.md) | Backend AI / CLI / MCP | WP07–WP10 | 同源规范、查询写入取帧、独立仓往返 |

@@ -11,14 +11,14 @@ from httpx import AsyncClient
 
 PROJECT_SLIDESHOW = {
     "transition": {"effect": "push", "duration_ms": 800},
-    "advance": {"mode": "timer", "delay_ms": 6500, "media_timeout_ms": 300000},
+    "advance": {"mode": "timer", "delay_ms": 6500, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
     "loop": True,
     "auto_start": False,
 }
 
 DEFAULT_SLIDESHOW = {
     "transition": {"effect": "fade", "duration_ms": 400},
-    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
+    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
     "loop": False,
     "auto_start": False,
 }
@@ -73,7 +73,7 @@ async def _create_source_project(client: AsyncClient, workspace_id: int) -> int:
                     "order": 0,
                     "page_id": page_ids[0],
                     "transition": {"effect": "none", "duration_ms": 0},
-                    "advance": {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000},
+                    "advance": {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
                 },
                 {
                     "route_type": "group",
@@ -85,7 +85,7 @@ async def _create_source_project(client: AsyncClient, workspace_id: int) -> int:
                             "route": "intro",
                             "order": 0,
                             "page_id": page_ids[1],
-                            "advance": {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000},
+                            "advance": {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
                         }
                     ],
                 },
@@ -152,8 +152,8 @@ async def test_template_package_schema3_should_roundtrip_slideshow_and_route_ove
 
     routes_by_name = {item["route"]: item for item in routes_payload["routes"]}
     assert routes_by_name["cover"]["transition"] == {"effect": "none", "duration_ms": 0}
-    assert routes_by_name["cover"]["advance"] == {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000}
-    assert routes_by_name["chapter"]["children"][0]["advance"] == {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000}
+    assert routes_by_name["cover"]["advance"] == {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
+    assert routes_by_name["chapter"]["children"][0]["advance"] == {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
     assert routes_by_name["chapter"]["children"][0]["transition"] is None
     assert "effective_slideshow" not in routes_by_name["cover"]
 
@@ -171,12 +171,12 @@ async def test_template_package_schema3_should_roundtrip_slideshow_and_route_ove
     chapter = next(item for item in tree["routes"] if item["route"] == "chapter")
     intro = chapter["children"][0]
     assert cover["transition"] == {"effect": "none", "duration_ms": 0}
-    assert cover["advance"] == {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000}
+    assert cover["advance"] == {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
     assert intro["transition"] is None
-    assert intro["advance"] == {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000}
+    assert intro["advance"] == {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
     assert intro["effective_slideshow"] == {
         "transition": {"effect": "push", "duration_ms": 800},
-        "advance": {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000},
+        "advance": {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
     }
 
     # 再次导出：项目默认与路由覆盖必须与原包语义等价。
@@ -187,8 +187,8 @@ async def test_template_package_schema3_should_roundtrip_slideshow_and_route_ove
     assert project_payload["slideshow"] == PROJECT_SLIDESHOW
     re_routes = {item["route"]: item for item in routes_payload["routes"]}
     assert re_routes["cover"]["transition"] == {"effect": "none", "duration_ms": 0}
-    assert re_routes["cover"]["advance"] == {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000}
-    assert re_routes["chapter"]["children"][0]["advance"] == {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000}
+    assert re_routes["cover"]["advance"] == {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
+    assert re_routes["chapter"]["children"][0]["advance"] == {"mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
 
 
 async def test_legacy_template_package_without_slideshow_should_import_with_defaults(
@@ -242,7 +242,7 @@ async def test_legacy_template_package_without_slideshow_should_import_with_defa
         assert cover["advance"] is None
         assert cover["effective_slideshow"] == {
             "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
+            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
         }
 
 

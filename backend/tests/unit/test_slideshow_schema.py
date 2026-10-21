@@ -154,16 +154,61 @@ def test_media_end_should_parse_and_map() -> None:
             "auto_start": True,
         }
     )
+    assert settings.advance.timeline_timeout_ms == 300000
     assert build_runtime_advance(settings.advance) == {
         "mode": "media_end",
         "delayMs": 6000,
         "mediaTimeoutMs": 120000,
+        "timelineTimeoutMs": 300000,
     }
     with pytest.raises(ValidationError):
         normalize_slideshow_settings(
             {
                 "transition": {"effect": "fade", "duration_ms": 400},
                 "advance": {"mode": "media_end", "delay_ms": 6000, "media_timeout_ms": 999},
+                "loop": False,
+                "auto_start": False,
+            }
+        )
+
+
+def test_timeline_end_should_be_representable_but_write_gated() -> None:
+    """timeline_end 结构可解析，但 G2 前写入门禁必须拒绝保存。"""
+
+    with pytest.raises(ValidationError, match="尚未开放"):
+        normalize_slideshow_settings(
+            {
+                "transition": {"effect": "fade", "duration_ms": 400},
+                "advance": {
+                    "mode": "timeline_end",
+                    "delay_ms": 5000,
+                    "media_timeout_ms": 300000,
+                    "timeline_timeout_ms": 300000,
+                },
+                "loop": False,
+                "auto_start": False,
+            }
+        )
+
+    settings = normalize_slideshow_settings(
+        {
+            "transition": {"effect": "fade", "duration_ms": 400},
+            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
+            "loop": False,
+            "auto_start": False,
+        }
+    )
+    assert settings.advance.timeline_timeout_ms == 300000
+    with pytest.raises(ValidationError):
+        normalize_slideshow_settings(
+            {
+                "transition": {"effect": "fade", "duration_ms": 400},
+                "advance": {
+                    "mode": "manual",
+                    "delay_ms": 5000,
+                    "media_timeout_ms": 300000,
+                    "timeline_timeout_ms": 999,
+                },
                 "loop": False,
                 "auto_start": False,
             }

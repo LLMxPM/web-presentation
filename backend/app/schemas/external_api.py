@@ -33,6 +33,8 @@ from app.schemas.slideshow import (
     SLIDESHOW_EXECUTABLE_ADVANCE_MODES,
     SLIDESHOW_SCHEMA_VERSION,
     SLIDESHOW_TRANSITION_EFFECTS,
+    TIMELINE_TIMEOUT_MAX_MS,
+    TIMELINE_TIMEOUT_MIN_MS,
     TRANSITION_DURATION_MAX_MS,
     TRANSITION_DURATION_MIN_MS,
     SlideshowSettings,
@@ -113,6 +115,7 @@ class ExternalSlideshowCapabilities(BaseModel):
     transition_duration_ms: ExternalTransitionDurationRange
     delay_ms: ExternalAdvanceDelayRange
     media_timeout_ms: ExternalAdvanceDelayRange
+    timeline_timeout_ms: ExternalAdvanceDelayRange
     audio: ExternalAudioCapabilities
 
 
@@ -129,7 +132,7 @@ def build_audio_capabilities() -> ExternalAudioCapabilities:
 
 
 def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
-    """构造当前能力声明：schema 2 的媒体结束、单窗口/双屏自动放映均已开放。"""
+    """构造当前能力声明：schema 3 仅新增时间轴结束的字段与预算，模式仍按写入门禁开放。"""
 
     return ExternalSlideshowCapabilities(
         schema_version=SLIDESHOW_SCHEMA_VERSION,
@@ -145,6 +148,7 @@ def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
         ),
         delay_ms=ExternalAdvanceDelayRange(min=ADVANCE_DELAY_MIN_MS, max=ADVANCE_DELAY_MAX_MS),
         media_timeout_ms=ExternalAdvanceDelayRange(min=MEDIA_TIMEOUT_MIN_MS, max=MEDIA_TIMEOUT_MAX_MS),
+        timeline_timeout_ms=ExternalAdvanceDelayRange(min=TIMELINE_TIMEOUT_MIN_MS, max=TIMELINE_TIMEOUT_MAX_MS),
         audio=build_audio_capabilities(),
     )
 

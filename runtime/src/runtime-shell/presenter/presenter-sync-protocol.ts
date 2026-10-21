@@ -7,7 +7,7 @@
 
 import { getRuntimePreloadedConfig, getRuntimePreviewContext } from '@/core/utils/path'
 
-export const PRESENTER_SYNC_PROTOCOL_VERSION = 3
+export const PRESENTER_SYNC_PROTOCOL_VERSION = 4
 const MAX_SEEN_EVENTS = 256
 
 export type PresenterSyncViewMode = 'focus' | 'grid'
@@ -29,6 +29,19 @@ export type PresenterSyncPlaybackCommandAction =
   | 'retry'
   | 'next'
   | 'set-auto-advance'
+  | 'seek'
+
+export type PresenterSyncTimelineIntent = 'stopped' | 'playing' | 'paused'
+export type PresenterSyncTimelinePhase =
+  | 'idle'
+  | 'preparing'
+  | 'ready'
+  | 'seeking'
+  | 'buffering'
+  | 'blocked'
+  | 'completed'
+  | 'error'
+  | 'disposed'
 
 export interface PresenterSyncPlaybackSnapshot {
   state: PresenterSyncPlaybackState
@@ -37,10 +50,19 @@ export interface PresenterSyncPlaybackSnapshot {
   /** timer 的停留时间；manual/media_end 等待时为 null。 */
   delayMs: number | null
   waitingForMedia: boolean
+  /** 当前页是否在等待页内时间轴完成；与媒体等待分开显示。 */
+  waitingForTimeline: boolean
   /** 本次放映是否自动推进；控制台据此显示自动/手动。 */
   autoAdvanceEnabled: boolean
   index: number
   total: number
+  /** 当前页时间轴身份；没有时间轴时为 null。 */
+  timelineId: string | null
+  planDigest: string | null
+  /** 时间轴逻辑位置；没有时间轴时为 0。 */
+  positionMs: number
+  timelineIntent: PresenterSyncTimelineIntent
+  timelinePhase: PresenterSyncTimelinePhase
 }
 
 export interface PresenterSyncEnvelope {
@@ -79,6 +101,10 @@ export interface PresenterSyncPlaybackCommandMessage extends PresenterSyncEnvelo
   action: PresenterSyncPlaybackCommandAction
   /** set-auto-advance 的目标状态；其他命令忽略。 */
   autoAdvance?: boolean
+  /** seek 的目标逻辑位置（毫秒）；其他命令忽略。 */
+  positionMs?: number
+  /** seek 的单调修订号；观众窗口只接受更新的定位命令。 */
+  seekRevision?: number
   /** 控制台命令只针对当前观众 owner，旧观众窗口必须忽略。 */
   targetOwnerEpoch?: number
 }
@@ -307,11 +333,17 @@ export function parsePresenterSyncMessage(value: unknown): PresenterSyncMessage 
       if (!isPlaybackCommandAction(value.action) || !isValidTargetOwnerEpoch(value.targetOwnerEpoch)) return null
       if (value.autoAdvance !== undefined && typeof value.autoAdvance !== 'boolean') return null
       if (value.action === 'set-auto-advance' && typeof value.autoAdvance !== 'boolean') return null
+      if (value.action === 'seek') {
+        if (!isFiniteNonNegative(value.positionMs) || !isNonNegativeInteger(value.seekRevision)) return null
+      }
       return {
         ...baseEnvelope(value),
         type: 'playback-command',
         action: value.action,
         ...(typeof value.autoAdvance === 'boolean' ? { autoAdvance: value.autoAdvance } : {}),
+        ...(value.action === 'seek'
+          ? { positionMs: Number(value.positionMs), seekRevision: Number(value.seekRevision) }
+          : {}),
         ...targetOwnerField(value.targetOwnerEpoch),
       }
     }
@@ -371,15 +403,24 @@ function parsePlayback(value: unknown): PresenterSyncPlaybackSnapshot | null {
   if (!Number.isFinite(value.remainingMs) || !Number.isInteger(value.index) || !Number.isInteger(value.total)) return null
   if (value.delayMs !== null && !Number.isFinite(value.delayMs)) return null
   if (typeof value.autoAdvanceEnabled !== 'boolean') return null
+  if (!isNullableNonEmptyString(value.timelineId) || !isNullableNonEmptyString(value.planDigest)) return null
+  if (!isFiniteNonNegative(value.positionMs)) return null
+  if (!isTimelineIntent(value.timelineIntent) || !isTimelinePhase(value.timelinePhase)) return null
   return {
     state: value.state,
     currentPath: value.currentPath,
     remainingMs: Math.max(0, Number(value.remainingMs)),
     delayMs: value.delayMs === null ? null : Number(value.delayMs),
     waitingForMedia: Boolean(value.waitingForMedia),
+    waitingForTimeline: Boolean(value.waitingForTimeline),
     autoAdvanceEnabled: value.autoAdvanceEnabled,
     index: Number(value.index),
     total: Number(value.total),
+    timelineId: value.timelineId as string | null,
+    planDigest: value.planDigest as string | null,
+    positionMs: Number(value.positionMs),
+    timelineIntent: value.timelineIntent,
+    timelinePhase: value.timelinePhase,
   }
 }
 
@@ -421,6 +462,23 @@ function isPlaybackCommandAction(value: unknown): value is PresenterSyncPlayback
     || value === 'retry'
     || value === 'next'
     || value === 'set-auto-advance'
+    || value === 'seek'
+}
+
+function isTimelineIntent(value: unknown): value is PresenterSyncTimelineIntent {
+  return value === 'stopped' || value === 'playing' || value === 'paused'
+}
+
+function isTimelinePhase(value: unknown): value is PresenterSyncTimelinePhase {
+  return value === 'idle'
+    || value === 'preparing'
+    || value === 'ready'
+    || value === 'seeking'
+    || value === 'buffering'
+    || value === 'blocked'
+    || value === 'completed'
+    || value === 'error'
+    || value === 'disposed'
 }
 
 function isViewMode(value: unknown): value is PresenterSyncViewMode {
@@ -459,4 +517,12 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) >= 0
+}
+
+function isFiniteNonNegative(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+function isNullableNonEmptyString(value: unknown): value is string | null {
+  return value === null || isNonEmptyString(value)
 }

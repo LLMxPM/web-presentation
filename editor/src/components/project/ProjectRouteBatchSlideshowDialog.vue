@@ -114,12 +114,15 @@ import {
   ADVANCE_DELAY_MIN_MS,
   MEDIA_TIMEOUT_MAX_MS,
   MEDIA_TIMEOUT_MIN_MS,
+  TIMELINE_TIMEOUT_MAX_MS,
+  TIMELINE_TIMEOUT_MIN_MS,
   TRANSITION_DURATION_MAX_MS,
   TRANSITION_DURATION_MIN_MS,
   TRANSITION_EFFECT_OPTIONS,
   buildAdvanceModeOptions,
   formatMillisecondsAsSeconds,
   isMediaEndAdvanceAvailable,
+  isTimelineEndAdvanceAvailable,
   parseSecondsToMilliseconds,
 } from './project-slideshow-values'
 
@@ -152,10 +155,12 @@ const durationSeconds = ref('0.4')
 const advanceMode = ref<SlideshowAdvanceMode>('manual')
 const delaySeconds = ref('5')
 const mediaTimeoutSeconds = ref('300')
+const timelineTimeoutSeconds = ref('300')
 const lastDurationSeconds = ref('0.4')
 
 const advanceModeOptions = computed(() => buildAdvanceModeOptions(props.capabilities))
 const mediaEndAvailable = computed(() => isMediaEndAdvanceAvailable(props.capabilities))
+const timelineEndAvailable = computed(() => isTimelineEndAdvanceAvailable(props.capabilities))
 const mediaEndUnavailable = computed(() => {
   return props.capabilities != null && advanceAction.value === 'override' && advanceMode.value === 'media_end' && !mediaEndAvailable.value
 })
@@ -175,6 +180,7 @@ watch(
     advanceMode.value = props.defaults.advance.mode
     delaySeconds.value = formatMillisecondsAsSeconds(props.defaults.advance.delay_ms)
     mediaTimeoutSeconds.value = formatMillisecondsAsSeconds(props.defaults.advance.media_timeout_ms ?? 300000)
+    timelineTimeoutSeconds.value = formatMillisecondsAsSeconds(props.defaults.advance.timeline_timeout_ms ?? 300000)
   },
   { immediate: true },
 )
@@ -197,8 +203,11 @@ function updateEffect(value: unknown): void {
 
 /** 媒体结束不可用时保持当前选择。 */
 function updateAdvanceMode(value: unknown): void {
-  const mode = value === 'timer' || value === 'media_end' ? value : 'manual'
+  const mode = value === 'timer' || value === 'media_end' || value === 'timeline_end' ? value : 'manual'
   if (mode === 'media_end' && !mediaEndAvailable.value) {
+    return
+  }
+  if (mode === 'timeline_end' && !timelineEndAvailable.value) {
     return
   }
   advanceMode.value = mode
@@ -238,6 +247,12 @@ function handleApply(): void {
           MEDIA_TIMEOUT_MIN_MS,
           MEDIA_TIMEOUT_MAX_MS,
           props.defaults.advance.media_timeout_ms ?? 300000,
+        ),
+        timeline_timeout_ms: clamp(
+          parseSecondsToMilliseconds(timelineTimeoutSeconds.value),
+          TIMELINE_TIMEOUT_MIN_MS,
+          TIMELINE_TIMEOUT_MAX_MS,
+          props.defaults.advance.timeline_timeout_ms ?? 300000,
         ),
       }
   }

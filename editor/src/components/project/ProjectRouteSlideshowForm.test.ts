@@ -9,7 +9,7 @@ import ProjectRouteSlideshowForm from './ProjectRouteSlideshowForm.vue'
 
 const defaults: SlideshowSettings = {
   transition: { effect: 'fade', duration_ms: 400 },
-  advance: { mode: 'timer', delay_ms: 5000, media_timeout_ms: 300000 },
+  advance: { mode: 'timer', delay_ms: 5000, media_timeout_ms: 300000, timeline_timeout_ms: 300000 },
   loop: false,
   auto_start: false,
 }
@@ -96,6 +96,7 @@ describe('ProjectRouteSlideshowForm', () => {
       mode: 'media_end',
       delay_ms: 7000,
       media_timeout_ms: 120000,
+      timeline_timeout_ms: 300000,
     })
   })
 

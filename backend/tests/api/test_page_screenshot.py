@@ -1268,7 +1268,7 @@ async def test_screenshot_should_stay_latest_when_route_playback_settings_change
         json={
             "slideshow": {
                 "transition": {"effect": "push", "duration_ms": 800},
-                "advance": {"mode": "timer", "delay_ms": 9000, "media_timeout_ms": 450000},
+                "advance": {"mode": "timer", "delay_ms": 9000, "media_timeout_ms": 450000, "timeline_timeout_ms": 300000},
                 "loop": True,
                 "auto_start": True,
             }
@@ -1288,7 +1288,7 @@ async def test_screenshot_should_stay_latest_when_route_playback_settings_change
                     "hidden": False,
                     "page_id": page_data["id"],
                     "transition": {"effect": "fade", "duration_ms": 600},
-                    "advance": {"mode": "media_end", "delay_ms": 2000, "media_timeout_ms": 120000},
+                    "advance": {"mode": "media_end", "delay_ms": 2000, "media_timeout_ms": 120000, "timeline_timeout_ms": 300000},
                 }
             ]
         },

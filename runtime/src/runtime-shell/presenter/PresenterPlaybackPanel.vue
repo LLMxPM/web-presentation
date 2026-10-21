@@ -92,6 +92,8 @@ const stateLabel = computed(() => {
   if (!props.displayAvailable) return '等待观众窗口全屏'
   const current = snapshot.value
   if (!current) return '等待观众窗口'
+  if (current.timelinePhase === 'buffering') return '时间轴缓冲'
+  if (current.waitingForTimeline) return current.state === 'paused' ? '时间轴已暂停' : '时间轴播放中'
   if (current.waitingForMedia) return current.state === 'paused' ? '媒体已暂停' : '媒体播放中'
   switch (current.state) {
     case 'preparing':
@@ -125,6 +127,7 @@ const remainingLabel = computed(() => {
   if (!props.displayAvailable || !current) return '—'
   if (!current.autoAdvanceEnabled) return '手动'
   if (current.delayMs != null) return formatDuration(remainingMs.value)
+  if (current.waitingForTimeline) return '等待时间轴'
   return current.waitingForMedia ? '等待媒体' : '本页手动'
 })
 

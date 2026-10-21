@@ -195,7 +195,7 @@ async def test_archiving_page_should_remove_project_route_bindings(authenticated
                     "advance": None,
                     "effective_slideshow": {
                         "transition": {"effect": "fade", "duration_ms": 400},
-                        "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
+                        "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
                     },
                 }
             ],

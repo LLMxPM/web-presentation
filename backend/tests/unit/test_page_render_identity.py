@@ -59,7 +59,7 @@ def test_projection_should_ignore_playback_and_display_fields() -> None:
                     "hidden": False,
                     "speakerNotes": "备注",
                     "transition": {"effect": "fade", "durationMs": 600},
-                    "advance": {"mode": "timer", "delayMs": 1000, "mediaTimeoutMs": 60000},
+                    "advance": {"mode": "timer", "delayMs": 1000, "mediaTimeoutMs": 60000, "timelineTimeoutMs": 300000},
                 },
             }
         ],

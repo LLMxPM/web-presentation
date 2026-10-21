@@ -18,6 +18,8 @@ import {
   type PageMediaSession,
   type PageMediaSnapshot,
 } from '@/core/media/page-media-session'
+import { readPageMotionHandle, type PageMotionHandle } from '@/core/motion/page-motion-contract'
+import type { CompiledMotionPlan, MotionTransportSnapshot } from '@/core/motion/types'
 import { PlaybackController, type PlaybackPage, type PlaybackSnapshot } from './playback-controller'
 import { useScreenWakeLock, type WakeLockState } from './useScreenWakeLock'
 
@@ -60,6 +62,11 @@ export interface PlaybackHost {
   toggleMute: () => boolean
   /** 按控制器单调时钟刷新剩余时间，供控制条定时读取。 */
   refresh: () => void
+  /** 当前页时间轴快照；没有时间轴时为 null。 */
+  motion: Readonly<Ref<MotionTransportSnapshot | null>>
+  motionPlan: Readonly<Ref<CompiledMotionPlan | null>>
+  /** 定位当前页时间轴；旧页面或未准备时返回 false。 */
+  seekMotion: (positionMs: number) => Promise<boolean>
 }
 
 export interface PlaybackHostOptions {
@@ -111,6 +118,8 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   const errorMessage = ref('')
   const wakeLock = useScreenWakeLock()
   const muted = session.audioMuted
+  const motion = ref<MotionTransportSnapshot | null>(null)
+  const motionPlan = shallowRef<CompiledMotionPlan | null>(null)
   let unsubscribe: (() => void) | null = null
   let pendingAttempt: ReadinessAttempt | null = null
   let attemptSequence = 0
@@ -118,6 +127,10 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   let mediaSession: PageMediaSession | null = null
   let mediaPath = ''
   let mediaSessionGeneration = -1
+  let motionHandle: PageMotionHandle | null = null
+  let motionPath = ''
+  let motionGeneration = -1
+  let motionUnsubscribe: (() => void) | null = null
 
   /** 按当前执行策略惰性创建控制器；目录为空时不创建。 */
   function ensureController(): PlaybackController | null {
@@ -158,6 +171,114 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     mediaSessionGeneration = -1
   }
 
+  /** 释放页面时间轴句柄引用；transport 由页面组件持有，宿主不 dispose。 */
+  function disposePageMotion(): void {
+    motionUnsubscribe?.()
+    motionUnsubscribe = null
+    motionHandle?.pause()
+    motionHandle = null
+    motionPath = ''
+    motionGeneration = -1
+    motion.value = null
+    motionPlan.value = null
+  }
+
+  /** 读取页面根注册的时间轴句柄并订阅状态；旧页面句柄不保留。 */
+  function attachPageMotion(root: HTMLElement, path: string, generation: number): PageMotionHandle | null {
+    disposePageMotion()
+    const handle = readPageMotionHandle(root)
+    if (!handle) return null
+    motionHandle = handle
+    motionPath = path
+    motionGeneration = generation
+    motionPlan.value = handle.plan
+    motion.value = handle.getSnapshot()
+    handle.setMuted(muted.value)
+    let lastPhase = motion.value.phase
+    motionUnsubscribe = handle.subscribe(snapshot => {
+      if (!motionHandle || motionPath !== path || motionGeneration !== generation) return
+      motion.value = snapshot
+      const instance = controller.value
+      const current = instance?.getSnapshot()
+      if (!instance || !current || current.path !== path || current.generation !== generation) return
+      if (snapshot.phase !== lastPhase) {
+        // 缓冲期间冻结 timeline_end 超时预算，恢复后继续使用剩余预算。
+        if (snapshot.phase === 'buffering') {
+          instance.reportTimelineBuffering(path, generation, true)
+        } else if (lastPhase === 'buffering') {
+          instance.reportTimelineBuffering(path, generation, false)
+        }
+        lastPhase = snapshot.phase
+      }
+      if (snapshot.phase === 'completed') {
+        if (current.advanceMode === 'timeline_end') instance.reportTimelineEnded(path, generation)
+        return
+      }
+      if (snapshot.phase === 'blocked') {
+        instance.reportBlocked(path, generation, snapshot.errorMessage || MEDIA_BLOCKED_MESSAGE)
+        return
+      }
+      if (snapshot.phase === 'error') {
+        instance.reportError(path, generation, snapshot.errorMessage || '页内时间轴执行失败。')
+      }
+    })
+    return handle
+  }
+
+  /** 按当前放映状态启停页面时间轴；浏览器拒绝时进入统一受阻态。 */
+  async function playPageMotion(handle: PageMotionHandle, path: string, generation: number): Promise<void> {
+    const instance = controller.value
+    const current = instance?.getSnapshot()
+    if (!instance || !current || current.path !== path || current.generation !== generation) return
+    try {
+      await handle.play()
+    } catch (error) {
+      if (motionHandle !== handle || motionPath !== path || motionGeneration !== generation) return
+      const latest = instance.getSnapshot()
+      if (latest.path !== path || latest.generation !== generation) return
+      const message = error instanceof Error ? error.message : '页内时间轴播放失败。'
+      if ((error as { code?: string }).code === 'TIMELINE_MEDIA_BLOCKED') {
+        instance.reportBlocked(path, generation, message)
+      } else {
+        instance.reportError(path, generation, message)
+      }
+      return
+    }
+    if (motionHandle !== handle || motionPath !== path || motionGeneration !== generation) return
+    const snapshot = handle.getSnapshot()
+    motion.value = snapshot
+    if (snapshot.phase === 'blocked') {
+      instance.reportBlocked(path, generation, snapshot.errorMessage || MEDIA_BLOCKED_MESSAGE)
+    } else if (snapshot.phase === 'error') {
+      instance.reportError(path, generation, snapshot.errorMessage || '页内时间轴执行失败。')
+    }
+  }
+
+  /** 控制器 generation 变化（单页循环/重试/重新开始）时重新驱动同一页面时间轴。 */
+  function syncMotionWithSnapshot(next: PlaybackSnapshot): void {
+    if (!motionHandle || next.path !== motionPath) return
+    if (next.generation !== motionGeneration) {
+      motionGeneration = next.generation
+      if (next.state === 'playing') void playPageMotion(motionHandle, next.path, next.generation)
+      return
+    }
+    if (next.state === 'paused' || next.state === 'blocked' || next.state === 'error'
+      || next.state === 'stopped' || next.state === 'ended') {
+      motionHandle.pause()
+    }
+  }
+
+  async function seekMotion(positionMs: number): Promise<boolean> {
+    const instance = controller.value
+    const current = instance?.getSnapshot()
+    if (!motionHandle || !current) return false
+    if (current.path !== motionPath || current.generation !== motionGeneration) return false
+    if (!Number.isFinite(positionMs)) return false
+    await motionHandle.seek(positionMs)
+    motion.value = motionHandle.getSnapshot()
+    return true
+  }
+
   /**
    * 媒体会话事件进入控制器；路径与 generation 必须同时匹配当前页，
    * 旧页、已销毁会话和迟到事件直接丢弃。
@@ -177,7 +298,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       // manual/timer 下的内容音频由用户控制，单个资源失败不应阻塞整场放映；
       // 旁白与 media_end 参与媒体仍进入统一错误链路。
       const failed = session.getSnapshot().targets.find(target => target.id === event.targetId)
-      if (current.advanceMode !== 'media_end' && failed?.purpose !== 'narration') return
+      if (current.advanceMode !== 'media_end' && current.advanceMode !== 'timeline_end' && failed?.purpose !== 'narration') return
       session.pause()
       instance.reportMediaError(mediaPath, event.generation, event.message || MEDIA_BLOCKED_MESSAGE)
       return
@@ -243,7 +364,12 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   }
 
   /** 为当前页创建媒体会话；构造期间的上报由显式 play 调用补足。 */
-  function createSessionForPage(root: HTMLElement, path: string, generation: number): PageMediaSession {
+  function createSessionForPage(
+    root: HTMLElement,
+    path: string,
+    generation: number,
+    motion: PageMotionHandle | null = null,
+  ): PageMediaSession {
     disposePageMedia()
     mediaPath = path
     mediaSessionGeneration = generation
@@ -252,6 +378,8 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       generation,
       allowPlayback: policy.value.allowAutoplay,
       onEvent: handleMediaEvent,
+      // 已由时间轴认领的媒体只交给 transport，旧会话不得暂停、归零或计入完成集合。
+      isExternallyOwned: element => motion?.isElementClaimed(element) ?? false,
     })
     mediaSession.setMuted(muted.value)
     return mediaSession
@@ -261,7 +389,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   function restartPageMedia(instance: PlaybackController, next: PlaybackSnapshot): void {
     const root = findPlaybackPageElement(next.path)
     if (!root) return
-    const session = createSessionForPage(root, next.path, next.generation)
+    const session = createSessionForPage(root, next.path, next.generation, motionHandle)
     const media = session.getSnapshot()
     const participating = participatingTargets(media)
     instance.reportMediaTargets(next.path, next.generation, participating.length)
@@ -280,6 +408,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
 
   /** 控制器状态变化时同步媒体：失败先停播，离场销毁，旧 generation 会话立即释放。 */
   function syncMediaWithSnapshot(next: PlaybackSnapshot): void {
+    syncMotionWithSnapshot(next)
     if (next.state === 'blocked' || next.state === 'error') {
       mediaSession?.pause()
       return
@@ -298,6 +427,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     wakeLock.release()
     suspendPageMedia()
     disposePageMedia()
+    disposePageMotion()
     pendingAttempt = null
     attemptSequence += 1
     unsubscribe?.()
@@ -339,22 +469,50 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     if (result.ok) {
       const current = instance?.getSnapshot()
       if (!instance || !current) return
+      // 先准备页内时间轴，再由其目标注册表过滤旧媒体会话；未注册媒体保持旧行为。
+      const motion = attachPageMotion(root, attempt.path, attempt.generation)
+      let motionReady = false
+      if (motion) {
+        try {
+          await motion.prepare()
+        } catch (error) {
+          const latest = instance.getSnapshot()
+          if (disposed || latest.path !== attempt.path || latest.generation !== attempt.generation) return
+          const message = error instanceof Error ? error.message : '页内时间轴准备失败。'
+          instance.reportError(attempt.path, attempt.generation, message)
+          return
+        }
+        const latest = instance.getSnapshot()
+        if (disposed || latest.path !== attempt.path || latest.generation !== attempt.generation) return
+        motionReady = true
+      }
       // 每个稳定放映页都建立会话；是否自动播放由用途、推进模式与执行策略决定。
-      const session = createSessionForPage(root, attempt.path, attempt.generation)
+      const session = createSessionForPage(root, attempt.path, attempt.generation, motion)
       const media = session.getSnapshot()
       if (media.contractError) {
         instance.reportMediaError(attempt.path, attempt.generation, media.contractError)
         return
       }
-      if (current.advanceMode === 'media_end') {
+      if (current.advanceMode === 'timeline_end') {
+        if (!motion || !motionReady) {
+          instance.reportTimelineUnavailable(attempt.path, attempt.generation)
+          return
+        }
+        const participating = participatingTargets(media)
+        instance.reportReady(attempt.path, attempt.generation, participating.length, 1)
+        if (media.targets.length > 0) void playPageMedia(session)
+        void playPageMotion(motion, attempt.path, attempt.generation)
+      } else if (current.advanceMode === 'media_end') {
         const participating = participatingTargets(media)
         instance.reportReady(attempt.path, attempt.generation, participating.length)
         if (media.targets.length > 0) void playPageMedia(session)
+        if (motionReady && motion) void playPageMotion(motion, attempt.path, attempt.generation)
       } else {
         instance.reportReady(attempt.path, attempt.generation)
         if (policy.value.allowAutoplay && media.targets.some(target => target.autoplayEligible)) {
           void playPageMedia(session, { autoplayOnly: true })
         }
+        if (motionReady && motion) void playPageMotion(motion, attempt.path, attempt.generation)
       }
       return
     }
@@ -394,6 +552,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     const instance = controller.value
     if (!instance) return
     disposePageMedia()
+    disposePageMotion()
     if (!instance.notifyPageChange(path)) return
     const state = instance.getSnapshot().state
     if (state === 'preparing' || state === 'paused') beginReadiness(path, false)
@@ -432,6 +591,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
 
   function pausePlayback(): boolean {
     if (!controller.value?.pause()) return false
+    motionHandle?.pause()
     if (mediaSession) mediaSession.suspend()
     else suspendPageMedia()
     return true
@@ -442,6 +602,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     if (!instance || !instance.resume()) return false
     const current = instance.getSnapshot()
     if (current.state === 'playing') {
+      if (motionHandle) void playPageMotion(motionHandle, current.path, current.generation)
       if (mediaSession?.isSuspended()) mediaSession.resume()
       else if (mediaSession && current.advanceMode === 'media_end') void playPageMedia(mediaSession)
       else if (!mediaSession && current.advanceMode === 'media_end') restartPageMedia(instance, current)
@@ -458,6 +619,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
 
   function stopPlayback(): boolean {
     if (!controller.value?.stop()) return false
+    motionHandle?.pause()
     if (mediaSession) disposePageMedia()
     else suspendPageMedia()
     mediaPlaybackCoordinator.dispose()
@@ -468,6 +630,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     const instance = controller.value
     if (!instance || !instance.retry()) return false
     disposePageMedia()
+    disposePageMotion()
     beginReadiness(instance.getSnapshot().path, true)
     return true
   }
@@ -477,6 +640,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     const instance = controller.value
     if (!instance || !instance.next()) return false
     disposePageMedia()
+    disposePageMotion()
     mediaPlaybackCoordinator.dispose()
     beginReadiness(instance.getSnapshot().path, false)
     return true
@@ -530,6 +694,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     if (disposed) return false
     muted.value = !muted.value
     mediaSession?.setMuted(muted.value)
+    motionHandle?.setMuted(muted.value)
     return true
   }
 
@@ -594,6 +759,9 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     setAutoAdvance,
     toggleAutoAdvance,
     toggleMute,
+    motion,
+    motionPlan,
+    seekMotion,
     refresh: () => {
       const instance = controller.value
       if (instance) snapshot.value = instance.getSnapshot()

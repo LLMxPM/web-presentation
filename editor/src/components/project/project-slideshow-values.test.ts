@@ -7,6 +7,7 @@ import {
   createSlideshowDraft,
   formatMillisecondsAsSeconds,
   isMediaEndAdvanceAvailable,
+  isTimelineEndAdvanceAvailable,
   normalizeSlideshowDraft,
   parseSecondsToMilliseconds,
 } from './project-slideshow-values'
@@ -21,6 +22,7 @@ const capabilities: SlideshowCapabilities = {
   transition_duration_ms: { min: 100, max: 2000, none: 0 },
   delay_ms: { min: 1000, max: 3600000 },
   media_timeout_ms: { min: 1000, max: 3600000 },
+  timeline_timeout_ms: { min: 1000, max: 3600000 },
 }
 
 describe('project slideshow values', () => {
@@ -38,6 +40,7 @@ describe('project slideshow values', () => {
       advanceMode: 'timer',
       delaySeconds: '8',
       mediaTimeoutSeconds: '300',
+      timelineTimeoutSeconds: '300',
       loop: true,
       autoStart: false,
     })
@@ -123,7 +126,12 @@ describe('project slideshow values', () => {
       autoStart: false,
     })
 
-    expect(settings.advance).toEqual({ mode: 'media_end', delay_ms: 6000, media_timeout_ms: 120000 })
+    expect(settings.advance).toEqual({
+      mode: 'media_end',
+      delay_ms: 6000,
+      media_timeout_ms: 120000,
+      timeline_timeout_ms: 300000,
+    })
   })
 
   it('翻页模式选项应只包含服务端已声明的模式', () => {
@@ -132,5 +140,27 @@ describe('project slideshow values', () => {
     expect(buildAdvanceModeOptions(capabilities).map(option => option.value)).toEqual(['manual', 'timer', 'media_end'])
     expect(isMediaEndAdvanceAvailable(capabilities)).toBe(true)
     expect(isMediaEndAdvanceAvailable({ ...capabilities, advance_modes: ['manual', 'timer'] })).toBe(false)
+    expect(isTimelineEndAdvanceAvailable(capabilities)).toBe(false)
+    expect(isTimelineEndAdvanceAvailable({ ...capabilities, advance_modes: ['manual', 'timer', 'timeline_end'] })).toBe(true)
+    expect(buildAdvanceModeOptions({
+      ...capabilities,
+      advance_modes: ['manual', 'timer', 'timeline_end'],
+    }).map(option => option.value)).toEqual(['manual', 'timer', 'timeline_end'])
+  })
+
+  it('页内时间轴结束超时应保留合法值并收敛到 1000–3600000ms', () => {
+    const base = {
+      effect: 'fade' as const,
+      durationSeconds: '0.4',
+      advanceMode: 'timer' as const,
+      delaySeconds: '5',
+      loop: false,
+      autoStart: false,
+    }
+
+    expect(normalizeSlideshowDraft({ ...base, timelineTimeoutSeconds: '120' }).advance.timeline_timeout_ms).toBe(120000)
+    expect(normalizeSlideshowDraft({ ...base, timelineTimeoutSeconds: '0.2' }).advance.timeline_timeout_ms).toBe(1000)
+    expect(normalizeSlideshowDraft({ ...base, timelineTimeoutSeconds: '9999' }).advance.timeline_timeout_ms).toBe(3600000)
+    expect(normalizeSlideshowDraft({ ...base, timelineTimeoutSeconds: 'oops' }).advance.timeline_timeout_ms).toBe(300000)
   })
 })

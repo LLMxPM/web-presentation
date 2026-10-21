@@ -614,7 +614,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
 
     slideshow = {
         "transition": {"effect": "push", "duration_ms": 900},
-        "advance": {"mode": "timer", "delay_ms": 7000, "media_timeout_ms": 300000},
+        "advance": {"mode": "timer", "delay_ms": 7000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
         "loop": True,
         "auto_start": False,
     }
@@ -633,7 +633,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
 
     media_end = {
         "transition": {"effect": "fade", "duration_ms": 400},
-        "advance": {"mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 120000},
+        "advance": {"mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 120000, "timeline_timeout_ms": 300000},
         "loop": False,
         "auto_start": False,
     }
@@ -656,7 +656,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
             {
                 "slideshow": {
                     "transition": {"effect": "fade", "duration_ms": 400},
-                    "advance": {"mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 999},
+                    "advance": {"mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 999, "timeline_timeout_ms": 300000},
                     "loop": False,
                     "auto_start": False,
                 }
@@ -677,7 +677,7 @@ async def test_project_create_should_accept_slideshow_payload(authenticated_clie
     context = _build_tool_run_context(workspace_id, approved=True)
     slideshow = {
         "transition": {"effect": "none", "duration_ms": 0},
-        "advance": {"mode": "manual", "delay_ms": 6000, "media_timeout_ms": 300000},
+        "advance": {"mode": "manual", "delay_ms": 6000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
         "loop": False,
         "auto_start": True,
     }

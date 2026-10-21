@@ -79,10 +79,10 @@ function createController(options: {
 }
 
 /** 开始并完成当前页就绪，返回当前 generation。 */
-function startReady(controller: PlaybackController, path?: string, mediaTargets = 0): number {
+function startReady(controller: PlaybackController, path?: string, mediaTargets = 0, timelineTargets = 0): number {
   controller.start(path)
   const generation = controller.getSnapshot().generation
-  expect(controller.reportReady(controller.getSnapshot().path, generation, mediaTargets)).toBe(true)
+  expect(controller.reportReady(controller.getSnapshot().path, generation, mediaTargets, timelineTargets)).toBe(true)
   return generation
 }
 
@@ -470,6 +470,107 @@ describe('PlaybackController 媒体结束翻页', () => {
     expect(looped.controller.getSnapshot()).toMatchObject({
       state: 'playing',
       waitingForMedia: true,
+      generation: generation + 1,
+    })
+    expect(looped.clock.pending).toBe(1)
+    expect(looped.navigations).toEqual([])
+  })
+})
+
+
+describe('PlaybackController 时间轴结束翻页', () => {
+  const TIMELINE_PAGES: PlaybackPage[] = [
+    { path: '/timeline', advance: { mode: 'timeline_end', delayMs: 2000, timelineTimeoutMs: 5000 } },
+    { path: '/next', advance: { mode: 'manual', delayMs: 5000 } },
+  ]
+
+  it('等待时间轴完成后只推进一次，旧 generation 的完成信号被丢弃', () => {
+    const { clock, navigations, controller } = createController({ pages: TIMELINE_PAGES })
+    const generation = startReady(controller, '/timeline', 0, 1)
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'playing',
+      waitingForTimeline: true,
+      advanceMode: 'timeline_end',
+      delayMs: null,
+    })
+    expect(clock.pending).toBe(1)
+
+    clock.advance(1_000)
+    expect(controller.reportTimelineEnded('/timeline', generation)).toBe(true)
+    expect(navigations).toEqual(['/next'])
+    expect(controller.getSnapshot()).toMatchObject({ state: 'preparing', waitingForTimeline: false })
+    expect(controller.reportTimelineEnded('/timeline', generation)).toBe(false)
+    expect(navigations).toEqual(['/next'])
+  })
+
+  it('timeline_end 页没有时间轴时直接报错，不退回停留计时', () => {
+    const { clock, navigations, controller } = createController({ pages: TIMELINE_PAGES })
+    controller.start('/timeline')
+    const generation = controller.getSnapshot().generation
+    expect(controller.reportReady('/timeline', generation, 0, 0)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'error', waitingForTimeline: false })
+    expect(controller.getSnapshot().message).toContain('时间轴')
+    expect(clock.pending).toBe(0)
+    expect(navigations).toEqual([])
+  })
+
+  it('时间轴超时进入错误态，暂停期间不推进超时预算', () => {
+    const { clock, navigations, controller } = createController({ pages: TIMELINE_PAGES })
+    startReady(controller, '/timeline', 0, 1)
+    clock.advance(2_000)
+    expect(controller.pause()).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'paused', waitingForTimeline: true, remainingMs: 3_000 })
+    clock.advance(60_000)
+    expect(controller.getSnapshot().state).toBe('paused')
+
+    expect(controller.resume()).toBe(true)
+    clock.advance(2_999)
+    expect(controller.getSnapshot().state).toBe('playing')
+    clock.advance(1)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'error' })
+    expect(controller.getSnapshot().message).toContain('超时')
+    expect(navigations).toEqual([])
+  })
+
+  it('时间轴缓冲期间冻结超时预算，恢复后只消耗剩余预算', () => {
+    const { clock, navigations, controller } = createController({ pages: TIMELINE_PAGES })
+    startReady(controller, '/timeline', 0, 1)
+    clock.advance(2_000)
+    expect(controller.reportTimelineBuffering('/timeline', controller.getSnapshot().generation, true)).toBe(true)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'playing', remainingMs: 3_000 })
+    expect(clock.pending).toBe(0)
+
+    clock.advance(60_000)
+    expect(controller.getSnapshot().state).toBe('playing')
+    expect(controller.reportTimelineBuffering('/timeline', controller.getSnapshot().generation, false)).toBe(true)
+    expect(clock.pending).toBe(1)
+    clock.advance(2_999)
+    expect(controller.getSnapshot().state).toBe('playing')
+    clock.advance(1)
+    expect(controller.getSnapshot()).toMatchObject({ state: 'error' })
+    expect(navigations).toEqual([])
+  })
+
+  it('末页时间轴结束后停止；单页循环重新等待时间轴并通知新一代', () => {
+    const single: PlaybackPage[] = [
+      { path: '/only', advance: { mode: 'timeline_end', delayMs: 2000, timelineTimeoutMs: 5000 } },
+    ]
+    const ended = createController({ pages: single })
+    ended.controller.start('/only')
+    const endedGeneration = ended.controller.getSnapshot().generation
+    ended.controller.reportReady('/only', endedGeneration, 0, 1)
+    ended.controller.reportTimelineEnded('/only', endedGeneration)
+    expect(ended.controller.getSnapshot()).toMatchObject({ state: 'ended', waitingForTimeline: false })
+    expect(ended.clock.pending).toBe(0)
+
+    const looped = createController({ pages: single, loop: true })
+    looped.controller.start('/only')
+    const generation = looped.controller.getSnapshot().generation
+    looped.controller.reportReady('/only', generation, 0, 1)
+    looped.controller.reportTimelineEnded('/only', generation)
+    expect(looped.controller.getSnapshot()).toMatchObject({
+      state: 'playing',
+      waitingForTimeline: true,
       generation: generation + 1,
     })
     expect(looped.clock.pending).toBe(1)

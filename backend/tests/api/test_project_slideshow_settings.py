@@ -6,14 +6,14 @@ from httpx import AsyncClient
 
 DEFAULT_SLIDESHOW = {
     "transition": {"effect": "fade", "duration_ms": 400},
-    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
+    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
     "loop": False,
     "auto_start": False,
 }
 
 TIMER_SLIDESHOW = {
     "transition": {"effect": "push", "duration_ms": 800},
-    "advance": {"mode": "timer", "delay_ms": 9000, "media_timeout_ms": 450000},
+    "advance": {"mode": "timer", "delay_ms": 9000, "media_timeout_ms": 450000, "timeline_timeout_ms": 300000},
     "loop": True,
     "auto_start": True,
 }
@@ -84,6 +84,7 @@ async def test_project_create_should_accept_media_end_advance(authenticated_clie
         "mode": "media_end",
         "delay_ms": 5000,
         "media_timeout_ms": 300000,
+        "timeline_timeout_ms": 300000,
     }
 
     explicit_timeout = await _create_project(
@@ -92,7 +93,7 @@ async def test_project_create_should_accept_media_end_advance(authenticated_clie
         "媒体显式超时",
         slideshow={
             "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "media_end", "delay_ms": 6000, "media_timeout_ms": 120000},
+            "advance": {"mode": "media_end", "delay_ms": 6000, "media_timeout_ms": 120000, "timeline_timeout_ms": 300000},
             "loop": True,
             "auto_start": True,
         },
@@ -101,6 +102,7 @@ async def test_project_create_should_accept_media_end_advance(authenticated_clie
         "mode": "media_end",
         "delay_ms": 6000,
         "media_timeout_ms": 120000,
+        "timeline_timeout_ms": 300000,
     }
 
 
@@ -173,7 +175,7 @@ async def test_project_slideshow_should_reject_invalid_numbers_on_create(authent
         },
         {
             "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 999},
+            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 999, "timeline_timeout_ms": 300000},
             "loop": False,
             "auto_start": False,
         },

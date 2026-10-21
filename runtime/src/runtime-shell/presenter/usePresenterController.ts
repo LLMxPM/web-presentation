@@ -51,6 +51,13 @@ export interface PresenterStoredMessage {
   message: PresenterSyncMessage
 }
 
+/** 控制台命令随路径动作一起传递的附加数据；观众窗口按动作读取对应字段。 */
+export interface PresenterPlaybackCommandDetails {
+  autoAdvance?: boolean
+  positionMs?: number
+  seekRevision?: number
+}
+
 interface PresenterControllerOptions {
   channelId: string
   initialPath?: string
@@ -62,7 +69,7 @@ interface PresenterControllerOptions {
   /** 本地时钟注入点，跨窗口只比较本地到达时间。 */
   now?: () => number
   /** 观众窗口处理控制台命令；控制台不提供该回调。 */
-  onPlaybackCommand?: (action: PresenterSyncPlaybackCommandAction, autoAdvance?: boolean) => void
+  onPlaybackCommand?: (action: PresenterSyncPlaybackCommandAction, details?: PresenterPlaybackCommandDetails) => void
 }
 
 const TILE_SIZE_STORAGE_KEY = 'web-presentation.presenter.tileSize'
@@ -83,6 +90,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
   const session = router ? getRuntimeSession(router) : undefined
   let remotePath = ''
   let commandSequence = 0
+  let seekSequence = 0
   let applyingRemoteView = false
   const currentPath = ref(normalizePresenterRoutePath(router?.currentRoute.value.path || options.initialPath || ''))
   const viewMode = ref<PresenterViewMode>('focus')
@@ -111,10 +119,30 @@ export function usePresenterController(options: PresenterControllerOptions) {
     remainingMs: number
     delayMs: number | null
     waitingForMedia: boolean
+    waitingForTimeline: boolean
     autoAdvanceEnabled: boolean
-  }>({ state: 'stopped', remainingMs: 0, delayMs: null, waitingForMedia: false, autoAdvanceEnabled: false })
+    timelineId: string | null
+    planDigest: string | null
+    positionMs: number
+    timelineIntent: PresenterSyncPlaybackSnapshot['timelineIntent']
+    timelinePhase: PresenterSyncPlaybackSnapshot['timelinePhase']
+  }>({
+    state: 'stopped',
+    remainingMs: 0,
+    delayMs: null,
+    waitingForMedia: false,
+    waitingForTimeline: false,
+    autoAdvanceEnabled: false,
+    timelineId: null,
+    planDigest: null,
+    positionMs: 0,
+    timelineIntent: 'stopped',
+    timelinePhase: 'idle',
+  })
   // 观众窗口先于控制台加载时，ready 已错过；收到控制台状态后补一次身份与状态回执。
   const acknowledgedConsoleSources = new Set<string>()
+  /** 观众窗口只接受单调递增的定位修订，迟到 seek 不再改变当前状态。 */
+  let lastAppliedSeekRevision = 0
   let channel: BroadcastChannel | null = null
 
   const pages = computed<PresenterPage[]>(() => buildPresenterPages(routeConfigs.value))
@@ -146,7 +174,17 @@ export function usePresenterController(options: PresenterControllerOptions) {
   function updatePlayback(
     value: Partial<Pick<
       PresenterSyncPlaybackSnapshot,
-      'state' | 'remainingMs' | 'delayMs' | 'waitingForMedia' | 'autoAdvanceEnabled'
+      | 'state'
+      | 'remainingMs'
+      | 'delayMs'
+      | 'waitingForMedia'
+      | 'waitingForTimeline'
+      | 'autoAdvanceEnabled'
+      | 'timelineId'
+      | 'planDigest'
+      | 'positionMs'
+      | 'timelineIntent'
+      | 'timelinePhase'
     >>,
   ): void {
     playbackValues.value = {
@@ -154,7 +192,13 @@ export function usePresenterController(options: PresenterControllerOptions) {
       remainingMs: Math.max(0, value.remainingMs ?? playbackValues.value.remainingMs),
       delayMs: value.delayMs === undefined ? playbackValues.value.delayMs : value.delayMs,
       waitingForMedia: value.waitingForMedia ?? playbackValues.value.waitingForMedia,
+      waitingForTimeline: value.waitingForTimeline ?? playbackValues.value.waitingForTimeline,
       autoAdvanceEnabled: value.autoAdvanceEnabled ?? playbackValues.value.autoAdvanceEnabled,
+      timelineId: value.timelineId === undefined ? playbackValues.value.timelineId : value.timelineId,
+      planDigest: value.planDigest === undefined ? playbackValues.value.planDigest : value.planDigest,
+      positionMs: Math.max(0, value.positionMs ?? playbackValues.value.positionMs),
+      timelineIntent: value.timelineIntent ?? playbackValues.value.timelineIntent,
+      timelinePhase: value.timelinePhase ?? playbackValues.value.timelinePhase,
     }
   }
 
@@ -250,6 +294,25 @@ export function usePresenterController(options: PresenterControllerOptions) {
   }
 
   /**
+   * 控制台请求观众窗口定位当前页时间轴；seekRevision 保证旧定位命令失效。
+   * @param positionMs 目标逻辑位置（毫秒）
+   * @returns 是否已发送
+   */
+  function sendSeek(positionMs: number): boolean {
+    if (options.role !== 'console' || activeDisplayOwnerEpoch.value === null) return false
+    if (!Number.isFinite(positionMs) || positionMs < 0) return false
+    seekSequence += 1
+    postMessage({
+      type: 'playback-command',
+      action: 'seek',
+      positionMs,
+      seekRevision: seekSequence,
+      targetOwnerEpoch: activeDisplayOwnerEpoch.value,
+    }, nextCommandId())
+    return true
+  }
+
+  /**
    * 发送窗口关闭通知。
    */
   function postClose(): void {
@@ -310,7 +373,15 @@ export function usePresenterController(options: PresenterControllerOptions) {
     }
     if (message.type === 'playback-command' && options.role === 'display' && message.role === 'console') {
       if (!isPresenterMessageForOwner(message, identity.ownerEpoch)) return
-      options.onPlaybackCommand?.(message.action, message.autoAdvance)
+      if (message.action === 'seek' && message.seekRevision !== undefined) {
+        if (message.seekRevision <= lastAppliedSeekRevision) return
+        lastAppliedSeekRevision = message.seekRevision
+      }
+      options.onPlaybackCommand?.(message.action, {
+        autoAdvance: message.autoAdvance,
+        positionMs: message.positionMs,
+        seekRevision: message.seekRevision,
+      })
       return
     }
     if (message.type === 'ready' && options.role === 'console' && message.role === 'display') {
@@ -502,6 +573,7 @@ export function usePresenterController(options: PresenterControllerOptions) {
     postState,
     postPlaybackState,
     sendPlaybackCommand,
+    sendSeek,
     postClose,
     postDisplayStatus,
   }
@@ -686,9 +758,15 @@ export function writePresenterInitialNavigateMessage(
         remainingMs: 0,
         delayMs: null,
         waitingForMedia: false,
+        waitingForTimeline: false,
         autoAdvanceEnabled: autoAdvance,
         index: 0,
         total: 0,
+        timelineId: null,
+        planDigest: null,
+        positionMs: 0,
+        timelineIntent: 'stopped',
+        timelinePhase: 'idle',
       },
     },
   }

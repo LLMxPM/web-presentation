@@ -104,10 +104,10 @@ describe('buildPresenterPages', () => {
     ])
   })
 
-  it('应解析 schema 3 localStorage 兜底同步消息', () => {
+  it('应解析 schema 4 localStorage 兜底同步消息', () => {
     const storageKey = buildPresenterStorageKey('channel-a')
     const envelope = {
-      protocol: 3,
+      protocol: 4,
       channelId: 'channel-a',
       artifactIdentity: 'artifact-1',
       sourceId: 'console-a',
@@ -131,7 +131,13 @@ describe('buildPresenterPages', () => {
           remainingMs: 4000,
           delayMs: 5000,
           waitingForMedia: false,
+          waitingForTimeline: false,
           autoAdvanceEnabled: true,
+          timelineId: null,
+          planDigest: null,
+          positionMs: 0,
+          timelineIntent: 'stopped',
+          timelinePhase: 'idle',
           index: 1,
           total: 2,
         },
@@ -179,14 +185,14 @@ describe('buildPresenterPages', () => {
     }))).toBeNull()
   })
 
-  it('应写入演讲入口 schema 3 初始导航兜底消息', () => {
+  it('应写入演讲入口 schema 4 初始导航兜底消息', () => {
     writePresenterInitialNavigateMessage('channel-entry', 'intro', true, 'artifact-1')
 
     const parsed = parseStoredSyncMessage(localStorage.getItem(buildPresenterStorageKey('channel-entry')))
 
     expect(parsed?.sourceId).toBe('presenter-entry')
     expect(parsed?.message).toMatchObject({
-      protocol: 3,
+      protocol: 4,
       channelId: 'channel-entry',
       artifactIdentity: 'artifact-1',
       sourceId: 'presenter-entry',
@@ -271,6 +277,18 @@ describe('presenter playback commands', () => {
       targetOwnerEpoch: 77,
     })
 
+    expect(controller.sendSeek(1200)).toBe(true)
+    expect(channel.posted.at(-1)).toMatchObject({
+      type: 'playback-command',
+      action: 'seek',
+      positionMs: 1200,
+      seekRevision: 1,
+      targetOwnerEpoch: 77,
+    })
+    expect(controller.sendSeek(2400)).toBe(true)
+    expect(channel.posted.at(-1)).toMatchObject({ action: 'seek', positionMs: 2400, seekRevision: 2 })
+    expect(controller.sendSeek(-1)).toBe(false)
+
     app.unmount()
   })
 
@@ -336,7 +354,13 @@ describe('presenter playback commands', () => {
         remainingMs: 0,
         delayMs: null,
         waitingForMedia: false,
+        waitingForTimeline: false,
           autoAdvanceEnabled: true,
+          timelineId: null,
+          planDigest: null,
+          positionMs: 0,
+          timelineIntent: 'stopped',
+          timelinePhase: 'idle',
         index: 0,
         total: 2,
       },
@@ -365,7 +389,13 @@ describe('presenter playback commands', () => {
         remainingMs: 0,
         delayMs: null,
         waitingForMedia: false,
+        waitingForTimeline: false,
           autoAdvanceEnabled: true,
+          timelineId: null,
+          planDigest: null,
+          positionMs: 0,
+          timelineIntent: 'stopped',
+          timelinePhase: 'idle',
         index: 0,
         total: 2,
       },
@@ -454,7 +484,13 @@ describe('presenter playback commands', () => {
       remainingMs: 0,
       delayMs: null,
       waitingForMedia: false,
+      waitingForTimeline: false,
           autoAdvanceEnabled: true,
+          timelineId: null,
+          planDigest: null,
+          positionMs: 0,
+          timelineIntent: 'stopped',
+          timelinePhase: 'idle',
       index: 1,
       total: 2,
     }
@@ -491,7 +527,7 @@ describe('presenter playback commands', () => {
 /** 构造观众窗口来源的协议消息。 */
 function displayMessage(overrides: Record<string, unknown>) {
   return {
-    protocol: 3,
+    protocol: 4,
     channelId: 'channel-command',
     artifactIdentity: '',
     sourceId: 'display-1',
@@ -504,7 +540,7 @@ function displayMessage(overrides: Record<string, unknown>) {
 /** 构造控制台放映命令消息。 */
 function commandMessage(action: string, revision: number, eventId: string, targetOwnerEpoch: number) {
   return {
-    protocol: 3,
+    protocol: 4,
     channelId: 'channel-command',
     artifactIdentity: '',
     sourceId: 'console-1',

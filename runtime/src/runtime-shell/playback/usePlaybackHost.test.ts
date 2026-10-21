@@ -9,6 +9,9 @@ import { setRuntimePreloadedConfig } from '@/core/utils/path'
 import { getRuntimeSession } from '@/core/router/runtime-session'
 import { initializeRuntimeExecution, resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
 import { mediaPlaybackCoordinator } from '@/core/execution/media-playback-guard'
+import { compilePageTimeline } from '@/core/motion/compile'
+import type { PageMotionHandle } from '@/core/motion/page-motion-contract'
+import type { MotionTransportSnapshot } from '@/core/motion/types'
 import {
   buildPlaybackPages,
   usePlaybackHost,
@@ -72,7 +75,12 @@ function preloadPlaybackConfig(options: {
   autoStart?: boolean
   loop?: boolean
   delays?: Record<string, number>
-  advances?: Record<string, { mode: 'manual' | 'timer' | 'media_end'; delayMs: number; mediaTimeoutMs?: number }>
+  advances?: Record<string, {
+    mode: 'manual' | 'timer' | 'media_end' | 'timeline_end'
+    delayMs: number
+    mediaTimeoutMs?: number
+    timelineTimeoutMs?: number
+  }>
 } = {}) {
   configuredAutoStart = options.autoStart ?? false
   const delays = options.delays ?? { '/a': 1000, '/b': 2000 }
@@ -263,7 +271,7 @@ describe('buildPlaybackPages', () => {
   it('复用可见叶子目录并携带生效翻页配置', () => {
     const pages = buildPlaybackPages()
     expect(pages.map(page => page.path)).toEqual(['/a', '/b'])
-    expect(pages[1].advance).toEqual({ mode: 'timer', delayMs: 2000, mediaTimeoutMs: 300000 })
+    expect(pages[1].advance).toEqual({ mode: 'timer', delayMs: 2000, mediaTimeoutMs: 300000, timelineTimeoutMs: 300000 })
   })
 })
 
@@ -483,6 +491,101 @@ describe('usePlaybackHost 自动开始与就绪', () => {
     second.app.unmount()
   })
 })
+
+
+/** 在放映页注册可控时间轴句柄，模拟页面组件持有的 transport；仅实现宿主实际读取的接口。 */
+function attachTestMotion(path: string) {
+  const page = document.querySelector(`[data-runtime-route-path="${path}"]`)
+  if (!page) throw new Error(`页面 ${path} 不存在`)
+  const plan = compilePageTimeline({
+    schemaVersion: 1,
+    timelineId: `timeline-${path.slice(1)}`,
+    tracks: [
+      {
+        id: 'fade',
+        type: 'dom',
+        target: 'h1',
+        durationMs: 1000,
+        from: { opacity: 0 },
+        to: { opacity: 1 },
+      },
+    ],
+  })
+  let snapshot: MotionTransportSnapshot = {
+    timelineId: plan.timelineId,
+    planDigest: plan.planDigest,
+    pagePath: path,
+    generation: 1,
+    intent: 'stopped',
+    phase: 'idle',
+    positionMs: 0,
+    durationMs: plan.durationMs,
+    revision: 0,
+    completedTrackIds: [],
+    errorCode: null,
+    errorMessage: '',
+  }
+  let claimed: Element | null = null
+  const listeners = new Set<(value: MotionTransportSnapshot) => void>()
+  const emit = () => {
+    for (const listener of listeners) listener(snapshot)
+  }
+  const advanceSnapshot = (patch: Partial<MotionTransportSnapshot>) => {
+    snapshot = { ...snapshot, ...patch, revision: snapshot.revision + 1 }
+    emit()
+  }
+  const play = vi.fn(async () => {
+    advanceSnapshot({ intent: 'playing', phase: 'ready' })
+    return true
+  })
+  const pause = vi.fn(() => {
+    advanceSnapshot({ intent: 'paused' })
+    return true
+  })
+  const seek = vi.fn(async (positionMs: number) => {
+    advanceSnapshot({ positionMs: Math.max(0, Math.min(plan.durationMs, positionMs)), phase: 'ready' })
+  })
+  const handle = {
+    plan,
+    ownership: { isElementClaimed: (element: Element) => element === claimed },
+    isElementClaimed: (element: Element) => element === claimed,
+    getSnapshot: () => snapshot,
+    prepare: vi.fn(async () => {
+      advanceSnapshot({ phase: 'ready' })
+    }),
+    play,
+    pause,
+    resume: vi.fn(async () => play()),
+    seek,
+    restart: vi.fn(async () => play()),
+    setMuted: vi.fn(),
+    sampleAt: vi.fn(async () => ({ proofs: [], positionMs: snapshot.positionMs })),
+    subscribe: (listener: (value: MotionTransportSnapshot) => void) => {
+      listeners.add(listener)
+      listener(snapshot)
+      return () => listeners.delete(listener)
+    },
+    dispose: vi.fn(),
+  } as unknown as PageMotionHandle
+  ;(page as unknown as Record<string, unknown>).__runtimePageMotionV1 = handle
+  page.setAttribute('data-runtime-page-motion', 'v1')
+  return {
+    plan,
+    play,
+    pause,
+    seek,
+    claim: (element: Element) => { claimed = element },
+    buffering: () => advanceSnapshot({ phase: 'buffering' }),
+    ready: () => advanceSnapshot({ phase: 'ready' }),
+    complete: () => advanceSnapshot({
+      intent: 'stopped',
+      phase: 'completed',
+      positionMs: plan.durationMs,
+      completedTrackIds: plan.requiredTrackIds,
+    }),
+    getSnapshot: () => snapshot,
+  }
+}
 
 describe('usePlaybackHost media_end 媒体调度', () => {
   it('等待实际媒体结束后翻页，超时前不提前推进', async () => {
@@ -1039,6 +1142,164 @@ describe('usePlaybackHost 禁用上下文', () => {
     expect(host.errorMessage.value).toBe('')
     expect(waitForAssets).not.toHaveBeenCalled()
     expect(router.currentRoute.value.path).toBe('/a')
+    app.unmount()
+  })
+})
+
+describe('usePlaybackHost timeline_end 页内时间轴调度', () => {
+  it('等待时间轴完成后翻页，不按停留时间提前推进', async () => {
+    preloadPlaybackConfig({
+      advances: { '/a': { mode: 'timeline_end', delayMs: 1000, timelineTimeoutMs: 5000 } },
+    })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const motion = attachTestMotion('/a')
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.snapshot.value).toMatchObject({
+      state: 'playing',
+      waitingForTimeline: true,
+      advanceMode: 'timeline_end',
+    })
+    expect(motion.play).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(router.currentRoute.value.path).toBe('/a')
+
+    motion.complete()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    app.unmount()
+  })
+
+  it('timeline_end 页没有时间轴时进入错误态，不退回停留计时', async () => {
+    preloadPlaybackConfig({
+      advances: { '/a': { mode: 'timeline_end', delayMs: 1000, timelineTimeoutMs: 5000 } },
+    })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(host.snapshot.value?.state).toBe('error')
+    expect(host.errorMessage.value).toContain('时间轴')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(router.currentRoute.value.path).toBe('/a')
+    app.unmount()
+  })
+
+  it('暂停时间轴后保留预算，恢复时重新启动同一时间轴', async () => {
+    preloadPlaybackConfig({
+      advances: { '/a': { mode: 'timeline_end', delayMs: 1000, timelineTimeoutMs: 5000 } },
+    })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const motion = attachTestMotion('/a')
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(host.pause()).toBe(true)
+    expect(motion.pause).toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(host.snapshot.value?.state).toBe('paused')
+
+    expect(host.resume()).toBe(true)
+    expect(motion.play).toHaveBeenCalledTimes(2)
+    motion.complete()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/b')
+    app.unmount()
+  })
+
+  it('时间轴认领的媒体不进入页面媒体自动播放', async () => {
+    preloadPlaybackConfig({
+      advances: { '/a': { mode: 'timeline_end', delayMs: 1000, timelineTimeoutMs: 5000 } },
+    })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const video = addTestVideo('/a')
+    const motion = attachTestMotion('/a')
+    motion.claim(video.element)
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    expect(video.play).not.toHaveBeenCalled()
+    expect(host.snapshot.value).toMatchObject({ state: 'playing', waitingForTimeline: true })
+    app.unmount()
+  })
+
+  it('时间轴缓冲冻结超时预算，恢复后按剩余预算超时', async () => {
+    preloadPlaybackConfig({
+      advances: { '/a': { mode: 'timeline_end', delayMs: 1000, timelineTimeoutMs: 5000 } },
+    })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const motion = attachTestMotion('/a')
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    motion.buffering()
+    await flushAsync()
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(host.snapshot.value?.state).toBe('playing')
+
+    motion.ready()
+    await flushAsync()
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(host.snapshot.value?.state).toBe('playing')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(host.snapshot.value).toMatchObject({ state: 'error' })
+    expect(host.errorMessage.value).toContain('超时')
+    app.unmount()
+  })
+
+  it('定位命令转发到当前页时间轴并更新快照', async () => {
+    preloadPlaybackConfig({
+      advances: { '/a': { mode: 'timeline_end', delayMs: 1000, timelineTimeoutMs: 5000 } },
+    })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const motion = attachTestMotion('/a')
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+
+    await expect(host.seekMotion(500)).resolves.toBe(true)
+    expect(motion.seek).toHaveBeenCalledWith(500)
+    expect(host.motion.value?.positionMs).toBe(500)
     app.unmount()
   })
 })

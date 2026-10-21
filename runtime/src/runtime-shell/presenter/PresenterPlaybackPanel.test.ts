@@ -95,6 +95,29 @@ describe('PresenterPlaybackPanel', () => {
     expect(manual.host.querySelector('[data-testid="presenter-playback-remaining"]')?.textContent?.trim()).toBe('手动')
   })
 
+  it('等待页内时间轴时显示时间轴状态，不误报为本页手动', async () => {
+    const playing = mountPanel(received('playing', {
+      waitingForTimeline: true,
+      timelineId: 'intro',
+      planDigest: '0123456789abcdef',
+      positionMs: 1200,
+      timelineIntent: 'playing',
+      timelinePhase: 'ready',
+    }))
+    await nextTick()
+    expect(playing.host.querySelector('[data-testid="presenter-playback-state"]')?.textContent?.trim()).toBe('时间轴播放中')
+    expect(playing.host.querySelector('[data-testid="presenter-playback-remaining"]')?.textContent?.trim()).toBe('等待时间轴')
+    playing.app.unmount()
+
+    const buffering = mountPanel(received('playing', {
+      waitingForTimeline: true,
+      timelinePhase: 'buffering',
+    }))
+    await nextTick()
+    expect(buffering.host.querySelector('[data-testid="presenter-playback-state"]')?.textContent?.trim()).toBe('时间轴缓冲')
+    buffering.app.unmount()
+  })
+
   it('从暂停继续时按当前时刻重建倒计时，不累计暂停时长', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-18T00:00:00Z'))
@@ -140,7 +163,13 @@ function received(
         remainingMs: 0,
         delayMs: null,
         waitingForMedia: false,
+        waitingForTimeline: false,
         autoAdvanceEnabled: true,
+        timelineId: null,
+        planDigest: null,
+        positionMs: 0,
+        timelineIntent: 'stopped',
+        timelinePhase: 'idle',
         index: 1,
         total: 3,
         ...overrides,

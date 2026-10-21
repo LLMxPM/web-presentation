@@ -49,7 +49,7 @@ const project = {
   build_extra_assets_json: { asset_names: [] },
   slideshow: {
     transition: { effect: 'push', duration_ms: 650 },
-    advance: { mode: 'timer', delay_ms: 8000, media_timeout_ms: 300000 },
+    advance: { mode: 'timer', delay_ms: 8000, media_timeout_ms: 300000, timeline_timeout_ms: 300000 },
     loop: true,
     auto_start: false,
   },
@@ -123,7 +123,7 @@ describe('ProjectPresentationConfigDialog', () => {
     expect(saves).toHaveLength(1)
     expect(saves[0][0].slideshow).toEqual({
       transition: { effect: 'none', duration_ms: 0 },
-      advance: { mode: 'timer', delay_ms: 8000, media_timeout_ms: 300000 },
+      advance: { mode: 'timer', delay_ms: 8000, media_timeout_ms: 300000, timeline_timeout_ms: 300000 },
       loop: true,
       auto_start: false,
     })

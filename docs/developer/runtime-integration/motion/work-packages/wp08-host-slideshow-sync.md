@@ -1,6 +1,6 @@
 # WP08 放映宿主与双窗口
 
-状态：待实施。主责：Runtime shell / Backend。前置：[WP04](./wp04-dom-adapter.md)、[WP05](./wp05-media-adapter.md)、[WP06](./wp06-model-adapter.md)、[WP07](./wp07-asset-capabilities.md)。
+状态：待验收（代码与自动化完成；真实跨域双窗口证据待补）。主责：Runtime shell / Backend。前置：[WP04](./wp04-dom-adapter.md)、[WP05](./wp05-media-adapter.md)、[WP06](./wp06-model-adapter.md)、[WP07](./wp07-asset-capabilities.md)。
 
 ## 输入与落点
 
@@ -27,6 +27,7 @@
 
 ## 实施记录
 
-- 代码版本、配置和同步协议版本：待回填。
-- 实际命令、结果、双窗口和旧行为回归证据：待回填。
-- 未覆盖项：待回填。
+- 代码版本：`PlaybackController` 增加 `timeline_end`、独立 `timelineTimeoutMs`、缓冲冻结与完成/超时/缺失分支；`usePlaybackHost` 在资源就绪后准备并启动页面时间轴，向媒体会话提供独占目标过滤，并转发完成、受阻、错误与缓冲状态。`PlaybackController` 快照新增 `waitingForTimeline`；`PresenterSyncProtocol` 升至 v4，播放快照携带 `timelineId`、`planDigest`、`positionMs`、`waitingForTimeline`、`timelineIntent`、`timelinePhase`，新增 `seek` 命令与 `seekRevision` 围栏。
+- 配置与能力：Backend 放映 Schema 升为 3，新增 `timeline_end`、`timeline_timeout_ms`（默认 300000，范围 1000–3600000）；`SLIDESHOW_EXECUTABLE_ADVANCE_MODES` 在 G2 前仍不含 `timeline_end`，写入由解析器明确拒绝。默认 payload、共享正反例、Runtime camelCase 映射、能力 `timeline_timeout_ms` 范围、Editor 生成类型与表单保留字段已联动。
+- 自动化命令：`pnpm --filter web-runtime-vue exec vitest run src/core/motion src/runtime-shell/playback src/runtime-shell/presenter src/core/utils/page-transition.test.ts` 全部通过（含时间轴完成/超时/缺失/暂停恢复/单页循环/缓冲预算、协议 v4 定位与时间轴快照）；`pnpm exec vue-tsc --noEmit -p tsconfig.json`、`pnpm --filter editor check` 通过；Backend `test_slideshow_schema.py`、放映 API、External API、模板包与能力测试通过。
+- 未覆盖项：真实跨域 iframe、双窗口 BroadcastChannel/localStorage 降级、后台节流与退出全屏的真实浏览器证据尚未执行，因此保持待验收；`timeline_end` 能力与写入仍关闭。

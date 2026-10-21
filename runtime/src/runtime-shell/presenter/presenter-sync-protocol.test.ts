@@ -28,7 +28,13 @@ const PLAYBACK: PresenterSyncPlaybackSnapshot = {
   remainingMs: 5000,
   delayMs: 8000,
   waitingForMedia: false,
+  waitingForTimeline: false,
   autoAdvanceEnabled: true,
+  timelineId: null,
+  planDigest: null,
+  positionMs: 0,
+  timelineIntent: 'stopped',
+  timelinePhase: 'idle',
   index: 0,
   total: 2,
 }
@@ -60,7 +66,7 @@ describe('PresenterSyncSender', () => {
     const second = sender.create({ type: 'navigate', currentPath: '/b', playback: PLAYBACK }, 'command-1')
 
     expect(first).toMatchObject({
-      protocol: 3,
+      protocol: 4,
       channelId: 'channel-1',
       artifactIdentity: 'artifact-1',
       sourceId: 'console-1',
@@ -77,6 +83,7 @@ describe('parsePresenterSyncMessage', () => {
   it('拒绝旧协议与缺失身份字段', () => {
     expect(parsePresenterSyncMessage(buildMessage())).not.toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({ protocol: 1 }))).toBeNull()
+    expect(parsePresenterSyncMessage(buildMessage({ protocol: 3 }))).toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({ channelId: '' }))).toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({ artifactIdentity: undefined }))).toBeNull()
     expect(parsePresenterSyncMessage(buildMessage({ role: undefined }))).toBeNull()
@@ -138,6 +145,41 @@ describe('parsePresenterSyncMessage', () => {
     expect(parsePresenterSyncMessage(buildMessage({
       type: 'navigate', currentPath: '/b', playback: PLAYBACK, targetOwnerEpoch: -1,
     }))).toBeNull()
+  })
+
+  it('解析定位命令并在缺少定位参数时拒绝', () => {
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'playback-command',
+      action: 'seek',
+      positionMs: 1500,
+      seekRevision: 2,
+      targetOwnerEpoch: 100,
+    }))).toMatchObject({
+      type: 'playback-command',
+      action: 'seek',
+      positionMs: 1500,
+      seekRevision: 2,
+    })
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'playback-command', action: 'seek', positionMs: -1, seekRevision: 2,
+    }))).toBeNull()
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'playback-command', action: 'seek', positionMs: 10,
+    }))).toBeNull()
+  })
+
+  it('拒绝缺少时间轴状态字段的放映快照', () => {
+    for (const key of ['timelineId', 'planDigest', 'positionMs', 'timelineIntent', 'timelinePhase']) {
+      const playback: Record<string, unknown> = { ...PLAYBACK }
+      delete playback[key]
+      expect(parsePresenterSyncMessage(buildMessage({ type: 'playback-state', playback }))).toBeNull()
+    }
+    expect(parsePresenterSyncMessage(buildMessage({
+      type: 'playback-state',
+      playback: { ...PLAYBACK, timelineId: 'timeline-a', planDigest: '0123456789abcdef', positionMs: 420, timelineIntent: 'playing', timelinePhase: 'ready' },
+    }))).toMatchObject({
+      playback: { timelineId: 'timeline-a', planDigest: '0123456789abcdef', positionMs: 420, timelineIntent: 'playing', timelinePhase: 'ready' },
+    })
   })
 
   it('目标 owner 缺省时兼容旧消息，存在时必须匹配', () => {

@@ -96,7 +96,10 @@ import type { TransitionStartedEvent } from '@/core/types/page-transition'
 import { useAudioCues } from '@/runtime-shell/audio/useAudioCues'
 import { usePlaybackHost } from '@/runtime-shell/playback/usePlaybackHost'
 import PresenterPageStage from './PresenterPageStage.vue'
-import { usePresenterController } from '@/runtime-shell/presenter/usePresenterController'
+import {
+  usePresenterController,
+  type PresenterPlaybackCommandDetails,
+} from '@/runtime-shell/presenter/usePresenterController'
 import type { PresenterSyncPlaybackCommandAction } from './presenter-sync-protocol'
 
 interface PresenterDetailedScreen {
@@ -173,43 +176,64 @@ const {
 const {
   snapshot: playbackSnapshot,
   errorMessage: playbackErrorMessage,
+  motion,
   start: startPlayback,
   pause: pausePlayback,
   resume: resumePlayback,
   stop: stopPlayback,
   retry: retryPlayback,
   next: nextPlayback,
+  seekMotion,
   setAutoAdvance: setPlaybackAutoAdvance,
 } = usePlaybackHost({ autoStart: false, initialAutoAdvance })
 
-watch(playbackSnapshot, snapshot => {
-  if (!snapshot) {
-    updatePlayback({
-      state: 'stopped',
-      remainingMs: 0,
-      delayMs: null,
-      waitingForMedia: false,
-      autoAdvanceEnabled: initialAutoAdvance,
-    })
-  } else {
-    updatePlayback({
-      state: snapshot.state,
-      remainingMs: snapshot.remainingMs,
-      delayMs: snapshot.delayMs,
-      waitingForMedia: snapshot.waitingForMedia,
-      autoAdvanceEnabled: snapshot.autoAdvanceEnabled,
-    })
-  }
+let motionPostTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 把控制器状态与当前页时间轴状态合并上报；观众窗口是双窗口唯一时钟来源。 */
+function syncPlaybackPresentation(): void {
+  const snapshot = playbackSnapshot.value
+  const timeline = motion.value
+  updatePlayback({
+    state: snapshot?.state ?? 'stopped',
+    remainingMs: snapshot?.remainingMs ?? 0,
+    delayMs: snapshot?.delayMs ?? null,
+    waitingForMedia: snapshot?.waitingForMedia ?? false,
+    waitingForTimeline: snapshot?.waitingForTimeline ?? false,
+    autoAdvanceEnabled: snapshot?.autoAdvanceEnabled ?? initialAutoAdvance,
+    timelineId: timeline?.timelineId ?? null,
+    planDigest: timeline?.planDigest ?? null,
+    positionMs: timeline?.positionMs ?? 0,
+    timelineIntent: timeline?.intent ?? 'stopped',
+    timelinePhase: timeline?.phase ?? 'idle',
+  })
   postPlaybackState()
-}, { immediate: true })
+}
+
+watch(playbackSnapshot, syncPlaybackPresentation, { immediate: true })
+
+/** 位置播放期间按固定间隔上报，阶段或意图变化立即上报，避免逐帧广播。 */
+watch(motion, (next, previous) => {
+  if (next?.phase !== previous?.phase || next?.intent !== previous?.intent || next?.timelineId !== previous?.timelineId) {
+    syncPlaybackPresentation()
+    return
+  }
+  if (motionPostTimer !== null) return
+  motionPostTimer = setTimeout(() => {
+    motionPostTimer = null
+    syncPlaybackPresentation()
+  }, 250)
+})
 
 /**
  * 执行控制台命令；观众窗口是双窗口中的唯一调度者。
  * 未全屏时拒绝开始/继续，避免窗口化放映。
  * @param action 控制台命令动作
- * @param autoAdvance set-auto-advance 的目标状态
+ * @param details 命令附加数据；seek 使用 positionMs
  */
-function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction, autoAdvance?: boolean): void {
+function handlePlaybackCommand(
+  action: PresenterSyncPlaybackCommandAction,
+  details?: PresenterPlaybackCommandDetails,
+): void {
   if ((action === 'start' || action === 'resume') && !isInFullscreen.value) {
     fullscreenMessage.value = '请先在观众窗口进入全屏，再从控制台开始放映。'
     postDisplayStatus('windowed', false)
@@ -234,8 +258,15 @@ function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction, autoA
     case 'next':
       nextPlayback()
       break
+    case 'seek':
+      if (details?.positionMs !== undefined) {
+        void seekMotion(details.positionMs).catch(() => {
+          // 定位失败由 transport 快照进入错误态，宿主不需要重复提示。
+        })
+      }
+      break
     case 'set-auto-advance':
-      setPlaybackAutoAdvance(Boolean(autoAdvance))
+      setPlaybackAutoAdvance(Boolean(details?.autoAdvance))
       break
   }
 }
@@ -421,6 +452,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (motionPostTimer !== null) {
+    clearTimeout(motionPostTimer)
+    motionPostTimer = null
+  }
   postDisplayStatus('closed', false)
   document.removeEventListener('fullscreenchange', updateFullscreenState)
   window.removeEventListener('beforeunload', handleBeforeUnload)

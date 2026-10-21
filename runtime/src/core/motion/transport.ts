@@ -65,6 +65,7 @@ export interface MotionTransport {
   setMuted(muted: boolean): void
   /** 无播放副作用的指定状态采样；供捕获与诊断使用。 */
   sampleAt(positionMs: number, visualMode?: MotionVisualMode): Promise<MotionSampleResult>
+  subscribe(listener: (snapshot: MotionTransportSnapshot) => void): () => void
   dispose(): void
 }
 
@@ -109,12 +110,21 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   let lastEmittedPhase: MotionRunPhase | null = null
   let entries: AdapterEntry[] = []
   const completedTrackIds = new Set<string>()
+  const stateListeners = new Set<(snapshot: MotionTransportSnapshot) => void>()
   let primaryTrack: CompiledMediaTrack | null = null
   let primaryAdapter: MotionTrackAdapter | null = null
 
   function emit(): void {
-    if (disposed || !options.onState) return
-    options.onState(getSnapshot())
+    if (disposed) return
+    const snapshot = getSnapshot()
+    options.onState?.(snapshot)
+    for (const listener of [...stateListeners]) {
+      try {
+        listener(snapshot)
+      } catch (error) {
+        console.error('[motion-transport] 状态监听失败', error)
+      }
+    }
   }
 
   /** 当前锚定位置；主媒体优先使用真实进度，交接后使用单调时钟。 */
@@ -553,6 +563,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     primaryAdapter = null
     primaryTrack = null
     if (ownsRegistry) ownership.dispose()
+    stateListeners.clear()
     phase = 'disposed'
     errorCode = null
     errorMessage = ''
@@ -572,6 +583,10 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     stop,
     setMuted,
     sampleAt,
+    subscribe(listener) {
+      stateListeners.add(listener)
+      return () => { stateListeners.delete(listener) }
+    },
     dispose,
   }
 }

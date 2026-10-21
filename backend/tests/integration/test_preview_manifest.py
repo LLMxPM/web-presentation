@@ -433,7 +433,7 @@ async def test_preview_artifact_config_bundle_should_translate_routes_to_compone
                 "hidden": False,
                 "speakerNotes": "演讲时说明路由页面备注。",
                 "transition": {"effect": "fade", "durationMs": 400},
-                "advance": {"mode": "manual", "delayMs": 5000, "mediaTimeoutMs": 300000},
+                "advance": {"mode": "manual", "delayMs": 5000, "mediaTimeoutMs": 300000, "timelineTimeoutMs": 300000},
             },
         }
     ]

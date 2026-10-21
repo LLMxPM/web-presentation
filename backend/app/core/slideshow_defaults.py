@@ -8,7 +8,7 @@ from typing import Any
 # 与 docs/developer/runtime-integration/slideshow/contract.md 保持一致的默认完整配置。
 SLIDESHOW_DEFAULT_PAYLOAD: dict[str, Any] = {
     "transition": {"effect": "fade", "duration_ms": 400},
-    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
+    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
     "loop": False,
     "auto_start": False,
 }
