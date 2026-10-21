@@ -16,6 +16,7 @@ const capabilities: SlideshowCapabilities = {
   transition_duration_ms: { min: 100, max: 2000, none: 0 },
   delay_ms: { min: 1000, max: 3600000 },
   media_timeout_ms: { min: 1000, max: 3600000 },
+  timeline_timeout_ms: { min: 1000, max: 3600000 },
 }
 
 const selectStub = {
@@ -35,6 +36,7 @@ function buildDraft(overrides: Partial<SlideshowDraft> = {}): SlideshowDraft {
     advanceMode: 'timer',
     delaySeconds: '5',
     mediaTimeoutSeconds: '300',
+    timelineTimeoutSeconds: '300',
     loop: false,
     autoStart: false,
     ...overrides,
@@ -92,6 +94,32 @@ describe('ProjectSlideshowFields', () => {
     expect(screen.getByLabelText('无媒体时停留（秒）')).toHaveValue('5')
     expect(screen.getByLabelText('媒体等待上限（秒）')).toHaveValue('300')
     expect(screen.getByText(/没有可等待媒体时按停留时长翻页/)).toBeInTheDocument()
+  })
+
+  it('能力开放时应提供时间轴结束选项、等待上限与无时间轴兜底说明', async () => {
+    const timelineCapabilities: SlideshowCapabilities = {
+      ...capabilities,
+      advance_modes: ['manual', 'timer', 'media_end', 'timeline_end'],
+    }
+    const { emitted, rerender } = render(ProjectSlideshowFields, {
+      props: { draft: buildDraft(), capabilities: timelineCapabilities },
+      global: { stubs: { UiSelect: selectStub } },
+    })
+
+    const select = screen.getByLabelText('翻页模式') as HTMLSelectElement
+    expect(Array.from(select.options).map(option => option.value))
+      .toEqual(['manual', 'timer', 'media_end', 'timeline_end'])
+
+    await fireEvent.update(select, 'timeline_end')
+    const updates = emitted('update:draft') as SlideshowDraft[][]
+    expect(updates.at(-1)?.[0]).toEqual(buildDraft({ advanceMode: 'timeline_end' }))
+
+    await rerender({
+      draft: buildDraft({ advanceMode: 'timeline_end', timelineTimeoutSeconds: '120' }),
+      capabilities: timelineCapabilities,
+    })
+    expect(screen.getByLabelText('时间轴等待上限（秒）')).toHaveValue('120')
+    expect(screen.getByText(/页面没有可用时间轴时按停留时长翻页/)).toBeInTheDocument()
   })
 
   it('能力未开放时不出现媒体结束选项，已有草稿给出可操作提示', () => {

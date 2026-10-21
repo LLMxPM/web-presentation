@@ -144,6 +144,29 @@
                   <dt class="shrink-0 text-text-muted">动画</dt>
                   <dd class="min-w-0 truncate text-right font-semibold text-text">{{ detail.model3dSummary.value.animations }}</dd>
                 </div>
+                <ul
+                  v-if="detail.model3dSummary.value.animationDetails.length"
+                  class="space-y-1 rounded-lg border border-border bg-surface-muted p-2"
+                >
+                  <li
+                    v-for="animation in detail.model3dSummary.value.animationDetails"
+                    :key="animation.index"
+                    class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]"
+                  >
+                    <span class="font-semibold text-text">{{ animation.label }}</span>
+                    <span class="text-text-muted">{{ animation.durationText }}</span>
+                    <code v-if="animation.signature" class="rounded bg-surface px-1 font-mono text-text-muted">
+                      {{ animation.signature }}
+                    </code>
+                    <span
+                      v-if="!animation.supported"
+                      class="text-warning-strong"
+                      :title="animation.issues.join('；')"
+                    >
+                      {{ animation.issues.join('；') }}
+                    </span>
+                  </li>
+                </ul>
                 <div class="flex justify-between gap-4">
                   <dt class="shrink-0 text-text-muted">必需扩展</dt>
                   <dd class="min-w-0 truncate text-right font-semibold text-text">{{ detail.model3dSummary.value.extensionsRequired }}</dd>

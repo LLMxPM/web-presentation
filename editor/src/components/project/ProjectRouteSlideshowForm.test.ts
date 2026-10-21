@@ -24,6 +24,7 @@ const capabilities: SlideshowCapabilities = {
   transition_duration_ms: { min: 100, max: 2000, none: 0 },
   delay_ms: { min: 1000, max: 3600000 },
   media_timeout_ms: { min: 1000, max: 3600000 },
+  timeline_timeout_ms: { min: 1000, max: 3600000 },
 }
 
 const formStubs = {
@@ -97,6 +98,37 @@ describe('ProjectRouteSlideshowForm', () => {
       delay_ms: 7000,
       media_timeout_ms: 120000,
       timeline_timeout_ms: 300000,
+    })
+  })
+
+  it('时间轴结束覆盖应展示继承说明与等待上限并提交完整配置', async () => {
+    const timelineCapabilities: SlideshowCapabilities = {
+      ...capabilities,
+      advance_modes: ['manual', 'timer', 'media_end', 'timeline_end'],
+    }
+    const { emitted } = render(ProjectRouteSlideshowForm, {
+      props: {
+        transition: null,
+        advance: { mode: 'timeline_end', delay_ms: 5000, timeline_timeout_ms: 180000 },
+        defaults,
+        capabilities: timelineCapabilities,
+      },
+      global: { stubs: formStubs },
+    })
+
+    expect(screen.getByDisplayValue('180')).toBeInTheDocument()
+    expect(screen.getByText(/页面没有可用时间轴时按停留时长翻页/)).toBeInTheDocument()
+
+    const timeoutInput = screen.getByDisplayValue('180')
+    await fireEvent.update(timeoutInput, '240')
+    await fireEvent.blur(timeoutInput)
+
+    const advanceEmits = emitted('update:advance') as Array<[unknown]>
+    expect(advanceEmits.at(-1)?.[0]).toEqual({
+      mode: 'timeline_end',
+      delay_ms: 5000,
+      media_timeout_ms: 300000,
+      timeline_timeout_ms: 240000,
     })
   })
 

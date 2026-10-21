@@ -8,6 +8,7 @@ import App from './App.vue'
 import { loadThemeConfigs } from './core/composables/useTheme'
 import { registerPageVisualEditSelectionBridge } from './core/visual-edit/browser/selection-bridge'
 import { installCaptureMotionBridge } from './core/motion/capture-bridge'
+import { installPreviewMotionBridge } from './core/motion/preview-bridge'
 import { initializeStaticIcons } from './core/utils/static-icons'
 import { initializeConfig } from './core/utils/config'
 import { initializeRuntimeFaviconSync } from './core/utils/favicon'
@@ -81,6 +82,7 @@ async function initializeApp(): Promise<void> {
   })
   registerEditorVisualAssetProbe()
   installCaptureMotionBridge()
+  installPreviewMotionBridge()
 
   try {
     await initializeConfig()

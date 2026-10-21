@@ -10,6 +10,7 @@
       :class="props.iframeClass"
       allow="autoplay; fullscreen"
       referrerpolicy="origin"
+      @load="syncMotion"
     />
     <div v-else-if="props.status === 'idle'" :class="props.emptyContentClass">
       <div class="space-y-3">
@@ -45,8 +46,15 @@ import {
 import {
   PAGE_PREVIEW_ERROR_EVENT,
   PAGE_PREVIEW_READY_EVENT,
+  PREVIEW_MOTION_PROTOCOL_VERSION,
+  PREVIEW_MOTION_REQUEST_TYPE,
+  PREVIEW_MOTION_STATE_TYPE,
   type PagePreviewErrorMessage,
   type PagePreviewReadyMessage,
+  type PreviewMotionAction,
+  type PreviewMotionState,
+  type PreviewMotionStateMessage,
+  type PreviewMotionVisualMode,
   type RuntimePreviewStatus,
 } from '@/types/runtime-preview'
 
@@ -92,9 +100,12 @@ const emit = defineEmits<{
   error: [message: string, code?: string]
   retry: []
   renew: [newUrl: string]
+  'motion-state': [state: PreviewMotionState]
 }>()
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
+const motionState = ref<PreviewMotionState | null>(null)
+let motionRequestSequence = 0
 const renewedFrameUrl = ref('')
 const effectiveFrameUrl = computed(() => renewedFrameUrl.value || props.frameUrl)
 const localError = ref('')
@@ -116,6 +127,7 @@ watch(() => props.frameUrl, () => {
   renewedFrameUrl.value = ''
   localError.value = ''
   lastErrorFingerprint = ''
+  motionState.value = null
 })
 
 const showStatusOverlay = computed(() => (
@@ -171,6 +183,76 @@ function retryPreview(): void {
   emit('retry')
 }
 
+/** 读取 iframe 当前地址的 origin；非法地址时拒绝发送控制消息。 */
+function runtimeOrigin(): string | null {
+  try {
+    return new URL(effectiveFrameUrl.value).origin
+  } catch {
+    return null
+  }
+}
+
+/** 向 Runtime 发送时间轴命令；只发给当前 iframe 与已校验 origin。 */
+function postMotionCommand(action: PreviewMotionAction, extra: Record<string, unknown> = {}): void {
+  const target = iframeRef.value?.contentWindow
+  const origin = runtimeOrigin()
+  if (!target || !origin) return
+  motionRequestSequence += 1
+  target.postMessage({
+    type: PREVIEW_MOTION_REQUEST_TYPE,
+    version: PREVIEW_MOTION_PROTOCOL_VERSION,
+    requestId: `motion-${motionRequestSequence}`,
+    action,
+    ...extra,
+  }, origin)
+}
+
+/** 订阅当前页时间轴状态；iframe 重载后由 ready/load 再次触发。 */
+function syncMotion(): void {
+  postMotionCommand('sync')
+}
+
+function playMotion(): void {
+  postMotionCommand('play')
+}
+
+function pauseMotion(): void {
+  postMotionCommand('pause')
+}
+
+function restartMotion(): void {
+  postMotionCommand('restart')
+}
+
+function seekMotion(positionMs: number): void {
+  if (!Number.isFinite(positionMs)) return
+  postMotionCommand('seek', { positionMs })
+}
+
+function setMotionVisualMode(visualMode: PreviewMotionVisualMode): void {
+  postMotionCommand('set-visual-mode', { visualMode })
+}
+
+/** 校验 Runtime 回传的时间轴状态结构，拒绝缺字段或错误类型。 */
+function isPreviewMotionState(value: unknown): value is PreviewMotionState {
+  if (!value || typeof value !== 'object') return false
+  const state = value as Record<string, unknown>
+  return typeof state.hasTimeline === 'boolean'
+    && typeof state.positionMs === 'number'
+    && typeof state.durationMs === 'number'
+    && (state.visualMode === 'full' || state.visualMode === 'reduced')
+}
+
+defineExpose({
+  motionState,
+  syncMotion,
+  playMotion,
+  pauseMotion,
+  restartMotion,
+  seekMotion,
+  setMotionVisualMode,
+})
+
 /**
  * 接收当前 iframe 的页面预览终态消息，并校验窗口、来源、协议版本与 artifact。
  * @param event 浏览器窗口消息
@@ -190,6 +272,16 @@ function handleWindowMessage(event: MessageEvent<unknown>): void {
     return
   }
 
+  const rawMessage = event.data as Partial<PreviewMotionStateMessage> & Record<string, unknown>
+  if (rawMessage.type === PREVIEW_MOTION_STATE_TYPE) {
+    if (rawMessage.version !== PREVIEW_MOTION_PROTOCOL_VERSION || !isPreviewMotionState(rawMessage.state)) {
+      return
+    }
+    motionState.value = rawMessage.state
+    emit('motion-state', rawMessage.state)
+    return
+  }
+
   const message = event.data as Partial<
     PagePreviewReadyMessage | PagePreviewErrorMessage | ComponentPreviewReadyMessage | ComponentPreviewErrorMessage
   >
@@ -201,6 +293,7 @@ function handleWindowMessage(event: MessageEvent<unknown>): void {
     localError.value = ''
     lastErrorFingerprint = ''
     recovery.reset()
+    syncMotion()
     emit('ready')
     return
   }

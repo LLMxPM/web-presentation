@@ -96,7 +96,7 @@ DOM 引擎待选，属性作用在独立包装层。首轮 WAAPI 样例通过保
 
 | 边界 | 首期迁移目标 |
 | :--- | :--- |
-| Runtime Kit | 新增 usePageTimeline.v1 与三个 Asset*.v2，旧 v1 保留 |
+| Runtime Kit | 已新增 usePageTimeline.v1 与三个 Asset*.v2（G2 前内部关闭），旧 v1 保留 |
 | 创作定义 | page-timeline.v1 与 Schema/TS 共用用例 |
 | 放映 capability | schema_version 从 2 升为 3，声明 timeline_end；写入门禁随 G2 开放 |
 | 演讲协议 | v3 升到 v4，新命令不发给旧协议观众 |

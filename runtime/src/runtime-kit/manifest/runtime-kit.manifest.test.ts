@@ -50,6 +50,26 @@ describe('runtime kit manifest', () => {
     expect(exportNames).toContain('useAssetFontFamily.v1')
     expect(exportNames).toContain('resolveAssetFontFamily.v1')
     expect(exportNames).toContain('useAudioCue.v1')
+    expect(exportNames).toContain('AssetVideo.v2')
+    expect(exportNames).toContain('AssetAudio.v2')
+    expect(exportNames).toContain('AssetModel.v2')
+    expect(exportNames).toContain('usePageTimeline.v1')
+  })
+
+  it('内部时间轴入口保留真实路径但不在普通能力目录披露', () => {
+    const internal = manifest.exports.filter(item => (
+      item.name === 'AssetVideo.v2'
+      || item.name === 'AssetAudio.v2'
+      || item.name === 'AssetModel.v2'
+      || item.name === 'usePageTimeline.v1'
+    ))
+
+    expect(internal).toHaveLength(4)
+    internal.forEach(item => {
+      expect(item.capability.enabled).toBe(false)
+      expect(item.capability.previewable).toBe(false)
+      expect(item.capability.recommendation_level).toBe('internal-only')
+    })
   })
 
   it('公开能力应使用文件名版本化命名', () => {

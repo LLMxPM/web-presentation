@@ -44,7 +44,7 @@ async function flush(): Promise<void> {
 }
 
 interface FakeState {
-  applied: Array<{ id: string; positionMs: number }>
+  applied: Array<{ id: string; positionMs: number; visualMode: string }>
   paused: string[]
   disposed: string[]
   blockOnPlay: boolean
@@ -56,7 +56,7 @@ function createFactory(state: FakeState, primaryId: string | null) {
     type: track.type,
     async prepare() {},
     async applyAt(options) {
-      state.applied.push({ id: track.id, positionMs: options.positionMs })
+      state.applied.push({ id: track.id, positionMs: options.positionMs, visualMode: options.visualMode })
     },
     async play() {
       if (state.blockOnPlay) {
@@ -247,6 +247,25 @@ describe('createMotionTransport', () => {
     await transport.seek(500)
     expect(transport.getSnapshot().intent).toBe('playing')
     expect(transport.getSnapshot().phase).toBe('ready')
+  })
+
+  it('setVisualMode 在准备后按当前位置重新应用且不改变播放意图', async () => {
+    const harness = createHarness({
+      schemaVersion: 1,
+      timelineId: 'visual-mode',
+      tracks: [{ type: 'dom', id: 'title', target: '.title', preset: 'fade', durationMs: 1000 }],
+    })
+    const { transport, state } = harness
+    await transport.prepare()
+    await transport.seek(400)
+    const intentBefore = transport.getSnapshot().intent
+
+    transport.setVisualMode('reduced')
+    await flush()
+
+    expect(state.applied.at(-1)?.positionMs).toBe(400)
+    expect(state.applied.at(-1)?.visualMode).toBe('reduced')
+    expect(transport.getSnapshot().intent).toBe(intentBefore)
   })
 
   it('相同计划的指定状态采样摘要稳定且不启动播放', async () => {

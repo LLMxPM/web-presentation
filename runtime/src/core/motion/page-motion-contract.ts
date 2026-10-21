@@ -13,10 +13,13 @@ import type { MotionSampleResult } from './sampling'
 export const PAGE_MOTION_HANDLE_KEY = '__runtimePageMotionV1'
 /** 可查询的 DOM 标记；与属性名一起登记/注销。 */
 export const PAGE_MOTION_ATTR = 'data-runtime-page-motion'
+/** 页面时间轴注册/注销事件；预览控制桥据此刷新状态。 */
+export const PAGE_MOTION_LIFECYCLE_EVENT = 'runtime-page-motion-lifecycle'
 
 export interface PageMotionHandle {
   readonly plan: CompiledMotionPlan
   readonly ownership: MotionTargetRegistry
+  readonly visualMode: MotionVisualMode
   /** MediaSession 过滤：已由时间轴独占的媒体不再自动播放或归零。 */
   isElementClaimed(element: Element): boolean
   getSnapshot(): MotionTransportSnapshot
@@ -27,6 +30,8 @@ export interface PageMotionHandle {
   seek(positionMs: number): Promise<void>
   restart(): Promise<boolean>
   setMuted(muted: boolean): void
+  /** 切换视觉映射偏好；捕获仍可显式覆盖。 */
+  setVisualMode(mode: MotionVisualMode): void
   sampleAt(positionMs: number, visualMode?: MotionVisualMode): Promise<MotionSampleResult>
   subscribe(listener: (snapshot: MotionTransportSnapshot) => void): () => void
   /** 由页面组件调用；注销 DOM 句柄并释放 transport。 */
@@ -64,6 +69,9 @@ export function createPageMotionHandle(root: Element, transport: MotionTransport
   const handle: PageMotionHandle = {
     plan: transport.plan,
     ownership: transport.ownership,
+    get visualMode() {
+      return transport.visualMode
+    },
     isElementClaimed: element => transport.ownership.isElementClaimed(element),
     getSnapshot: () => transport.getSnapshot(),
     prepare: () => transport.prepare(),
@@ -73,6 +81,7 @@ export function createPageMotionHandle(root: Element, transport: MotionTransport
     seek: positionMs => transport.seek(positionMs),
     restart: () => transport.restart(),
     setMuted: muted => transport.setMuted(muted),
+    setVisualMode: mode => transport.setVisualMode(mode),
     sampleAt: (positionMs, visualMode) => transport.sampleAt(positionMs, visualMode),
     subscribe: listener => transport.subscribe(listener),
     dispose: () => {
@@ -80,10 +89,12 @@ export function createPageMotionHandle(root: Element, transport: MotionTransport
       disposed = true
       unregisterPageMotionHandle(root, handle)
       transport.dispose()
+      notifyPageMotionLifecycle()
     },
   }
   ;(root as unknown as Record<string, unknown>)[PAGE_MOTION_HANDLE_KEY] = handle
   root.setAttribute(PAGE_MOTION_ATTR, 'v1')
+  notifyPageMotionLifecycle()
   return handle
 }
 
@@ -93,5 +104,12 @@ export function unregisterPageMotionHandle(root: Element, handle: PageMotionHand
   if (record[PAGE_MOTION_HANDLE_KEY] === handle) {
     delete record[PAGE_MOTION_HANDLE_KEY]
     root.removeAttribute(PAGE_MOTION_ATTR)
+    notifyPageMotionLifecycle()
   }
+}
+
+/** 通知预览控制桥句柄已变化；无监听时开销固定且可忽略。 */
+function notifyPageMotionLifecycle(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(PAGE_MOTION_LIFECYCLE_EVENT))
 }

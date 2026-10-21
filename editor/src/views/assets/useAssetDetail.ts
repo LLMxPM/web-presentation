@@ -31,6 +31,7 @@ import {
   type AssetView,
   type DetailTab,
 } from '@/views/asset-view-options'
+import { summarizeModelAnimations } from './model3d-summary'
 
 export interface AssetDetailOptions {
   workspaceId: Ref<number>
@@ -118,14 +119,15 @@ export function useAssetDetail(options: AssetDetailOptions) {
     const payload = analysis?.kind === 'model3d' ? analysis.model3d : null
     if (!payload) return null
     const sceneCount = payload.scene_count ?? 0
+    const animationSummary = summarizeModelAnimations(payload.animations, payload.animation_analysis_version)
     return {
       scenes: `${sceneCount} 个场景${payload.default_scene_index == null ? '' : `，默认场景 #${payload.default_scene_index}`}`,
       cameras: payload.cameras?.length
         ? payload.cameras.map(item => `#${item.index}${item.name ? ` ${item.name}` : ''}（${item.type === 'orthographic' ? '正交' : '透视'}）`).join('、')
         : '无源相机（自动取景）',
-      animations: payload.animations?.length
-        ? payload.animations.map(item => `#${item.index}${item.name ? ` ${item.name}` : ''}`).join('、')
-        : '无动画',
+      animations: animationSummary.text,
+      animationAnalyzed: animationSummary.analyzed,
+      animationDetails: animationSummary.details,
       extensionsRequired: payload.extensions_required?.length ? payload.extensions_required.join('、') : '无必需扩展',
       validationProfile: payload.validation_profile || '',
       warnings: payload.warnings ?? [],

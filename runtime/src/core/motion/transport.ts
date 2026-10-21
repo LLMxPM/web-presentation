@@ -54,6 +54,7 @@ export interface MotionTransportOptions {
 export interface MotionTransport {
   readonly plan: CompiledMotionPlan
   readonly ownership: MotionTargetRegistry
+  readonly visualMode: MotionVisualMode
   getSnapshot(): MotionTransportSnapshot
   prepare(): Promise<void>
   play(): Promise<boolean>
@@ -63,6 +64,8 @@ export interface MotionTransport {
   seek(positionMs: number): Promise<void>
   stop(): Promise<void>
   setMuted(muted: boolean): void
+  /** 切换视觉映射偏好；已准备时立即重放当前状态。 */
+  setVisualMode(mode: MotionVisualMode): void
   /** 无播放副作用的指定状态采样；供捕获与诊断使用。 */
   sampleAt(positionMs: number, visualMode?: MotionVisualMode): Promise<MotionSampleResult>
   subscribe(listener: (snapshot: MotionTransportSnapshot) => void): () => void
@@ -80,7 +83,7 @@ interface AdapterEntry {
  */
 export function createMotionTransport(options: MotionTransportOptions): MotionTransport {
   const { plan, root, pagePath, generation } = options
-  const visualMode = options.visualMode ?? 'full'
+  let visualMode = options.visualMode ?? 'full'
   const scheduler = options.scheduler ?? createMotionScheduler()
   const now = options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()))
   const ownsRegistry = options.ownership === undefined
@@ -508,6 +511,13 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     for (const entry of entries) entry.adapter.setMuted?.(nextMuted)
   }
 
+  /** 只改变视觉映射，不改变时钟与播放意图；准备后立即按当前位置重新应用。 */
+  function setVisualMode(nextMode: MotionVisualMode): void {
+    if (visualMode === nextMode) return
+    visualMode = nextMode
+    if (prepared && !disposed) void requestApply(getSnapshot().positionMs)
+  }
+
   async function sampleAt(target: number, sampleVisualMode: MotionVisualMode = visualMode): Promise<MotionSampleResult> {
     if (disposed) {
       throw new MotionError(MOTION_ERROR_SNAPSHOT_UNAVAILABLE, '时间轴已释放，无法采样。')
@@ -573,6 +583,9 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   return {
     plan,
     ownership,
+    get visualMode() {
+      return visualMode
+    },
     getSnapshot,
     prepare,
     play,
@@ -582,6 +595,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     seek,
     stop,
     setMuted,
+    setVisualMode,
     sampleAt,
     subscribe(listener) {
       stateListeners.add(listener)

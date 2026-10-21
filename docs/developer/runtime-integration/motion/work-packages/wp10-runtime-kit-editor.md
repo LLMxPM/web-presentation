@@ -1,6 +1,6 @@
 # WP10 公共入口与预览控制
 
-状态：待实施。主责：Runtime Kit / Editor。前置：[WP08](./wp08-host-slideshow-sync.md)、[WP09](./wp09-capture-export.md)。
+状态：待验收（公开入口、预览控制与表单已实施；真实浏览器交互与生产裁剪加载证据待补）。主责：Runtime Kit / Editor。前置：[WP08](./wp08-host-slideshow-sync.md)、[WP09](./wp09-capture-export.md)。
 
 ## 输入与落点
 
@@ -27,6 +27,22 @@ Editor 组件/布局验证、Runtime Kit manifest 跨端校验、旧 v1 页面�
 
 ## 实施记录
 
-- 代码版本、manifest 与公开入口：待回填。
-- 实际命令、结果、预览截图和旧页面证据：待回填。
-- 未覆盖项：待回填。
+- 代码版本、manifest 与公开入口：
+  - 新增 `usePageTimeline.v1`：接收静态 definition 与 bindings，DOM 轨道 target 由类型限制为绑定 key；元素绑定写入实例级临时属性并在释放时清理，字符串绑定直接作为局部选择器。
+  - 公开接口返回只读 plan/state/error 与 prepare/play/pause/resume/restart/seek/sampleAt/setMuted/setVisualMode/dispose；交互式预览自动应用 poster，捕获/导出与放映由各自宿主驱动。
+  - 新增 `AssetVideo.v2`、`AssetAudio.v2`、`AssetModel.v2`：复用 v1 解析与渲染器，固定隐藏控件、禁止 autoplay/原生循环、关闭模型交互，并使用 `data-runtime-kit-motion="timeline"` 标记受控目标。
+  - manifest 增加四项真实版本化路径，均标记 `enabled=false`、`previewable=false`、`internal-only`，G2 前不进入普通模型能力目录；v1 路径与行为保持不变。
+  - transport 增加 `visualMode` 只读属性与 `setVisualMode`，准备后按当前位置重新应用；该模式不进入计划摘要与截图身份。
+  - Runtime 新增 `runtime-preview-motion.v1` 预览桥：只接受父窗口同源消息，支持 sync/play/pause/restart/seek/set-visual-mode，250ms 广播有界状态，无时间轴时返回空状态。
+  - Editor `RuntimePreviewFrame` 校验来源窗口与 origin 后接收状态；页面预览新增播放/暂停、重播、拖动定位、降动效模拟和错误提示，不写回项目配置。
+  - 项目与逐路由表单补充 timeline_end 等待上限、无时间轴兜底和继承摘要；资产详情补充动作时长、签名与不支持原因。
+- 实际命令、结果、预览截图和旧页面证据：
+  - `pnpm --filter web-runtime-vue exec vitest run src/runtime-kit/public/composables/motion/usePageTimeline.v1.test.ts src/runtime-kit/public/components/assets/assets-v2.test.ts src/core/motion/preview-bridge.test.ts src/core/motion/transport.test.ts src/runtime-kit/manifest/runtime-kit.manifest.test.ts` → 34 passed。
+  - `uv run --project backend pytest -c backend/pyproject.toml backend/tests/contracts/test_runtime_module_policy.py backend/tests/contracts/test_runtime_kit_components.py -q` → 15 passed。
+  - `pnpm --filter editor exec vitest run src/components/runtime-preview/RuntimePreviewFrame.test.ts src/components/page-detail/PageDetailPreviewPanel.motion.test.ts src/components/project/ProjectSlideshowFields.test.ts src/components/project/ProjectRouteSlideshowForm.test.ts src/views/assets/model3d-summary.test.ts` → 18 passed；Editor 全量 `pnpm --filter editor exec vitest run` → 160 files / 907 passed。
+  - Runtime 全量 `pnpm --filter web-runtime-vue exec vitest run` → 162 files / 1300 passed / 3 skipped。
+  - Runtime `vue-tsc --noEmit` 与 Editor `vue-tsc -b` 通过。
+- 未覆盖项：
+  - 未在真实浏览器中走通 Editor 预览播放、暂停、拖动与降动效切换，也没有交互截图；poster 与播放命令只有单元/消息协议证据。
+  - 未执行生产裁剪后的 Runtime 构建加载验证，也未对 v1 页面做完整回归；manifest 仅通过静态结构与 Backend 能力目录对拍。
+  - 组件独立轨道片段预览没有真实样例页面，当前公开入口只由单测覆盖。

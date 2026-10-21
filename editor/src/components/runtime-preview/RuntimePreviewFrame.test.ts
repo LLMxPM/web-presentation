@@ -5,7 +5,7 @@ import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
 import RuntimePreviewFrame from '@/components/runtime-preview/RuntimePreviewFrame.vue'
-import { PAGE_PREVIEW_ERROR_EVENT, PAGE_PREVIEW_READY_EVENT } from '@/types/runtime-preview'
+import { PAGE_PREVIEW_ERROR_EVENT, PAGE_PREVIEW_READY_EVENT, PREVIEW_MOTION_STATE_TYPE } from '@/types/runtime-preview'
 
 describe('RuntimePreviewFrame', () => {
   it('慢加载与错误状态应覆盖旧 iframe 并允许重试', async () => {
@@ -65,6 +65,37 @@ describe('RuntimePreviewFrame', () => {
     expect(emitted().retry).toHaveLength(1)
     await fireEvent.click(screen.getByRole('button', { name: '重新生成预览' }))
     expect(emitted().retry).toHaveLength(2)
+  })
+
+  it('仅接受当前 iframe 与 origin 的时间轴状态并透传', async () => {
+    const { emitted } = render(RuntimePreviewFrame, {
+      props: createProps('loading'),
+    })
+    const iframe = document.querySelector('iframe') as HTMLIFrameElement
+    const state = {
+      hasTimeline: true,
+      timelineId: 'intro',
+      planDigest: 'plan-1',
+      intent: 'playing',
+      phase: 'ready',
+      positionMs: 640,
+      durationMs: 1200,
+      posterTimeMs: 250,
+      visualMode: 'reduced',
+      revision: 3,
+      errorCode: null,
+      errorMessage: '',
+    }
+    const message = { type: PREVIEW_MOTION_STATE_TYPE, version: 1, state }
+
+    dispatchPreviewMessage(message, 'http://wrong.example', iframe.contentWindow)
+    dispatchPreviewMessage(message, 'http://runtime.example', window)
+    dispatchPreviewMessage({ ...message, version: 2 }, 'http://runtime.example', iframe.contentWindow)
+    dispatchPreviewMessage({ ...message, state: { hasTimeline: true } }, 'http://runtime.example', iframe.contentWindow)
+    expect(emitted()['motion-state']).toBeUndefined()
+
+    dispatchPreviewMessage(message, 'http://runtime.example', iframe.contentWindow)
+    expect(emitted()['motion-state']).toEqual([[state]])
   })
 })
 

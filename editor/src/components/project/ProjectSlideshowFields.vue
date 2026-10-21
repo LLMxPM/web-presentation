@@ -82,6 +82,31 @@
         </UiFormField>
       </div>
 
+      <div v-if="draft.advanceMode === 'timeline_end'" class="mt-3 grid grid-cols-2 gap-3">
+        <UiFormField label="时间轴等待上限（秒）">
+          <template #default="field">
+            <UiInput
+              :model-value="draft.timelineTimeoutSeconds ?? ''"
+              inputmode="decimal"
+              placeholder="300"
+              :input-id="field.inputId"
+              :described-by="field.describedBy"
+              @update:model-value="updateTimelineTimeout"
+            />
+          </template>
+        </UiFormField>
+      </div>
+
+      <template v-if="draft.advanceMode === 'timeline_end'">
+        <p class="mt-2 text-xs text-text-disabled">
+          等待当前页时间轴自然结束；页面没有可用时间轴时按停留时长翻页。
+          时间轴阻塞、报错或超过等待上限时进入受阻状态，由放映控制条重试或继续。
+        </p>
+        <p v-if="timelineEndUnavailable" class="mt-1 text-xs font-medium text-warning-strong" role="status">
+          当前服务端未开放页内时间轴结束模式，请改用其它翻页方式后保存。
+        </p>
+      </template>
+
       <template v-if="draft.advanceMode === 'media_end'">
         <p class="mt-2 text-xs text-text-disabled">
           播放当前页的非循环音视频，全部结束后翻页；没有可等待媒体时按停留时长翻页。循环背景媒体不参与等待。
@@ -123,6 +148,7 @@ import {
   buildAdvanceModeOptions,
   formatMillisecondsAsSeconds,
   isMediaEndAdvanceAvailable,
+  isTimelineEndAdvanceAvailable,
 } from './project-slideshow-values'
 
 const props = withDefaults(defineProps<{
@@ -142,10 +168,14 @@ const effectOptions = [
   { label: '无动画', value: 'none' },
 ]
 const mediaEndAvailable = computed(() => isMediaEndAdvanceAvailable(props.capabilities))
+const timelineEndAvailable = computed(() => isTimelineEndAdvanceAvailable(props.capabilities))
 const advanceModeOptions = computed(() => buildAdvanceModeOptions(props.capabilities))
 const delayFieldLabel = computed(() => props.draft.advanceMode === 'media_end' ? '无媒体时停留（秒）' : '停留时长（秒）')
 const mediaEndUnavailable = computed(() => {
   return props.capabilities != null && props.draft.advanceMode === 'media_end' && !mediaEndAvailable.value
+})
+const timelineEndUnavailable = computed(() => {
+  return props.capabilities != null && props.draft.advanceMode === 'timeline_end' && !timelineEndAvailable.value
 })
 
 // 切到“无动画”时保留上一段有效时长，切回其它效果时恢复，避免用户反复重填。
@@ -185,13 +215,19 @@ function updateDuration(value: string | number): void {
 }
 
 function updateAdvanceMode(value: unknown): void {
-  const mode = value === 'timer' || value === 'media_end' ? value : 'manual'
+  const mode = value === 'timer' || value === 'media_end' || value === 'timeline_end' ? value : 'manual'
   if (mode === 'media_end' && !mediaEndAvailable.value) {
+    return
+  }
+  if (mode === 'timeline_end' && !timelineEndAvailable.value) {
     return
   }
   patchDraft({
     advanceMode: mode,
     mediaTimeoutSeconds: mode === 'media_end' ? props.draft.mediaTimeoutSeconds ?? '300' : props.draft.mediaTimeoutSeconds,
+    timelineTimeoutSeconds: mode === 'timeline_end'
+      ? props.draft.timelineTimeoutSeconds ?? '300'
+      : props.draft.timelineTimeoutSeconds,
   })
 }
 
@@ -201,6 +237,10 @@ function updateDelay(value: string | number): void {
 
 function updateMediaTimeout(value: string | number): void {
   patchDraft({ mediaTimeoutSeconds: String(value) })
+}
+
+function updateTimelineTimeout(value: string | number): void {
+  patchDraft({ timelineTimeoutSeconds: String(value) })
 }
 
 function updateLoop(value: boolean | 'indeterminate'): void {
