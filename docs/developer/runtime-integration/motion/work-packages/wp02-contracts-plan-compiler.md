@@ -1,6 +1,6 @@
 # WP02 契约与计划编译
 
-状态：待实施。主责：跨模块契约 / Runtime core。前置：[WP01](./wp01-baseline-engine-spike.md)。
+状态：完成（纯逻辑层）。主责：跨模块契约 / Runtime core。前置：[WP01](./wp01-baseline-engine-spike.md)。
 
 ## 输入与落点
 
@@ -27,6 +27,6 @@
 
 ## 实施记录
 
-- 代码版本与冻结 Schema：待回填。
-- 实际命令、通过/失败数量与 fixture 位置：待回填。
-- 未覆盖项：待回填。
+- 代码版本与冻结 Schema：`runtime/src/core/motion/{types,errors,compile,sampling}.ts`；page-timeline.v1 字段、错误码、适配器接口与 64 位稳定摘要已落地，公开 `.vN` 入口由 WP10 包装。
+- 实际命令、通过/失败数量与 fixture 位置：`pnpm --filter web-runtime-vue exec vitest run src/core/motion`，WP02 14 项通过；正反例内联在 `compile.test.ts`，覆盖依赖环、属性冲突、主媒体约束、时长未解析、海报与标签。
+- 未覆盖项：真实浏览器适配器时序由 WP04–WP06 验证；Backend 对任意 TypeScript 视觉函数不做完整解析，符合本包边界。

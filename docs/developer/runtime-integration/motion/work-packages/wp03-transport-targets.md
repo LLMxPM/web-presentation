@@ -1,6 +1,6 @@
 # WP03 时钟状态与目标所有权
 
-状态：待实施。主责：Runtime core。前置：[WP02](./wp02-contracts-plan-compiler.md)。
+状态：完成（虚拟时钟与纯状态层）。主责：Runtime core。前置：[WP02](./wp02-contracts-plan-compiler.md)。
 
 ## 输入与落点
 
@@ -27,6 +27,6 @@ WP04–WP06 只需实现适配接口即可接入，不各自创建全局时钟�
 
 ## 实施记录
 
-- 代码版本：待回填。
-- 实际命令、结果与虚拟时钟用例：待回填。
-- 未覆盖项：待回填。
+- 代码版本：`runtime/src/core/motion/{transport,target-registry,adapters}.ts`；状态机区分播放意图与运行阶段，定位使用递增 revision，主媒体结束后显式交接单调时钟。
+- 实际命令、结果与虚拟时钟用例：`pnpm --filter web-runtime-vue exec vitest run src/core/motion`，WP03 8 项通过；覆盖暂停不前进、缓冲不恢复用户暂停、blocked 手势重试、乱序定位与采样摘要稳定。
+- 未覆盖项：真实媒体/视频帧回执与跨域 iframe 宿主由 WP05、WP08 的浏览器场景验证。

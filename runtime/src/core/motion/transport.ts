@@ -1,0 +1,577 @@
+/**
+ * 文件功能：实现页内编排的唯一播放所有者与确定性状态机。
+ *
+ * 播放意图（stopped/playing/paused）与运行阶段分离；位置由真实主媒体时钟或
+ * 单调时钟推进。所有异步准备、播放与定位都核对 generation、revision 和 disposed，
+ * 旧回执只清理自己，不提交状态。
+ */
+import { deriveSampledState, type MotionSampleResult } from './sampling'
+import {
+  MOTION_ERROR_MEDIA_BLOCKED,
+  MOTION_ERROR_SNAPSHOT_UNAVAILABLE,
+  MotionError,
+  isMotionError,
+  toMotionError,
+} from './errors'
+import {
+  createMotionScheduler,
+  type MotionAdapterApplyOptions,
+  type MotionAdapterFactory,
+  type MotionScheduler,
+  type MotionTrackAdapter,
+} from './adapters'
+import { MotionTargetRegistry } from './target-registry'
+import {
+  type CompiledMediaTrack,
+  type CompiledMotionPlan,
+  type CompiledMotionTrack,
+  type MotionPlaybackIntent,
+  type MotionRunPhase,
+  type MotionStateProof,
+  type MotionTransportSnapshot,
+  type MotionVisualMode,
+} from './types'
+
+/** 连续 tick 的最小位置提交差；避免同一毫秒重复通知。 */
+const POSITION_EPSILON_MS = 0.5
+
+export interface MotionTransportOptions {
+  plan: CompiledMotionPlan
+  root: ParentNode
+  pagePath: string
+  generation: number
+  createAdapter: MotionAdapterFactory
+  /** 页面宿主共享的目标注册表；缺省由 transport 创建并负责释放。 */
+  ownership?: MotionTargetRegistry
+  visualMode?: MotionVisualMode
+  allowMediaPlayback?: boolean
+  muted?: boolean
+  scheduler?: MotionScheduler
+  now?: () => number
+  onState?: (snapshot: MotionTransportSnapshot) => void
+}
+
+export interface MotionTransport {
+  readonly plan: CompiledMotionPlan
+  readonly ownership: MotionTargetRegistry
+  getSnapshot(): MotionTransportSnapshot
+  prepare(): Promise<void>
+  play(): Promise<boolean>
+  pause(): boolean
+  resume(): Promise<boolean>
+  restart(): Promise<boolean>
+  seek(positionMs: number): Promise<void>
+  stop(): Promise<void>
+  setMuted(muted: boolean): void
+  /** 无播放副作用的指定状态采样；供捕获与诊断使用。 */
+  sampleAt(positionMs: number, visualMode?: MotionVisualMode): Promise<MotionSampleResult>
+  dispose(): void
+}
+
+interface AdapterEntry {
+  track: CompiledMotionTrack
+  adapter: MotionTrackAdapter
+}
+
+/**
+ * 创建页内时间轴 transport。
+ * 构造阶段不读取 DOM、不播放媒体；第一次 prepare 才创建并准备适配器。
+ */
+export function createMotionTransport(options: MotionTransportOptions): MotionTransport {
+  const { plan, root, pagePath, generation } = options
+  const visualMode = options.visualMode ?? 'full'
+  const scheduler = options.scheduler ?? createMotionScheduler()
+  const now = options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()))
+  const ownsRegistry = options.ownership === undefined
+  const ownership = options.ownership ?? new MotionTargetRegistry()
+  if (ownsRegistry) ownership.beginGeneration(generation)
+
+  let intent: MotionPlaybackIntent = 'stopped'
+  let phase: MotionRunPhase = 'idle'
+  let positionMs = 0
+  let revision = 0
+  let muted = options.muted === true
+  let allowMediaPlayback = options.allowMediaPlayback !== false
+  let errorCode: string | null = null
+  let errorMessage = ''
+  let disposed = false
+  let preparing = false
+  let prepared = false
+  let abortController: AbortController | null = null
+  let tickHandle: number | null = null
+  let anchorWallMs = 0
+  let anchorPositionMs = 0
+  let primaryHandover = false
+  let seekChain: Promise<void> = Promise.resolve()
+  let applyChain: Promise<void> = Promise.resolve()
+  let pendingApplyPosition: number | null = null
+  let lastEmittedPosition = -1
+  let lastEmittedPhase: MotionRunPhase | null = null
+  let entries: AdapterEntry[] = []
+  const completedTrackIds = new Set<string>()
+  let primaryTrack: CompiledMediaTrack | null = null
+  let primaryAdapter: MotionTrackAdapter | null = null
+
+  function emit(): void {
+    if (disposed || !options.onState) return
+    options.onState(getSnapshot())
+  }
+
+  /** 当前锚定位置；主媒体优先使用真实进度，交接后使用单调时钟。 */
+  function currentPosition(): number {
+    if (intent !== 'playing' || primaryHandover) {
+      if (intent === 'playing' && primaryHandover) {
+        return clampPosition(anchorPositionMs + (now() - anchorWallMs))
+      }
+      return positionMs
+    }
+    if (primaryTrack && primaryAdapter?.getClock) {
+      const clock = primaryAdapter.getClock()
+      if (clock && !clock.ended) {
+        return clampPosition(primaryTrack.startMs + (clock.positionMs - primaryTrack.inMs) / primaryTrack.rate)
+      }
+    }
+    return clampPosition(anchorPositionMs + (now() - anchorWallMs))
+  }
+
+  function clampPosition(value: number): number {
+    if (!Number.isFinite(value)) return 0
+    return Math.min(Math.max(value, 0), plan.durationMs)
+  }
+
+  function getSnapshot(): MotionTransportSnapshot {
+    return {
+      timelineId: plan.timelineId,
+      planDigest: plan.planDigest,
+      pagePath,
+      generation,
+      intent,
+      phase,
+      positionMs: currentPosition(),
+      durationMs: plan.durationMs,
+      revision,
+      completedTrackIds: [...completedTrackIds].sort(),
+      errorCode,
+      errorMessage,
+    }
+  }
+
+  function notifyIfChanged(): void {
+    const position = currentPosition()
+    if (phase === lastEmittedPhase && Math.abs(position - lastEmittedPosition) < POSITION_EPSILON_MS) return
+    lastEmittedPhase = phase
+    lastEmittedPosition = position
+    emit()
+  }
+
+  function setPhase(next: MotionRunPhase, error?: unknown): void {    phase = next
+    if (error === undefined) {
+      errorCode = null
+      errorMessage = ''
+    } else {
+      const motionError = toMotionError(error)
+      errorCode = motionError.code
+      errorMessage = motionError.message
+    }
+    notifyIfChanged()
+  }
+
+  function fail(error: unknown): void {
+    const motionError = toMotionError(error)
+    intent = 'stopped'
+    cancelTick()
+    setPhase('error', motionError)
+  }
+
+  function isErrorPhase(): boolean {
+    return phase === 'error'
+  }
+
+  function cancelTick(): void {
+    if (tickHandle !== null) {
+      scheduler.cancel(tickHandle)
+      tickHandle = null
+    }
+  }
+
+  function scheduleTick(): void {
+    if (disposed || tickHandle !== null || intent !== 'playing') return
+    tickHandle = scheduler.request(() => {
+      tickHandle = null
+      void tick()
+    })
+  }
+
+  function resetAnchor(position: number): void {
+    anchorWallMs = now()
+    anchorPositionMs = position
+    positionMs = position
+  }
+
+  /** 把位置应用到所有适配器；连续 tick 通过同一队列串行，避免乱序采样。 */
+  function requestApply(position: number): Promise<void> {
+    pendingApplyPosition = position
+    const revisionAtRequest = revision
+    applyChain = applyChain.then(async () => {
+      if (disposed) return
+      const target = pendingApplyPosition
+      if (target === null) return
+      pendingApplyPosition = null
+      await applyAtPosition(target, revisionAtRequest)
+    }).catch(error => {
+      if (!disposed) fail(error)
+    })
+    return applyChain
+  }
+
+  async function applyAtPosition(position: number, revisionAtRequest: number): Promise<void> {
+    const applyOptions: MotionAdapterApplyOptions = { positionMs: position, visualMode }
+    for (const entry of entries) {
+      if (disposed || revisionAtRequest !== revision) return
+      await entry.adapter.applyAt(applyOptions)
+    }
+    if (disposed || revisionAtRequest !== revision) return
+    positionMs = position
+    for (const entry of entries) {
+      if (entry.track.required && position >= entry.track.endMs - POSITION_EPSILON_MS) {
+        completedTrackIds.add(entry.track.id)
+      }
+    }
+  }
+
+  async function startAdapters(): Promise<void> {
+    for (const entry of entries) {
+      if (disposed || intent !== 'playing') return
+      try {
+        await entry.adapter.play?.()
+      } catch (error) {
+        if (isMotionError(error) && error.code === MOTION_ERROR_MEDIA_BLOCKED) {
+          setPhase('blocked', error)
+          cancelTick()
+          return
+        }
+        throw error
+      }
+    }
+  }
+
+  function pauseAdapters(): void {
+    for (const entry of entries) {
+      try {
+        entry.adapter.pause?.()
+      } catch {
+        // 暂停失败不阻断状态收敛；后续 applyAt/dispose 仍会尝试释放。
+      }
+    }
+  }
+
+  async function prepareInternal(): Promise<void> {
+    if (disposed) return
+    if (prepared) return
+    if (preparing) {
+      // 同一 transport 只有一个准备流程；重复调用等待现有流程完成。
+      while (preparing && !disposed) {
+        await new Promise(resolve => setTimeout(resolve, 0))
+      }
+      return
+    }
+    preparing = true
+    setPhase('preparing')
+    abortController = new AbortController()
+    const signal = abortController.signal
+    try {
+      entries = plan.tracks.map(track => ({
+        track,
+        adapter: options.createAdapter({
+          plan,
+          track,
+          root,
+          signal,
+          visualMode,
+          allowMediaPlayback,
+          muted,
+          generation,
+          ownership,
+        }),
+      }))
+      primaryTrack = plan.tracks.find((track): track is CompiledMediaTrack => (
+        track.type !== 'dom' && track.type !== 'model3d' && track.id === plan.primaryClockTrackId
+      )) ?? null
+      primaryAdapter = entries.find(entry => entry.track.id === plan.primaryClockTrackId)?.adapter ?? null
+      await Promise.all(entries.map(entry => entry.adapter.prepare()))
+      if (disposed || signal.aborted) return
+      await applyAtPosition(positionMs, revision)
+      prepared = true
+      preparing = false
+      setPhase('ready')
+    } catch (error) {
+      preparing = false
+      if (disposed) return
+      if (isMotionError(error) && error.code === MOTION_ERROR_MEDIA_BLOCKED) {
+        setPhase('blocked', error)
+        return
+      }
+      fail(error)
+    }
+  }
+
+  async function tick(): Promise<void> {
+    if (disposed || intent !== 'playing') return
+    if (phase === 'completed' || phase === 'error' || phase === 'disposed') return
+    try {
+      if (primaryTrack && primaryAdapter && !primaryHandover) {
+        const clock = primaryAdapter.getClock?.()
+        if (clock?.blocked) {
+          setPhase('blocked', new MotionError(MOTION_ERROR_MEDIA_BLOCKED, '浏览器阻止了媒体播放，请点击页面后重试。', {
+            trackId: primaryTrack.id,
+          }))
+          return
+        }
+        if (clock?.buffering) {
+          if (phase !== 'buffering') {
+            setPhase('buffering')
+            pauseNonPrimaryAdapters()
+          }
+          scheduleTick()
+          return
+        }
+        if (clock?.ended || (clock && primaryTrack.startMs + (clock.positionMs - primaryTrack.inMs) / primaryTrack.rate >= primaryTrack.endMs)) {
+          primaryHandover = true
+          resetAnchor(primaryTrack.endMs)
+        } else if (clock) {
+          positionMs = clampPosition(primaryTrack.startMs + (clock.positionMs - primaryTrack.inMs) / primaryTrack.rate)
+        }
+      }
+
+      if (!primaryTrack || primaryHandover) {
+        positionMs = clampPosition(anchorPositionMs + (now() - anchorWallMs))
+      }
+
+      if (phase === 'buffering') setPhase('ready')
+
+      await requestApply(positionMs)
+      notifyIfChanged()
+
+      if (disposed || intent !== 'playing') return
+      if (positionMs >= plan.durationMs - POSITION_EPSILON_MS) {
+        cancelTick()
+        await requestApply(plan.durationMs)
+        completedTrackIds.clear()
+        for (const entry of entries) {
+          if (entry.track.required) completedTrackIds.add(entry.track.id)
+        }
+        intent = 'stopped'
+        pauseAdapters()
+        setPhase('completed')
+        return
+      }
+      scheduleTick()
+    } catch (error) {
+      fail(error)
+    }
+  }
+
+  function pauseNonPrimaryAdapters(): void {
+    for (const entry of entries) {
+      if (entry.adapter === primaryAdapter) continue
+      try {
+        entry.adapter.pause?.()
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  async function playInternal(): Promise<boolean> {
+    if (disposed || phase === 'error') return false
+    if (phase === 'completed' || positionMs >= plan.durationMs - POSITION_EPSILON_MS) {
+      await seekInternal(0)
+    }
+    intent = 'playing'
+    if (!prepared) {
+      await prepareInternal()
+    }
+    if (disposed || isErrorPhase()) {
+      intent = 'stopped'
+      return false
+    }
+    // 已准备的阻塞来自上一轮 play() 的浏览器拒绝；本轮可能由用户手势解除。
+    if (prepared && phase === 'blocked') setPhase('ready')
+    await requestApply(positionMs)
+    try {
+      await startAdapters()
+    } catch (error) {
+      fail(error)
+      return false
+    }
+    if (disposed || intent !== 'playing') return !isErrorPhase()
+    if (phase === 'blocked') return true
+    completedTrackIds.clear()
+    setPhase('ready')
+    resetAnchor(positionMs)
+    scheduleTick()
+    return true
+  }
+
+  async function seekInternal(target: number): Promise<void> {
+    if (disposed) return
+    const clamped = clampPosition(target)
+    revision += 1
+    const requestRevision = revision
+    cancelTick()
+    pauseAdapters()
+    setPhase('seeking')
+    try {
+      await applyAtPosition(clamped, requestRevision)
+    } catch (error) {
+      if (!disposed && requestRevision === revision) fail(error)
+      return
+    }
+    if (disposed || requestRevision !== revision) return
+    resetAnchor(clamped)
+    completedTrackIds.clear()
+    if (intent === 'playing') {
+      setPhase('ready')
+      try {
+        await startAdapters()
+        scheduleTick()
+      } catch (error) {
+        if (requestRevision === revision) fail(error)
+      }
+    } else {
+      setPhase('ready')
+    }
+  }
+
+  function seek(position: number): Promise<void> {
+    const run = () => seekInternal(position)
+    seekChain = seekChain.then(run, run)
+    return seekChain
+  }
+
+  async function prepare(): Promise<void> {
+    await prepareInternal()
+  }
+
+  async function play(): Promise<boolean> {
+    return playInternal()
+  }
+
+  function pause(): boolean {
+    if (disposed || (intent !== 'playing' && phase !== 'buffering' && phase !== 'preparing')) return false
+    positionMs = currentPosition()
+    intent = 'paused'
+    cancelTick()
+    pauseAdapters()
+    if (phase !== 'error') setPhase('ready')
+    return true
+  }
+
+  async function resume(): Promise<boolean> {
+    if (disposed || intent !== 'paused') return false
+    return playInternal()
+  }
+
+  async function restart(): Promise<boolean> {
+    if (disposed) return false
+    revision += 1
+    positionMs = 0
+    resetAnchor(0)
+    completedTrackIds.clear()
+    await seekInternal(0)
+    if (disposed) return false
+    intent = 'playing'
+    return playInternal()
+  }
+
+  async function stop(): Promise<void> {
+    if (disposed) return
+    intent = 'stopped'
+    cancelTick()
+    pauseAdapters()
+    await seekInternal(0)
+    if (!disposed) setPhase('ready')
+  }
+
+  function setMuted(nextMuted: boolean): void {
+    muted = nextMuted
+    for (const entry of entries) entry.adapter.setMuted?.(nextMuted)
+  }
+
+  async function sampleAt(target: number, sampleVisualMode: MotionVisualMode = visualMode): Promise<MotionSampleResult> {
+    if (disposed) {
+      throw new MotionError(MOTION_ERROR_SNAPSHOT_UNAVAILABLE, '时间轴已释放，无法采样。')
+    }
+    if (!prepared && phase !== 'blocked') await prepareInternal()
+    if (disposed || phase === 'error') {
+      throw new MotionError(MOTION_ERROR_SNAPSHOT_UNAVAILABLE, errorMessage || '时间轴准备失败，无法采样。', {
+        cause: errorCode,
+      })
+    }
+    const clamped = clampPosition(target)
+    const requestRevision = ++revision
+    cancelTick()
+    pauseAdapters()
+    const previousIntent = intent
+    intent = 'paused'
+    try {
+      await applyAtPosition(clamped, requestRevision)
+      if (disposed || requestRevision !== revision) {
+        throw new MotionError(MOTION_ERROR_SNAPSHOT_UNAVAILABLE, '采样已被更新的定位请求取代。')
+      }
+      positionMs = clamped
+      const proofs: MotionStateProof[] = []
+      for (const entry of entries) {
+        if (!entry.adapter.freeze) continue
+        proofs.push(await entry.adapter.freeze(clamped))
+      }
+      return deriveSampledState(plan, clamped, sampleVisualMode, proofs)
+    } finally {
+      if (!disposed) {
+        intent = previousIntent === 'playing' ? 'paused' : previousIntent
+        setPhase('ready')
+      }
+    }
+  }
+
+  function dispose(): void {
+    if (disposed) return
+    disposed = true
+    intent = 'stopped'
+    cancelTick()
+    abortController?.abort()
+    abortController = null
+    pauseAdapters()
+    for (const entry of entries) {
+      try {
+        entry.adapter.dispose()
+      } catch {
+        // 释放失败不阻断其它资源；页面卸载后由文档销毁兜底。
+      }
+    }
+    entries = []
+    primaryAdapter = null
+    primaryTrack = null
+    if (ownsRegistry) ownership.dispose()
+    phase = 'disposed'
+    errorCode = null
+    errorMessage = ''
+  }
+
+  // 初始海报状态：构造时立即应用一次，首次挂载不自动播放。
+  return {
+    plan,
+    ownership,
+    getSnapshot,
+    prepare,
+    play,
+    pause,
+    resume,
+    restart,
+    seek,
+    stop,
+    setMuted,
+    sampleAt,
+    dispose,
+  }
+}
