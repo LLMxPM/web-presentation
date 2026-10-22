@@ -83,6 +83,7 @@ jobs:
           file: ${{ matrix.file }}
           platforms: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           push: false
+          pull: true
           tags: ${{ matrix.tag }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}

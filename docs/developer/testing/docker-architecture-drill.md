@@ -9,9 +9,9 @@
 从根仓构建三种交付镜像，示例标签可自行调整：
 
 ```powershell
-docker build -f runtime/Dockerfile -t wp-runtime:drill .
-docker build -f deploy/docker/Dockerfile.lite -t wp-lite:drill .
-docker build -f renderer/Dockerfile -t wp-renderer:drill .
+docker build --pull -f runtime/Dockerfile -t wp-runtime:drill .
+docker build --pull -f deploy/docker/Dockerfile.lite -t wp-lite:drill .
+docker build --pull -f renderer/Dockerfile -t wp-renderer:drill .
 uv run --project backend python scripts/testing/docker-architecture.py setup --backend-image wp-lite:drill --runtime-image wp-runtime:drill --renderer-image wp-renderer:drill
 ```
 
@@ -90,9 +90,9 @@ uv run --project backend python scripts/testing/docker-architecture.py render-la
 
 ```powershell
 uv run --project backend python scripts/testing/docker_architecture_images.py
-docker build -f deploy/docker/Dockerfile.platform -t wp-platform-m05-n:local .
-docker build -f deploy/docker/Dockerfile.lite -t wp-lite-m05-n:local .
-docker build -f renderer/Dockerfile -t wp-renderer-m05-n:local .
+docker build --pull -f deploy/docker/Dockerfile.platform -t wp-platform-m05-n:local .
+docker build --pull -f deploy/docker/Dockerfile.lite -t wp-lite-m05-n:local .
+docker build --pull -f renderer/Dockerfile -t wp-renderer-m05-n:local .
 uv run --project backend python scripts/testing/docker-architecture.py setup --backend-image wp-lite-m05-n:local --runtime-image wp-runtime:drill --renderer-image wp-renderer-m05-n:local
 # 将该次 setup 输出赋给 $drillDirectory，再依次执行。
 uv run --project backend python scripts/testing/docker-architecture.py seed --directory $drillDirectory

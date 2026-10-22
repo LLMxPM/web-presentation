@@ -2,6 +2,7 @@
  * 文件用途：Runtime 强制渲染就绪协议 render-ready.v1/v2 的唯一宿主实现。
  */
 import { settleMotionReadiness } from '@/core/motion/readiness'
+import { waitForMainPreviewContent } from './render-content-ready'
 
 export interface RenderContentException {
   code: string
@@ -148,12 +149,13 @@ export async function markRenderPreviewMounted(options?: {
       protocol: options?.protocol ?? null,
     })
   }
+  const contentErrors = await waitForMainPreviewContent(options?.visualTimeoutMs ?? 25000)
   const fontsReady = typeof document !== 'undefined' && document.fonts?.ready
     ? await document.fonts.ready.then(() => true).catch(() => false)
     : true
   const context = options?.executionContext ?? window.__RENDER_READY__?.executionContext
   const scope = document.querySelector('.runtime-page-print-source, .runtime-view-preview-source') ?? document
-  const motionErrors = await settleMotionReadiness(scope, ['capture', 'export', 'thumbnail'].includes(context ?? ''))
+  const motionErrors = [...contentErrors, ...await settleMotionReadiness(scope, ['capture', 'export', 'thumbnail'].includes(context ?? ''))]
   if (motionErrors.length) {
     updateRenderReadyHost({
       contentExceptions: [...(window.__RENDER_READY__?.contentExceptions ?? []), ...motionErrors].slice(-20),

@@ -19,6 +19,7 @@ import {
   type PageMediaSnapshot,
 } from '@/core/media/page-media-session'
 import { findPageMotionHandle, type PageMotionHandle } from '@/core/motion/page-motion-contract'
+import { settleMotionReadiness } from '@/core/motion/readiness'
 import type { CompiledMotionPlan, MotionTransportSnapshot } from '@/core/motion/types'
 import { PlaybackController, type PlaybackPage, type PlaybackSnapshot } from './playback-controller'
 import { useScreenWakeLock, type WakeLockState } from './useScreenWakeLock'
@@ -52,7 +53,7 @@ export interface PlaybackHost {
   retry: () => boolean
   /** 失败态跳到下一页；没有下一页时返回 false。 */
   next: () => boolean
-  /** 手动翻页；失败态等价于跳到下一页。 */
+  /** 手动双向翻页；失败态离场同样清理旧媒体并重新准备目标页。 */
   goPrevious: () => boolean
   goNext: () => boolean
   /** 切换本次放映的自动推进；关闭时媒体继续但页面等待用户翻页。 */
@@ -465,8 +466,15 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       includeAnimations: false,
     })
     if (!isAttemptCurrent(attempt, instance)) return
-    pendingAttempt = null
     if (result.ok) {
+      // 句柄可能先于默认海报采样登记；初始化完成前不能 prepare/play 与采样争用媒体。
+      const initializationErrors = await settleMotionReadiness(root, false)
+      if (!isAttemptCurrent(attempt, instance)) return
+      pendingAttempt = null
+      if (initializationErrors.length) {
+        instance?.reportError(attempt.path, attempt.generation, `页内时间轴初始化失败：${initializationErrors[0].message}`)
+        return
+      }
       const current = instance?.getSnapshot()
       if (!instance || !current) return
       // 先准备页内时间轴，再由其目标注册表过滤旧媒体会话；未注册媒体保持旧行为。
@@ -516,6 +524,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       }
       return
     }
+    pendingAttempt = null
     const issue = result.failed[0] || result.pending[0]
     instance?.reportError(
       attempt.path,
@@ -637,8 +646,13 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
 
   /** 失败态跳到下一页；清掉旧媒体后重新等待目标页就绪。 */
   function nextPlayback(): boolean {
+    return skipFailedPage(1)
+  }
+
+  /** 错误/受阻页允许双向手动离开，两种方向共用媒体清理与新页就绪流程。 */
+  function skipFailedPage(offset: -1 | 1): boolean {
     const instance = controller.value
-    if (!instance || !instance.next()) return false
+    if (!instance || !(offset === 1 ? instance.next() : instance.previous())) return false
     disposePageMedia()
     disposePageMotion()
     mediaPlaybackCoordinator.dispose()
@@ -648,8 +662,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
 
   const canGoPrevious = computed(() => {
     const current = snapshot.value
-    if (!current || current.index <= 0) return false
-    return current.state !== 'error' && current.state !== 'blocked'
+    return Boolean(current && current.index > 0)
   })
 
   const canGoNext = computed(() => {
@@ -663,14 +676,14 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
 
   /**
    * 在放映序列内手动翻页；手动模式不绕回。
-   * 失败态交给控制器 next() 以清除旧媒体并重新就绪。
+   * 失败态交给控制器双向恢复，以清除旧媒体并重新就绪。
    */
   function goBy(offset: -1 | 1): boolean {
     const instance = controller.value
     const current = instance?.getSnapshot()
     if (!instance || !current || current.index < 0) return false
     if (current.state === 'error' || current.state === 'blocked') {
-      return offset === 1 ? nextPlayback() : false
+      return skipFailedPage(offset)
     }
     const targetIndex = current.index + offset
     if (targetIndex < 0 || targetIndex >= current.total) return false

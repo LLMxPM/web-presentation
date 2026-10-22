@@ -44,8 +44,8 @@ function setEditorRuntimePreviewReady(ready: boolean): void {
  * 等待预览页面完成首屏渲染与字体装载，再通过 render-ready.v1 通知 Renderer。
  * 关键约束：
  * 1. 需要在应用挂载完成后调用；
- * 2. 使用双帧等待，尽量覆盖首轮布局和异步组件挂载；
- * 3. 缺少协议或状态无法确认时不得伪报成功。
+ * 2. 双帧仅用于首轮布局，不证明异步页面内容已就绪；
+ * 3. 主画布模块与时间轴由 markRenderPreviewMounted 核对，无法确认时不得伪报成功。
  */
 async function waitForPreviewStabilized(): Promise<void> {
   await nextTick()

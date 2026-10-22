@@ -38,6 +38,7 @@
 - `platform-release.yml` 不再重复执行整套质量门禁。`verify-main-gate` 通过 `gh api repos/.../actions/runs?head_sha=<发布提交>` 检查该提交是否已有通过的 `platform-test` 运行；没有则拒绝发布。因此**合入 main 的那次 push 必须跑绿**，且 release tag 指向的提交要与该运行同 SHA。确需紧急补发时，需通过 GitHub Actions 页面使用 `workflow_dispatch` 手动触发并勾选 `allow_unverified`（GitHub Release UI 发布无法传入跳过参数），此时写入 `::warning::` 留痕。
 - `release-meta` 在构建前一次性校验 `vars.DOCKER_USERNAME`、`secrets.DOCKER_PASSWORD`、`vars.ACR_REGISTRY`、`vars.ACR_NAMESPACE`、`vars.ACR_USERNAME`、`secrets.ACR_PASSWORD` 是否缺失（只做非空判断，不输出值），避免缺配置直到 docker login 阶段才报出难以定位的错误。
 - 推送由 `.github/actions/publish-image` composite action 完成：先复用 `.github/actions/check-image` 验证镜像实际启动，再用**一次** `docker/build-push-action` 多架构构建同时携带 Docker Hub 与 ACR 两组标签。代价是关闭 OCI provenance/SBOM 附件（ACR 个人版不接受该附件），换取双仓镜像内容与摘要一致。
+- Node 构建与测试维持 `22` 主版本浮动：`setup-node` 开启 `check-latest`，镜像 smoke 和发布构建开启 `pull`，每次从该主版本可用的最新补丁版本开始构建；已发布镜像仍须重新构建与部署才能获得更新。
 - Docker Hub 配置：
   - `vars.DOCKER_USERNAME`
   - `secrets.DOCKER_PASSWORD`

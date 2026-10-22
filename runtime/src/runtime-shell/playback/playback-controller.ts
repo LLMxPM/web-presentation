@@ -311,12 +311,23 @@ export class PlaybackController {
    * 末页且不循环时没有下一页，返回 false 由界面保持当前错误提示。
    */
   next(): boolean {
+    return this.skipFailure(1)
+  }
+
+  /** 失败态回到上一页；不从首页绕到末页，仍须重新准备目标页。 */
+  previous(): boolean {
+    return this.skipFailure(-1)
+  }
+
+  /** 手动离开失败页时统一重置等待与 generation，拒绝旧页迟到事件。 */
+  private skipFailure(offset: -1 | 1): boolean {
     if (this.disposed || (this.state !== 'error' && this.state !== 'blocked')) return false
     const currentIndex = this.indexOf(this.path)
     if (currentIndex < 0) return false
-    const isLast = currentIndex === this.pages.length - 1
-    if (isLast && !this.loop) return false
-    const next = this.pages[isLast ? 0 : currentIndex + 1]
+    let targetIndex = currentIndex + offset
+    if (targetIndex >= this.pages.length && this.loop && offset === 1) targetIndex = 0
+    const next = this.pages[targetIndex]
+    if (!next) return false
     this.clearTimer()
     this.generation += 1
     this.path = next.path

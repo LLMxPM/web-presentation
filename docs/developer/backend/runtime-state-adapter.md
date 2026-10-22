@@ -123,7 +123,7 @@ AI run/HITL **不依赖** Redis run hash 或 Redis stream；截图认领、资�
 | 清扫回收 | 31 次清扫、0 失败、单次最长 5.5 ms；过期后回落到 438 B / 2 keys |
 | 进程 RSS 峰值 | Backend（uvicorn）637 MB；Node（Vite）2.54 GB；容器 2.76 GiB / 4 GiB |
 | 稳定性 | 无 OOM、无容器重启、无异常请求失败 |
-| 复现命令 | `docker build -f deploy/docker/Dockerfile.lite -t web-presentation:lite-local .` 后运行 `pnpm run test:lite:runtime-state-drill -- --mode baseline --image web-presentation:lite-local` |
+| 复现命令 | `docker build --pull -f deploy/docker/Dockerfile.lite -t web-presentation:lite-local .` 后运行 `pnpm run test:lite:runtime-state-drill -- --mode baseline --image web-presentation:lite-local` |
 | 阈值结论 | 总预算取 128 MiB（实测峰值 1.2 倍外再留余量，同时封住 1 小时 TTL 窗口内的无限增长）；单项上限 16 MiB 覆盖最大单 artifact（本次实测约 2.5 MiB）并拒绝超大模板资源。TTL 与清扫周期保持 3600s / 30s：实测清扫成本为毫秒级，瓶颈在 Node 常驻内存而非清扫频率。 |
 
 阈值与硬件绑定，更换机型或大幅调整载荷后必须重跑基线再调整。

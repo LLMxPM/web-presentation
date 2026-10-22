@@ -23,6 +23,7 @@ runs:
         file: ${{ inputs.file }}
         platforms: linux/amd64
         load: true
+        pull: true
         tags: ${{ inputs.tag }}
         cache-from: type=gha,scope=${{ inputs.cache-scope }}
     - name: 验证镜像实际启动

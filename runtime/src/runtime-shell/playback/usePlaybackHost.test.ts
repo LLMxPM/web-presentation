@@ -12,6 +12,7 @@ import { mediaPlaybackCoordinator } from '@/core/execution/media-playback-guard'
 import { compilePageTimeline } from '@/core/motion/compile'
 import type { PageMotionHandle } from '@/core/motion/page-motion-contract'
 import type { MotionTransportSnapshot } from '@/core/motion/types'
+import { registerMotionReadiness } from '@/core/motion/readiness'
 import {
   buildPlaybackPages,
   usePlaybackHost,
@@ -23,6 +24,7 @@ const { waitForAssets } = vi.hoisted(() => ({ waitForAssets: vi.fn() }))
 vi.mock('@/core/utils/visual-assets', () => ({ waitForEditorVisualAssets: waitForAssets }))
 
 const READY = { ok: true, timedOut: false, total: 0, loaded: 0, failed: [], pending: [], waitedMs: 0 }
+const readinessCleanups: Array<() => void> = []
 
 // 测试宿主默认沿用预载配置的 auto_start；显式传参优先，便于验证手动启动与初始模式。
 let configuredAutoStart = false
@@ -259,6 +261,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  readinessCleanups.splice(0).forEach(cleanup => cleanup())
   vi.useRealTimers()
   setRuntimePreloadedConfig(undefined)
   resetRuntimeExecutionForTests()
@@ -1199,6 +1202,70 @@ describe('usePlaybackHost timeline_end 页内时间轴调度', () => {
     expect(host.errorMessage.value).toContain('时间轴')
     await vi.advanceTimersByTimeAsync(5_000)
     expect(router.currentRoute.value.path).toBe('/a')
+    app.unmount()
+  })
+
+  it.each(['timeline_end', 'media_end'] as const)('%s 失败后保留上一页入口，清理旧会话并重新等待就绪', async mode => {
+    preloadPlaybackConfig({ advances: { '/b': { mode, delayMs: 1000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/b')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const media = mode === 'media_end' ? addTestVideo('/b', { blocked: true }) : null
+    expect(host.start()).toBe(true)
+    session.transitionSettled.value = { path: '/b', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe(mode === 'media_end' ? 'blocked' : 'error')
+    expect(host.canGoPrevious.value).toBe(true)
+    expect(host.canGoNext.value).toBe(false)
+    expect(host.goPrevious()).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/a')
+    expect(host.snapshot.value).toMatchObject({ state: 'preparing', message: '' })
+    if (media) expect(media.element.paused).toBe(true)
+    session.transitionSettled.value = { path: '/a', generation: 2 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('playing')
+    media?.end()
+    await flushAsync()
+    expect(router.currentRoute.value.path).toBe('/a')
+    app.unmount()
+  })
+
+  it.each([false, true])('等待初始海报完成才播放，晚到回执 cancelled=%s 不污染新页', async cancelled => {
+    preloadPlaybackConfig({ advances: { '/a': { mode: 'timeline_end', delayMs: 1000 } } })
+    await reloadAllConfigs()
+    const router = makeRouter()
+    await router.push('/a')
+    await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    const session = getRuntimeSession(router)
+    const motion = attachTestMotion('/a')
+    let resolveInitialization!: () => void
+    const ready = new Promise<void>(resolve => { resolveInitialization = resolve })
+    readinessCleanups.push(registerMotionReadiness({
+      root: () => document.querySelector<HTMLElement>('[data-runtime-route-path="/a"]'),
+      ready, async prepareStatic() {},
+    }))
+    host.start()
+    session.transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(host.snapshot.value?.state).toBe('preparing')
+    expect(motion.play).not.toHaveBeenCalled()
+    if (cancelled) await router.push('/b')
+    resolveInitialization()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushAsync()
+    if (cancelled) {
+      expect(motion.play).not.toHaveBeenCalled()
+      expect(host.snapshot.value?.path).toBe('/b')
+    } else {
+      expect(motion.play).toHaveBeenCalled()
+      expect(host.snapshot.value?.state).toBe('playing')
+    }
     app.unmount()
   })
 

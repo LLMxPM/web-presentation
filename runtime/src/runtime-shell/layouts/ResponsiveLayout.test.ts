@@ -605,6 +605,8 @@ describe('ResponsiveLayout', () => {
     expect(host.querySelector('button[title="进入放映"]')).not.toBeNull()
     expect(host.querySelector('[aria-label="退出放映"]')).toBeNull()
 
+    expect(host.querySelector('.responsive-layout')?.getAttribute('data-runtime-execution')).toBe('interactive-preview')
+
     const previewCanvas = host.querySelector('[data-testid="fixed-ratio-container-stub"]')!
     const previewScale = Number(previewCanvas.getAttribute('scale'))
 
@@ -631,6 +633,7 @@ describe('ResponsiveLayout', () => {
     expect(host.querySelector('.top-right-controls')).toBeNull()
     expect(host.querySelector('.runtime-playback-controls')).not.toBeNull()
     expect(host.querySelector('[aria-label="退出放映"]')).not.toBeNull()
+    expect(host.querySelector('.responsive-layout')?.getAttribute('data-runtime-execution')).toBe('presentation')
 
     Object.defineProperty(document, 'fullscreenElement', {
       configurable: true,
@@ -642,6 +645,8 @@ describe('ResponsiveLayout', () => {
     expect(host.querySelector('.runtime-playback-controls')).toBeNull()
     expect(host.querySelector('[data-testid="bottom-preview-strip-stub"]')).not.toBeNull()
     expect(host.querySelector('button[title="进入放映"]')).not.toBeNull()
+
+    expect(host.querySelector('.responsive-layout')?.getAttribute('data-runtime-execution')).toBe('interactive-preview')
 
     app.unmount()
   })

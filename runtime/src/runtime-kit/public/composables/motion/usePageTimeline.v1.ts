@@ -7,7 +7,7 @@
 
 import { onBeforeUnmount, onMounted, shallowReadonly, shallowRef, toValue, unref, type MaybeRefOrGetter, type Ref } from 'vue'
 
-import { getRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
+import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
 import { compilePageTimeline } from '@/core/motion/compile'
 import { createDefaultMotionAdapterFactory } from '@/core/motion/default-adapters'
 import { createNativeVisual, type NativeVisualBuilder } from '@/core/motion/native-visual'
@@ -72,7 +72,7 @@ interface PageTimelineCommonOptions<B extends PageTimelineBindingMap> {
   visualMode?: MotionVisualMode
   /** 会话静音初值；放映宿主仍可覆盖。 */
   muted?: boolean
-  /** 组件预览中是否自动应用 poster；缺省仅在交互式预览开启。 */
+  /** 预览中是否自动应用 poster；放映始终保留动画初态，静态捕获由就绪协议采样。 */
   applyPoster?: boolean
 }
 
@@ -107,6 +107,7 @@ export interface UsePageTimelineApi {
 export function usePageTimeline<B extends PageTimelineBindingMap>(
   options: UsePageTimelineOptions<Extract<keyof B, string>, B>,
 ): UsePageTimelineApi {
+  const execution = useRuntimeExecutionPolicy()
   const plan = shallowRef<CompiledMotionPlan | null>(null)
   const state = shallowRef<MotionTransportSnapshot | null>(null)
   const error = shallowRef<MotionError | null>(null)
@@ -210,7 +211,7 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
     return 'full'
   }
 
-  /** 安装 transport、注册句柄，并在交互式预览中先固化 poster。 */
+  /** 安装 transport；放映在切页过渡前准备初态，预览按需固化 poster。 */
   async function mountTimeline(): Promise<void> {
     if (disposed) return
     const root = toValue(options.root)
@@ -241,7 +242,7 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
       clearBindings()
       throw cause
     }
-    const policy = getRuntimeExecutionPolicy()
+    const policy = execution.value
     const visualMode = resolveVisualMode()
     const createdTransport = createMotionTransport({
       plan: compiled,
@@ -266,11 +267,13 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
     plan.value = compiled
     handle = createPageMotionHandle(root, createdTransport)
     state.value = createdTransport.getSnapshot()
-    const shouldApplyPoster = options.applyPoster
-      ?? policy.kind === 'interactive-preview'
-    if (shouldApplyPoster) {
+    // 作者声明的可读海报只用于预览；放映不能先展示终态、等过渡结束再回到零点。
+    const shouldApplyPoster = policy.kind !== 'presentation'
+      && (options.applyPoster ?? policy.kind === 'interactive-preview')
+    if (shouldApplyPoster || policy.kind === 'presentation') {
       await createdTransport.prepare()
-      await createdTransport.sampleAt(compiled.posterTimeMs, visualMode)
+      if (disposed) return
+      if (shouldApplyPoster) await createdTransport.sampleAt(compiled.posterTimeMs, visualMode)
     }
   }
 
@@ -278,6 +281,8 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
     mountTimeline()
       .then(() => resolveReady())
       .catch((cause: unknown) => {
+        // 快速翻页或切换宿主已卸载本实例时，迟到的准备/采样回执不再报告为当前页失败。
+        if (disposed) { resolveReady(); return }
         const motionError = toMotionError(cause)
         error.value = motionError
         console.error('[usePageTimeline] 初始化失败', motionError)

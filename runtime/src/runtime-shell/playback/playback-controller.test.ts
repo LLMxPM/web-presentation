@@ -426,6 +426,27 @@ describe('PlaybackController 媒体结束翻页', () => {
     expect(lastPage.getSnapshot().state).toBe('blocked')
   })
 
+  it.each(['error', 'blocked'] as const)('失败页 %s 可回到上一页，旧完成/错误回执不能影响新页', failure => {
+    const { clock, navigations, controller } = createController({ pages: [
+      { path: '/before', advance: { mode: 'manual', delayMs: 1000 } }, ...MEDIA_PAGES,
+    ] })
+    const generation = startReady(controller, '/media', 1)
+    if (failure === 'blocked') controller.reportMediaBlocked('/media', generation)
+    else controller.reportError('/media', generation)
+    expect(controller.previous()).toBe(true)
+    expect(navigations).toEqual(['/before'])
+    expect(controller.getSnapshot()).toMatchObject({
+      state: 'preparing', path: '/before', message: '', waitingForMedia: false, waitingForTimeline: false,
+    })
+    expect(controller.reportMediaEnded('/media', generation)).toBe(false)
+    expect(controller.reportError('/media', generation)).toBe(false)
+    expect(clock.pending).toBe(0)
+    controller.reportReady('/before', controller.getSnapshot().generation)
+    expect(controller.getSnapshot().state).toBe('playing')
+    controller.reportError('/before', controller.getSnapshot().generation)
+    expect(controller.previous()).toBe(false)
+  })
+
   it('暂停保留媒体时限，恢复后补足剩余时间再判超时', () => {
     const { clock, controller } = createController({ pages: MEDIA_PAGES })
     startReady(controller, '/media', 1)

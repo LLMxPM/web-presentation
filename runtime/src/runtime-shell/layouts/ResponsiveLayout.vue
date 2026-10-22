@@ -199,8 +199,9 @@ const isCardModeVisible = computed({
   get: () => session.mode.value === 'cards',
   set: value => { void switchRuntimeMode(router, value ? 'cards' : 'normal') },
 })
-// 卡片模式的主画布被卡片面板覆盖，收紧为交互预览，禁止自动推进与自动播放。
-const execution = provideRuntimeExecutionScope(computed(() => isCardModeVisible.value ? 'interactive-preview' : 'presentation'))
+// 只有全屏放映使用动画初态；窗口与卡片模式保留可读海报并禁止自动推进。
+const execution = provideRuntimeExecutionScope(computed(() =>
+  isFullscreen.value && !isCardModeVisible.value ? 'presentation' : 'interactive-preview'))
 const executionAttrs = computed(() => executionAttributes(execution.value))
 // 全屏即放映；窗口化预览不播放切页 cue，也不为页面提供可发声服务。
 const { playTransitionCue } = useAudioCues(isFullscreen)

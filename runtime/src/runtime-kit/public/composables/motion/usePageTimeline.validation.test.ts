@@ -1,9 +1,14 @@
 /** 文件功能：回归时间轴初始化/准备失败的渲染校验上报、实例隔离和末尾标签海报。 */
+/* eslint-disable vue/one-component-per-file */
 import { afterEach, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, ref } from 'vue'
+import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 import { initializeRuntimeExecution, resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
 import { initializeRenderReadyHost, markRenderPreviewMounted } from '@/core/utils/render-ready'
 import { usePageTimeline, type UsePageTimelineApi } from './usePageTimeline.v1'
+import ViewPreview from '@/runtime-shell/preview/ViewPreview.vue'
+
+const { loadView } = vi.hoisted(() => ({ loadView: vi.fn() }))
+vi.mock('@/core/utils/view-module', () => ({ importViewModule: loadView }))
 
 const unmounts: Array<() => void> = []
 afterEach(() => {
@@ -13,6 +18,7 @@ afterEach(() => {
   delete window.__EDITOR_RUNTIME_PREVIEW_READY__
   resetRuntimeExecutionForTests()
   vi.restoreAllMocks()
+  loadView.mockReset()
 })
 
 /** 在真实 Vue 生命周期创建独立画布；测试本身不替换时间轴编译或适配器。 */
@@ -78,6 +84,40 @@ it.each([1, 3, 5])('末尾标签随 %i 个错峰目标变化，静态校验固�
   expect(window.__RENDER_READY__?.contentExceptions).toEqual([])
   expect(window.__EDITOR_RUNTIME_PREVIEW_READY__).toBe(true)
   expect([...host.querySelectorAll<HTMLElement>('.title,.step')].every(element => element.style.opacity === '1')).toBe(true)
+})
+
+it('主画布延迟加载后才初始化的错误旁白不能被占位画面的就绪结果漏过', async () => {
+  initializeRuntimeExecution('?runtimeExecution=capture')
+  initializeRenderReadyHost({ executionContext: 'capture' })
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  let resolveModule!: (value: unknown) => void
+  loadView.mockReturnValue(new Promise(resolve => { resolveModule = resolve }))
+  const BadPage = defineComponent({ setup() {
+    const root = ref<HTMLElement | null>(null)
+    usePageTimeline({ root, bindings: {}, timelineId: 'bad-voice', define: ctx => ({
+      // 模拟模型输出的非法 JavaScript；不能依赖作者的 TypeScript 检查替代运行态校验。
+      plan: ctx.resources().voice('voice', { assetName: 'narration', outMs: 1000 } as never).build(),
+      visual(tl) { tl.fromTo('.title', { opacity: 0 }, { opacity: 1, duration: 1 }) },
+    }) })
+    return () => h('main', { ref: root }, [h('h1', { class: 'title' }, '旁白流程')])
+  } })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const app = createApp(defineComponent({ setup: () => () => h('main', { class: 'standalone-preview-view' }, [
+    h(ViewPreview, { filePath: 'src/views/delayed.vue', executionContext: 'capture' }),
+  ]) }))
+  app.mount(host)
+  unmounts.push(() => app.unmount())
+  await nextTick()
+  const completion = markRenderPreviewMounted()
+  await Promise.resolve()
+  expect(window.__RENDER_READY__?.mounted).toBe(false)
+  resolveModule({ default: BadPage })
+  await completion
+  expect(window.__RENDER_READY__?.contentExceptions).toEqual([expect.objectContaining({
+    code: 'TIMELINE_SCHEMA_INVALID', fieldPath: 'timeline.tracks[0].asset',
+  })])
+  expect(window.__EDITOR_RUNTIME_PREVIEW_READY__).toBe(false)
 })
 
 it('其它缩略图实例的失败不污染当前画布，卸载实例不留校验任务', async () => {

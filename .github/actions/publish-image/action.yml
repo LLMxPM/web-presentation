@@ -116,6 +116,7 @@ runs:
         file: ${{ inputs.file }}
         platforms: linux/amd64,linux/arm64
         push: true
+        pull: true
         tags: |
           ${{ steps.meta-hub.outputs.tags }}
           ${{ steps.meta-acr.outputs.tags }}

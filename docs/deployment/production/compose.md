@@ -28,13 +28,13 @@ docker compose -f compose/compose.sqlite-lite.yml up -d
 需要从源码验证轻量镜像时，直接在仓库根目录执行构建；`deploy/docker/Dockerfile.lite` 会把仓库原生的 `runtime/` 源码和依赖一起打进单容器镜像。
 
 ```bash
-docker build -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
+docker build --pull -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite .
 ```
 
 交叉构建 ARM64 轻量镜像时，可执行：
 
 ```bash
-docker buildx build --platform linux/arm64 -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite-arm64 --load .
+docker buildx build --pull --platform linux/arm64 -f deploy/docker/Dockerfile.lite -t llmxpm/web-presentation:sqlite-lite-arm64 --load .
 ```
 
 轻量模式的 `platform-lite` 只支持单实例、单 Backend worker、单 Runtime server，不适合多副本或高并发写入。**推荐规模（目标，不是 SLA）**：5–10 人小团队、预览并发约 3、常规演示文稿工作区；容量验收（D2）前不得当作硬承诺。**故障域**：Backend + Runtime + Nginx（及当前形态下的渲染）合并故障域，容器重启会丢失预览/构建临时运行态，业务数据（SQLite / `lite-data`）不丢。详见 [Lite 规模与隔离决策](../operations/lite-scale-and-isolation.md)。容器重启后短生命周期预览链接、内存锁和内存构建状态会失效，但用户、工作空间、项目、页面、资源和 AI 会话等主数据会保留在 SQLite 文件中。
