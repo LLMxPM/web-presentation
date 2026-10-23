@@ -1,6 +1,6 @@
 # 自动放映配置与接口契约
 
-状态：M0 字段与行为已通过 [WP12 联调验收](./work-packages/wp12-m0-integration.md)；M1 的 `timer`、自动开始与单窗口自动放映已通过 WP21 开放；M2 的 `media_end`、`media_timeout_ms` 与演讲者自动放映已通过 [WP30 验收](./work-packages/wp30-m2-integration-release.md)并于 2026-10-18 开放（schema 2）。2026-10-21 WP08 将结构升为 schema 3，新增 `timeline_end` 与 `timeline_timeout_ms`。2026-10-22 按用户要求默认开放时间轴结束推进的能力声明与写入；G1/G2 的完整验收仍未关闭。2026-10-18 全屏放映统一模型调整了 `auto_start` 的运行语义，不改变字段、DTO 或存储；已发布事实以实际 DTO、OpenAPI 和契约测试为准，阶段定义见[总计划](./README.md)。
+状态：M0 字段与行为已通过 [WP12 联调验收](./work-packages/wp12-m0-integration.md)；M1 的 `timer`、自动开始与单窗口自动放映已通过 WP21 开放；M2 的 `media_end`、`media_timeout_ms` 与演讲者自动放映已通过 [WP30 验收](./work-packages/wp30-m2-integration-release.md)并于 2026-10-18 开放（schema 2）。2026-10-21 WP08 将结构升为 schema 3，新增 `timeline_end` 与 `timeline_timeout_ms`。2026-10-22 按用户要求默认开放时间轴结束推进的能力声明与写入；G1 已于 2026-10-23 关闭，G2 的完整验收仍未关闭。2026-10-18 全屏放映统一模型调整了 `auto_start` 的运行语义，不改变字段、DTO 或存储；已发布事实以实际 DTO、OpenAPI 和契约测试为准，阶段定义见[总计划](./README.md)。
 
 ## 1. 配置归属与名称
 
@@ -111,7 +111,7 @@ Backend 拟新增独立 `schemas/slideshow.py`，定义严格 DTO 和统一解�
 }
 ```
 
-M0 只声明已贯通的动画和 `manual`；M1 出口声明 timer 与单窗口自动放映（2026-10-17）。M2 结构在 WP22 升为 schema 2 并追加 `media_timeout_ms` 范围；WP24 的真实媒体证据、WP26/WP30 的双窗口与捕获验收完成后，WP30 于 2026-10-18 开放 `media_end` 和 `presenter_auto_play=true`，捕获仍保持 `capture_auto_play=false`。WP08 将结构升为 schema 3 并追加 `timeline_timeout_ms` 范围；2026-10-22 按用户要求提前开放 `timeline_end` 的 `advance_modes` 与写入白名单，G1/G2 仍待验收。能力必须对应实际发布的 Backend/Runtime 组合，不能仅因数据库已接受字段就声明可执行。Editor 通过同一 builder 派生的只读 `GET /api/system/slideshow-capabilities` 获取相同结构，仅在 `advance_modes` 声明后展示对应模式，避免内外两套能力判断。现有 `/standards/page`、`/standards/component` 仍维护源码规范，不把项目放映 Schema 复制到其中。
+M0 只声明已贯通的动画和 `manual`；M1 出口声明 timer 与单窗口自动放映（2026-10-17）。M2 结构在 WP22 升为 schema 2 并追加 `media_timeout_ms` 范围；WP24 的真实媒体证据、WP26/WP30 的双窗口与捕获验收完成后，WP30 于 2026-10-18 开放 `media_end` 和 `presenter_auto_play=true`，捕获仍保持 `capture_auto_play=false`。WP08 将结构升为 schema 3 并追加 `timeline_timeout_ms` 范围；2026-10-22 按用户要求提前开放 `timeline_end` 的 `advance_modes` 与写入白名单；G1 已于 2026-10-23 关闭，G2 仍待验收。能力必须对应实际发布的 Backend/Runtime 组合，不能仅因数据库已接受字段就声明可执行。Editor 通过同一 builder 派生的只读 `GET /api/system/slideshow-capabilities` 获取相同结构，仅在 `advance_modes` 声明后展示对应模式，避免内外两套能力判断。现有 `/standards/page`、`/standards/component` 仍维护源码规范，不把项目放映 Schema 复制到其中。
 
 ## 5. Runtime 下发契约
 
