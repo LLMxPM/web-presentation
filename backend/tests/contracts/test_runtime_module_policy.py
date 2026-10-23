@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+from app.core.config import get_settings
 from app.core.runtime_module_policy import (
     build_runtime_module_resolver_config,
     get_runtime_kit_capability_by_import_path,
@@ -62,6 +64,20 @@ def test_runtime_kit_capability_directory_should_include_doc_only_items() -> Non
         assert by_name[name]["usage"]
     assert "ComponentPreviewSchema" not in by_name
     assert "useComponentPreviewMock" not in by_name
+
+
+def test_audio_cue_capability_directory_follows_development_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """cue 目录项仅在音效能力开放时展示，避免生产环境推荐无法保存的用法。"""
+
+    monkeypatch.setenv("AUDIO_DEV_CAPABILITIES_ENABLED", "false")
+    get_settings.cache_clear()
+    try:
+        assert "useAudioCue.v1" not in {item["name"] for item in list_runtime_kit_capabilities()}
+        monkeypatch.setenv("AUDIO_DEV_CAPABILITIES_ENABLED", "true")
+        get_settings.cache_clear()
+        assert "useAudioCue.v1" in {item["name"] for item in list_runtime_kit_capabilities()}
+    finally:
+        get_settings.cache_clear()
 
 
 def test_runtime_kit_capability_directory_should_filter_latest_versions(tmp_path: Path) -> None:

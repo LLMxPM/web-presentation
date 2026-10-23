@@ -1,7 +1,7 @@
 """文件功能：验证公开放映能力端点与当前写入门禁、范围常量保持一致。"""
 
-from httpx import AsyncClient
-
+import pytest
+from app.core.config import get_settings
 from app.schemas.audio import AUDIO_SCHEMA_VERSION
 from app.schemas.slideshow import (
     ADVANCE_DELAY_MAX_MS,
@@ -16,6 +16,7 @@ from app.schemas.slideshow import (
     TRANSITION_DURATION_MAX_MS,
     TRANSITION_DURATION_MIN_MS,
 )
+from httpx import AsyncClient
 
 
 async def test_system_slideshow_capabilities_should_publish_executable_baseline(client: AsyncClient) -> None:
@@ -47,3 +48,23 @@ async def test_system_slideshow_capabilities_should_publish_executable_baseline(
         "page_narration": False,
         "audio_cues": False,
     }
+
+
+async def test_development_audio_capabilities_are_published(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本地联调显式开关应同时开放旁白与 cue 的公开能力声明。"""
+
+    monkeypatch.setenv("AUDIO_DEV_CAPABILITIES_ENABLED", "true")
+    get_settings.cache_clear()
+    try:
+        response = await client.get("/api/system/slideshow-capabilities")
+        assert response.status_code == 200
+        assert response.json()["audio"] == {
+            "schema_version": AUDIO_SCHEMA_VERSION,
+            "audio_assets": True,
+            "page_narration": True,
+            "audio_cues": True,
+        }
+    finally:
+        get_settings.cache_clear()

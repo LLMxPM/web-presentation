@@ -157,6 +157,8 @@ cue key 规则为小写点分段：`^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$`，最大
 
 能力门禁与写入一致：
 
+- 本地开发环境可设置 `AUDIO_DEV_CAPABILITIES_ENABLED=true`，同时开放 `page_narration` 与 `audio_cues` 供联调；根目录 `.env.example` 已默认启用。正式发布集合仍仅含已验收能力，生产部署不设置此变量时保持关闭。开发开关不代表 M1/M2 出口验收完成。
+
 - `audio_cues=false` 时，项目创建、项目更新、configuration 更新和模板导入只要携带非空 `cue_bindings` 就返回 422 `AUDIO_CAPABILITY_UNAVAILABLE`；音量更新与空 `cue_bindings` 继续允许。
 - `page_narration=false` 时，页面与组件保存拒绝可静态判定的 `purpose="narration"`；`audio_cues=false` 时拒绝可静态识别的 `useAudioCue` 调用（含别名导入）。`validate` 返回 `valid=false` 与同一业务码，真正写入仍独立校验。
 - 检查指纹包含当前开放能力集合，能力开关变化后不复用旧 `valid` 缓存。

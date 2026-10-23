@@ -61,6 +61,17 @@ AUDIO_MILESTONE_CAPABILITIES: dict[str, tuple[str, ...]] = {
 # 已实现并允许 Editor/External 客户端展示的音频能力；阶段出口验收后在此开放。
 AUDIO_OPEN_CAPABILITIES: frozenset[str] = frozenset({AUDIO_CAPABILITY_AUDIO_ASSETS})
 
+
+def get_open_audio_capabilities() -> frozenset[str]:
+    """返回当前实例的音频能力；本地联调可显式开放未完成阶段的能力。"""
+
+    from app.core.config import get_settings
+
+    if get_settings().audio_dev_capabilities_enabled:
+        return AUDIO_OPEN_CAPABILITIES | frozenset(AUDIO_MILESTONE_CAPABILITIES["m2"])
+    return AUDIO_OPEN_CAPABILITIES
+
+
 AUDIO_CUE_KEY_MAX_LENGTH = 80
 AUDIO_CUE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$")
 AUDIO_SYSTEM_CUE_KEYS = frozenset(

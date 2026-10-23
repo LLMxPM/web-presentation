@@ -100,6 +100,8 @@ class AppSettings(BaseSettings):
     app_port: int = 8000
     app_reload: bool = True
     app_timezone: str = "Asia/Shanghai"
+    # 本地开发联调用；生产环境缺省关闭，阶段验收仍由发布能力集合控制。
+    audio_dev_capabilities_enabled: bool = False
     log_level: str = "INFO"
     log_format: str = "json"
     access_log_enabled: bool = True

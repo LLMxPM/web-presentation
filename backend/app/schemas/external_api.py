@@ -124,9 +124,9 @@ class ExternalSlideshowCapabilities(BaseModel):
 
 
 def build_audio_capabilities() -> ExternalAudioCapabilities:
-    """按已开放能力集合声明音频能力，未通过出口验收的阶段保持关闭。"""
+    """声明当前实例的音频能力，与写入门禁使用相同集合。"""
 
-    open_capabilities = audio_schema.AUDIO_OPEN_CAPABILITIES
+    open_capabilities = audio_schema.get_open_audio_capabilities()
     return ExternalAudioCapabilities(
         schema_version=AUDIO_SCHEMA_VERSION,
         audio_assets=AUDIO_CAPABILITY_AUDIO_ASSETS in open_capabilities,

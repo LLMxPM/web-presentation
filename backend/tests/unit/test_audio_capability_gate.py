@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
+from app.core.config import get_settings
 from app.schemas import audio as audio_schema
 from app.services.audio_options_gate import collect_audio_capability_errors
 from app.services.code_check_fingerprint import audio_capability_identity
@@ -80,6 +80,22 @@ def test_open_capabilities_allow_narration_and_cue(monkeypatch: pytest.MonkeyPat
     )
 
     assert collect_audio_capability_errors(source) == []
+
+
+def test_development_audio_flag_opens_write_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """开发开关应同时作用于写入门禁与检查指纹，不修改正式发布集合。"""
+
+    monkeypatch.setenv("AUDIO_DEV_CAPABILITIES_ENABLED", "true")
+    get_settings.cache_clear()
+    try:
+        assert audio_schema.AUDIO_OPEN_CAPABILITIES == frozenset({audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS})
+        assert audio_schema.get_open_audio_capabilities() == ALL_CAPABILITIES
+        assert collect_audio_capability_errors(
+            '<template><AssetAudio name="voice" purpose="narration" /></template>'
+        ) == []
+        assert audio_capability_identity() == ["audio_assets", "audio_cues", "page_narration"]
+    finally:
+        get_settings.cache_clear()
 
 
 def test_code_check_identity_tracks_capability_changes(monkeypatch: pytest.MonkeyPatch) -> None:

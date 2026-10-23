@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 _STREAM_CONTROL_POLL_INTERVAL_SECONDS = 0.5
 _STREAM_TASK_CANCEL_GRACE_SECONDS = 1.0
+_MAX_MODEL_TOOL_CALLS_PER_STEP = 64
 
 
 class PydanticAgentRunner:
@@ -311,6 +312,18 @@ class PydanticAgentRunner:
                             yield sse
                         continue
                     if agent.is_call_tools_node(node):
+                        # 模型可能在单次响应中输出异常数量的调用。必须在 Pydantic AI
+                        # 启动任何工具前整批拒绝，避免并发写入放大和运行态事件洪泛。
+                        tool_call_count = len(node.model_response.tool_calls)
+                        if tool_call_count > _MAX_MODEL_TOOL_CALLS_PER_STEP:
+                            raise AppException(
+                                status_code=422,
+                                code="AI_MODEL_TOOL_CALL_LIMIT_EXCEEDED",
+                                detail=(
+                                    f"模型单次响应包含 {tool_call_count} 个工具调用，"
+                                    f"超过上限 {_MAX_MODEL_TOOL_CALLS_PER_STEP}；本轮未执行这些工具。"
+                                ),
+                            )
                         async with node.stream(agent_run.ctx) as stream:
                             async for raw_event in self._iter_stream_events(
                                 stream,
