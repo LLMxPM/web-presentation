@@ -1,6 +1,6 @@
 # WP12 联合验收与能力开放
 
-状态：待验收（自动化复核与文档收口完成；G1/G2 真实浏览器、远程 Renderer 与模型基准未执行，能力保持关闭）。主责：联调 / 发布。前置：WP01–WP11 全部交付并可复核。
+状态：**已关闭（首期收口，2026-10-23）。** G1 已关闭；G2 未通过，遗留项已登记并移交 [G2 遗留清单](../g2-followups.md)。页内时间轴与 `timeline_end` 已按用户要求提前默认开放，指定状态截图仍关闭；MCP 暂不提供服务，移出本轮范围。主责：联调 / 发布。前置：WP01–WP11 全部交付并可复核。
 
 ## 输入
 
@@ -8,20 +8,23 @@
 
 ## 交付
 
+以下为原计划交付范围；实际完成情况见文末「首期收口与移交」。
+
 - 验收完整案例：真实资源与动作查询 → Vue 编排 → 标题/旁白/模型/视频同步 → 暂停定位重播 → timeline_end → 默认与指定状态静态交付。
 - 执行真实跨域、媒体 HEAD/Range、有声自动播放受阻、缓冲与双窗口唯一播放者验证。
 - 在生产依赖裁剪镜像、独立构建和支持浏览器上执行回归，核对资源、Schema/协议与 Runtime 发布身份。
 - 完成模型八任务基准、100 次进出清理和至少 30 分钟受控循环，保留原始指标与失败修正记录。
 - 验证灰度、混版派发与回退：旧内容继续运行，新请求不被旧 Worker 丢字段执行。
-- 满足 G2 后才开放 capability、Runtime Kit 推荐、新推进模式和模型说明；同步用户文档、顶层 README 与发布清单中的实际支持范围。
+- 已按用户要求提前开放时间轴 capability、Runtime Kit 创作入口与 `timeline_end`，并同步用户文档、顶层 README 与发布清单；指定状态截图保持关闭，G2 关闭前不得开放或宣称 G2 完成。
+- G2 遗留项由 [G2 遗留清单](../g2-followups.md) 跟踪，不再以 WP12 状态表达。
 
 ## 发布出口
 
-所有 required 场景通过，临时 sample 不污染默认截图、主放映状态或其它实例；Backend 不运行浏览器，Renderer 任务与浏览器进程/槽位/临时文件完整释放。
+所有 required 场景通过，临时 sample 不污染默认截图、主放映状态或其它实例；Backend 不运行浏览器，Renderer 任务与浏览器进程/槽位/临时文件完整释放。G2 未关闭，表示该出口尚未达成；剩余项见 [G2 遗留清单](../g2-followups.md)。
 
 Firefox/WebKit、移动端或特定编码未完成验收时在支持矩阵中列明，不对外宣称已支持。跨页 BGM、复杂混音、动作混合、相机轨道、可视化时间轴和离线视频导出仍属于后续工作，不在首期关闭项中虚标。
 
-## 实施记录
+## 实施记录（按时间保留，当前结论见文末「首期收口与移交」）
 
 - G0/G1/G2 结论与代码版本：
   - G0 功能选型通过（WP01）；本轮未重新比较性能。
@@ -70,7 +73,7 @@ Firefox/WebKit、移动端或特定编码未完成验收时在支持矩阵中列
 - [隔离 Chromium 回归](../../../../../tests/experiments/motion-regression/README.md)：`node tests/experiments/motion-regression/run.mjs` 通过，Chromium `148.0.7778.96`。真实视频延后播放/暂停/定位/重播/完成、full 250ms 采样 opacity=0.5、三个真实 GLB 签名及卸载通过，未处理页面异常为 0。开发脚本首次曾等待完成超时，随后两次复跑及保存后的脚本均通过；保留此记录，不作为稳定性门禁已完成的证据。
 - 截图和 JSON 回执保存在本地 `.tmp/motion-fix-browser/`，构建日志为 `.tmp/motion-fix-build.log`；二进制、缓存和构建产物不入库。
 
-本轮未运行完整 E2E、真实远程 Renderer 链路、双窗口、跨域票据/HEAD/Range、生产裁剪镜像、100 次进出、30 分钟循环、Firefox/WebKit 或 G2 模型八任务基准。平台服务及配置的远程基础依赖探测不可达，本轮使用隔离浏览器且未启动平台服务、未重置数据；这些验收仍是开放前置。
+本轮未运行完整 E2E、真实远程 Renderer 链路、双窗口、跨域票据/HEAD/Range、生产裁剪镜像、100 次进出、30 分钟循环、Firefox/WebKit 或 G2 模型八任务基准。当时在受限执行环境下远程基础依赖探测返回不可达，本轮使用隔离浏览器且未启动平台服务、未重置数据；2026-10-22 后续以实际服务权限复核发现 PostgreSQL/Redis 均可连通，先前探测不能作为服务故障结论。后续跨端证据见[G1 映射](../g1-automation-coverage.md)。
 
 ### 本地人工试用准备
 
@@ -130,3 +133,41 @@ Firefox/WebKit、移动端或特定编码未完成验收时在支持矩阵中列
 真实 Chromium 从 757 到 761 的逐帧记录中，播放前可见的完整海报由约 25 帧降为 0 帧，首帧及过渡期间标题和错峰条目均保持初态，最终播放错误为 0。直接在 761 进入放映仍从零点播放，窗口预览全部条目保持可读；旁白页有声播放状态、上一页停止、返回重播与 timeline_end 进入复习页的完整流程再次通过。证据保存在本地 `.tmp/motion-round2/flash-*` 与 `voice-flash-regression.log`。
 
 本轮 Runtime 全量 167 files / 1338 passed / 3 skipped，类型检查、正式构建与相关文件 ESLint 通过；Backend 代码检查/缓存/指纹 35 passed，Renderer 内容错误映射 3 passed，仓库契约 8 files / 63 passed。实际 CLI → Backend → Renderer → Runtime 对 761 的新候选只读校验返回 valid=true、无错误或警告，未写入页面。未开展完整 E2E、G1/G2、生产镜像或长期稳定性验收，复用现有开发服务与数据。
+
+### 2026-10-22 时间轴与结束推进默认开放
+
+用户明确要求开放能力开关。Backend 默认声明 `timeline.enabled=true` 与 `timeline.advance_modes=[timeline_end]`，放映能力列表及写入白名单加入 `timeline_end`；Runtime Kit 清单向普通能力查询开放 `usePageTimeline.v1` 和三个受控 `Asset*.v2` 入口。项目默认 `advance.mode=manual` 与 `auto_start=false` 保持不变，用户仍须为项目或页面选择时间轴结束推进并开启自动推进。指定状态截图保持独立关闭。此变更不补记 G1/G2 通过；完整浏览器、Renderer、生产镜像和长时间验收仍需按本工作包执行。
+
+### 2026-10-22 G1 第一批自动化覆盖
+
+按[验收计划](../acceptance.md)先做纯逻辑与契约层，A01、A02、A05、A14 的逐条证据见[G1 自动化覆盖映射](../g1-automation-coverage.md)。本轮修两处实现缺陷：`compile.ts` 增加字段白名单，未知字段不再被静默忽略；`transport.ts` 的 tick 在 `requestApply`、`startAdapters` 与完成分支复核 revision，避免旧一轮 tick 在定位后继续提交位置与完成集合。Runtime 全量 166 files / 1342 passed / 3 skipped（另有 1 个既有 Windows 临时目录 `EBUSY` 失败，单独复跑 32 passed），`vue-tsc -b` 通过；Backend 定向 56 passed；仓库契约 63 passed。A03、A04、A06–A13、A15、A16 与 G2 仍未执行。
+
+### 2026-10-22 G1 隔离浏览器场景与构建前置
+
+后续执行了[隔离浏览器夹具](../../../../../tests/experiments/motion-g1/README.md)：Windows x64、Chromium 148.0.7778.96，A03、A04、A06–A10、A12、A13 共 9/9 通过。包括真实视频 Range/seek、慢速传输缓冲、无手势有声 autoplay 拒绝与点击恢复、同 GLB 双实例 WebGL 画面对比、旧媒体会话所有权、降动效与静态作用域、本地捕获桥。完整哈希、断言与未覆盖子条款见[G1 映射](../g1-automation-coverage.md)，原始 JSON 与截图位于本地 `.tmp/motion-g1/`。
+
+浏览器过程中发现播放/暂停在位置不变时订阅者未收到意图变化，`transport` 现将 intent 纳入状态通知条件；定向 Runtime 单测 3 files / 26 passed，全量 167 files / 1344 passed / 3 skipped，类型检查、修改文件 ESLint 与仓库契约 63 passed。正式 Runtime `vite build` 成功（5478 模块），在本阶段只作为 G2 的开发依赖构建前置。此阶段未启动或重置平台服务；服务探测发现 Backend/Editor/Runtime/Renderer HTTP 就绪，但受限执行环境下 PostgreSQL 与 Redis 探测误报不可达，所以当时没有进行跨端/E2E 与远程任务演练。后续已在实际权限下确认依赖可连通，完成独立 E2E、CLI 链路和生产依赖 Runtime 镜像启动验证，证据及剩余条款见[G1 映射](../g1-automation-coverage.md)。G1/G2 未关闭。
+
+### 2026-10-22 G1/G2 跨端与交付续测
+
+独立 `_e2e` 服务完成正式项目预览、双窗口、默认远程海报、PPTX/PDF 静态隔离；同版本 CLI 使用一次性 Profile/PAT 完成创建、编辑、Mutation Job 等待、回读、预览与默认截图，测试对象及令牌已清理，开发数据未重置。开发 `local` CLI Profile 在恢复开发服务后 `whoami`、`doctor` 和只读时间轴能力查询通过。Backend 补充由鉴权注册表派生的 `x-wp-operation v1`，当前 OpenAPI/Editor 生成物上的 MCP motion 定向测试 4/4 与契约绑定检查 78/73 通过；完整 MCP 契约套件 228 passed / 9 个既有基线失败。
+
+Runtime 生产裁剪镜像首先暴露 `jsdom` 被列为开发依赖而 Mermaid 测量在运行时需要它；移至执行依赖并更新锁文件后重建镜像，`preview`、`check`、带测试专用凭证的 `build` 三角色同一构建身份下就绪，裁剪容器直接调用正式 Mermaid 测量返回有效比例。Backend 在热重载退出卡住后，按 `dev-start-test` 停服预演及确认归属的停服脚本恢复为无 reload 开发进程，在线 OpenAPI 已核对；PostgreSQL/Redis 与四项应用服务均健康。A12 本地 system/显式 full/reduced 组合补测通过。精确证据、测试命令和仍开放的 A 项见[G1 映射](../g1-automation-coverage.md)。指定状态捕获仍默认关闭，G1/G2 未关闭，不进行阶段提交。
+
+再以独立 `_e2e` 数据补测：auth + smoke 22/22 通过，时间轴页面真实构建产物中的放映与静态 PDF 下载通过。指定状态捕获只在临时 E2E Backend 入口开启，正式默认开关不变；远程 Renderer 的 poster、0ms、1800ms、标签与负偏移均生成真实 PNG，像素和 applied 回执匹配，临时任务不提升默认截图。A07 发现次要 required 媒体缓冲未冻结同步集合，transport 修复后受控时钟 15/15、完整 Runtime 167 files / 1346 passed / 3 skipped、隔离 Chromium 9/9、类型检查与正式构建通过；次要媒体真实缓冲夹具未复现，不能记为浏览器验收。E2E 完成后已停用临时捕获入口并恢复普通开发服务；详细边界见[G1 映射](../g1-automation-coverage.md)。
+
+### 2026-10-23 G1 收口与 A04 清理定位
+
+本轮复跑 `node tests/experiments/motion-g1/run.mjs` **12/12**、`vitest run src/core/motion src/runtime-kit/public/composables/motion` **12 files / 93 passed**；跨端补充 A15 有声导出隔离（PNG/PDF/PPTX 静音与海报姿态、PPTX 可编辑文本与 alpha、PDF 内嵌像素、导出完成与取消保持主放映播放）、A05 三维替换后旧签名失效、A14 跨任务取消后迟到结果不覆盖较新截图、A07 受保护音视频 HEAD/Range/无票据与视频 seek、A13 远程受保护视频与骨骼帧、A16 旧协议/旧 owner/晚到/重开。A01–A16 逐条证据与边界见[G1 映射](../g1-automation-coverage.md)，**G1 关闭**。
+
+A04 的 100 次双 GLB 挂载/卸载功能通过（累计 200 个实例 ready，活跃 WebGL context/canvas 为 0）；保留堆定位为 Three.js r186 模块级 DFG LUT 通过共享纹理的 `dispose` 监听反向持有渲染器，最小复现中释放共享纹理后 20 个渲染器全部回收。该保留属库层行为，记为 G2 性能/清理后续项，不阻塞 A04 功能结论。
+
+按用户要求，MCP 从本轮验证与发布要求中移除（暂不提供服务）；G2 只要求内置助手与 CLI。
+
+### 首期收口与移交（2026-10-23）
+
+- 关闭范围：WP01–WP12 的实施与首期交付单元关闭；G1 关闭；G2 **未通过**。WP12 关闭不等同于 G2 验收完成。
+- 已交付：A01–A16 的自动化、隔离 Chromium 与跨端 E2E 证据；时间轴与 `timeline_end` 提前开放；指定状态截图的协议、临时 opt-in 链路与导出隔离；CLI 创建/编辑/等待/预览/默认截图链路；生产依赖 Runtime 镜像的角色启动前置。
+- 未交付：G2-01 联合创作、G2-02 最终生产镜像、G2-03 混版/回退、G2-04 修正版 30 分钟长测、G2-05 B01–B08 基准、G2-06 A04 渲染器保留、G2-09 Renderer 取消清理与槽位释放，以及 G2-07/G2-08/G2-10/G2-11 边界补测，详见 [G2 遗留清单](../g2-followups.md)。
+- 能力状态：`TIMELINE_CAPABILITY_ENABLED=true`、`TIMELINE_CAPTURE_SNAPSHOT_ENABLED=false`；`timeline_end` 可执行；MCP 不提供服务。
+- 后续接手：所有 G2 工作以 [G2 遗留清单](../g2-followups.md) 为准，WP12 不再回填新的实施记录；关闭 G2 前不得开放指定状态截图或对外宣称 G2 完成。

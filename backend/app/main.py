@@ -34,6 +34,7 @@ from app.ai.image_generation_queue import (
     run_ai_image_generation_queue_loop,
 )
 from app.api.router import api_router
+from app.api.external_openapi import install_external_operation_openapi
 from app.api.routes import build_artifacts, internal_runtime, runtime_configs, well_known, preview
 from app.core.config import get_settings, validate_runtime_role_targets
 from app.core.exceptions import AppException
@@ -264,6 +265,7 @@ def create_app() -> FastAPI:
     app.include_router(preview.router_public, tags=["preview"])
     app.include_router(internal_runtime.router, tags=["internal-runtime"])
     app.include_router(well_known.router, tags=["well-known"])
+    install_external_operation_openapi(app)
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> JSONResponse:

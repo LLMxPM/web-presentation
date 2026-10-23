@@ -85,12 +85,15 @@ export async function applyCaptureMotionSnapshot(
     throw new MotionError(MOTION_ERROR_SNAPSHOT_UNAVAILABLE, '页面时间轴采样失败。', { cause: error })
   }
   const receipt: CaptureMotionReceipt = {
-    status: 'applied',
+    status: sampled.degradedTrackIds.length > 0 ? 'degraded' : 'applied',
     timelineId: sampled.timelineId,
     planDigest: sampled.planDigest,
     sampledTimeMs: sampled.sampledTimeMs,
     stateDigest: sampled.stateDigest,
     visualMode: sampled.visualMode,
+    ...(sampled.degradedTrackIds.length > 0
+      ? { message: `已跳过 ${sampled.degradedTrackIds.length} 个失败的可选轨道。` }
+      : {}),
   }
   updateRenderReadyHost({ motion: receipt })
   return receipt

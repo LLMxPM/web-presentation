@@ -14,6 +14,8 @@ export interface MotionSampleResult {
   visualMode: MotionVisualMode
   stateDigest: string
   proofs: MotionStateProof[]
+  /** 采样期间失败并跳过的可选轨道；捕获桥据此返回 degraded。 */
+  degradedTrackIds: string[]
 }
 
 /**
@@ -24,8 +26,10 @@ export function deriveSampledState(
   sampledTimeMs: number,
   visualMode: MotionVisualMode,
   proofs: MotionStateProof[],
+  degradedTrackIds: string[] = [],
 ): MotionSampleResult {
   const sortedProofs = [...proofs].sort((left, right) => left.trackId.localeCompare(right.trackId))
+  const sortedDegraded = [...degradedTrackIds].sort()
   const payload = {
     planDigest: plan.planDigest,
     sampledTimeMs,
@@ -36,6 +40,7 @@ export function deriveSampledState(
       positionMs: proof.positionMs,
       digest: proof.digest,
     })),
+    degradedTrackIds: sortedDegraded,
   }
   return {
     timelineId: plan.timelineId,
@@ -44,6 +49,7 @@ export function deriveSampledState(
     visualMode,
     stateDigest: digestMotionPayload(payload),
     proofs: sortedProofs,
+    degradedTrackIds: sortedDegraded,
   }
 }
 

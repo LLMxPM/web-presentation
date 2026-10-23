@@ -44,6 +44,8 @@ EXPECTED_GENERIC_TOOL_KEYS = {
     "get_code_standards",
     "list_entities",
     "get_entity",
+    "get_runtime_kit_capability",
+    "create_project_page",
     "create_entity",
     "update_entity",
     "archive_entity",
@@ -343,6 +345,8 @@ def test_generic_tools_should_expose_flat_top_level_schemas() -> None:
     expected_tool_names = {
         "list_entities": 2,
         "get_entity": 8,
+        "get_runtime_kit_capability": 2,
+        "create_project_page": 2,
         "create_entity": 3,
         "update_entity": 6,
         "archive_entity": 1,
@@ -393,6 +397,11 @@ def test_generic_tools_should_expose_flat_top_level_schemas() -> None:
     assert not validators["update_entity"].is_valid({"resource_type": "project", "action": "content", "target_id": 8})
     assert not validators["list_entities"].is_valid({})
     assert not validators["get_entity"].is_valid({"resource_type": "runtime_kit"})
+    assert validators["get_runtime_kit_capability"].is_valid({"name": "usePageTimeline.v1"})
+    assert not validators["get_runtime_kit_capability"].is_valid({})
+    assert not validators["get_runtime_kit_capability"].is_valid({"target_id": 1})
+    assert validators["create_project_page"].is_valid({"title": "封面", "page_content": "<template />"})
+    assert not validators["create_project_page"].is_valid({"title": "封面"})
     assert not validators["validate_entity"].is_valid({"resource_type": "asset", "action": "preview"})
 
     from app.services.ai_agent_config_service import AiAgentConfigService
@@ -497,15 +506,45 @@ def test_read_tools_should_separate_collection_and_single_entity_parameters() ->
     get_properties = set(get_schema["properties"])
 
     assert list_properties == {"resource_type", "filters", "collection"}
-    assert get_properties == {"resource_type", "view", "target_id", "lookup", "options"}
+    assert get_properties == {"resource_type", "view", "target_id", "options"}
     assert "action" not in list_properties | get_properties
     assert "target_id" not in list_properties
     assert "filters" not in get_properties
     assert set(_schema_values(list_schema["properties"]["resource_type"])) >= {"asset", "project"}
     assert set(_schema_values(list_schema["properties"]["collection"])) == {"items", "tags"}
     assert "detail" in _schema_values(get_schema["properties"]["view"])
-    assert "runtime_kit" in _schema_values(get_schema["properties"]["resource_type"])
-    assert {"lookup", "options"}.issubset(get_properties)
+    assert "runtime_kit" not in _schema_values(get_schema["properties"]["resource_type"])
+    runtime_schema = tools["get_runtime_kit_capability"].parameters
+    assert runtime_schema["required"] == ["name"]
+    assert set(runtime_schema["properties"]) == {"name", "kind"}
+
+
+async def test_runtime_kit_detail_tool_should_dispatch_versioned_name(monkeypatch) -> None:
+    """专用只读工具只按版本化名称定位能力，不再携带通用对象的数字 ID。"""
+
+    captured: dict[str, object] = {}
+
+    async def fake_resolve(*_args, **_kwargs):
+        return {"workspace_id": 8}, {"sub": "user:1"}
+
+    async def fake_dispatch(*_args, **kwargs):
+        captured.update(kwargs)
+        return {"name": kwargs["filters"]["name"]}
+
+    monkeypatch.setattr(generic_tools_module, "resolve_tool_context", fake_resolve)
+    monkeypatch.setattr(generic_tools_module, "_dispatch_entity_query", fake_dispatch)
+    tools = {item.name: item for item in build_generic_business_tools(None)}  # type: ignore[arg-type]
+    result = await tools["get_runtime_kit_capability"].entrypoint(
+        AgentToolContext(run_id="run-1", session_id="session-1", dependencies={}),
+        name="usePageTimeline.v1",
+        kind="composable",
+    )
+
+    assert captured["resource_type"] == "runtime_kit"
+    assert captured["action"] == "detail"
+    assert captured["target_id"] is None
+    assert captured["filters"] == {"name": "usePageTimeline.v1", "kind": "composable"}
+    assert result["data"] == {"name": "usePageTimeline.v1"}
 
 
 async def test_removed_action_should_return_unsupported_business_error() -> None:

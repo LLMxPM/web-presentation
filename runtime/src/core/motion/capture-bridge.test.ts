@@ -46,6 +46,7 @@ function attachHandle(options: { missing?: boolean } = {}) {
     visualMode,
     stateDigest: `state-${positionMs}-${visualMode}`,
     proofs: [],
+    degradedTrackIds: [],
   }))
   const snapshot: MotionTransportSnapshot = {
     timelineId: PLAN.timelineId,
@@ -121,6 +122,27 @@ describe('capture motion bridge', () => {
 
     await applyCaptureMotionSnapshot({ atLabel: 'detail', offsetMs: 600 })
     expect(sampleAt).toHaveBeenLastCalledWith(600, 'full')
+  })
+
+  it('可选轨道失败时返回 degraded 回执并保留有界摘要', async () => {
+    const { sampleAt } = attachHandle()
+    sampleAt.mockResolvedValueOnce({
+      timelineId: PLAN.timelineId,
+      planDigest: PLAN.planDigest,
+      sampledTimeMs: 400,
+      visualMode: 'full',
+      stateDigest: 'degraded-state',
+      proofs: [],
+      degradedTrackIds: ['optional-audio'],
+    })
+    initializeRenderReadyHost()
+    const receipt = await applyCaptureMotionSnapshot({ atMs: 400 })
+    expect(receipt).toMatchObject({
+      status: 'degraded',
+      stateDigest: 'degraded-state',
+      message: '已跳过 1 个失败的可选轨道。',
+    })
+    expect(window.__RENDER_READY__?.motion).toMatchObject({ status: 'degraded' })
   })
 
   it('缺失标签、越界时间或错误时间轴明确失败', async () => {

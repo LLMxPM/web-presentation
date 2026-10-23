@@ -1,6 +1,6 @@
 # WP07 资产摘要与能力契约
 
-状态：完成（受限分析与能力关闭；未对真实历史资源执行批量回填）。主责：Backend / 契约。前置：[WP02](./wp02-contracts-plan-compiler.md)。
+状态：完成（资源摘要与能力契约；未对真实历史资源执行批量回填）。主责：Backend / 契约。前置：[WP02](./wp02-contracts-plan-compiler.md)。
 
 ## 输入与落点
 

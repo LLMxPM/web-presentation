@@ -74,12 +74,14 @@ describe('compilePageTimeline', () => {
   })
 
   it('拒绝循环依赖与缺失前驱', () => {
-    expectMotionError(() => compilePageTimeline(definition({
+    const cycle = expectMotionError(() => compilePageTimeline(definition({
       tracks: [
         { type: 'dom', id: 'a', target: '.a', preset: 'fade', durationMs: 100, afterTrack: 'b' },
         { type: 'dom', id: 'b', target: '.b', preset: 'fade', durationMs: 100, afterTrack: 'a' },
       ],
     })), 'TIMELINE_DEPENDENCY_CYCLE')
+    expect(cycle.trackId).toBe('a')
+    expect(cycle.fieldPath).toBe('timeline.tracks[0].afterTrack')
 
     const missing = expectMotionError(() => compilePageTimeline(definition({
       tracks: [{ type: 'dom', id: 'a', target: '.a', preset: 'fade', durationMs: 100, afterTrack: 'ghost' }],
@@ -88,12 +90,14 @@ describe('compilePageTimeline', () => {
   })
 
   it('拒绝重复 id、非法数值与海报越界', () => {
-    expectMotionError(() => compilePageTimeline(definition({
+    const duplicate = expectMotionError(() => compilePageTimeline(definition({
       tracks: [
         { type: 'dom', id: 'title', target: '.a', preset: 'fade', durationMs: 100 },
         { type: 'dom', id: 'title', target: '.b', preset: 'fade', durationMs: 100 },
       ],
     })), 'TIMELINE_SCHEMA_INVALID')
+    expect(duplicate.fieldPath).toBe('timeline.tracks[1].id')
+    expect(duplicate.trackId).toBe('title')
 
     expectMotionError(() => compilePageTimeline(definition({
       tracks: [{ type: 'dom', id: 'title', target: '.a', preset: 'fade', durationMs: -1 }],
@@ -207,6 +211,67 @@ describe('compilePageTimeline', () => {
     }))
     expect(plan.durationMs).toBe(500)
     expect(plan.requiredTrackIds).toEqual(['title'])
+  })
+
+  it('拒绝未知字段并定位到具体层级与轨道', () => {
+    const topLevel = expectMotionError(() => compilePageTimeline({
+      ...definition(),
+      visual: { durationMs: 100 },
+    } as unknown as PageTimelineDefinition), 'TIMELINE_SCHEMA_INVALID')
+    expect(topLevel.fieldPath).toBe('timeline.visual')
+
+    // 历史故障中 `asset` 被写成 `assetName`，静默忽略后只表现为“没有动画”。
+    const trackLevel = expectMotionError(() => compilePageTimeline(definition({
+      tracks: [
+        { type: 'video', id: 'demo', asset: 'demo', outMs: 1000, assetName: 'demo' },
+      ] as unknown as PageTimelineDefinition['tracks'],
+    })), 'TIMELINE_SCHEMA_INVALID')
+    expect(trackLevel.fieldPath).toBe('timeline.tracks[0].assetName')
+    expect(trackLevel.trackId).toBe('demo')
+
+    const clipLevel = expectMotionError(() => compilePageTimeline(definition({
+      tracks: [{
+        type: 'model3d',
+        id: 'product',
+        asset: 'product',
+        clip: { index: 0, durationMs: 2000, loop: true },
+      }] as unknown as PageTimelineDefinition['tracks'],
+    })), 'TIMELINE_SCHEMA_INVALID')
+    expect(clipLevel.fieldPath).toBe('timeline.tracks[0].clip.loop')
+    expect(clipLevel.trackId).toBe('product')
+
+    const posterLevel = expectMotionError(() => compilePageTimeline(definition({
+      poster: { atTime: 300 } as unknown as PageTimelineDefinition['poster'],
+    })), 'TIMELINE_SCHEMA_INVALID')
+    expect(posterLevel.fieldPath).toBe('timeline.poster.atTime')
+  })
+
+  it('拒绝非有限依赖数值与无限重复并保留定位', () => {
+    const infiniteStart = expectMotionError(() => compilePageTimeline(definition({
+      tracks: [{ type: 'dom', id: 'title', target: '.title', preset: 'fade', durationMs: 400, startMs: Number.POSITIVE_INFINITY }],
+    })), 'TIMELINE_SCHEMA_INVALID')
+    expect(infiniteStart.fieldPath).toBe('timeline.tracks[0].startMs')
+    expect(infiniteStart.trackId).toBe('title')
+
+    const infiniteOffset = expectMotionError(() => compilePageTimeline(definition({
+      tracks: [
+        { type: 'dom', id: 'title', target: '.title', preset: 'fade', durationMs: 400 },
+        { type: 'dom', id: 'subtitle', target: '.subtitle', preset: 'fade', durationMs: 400, afterTrack: 'title', offsetMs: Number.POSITIVE_INFINITY },
+      ],
+    })), 'TIMELINE_SCHEMA_INVALID')
+    expect(infiniteOffset.fieldPath).toBe('timeline.tracks[1].offsetMs')
+    expect(infiniteOffset.trackId).toBe('subtitle')
+
+    const infiniteRepeat = expectMotionError(() => compilePageTimeline(definition({
+      tracks: [{ type: 'video', id: 'loop', asset: 'loop', outMs: 1000, repeat: Number.POSITIVE_INFINITY }],
+    })), 'TIMELINE_SCHEMA_INVALID')
+    expect(infiniteRepeat.fieldPath).toBe('timeline.tracks[0].repeat')
+    expect(infiniteRepeat.trackId).toBe('loop')
+
+    const notANumber = expectMotionError(() => compilePageTimeline(definition({
+      tracks: [{ type: 'dom', id: 'title', target: '.title', preset: 'fade', durationMs: Number.NaN }],
+    })), 'TIMELINE_DURATION_UNRESOLVED')
+    expect(notANumber.fieldPath).toBe('timeline.tracks[0].durationMs')
   })
 
   it('摘要实现可跨进程稳定', () => {

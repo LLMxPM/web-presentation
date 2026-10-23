@@ -1,6 +1,6 @@
 # WP09 捕获协议与静态导出
 
-状态：待验收（协议、Renderer 与 Runtime 捕获桥已实施；真实链路取帧证据待补）。主责：render-contracts / Renderer / Backend / Runtime。前置：[WP04](./wp04-dom-adapter.md)、[WP05](./wp05-media-adapter.md)、[WP06](./wp06-model-adapter.md)、[WP07](./wp07-asset-capabilities.md)。
+状态：完成（2026-10-23 首期收口；A13/A15 远程取帧与导出证据见 [G1 映射](../g1-automation-coverage.md)；指定状态截图能力仍关闭）。主责：render-contracts / Renderer / Backend / Runtime。前置：[WP04](./wp04-dom-adapter.md)、[WP05](./wp05-media-adapter.md)、[WP06](./wp06-model-adapter.md)、[WP07](./wp07-asset-capabilities.md)。
 
 ## 输入与落点
 
@@ -38,6 +38,7 @@
   - `uv run pytest renderer/tests/test_motion_capture.py renderer/tests/test_static_capture.py -q` → 12 passed；`uv run pytest renderer/tests -q --ignore=renderer/tests/test_startup_check.py` → 41 passed。
   - `uv run --project backend pytest -c backend/pyproject.toml backend/tests/unit/test_render_motion_dispatch.py backend/tests/unit/test_render_control_plane.py backend/tests/unit/test_render_lifecycle.py backend/tests/unit/test_render_static_navigation.py backend/tests/unit/test_render_attempt_late_failure.py backend/tests/unit/test_render_result_conflict.py -q` → 58 passed。
   - `pnpm --filter web-runtime-vue exec vitest run src/core/motion/capture-bridge.test.ts src/core/utils/render-ready.test.ts src/core/services/export/OffscreenPageStage.test.ts` → 14 passed；Runtime `vue-tsc --noEmit` 通过。
-- 未覆盖项：
-  - 尚未运行 Backend → Renderer → 独立 Runtime 的真实 PNG/PDF/PPTX 取帧与目检，视频中间帧、模型姿态、同刻重复/乱序、取消与临时产物清理只有单元/契约证据。
-  - 外部异步截图任务与临时选择器持久化归 WP11；当前默认截图任务不接收选择器，因此不存在临时帧覆盖默认指针的路径，但也没有真实任务侧身份对拍。
+- 首期收口（2026-10-23）：
+  - Backend → Renderer → 独立 Runtime 的真实链路已完成：默认 PNG、指定状态 DOM/受保护视频/骨骼 GLB PNG、A15 有声 PNG/PDF/PPTX、导出取消与主放映隔离；同时间点跨任务像素一致（A14）；默认截图指针不被临时结果改写。
+  - 外部异步截图任务与临时选择器持久化由 A13/A14 覆盖，跨任务取消/迟到发布已由后端集成用例验证。
+  - Renderer 取消后的临时文件、浏览器进程与槽位释放尚无独立 E2E 证据，转 [G2-09](../g2-followups.md)。

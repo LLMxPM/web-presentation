@@ -88,6 +88,8 @@ export function createMediaMotionAdapter(
   let sessionMuted = context.muted
   let visualMode: MotionVisualMode = context.visualMode
   let lastSourceTimeMs = Number.NaN
+  // 媒体循环回绕后需要重新 play；暂停与静默捕获必须清掉该意图，避免擅自恢复。
+  let wantsPlayback = false
   let listeners: Array<() => void> = []
 
   function ensureElement(): HTMLMediaElement {
@@ -160,6 +162,22 @@ export function createMediaMotionAdapter(
     return Math.abs(currentMs - sourceTimeMs) > DRIFT_CORRECTION_THRESHOLD_MS
   }
 
+  /** 重复片段回绕后恢复播放；仅当用户/宿主仍期望播放时执行。 */
+  async function resumeAfterCycle(media: HTMLMediaElement): Promise<void> {
+    if (!wantsPlayback || !context.allowMediaPlayback || !media.paused) return
+    try {
+      await media.play()
+    } catch (error) {
+      if (isNotAllowedError(error)) {
+        blocked = true
+        throw new MotionError(MOTION_ERROR_MEDIA_BLOCKED, '浏览器阻止了媒体播放，请点击页面后重试。', {
+          trackId: track.id,
+        })
+      }
+      throw new MotionError(MOTION_ERROR_TARGET_INVALID, mediaErrorMessage(error), { trackId: track.id })
+    }
+  }
+
   async function applyPosition(positionMs: number, mode: MotionVisualMode, forceSeek = false): Promise<void> {
     if (disposed) return
     visualMode = mode
@@ -182,6 +200,7 @@ export function createMediaMotionAdapter(
     }
     if (shouldCorrectDrift(mapping.sourceTimeMs, forceSeek)) {
       await seekTo(mapping.sourceTimeMs, mode)
+      await resumeAfterCycle(media)
     } else {
       lastSourceTimeMs = mapping.sourceTimeMs
     }
@@ -234,6 +253,7 @@ export function createMediaMotionAdapter(
       if (disposed || !context.allowMediaPlayback) return
       const media = ensureElement()
       blocked = false
+      wantsPlayback = true
       if (!media.paused) return
       applyMuted()
       try {
@@ -249,6 +269,7 @@ export function createMediaMotionAdapter(
       }
     },
     pause() {
+      wantsPlayback = false
       if (element && !element.paused) element.pause()
     },
     setMuted(nextMuted: boolean) {
@@ -269,6 +290,7 @@ export function createMediaMotionAdapter(
       if (!element) {
         throw new MotionError(MOTION_ERROR_TARGET_INVALID, '媒体目标尚未准备。', { trackId: track.id })
       }
+      wantsPlayback = false
       element.pause()
       await applyPosition(positionMs, visualMode, true)
       const details = {

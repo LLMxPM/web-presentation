@@ -1859,9 +1859,9 @@
       "category": "asset",
       "description": "页内时间轴受控的视频资源渲染。",
       "capability": {
-        "enabled": false,
+        "enabled": true,
         "previewable": false,
-        "recommendation_level": "internal-only",
+        "recommendation_level": "advanced",
         "display_name": "时间轴视频资源",
         "summary": "按资源逻辑名渲染视频，固定隐藏播放控件并禁止自动播放，位置、裁剪、音量与循环由页内时间轴声明。",
         "tags": ["timeline-video"],
@@ -1871,7 +1871,7 @@
         ],
         "returns": "Vue 组件；渲染受控 video 目标，供时间轴按 data-runtime-asset-name 定位。",
         "return_example": ["<AssetVideoV2 name=\"demo-video\" class=\"w-full h-80\" />"],
-        "constraints": ["必须与 usePageTimeline.v1 的 video 轨道配合使用，轨道声明裁切终点与静音策略。", "组件不展示播放控件，也不接受 autoplay 旁路；普通手动视频继续使用 AssetVideo.v1。", "当前为内部受控入口，未进入普通模型能力目录。"],
+        "constraints": ["必须与 usePageTimeline.v1 的 video 轨道配合使用，轨道声明裁切终点与静音策略。", "组件不展示播放控件，也不接受 autoplay 旁路；普通手动视频继续使用 AssetVideo.v1。"],
         "audiences": ["backend", "agent"]
       }
     },
@@ -1884,9 +1884,9 @@
       "category": "asset",
       "description": "页内时间轴受控的音频资源渲染。",
       "capability": {
-        "enabled": false,
+        "enabled": true,
         "previewable": false,
-        "recommendation_level": "internal-only",
+        "recommendation_level": "advanced",
         "display_name": "时间轴音频资源",
         "summary": "按资源逻辑名渲染内容音频或旁白，固定隐藏控件并禁止自动播放、原生循环，播放位置由时间轴声明。",
         "tags": ["timeline-audio"],
@@ -1896,7 +1896,7 @@
         ],
         "returns": "Vue 组件；渲染受控 audio 目标，供时间轴按 data-runtime-asset-name 定位。",
         "return_example": ["<AssetAudioV2 name=\"chapter-01-narration\" purpose=\"narration\" class=\"w-full h-16\" />"],
-        "constraints": ["必须与 usePageTimeline.v1 的 audio 轨道配合使用；旁白轨道只能有一条。", "组件不展示播放控件，也不接受 autoplay 旁路；普通内容音频继续使用 AssetAudio.v1。", "当前为内部受控入口，未进入普通模型能力目录。"],
+        "constraints": ["必须与 usePageTimeline.v1 的 audio 轨道配合使用；旁白轨道只能有一条。", "组件不展示播放控件，也不接受 autoplay 旁路；普通内容音频继续使用 AssetAudio.v1。"],
         "audiences": ["backend", "agent"]
       }
     },
@@ -1909,9 +1909,9 @@
       "category": "asset",
       "description": "页内时间轴受控的三维模型渲染。",
       "capability": {
-        "enabled": false,
+        "enabled": true,
         "previewable": false,
-        "recommendation_level": "internal-only",
+        "recommendation_level": "advanced",
         "display_name": "时间轴三维模型",
         "summary": "按资源逻辑名渲染标准 GLB 模型，固定关闭查看交互；片段采样与整体包装变换由页内时间轴独占。",
         "tags": ["timeline-model"],
@@ -1921,7 +1921,7 @@
         ],
         "returns": "Vue 组件；渲染受控模型目标，并提供时间轴所需的动作与整体变换句柄。",
         "return_example": ["<AssetModelV2 name=\"product\" class=\"w-full h-80\" />"],
-        "constraints": ["片段引用必须来自真实资源查询的 index 与 signature；时间轴不猜测动作名称。", "组件固定关闭查看交互；普通可交互模型继续使用 AssetModel.v1。", "当前为内部受控入口，未进入普通模型能力目录。"],
+        "constraints": ["片段引用必须来自真实资源查询的 index 与 signature；时间轴不猜测动作名称。", "组件固定关闭查看交互；普通可交互模型继续使用 AssetModel.v1。"],
         "audiences": ["backend", "agent"]
       }
     },
@@ -1934,9 +1934,9 @@
       "category": "runtime",
       "description": "声明页内唯一的动画、音视频与模型时间轴。",
       "capability": {
-        "enabled": false,
+        "enabled": true,
         "previewable": false,
-        "recommendation_level": "internal-only",
+        "recommendation_level": "advanced",
         "display_name": "页内时间轴",
         "summary": "通过 define 返回有限资源 builder 计划与原生 GSAP 视觉填充函数；Runtime 托管暂停时间轴、作用域、采样和唯一 transport。",
         "tags": ["timeline"],
@@ -1948,7 +1948,7 @@
         ],
         "returns": "对象：plan、state、error、ready 及 prepare/play/pause/resume/restart/seek/sampleAt/setMuted/setVisualMode/dispose。",
         "return_example": ["timeline.state.value?.positionMs // 400", "timeline.plan.value?.planDigest // 'fnv1a-...'"],
-        "constraints": ["每个页面最多注册一个时间轴；组件片段必须通过填充函数合并，不能创建第二个全局播放者。", "define 仅在挂载时执行一次；原生视觉支持显式 fromTo、addLabel、位置字符串、数值 stagger 和段落函数复用，属性限 opacity/x/y/scale/rotation；禁止回调、插件、无限重复和外部目标。", "资源和捕获统一毫秒，GSAP 原生参数用秒，使用 seconds(ms) 转换；资源 id 自动登记为视觉标签。", "可读海报优先引用视觉末尾的 addLabel 标签，窗口预览需要时设置 applyPoster=true；poster 必须处于真实 0–durationMs 范围，初始化或准备失败必须按内容诊断修复。", "动作片段、资源时长与签名必须来自真实资源查询；运行错误带 code、trackId 或 fieldPath。", "当前为内部受控入口，G2 前不进入普通模型能力目录。"],
+        "constraints": ["每个页面最多注册一个时间轴；组件片段必须通过填充函数合并，不能创建第二个全局播放者。", "define 仅在挂载时执行一次；原生视觉支持显式 fromTo、addLabel、位置字符串、数值 stagger 和段落函数复用，属性限 opacity/x/y/scale/rotation；禁止回调、插件、无限重复和外部目标。", "资源和捕获统一毫秒，GSAP 原生参数用秒，使用 seconds(ms) 转换；资源 id 自动登记为视觉标签。", "可读海报优先引用视觉末尾的 addLabel 标签，窗口预览需要时设置 applyPoster=true；poster 必须处于真实 0–durationMs 范围，初始化或准备失败必须按内容诊断修复。", "动作片段、资源时长与签名必须来自真实资源查询；运行错误带 code、trackId 或 fieldPath。"],
         "audiences": ["backend", "agent"]
       }
     }

@@ -40,7 +40,7 @@ async def test_system_slideshow_capabilities_should_publish_executable_baseline(
     assert data["delay_ms"] == {"min": ADVANCE_DELAY_MIN_MS, "max": ADVANCE_DELAY_MAX_MS}
     assert data["media_timeout_ms"] == {"min": MEDIA_TIMEOUT_MIN_MS, "max": MEDIA_TIMEOUT_MAX_MS}
     assert data["timeline_timeout_ms"] == {"min": TIMELINE_TIMEOUT_MIN_MS, "max": TIMELINE_TIMEOUT_MAX_MS}
-    assert "timeline_end" not in data["advance_modes"]
+    assert "timeline_end" in data["advance_modes"]
     assert data["audio"] == {
         "schema_version": AUDIO_SCHEMA_VERSION,
         "audio_assets": True,

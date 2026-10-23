@@ -79,17 +79,17 @@ Backend `capabilities.slideshow` 已声明 `advance_modes` 为 `manual`/`timer`�
 
 ## 6. 页内动画与时间轴能力开放门禁
 
-**状态**：能力关闭（2026-10-21），G1/G2 未关闭。
+**状态**：时间轴与 `timeline_end` 已默认开放（2026-10-22）；G1 已关闭（2026-10-23），G2 未关闭；指定状态截图仍关闭。
 
-首期编排 WP01–WP12 的代码、契约与客户端适配已实施，但真实浏览器、远程 Renderer、跨域双窗口、指定状态截图、生产依赖裁剪镜像、混版派发、30 分钟循环与八任务模型基准尚未执行。当前 `TIMELINE_CAPABILITY_ENABLED`、`TIMELINE_CAPTURE_SNAPSHOT_ENABLED` 均为 false，放映 `advance_modes` 不含 `timeline_end`。
+首期编排 WP01–WP12 的代码、契约与客户端适配已实施。当前 `TIMELINE_CAPABILITY_ENABLED=true`、`TIMELINE_CAPTURE_SNAPSHOT_ENABLED=false`，放映可执行 `advance_modes` 已含 `timeline_end`；用户文档与顶层 README 已同步。G1 的 A01–A16 已有自动化、隔离 Chromium 与跨端 E2E 证据（见 [G1 映射](../developer/runtime-integration/motion/g1-automation-coverage.md)）；G2 的 Editor + 内置助手 + CLI 联合创作、生产依赖裁剪镜像最终重建、混版/回退、修正版 30 分钟长测与 B01–B08 模型基准尚未完成；长稳中需记录 A04 的 Three.js 模块级 DFG LUT 渲染器保留（活跃 context/canvas 为 0，属库层行为）。MCP 暂不提供服务，不列入本轮发布验证。逐项状态、关闭条件与边界补测见 [G2 遗留清单](../developer/runtime-integration/motion/g2-followups.md)。
 
 **发布要求**：
 
-- 开放上述 flags 前，必须先取得 [G1/G2 验收](../developer/runtime-integration/motion/acceptance.md)真实证据，并在同一批部署中验证 Backend、Runtime、Renderer、CLI/MCP 的版本与能力一致。
-- 临时时间轴截图不得更新页面默认截图；旧 v1 页面、旧 Worker 与旧 Runtime 遇到新请求必须明确失败，不能丢字段执行。
-- 开放后才同步用户文档、顶层 README 与支持矩阵；Firefox/WebKit、移动端和未验证编码不得对外宣称。
+- 关闭 G2 前，必须先取得 [G2 验收](../developer/runtime-integration/motion/acceptance.md)真实证据，并在同一批部署中验证 Backend、Runtime、Renderer、CLI 的版本与能力一致；G1 已关闭，不再重复列为开放阻断。
+- 指定状态截图在 G2 关闭前保持关闭；临时时间轴截图不得更新页面默认截图；旧 v1 页面、旧 Worker 与旧 Runtime 遇到新请求必须明确失败，不能丢字段执行。
+- 继续维护已开放能力的用户文档与支持矩阵；Firefox/WebKit、移动端和未验证编码不得对外宣称。
 
-**下一步**：按 WP12 记录补齐真实链路与模型基准，再单独提交能力开放变更。
+**下一步**：按 [G2 遗留清单](../developer/runtime-integration/motion/g2-followups.md) 补齐联合创作、生产镜像、混版/回退与长稳证据，再单独提交指定状态截图开放变更。
 
 ---
 

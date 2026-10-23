@@ -295,8 +295,8 @@ async def test_external_idempotency_should_distinguish_slideshow_and_omitted_fie
 
 
 @pytest.mark.asyncio
-async def test_external_capabilities_should_declare_schema3_media_and_presenter(client: AsyncClient) -> None:
-    """schema 3 增加时间轴结束字段与预算；写入门禁未开放前不宣称 timeline_end 可执行。"""
+async def test_external_capabilities_should_declare_schema3_timeline_advance(client: AsyncClient) -> None:
+    """schema 3 对外声明时间轴结束推进及独立等待预算。"""
 
     token, workspace_id, _ = await _create_external_identity()
     response = await client.get(
@@ -307,7 +307,7 @@ async def test_external_capabilities_should_declare_schema3_media_and_presenter(
     slideshow = response.json()["slideshow"]
     assert slideshow["schema_version"] == 3
     assert slideshow["transition_effects"] == ["none", "fade", "push"]
-    assert slideshow["advance_modes"] == ["manual", "timer", "media_end"]
+    assert slideshow["advance_modes"] == ["manual", "timer", "media_end", "timeline_end"]
     assert slideshow["single_window_auto_play"] is True
     assert slideshow["presenter_auto_play"] is True
     assert slideshow["capture_auto_play"] is False
@@ -315,4 +315,4 @@ async def test_external_capabilities_should_declare_schema3_media_and_presenter(
     assert slideshow["delay_ms"] == {"min": 1000, "max": 3600000}
     assert slideshow["media_timeout_ms"] == {"min": 1000, "max": 3600000}
     assert slideshow["timeline_timeout_ms"] == {"min": 1000, "max": 3600000}
-    assert "timeline_end" not in slideshow["advance_modes"]
+    assert "timeline_end" in slideshow["advance_modes"]

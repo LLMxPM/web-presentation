@@ -156,6 +156,8 @@ def require_external_operation(operation_key: str):
 
         return auth
 
+    # OpenAPI 扩展复用同一鉴权依赖标记，覆盖多个 URL 共用一个操作的路由。
+    _dependency.__wp_operation_keys__ = (operation_key,)
     return _dependency
 
 
@@ -208,4 +210,9 @@ def require_dynamic_mutation_operation(action: Literal["status", "cancel", "retr
 
         return auth, job
 
+    # Mutation Job 的实体类型在请求时才可知，文档保留 page/component 两个候选。
+    _dependency.__wp_operation_keys__ = (
+        f"jobs.mutation.page.{action}",
+        f"jobs.mutation.component.{action}",
+    )
     return _dependency

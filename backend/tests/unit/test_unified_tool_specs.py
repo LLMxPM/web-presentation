@@ -23,6 +23,8 @@ EXPECTED_TOOL_KEYS = {
     "get_code_standards",
     "list_entities",
     "get_entity",
+    "get_runtime_kit_capability",
+    "create_project_page",
     "create_entity",
     "update_entity",
     "archive_entity",

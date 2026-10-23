@@ -21,6 +21,7 @@ English | [简体中文](./README.zh-CN.md)
 - **Automated Layout Diagnostic**: Performs DOM-based automated detection for common AI layout defects (e.g. overflow, awkward text wrapping, element overlap) to enable autonomous AI self-healing.
 - **Asset Abstraction & Reuse**: Accumulate media, components, themes, styles, and typography in workspace libraries, enabling PPT decks, visual cards, report pages, and display boards to share the same design foundation.
 - **Rapid Visual Feedback**: The Runtime loads pages, components, and configuration bundles using Vue 3 and Vite, powering Editor features including live iframe preview, remote screenshot capture, component preview, and production builds.
+- **Timeline Playback**: Compose page visuals and media on one timeline and optionally advance to the next slide when it completes. This capability is enabled by default; G2 validation remains pending.
 - **Constrained Visual Editing**: Inspect Vue container hierarchies alongside rendered outputs to modify static text, component props, and controlled Tailwind styles via intuitive form controls.
 - **Context Isolation & Injection**: The Backend injects only the essential context (project, page, component, asset specs) into the AI model, allowing it to focus on creative tasks without runtime overhead or implementation leaks.
 - **Workspace-Scoped Content Assistant**: Eliminates the need to switch chat sessions across projects; sessions are workspace-bound, and each Run snapshot locks its current focus and project working set with explicit permission checks per target.

@@ -30,6 +30,7 @@
     "fflate": "^0.8.3",
     "gsap": "3.15.0",
     "jose": "^6.2.3",
+    "jsdom": "^29.1.1",
     "jspdf": "^4.2.1",
     "mermaid": "^11.15.0",
     "postcss": "^8.5.15",
@@ -57,7 +58,6 @@
     "eslint": "^10.4.0",
     "eslint-plugin-vue": "^10.9.1",
     "globals": "^17.6.0",
-    "jsdom": "^29.1.1",
     "prettier": "^3.8.3",
     "vitest": "^4.1.7",
     "vue-tsc": "^3.3.1"

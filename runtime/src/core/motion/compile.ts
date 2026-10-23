@@ -52,6 +52,21 @@ const PRESET_STATES: Record<DomMotionPreset, { from: DomMotionState; to: DomMoti
 
 const DOM_PROPERTIES: DomMotionProperty[] = ['opacity', 'x', 'y', 'scale', 'rotation']
 
+// 字段白名单与 types.ts 的 page-timeline.v1 定义一一对应；拼错字段必须在编译期失败，
+// 不能像 `assetName` 那样被静默忽略后在运行时表现为“没有动画”。
+const TIMELINE_KEYS = ['schemaVersion', 'timelineId', 'tracks', 'poster'] as const
+const TRACK_BASE_KEYS = ['type', 'id', 'label', 'required', 'role', 'startMs', 'afterTrack', 'offsetMs'] as const
+const MEDIA_TRACK_KEYS = ['asset', 'selector', 'inMs', 'outMs', 'rate', 'repeat', 'muted', 'volume', 'endBehavior'] as const
+const TRACK_KEYS_BY_TYPE: Record<string, readonly string[]> = {
+  dom: [...TRACK_BASE_KEYS, 'target', 'preset', 'from', 'to', 'durationMs'],
+  audio: [...TRACK_BASE_KEYS, ...MEDIA_TRACK_KEYS],
+  video: [...TRACK_BASE_KEYS, ...MEDIA_TRACK_KEYS],
+  model3d: [...TRACK_BASE_KEYS, 'asset', 'selector', 'clip', 'inMs', 'outMs', 'rate', 'repeat', 'transform', 'endBehavior'],
+}
+const POSTER_KEYS = ['atMs', 'atLabel'] as const
+const CLIP_KEYS = ['index', 'name', 'signature', 'durationMs'] as const
+const TRANSFORM_KEYS = ['from', 'to'] as const
+
 const MODEL_TRANSFORM_DEFAULTS: Required<ModelMotionTransformState> = {
   x: 0,
   y: 0,
@@ -80,6 +95,7 @@ export function compilePageTimeline(
   if (!definition || typeof definition !== 'object') {
     throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, '编排定义必须是对象。', { fieldPath: rootPath })
   }
+  rejectUnknownKeys(definition, TIMELINE_KEYS, rootPath)
   if (definition.schemaVersion !== PAGE_TIMELINE_SCHEMA_VERSION) {
     if (!(options.allowMissingSchemaVersion && definition.schemaVersion === undefined)) {
       throw new MotionError(
@@ -118,6 +134,11 @@ export function compilePageTimeline(
     const path = `timeline.tracks[${index}]`
     if (!track || typeof track !== 'object') {
       throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, '轨道必须是对象。', { fieldPath: path })
+    }
+    // 只在轨道类型已知时校验字段白名单；未知类型仍由后续分支给出更准确的 type 错误。
+    const allowedKeys = typeof track.type === 'string' ? TRACK_KEYS_BY_TYPE[track.type] : undefined
+    if (allowedKeys) {
+      rejectUnknownKeys(track, allowedKeys, path, typeof track.id === 'string' ? track.id : undefined)
     }
     const id = requireString(track.id, `${path}.id`, 64)
     if (options.visual && id === 'motion-visual') {
@@ -575,6 +596,7 @@ function normalizeClipReference(
   if (!value || typeof value !== 'object') {
     throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, '模型轨道必须声明 clip。', { fieldPath: path, trackId })
   }
+  rejectUnknownKeys(value, CLIP_KEYS, path, trackId)
   if (!Number.isInteger(value.index) || value.index < 0) {
     throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, 'clip.index 必须是非负整数。', {
       fieldPath: `${path}.index`,
@@ -599,6 +621,7 @@ function normalizeModelTransform(
   if (!value || typeof value !== 'object') {
     throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, 'transform 必须是对象。', { fieldPath: path, trackId })
   }
+  rejectUnknownKeys(value, TRANSFORM_KEYS, path, trackId)
   const from: ModelMotionTransformState = { ...MODEL_TRANSFORM_DEFAULTS, ...value.from }
   const to: ModelMotionTransformState = { ...MODEL_TRANSFORM_DEFAULTS, ...value.to }
   for (const [side, state] of [['from', from], ['to', to]] as const) {
@@ -710,6 +733,7 @@ function resolvePosterTime(
     if (!poster || typeof poster !== 'object') {
       throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, 'poster 必须是对象。', { fieldPath: 'timeline.poster' })
     }
+    rejectUnknownKeys(poster, POSTER_KEYS, 'timeline.poster')
     if (poster.atMs !== undefined && poster.atLabel !== undefined) {
       throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, 'poster 的 atMs 与 atLabel 不能同时声明。', {
         fieldPath: 'timeline.poster',
@@ -792,6 +816,26 @@ function resolveRepeat(value: number | undefined, path: string, trackId: string)
     )
   }
   return value
+}
+
+/**
+ * 拒绝白名单外的字段。值为 undefined 的键视为“未声明”，兼容展开语法传参；
+ * 其余未知键回报 fieldPath 与 trackId，便于按路径修正而不是运行时静默失效。
+ */
+function rejectUnknownKeys(
+  value: object,
+  allowed: readonly string[],
+  path: string,
+  trackId?: string,
+): void {
+  for (const key of Object.keys(value)) {
+    if (allowed.includes(key)) continue
+    if ((value as Record<string, unknown>)[key] === undefined) continue
+    throw new MotionError(MOTION_ERROR_SCHEMA_INVALID, `未知字段 ${key}。`, {
+      fieldPath: `${path}.${key}`,
+      trackId,
+    })
+  }
 }
 
 function requireString(value: unknown, path: string, maxLength: number): string {

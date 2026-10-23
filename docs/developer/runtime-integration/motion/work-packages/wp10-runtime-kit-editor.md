@@ -1,6 +1,6 @@
 # WP10 公共入口与预览控制
 
-状态：待验收（公开入口、预览控制与表单已实施；真实浏览器交互与生产裁剪加载证据待补）。主责：Runtime Kit / Editor。前置：[WP08](./wp08-host-slideshow-sync.md)、[WP09](./wp09-capture-export.md)。
+状态：完成（2026-10-23 首期收口；A12 Editor 预览控件证据见 [G1 映射](../g1-automation-coverage.md)；生产镜像最终重建与 v1 回归转 G2）。主责：Runtime Kit / Editor。前置：[WP08](./wp08-host-slideshow-sync.md)、[WP09](./wp09-capture-export.md)。
 
 ## 输入与落点
 
@@ -42,7 +42,7 @@ Editor 组件/布局验证、Runtime Kit manifest 跨端校验、旧 v1 页面�
   - `pnpm --filter editor exec vitest run src/components/runtime-preview/RuntimePreviewFrame.test.ts src/components/page-detail/PageDetailPreviewPanel.motion.test.ts src/components/project/ProjectSlideshowFields.test.ts src/components/project/ProjectRouteSlideshowForm.test.ts src/views/assets/model3d-summary.test.ts` → 18 passed；Editor 全量 `pnpm --filter editor exec vitest run` → 160 files / 907 passed。
   - Runtime 全量 `pnpm --filter web-runtime-vue exec vitest run` → 162 files / 1300 passed / 3 skipped。
   - Runtime `vue-tsc --noEmit` 与 Editor `vue-tsc -b` 通过。
-- 未覆盖项：
-  - 未在真实浏览器中走通 Editor 预览播放、暂停、拖动与降动效切换，也没有交互截图；poster 与播放命令只有单元/消息协议证据。
-  - 未执行生产裁剪后的 Runtime 构建加载验证，也未对 v1 页面做完整回归；manifest 仅通过静态结构与 Backend 能力目录对拍。
-  - 组件独立轨道片段预览没有真实样例页面，当前公开入口只由单测覆盖。
+- 首期收口（2026-10-23）：
+  - 真实 E2E 已走通 Editor 预览播放、暂停、重播、拖动定位与 system/reduced/full 切换，含错误提示与海报；A12 证据见 [G1 映射](../g1-automation-coverage.md)。
+  - 公开入口与 manifest 已随 2026-10-22 能力开放同步；生产裁剪 Runtime 的最终重建与独立构建加载转 [G2-02](../g2-followups.md)，v1 页面完整回归转 [G2-03](../g2-followups.md)。
+  - 组件独立轨道片段预览仍无真实样例页面，当前只由单测覆盖，转 [G2-10](../g2-followups.md)（不阻塞 G2，支持矩阵需注明）。

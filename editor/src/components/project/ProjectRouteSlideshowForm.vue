@@ -107,8 +107,8 @@
       </div>
       <template v-if="overrideAdvance && advanceMode === 'timeline_end'">
         <p class="mt-2 text-xs text-text-disabled">
-          等待当前页时间轴自然结束；页面没有可用时间轴时按停留时长翻页。
-          时间轴阻塞、报错或超过等待上限时进入受阻状态，由放映控制条重试或继续。
+          等待当前页时间轴自然结束；页面没有可用时间轴时显示错误，可重试或手动翻页。
+          时间轴被浏览器阻止时显示受阻；播放失败或超过等待上限时显示错误，可在放映控制条重试或手动翻页。
         </p>
         <p v-if="timelineEndUnavailable" class="mt-1 text-xs font-medium text-warning-strong" role="status">
           当前服务端未开放页内时间轴结束模式，请改用其它翻页方式后保存。
@@ -201,7 +201,7 @@ const inheritedAdvanceSummary = computed(() => {
   }
   if (advance.mode === 'timeline_end') {
     const timeout = formatMillisecondsAsSeconds(advance.timeline_timeout_ms ?? 300000)
-    return `继承项目默认：${mode}，无时间轴时停留 ${delay} 秒，等待上限 ${timeout} 秒。`
+    return `继承项目默认：${mode}，无时间轴时显示错误，等待上限 ${timeout} 秒。`
   }
   return `继承项目默认：${mode}，停留 ${delay} 秒。`
 })

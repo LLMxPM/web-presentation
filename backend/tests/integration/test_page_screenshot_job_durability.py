@@ -318,3 +318,142 @@ async def test_screenshot_job_should_not_publish_artifact_after_lease_lost(
         page_model = await service.page_service._get_page_or_raise(int(page["id"]))
         assert job.status == "running"
         assert page_model.screenshot_storage_key is None
+
+
+async def test_cancelled_screenshot_job_should_not_publish_late_capture(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """截图执行期间取消后，迟到的图片结果不得提升默认指针或成为成功任务。"""
+
+    page = await _create_screenshot_page(authenticated_client, "取消后迟到截图")
+    _install_capture_stubs(monkeypatch)
+    job_response = await authenticated_client.post(f"/api/pages/{page['id']}/screenshot-jobs", json={})
+    assert job_response.status_code == 200
+    job_id = int(job_response.json()["id"])
+    worker_id = await _claim_job(job_id)
+    capture_started = asyncio.Event()
+    release_capture = asyncio.Event()
+
+    async def delayed_capture(  # noqa: ANN001, ARG001
+        self,
+        preview_url: str,
+        viewport: CaptureViewport,
+        *,
+        extra_http_headers=None,
+        **kwargs,
+    ) -> bytes:
+        """让远程截图结果晚于取消请求返回，模拟无法立即中止的 Renderer。"""
+
+        capture_started.set()
+        await asyncio.wait_for(release_capture.wait(), timeout=5)
+        return b"late-cancelled-screenshot"
+
+    monkeypatch.setattr(
+        "app.services.page_screenshot_service.BrowserCaptureService.capture_preview",
+        delayed_capture,
+    )
+    running = asyncio.create_task(
+        run_page_screenshot_job(job_id, worker_id=worker_id, session_factory=get_session_factory())
+    )
+    try:
+        await asyncio.wait_for(capture_started.wait(), timeout=5)
+        cancel_response = await authenticated_client.post(f"/api/page-screenshot-jobs/{job_id}/cancel")
+        assert cancel_response.status_code == 200
+        assert cancel_response.json()["cancel_requested_at"] is not None
+    finally:
+        release_capture.set()
+        await asyncio.wait_for(running, timeout=10)
+
+    status_response = await authenticated_client.get(f"/api/page-screenshot-jobs/{job_id}")
+    assert status_response.status_code == 200
+    assert status_response.json()["status"] == "cancelled"
+    assert status_response.json()["result_screenshot_id"] is None
+    page_response = await authenticated_client.get(f"/api/pages/{page['id']}")
+    assert page_response.status_code == 200
+    assert page_response.json()["screenshot_url"] is None
+
+
+async def test_cancelled_older_job_late_result_should_not_overwrite_newer_job(
+    authenticated_client: AsyncClient,
+    monkeypatch,
+) -> None:
+    """旧任务取消后迟到返回，不得覆盖较新任务已经发布的默认截图。"""
+
+    page = await _create_screenshot_page(authenticated_client, "跨任务迟到截图")
+    _install_capture_stubs(monkeypatch)
+    first_capture_started = asyncio.Event()
+    release_first_capture = asyncio.Event()
+    capture_calls = 0
+
+    async def capture_by_order(  # noqa: ANN001, ARG001
+        self,
+        preview_url: str,
+        viewport: CaptureViewport,
+        *,
+        extra_http_headers=None,
+        **kwargs,
+    ) -> bytes:
+        """第一个任务阻塞到取消后返回，第二个任务立即成功。"""
+
+        nonlocal capture_calls
+        capture_calls += 1
+        if capture_calls == 1:
+            first_capture_started.set()
+            await asyncio.wait_for(release_first_capture.wait(), timeout=5)
+            return b"older-late-screenshot"
+        return b"newer-screenshot"
+
+    monkeypatch.setattr(
+        "app.services.page_screenshot_service.BrowserCaptureService.capture_preview",
+        capture_by_order,
+    )
+    first_response = await authenticated_client.post(f"/api/pages/{page['id']}/screenshot-jobs", json={})
+    assert first_response.status_code == 200
+    first_job_id = int(first_response.json()["id"])
+    first_worker_id = await _claim_job(first_job_id)
+    first_run = asyncio.create_task(
+        run_page_screenshot_job(
+            first_job_id,
+            worker_id=first_worker_id,
+            session_factory=get_session_factory(),
+        )
+    )
+    try:
+        await asyncio.wait_for(first_capture_started.wait(), timeout=5)
+        # 视口不同才能绕过同指纹活跃任务复用，形成两个真实并发任务。
+        second_response = await authenticated_client.post(
+            f"/api/pages/{page['id']}/screenshot-jobs",
+            json={"viewport_width": 1280, "viewport_height": 720},
+        )
+        assert second_response.status_code == 200
+        second_job_id = int(second_response.json()["id"])
+        assert second_job_id != first_job_id
+        second_worker_id = await _claim_job(second_job_id)
+        await asyncio.wait_for(
+            run_page_screenshot_job(
+                second_job_id,
+                worker_id=second_worker_id,
+                session_factory=get_session_factory(),
+            ),
+            timeout=10,
+        )
+        published = await authenticated_client.get(f"/api/pages/{page['id']}")
+        assert published.status_code == 200
+        newer_screenshot_url = published.json()["screenshot_url"]
+        assert newer_screenshot_url is not None
+        cancel_response = await authenticated_client.post(f"/api/page-screenshot-jobs/{first_job_id}/cancel")
+        assert cancel_response.status_code == 200
+        assert cancel_response.json()["cancel_requested_at"] is not None
+    finally:
+        release_first_capture.set()
+        await asyncio.wait_for(first_run, timeout=10)
+
+    first_status = await authenticated_client.get(f"/api/page-screenshot-jobs/{first_job_id}")
+    assert first_status.status_code == 200
+    assert first_status.json()["status"] == "cancelled"
+    assert first_status.json()["result_screenshot_id"] is None
+    final_page = await authenticated_client.get(f"/api/pages/{page['id']}")
+    assert final_page.status_code == 200
+    assert final_page.json()["screenshot_url"] == newer_screenshot_url
+    assert capture_calls == 2

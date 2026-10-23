@@ -1,4 +1,4 @@
-"""文件功能：验证页内编排能力端点默认关闭且字段与运行时常量一致。"""
+"""文件功能：验证页内编排能力端点默认开放及独立截图能力状态。"""
 
 from httpx import AsyncClient
 
@@ -11,8 +11,8 @@ from app.schemas.timeline import (
 )
 
 
-async def test_system_timeline_capabilities_are_closed_before_g2(client: AsyncClient) -> None:
-    """G2 前能力关闭，不通过 track_types 或推进模式暗示可执行。"""
+async def test_system_timeline_capabilities_publish_enabled_playback(client: AsyncClient) -> None:
+    """时间轴与结束推进默认开放，指定时刻截图仍保持独立关闭。"""
 
     response = await client.get("/api/system/timeline-capabilities")
 
@@ -22,8 +22,7 @@ async def test_system_timeline_capabilities_are_closed_before_g2(client: AsyncCl
     assert data["enabled"] is TIMELINE_CAPABILITY_ENABLED
     assert data["capture_snapshot"] is TIMELINE_CAPTURE_SNAPSHOT_ENABLED
     assert data["advance_modes"] == list(TIMELINE_EXECUTABLE_ADVANCE_MODES)
-    if not TIMELINE_CAPABILITY_ENABLED:
-        assert data["track_types"] == []
-        assert "timeline_end" not in data["advance_modes"]
-    else:
-        assert data["track_types"] == list(TIMELINE_TRACK_TYPES)
+    assert data["enabled"] is True
+    assert data["track_types"] == list(TIMELINE_TRACK_TYPES)
+    assert data["advance_modes"] == ["timeline_end"]
+    assert data["capture_snapshot"] is False

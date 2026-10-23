@@ -1,6 +1,6 @@
 # 首期编排创作契约方向
 
-状态：G0 已选定 GSAP 与“受控原生视觉＋资源 builder”，详见[G0 决定](./g0-decision.md)。2026-10-21 评审修复已将该形状接入 `usePageTimeline.v1`；入口仍为 internal-only，G1/G2 尚未关闭。[此前 JSON 草案](./authoring-json-draft.md)不作为默认创作入口；内部旧 `definition` 仅为既有夹具兼容。
+状态：G0 已选定 GSAP 与“受控原生视觉＋资源 builder”，详见[G0 决定](./g0-decision.md)。2026-10-21 评审修复已将该形状接入 `usePageTimeline.v1`；2026-10-22 起公开入口默认开放，G1 已于 2026-10-23 关闭，G2 未关闭。[此前 JSON 草案](./authoring-json-draft.md)不作为默认创作入口；内部旧 `definition` 仅为既有夹具兼容。
 
 ## 一份 SFC，两类定义
 

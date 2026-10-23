@@ -56,19 +56,19 @@ describe('runtime kit manifest', () => {
     expect(exportNames).toContain('usePageTimeline.v1')
   })
 
-  it('内部时间轴入口保留真实路径但不在普通能力目录披露', () => {
-    const internal = manifest.exports.filter(item => (
+  it('时间轴入口默认向普通能力目录披露，但组件不单独预览', () => {
+    const motion = manifest.exports.filter(item => (
       item.name === 'AssetVideo.v2'
       || item.name === 'AssetAudio.v2'
       || item.name === 'AssetModel.v2'
       || item.name === 'usePageTimeline.v1'
     ))
 
-    expect(internal).toHaveLength(4)
-    internal.forEach(item => {
-      expect(item.capability.enabled).toBe(false)
+    expect(motion).toHaveLength(4)
+    motion.forEach(item => {
+      expect(item.capability.enabled).toBe(true)
       expect(item.capability.previewable).toBe(false)
-      expect(item.capability.recommendation_level).toBe('internal-only')
+      expect(item.capability.recommendation_level).toBe('advanced')
     })
   })
 

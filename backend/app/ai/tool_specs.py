@@ -549,10 +549,11 @@ def _operation_guide(
     requires_confirmation: bool = False,
     call_example: dict[str, Any] | None = None,
     response_example: Any | None = None,
+    handler_tool_key_override: str | None = None,
 ) -> AgentOperationGuideSpec:
     """用统一默认值声明一项模型操作手册。"""
 
-    handler_tool_key = {
+    handler_tool_key = handler_tool_key_override or {
         "query": "list_entities" if action in {"list", "tags"} else "get_entity",
         "create": "create_entity",
         "update": "update_entity",
@@ -694,6 +695,18 @@ def _query_parameters(
     return result
 
 
+def _direct_page_create_parameters() -> dict[str, Any]:
+    """从页面创建业务模型派生当前项目直写工具的精确参数 Schema。"""
+
+    schema = PageCreatePayload.model_json_schema()
+    properties = schema["properties"]
+    properties["page_content"] = properties.pop("content")
+    properties.pop("project_id")
+    schema["required"] = ["title", "page_content"]
+    schema["additionalProperties"] = False
+    return schema
+
+
 def _write_parameters(
     resource_type: str,
     operation: Literal["create", "update", "validate", "action"],
@@ -782,27 +795,27 @@ _COORDINATOR_OPERATION_GUIDES = (
     _operation_guide("runtime_kit", "query", "查询可在页面或组件源码中引用的版本化 Runtime Kit 能力。", _query_parameters("runtime_kit", "list", RuntimeKitListFilters), action="list",
                      constraints=("该对象只读；公开 import path 必须带 .vN 版本。", "Runtime Tailwind 主题类属于 Runtime 的源码编译能力，不是可虚构的 Runtime Kit import；页面与组件应按 Runtime 主题契约使用静态类名。", "未在结果中返回的 Runtime Kit 入口视为未开放；不能因为文档或历史样例提到就按路径直接 import。"),
                      call_example={"resource_type": "runtime_kit", "collection": "items", "filters": {"keyword": "chart", "limit": 20}}),
-    _operation_guide("runtime_kit", "query", "读取单个 Runtime Kit 能力的参数和 import 用法。", _query_parameters("runtime_kit", "detail", RuntimeKitDetailFilters), action="detail",
+    _operation_guide("runtime_kit", "query", "按版本化名称读取单个 Runtime Kit 能力的参数和 import 用法。", RuntimeKitDetailFilters.model_json_schema(), action="detail",
                      constraints=("生成 import 时只能使用返回的带 .vN 版本的 import_path；主题类、CSS 变量和 Tailwind 工具类不通过 import 暴露。",
                                   "阅读时保留 import_path、usage、constraints、preview_schema.props；按字段投影而不是截断 JSON，缺字段或存在省略标记时补读完整详情。",
                                   "使用 AssetModel.v1 时只传真实 model3d 资源 name 与展示参数，不传 URL、本地路径、GLB 文本或 base64；cameraIndex 与显式 cameraPosition/cameraTarget 互斥，位置和目标必须成对且不重合。",
                                   "使用 AssetAudio.v1 时只传 active audio 资源的真实 name；content 用于用户手动播放；narration 只有在能力摘要明确声明旁白自动播放已开放后才能使用，且不得设置 loop、同一实际页面最多一个旁白目标、页面源码不得写 autoplay。",
                                   "usePageTimeline.v1 与 AssetVideo.v2、AssetAudio.v2、AssetModel.v2 只有在当前查询结果中返回时才可用；未返回时不得自行导入或宣称统一编排已开放，动作引用只使用真实资源摘要中的 index、signature 与 duration。"),
-                     call_example={"resource_type": "runtime_kit", "view": "detail", "lookup": {"name": "MetricCard.v1", "kind": "component"}}),
+                     call_example={"name": "MetricCard.v1", "kind": "component"}, handler_tool_key_override="get_runtime_kit_capability"),
     _operation_guide("font", "query", "查询工作空间已注册且可用的字体资源。", _query_parameters("font", "list", FontListFilters), action="list",
                      constraints=("字体只读；主题写工具不开放字体配置。",)),
 
     _operation_guide("project", "create", "创建当前工作空间中的项目。", _write_parameters("project", "create", ProjectCreatePayload, action="new"), action="new",
                      constraints=("workspace_id 和 active 状态由运行上下文注入。", "可选 slideshow 必须是完整对象；省略时使用平台默认（fade 400ms、manual 5000ms、不循环、不自动开始）。"), risk_level="write",
                      call_example={"resource_type": "project", "mode": "new", "payload": {"name": "季度汇报", "description": "2026 Q3"}}),
-    _operation_guide("page", "create", "在指定项目创建并校验 Vue 页面，可原子写入路由。", _write_parameters("page", "create", PageCreatePayload, action="new"), action="new",
+    _operation_guide("page", "create", "在当前焦点项目创建并校验 Vue 页面，可原子写入路由。", _direct_page_create_parameters(), action="new",
                       prerequisites=(
-                          "project_id 必须来自当前工作空间和本轮项目工作集。",
-                          "写入 content 前先读取项目 configuration 取得画布尺寸、基础字号、样式规范和建议组件；页型与布局数值基线遵循样式规范，根结构优先复用建议组件中已发布的页面组件。",
+                          "当前焦点必须是目标项目，且项目属于本轮项目工作集。",
+                          "写入 page_content 前先读取项目 configuration 取得画布尺寸、基础字号、样式规范和建议组件；页型与布局数值基线遵循样式规范，根结构优先复用建议组件中已发布的页面组件。",
                           "如果当前 theme_key 的 palette 与用户明确的视觉目标不匹配，先通过 theme.create.copy 或 theme.create.new 准备主题，再编写页面源码。",
                       ),
                       constraints=(
-                          "content 是完整 Vue SFC；根节点必须是已发布页面组件或 DefaultContainer，不得自行使用 transform: scale、zoom、100vh、100vw 或滚动长页。",
+                          "page_content 是完整 Vue SFC；根节点必须是已发布页面组件或 DefaultContainer，不得自行使用 transform: scale、zoom、100vh、100vw 或滚动长页。",
                           "提交前完成布局约束自查：画布方向、安全边距、主要区域、栅格比例、视觉层级、资源槽位、文字容量、固定高度和潜在溢出；数值标准遵循项目样式规范。",
                           "页面颜色、字体和品牌视觉优先使用 Runtime 主题语义类与 Runtime Kit；只使用 Runtime 契约中列出的语义键，不要引入未列出的 Token，不要硬编码品牌色、字体文件或 Logo 路径。",
                           "Tailwind 类必须是源码中的完整静态字符串；动态视觉选择使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。",
@@ -814,25 +827,15 @@ _COORDINATOR_OPERATION_GUIDES = (
                      ),
                      response_example={
                          "success": True,
-                         "resource_type": "page",
-                         "operation": "create",
-                         "target": {"id": 31, "resource_type": "page"},
-                         "data": {
-                             "success": True,
-                             "applied": True,
-                             "page_id": 31,
-                             "version_no": 1,
-                             "validation": _COMPACT_PAGE_VALIDATION_EXAMPLE,
-                         },
+                         "applied": True,
+                         "page_id": 31,
+                         "version_no": 1,
+                         "validation": _COMPACT_PAGE_VALIDATION_EXAMPLE,
                      },
                      risk_level="write",
                      call_example={
-                         "resource_type": "page",
-                         "mode": "new",
-                         "payload": {
-                             "project_id": 8,
-                             "title": "封面",
-                             "content": (
+                         "title": "封面",
+                         "page_content": (
                                  '<script setup lang="ts">'
                                  "import DefaultContainer from '@runtime-kit/public/components/page/layout/DefaultContainer.v1.vue'"
                                  "</script>"
@@ -841,10 +844,9 @@ _COORDINATOR_OPERATION_GUIDES = (
                                  '<h1 class="text-6xl font-bold text-primary">季度经营汇报</h1>'
                                  '<p class="text-2xl text-secondary">2026 Q3</p>'
                                  "</main></DefaultContainer></template>"
-                             ),
-                             "route_placement": "root",
-                         },
-                     }),
+                         ),
+                         "route_placement": "root",
+                     }, handler_tool_key_override="create_project_page"),
     _operation_guide("page", "create", "把页面复制到同工作空间的目标项目，也支持在源项目内创建副本。", _write_parameters("page", "create", PageCopyPayload, action="copy"), action="copy",
                      side_effects=("创建新页面；可同时原子写入目标项目路由。",), risk_level="write"),
     _operation_guide(
@@ -1142,10 +1144,14 @@ _COORDINATOR_TOOL_SPECS = (
           default_instructions="页面源码任务先查询 standard_type=page，组件源码任务先查询 standard_type=component；当前规范结果已经在消息历史中时不要重复查询。", configurable=False),
     _tool("list_entities", "罗列业务对象", "generic_business", "通用业务", "统一罗列、搜索项目、页面、组件、资源、主题、样式、Runtime Kit 和字体；支持项目范围与建议集合筛选。",
           default_instructions="只用于集合查询，不读取详情或源码；项目页面用 page + project_id，建议组件或资源使用 scope=suggested；需要视觉素材或音频时优先按 asset 查询 active 资源，再按返回的 render_type、content_editable 和 Runtime Kit 能力决定渲染方式；audio 只能通过稳定 name 与 AssetAudio.v1 引用。"),
-    _tool("get_entity", "读取业务对象", "generic_business", "通用业务", "统一读取详情、共享配置、源码、路由、历史版本和依赖。",
-          default_instructions="使用真实 target_id 和匹配的 view；Runtime Kit detail 使用 lookup.name，不使用 target_id。"),
+    _tool("get_entity", "读取业务对象", "generic_business", "通用业务", "按真实数字 ID 读取详情、共享配置、源码、路由、历史版本和依赖。",
+          default_instructions="使用真实 target_id 和匹配的 view；Runtime Kit 详情使用 get_runtime_kit_capability。"),
+    _tool("get_runtime_kit_capability", "读取 Runtime Kit 能力", "generic_business", "通用业务", "按版本化 name 读取单个 Runtime Kit 能力及其导入契约；没有数字 ID。",
+          default_instructions="先用 list_entities 查询 runtime_kit 列表，再传返回的 name；例如 name=usePageTimeline.v1。"),
+    _tool("create_project_page", "创建当前项目页面", "generic_business", "通用业务", "以必填 title 和 page_content 在当前焦点项目创建 Vue 页面，持久化任务自动校验并可写入路由。",
+          default_instructions="先读取页面规范、项目 configuration 与相关 Runtime Kit/资源契约；仅在目标项目为当前焦点时调用。page_content 必须是完整 Vue SFC。调用后等待页面 Mutation Job 终态。", risk_level="write", sequential=True),
     _tool("create_entity", "创建业务对象", "generic_business", "通用业务", "按 new、copy 或 upload 模式创建项目、页面、组件、资源、主题或样式。",
-          default_instructions="先确定 resource_type 和 mode；复制使用 payload.source_id，上传只接受可信 attachment_id。创建主题、样式、组件或图标前先用 list_entities 确认现有资产是否已满足需求；组件创建后应走 publish → 更新项目 suggested_components 的完整链路。", risk_level="write", sequential=True),
+          default_instructions="当前项目新建页面使用 create_project_page；复制使用 payload.source_id，上传只接受可信 attachment_id。创建主题、样式、组件或图标前先用 list_entities 确认现有资产是否已满足需求；组件创建后应走 publish → 更新项目 suggested_components 的完整链路。", risk_level="write", sequential=True),
     _tool("update_entity", "修改业务对象", "generic_business", "通用业务", "统一修改项目、页面、组件、资源、主题或样式，包括项目路由树与样式快照。",
           default_instructions="只提交用户要求修改的字段；项目和样式展示字段使用 configuration，应用样式使用 apply_style，页面和组件源码使用 content。", risk_level="write", sequential=True),
     _tool("archive_entity", "归档业务对象", "generic_business", "通用业务", "归档 1～100 个同类型对象；单项免确认，批量动态确认并整批原子执行。",
@@ -1166,7 +1172,7 @@ _COORDINATOR_GROUP_SPECS = (
         "generic_business",
         "通用业务",
         "固定通用工具，覆盖工作空间内项目、页面、组件、资源、主题和样式。",
-        ("get_operation_guide", "get_code_standards", "list_entities", "get_entity", "create_entity", "update_entity", "archive_entity", "validate_entity", "execute_action"),
+        ("get_operation_guide", "get_code_standards", "list_entities", "get_entity", "get_runtime_kit_capability", "create_project_page", "create_entity", "update_entity", "archive_entity", "validate_entity", "execute_action"),
         required_context_fields=("workspace_id",),
         token_scopes=(
             *PAGE_TOOL_READ_SCOPES,

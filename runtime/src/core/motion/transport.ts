@@ -7,6 +7,7 @@
  */
 import { deriveSampledState, type MotionSampleResult } from './sampling'
 import {
+  MOTION_ERROR_BUFFER_TIMEOUT,
   MOTION_ERROR_MEDIA_BLOCKED,
   MOTION_ERROR_SNAPSHOT_UNAVAILABLE,
   MotionError,
@@ -34,6 +35,8 @@ import {
 
 /** 连续 tick 的最小位置提交差；避免同一毫秒重复通知。 */
 const POSITION_EPSILON_MS = 0.5
+/** 播放中恢复缓冲的上限；避免网络永久挂起使时间轴无限停留。 */
+const BUFFER_RECOVERY_TIMEOUT_MS = 15_000
 
 export interface MotionTransportOptions {
   plan: CompiledMotionPlan
@@ -109,11 +112,16 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   let anchorWallMs = 0
   let anchorPositionMs = 0
   let primaryHandover = false
+  let bufferingStartedAtMs: number | null = null
+  let bufferingTrackId: string | null = null
+  const warnedOptionalBuffering = new Set<string>()
+  const disabledOptionalAdapters = new Set<MotionTrackAdapter>()
   let seekChain: Promise<void> = Promise.resolve()
   let applyChain: Promise<void> = Promise.resolve()
   let pendingApplyPosition: number | null = null
   let lastEmittedPosition = -1
   let lastEmittedPhase: MotionRunPhase | null = null
+  let lastEmittedIntent: MotionPlaybackIntent | null = null
   let entries: AdapterEntry[] = []
   const completedTrackIds = new Set<string>()
   const playingAdapters = new Set<MotionTrackAdapter>()
@@ -136,6 +144,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
 
   /** 当前锚定位置；主媒体优先使用真实进度，交接后使用单调时钟。 */
   function currentPosition(): number {
+    if (phase === 'buffering') return positionMs
     if (intent !== 'playing' || primaryHandover) {
       if (intent === 'playing' && primaryHandover) {
         return clampPosition(anchorPositionMs + (now() - anchorWallMs))
@@ -175,8 +184,10 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
 
   function notifyIfChanged(): void {
     const position = currentPosition()
-    if (phase === lastEmittedPhase && Math.abs(position - lastEmittedPosition) < POSITION_EPSILON_MS) return
+    if (phase === lastEmittedPhase && intent === lastEmittedIntent
+      && Math.abs(position - lastEmittedPosition) < POSITION_EPSILON_MS) return
     lastEmittedPhase = phase
+    lastEmittedIntent = intent
     lastEmittedPosition = position
     emit()
   }
@@ -229,6 +240,16 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     positionMs = position
   }
 
+  /** optional 轨道失败后只释放本轨道，避免重复调用失败适配器或阻断必需轨道。 */
+  function disableOptional(entry: AdapterEntry, stage: string, error: unknown): void {
+    if (disabledOptionalAdapters.has(entry.adapter)) return
+    disabledOptionalAdapters.add(entry.adapter)
+    playingAdapters.delete(entry.adapter)
+    try { entry.adapter.pause?.() } catch { /* 继续释放失败轨道。 */ }
+    try { entry.adapter.dispose() } catch { /* 其它轨道仍需继续。 */ }
+    console.warn(`[motion-transport] optional 轨道 ${entry.track.id} 在 ${stage} 失败，已跳过。`, error)
+  }
+
   /** 把位置应用到所有适配器；连续 tick 通过同一队列串行，避免乱序采样。 */
   function requestApply(position: number): Promise<void> {
     pendingApplyPosition = position
@@ -249,7 +270,14 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     const applyOptions: MotionAdapterApplyOptions = { positionMs: position, visualMode: mode, forceSeek }
     for (const entry of entries) {
       if (disposed || revisionAtRequest !== revision) return
-      await entry.adapter.applyAt(applyOptions)
+      if (disabledOptionalAdapters.has(entry.adapter)) continue
+      if (!entry.track.required && entry.adapter.getClock?.()?.buffering) continue
+      try {
+        await entry.adapter.applyAt(applyOptions)
+      } catch (error) {
+        if (entry.track.required) throw error
+        disableOptional(entry, '采样', error)
+      }
     }
     if (disposed || revisionAtRequest !== revision) return
     positionMs = position
@@ -264,6 +292,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     const playRevision = revision
     for (const entry of entries) {
       if (disposed || intent !== 'playing') return
+      if (disabledOptionalAdapters.has(entry.adapter)) continue
       // 只有当前区间内的媒体才能播放；采样方法始终只负责状态写入。
       if (positionMs < entry.track.startMs || positionMs >= entry.track.endMs) {
         entry.adapter.pause?.()
@@ -279,6 +308,10 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
         }
         playingAdapters.add(entry.adapter)
       } catch (error) {
+        if (!entry.track.required) {
+          disableOptional(entry, '播放', error)
+          continue
+        }
         if (isMotionError(error) && error.code === MOTION_ERROR_MEDIA_BLOCKED) {
           pauseAdapters()
           setPhase('blocked', error)
@@ -293,6 +326,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   function pauseAdapters(): void {
     playingAdapters.clear()
     for (const entry of entries) {
+      if (disabledOptionalAdapters.has(entry.adapter)) continue
       try {
         entry.adapter.pause?.()
       } catch {
@@ -337,7 +371,14 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
         track.type !== 'dom' && track.type !== 'model3d' && track.id === plan.primaryClockTrackId
       )) ?? null
       primaryAdapter = entries.find(entry => entry.track.id === plan.primaryClockTrackId)?.adapter ?? null
-      await Promise.all(entries.map(entry => entry.adapter.prepare()))
+      await Promise.all(entries.map(async entry => {
+        try {
+          await entry.adapter.prepare()
+        } catch (error) {
+          if (entry.track.required) throw error
+          disableOptional(entry, '准备', error)
+        }
+      }))
       if (disposed || signal.aborted) return
       await applyAtPosition(positionMs, revision)
       prepared = true
@@ -357,21 +398,54 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
   async function tick(): Promise<void> {
     if (disposed || intent !== 'playing') return
     if (phase === 'completed' || phase === 'error' || phase === 'disposed') return
+    // 一轮 tick 跨多个 await；期间可能发生定位、重播或换页，
+    // 旧轮次不得在回执返回后继续提交位置、完成集合或再次排程。
+    const tickRevision = revision
     try {
+      // 所有正在播放的 required 媒体都属于同步集合；optional 卡顿则跳过并在恢复后追帧。
+      let requiredBuffering: string | null = null
+      for (const entry of entries) {
+        if (disabledOptionalAdapters.has(entry.adapter)) continue
+        if (positionMs < entry.track.startMs || positionMs >= entry.track.endMs) continue
+        const clock = entry.adapter.getClock?.()
+        if (!clock?.buffering) {
+          warnedOptionalBuffering.delete(entry.track.id)
+          continue
+        }
+        if (entry.track.required) requiredBuffering ??= entry.track.id
+        else if (!warnedOptionalBuffering.has(entry.track.id)) {
+          warnedOptionalBuffering.add(entry.track.id)
+          console.warn(`[motion-transport] optional 媒体 ${entry.track.id} 缓冲中，按跳过策略继续播放。`)
+        }
+      }
+      if (requiredBuffering) {
+        if (phase !== 'buffering') {
+          resetAnchor(currentPosition())
+          bufferingStartedAtMs = now()
+          bufferingTrackId = requiredBuffering
+          pauseAdapters()
+          setPhase('buffering')
+        } else if (bufferingStartedAtMs !== null && now() - bufferingStartedAtMs >= BUFFER_RECOVERY_TIMEOUT_MS) {
+          fail(new MotionError(MOTION_ERROR_BUFFER_TIMEOUT, '等待同步媒体恢复超时。', {
+            trackId: bufferingTrackId ?? requiredBuffering,
+          }))
+          return
+        }
+        scheduleTick()
+        return
+      }
+      if (phase === 'buffering') {
+        bufferingStartedAtMs = null
+        bufferingTrackId = null
+        resetAnchor(positionMs)
+        setPhase('ready')
+      }
       if (primaryTrack && primaryAdapter && !primaryHandover) {
         const clock = primaryAdapter.getClock?.()
         if (clock?.blocked) {
           setPhase('blocked', new MotionError(MOTION_ERROR_MEDIA_BLOCKED, '浏览器阻止了媒体播放，请点击页面后重试。', {
             trackId: primaryTrack.id,
           }))
-          return
-        }
-        if (clock?.buffering) {
-          if (phase !== 'buffering') {
-            setPhase('buffering')
-            pauseNonPrimaryAdapters()
-          }
-          scheduleTick()
           return
         }
         if (clock?.ended || (clock && primaryTrack.startMs + (clock.positionMs - primaryTrack.inMs) / primaryTrack.rate >= primaryTrack.endMs)) {
@@ -386,10 +460,10 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
         positionMs = clampPosition(anchorPositionMs + (now() - anchorWallMs))
       }
 
-      if (phase === 'buffering') setPhase('ready')
-
       await requestApply(positionMs)
+      if (disposed || intent !== 'playing' || tickRevision !== revision) return
       await startAdapters()
+      if (disposed || intent !== 'playing' || tickRevision !== revision) return
       if (phase === 'blocked' || isErrorPhase()) return
       notifyIfChanged()
 
@@ -397,6 +471,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
       if (positionMs >= plan.durationMs - POSITION_EPSILON_MS) {
         cancelTick()
         await requestApply(plan.durationMs)
+        if (disposed || tickRevision !== revision) return
         completedTrackIds.clear()
         for (const entry of entries) {
           if (entry.track.required) completedTrackIds.add(entry.track.id)
@@ -409,18 +484,6 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
       scheduleTick()
     } catch (error) {
       fail(error)
-    }
-  }
-
-  function pauseNonPrimaryAdapters(): void {
-    for (const entry of entries) {
-      if (entry.adapter === primaryAdapter) continue
-      playingAdapters.delete(entry.adapter)
-      try {
-        entry.adapter.pause?.()
-      } catch {
-        // ignore
-      }
     }
   }
 
@@ -540,7 +603,9 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
 
   function setMuted(nextMuted: boolean): void {
     muted = nextMuted
-    for (const entry of entries) entry.adapter.setMuted?.(nextMuted)
+    for (const entry of entries) {
+      if (!disabledOptionalAdapters.has(entry.adapter)) entry.adapter.setMuted?.(nextMuted)
+    }
   }
 
   /** 只改变视觉映射，不改变时钟与播放意图；准备后立即按当前位置重新应用。 */
@@ -575,10 +640,19 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
       positionMs = clamped
       const proofs: MotionStateProof[] = []
       for (const entry of entries) {
+        if (disabledOptionalAdapters.has(entry.adapter)) continue
         if (!entry.adapter.freeze) continue
-        proofs.push(await entry.adapter.freeze(clamped))
+        try {
+          proofs.push(await entry.adapter.freeze(clamped))
+        } catch (error) {
+          if (entry.track.required) throw error
+          disableOptional(entry, '固化', error)
+        }
       }
-      return deriveSampledState(plan, clamped, sampleVisualMode, proofs)
+      const degradedTrackIds = entries
+        .filter(entry => !entry.track.required && disabledOptionalAdapters.has(entry.adapter))
+        .map(entry => entry.track.id)
+      return deriveSampledState(plan, clamped, sampleVisualMode, proofs, degradedTrackIds)
     } finally {
       if (!disposed) {
         intent = previousIntent === 'playing' ? 'paused' : previousIntent
@@ -596,6 +670,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
     abortController = null
     pauseAdapters()
     for (const entry of entries) {
+      if (disabledOptionalAdapters.has(entry.adapter)) continue
       try {
         entry.adapter.dispose()
       } catch {
@@ -603,6 +678,7 @@ export function createMotionTransport(options: MotionTransportOptions): MotionTr
       }
     }
     entries = []
+    disabledOptionalAdapters.clear()
     // 尚未 prepare 就卸载时，原生视觉也已经创建，仍需释放作用域。
     options.visualAdapter?.dispose()
     primaryAdapter = null

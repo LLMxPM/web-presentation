@@ -1,6 +1,6 @@
 """文件功能：定义页内编排能力自省与开放门禁的单一字段基线。
 
-能力默认关闭；只有 G2 验收通过后才允许通过构建期常量开放，不接受请求参数放宽。
+页内时间轴及按时间轴结束推进默认开放；指定状态截图仍由独立能力控制。
 """
 
 from __future__ import annotations
@@ -8,11 +8,10 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 TIMELINE_SCHEMA_VERSION = 1
-TIMELINE_CAPABILITY_ENABLED = False
+TIMELINE_CAPABILITY_ENABLED = True
 TIMELINE_CAPTURE_SNAPSHOT_ENABLED = False
 TIMELINE_TRACK_TYPES: tuple[str, ...] = ("dom", "audio", "video", "model3d")
-# 新推进模式 timeline_end 在 WP08 完成代码，但 G2 前不进入开放列表。
-TIMELINE_EXECUTABLE_ADVANCE_MODES: tuple[str, ...] = ()
+TIMELINE_EXECUTABLE_ADVANCE_MODES: tuple[str, ...] = ("timeline_end",)
 
 
 class ExternalTimelineCapabilities(BaseModel):

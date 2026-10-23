@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- 文件功能：G1 真实浏览器验收夹具入口，提供居中容器与三维实例布局。 -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Motion G1 验收夹具</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      .stage { display: flex; flex-direction: column; align-items: center; justify-content: center;
+        min-height: 360px; gap: 12px; padding: 24px; box-sizing: border-box; }
+      .title { font-size: 28px; margin: 0; }
+      .sub { margin: 0; color: #444; }
+      .steps { margin: 0; padding: 0; list-style: none; display: flex; gap: 8px; }
+      .steps li { padding: 4px 10px; background: #eef; border-radius: 6px; }
+      .tail { padding: 6px 12px; background: #fee; border-radius: 6px; }
+      .model-row { flex-direction: row; height: 360px; }
+      .stage.model-row .model-a, .stage.model-row .model-b { width: 220px; height: 220px; flex: none; display: block; }
+      .model-a { outline: 1px solid #ccc; }
+      .model-b { outline: 1px solid #9cf; }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

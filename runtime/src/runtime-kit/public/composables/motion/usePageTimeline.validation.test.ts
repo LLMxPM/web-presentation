@@ -115,7 +115,8 @@ it('主画布延迟加载后才初始化的错误旁白不能被占位画面的�
   resolveModule({ default: BadPage })
   await completion
   expect(window.__RENDER_READY__?.contentExceptions).toEqual([expect.objectContaining({
-    code: 'TIMELINE_SCHEMA_INVALID', fieldPath: 'timeline.tracks[0].asset',
+    // 未知字段按实际写错的键定位，而不是只报必填字段缺失。
+    code: 'TIMELINE_SCHEMA_INVALID', fieldPath: 'timeline.tracks[0].assetName',
   })])
   expect(window.__EDITOR_RUNTIME_PREVIEW_READY__).toBe(false)
 })

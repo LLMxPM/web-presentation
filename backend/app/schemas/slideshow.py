@@ -21,8 +21,8 @@ AdvanceMode = Literal["manual", "timer", "media_end", "timeline_end"]
 
 SLIDESHOW_TRANSITION_EFFECTS: tuple[TransitionEffect, ...] = ("none", "fade", "push")
 SLIDESHOW_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "media_end", "timeline_end")
-# 能力声明与写入门禁共用；timeline_end 只有在 G2 验收通过后才会进入开放列表。
-SLIDESHOW_EXECUTABLE_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "media_end")
+# 能力声明与写入门禁共用，确保 Editor 与外部客户端只写入可执行模式。
+SLIDESHOW_EXECUTABLE_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "media_end", "timeline_end")
 
 # 与契约一致的数值边界；none 效果必须为 0，由模型校验器强制。
 TRANSITION_DURATION_MIN_MS = 100
@@ -98,7 +98,7 @@ class SlideshowAdvance(BaseModel):
 
     @model_validator(mode="after")
     def validate_executable_mode(self) -> SlideshowAdvance:
-        """写入门禁：未通过 G2 验收的推进模式不能被保存。"""
+        """写入门禁：只允许能力目录声明的推进模式被保存。"""
 
         if self.mode not in SLIDESHOW_EXECUTABLE_ADVANCE_MODES:
             raise ValueError(f"推进模式 {self.mode} 尚未开放。")
@@ -209,7 +209,7 @@ def build_runtime_transition(transition: SlideshowTransition) -> dict[str, Any]:
 
 
 def build_runtime_advance(advance: SlideshowAdvance) -> dict[str, Any]:
-    """将推进设置转换为 Runtime camelCase 结构，三种模式保持完整字段。"""
+    """将推进设置转换为 Runtime camelCase 结构，四种模式保持完整字段。"""
 
     return {
         "mode": advance.mode,

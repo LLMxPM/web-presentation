@@ -1,10 +1,11 @@
 /**
  * 文件功能：覆盖 WP05 媒体时间映射与资源目标定位。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { compilePageTimeline } from './compile'
-import { mapMediaTimelinePosition, resolveMediaElement } from './media-adapter'
+import { createMediaMotionAdapter, mapMediaTimelinePosition, resolveMediaElement } from './media-adapter'
+import type { MotionAdapterContext } from './adapters'
 import type { CompiledMediaTrack } from './types'
 
 function mediaTrack(overrides: Partial<CompiledMediaTrack> = {}): CompiledMediaTrack {
@@ -80,5 +81,88 @@ describe('媒体轨道编译边界', () => {
     const track = plan.tracks[0] as CompiledMediaTrack
     expect(track.durationMs).toBe(800)
     expect(mapMediaTimelinePosition(track, 700).sourceTimeMs).toBeCloseTo(800)
+  })
+})
+
+describe('媒体重复回绕', () => {
+  it('循环到下一段时恢复播放，用户暂停后保持暂停', async () => {
+    const listeners = new Map<string, Set<() => void>>()
+    let currentTime = 0
+    const media = {
+      tagName: 'AUDIO',
+      isConnected: true,
+      readyState: 4,
+      duration: 0.7,
+      paused: true,
+      ended: false,
+      muted: false,
+      preload: 'auto',
+      volume: 1,
+      playbackRate: 1,
+      error: null,
+      playCalls: 0,
+      addEventListener(type: string, handler: () => void) {
+        if (!listeners.has(type)) listeners.set(type, new Set())
+        listeners.get(type)!.add(handler)
+      },
+      removeEventListener(type: string, handler: () => void) {
+        listeners.get(type)?.delete(handler)
+      },
+      emit(type: string) {
+        for (const handler of listeners.get(type) ?? []) handler()
+      },
+      async play() {
+        this.playCalls += 1
+        this.paused = false
+        this.ended = false
+      },
+      pause() {
+        this.paused = true
+      },
+      get currentTime() {
+        return currentTime
+      },
+      set currentTime(value: number) {
+        currentTime = value
+        this.emit('seeked')
+      },
+    }
+    const track = mediaTrack({
+      selector: '.a15-audio',
+      outMs: 700, inMs: 0, repeat: 500,
+      startMs: 0, endMs: 350_000, durationMs: 350_000,
+    })
+    const context = {
+      track,
+      root: { querySelector: () => media } as unknown as ParentNode,
+      ownership: { claim: () => ({ release: vi.fn() }) },
+      generation: 1,
+      visualMode: 'full',
+      muted: false,
+      allowMediaPlayback: true,
+    } as unknown as MotionAdapterContext
+    const adapter = createMediaMotionAdapter(context, { deadlineMs: 100 })
+    await adapter.prepare()
+    await adapter.play!()
+    expect(media.paused).toBe(false)
+
+    // 模拟首段自然结束：时间轴进入下一循环后必须重新播放。
+    media.paused = true
+    media.ended = true
+    currentTime = 0.7
+    await adapter.applyAt({ positionMs: 750, visualMode: 'full' })
+    expect(media.paused).toBe(false)
+    expect(media.playCalls).toBe(2)
+    expect(currentTime).toBeCloseTo(0.05)
+
+    // 用户暂停后，同一回绕逻辑不得擅自恢复。
+    adapter.pause!()
+    media.paused = true
+    media.ended = true
+    currentTime = 0.7
+    await adapter.applyAt({ positionMs: 1_450, visualMode: 'full' })
+    expect(media.paused).toBe(true)
+    expect(media.playCalls).toBe(2)
+    adapter.dispose()
   })
 })

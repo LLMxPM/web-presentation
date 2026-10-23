@@ -147,6 +147,9 @@ importers:
       jose:
         specifier: ^6.2.3
         version: 6.2.12
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1
       jspdf:
         specifier: ^4.2.1
         version: 4.2.1
@@ -223,9 +226,6 @@ importers:
       globals:
         specifier: ^17.6.0
         version: 17.12.0
-      jsdom:
-        specifier: ^29.1.1
-        version: 29.1.1
       prettier:
         specifier: ^3.8.3
         version: 3.9.8

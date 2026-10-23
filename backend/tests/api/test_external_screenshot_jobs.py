@@ -229,3 +229,46 @@ async def test_external_screenshot_job_status_and_content(
     )
     assert replay.status_code == 202
     assert replay.json()["job_id"] == job_id
+
+
+@pytest.mark.asyncio
+async def test_external_screenshot_job_identity_includes_motion_time(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """不同动作时间必须落在不同任务上；否则同一动作资源的不同时刻会共用同一帧。"""
+
+    from app.schemas import timeline as timeline_schema
+
+    monkeypatch.setattr(timeline_schema, "TIMELINE_CAPTURE_SNAPSHOT_ENABLED", True)
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        page_id, workspace_id, _user_id, token = await _seed_page(session, suffix="motion-identity")
+    base_headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Workspace-ID": str(workspace_id),
+    }
+
+    async def create(at_ms: int, idempotency_key: str) -> str:
+        # 使用不同的 Idempotency-Key，确保复用判断来自选择器身份而不是幂等重放。
+        response = await client.post(
+            f"/api/v1/pages/{page_id}/screenshot-jobs",
+            headers={**base_headers, "Idempotency-Key": idempotency_key},
+            json={"motion_snapshot": {"timeline_id": "intro", "at_ms": at_ms}},
+        )
+        assert response.status_code == 202, response.text
+        return response.json()["job_id"]
+
+    first = await create(1200, "motion-time-1200-a")
+    later = await create(1800, "motion-time-1800")
+    replay = await create(1200, "motion-time-1200-b")
+
+    assert first != later
+    assert replay == first
+
+    async with session_factory() as session:
+        jobs = (await session.scalars(select(PageScreenshotJob))).all()
+        assert len(jobs) == 2
+        hashes = {job.motion_snapshot_hash for job in jobs}
+        assert len(hashes) == 2
+        assert "" not in hashes

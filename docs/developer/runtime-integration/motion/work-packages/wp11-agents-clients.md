@@ -1,6 +1,8 @@
 # WP11 模型与外部客户端
 
-状态：待验收（共用规范、External API 异步截图、CLI/MCP 适配与文档已实施；真实三入口联合验收与能力开放待 WP12）。主责：Backend AI / CLI / MCP。前置：[WP07](./wp07-asset-capabilities.md)、[WP08](./wp08-host-slideshow-sync.md)、[WP09](./wp09-capture-export.md)、[WP10](./wp10-runtime-kit-editor.md)。
+状态：完成（2026-10-23 首期收口；CLI/External API 与指定状态截图证据见 [G1 映射](../g1-automation-coverage.md)；MCP 移出本轮，内置助手联合创作转 G2-01）。主责：Backend AI / CLI（MCP 移出）。前置：[WP07](./wp07-asset-capabilities.md)、[WP08](./wp08-host-slideshow-sync.md)、[WP09](./wp09-capture-export.md)、[WP10](./wp10-runtime-kit-editor.md)。
+
+> 2026-10-23 起 MCP 暂不提供服务，已移出本轮 G2；下文 MCP 相关记录只作历史实施与证据，不作为当前发布要求。
 
 ## 输入与落点
 
@@ -17,7 +19,7 @@
 
 ## 验证与通过条件
 
-同一受控测试工作空间分别由内置助手、CLI 与 MCP 查询/创建/修改/等待/取帧，核对最终对象版本、计划摘要、默认海报与临时截图。
+同一受控测试工作空间分别由内置助手与 CLI 查询/创建/修改/等待/取帧，核对最终对象版本、计划摘要、默认海报与临时截图（MCP 于 2026-10-23 移出本轮）。
 
 覆盖关闭能力、旧 Schema、未知片段、过期引用与恢复；更新 OpenAPI/参数 Schema 时运行生成漂移及工具规格防漂移检查。
 
@@ -39,8 +41,9 @@
   - CLI `uv run pytest packages/cli/tests -q` → 180 passed。
   - MCP `WP_MCP_BACKEND_OPENAPI=.tmp/merged-openapi.json uv run pytest tests/contracts/test_motion_screenshot_tools.py -q` → 4 passed；`wp-mcp-check-contract --openapi-file .tmp/merged-openapi.json` → 78 bindings / 73 HTTP 路由，document sha256 `2196aae6e0ff4d7ebb48468c21557781bb4ca5356a63c16cc225b5883c319761`。
   - MCP 完整套件 `uv run pytest -q` → 319 passed、9 failed；失败均为既有跨仓基线漂移（`page.get.source`/组件编辑基线、`project.list` 限制、Job 取消元数据、放映配置 DTO），不属于本包改动；本包 motion 用例与契约检查通过。
-- 未覆盖项与后续接手：
-  - 能力仍关闭（`TIMELINE_CAPABILITY_ENABLED=False`、`TIMELINE_CAPTURE_SNAPSHOT_ENABLED=False`），本包只验证关闭能力的准确失败语义，未完成真实 Backend → Renderer → Runtime 指定时刻截图。
-  - 同一受控工作空间分别由内置助手、CLI 与 MCP 查询/创建/修改/等待/取帧的联合验收未执行，归 WP12。
-  - 当前 dev 生成 OpenAPI 未携带 MCP 基线所需的 `x-wp-operation`；本次 MCP 验证使用固定 CI 基线元数据与当前生成物的临时合并件，跨仓生成物基线与固定主仓 commit 的收口仍属 WP12/发布流程。
-  - CLI/MCP 文档已覆盖新参数、能力失败与静态证据边界，但未发布新包或更新已安装 Skill；发布动作不在本包内。
+- 首期收口（2026-10-23）：
+  - 时间轴与 `timeline_end` 已于 2026-10-22 默认开放，指定状态截图仍关闭；关闭能力的准确失败语义与临时 opt-in 真实链路均已验证。
+  - CLI 已完成创建、编辑、Mutation Job 等待、回读、预览与默认截图；真实 Backend → Renderer → Runtime 指定状态截图由 A13/A15 临时 opt-in 用例覆盖，临时结果不提升默认指针。
+  - 内置助手与 CLI 在同一受控工作空间的联合创作尚未执行，转 [G2-01](../g2-followups.md)。
+  - MCP 自 2026-10-23 起暂不提供服务，已移出本轮验证与发布要求；其既有跨仓基线失败不作为 G2 阻塞。
+  - CLI/MCP 文档已覆盖新参数、能力失败与静态证据边界；CLI 发布包与已安装 Skill 的更新不在本包内，联合验收前需确认使用与源码一致的 CLI 版本。

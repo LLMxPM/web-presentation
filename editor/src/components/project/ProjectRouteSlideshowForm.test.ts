@@ -117,7 +117,7 @@ describe('ProjectRouteSlideshowForm', () => {
     })
 
     expect(screen.getByDisplayValue('180')).toBeInTheDocument()
-    expect(screen.getByText(/页面没有可用时间轴时按停留时长翻页/)).toBeInTheDocument()
+    expect(screen.getByText(/页面没有可用时间轴时显示错误/)).toBeInTheDocument()
 
     const timeoutInput = screen.getByDisplayValue('180')
     await fireEvent.update(timeoutInput, '240')

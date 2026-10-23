@@ -119,7 +119,7 @@ describe('ProjectSlideshowFields', () => {
       capabilities: timelineCapabilities,
     })
     expect(screen.getByLabelText('时间轴等待上限（秒）')).toHaveValue('120')
-    expect(screen.getByText(/页面没有可用时间轴时按停留时长翻页/)).toBeInTheDocument()
+    expect(screen.getByText(/页面没有可用时间轴时显示错误/)).toBeInTheDocument()
   })
 
   it('能力未开放时不出现媒体结束选项，已有草稿给出可操作提示', () => {

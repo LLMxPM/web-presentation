@@ -167,10 +167,10 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     @agent_tool(show_result=False)
     async def get_entity(
         run_context: AgentToolContext,
-        resource_type: Annotated[Literal["project", "page", "component", "asset", "theme", "style", "runtime_kit"], Field(description="要读取的单项对象类型。")],
+        resource_type: Annotated[Literal["project", "page", "component", "asset", "theme", "style"], Field(description="要读取的单项对象类型；Runtime Kit 详情使用 get_runtime_kit_capability。")],
         view: Annotated[Literal["detail", "content", "configuration", "route_tree", "versions", "version_content", "dependencies"], Field(description="单项读取视图，必须与 resource_type 匹配。")],
-        target_id: Annotated[int | None, Field(gt=0, description="项目、页面、组件、资源、主题或样式 ID；Runtime Kit detail 不使用。")] = None,
-        lookup: Annotated[dict[str, Any] | None, Field(description="非 ID 定位参数；目前仅 Runtime Kit detail 使用 name 和可选 kind。")] = None,
+        target_id: Annotated[int | None, Field(gt=0, description="项目、页面、组件、资源、主题或样式的真实 ID。")] = None,
+        lookup: Annotated[dict[str, Any] | None, Field(description="兼容旧调用；模型可见 Schema 不再披露此参数。")] = None,
         options: Annotated[dict[str, Any] | None, Field(description="视图选项；例如 version_content 的 version_no。")] = None,
     ) -> dict[str, Any]:
         """统一读取单个对象的详情、源码或结构化视图。"""
@@ -181,11 +181,9 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
             required_scopes=(),
             required_dependency_fields=("workspace_id",),
         )
-        query_options = dict(options or {})
-        if resource_type == "runtime_kit":
-            query_options.update(dict(lookup or {}))
-        elif lookup:
+        if lookup:
             raise AppException(status_code=400, code="AI_ENTITY_LOOKUP_UNSUPPORTED", detail="当前对象只支持使用 target_id 定位。")
+        query_options = dict(options or {})
         data = await _dispatch_entity_query(
             session_factory,
             internal_tools,
@@ -199,6 +197,33 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         )
         message = _build_detail_query_message(resource_type, target_id, data) if view == "detail" else "查询完成。"
         return build_query_envelope(resource_type=resource_type, action=view, data=data, message=message)
+
+    @agent_tool(show_result=False)
+    async def get_runtime_kit_capability(
+        run_context: AgentToolContext,
+        name: Annotated[str, Field(min_length=1, description="从 Runtime Kit 列表取得的版本化能力名称，例如 usePageTimeline.v1；此工具没有数字 ID。")],
+        kind: Annotated[Literal["component", "composable", "util", "type"] | None, Field(description="可选能力类型，用于消除同名歧义。")] = None,
+    ) -> dict[str, Any]:
+        """按版本化名称读取单个 Runtime Kit 能力及其导入契约。"""
+
+        dependencies, claims = await resolve_tool_context(
+            session_factory,
+            run_context,
+            required_scopes=(),
+            required_dependency_fields=("workspace_id",),
+        )
+        data = await _dispatch_entity_query(
+            session_factory,
+            internal_tools,
+            run_context,
+            dependencies=dependencies,
+            claims=claims,
+            resource_type="runtime_kit",
+            action="detail",
+            target_id=None,
+            filters={"name": name, **({"kind": kind} if kind is not None else {})},
+        )
+        return build_query_envelope(resource_type="runtime_kit", action="detail", data=data)
 
     @agent_tool(show_result=False, sequential=True)
     async def create_entity(
@@ -320,6 +345,8 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
         get_code_standards,
         list_entities,
         get_entity,
+        get_runtime_kit_capability,
+        internal_tools["create_project_page"],
         create_entity,
         update_entity,
         archive_entity,
@@ -330,6 +357,8 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     from app.ai.tool_specs import list_operation_guide_specs
 
     guides = list_operation_guide_specs()
+    get_runtime_kit_capability.parameters["additionalProperties"] = False
+    internal_tools["create_project_page"].parameters["additionalProperties"] = False
     for tool in tools:
         tool.parameters = project_generic_business_tool_schema(tool.name, tool.parameters, guides)
     return tools

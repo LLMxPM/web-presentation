@@ -172,23 +172,24 @@ def test_media_end_should_parse_and_map() -> None:
         )
 
 
-def test_timeline_end_should_be_representable_but_write_gated() -> None:
-    """timeline_end 结构可解析，但 G2 前写入门禁必须拒绝保存。"""
+def test_timeline_end_should_be_writable_with_bounded_timeout() -> None:
+    """开放后的 timeline_end 可保存，等待上限仍按公共范围校验。"""
 
-    with pytest.raises(ValidationError, match="尚未开放"):
-        normalize_slideshow_settings(
-            {
-                "transition": {"effect": "fade", "duration_ms": 400},
-                "advance": {
-                    "mode": "timeline_end",
-                    "delay_ms": 5000,
-                    "media_timeout_ms": 300000,
-                    "timeline_timeout_ms": 300000,
-                },
-                "loop": False,
-                "auto_start": False,
-            }
-        )
+    timeline_settings = normalize_slideshow_settings(
+        {
+            "transition": {"effect": "fade", "duration_ms": 400},
+            "advance": {
+                "mode": "timeline_end",
+                "delay_ms": 5000,
+                "media_timeout_ms": 300000,
+                "timeline_timeout_ms": 300000,
+            },
+            "loop": False,
+            "auto_start": False,
+        }
+    )
+    assert timeline_settings.advance.mode == "timeline_end"
+    assert build_runtime_advance(timeline_settings.advance)["mode"] == "timeline_end"
 
     settings = normalize_slideshow_settings(
         {

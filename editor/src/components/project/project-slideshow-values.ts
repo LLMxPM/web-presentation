@@ -61,7 +61,7 @@ export function isMediaEndAdvanceAvailable(capabilities?: SlideshowCapabilities 
   return capabilities?.advance_modes.includes('media_end') ?? false
 }
 
-/** 判断服务端是否已开放页内时间轴结束模式；G2 前能力列表不会包含该值。 */
+/** 判断服务端是否已开放页内时间轴结束模式；以实时能力声明为准。 */
 export function isTimelineEndAdvanceAvailable(capabilities?: SlideshowCapabilities | null): boolean {
   return capabilities?.advance_modes.includes('timeline_end') ?? false
 }

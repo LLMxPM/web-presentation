@@ -57,6 +57,9 @@ def test_runtime_kit_capability_directory_should_include_doc_only_items() -> Non
     assert len(by_name["usePageSize.v1"]["usage"]) >= 1
     assert len(by_name["usePageSize.v1"]["return_example"]) >= 1
     assert len(by_name["usePageSize.v1"]["constraints"]) >= 1
+    for name in ("usePageTimeline.v1", "AssetAudio.v2", "AssetVideo.v2", "AssetModel.v2"):
+        assert by_name[name]["previewable"] is False
+        assert by_name[name]["usage"]
     assert "ComponentPreviewSchema" not in by_name
     assert "useComponentPreviewMock" not in by_name
 

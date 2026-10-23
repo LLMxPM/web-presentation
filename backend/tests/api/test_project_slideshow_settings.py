@@ -106,6 +106,29 @@ async def test_project_create_should_accept_media_end_advance(authenticated_clie
     }
 
 
+async def test_project_create_should_accept_timeline_end_advance(authenticated_client: AsyncClient) -> None:
+    """时间轴结束模式通过项目 API 写入后保留独立等待上限。"""
+
+    workspace_id = await _create_workspace(authenticated_client, "时间轴放映空间")
+    project = await _create_project(
+        authenticated_client,
+        workspace_id,
+        "时间轴放映项目",
+        slideshow={
+            "transition": {"effect": "fade", "duration_ms": 400},
+            "advance": {"mode": "timeline_end", "delay_ms": 5000, "timeline_timeout_ms": 120000},
+            "loop": False,
+            "auto_start": True,
+        },
+    )
+    assert project["slideshow"]["advance"] == {
+        "mode": "timeline_end",
+        "delay_ms": 5000,
+        "media_timeout_ms": 300000,
+        "timeline_timeout_ms": 120000,
+    }
+
+
 async def test_project_patch_should_preserve_or_replace_slideshow(authenticated_client: AsyncClient) -> None:
     """PATCH 省略放映配置时保留原值，提供完整对象时整体替换。"""
 
