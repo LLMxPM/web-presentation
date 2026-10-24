@@ -84,6 +84,21 @@ uv run --project backend python scripts/testing/docker-architecture.py render-la
 
 重复场景创建带时间戳的新报告，失败报告不覆盖。恢复截图保存 PNG 与摘要，取消/超时保留未发布的状态证据。阶段结束恢复代理与被中断服务，全部演练结束后仍执行 `cleanup`。这些证据覆盖 M01/M04 的截图生命周期，构建 attempt 故障、页面/图片/组件 Batch 交接、恢复、容量和远端发布继续按现行计划独立验收。
 
+## 上一正式发布版的定向升级抽样
+
+本候选上一正式发布版为 `v0.3.1`，与下方固定 `4c7eee8` 的 M05 历史样本不是同一版本。先按[动画前版本联合验收记录](../runtime-integration/pre-motion-joint-acceptance.md)的四个 digest 拉取并标记平台/Lite、Runtime、Renderer 镜像；一个项目只选 platform 或 Lite 作为 Backend，另一变体使用另一个专属项目。每个项目按 `setup` → `seed` → `browser-same` → `pipeline` → `browser-build` 执行旧版基线，保存旧 ZIP 摘要后运行：
+
+```powershell
+uv run --project backend python scripts/testing/docker_architecture_release_upgrade.py --directory $drillDirectory --backend-image wp-platform:pre-motion-candidate --runtime-image wp-runtime:pre-motion-candidate --renderer-image wp-renderer:pre-motion-candidate
+uv run --project backend python scripts/testing/docker-architecture.py browser-same --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py pipeline --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py browser-build --directory $drillDirectory
+uv run --project backend python scripts/testing/docker_architecture_release_artifact.py --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py cleanup --directory $drillDirectory
+```
+
+升级脚本只操作带所有权标记的演练项目，先检查没有占用中的渲染 attempt，再停业务容器、用候选 platform 迁移原 PostgreSQL 卷并核对真实容器 image ID。迁移已完成但本机就绪探针超时时，在确认 revision 与容器后给同一命令加 `--resume`；不能重新播种或重跑迁移。两套项目须串行运行，避免 Docker Desktop 资源拥塞。此抽样的 Backend 使用演练的 `uvicorn` 入口，验证原镜像代码、同版预览/截图/构建及保留数据前滚；交付镜像默认 CMD、SQLite 前滚、迁移故障注入和生产回滚继续按各自门槛验收。
+
 ## M05 完整旧镜像、迁移与公共能力
 
 `legacy` 是旧源码配当前依赖的领域探针。完整 N-1 演练另从固定 Git 对象导出全部源码，以其原始 Dockerfile、两份锁文件和 CMD 构建 platform、Lite、Runtime、Renderer；不覆盖旧源码，不把继承的 uv 基镜像 OCI revision 当应用来源。

@@ -1,6 +1,6 @@
 # 动画前版本联合验收记录
 
-状态：本机联合联调、人工听感、Chromium 长稳和同版交付镜像组合已完成；N-1 旧镜像组合、真实 S3 和独立预览域仍待验收。候选分支 `feature/runtime-joint-acceptance-pre-motion` 从 `23d58aa` 创建；此提交是页内动画实现前的最后一个代码版本。本文只记录这条分支的验收范围与实际证据，不改变各专题的契约和阶段退出条件。
+状态：本机联合联调、人工听感、Chromium 长稳、同版交付镜像、上一正式发布版 `v0.3.1` 升级组合及三个高风险合并样本已完成，可以进入 `main` 合并评审；真实 S3 和独立预览域仍待发布验收。候选分支 `feature/runtime-joint-acceptance-pre-motion` 从 `23d58aa` 创建；此提交是页内动画实现前的最后一个代码版本。本文只记录这条分支的验收范围与实际证据，不改变各专题的契约和阶段退出条件。
 
 ## 1. 候选范围
 
@@ -27,7 +27,7 @@
 4. 替换 GLB 和音频后，分别核对当前预览、历史 artifact、截图新旧身份与构建快照。验证错工作空间、过期票据、匿名访问和 Range/条件请求均按权限与版本拒绝或返回。
 5. 通过 CLI 与主仓 External API 对模型文件、放映配置和音频配置做读改写回滚；旧客户端省略新增字段时不得清空。模板包导入导出保留资源与配置。
 6. 对三维执行首帧/峰值内存测量、真实 PDF/PPTX 双视角目检和至少 50 次切换的资源增长检查；对音频执行原验收计划 A01–A20 的浏览器与长稳项目。记录实际浏览器、时长、次数、产物 hash、失败与未运行项。
-7. 主分支合并前补真实 S3/独立预览域、同版部署和 N-1 镜像组合验证，并跑完整质量门禁。可跳过的只有本文明确排除的 MCP 接入与远端无人值守，不得以单元测试代替真实浏览器和部署证据。
+7. 主分支合并前完成本机同版部署、上一正式发布版升级组合、真实浏览器核心用户路径和完整质量门禁；对外发布前另补真实 S3 与独立预览域。MCP 接入与远端无人值守不在本候选验收范围。代码合并与发布分别按 §5 的停止条件判定，不以单元测试代替真实浏览器和部署证据。
 
 运行浏览器联调时必须使用本分支服务和独立 `_e2e` 数据；不能把当前开发目录运行中的 `dev` 服务当作本候选版本。环境准备与测试选择遵循仓库 `dev-start-test` 技能；任何 E2E 重置前先确认服务归属。
 
@@ -48,9 +48,11 @@
 | 3D + 旁白 + cue + 放映联合场景 | 已通过 | 显式开放音频后的联合 E2E 1/1；GLB 静态截图有真实模型像素，进入全屏后旁白实际播放，切页 cue 与旁白分别调用两个音频资源。共用 GLB 夹具调整后原截图用例复跑 2/2 |
 | 人工听感、模型与音频长稳 | 本机通过 | 用户实听确认旁白、短 cue 与退出全屏静音；模型页 50 次往返修复 WebGL 上下文线性增长；独立构建产物 Chromium 30 分 55 秒完成 1000 次 interaction cue、1000 次前进 cue、2000 次导航，结束后无播放中的音频 |
 | 同版交付镜像组合 | 本机通过 | 候选 Lite、Runtime、Renderer 镜像真实启动；两个预览副本正常分发，跨发布身份的模块/CSS/Vite 请求各返回 409；真实 PNG、ZIP、离线站点和双 Build/Renderer 并发作业通过 |
-| S3、N-1 镜像与生产预览域 | 待执行 | 按 §3 留存真实交付证据后再判定合并；本地回环预览不能替代真实 S3 和独立域 |
+| 上一正式发布版 `v0.3.1` → 候选 | 本机通过 | 整套旧平台/Lite/Runtime/Renderer 镜像按 digest 拉取；两套独立 PG 项目验证旧版预览、PNG、ZIP、浏览器加载，原库升级后候选复验及旧 ZIP 回读；混版行为见 §5 |
+| 合并前高风险样本 | 本机通过 | 带纹理与骨骼 GLB 在预览、远程 PNG、PPTX 真实出图；50 次切页后原生 canvas 2→2；MP3 手动播放、离页停播、静态 PPTX 禁播通过；三页真实全屏与演讲者键位 17 项通过，见 §6 |
+| S3 与生产预览域 | 待发布验收 | 本地回环预览不能替代真实 S3 和独立域；不把本机组合验证写成生产发布通过 |
 
-只有本分支门禁、联合场景和发布部署条件均有证据时，才建议合入 `main`。[发布检查表](../../deployment/release-checklist.md)中仍适用的基础设施事项需同步关闭或明确限制发布面。
+只有本分支门禁、联合场景和 §5 的合并停止条件都有证据时，才建议合入 `main`。对外发布还须关闭或明确限制[发布检查表](../../deployment/release-checklist.md)中的基础设施事项。
 
 ### 2026-10-24 本机补充证据
 
@@ -65,4 +67,33 @@
 - 演练过程中修复了三处测试探针问题：新预览副本需要在 Gateway 分流前等待就绪；本机 Playwright HTTP 客户端把 `preview.localhost` 解析到代理地址，409 正文复核改为保留原路径、查询和 Host 并连接本轮回环 Gateway；构建站点同时有主画布和缩略图，标题断言已限定到实际可见的主画布。这些修复未改变产品预览协议。
 - 最终执行 `node .agents/skills/dev-start-test/scripts/full-test.mjs` 连续通过：Backend 1754/22 跳过、Editor 898、Runtime 1226/3 跳过、根仓契约 127、渲染契约 26、Renderer 42、Python workspace 17、完整 E2E 18/1 跳过。仓库文档门禁另有 63/63。此前一轮 Editor 路由测试发生一次 5 秒超时，定向 17/17 与后两轮完整 Editor 均通过；另一轮根仓收集边界仍期望 1 个 `runtime-heavy` 用例，已同步为默认收集 2 个、联合场景按开关跳过。Renderer 单独补测曾在 Windows 槽位用例处卡住一次，终止本轮 pytest 后定向 24/24、整套 42/42 与最终连续门禁均通过。保留这些波动记录，不将失败轮次描述为通过。
 
-上述长稳只覆盖 Windows Chromium 与本轮小型自制 GLB/WAV。MP3/M4A/OGG 的实机播放、复杂纹理/骨骼 GLB 的容器峰值、真实 S3/独立预览域和 N-1 组合尚未由本轮证据关闭；不能把本地小样本外推为全部格式或发布拓扑通过。
+上述 2026-10-24 长稳只覆盖 Windows Chromium 与小型自制 GLB/WAV。§6 另补一个 MP3 与一个纹理骨骼 GLB；M4A/OGG、复杂模型的更大容器压力样本、真实 S3/独立预览域仍未关闭，不能把本地样本外推为全部格式或发布拓扑通过。
+
+## 5. 上一正式发布版与合并边界（2026-10-24）
+
+本候选的上一正式发布版是 `v0.3.1`（Git 提交 `a94ae5703c99237eb9b9c5799722c7f54310f4d2`，2026-10-15）；候选基线 `23d58aa` 为其后代。历史 M05 的 `4c7eee8` 是另一轮固定兼容样本，不代表本轮上一正式发布版。Docker Hub 公共标签元数据与阿里云 ACR manifest 对应四个相同 digest；本机 Docker Hub Registry HEAD 经代理返回 EOF，实际从 ACR 按 digest 拉取。四镜像 OCI revision 均为 `a94ae57`：
+
+| `v0.3.1` 镜像 | digest |
+| :--- | :--- |
+| platform | `sha256:5e9b439365ce263d48afacd4ca3163d7e49fa428d112e1ed4660b8c941f6b176` |
+| Lite | `sha256:07b7d16b0d03eb3985aad196b16ed138c8773576b7308e8cc33db3944c250bb9` |
+| Runtime | `sha256:93fb12ffece9fa8831c396cdbf177b4d4296474c4f5d72b7ac31fb9a7e64b53b` |
+| Renderer | `sha256:bb3d85ad0d2ac2b8274d62bc402bc98f2441f4d2cb69b72cdfb39109ab1467ef` |
+
+两个独立项目分别以旧 platform 或旧 Lite 作为 Backend，均使用整套旧 Runtime/Renderer、独立 PostgreSQL/Redis/卷和回环 Gateway；旧版同版浏览器 57 条响应、真实 1920×1080 PNG、ZIP 与浏览器加载均通过。停旧后由候选 platform `sha256:66ae1f35` 将原库从 `20261002_0100` 迁到 `20261019_0100`，再以候选 Runtime `sha256:e81fe987`、Renderer `sha256:929ba5b2` 启动。两套项目的候选浏览器 64 条响应、PNG、ZIP 与旧 ZIP 经新 Backend 下载并重新加载均通过；旧 ZIP 摘要保持不变。演练 Backend 使用 `uvicorn` 入口，未覆盖交付镜像的默认 CMD 或 SQLite 前滚。证据位于 `test-results/docker-architecture/wp-arch-drill-4c4d7f6d/` 与 `test-results/docker-architecture/wp-arch-drill-2735d2eb/`，项目容器和卷均已清理。
+
+混版探针只给出本轮具体组合的结论：候选 HTML 的版本化模块/CSS/Vite 请求落到旧 Runtime 副本时均以 409 `PREVIEW_VERSION_SKEW` 拒绝；候选 Backend + 整池旧 Runtime 的 `/runtime/__preview` 为 401，页面不渲染；候选 Backend/Runtime + 旧 Renderer 的真实 PNG/ZIP 成功。发布仍采用排空旧 Runtime 池、同版切换，不能把单个 Renderer 兼容样本外推到任意旧版。第二套项目并行时 Docker Desktop API 短暂 500、就绪探针超时，释放第一套项目资源后候选浏览器 64 条响应在约 10 秒内通过；失败轮次与续验报告均保留，不将首次超时记成通过。
+
+**代码合并停止条件（2026-10-25 本机已满足）**：保持正式音频能力 `audio_assets` 开放、旁白与 cue 默认关闭；联合用户路径、用户实听、真实截图/导出、长稳与完整质量门禁已有证据。三个高风险样本的补证见 §6，均未发现阻断问题；本分支可进入 `main` 合并评审，合并仍以审阅、CI 和无新回归为准。
+
+**发布停止条件**：真实 S3、独立预览主机名的 Cookie/CORS/票据与受保护素材链路、正式部署版本与回滚窗口必须实测。M4A/OGG、复杂 GLB 的更大压力样本、Firefox/WebKit 按实际支持范围继续补证；未经实测不得宣称全格式或跨浏览器支持。MCP 和远端无人值守依旧不纳入本候选发布面。
+
+## 6. 合并前高风险样本补证（2026-10-25）
+
+沿用当前候选的隔离 `_e2e` 四服务，在独立三页项目中上传 [Khronos Cesium Man GLB](https://github.com/KhronosGroup/glTF-Sample-Assets/blob/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb)（438044 字节，SHA-256 `b7001eaeea8254bd44773bcd247e78696d94169388fbb2a1800fc69434e777d9`，含 1 个纹理、1 个 skin、1 个动画）与 [MDN 示例 MP3](https://developer.mozilla.org/shared-assets/audio/t-rex-roar.mp3)（39868 字节，SHA-256 `41191d0727073bf848bcc8f0bd851d71a0b0058e901abb1c1b236ad327bda52e`）。样本只存于忽略目录与 `_e2e` 数据，不进入仓库或发布包。
+
+- 模型：真实预览、独立 Renderer PNG 和可编辑 PPTX 内的模型图像均经像素目检，无空白；PNG 1920×1080，PPTX 为 1 页且含模型 PNG。主画布与音频页往返 50 次后模型仍可见，Chromium GC 后原生 canvas 2→2、节点数在后五个采样点均为 459、监听器均为 105，未见 WebGL 上下文过量警告或脚本错误。报告与图片为 `test-results/pre-motion-acceptance/high-risk-model.json`、`high-risk-model-switch.json` 和相邻 PNG/PPTX。
+- MP3：主画布原生 audio 解码时长 2.074 秒，默认暂停；点击页面按钮后 `currentTime` 推进且未结束，离页动画结束后旧元素暂停并卸载、页面播放中元素为 0。静态 PPTX 导出前后浏览器 `play()` 调用数均为 1，产物 1 页且未嵌入音频文件。报告为 `test-results/pre-motion-acceptance/high-risk-mp3.json`；缩略图音频的 `preload=none`、媒体策略 `block` 是预期静态隔离，测试只以主画布 `allow` 音频判断手动播放。
+- 键位：在上述三页项目的真实 Chromium 全屏中，`→`、`←`、空格、Home/End、PageUp/PageDown、上下方向键与数字键均命中预期单页，首个 `→` 停在中间页而非跨两页。演讲者控制台左右键同步观众，观众窗口键盘只读，控制台空格不翻页，共 17 项。报告为 `test-results/pre-motion-acceptance/high-risk-keyboard.json`。
+
+这些补证只覆盖 Windows Chromium、本轮两个具体素材与隔离回环部署；更大模型、其它音频格式及真实发布拓扑仍按上方发布停止条件判定。最初 MP3 探针误选缩略图中的禁播 audio、最初离页断言早于 200ms 过渡完成，均已修正测试定位与等待条件后重跑通过；未修改产品代码。

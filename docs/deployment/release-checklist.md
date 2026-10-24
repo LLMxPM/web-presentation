@@ -13,13 +13,13 @@
 
 ---
 
-## 1. Renderer 首次发布与匿名拉取验证
+## 1. Renderer / Runtime 镜像拉取验证
 
-**状态**：脚本就绪，镜像尚未发布。
+**状态**：`v0.3.1` 已发布；ACR 匿名 manifest 与本机 digest 拉取通过，Docker Hub Registry 直连拉取待从非故障网络复核。
 
-`web-presentation-renderer` 与仓库自构建 `web-runtime-vue` 的推送 job 尚未执行过，两个 registry 中当前不可拉取。检查脚本 `scripts/contracts/check-compose-images.py` 与 npm script `test:contracts:compose-images` 已就绪。
+2026-10-24 查到两个 Registry 的 platform、Lite、Runtime、Renderer `v0.3.1` 相同 digest；本机从 ACR 按 digest 拉取四镜像，OCI revision 均为 `a94ae57`。Docker Hub 公共标签元数据可读，本机 Registry HEAD 经代理返回 EOF，不能记作直接拉取通过。确切 digest 与升级证据见[动画前版本联合验收记录](../developer/runtime-integration/pre-motion-joint-acceptance.md)。检查脚本 `scripts/contracts/check-compose-images.py` 与 npm script `test:contracts:compose-images` 已就绪。
 
-**下一步**：下一次 Release 时执行首次推送，通过 `docker manifest inspect` 验证 Docker Hub 与 ACR 匿名可拉取。
+**下一步**：从可直连 Docker Hub Registry 的 CI 或主机执行匿名 `docker manifest inspect` 与 `docker pull`，同时核对 ACR digest；将结果留在发布流水线。
 
 **原始记录**：归档计划 GAT2。
 
@@ -31,7 +31,7 @@
 
 `check-compose-images.py` 可独立运行检查 compose 模板引用的所有镜像是否可拉取，但尚未接入 GitHub Actions 定时触发。
 
-**下一步**：Renderer 首次发布后，将 `test:contracts:compose-images` 接入 GitHub Actions 定时运行（建议每周）。
+**下一步**：将 `test:contracts:compose-images` 接入 GitHub Actions 定时运行（建议每周）。
 
 **原始记录**：归档计划 GAT2。
 

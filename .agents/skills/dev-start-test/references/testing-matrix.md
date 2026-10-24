@@ -121,6 +121,7 @@ test:backend
 | lite 运行态演练 | `test:lite:runtime-state-drill` |
 | 真实截图链路 | `test:render-e2e` |
 | 本地多副本架构演练 | `scripts/testing/docker-architecture.py` |
+| 上一正式版镜像升级与旧产物回读 | `scripts/testing/docker_architecture_release_upgrade.py`、`scripts/testing/docker_architecture_release_artifact.py` |
 
 推荐用 `full-test.mjs` 执行全量：它先做依赖与 IPv4/IPv6 端口预检、可选停服/装浏览器，再调用 `pnpm run test:all`。
 
@@ -142,6 +143,8 @@ test:backend
 ### 本地多副本架构演练
 
 使用 `scripts/testing/docker-architecture.py`，必须创建专属数据库、Redis、卷和回环端口，不能复用开发数据。阶段操作按依赖串行执行，结束后仅清理本项目；命令与证据边界见 [本地 Docker 架构演练](../../../../docs/developer/testing/docker-architecture-drill.md)。
+
+上一正式版升级先在同一专属项目完成旧版 `seed`、`browser-same`、`pipeline` 和 `browser-build`，记录镜像 digest 与旧 ZIP 摘要，再用 `docker_architecture_release_upgrade.py` 排空业务容器、运行候选迁移并核对实际镜像；`docker_architecture_release_artifact.py` 经候选 Backend 重读原 ZIP 并在浏览器加载。若迁移已完成但本机就绪探针超时，只能在核对 revision 和实际容器后使用 `--resume` 续验，不能重跑升级或重置数据库。并行启动多套完整演练会占用较多 Docker Desktop 资源，按项目串行验收并分别 `cleanup`。
 
 ### E2E 环境
 
