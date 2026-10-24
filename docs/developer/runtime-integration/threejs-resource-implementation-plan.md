@@ -1,5 +1,7 @@
 # 三维资源复用与渲染实施计划
 
+> **历史实现记录（三维资源托管与静态展示全部保留复用）**：模型动作播放的目标方案见[放映动画能力收敛规划](./playback-redesign-proposal.md)，由[收敛工作包清单](./playback-redesign/work-packages/README.md)的 A1–C3 接管。旧时间轴模型适配器与指定时刻取帧已永久放弃；`ModelViewer.vue` 拆分、renderer 所有权决策与 A04 保留堆处置由 B3 决策、C3 给出修复或接受结论，WebGL 上下文丢失演练由 A2 承接。
+
 计划日期：2026-10-16；实施状态更新：2026-10-17（替换即全局更新修订落在 C04，CLI 外部能力已对接）。W01–W09 已实现并合入 `feature/threejs-model3d`，W10 主体验证完成；包级状态、T01–T12 证据与 G1 退出项见「实施状态与证据」。
 
 方向依据：[三维资源复用与 Three.js 渲染接入分析](./threejs-rendering-and-management-analysis.md)。本计划细化交付顺序、接口、数据增量、测试和发布门槛；后续实施状态与实际证据在本计划中维护。
