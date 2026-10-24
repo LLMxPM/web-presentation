@@ -45,7 +45,7 @@ uv run --project backend python scripts/testing/docker-architecture.py jobs --di
 | `owner-hostname` | 强杀并重建 A、改变 hostname；PID=1 重用，新旧 UUID 区分 |
 | `legacy` | 真实 PG 从 `20260926_0100` 前滚至 head；只读挂载 `4c7eee8` app 源码验证旧页面入队幂等、完整 Batch ORM 读写、过期恢复及 Run 取消；旧迁移器对未知 revision 拒绝 |
 | `browser-same` | 正常 iframe 导航，真实请求跨两个同版预览副本，页面、scoped CSS 与字体可用；响应身份一致，无失败请求或页面异常 |
-| `browser-cross` | HTML 绑定 A 身份，浏览器自然子请求强制走发布身份不同的 B；模块、Tailwind CSS、Vite 明确 409。Chromium 不保留拒绝响应正文时，用原浏览器 URL HTTP 复读核对错误码，单独记录来源，不注入版本头 |
+| `browser-cross` | HTML 绑定 A 身份，浏览器自然子请求强制走发布身份不同的 B；模块、Tailwind CSS、Vite 明确 409。Chromium 不保留拒绝响应正文时，HTTP 复读保留浏览器原路径、查询和 Host；本机客户端若把 `preview.localhost` 解析到代理地址，仅将连接映射到本轮 Gateway 回环端口。报告单独标记复读来源并核对错误码与发布身份，不注入版本头 |
 | `credentials` | Runtime/Renderer 实际镜像 CMD 在无网络下验证缺凭证、不存在文件、0400 空文件启动失败；镜像构建中可先执行 `credentials-runtime` |
 | `pipeline` | 调用官方完整部署探针，经 Gateway 下载实际 PNG 和 ZIP，校验尺寸、版本、摘要及 ZIP 入口；安全解压并记录最新站点目录 |
 | `browser-build` | 通过本地静态 HTTP 实际打开本轮 ZIP 入口，确认目标页面可见且无失败请求或页面异常 |

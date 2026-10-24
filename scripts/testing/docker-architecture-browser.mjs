@@ -32,13 +32,20 @@ page.on('response', response => {
       try { code = (await response.json()).code; codeSource = 'browser_response' } catch (error) {
         bodyError = error.message.replace(/\?.*$/s, '?[redacted]')
         // Chromium 对拒绝加载的 script/CSS 可只提供状态头、不保留正文。
-        // 用该浏览器实际发出的原 URL 再读错误详情，独立标记来源，不构造版本头。
-        const detail = await page.request.get(response.url())
+        // 保留浏览器实际路径、查询和 Host；仅把 HTTP 客户端无法解析的预览域映射到本轮回环 Gateway。
+        // 复建后的网关连接可能被重置；只重试传输错误，不构造版本头。
+        const original = new URL(response.url())
+        const mapped = original.hostname === 'preview.localhost'
+        const replayUrl = mapped ? new URL(original.pathname + original.search, context.origins.gateway).href : response.url()
+        const detail = await page.request.get(replayUrl, {
+          headers: mapped ? { Host: original.host } : undefined,
+          maxRetries: 3,
+        })
         if (detail.status() !== 409 || detail.headers()['x-runtime-version-fingerprint'] !== headers['x-runtime-version-fingerprint']) throw new Error('版本拒绝复查与浏览器响应不一致')
         const detailText = await detail.text()
         // 桥接宿主页等 HTML 响应也可能带 409：正文非 JSON 时只留脱敏摘要，不能让采集链崩溃。
         try { code = JSON.parse(detailText).code } catch { bodyError = detailText.slice(0, 200) }
-        codeSource = 'exact_browser_url_http_replay'
+        codeSource = mapped ? 'browser_url_loopback_http_replay' : 'exact_browser_url_http_replay'
       }
     }
     requests.push({ path: url.pathname, query_keys: [...url.searchParams.keys()], status: response.status(), version: headers['x-runtime-version-fingerprint'], upstream: headers['x-drill-upstream'], code, code_source: codeSource, body_error: bodyError })
@@ -99,7 +106,11 @@ try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
     url = `http://127.0.0.1:${server.address().port}/index.html`
     await page.goto(url)
-    await page.getByRole('heading', { name: 'Docker architecture probe' }).waitFor({ timeout: 30_000 })
+    // 构建站点同时含主画布和缩略图；要求主画布实际显示目标标题。
+    await page.waitForFunction(() => [...document.querySelectorAll('.probe')].some(element =>
+      element.getBoundingClientRect().width >= 1000
+      && element.querySelector('h1')?.textContent?.trim() === 'Docker architecture probe'),
+    null, { timeout: 30_000 })
   } else {
     const origin = context.origins.gateway
     const login = await page.request.post(origin + '/api/auth/login', { data: { username: 'admin', password: context.password } })
@@ -150,7 +161,13 @@ try {
     if (failedRequests.length) throw new Error('浏览器存在失败网络请求')
   }
   const collected = await Promise.allSettled(pending)
-  if (collected.some(item => item.status === 'rejected')) throw new Error('响应证据采集失败')
+  const collectionErrors = collected
+    .filter(item => item.status === 'rejected')
+    .map(item => String(item.reason?.message ?? item.reason).split('\n')[0].replace(/https?:\/\/\S+/g, '[redacted-url]'))
+  if (collectionErrors.length) {
+    report.collection_errors = collectionErrors
+    throw new Error('响应证据采集失败')
+  }
   const relevant = requests.filter(item => item.path.startsWith('/runtime/'))
   if (mode === 'same') {
     const upstreams = [...new Set(relevant.filter(item => item.status === 200).map(item => item.upstream).filter(Boolean))]

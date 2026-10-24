@@ -83,6 +83,7 @@ def browser(drill: DockerDrill, mode: str, other_runtime_image: str | None = Non
     try:
         if mode in ("same", "cross"):
             drill.compose("up", "-d", "--force-recreate", "preview_b")
+            wait_runtime(drill, "preview_b")
             # 复建会改变容器 IP，重启专属 Gateway 重新解析上游地址。
             write_gateway(drill.directory, mode)
             drill.compose("restart", "gateway")

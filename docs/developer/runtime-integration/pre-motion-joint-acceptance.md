@@ -1,6 +1,6 @@
 # 动画前版本联合验收记录
 
-状态：自动化联调已完成，人工、长稳与部署验收待执行。候选分支 `feature/runtime-joint-acceptance-pre-motion` 从 `23d58aa` 创建；此提交是页内动画实现前的最后一个代码版本。本文只记录这条分支的验收范围与实际证据，不改变各专题的契约和阶段退出条件。
+状态：本机联合联调、人工听感、Chromium 长稳和同版交付镜像组合已完成；N-1 旧镜像组合、真实 S3 和独立预览域仍待验收。候选分支 `feature/runtime-joint-acceptance-pre-motion` 从 `23d58aa` 创建；此提交是页内动画实现前的最后一个代码版本。本文只记录这条分支的验收范围与实际证据，不改变各专题的契约和阶段退出条件。
 
 ## 1. 候选范围
 
@@ -37,15 +37,32 @@
 | :--- | :--- | :--- |
 | 分支基线 | 已确认 | `23d58aa`；不包含 motion 代码 |
 | 音频开关定向测试 | 已通过 | Backend 单元/API/契约共 19 项 |
-| Backend 全量 | 已通过 | 首次 1753 通过、22 跳过、1 个 Windows 20ms 模型流入口阈值用例失败；调整测试调度余量后独立全量复跑 1754 通过、22 跳过、0 失败 |
+| Backend 全量 | 已通过 | 最终连续门禁 1754 通过、22 跳过、0 失败；早期 Windows 20ms 模型流入口阈值波动已按测试调度余量修正 |
 | Editor 门禁 | 已通过 | 898 项测试、类型检查与生产构建通过 |
-| Runtime 门禁 | 已通过 | 1224 项通过、3 项跳过；类型检查和生产构建通过。首次三端并行时 Mermaid 用例超时，单独复跑 7/7、Runtime 全套复跑通过 |
+| Runtime 门禁 | 已通过 | 最终 1226 项通过、3 项跳过；类型检查和生产构建通过。首次三端并行时 Mermaid 用例超时，单独复跑 7/7、Runtime 全套复跑通过 |
 | 根仓契约与文档 | 已通过 | `test:contracts` 127 项、`test:repository` 63 项、生成契约无漂移。修复旧文档指向未入库临时报告的失效链接 |
-| CLI Skill 与 Gateway 契约 | 已通过 | 工作树通过 `WEB_PRESENTATION_CLI_ROOT` 定位独立 CLI 仓，Skill 示例 4/4；真实 Nginx Gateway 契约通过。CLI 独立仓不含固定读取另一份主仓的跨仓测试时 203 项通过；CLI 可执行程序对候选服务的真实读改写仍待验收 |
+| CLI Skill 与 Gateway 契约 | 已通过 | 工作树通过 `WEB_PRESENTATION_CLI_ROOT` 定位独立 CLI 仓，Skill 示例 4/4；真实 Nginx Gateway 契约通过。CLI 独立仓不含固定读取另一份主仓的跨仓测试时 203 项通过；CLI 0.3.5 在隔离 `_e2e` 库实际上传、下载、替换 GLB/WAV，读改放映和音频配置、创建两页及路由；替换过期 hash 返回 `ASSET_VERSION_CONFLICT`。临时 PAT 已吊销 |
 | Renderer 与契约 | 已通过 | Renderer 42 项、渲染契约 26 项；Renderer 有 Windows 进程清理警告，测试退出码为 0 |
 | Python workspace | 已通过 | 全成员共装、包边界及部署探针 17/17 |
-| 真实浏览器基础回归 | 已通过 | 本分支独立 `_e2e` 服务，全套 18/18；含真实远程 PNG、三维模型像素、PPTX、构建与 AI 页面写入 |
+| 真实浏览器基础回归 | 已通过 | 本分支独立 `_e2e` 服务，最终 18 通过、1 个联合音频场景按开关跳过；含真实远程 PNG、三维模型像素、PPTX、构建与 AI 页面写入 |
 | 3D + 旁白 + cue + 放映联合场景 | 已通过 | 显式开放音频后的联合 E2E 1/1；GLB 静态截图有真实模型像素，进入全屏后旁白实际播放，切页 cue 与旁白分别调用两个音频资源。共用 GLB 夹具调整后原截图用例复跑 2/2 |
-| S3、N-1 镜像、生产预览域与人工/长稳矩阵 | 未执行 | 按 §3 留存证据后再判定合并；本次 E2E 不覆盖完整音频 A01–A20 或三维 G1 退出项 |
+| 人工听感、模型与音频长稳 | 本机通过 | 用户实听确认旁白、短 cue 与退出全屏静音；模型页 50 次往返修复 WebGL 上下文线性增长；独立构建产物 Chromium 30 分 55 秒完成 1000 次 interaction cue、1000 次前进 cue、2000 次导航，结束后无播放中的音频 |
+| 同版交付镜像组合 | 本机通过 | 候选 Lite、Runtime、Renderer 镜像真实启动；两个预览副本正常分发，跨发布身份的模块/CSS/Vite 请求各返回 409；真实 PNG、ZIP、离线站点和双 Build/Renderer 并发作业通过 |
+| S3、N-1 镜像与生产预览域 | 待执行 | 按 §3 留存真实交付证据后再判定合并；本地回环预览不能替代真实 S3 和独立域 |
 
 只有本分支门禁、联合场景和发布部署条件均有证据时，才建议合入 `main`。[发布检查表](../../deployment/release-checklist.md)中仍适用的基础设施事项需同步关闭或明确限制发布面。
+
+### 2026-10-24 本机补充证据
+
+- 本机隔离 `_e2e` 库、Redis DB 15 和候选分支服务中，真实 CLI 创建含双视角 GLB、内容音频、4 秒旁白、`interaction.confirm` 与 `transition.forward` 的两页项目。项目 3、页面 4/5 及资源 6/7/10 仅是本轮临时测试 ID；CLI 配置另放在忽略目录，未修改用户原有 profile。
+- Renderer 的双视角 PNG、浏览器导出的 PDF/PPTX 均看见两个不同视角；PowerPoint 实际打开并导出 PNG 后也看见两个模型。静态 PDF/PPTX 过程中记录到 0 次媒体 `play()`。独立 ZIP 构建任务 2 成功，SHA-256 为 `8d3b1300d7b353042f9a90d4a4081074d50aa45080e4d048bca5d2378663b03a`，包含 GLB 与两份 WAV，可脱离 Backend 和外网加载。
+- 相同 ZIP 的模型页与音频页往返 50 次，GC 后 DOM 节点始终 511、监听器始终 80、文档数始终 4；JS 堆约 8.21→8.57 MiB。原实现每轮留下两个已绘制 WebGL 上下文，已通过空闲渲染器池修复；同时显示的模型仍使用独立实例。浏览器对照实验确认简单 WebGL 与未绘制 Three.js 实例没有该增长，修复后重建 ZIP 复测通过。
+- 资源版本从绿色 GLB `1c33068256254ef6c67904d834b204b7091f1151370c5b51caeb16e274bfe095` 替换为红色 `4148b466fb7d05e0f08eaeebed523843672ddd6e46a10c52d59ff4e58385faef`：旧 artifact 仍显示绿色，新 artifact 显示红色；Renderer PNG 绿色像素 104801→0、红色像素 399→106421，截图内容 hash 改变。旧构建 ZIP 保留绿色快照。
+- 音频受保护读取在真实 HTTP 下返回 Range 206/200 字节、HEAD 200、ETag 304；匿名 401、错误 hash 404、错误工作空间 404、错用途票据 401。模板包导出 99554 字节，SHA-256 `1fdd50915eeb9c027e353e126f4585d4c610ad8bcd7277d7e4b61c99fac4086b`；导入新项目保留两页、3 个资源摘要、两条 cue 与放映配置。由此发现并修复导出预检把实际放映配置误显示为默认值的问题，新增单测。
+- 独立 ZIP 的 Chromium 音频长稳报告在 `test-results/pre-motion-acceptance/audio-soak.json`：30 分 55 秒、1000 次 interaction cue、1000 次前进 cue、2000 次前后导航，2000 次 cue `play()`、0 次拒绝、0 个外部请求、0 个脚本错误。导航阶段 GC 后堆约 8.93–10.09 MiB、节点 736–760；后续 11 次长稳采样堆约 10.06 MiB、节点 736、监听器 93、媒体元素 2，退出全屏 3 秒后播放中元素为 0。用户实听确认旁白、cue、退出静音三步符合预期。
+- 真实 Chromium 注入一次旁白 `NotAllowedError` 后出现受阻提示，点击重试恢复到“媒体播放中”；演讲者双窗口两次进入音频页，观众旁白播放计数 2、控制台 0，关闭观众后控制台仍为 0。关闭 `AUDIO_DEV_CAPABILITIES_ENABLED` 后，能力声明关闭，已存两条 cue 和旁白页可读，元数据更新不清空 cue，非空 cue 写入返回 422，清空成功，历史项目预览与构建任务 4 成功。
+- 专属 Docker 项目 `wp-arch-drill-a90b2f62` 使用候选 Lite `sha256:4d5e3e32`、Runtime `sha256:e81fe987`、Renderer `sha256:929ba5b2`；同版浏览器跨两个预览副本记录 64 条脱敏响应。发布身份冲突时，`main.ts`、Tailwind CSS 与 Vite 客户端各返回 409 `PREVIEW_VERSION_SKEW`。6 个凭证负例均拒绝启动；官方部署探针下载 1920×1080 PNG（SHA-256 `1739246ffbe5196059043504f2dba55fde8230f106128ac9b0f4589eedcbf633`）与 ZIP（SHA-256 `780c426a02b4d9466f5fb5f290ba9a9fd974e14e8200f53e227ebbea8ca2784d`），ZIP 经本地 HTTP 在 Chromium 实际打开。4 组独立作业由两个 Build Worker 和两个 Renderer 分担并下载产物。证据在 `test-results/docker-architecture/wp-arch-drill-a90b2f62/`。
+- 演练过程中修复了三处测试探针问题：新预览副本需要在 Gateway 分流前等待就绪；本机 Playwright HTTP 客户端把 `preview.localhost` 解析到代理地址，409 正文复核改为保留原路径、查询和 Host 并连接本轮回环 Gateway；构建站点同时有主画布和缩略图，标题断言已限定到实际可见的主画布。这些修复未改变产品预览协议。
+- 最终执行 `node .agents/skills/dev-start-test/scripts/full-test.mjs` 连续通过：Backend 1754/22 跳过、Editor 898、Runtime 1226/3 跳过、根仓契约 127、渲染契约 26、Renderer 42、Python workspace 17、完整 E2E 18/1 跳过。仓库文档门禁另有 63/63。此前一轮 Editor 路由测试发生一次 5 秒超时，定向 17/17 与后两轮完整 Editor 均通过；另一轮根仓收集边界仍期望 1 个 `runtime-heavy` 用例，已同步为默认收集 2 个、联合场景按开关跳过。Renderer 单独补测曾在 Windows 槽位用例处卡住一次，终止本轮 pytest 后定向 24/24、整套 42/42 与最终连续门禁均通过。保留这些波动记录，不将失败轮次描述为通过。
+
+上述长稳只覆盖 Windows Chromium 与本轮小型自制 GLB/WAV。MP3/M4A/OGG 的实机播放、复杂纹理/骨骼 GLB 的容器峰值、真实 S3/独立预览域和 N-1 组合尚未由本轮证据关闭；不能把本地小样本外推为全部格式或发布拓扑通过。

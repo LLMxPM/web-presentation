@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearDefaultModelStaticFrameCache, prepareModelStaticFrames } from '@/core/services/export/model-static-frames'
 import { findModelStaticFrameImage } from '@/core/shared/model-static-frame-contract'
 import ModelViewer from './ModelViewer.vue'
+import { drainModelRendererPool } from './model3d/renderer-pool'
 
 const probes = vi.hoisted(() => ({
   renderers: [] as Array<{ camera: Camera | null }>,
@@ -116,6 +117,7 @@ beforeEach(() => {
 
 afterEach(() => {
   mounted.splice(0).forEach(app => app.unmount())
+  drainModelRendererPool()
   clearDefaultModelStaticFrameCache()
   vi.unstubAllGlobals()
   document.body.innerHTML = ''

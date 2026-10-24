@@ -241,7 +241,7 @@ flowchart LR
 
 测试：`backend/tests/unit/test_asset_binding_service.py`、`backend/tests/unit/test_owner_resource_token_resolver.py`、`backend/tests/integration/test_model3d_resource_replacement.py`、`backend/tests/unit/test_page_screenshot_fingerprint_service.py`，并扩展检查/渲染指纹与迁移测试。
 
-验收：A→B 替换后当前与历史预览均为 B；已入队任务使用 A 完成并可下载；替换后旧截图/检查缓存重算；仍被在途任务或未过期产物持有的 A 不可删除；持有过期后可清理。
+验收：A→B 替换后新建的当前预览与历史页面版本预览均解析 B；替换前已发布的不可变 preview artifact 仍按其 manifest 读取 A，直至 artifact 到期。已入队任务使用 A 完成并可下载；替换后旧截图/检查缓存重算；仍被在途任务或未过期产物持有的 A 不可删除；持有过期后可清理。
 
 ### W04 Runtime 标准 Viewer 与多实例
 

@@ -26,6 +26,8 @@ async def test_project_template_export_validation_should_include_theme_summary()
     assert validation.themes[0].key == "brand-theme"
     assert validation.themes[0].name == "品牌主题"
     assert validation.themes[0].action == "export"
+    assert validation.project.slideshow.transition.effect == "push"
+    assert validation.project.slideshow.advance.mode == "media_end"
 
 
 def test_project_template_metadata_should_use_project_fields_and_current_user() -> None:
@@ -73,6 +75,12 @@ def _build_export_plan_with_theme() -> ProjectTemplateExportPlan:
         theme_key="brand-theme",
         theme_config_yaml="themes: {}\n",
         style_spec_markdown="",
+        slideshow_config_json={
+            "transition": {"effect": "push", "duration_ms": 300},
+            "advance": {"mode": "media_end", "delay_ms": 1200, "media_timeout_ms": 8000},
+            "loop": False,
+            "auto_start": True,
+        },
         build_extra_assets_json={"asset_names": []},
     )
     page = Page(
