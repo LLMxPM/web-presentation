@@ -97,3 +97,11 @@
 - 键位：在上述三页项目的真实 Chromium 全屏中，`→`、`←`、空格、Home/End、PageUp/PageDown、上下方向键与数字键均命中预期单页，首个 `→` 停在中间页而非跨两页。演讲者控制台左右键同步观众，观众窗口键盘只读，控制台空格不翻页，共 17 项。报告为 `test-results/pre-motion-acceptance/high-risk-keyboard.json`。
 
 这些补证只覆盖 Windows Chromium、本轮两个具体素材与隔离回环部署；更大模型、其它音频格式及真实发布拓扑仍按上方发布停止条件判定。最初 MP3 探针误选缩略图中的禁播 audio、最初离页断言早于 200ms 过渡完成，均已修正测试定位与等待条件后重跑通过；未修改产品代码。
+
+## 7. 发布环境的三项待验收门槛
+
+以下测试使用隔离测试库、私有测试桶和测试域名，固定候选平台 / Runtime / Renderer 镜像 digest；不复用生产数据。先完成前两项，再做升级与回滚演练。结果记录配置项名称、镜像 digest、DB revision、响应状态和耗时，日志不得保存完整票据或 S3 密钥。它们不替代[发布检查表](../../deployment/release-checklist.md)中的其它事项。
+
+1. **真实 S3 兼容服务**：以 `ASSET_STORAGE_DRIVER=s3` 连接目标提供商的私有测试桶，配置 `S3_ENDPOINT_URL`、凭证、bucket 和 region；本地内存替身或本机 MinIO 只算预演。上传图片、字体、GLB、MP3 和构建产物，分别在冷缓存、热缓存及两个 Backend 副本上验证同一字节与版本；走浏览器单页 / 整项目预览、Renderer PNG、PDF/PPTX 导出和构建 ZIP。对受保护文件实测 GET、HEAD、Range 206、ETag 304 / If-Range，以及匿名、错工作空间、过期票据、失效缓存的拒绝；桶匿名读取始终失败，旧字体桶若存在也须关闭公开 ACL。留存 S3 响应头、文件 hash、任务终态与回源量，判定标准见[文件鉴权验收矩阵](./file-storage-auth-cache-plan.md#11-验证矩阵与性能证据)。
+2. **独立预览域**：准备两个不同主机名及有效 DNS/TLS，例如业务域 `presentation.test.example` 与预览域 `preview.test.example`，可指向同一 Gateway；只换端口不算隔离。设置 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL`、`RUNTIME_SERVER_BASE_PATH` 和只含业务域的 `CORS_ORIGINS`。真实浏览器检查用户页面运行在预览域 iframe，业务登录 Cookie 为 host-only 且不随预览请求发送；预览域发起业务写请求被拒绝，`/runtime/` 模块、字体与 `/build-artifacts/` 受保护子资源正常加载。匿名 / 过期票据不能取私有资源，版本不符明确返回 409；截图与导出仍成功。配置与转发见[生产域名说明](../../deployment/production/README.md#公网-url-配置)。
+3. **回滚窗口**：升级前约定可撤回时段及 RPO/RTO，保留 `v0.3.1` 和候选的精确镜像、数据库与 S3 对象一致备份、密钥和配置，并记录旧 `alembic_version`。在同拓扑隔离环境按「排空任务和旧池 → 停旧 Backend → 备份 → 候选迁移 → 同版新池验证」演练，再故意执行一次回退。先验证旧应用能否在候选 schema 上工作；只有通过完整读写、登录、预览、PNG 与 ZIP 后才允许保留新库做应用回滚，否则须停写并恢复与旧镜像匹配的数据库和对象备份。记录实际中断时长、数据恢复点、旧产物 hash 和失败轮次；不得通过 `alembic stamp`、重开 `/media` 或公开桶使旧版表面可用。当前 `v0.3.1` → 候选只完成前滚，**没有**旧应用在新 schema 上的回滚证据，详见[升级与回滚](../../deployment/operations/upgrade-rollback.md)和[备份恢复](../../deployment/operations/backup-restore.md)。

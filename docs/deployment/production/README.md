@@ -174,7 +174,7 @@ llmxpm/web-presentation-renderer:latest
 
 Redis 只保存短生命周期预览 artifact、构建状态和锁；主数据仍由 PostgreSQL 或 SQLite 管理。
 
-`latest` 与 `sqlite-lite` 只适合跟随稳定 Release 自动升级。需要精确回滚时，已部署多容器拓扑的环境应把平台、Runtime、Renderer 的 image 一起固定到同一发布版本（Renderer 以**已实际发布**的标签为准；当前 renderer 镜像尚未发布）。已发布的轻量版只需固定 `sqlite-lite-<release_tag>`，无需对齐 Renderer 标签。
+`latest` 与 `sqlite-lite` 只适合跟随稳定 Release 自动升级。需要精确回滚时，已部署多容器拓扑的环境应把平台、Runtime、Renderer 的 image 一起固定到同一发布版本；`v0.3.1` 的四类镜像已实际发布，后续版本仍须逐版核对标签和 digest。已发布的轻量版只需固定 `sqlite-lite-<release_tag>`，无需对齐独立 Renderer 标签。
 
 SQLite 轻量单容器版由 `platform-lite` 容器入口脚本在启动时执行一次 `alembic upgrade head`，随后同时启动 Backend、Runtime、Renderer 与 Nginx。生产模板由 `backend-migrate` 容器在 `backend` 启动前执行迁移。
 
@@ -285,14 +285,14 @@ PostgreSQL 与 Redis 使用已有基础设施时，应使用对应基础设施�
 
 升级流程：
 
-1. 备份数据库和本地文件 volume；SQLite 轻量单容器版备份 `lite-data`。
-2. 在 `deploy/` 目录执行对应 compose 文件的 `docker compose pull` 拉取最新稳定镜像。
-3. 在 `deploy/` 目录执行对应 compose 文件的 `docker compose up -d`。
-4. SQLite 轻量版观察 `platform-lite` 日志；生产版观察 `backend-migrate`、`backend`、`runtime`、`renderer` 和 `gateway` 日志。
+1. 固定新旧镜像 digest，暂停新业务写入并排空页面、构建与截图任务；分服务拓扑停止旧 Backend，旧预览池暂停入口并排空，待新版就绪后再整池切换。Lite 接受停机升级。
+2. 备份数据库、资源/产物、密钥与配置；SQLite 轻量单容器版备份完整 `lite-data`，记录 `alembic_version`。
+3. 在 `deploy/` 目录使用固定版本配置执行对应 compose 文件的 `docker compose pull` 与 `docker compose up -d`；生产模板的 `backend-migrate` 只执行一次候选迁移，不在旧 Backend 仍接业务时迁移。
+4. 核对迁移 revision、Runtime 发布身份和各容器镜像，再验证登录、资源、预览、PNG、ZIP 后恢复入口；SQLite 轻量版观察 `platform-lite` 日志，生产版观察 `backend-migrate`、`backend`、`runtime`、`renderer` 和 `gateway` 日志。
 
-预览多副本部署时采用滚动发布，顺序固定为「新副本就绪 → 流量切换 → 旧副本排空 → 下线」：先启动新版预览副本并核对 `/__runtime_healthz` 的 `runtime_kit_version` / `build_id`，再把新副本加入 Gateway 预览池、把旧副本标记 `down` 或移出列表并 reload，等旧副本在途连接结束后停容器。详见 [Compose 部署说明](./compose.md)「预览多副本与滚动发布」。
+预览多副本跨版本部署采用**整池切换**：先在旧池外启动新版副本并核对 `/__runtime_readyz`、`/__runtime_healthz` 的 `runtime_kit_version` / `build_id`；暂停新入口，停止旧池接收请求并有界排空；然后将 Gateway 的预览池整体切到新版，恢复入口并下线旧容器。不得先把新副本加入仍在服务的旧池。详见[版本兼容矩阵](./compatibility-matrix.md#31-预览角色同版池切换与排空)。
 
-回滚时需要把对应 compose 文件中的 image 改为上一个可用版本标签，再执行对应 compose 文件的 `docker compose pull && docker compose up -d`。数据库迁移如已执行不可逆变更，需要按对应版本的迁移说明处理。
+回滚前先按[升级与回滚](../operations/upgrade-rollback.md)排空任务并停新应用。只有实测旧应用能在迁移后的 schema 上工作，才可保留新库、把平台 / Runtime / Renderer 镜像一同回退并关闭旧入口自动迁移；否则必须恢复与旧镜像匹配的数据库、资源和产物一致备份，记录数据恢复边界。不得仅切镜像就宣称回滚成功。
 
 如果回滚或重新部署后出现 `Can't locate revision identified by '<revision>'`，说明数据库中的 `alembic_version` 指向了当前镜像不包含的迁移脚本。这通常不是数据库连接问题，而是平台镜像版本早于数据库 schema 版本。应改回包含该 revision 的平台镜像，或重新拉取/发布正确镜像后再启动；不要直接执行 `alembic stamp` 覆盖版本号，除非已经人工确认数据库结构与目标 revision 完全一致。
 
