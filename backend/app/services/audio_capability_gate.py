@@ -16,9 +16,9 @@ _CUE_WRITE_CLOSED_DETAIL = (
 
 
 def open_audio_capabilities() -> frozenset[str]:
-    """读取当前开放集合；运行期读取模块常量，测试可替换后验证正反例。"""
+    """读取当前实例的开放集合，供写入门禁和检查指纹共用。"""
 
-    return audio_schema.AUDIO_OPEN_CAPABILITIES
+    return audio_schema.get_open_audio_capabilities()
 
 
 def is_audio_capability_open(capability: str) -> bool:

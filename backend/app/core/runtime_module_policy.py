@@ -164,6 +164,11 @@ def list_runtime_kit_capabilities(
             continue
 
         name = str(item.get("name") or "").strip()
+        if name == "useAudioCue.v1":
+            from app.schemas.audio import AUDIO_CAPABILITY_AUDIO_CUES, get_open_audio_capabilities
+
+            if AUDIO_CAPABILITY_AUDIO_CUES not in get_open_audio_capabilities():
+                continue
         item_base_name = str(item.get("base_name") or "").strip()
         item_version_no = _coerce_positive_int(item.get("version_no"))
         import_path = str(item.get("import_path") or "").strip()
