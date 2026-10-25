@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from app.core.config import get_settings
+from app.core import config as app_config
 from app.schemas import audio as audio_schema
 from app.services.audio_options_gate import collect_audio_capability_errors
 from app.services.code_check_fingerprint import audio_capability_identity
@@ -21,6 +24,24 @@ def _use_capabilities(monkeypatch: pytest.MonkeyPatch, capabilities: frozenset[s
     """替换当前开放能力集合，模拟不同阶段出口组合。"""
 
     monkeypatch.setattr(audio_schema, "AUDIO_OPEN_CAPABILITIES", capabilities)
+
+
+def test_dev_switch_only_expands_audio_capabilities_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """联合验收开关默认不改变发布集合，显式开启才纳入旁白和 cue。"""
+
+    monkeypatch.setattr(
+        app_config,
+        "get_settings",
+        lambda: SimpleNamespace(audio_dev_capabilities_enabled=False),
+    )
+    assert audio_schema.get_open_audio_capabilities() == frozenset({audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS})
+
+    monkeypatch.setattr(
+        app_config,
+        "get_settings",
+        lambda: SimpleNamespace(audio_dev_capabilities_enabled=True),
+    )
+    assert audio_schema.get_open_audio_capabilities() == ALL_CAPABILITIES
 
 
 def test_content_audio_is_not_blocked_by_closed_narration_or_cues(

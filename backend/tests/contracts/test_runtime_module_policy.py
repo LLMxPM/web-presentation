@@ -15,6 +15,7 @@ from app.core.runtime_module_policy import (
     load_runtime_kit_manifest,
     normalize_runtime_module_path,
 )
+from app.schemas import audio as audio_schema
 
 
 def test_runtime_kit_manifest_loader_should_expose_public_contract() -> None:
@@ -78,6 +79,24 @@ def test_audio_cue_capability_directory_follows_development_gate(monkeypatch: py
         assert "useAudioCue.v1" in {item["name"] for item in list_runtime_kit_capabilities()}
     finally:
         get_settings.cache_clear()
+
+
+def test_audio_cue_disclosure_follows_audio_capability_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未开放 cue 时能力目录不披露，联合验收开启后才允许内容助手发现。"""
+
+    monkeypatch.setattr(
+        audio_schema,
+        "get_open_audio_capabilities",
+        lambda: frozenset({audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS}),
+    )
+    assert "useAudioCue.v1" not in {item["name"] for item in list_runtime_kit_capabilities()}
+
+    monkeypatch.setattr(
+        audio_schema,
+        "get_open_audio_capabilities",
+        lambda: frozenset(audio_schema.AUDIO_MILESTONE_CAPABILITIES["m2"]),
+    )
+    assert "useAudioCue.v1" in {item["name"] for item in list_runtime_kit_capabilities()}
 
 
 def test_runtime_kit_capability_directory_should_filter_latest_versions(tmp_path: Path) -> None:

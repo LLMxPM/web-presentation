@@ -124,7 +124,7 @@ class ExternalSlideshowCapabilities(BaseModel):
 
 
 def build_audio_capabilities() -> ExternalAudioCapabilities:
-    """声明当前实例的音频能力，与写入门禁使用相同集合。"""
+    """按当前实例开放集合声明音频能力，与写入门禁保持一致。"""
 
     open_capabilities = audio_schema.get_open_audio_capabilities()
     return ExternalAudioCapabilities(

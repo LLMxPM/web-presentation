@@ -63,7 +63,7 @@ AUDIO_OPEN_CAPABILITIES: frozenset[str] = frozenset({AUDIO_CAPABILITY_AUDIO_ASSE
 
 
 def get_open_audio_capabilities() -> frozenset[str]:
-    """返回当前实例的音频能力；本地联调可显式开放未完成阶段的能力。"""
+    """返回实例开放的音频能力；联合验收开关仅在显式配置时扩展到 M2。"""
 
     from app.core.config import get_settings
 

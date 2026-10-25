@@ -4,6 +4,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { expect, test } from '../../fixtures/test-data'
+import { buildRedModelGlb } from '../../helpers/media-fixtures'
 import { countStrongRedPixels, decodePngPixels } from '../../helpers/png-pixels'
 
 test('页面截图应通过远程 Renderer 生成可下载 PNG', async ({ page, context, visualEditSandbox }, testInfo) => {
@@ -50,58 +51,6 @@ test('页面截图应通过远程 Renderer 生成可下载 PNG', async ({ page, 
   expect(new URL((await thumbnail.getAttribute('src'))!, page.url()).origin).toBe(new URL(page.url()).origin)
   await testInfo.attach('remote-render.png', { body: png, contentType: 'image/png' })
 })
-
-/** 按 4 字节对齐填充（GLB chunk 要求）。 */
-function padTo4(buffer: Buffer, padByte: number): Buffer {
-  const remainder = buffer.length % 4
-  return remainder === 0 ? buffer : Buffer.concat([buffer, Buffer.alloc(4 - remainder, padByte)])
-}
-
-/**
- * 构造红色无光照（KHR_materials_unlit）三角面的最小 GLB。
- * unlit 输出不受灯光与色彩管理影响，便于用固定红色阈值断言模型真实出现在截图里。
- */
-function buildRedModelGlb(): Buffer {
-  const positions = Buffer.alloc(9 * 4)
-  const values = [0, 0.85, 0, -0.85, -0.75, 0, 0.85, -0.75, 0]
-  values.forEach((value, index) => positions.writeFloatLE(value, index * 4))
-  const gltf = {
-    asset: { version: '2.0', generator: 'e2e-model-screenshot' },
-    extensionsUsed: ['KHR_materials_unlit'],
-    buffers: [{ byteLength: positions.length }],
-    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: positions.length }],
-    accessors: [{
-      bufferView: 0,
-      componentType: 5126,
-      count: 3,
-      type: 'VEC3',
-      min: [-0.85, -0.75, 0],
-      max: [0.85, 0.85, 0],
-    }],
-    materials: [{
-      name: 'e2e-red-unlit',
-      pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1], metallicFactor: 0, roughnessFactor: 1 },
-      extensions: { KHR_materials_unlit: {} },
-    }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }],
-    nodes: [{ mesh: 0 }],
-    scenes: [{ nodes: [0] }],
-    scene: 0,
-  }
-  const jsonBytes = padTo4(Buffer.from(JSON.stringify(gltf), 'utf8'), 0x20)
-  const binBytes = padTo4(positions, 0x00)
-  const jsonHeader = Buffer.alloc(8)
-  jsonHeader.writeUInt32LE(jsonBytes.length, 0)
-  jsonHeader.writeUInt32LE(0x4e4f534a, 4)
-  const binHeader = Buffer.alloc(8)
-  binHeader.writeUInt32LE(binBytes.length, 0)
-  binHeader.writeUInt32LE(0x004e4942, 4)
-  const header = Buffer.alloc(12)
-  header.write('glTF', 0, 'ascii')
-  header.writeUInt32LE(2, 4)
-  header.writeUInt32LE(12 + 8 + jsonBytes.length + 8 + binBytes.length, 8)
-  return Buffer.concat([header, jsonHeader, jsonBytes, binHeader, binBytes])
-}
 
 test('三维模型页面截图应包含真实模型像素', async ({ context, visualEditSandbox }, testInfo) => {
   test.setTimeout(180_000)

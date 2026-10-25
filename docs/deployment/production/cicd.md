@@ -5,18 +5,18 @@
 
 根仓由同一次 Buildx 多架构构建同时发布到 Docker Hub 和阿里云 ACR 个人版。两个仓库使用相同的镜像标签与内容摘要——这依赖 `.github/actions/publish-image` 用单次构建携带双仓标签，而不是分别构建；代价是发布镜像不生成 OCI provenance/SBOM 附件，因为 ACR 个人版不接受该类附件。Docker Hub 作为默认公共仓库，ACR 作为中国大陆网络环境下的拉取副本。镜像仓库为：
 
-- Docker Hub：`docker.io/llmxpm/web-presentation`、`docker.io/llmxpm/web-runtime-vue`、`docker.io/llmxpm/web-presentation-renderer`（**Renderer 尚未发布**，见下）
-- 阿里云 ACR：`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation-renderer`（**Renderer 尚未发布**）
+- Docker Hub：`docker.io/llmxpm/web-presentation`、`docker.io/llmxpm/web-runtime-vue`、`docker.io/llmxpm/web-presentation-renderer`
+- 阿里云 ACR：`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation-renderer`
 
-**关于 Renderer / 自构建 Runtime 镜像的现状（必须如实理解）**：`web-presentation-renderer` 与仓库自构建 `web-runtime-vue` 的推送 job **尚未执行过**，两个 registry 中当前**不可拉取**对应镜像；它们的首次推送预计发生在**下一次 Release**。在首次真实 Release 验证之前，不要按「已存在可拉取的 renderer 镜像」编写部署步骤或回滚组合。
+**已发布镜像的实际可拉取性**：2026-10-24 已在两个 Registry 查到 `v0.3.1` 的 platform、Lite、Runtime 和 Renderer 相同 digest；本机从 ACR 按 digest 拉取四镜像并核对 OCI revision 为 `a94ae57`。Docker Hub 公共标签元数据可读，但本机到其 Registry 的 HEAD 被代理中断，未在本机完成 Docker Hub 直接拉取。确切 digest、本机升级组合与限制见[动画前版本联合验收记录](../../developer/runtime-integration/pre-motion-joint-acceptance.md)。
 
 `runtime/` 已 vendored 进本仓，Runtime 独立镜像由本仓 Release 使用 `runtime/Dockerfile` 构建推送，不再依赖外部 `web-runtime-vue` 子模块 SHA 镜像。本仓镜像变体：
 
 - 常规平台镜像：由 `deploy/docker/Dockerfile.platform` 构建，包含 Backend 代码、Editor 静态资源、Nginx 配置和 Backend 运行所需的 Runtime Kit manifest。
 - SQLite 轻量单容器镜像：由 `deploy/docker/Dockerfile.lite` 构建，额外内置 Runtime Vite server 运行依赖，面向 SQLite + memory runtime 轻量部署。该变体直接打包当前仓库原生 `runtime/` 源码。**已发布的 `sqlite-lite`（旧架构）自带浏览器，截图在容器内完成**；当前 HEAD 开发中的 lite 渲染能力形态与是否再内置浏览器，以镜像专项计划为准，发布前不要假设 HEAD 与已发布镜像同构。
-- 独立 Runtime 运行时镜像：由 `runtime/Dockerfile` 构建（构建上下文为仓库根，以共享 pnpm workspace 锁文件），提供独立 Vite server 以承载生产编排中的预览、诊断与构建接口。**自构建 Runtime 镜像尚未随 Release 推送过**，待下一次 Release 首次发布。
+- 独立 Runtime 运行时镜像：由 `runtime/Dockerfile` 构建（构建上下文为仓库根，以共享 pnpm workspace 锁文件），提供独立 Vite server 以承载生产编排中的预览、诊断与构建接口。`v0.3.1` 已发布。
 
-- 独立 Renderer 镜像：由 `renderer/Dockerfile` 在根构建上下文中构建，包含 `wp_renderer` 与 Python Playwright Chromium。**尚未发布；待下一次 Release 首次推送。**
+- 独立 Renderer 镜像：由 `renderer/Dockerfile` 在根构建上下文中构建，包含 `wp_renderer` 与 Python Playwright Chromium。`v0.3.1` 已发布。
 
 ## GitHub Actions
 
@@ -48,7 +48,7 @@
   - `vars.ACR_USERNAME`：ACR 访问凭证中的登录名。
   - `secrets.ACR_PASSWORD`：ACR 访问凭证密码，不是阿里云控制台登录密码。
 
-稳定 Release 的目标推送清单如下。其中 **`web-presentation-renderer` 与 `web-runtime-vue`（自构建）两类镜像尚未发布；下列 renderer / runtime 行描述的是「待下一次 Release 首次推送」的计划，不是当前已可拉取的标签**：
+稳定 Release 的目标推送清单如下。`v0.3.1` 的四类镜像已按上文范围查验；后续版本仍须逐版核对标签和 digest：
 
 ```text
 docker.io/llmxpm/web-presentation-renderer:<release_tag>

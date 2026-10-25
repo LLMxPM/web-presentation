@@ -16,7 +16,7 @@ _CUE_WRITE_CLOSED_DETAIL = (
 
 
 def open_audio_capabilities() -> frozenset[str]:
-    """读取当前开放集合；开发覆盖与正式出口均使用同一事实源。"""
+    """读取当前实例的开放集合，供写入门禁和检查指纹共用。"""
 
     return audio_schema.get_open_audio_capabilities()
 

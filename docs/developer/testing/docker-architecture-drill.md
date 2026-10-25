@@ -45,7 +45,7 @@ uv run --project backend python scripts/testing/docker-architecture.py jobs --di
 | `owner-hostname` | 强杀并重建 A、改变 hostname；PID=1 重用，新旧 UUID 区分 |
 | `legacy` | 真实 PG 从 `20260926_0100` 前滚至 head；只读挂载 `4c7eee8` app 源码验证旧页面入队幂等、完整 Batch ORM 读写、过期恢复及 Run 取消；旧迁移器对未知 revision 拒绝 |
 | `browser-same` | 正常 iframe 导航，真实请求跨两个同版预览副本，页面、scoped CSS 与字体可用；响应身份一致，无失败请求或页面异常 |
-| `browser-cross` | HTML 绑定 A 身份，浏览器自然子请求强制走发布身份不同的 B；模块、Tailwind CSS、Vite 明确 409。Chromium 不保留拒绝响应正文时，用原浏览器 URL HTTP 复读核对错误码，单独记录来源，不注入版本头 |
+| `browser-cross` | HTML 绑定 A 身份，浏览器自然子请求强制走发布身份不同的 B；模块、Tailwind CSS、Vite 明确 409。Chromium 不保留拒绝响应正文时，HTTP 复读保留浏览器原路径、查询和 Host；本机客户端若把 `preview.localhost` 解析到代理地址，仅将连接映射到本轮 Gateway 回环端口。报告单独标记复读来源并核对错误码与发布身份，不注入版本头 |
 | `credentials` | Runtime/Renderer 实际镜像 CMD 在无网络下验证缺凭证、不存在文件、0400 空文件启动失败；镜像构建中可先执行 `credentials-runtime` |
 | `pipeline` | 调用官方完整部署探针，经 Gateway 下载实际 PNG 和 ZIP，校验尺寸、版本、摘要及 ZIP 入口；安全解压并记录最新站点目录 |
 | `browser-build` | 通过本地静态 HTTP 实际打开本轮 ZIP 入口，确认目标页面可见且无失败请求或页面异常 |
@@ -83,6 +83,21 @@ uv run --project backend python scripts/testing/docker-architecture.py render-la
 这些阶段逐一创建新页面/Job，以 20 秒请求期限、6 秒 attempt 租约、10 秒 Worker 产物 TTL 缩短故障观察，属于演练配置。所有阶段串行执行；PNG gate 最多等待 90 秒。每轮记录真实 DB 状态与全局占用，结合 Worker 控制 API、`/proc` 的进程名/可执行文件/PID/状态及临时文件数量，核对 Worker 空闲、无 Chromium/Playwright 驱动进程（含僵尸）、临时产物释放。Renderer 镜像通过 tini 回收被 PID 1 接管的浏览器孤儿；历史僵尸负例仍保留。这不关闭完整 M02 进程隔离门。
 
 重复场景创建带时间戳的新报告，失败报告不覆盖。恢复截图保存 PNG 与摘要，取消/超时保留未发布的状态证据。阶段结束恢复代理与被中断服务，全部演练结束后仍执行 `cleanup`。这些证据覆盖 M01/M04 的截图生命周期，构建 attempt 故障、页面/图片/组件 Batch 交接、恢复、容量和远端发布继续按现行计划独立验收。
+
+## 上一正式发布版的定向升级抽样
+
+本候选上一正式发布版为 `v0.3.1`，与下方固定 `4c7eee8` 的 M05 历史样本不是同一版本。先按[动画前版本联合验收记录](../runtime-integration/pre-motion-joint-acceptance.md)的四个 digest 拉取并标记平台/Lite、Runtime、Renderer 镜像；一个项目只选 platform 或 Lite 作为 Backend，另一变体使用另一个专属项目。每个项目按 `setup` → `seed` → `browser-same` → `pipeline` → `browser-build` 执行旧版基线，保存旧 ZIP 摘要后运行：
+
+```powershell
+uv run --project backend python scripts/testing/docker_architecture_release_upgrade.py --directory $drillDirectory --backend-image wp-platform:pre-motion-candidate --runtime-image wp-runtime:pre-motion-candidate --renderer-image wp-renderer:pre-motion-candidate
+uv run --project backend python scripts/testing/docker-architecture.py browser-same --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py pipeline --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py browser-build --directory $drillDirectory
+uv run --project backend python scripts/testing/docker_architecture_release_artifact.py --directory $drillDirectory
+uv run --project backend python scripts/testing/docker-architecture.py cleanup --directory $drillDirectory
+```
+
+升级脚本只操作带所有权标记的演练项目，先检查没有占用中的渲染 attempt，再停业务容器、用候选 platform 迁移原 PostgreSQL 卷并核对真实容器 image ID。迁移已完成但本机就绪探针超时时，在确认 revision 与容器后给同一命令加 `--resume`；不能重新播种或重跑迁移。两套项目须串行运行，避免 Docker Desktop 资源拥塞。此抽样的 Backend 使用演练的 `uvicorn` 入口，验证原镜像代码、同版预览/截图/构建及保留数据前滚；交付镜像默认 CMD、SQLite 前滚、迁移故障注入和生产回滚继续按各自门槛验收。
 
 ## M05 完整旧镜像、迁移与公共能力
 

@@ -62,6 +62,7 @@ import {
   type ParsedModelResource,
 } from './model3d/engine'
 import { buildModelCacheKey } from './model3d/model-cache'
+import { acquireModelRenderer, releaseModelRenderer } from './model3d/renderer-pool'
 import { buildModelCameraViewKey, resizeAutoFitCamera } from './model3d/camera-state'
 import {
   adaptOrthographicFrustum,
@@ -382,22 +383,22 @@ function teardownInstance(): void {
     controls = null
   }
   if (canvasElement) {
-    contextLostHandler && canvasElement.removeEventListener('webglcontextlost', contextLostHandler)
-    contextRestoredHandler && canvasElement.removeEventListener('webglcontextrestored', contextRestoredHandler)
-  }
-  if (renderer) {
-    try {
-      renderer.dispose()
-      renderer.forceContextLoss?.()
-    } catch {
-      // 上下文已丢失时忽略释放异常。
+    if (contextLostHandler) {
+      canvasElement.removeEventListener('webglcontextlost', contextLostHandler)
     }
-    renderer = null
+    if (contextRestoredHandler) {
+      canvasElement.removeEventListener('webglcontextrestored', contextRestoredHandler)
+    }
   }
   if (canvasElement?.parentElement) {
     canvasElement.parentElement.removeChild(canvasElement)
   }
   canvasElement = null
+  if (renderer && engine) {
+    releaseModelRenderer(renderer, engine)
+  }
+  renderer = null
+  engine = null
 
   // 共享资源只递减引用计数；仅当缓存引用归零时才真正释放。
   if (cachedKey) {
@@ -424,13 +425,11 @@ function teardownInstance(): void {
  * 选择要渲染的场景。
  * @param parsed 解析结果
  * @param sceneIndex 源文件场景索引；null 表示缺省
- * @param engineRef 已加载引擎
  * @returns 选中的源场景
  */
 function selectScene(
   parsed: ParsedModelResource,
   sceneIndex: number | null,
-  engineRef: Model3dEngine,
 ): ThreeNamespace.Group {
   if (sceneIndex !== null) {
     const scene = parsed.scenes[sceneIndex]
@@ -971,7 +970,7 @@ async function startLoad(token: number): Promise<void> {
   const { width, height } = readContainerSize()
   const aspect = resolveCameraAspect(width || 1, height || 1)
 
-  const sourceScene = selectScene(parsed, options.sceneIndex, localEngine)
+  const sourceScene = selectScene(parsed, options.sceneIndex)
   const renderScene = new localEngine.THREE.Scene()
   const instanceRoot = cloneSceneForInstance(sourceScene, localEngine)
   // 整体变换应用在包装节点上，不覆盖片段内部骨骼/节点动画。
@@ -988,14 +987,9 @@ async function startLoad(token: number): Promise<void> {
   applyLighting(renderScene, options.lighting, localEngine)
   activeCamera = resolveCamera({ sourceScene, renderScene, parsed, options, aspect, engineRef: localEngine })
 
-  // 创建独立渲染器与 canvas。
-  const canvas = document.createElement('canvas')
-  const createdRenderer = new localEngine.THREE.WebGLRenderer({
-    canvas,
-    alpha: true,
-    antialias: true,
-    preserveDrawingBuffer: false,
-  })
+  // 同时可见实例独占渲染器；页面往返时借用空闲上下文。
+  const createdRenderer = acquireModelRenderer(localEngine)
+  const canvas = createdRenderer.domElement as HTMLCanvasElement
   renderer = createdRenderer
   configureModel3dRenderer(createdRenderer, localEngine)
   applyBackground(createdRenderer, options.background, localEngine)

@@ -73,9 +73,9 @@ async def test_pydantic_runner_should_allow_tool_stream_to_exceed_model_idle_tim
         }
 
     async def slow_tool() -> str:
-        """模拟耗时超过模型流空闲阈值的成员委派类工具。"""
+        """模拟耗时超过模型流阈值的工具，同时留出 Windows 调度余量。"""
 
-        await asyncio.sleep(0.08)
+        await asyncio.sleep(0.4)
         return "工具结果"
 
     _, session_id, scope = await _create_workspace_session(
@@ -98,8 +98,8 @@ async def test_pydantic_runner_should_allow_tool_stream_to_exceed_model_idle_tim
         events = await _collect_runner_events(
             PydanticAgentRunner(
                 store,
-                stream_idle_timeout_seconds=0.02,
-                tool_stream_idle_timeout_seconds=0.2,
+                stream_idle_timeout_seconds=0.2,
+                tool_stream_idle_timeout_seconds=1.0,
             ).stream_run(
                 run_model=run_start.run_model,
                 agent_id="agent-coordinator",

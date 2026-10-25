@@ -1,6 +1,7 @@
 """文件功能：验证相邻 CLI Skill 的路由、音频及主题示例与 Backend 契约一致。"""
 
 import json
+import os
 from pathlib import Path
 import re
 
@@ -15,9 +16,11 @@ from app.services.project_route_service import ProjectRouteService
 
 @pytest.fixture
 def skill_paths() -> tuple[Path, Path]:
-    """定位主仓与相邻 Skill；缺少外部源码时明确跳过跨仓验证。"""
+    """定位主仓与 CLI Skill；工作树可显式指定独立仓位置。"""
     root = Path(__file__).resolve().parents[3]
-    references = root.parent / 'web-presentation-cli/skills/web-presentation/references'
+    configured_root = os.environ.get('WEB_PRESENTATION_CLI_ROOT')
+    cli_root = Path(configured_root).resolve() if configured_root else root.parent / 'web-presentation-cli'
+    references = cli_root / 'skills/web-presentation/references'
     if not references.is_dir():
         references = root.parent / 'web-presentation-agent-kit/skills/web-presentation/references'
     if not references.is_dir():

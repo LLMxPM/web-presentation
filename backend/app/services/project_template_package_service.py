@@ -1935,6 +1935,7 @@ class ProjectTemplatePackageService:
             menu_mode=project.menu_mode,
             theme_key=project.theme_key,
             style_spec_markdown=project.style_spec_markdown,
+            slideshow=load_slideshow_settings(project.slideshow_config_json),
         )
 
     @staticmethod
