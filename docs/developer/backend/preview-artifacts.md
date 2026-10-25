@@ -6,6 +6,12 @@ Backend 负责把平台数据转换为 Runtime 可执行的短期上下文和构
 
 preview artifact 是 Runtime 预览页面或组件时读取的短期上下文。它应包含当前对象渲染所需的源码、配置、资源引用和访问令牌，不应长期保存。
 
+Runtime 和构建 Worker 使用内部服务票据读取以下接口；`artifact_id` 可指向短期预览 artifact 或持久化 Release：
+
+- `GET /internal/runtime/preview-artifacts/{artifact_id}/manifest`：读取入口、模块白名单和资源映射清单。
+- `GET /internal/runtime/preview-artifacts/{artifact_id}/config-bundle`：读取 JSON 配置包。
+- `GET /internal/runtime/preview-artifacts/{artifact_id}/modules?path={logical_module_path}`：按逻辑路径读取模块源码文本；模块不存在时返回 404。
+
 临时预览 artifact 存放在**运行态存储适配器**中（`runtime:artifact:*`，默认 TTL 3600 秒，诊断链路结束主动删除），因此：
 
 - 常规 Redis 部署缺少缓存时可从持久化快照重建；SQLite Lite 使用进程内 `memory://`，**重启或 TTL 到期后临时预览失效**。
