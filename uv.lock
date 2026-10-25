@@ -2562,11 +2562,15 @@ source = { editable = "packages/render-contracts" }
 
 [package.optional-dependencies]
 dev = [
+    { name = "jsonschema" },
     { name = "pytest" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3" }]
+requires-dist = [
+    { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.26.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3" },
+]
 provides-extras = ["dev"]
 
 [[package]]
