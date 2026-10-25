@@ -60,8 +60,7 @@ async def _verify_browser(timeout_seconds: float) -> tuple[bool, str | None, str
     try:
         playwright = await asyncio.wait_for(async_playwright().start(), timeout=timeout_seconds)
         executable = playwright.chromium.executable_path
-        if not executable or not Path(executable).is_file():
-            return False, executable, "Chromium 可执行文件不存在，请运行 playwright install chromium。"
+        # --only-shell 镜像没有完整 Chromium 路径；实际启动才是可用性的判据。
         browser = await asyncio.wait_for(
             playwright.chromium.launch(headless=True),
             timeout=timeout_seconds,
@@ -69,7 +68,10 @@ async def _verify_browser(timeout_seconds: float) -> tuple[bool, str | None, str
         page = await asyncio.wait_for(browser.new_page(), timeout=timeout_seconds)
         await asyncio.wait_for(page.set_content("<html><body>renderer-self-check</body></html>"), timeout=timeout_seconds)
         await page.close()
-        return True, executable, ""
+        reported_executable = (
+            executable if executable and Path(executable).is_file() else None
+        )
+        return True, reported_executable, ""
     except Exception as exc:  # noqa: BLE001 - 启动失败必须返回非 200 原因
         return False, None, f"Chromium 启动验证失败：{exc}"
     finally:
