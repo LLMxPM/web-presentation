@@ -1,0 +1,36 @@
+# WP01：冻结配置 Schema 与共享样例
+
+状态：完成（2026-10-17）。阶段：M0。主责：Backend / 跨模块契约。
+上层工作项：B01（Schema）；详见[模块计划](../backend.md)。本包是该工作项的实施拆分，不是另一份配置契约。
+
+## 前置与输入
+
+前置完成：无；以已落地的统一契约为输入。
+字段与行为以[统一契约](../../../../developer/runtime-integration/slideshow/contract.md)为准；所有依赖编号见[执行清单](README.md)。
+
+## 修改范围与交付
+
+- 修改范围：新增独立放映 DTO 和解析器；共享正反例覆盖项目完整值、路由整组覆盖、null/省略、严格整数及 snake_case/camelCase。
+- 交付物：可供 Backend、Editor、Runtime 和客户端消费的字段基线及确定性样例。
+- 提交边界：只建立 Schema、解析和样例，不加数据库列、不开放 API 或自动播放能力。
+
+## 完成标准
+
+- [x] 实现及评审覆盖上述修改范围，未超出提交边界。
+- [x] 行为验收：默认值、继承和错误语义与统一契约一致；不通过 UI 或 Runtime fixture 推测平台默认值。
+- [x] 验证范围：Backend Schema 单测；共享数据转换契约。
+- [x] 关联验收：A02、A03；见[联调与验收计划](../acceptance.md)。
+- [x] 记录代码版本、实际测试命令/结果、未运行项及原因，产物保存到任务专属临时目录。
+- [x] 回填本卡状态与证据；阶段能力是否开放由对应阶段出口包决定，单包完成不等于整阶段交付。
+
+建议提交标题：`WP01：冻结配置 Schema 与共享样例`。通常按一个可评审 PR 实施；若实际改动仍过大，先按输入/输出再拆子包，保留父编号和依赖。
+
+## 实施记录
+
+- 交付代码：`backend/app/schemas/slideshow.py`（严格 DTO、默认值、组覆盖解析、生效值与 Runtime camelCase 映射）；共享样例 `tests/fixtures/slideshow-contract-cases.json`；单测 `backend/tests/unit/test_slideshow_schema.py`。
+- 严格性：`extra=forbid`；整数与布尔使用 strict 校验，字符串数字、浮点数与 0/1 布尔替代均拒绝；`none` 必须 0 时长，其它效果 100–2000ms；停留 1000–3600000ms。
+- 边界：本包不新增数据库列、不改接口、不开放自动放映能力；`media_end` 仍被 `advance.mode` 枚举拒绝。
+- 验证：`cd backend && ../.venv/Scripts/python.exe -m pytest tests/unit/test_slideshow_schema.py -q` → 33 passed；`ruff check` 通过。未运行全量 Backend 套件（本包仅新增独立 Schema，无存量调用方）。
+- 证据目录：本卡记录命令与结果，未额外落盘临时产物。
+
+测试环境与命令选择遵循 [dev-start-test](../../../../../.agents/skills/dev-start-test/SKILL.md)，不因执行本卡重复启动服务或重置开发数据。

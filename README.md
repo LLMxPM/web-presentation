@@ -21,6 +21,7 @@ English | [简体中文](./README.zh-CN.md)
 - **Automated Layout Diagnostic**: Performs DOM-based automated detection for common AI layout defects (e.g. overflow, awkward text wrapping, element overlap) to enable autonomous AI self-healing.
 - **Asset Abstraction & Reuse**: Accumulate media, components, themes, styles, and typography in workspace libraries, enabling PPT decks, visual cards, report pages, and display boards to share the same design foundation.
 - **Rapid Visual Feedback**: The Runtime loads pages, components, and configuration bundles using Vue 3 and Vite, powering Editor features including live iframe preview, remote screenshot capture, component preview, and production builds.
+- **Presentation Audio**: Use workspace audio assets for page narration and project cues during presentation playback; configure cue bindings and volume in the Editor.
 - **Constrained Visual Editing**: Inspect Vue container hierarchies alongside rendered outputs to modify static text, component props, and controlled Tailwind styles via intuitive form controls.
 - **Context Isolation & Injection**: The Backend injects only the essential context (project, page, component, asset specs) into the AI model, allowing it to focus on creative tasks without runtime overhead or implementation leaks.
 - **Workspace-Scoped Content Assistant**: Eliminates the need to switch chat sessions across projects; sessions are workspace-bound, and each Run snapshot locks its current focus and project working set with explicit permission checks per target.
@@ -89,7 +90,7 @@ docker logs web-presentation
 
 After the container starts, open `http://127.0.0.1:8080` and log in with username `admin` and the generated password from the container logs. The database, uploaded media, screenshots, build artifacts, and encryption keys are stored in the `web-presentation-lite-data` volume. Always retain and back up this volume during upgrades.
 
-局域网或自定义域名部署使用 [Compose 模板](./deploy/compose/compose.sqlite-lite.yml)，配置 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL` 和 `CORS_ORIGINS`。预览与私有构建会执行用户代码，`RUNTIME_PUBLIC_BASE_URL` 必须使用独立于工作台和 Backend 的主机名；本机示例为 `preview.localhost`，局域网需配置可解析到同一 Gateway 的预览域名，生产需配置对应 DNS / TLS。业务 Cookie 保持 host-only，业务 CORS 不包含预览域。参见 [生产部署说明](./docs/deployment/production/README.md) 和 [文件鉴权规划](./docs/developer/runtime-integration/file-storage-auth-cache-plan.md)。
+局域网或自定义域名部署使用 [Compose 模板](./deploy/compose/compose.sqlite-lite.yml)，配置 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL` 和 `CORS_ORIGINS`。预览与私有构建会执行用户代码，`RUNTIME_PUBLIC_BASE_URL` 必须使用独立于工作台和 Backend 的主机名；本机示例为 `preview.localhost`，局域网需配置可解析到同一 Gateway 的预览域名，生产需配置对应 DNS / TLS。业务 Cookie 保持 host-only，业务 CORS 不包含预览域。参见 [生产部署说明](./docs/deployment/production/README.md) 和 [文件鉴权规划](docs/developer/projects/file-storage-auth-cache-plan.md)。
 
 ## Documentation
 
@@ -98,8 +99,8 @@ After the container starts, open `http://127.0.0.1:8080` and log in with usernam
 | [User Guide](https://wp.llmxpm.com/docs/user/) | Getting started, AI co-creation, workspace asset management, and export |
 | [Deployment Guide](https://wp.llmxpm.com/docs/developer/deployment/) | Architecture options, environment setup, backup/recovery, upgrades, and troubleshooting |
 | [Developer Guide](https://wp.llmxpm.com/docs/developer/) | Local development, system architecture, API specifications, and testing |
-| [翻页动画与自动放映实施计划](./docs/developer/runtime-integration/slideshow/README.md) | Backend 配置契约、各模块实施计划和分阶段验收；M0–M2 已完成，M3 本地构建产物长稳已完成（未开放产品级远端无人值守） |
-| [CLI 字体与主题配置实施规划](./docs/developer/cli-font-theme/implementation-plan.md) | 字体注册/字体族、主题图片与字体配置、跨仓工作包及验收；待实施 |
+| [Presentation playback development](docs/developer/runtime-integration/slideshow/README.md) | Current configuration, runtime behavior, and code entry points |
+| [Active development projects](docs/developer/projects/README.md) | Ongoing implementation, validation, and release follow-up |
 
 ## Repository Structure
 

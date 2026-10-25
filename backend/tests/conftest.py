@@ -30,6 +30,19 @@ def open_audio_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
+def closed_audio_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
+    """仅在拒绝路径测试中关闭旁白和 cue，验证能力降级时的写入边界。"""
+
+    from app.schemas import audio as audio_schema
+
+    monkeypatch.setattr(
+        audio_schema,
+        "AUDIO_OPEN_CAPABILITIES",
+        frozenset({audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS}),
+    )
+
+
+@pytest.fixture
 def build_worker_credential(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     """注入测试用 Runtime Build Worker 共享凭证，并在结束时清理 settings 缓存。"""
 

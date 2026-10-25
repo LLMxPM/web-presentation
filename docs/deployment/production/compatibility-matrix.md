@@ -1,7 +1,7 @@
-<!-- 文件功能：定义 Backend/Runtime/Renderer/DB/Runtime Kit 的 N/N-1 支持组合、升级窗口与摘流策略，支撑 AR-05/W05 与 M05。 -->
+<!-- 文件功能：保存 Backend/Runtime/Renderer/DB/Runtime Kit 的历史固定组合验证，并说明当前同版升级与摘流策略。 -->
 # 版本兼容矩阵与升级窗口
 
-本文定义平台各组件在升级或回滚时的支持边界，对应 AR-05 / W05。[09-30 历史复核](../../archive/architecture-2026-09/reports/architecture-assessment-2026-09-30.md)撤回了旧 ORM 缺列时的兼容结论；补偿后，[10-01 M05 实机](../../archive/architecture-2026-09/runs/2026-10-01-73b0036/summary.md)以完整 `4c7eee8` 镜像和自己的锁文件验证 PG/SQLite 旧入口、迁移中断、N 业务及保留 schema 的旧应用回滚。此前[双副本浏览器定向证据](../../archive/architecture-2026-09/runs/2026-09-30-docker/summary.md)保持有效；本轮补公共 Kit 与产物组合。M04 外部交接及其它发布/容量门的状态见[已归档收尾计划](../../archive/architecture-2026-09/reports/architecture-closeout-plan-2026-10-01.md#7-验收状态与责任域)；部署形态收敛后需要重开的门见[现行执行计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md)。
+本文保存历史固定版本的组合验证，并规定当前升级采用排空旧服务、迁移后切换同版 Backend/Runtime/Renderer。**平台内部服务不保证不同发布版本混合部署正常运行；新功能无需补做 N/N-1 内部服务混版矩阵。**旧验证只说明当时的固定镜像和数据库组合，不能成为后续混版支持承诺。[09-30 历史复核](../../archive/architecture-2026-09/reports/architecture-assessment-2026-09-30.md)撤回了旧 ORM 缺列时的兼容结论；补偿后，[10-01 M05 实机](../../archive/architecture-2026-09/runs/2026-10-01-73b0036/summary.md)记录了当时 PG/SQLite 旧入口、迁移中断和应用回滚的结果。外部 CLI 与 Backend 的 API 兼容属于独立契约，不等同于内部服务混版。
 
 ## 1. 组件与版本轴
 
@@ -15,7 +15,7 @@
 | 数据库 | Alembic `alembic_version` | `backend/migrations/versions/` |
 | 页面/组件产物 | 预览 artifact、构建 ZIP、组件 previewSchema | 存储中的产物元数据 |
 
-## 2. N / N-1 支持矩阵（目标约定）
+## 2. N / N-1 历史固定样本（非现行支持矩阵）
 
 N/N-1 必须绑定具体版本。本轮 N 为 `73b0036 + 迁移事务/Renderer 错误映射补丁`，Runtime 复用 `e82c793`；N-1 固定 `4c7eee8`，是选定 Git 稳定点，不是任意前一 Release 的兼容保证。本地镜像 ID 和源码对拍见实机记录，未推送 Registry。
 
@@ -75,13 +75,13 @@ N Backend + 无发布身份的 `4c7eee8` Runtime，在 N/N-1 两种 Renderer 下
 ### 3.3 Backend：停机或双副本
 
 - **小团队 / Lite**：停机升级。先备份 → `backend-migrate` → 启动新 Backend。
-- **多副本**：必须先逐项证明旧应用兼容新 schema，才能先扩新副本、再摘旧副本。当前 N/N-1 组合有删列冲突，页面业务按停机升级处理；共享签名密钥环、DB、对象存储与 Redis。普通 AI Run 不跨实例迁移（见 §5）。
+- **多副本**：排空并停止旧 Backend 后再迁移、启动同版新副本；不采用新旧 Backend 同时接业务的滚动混版。各副本共享签名密钥环、DB、对象存储与 Redis。普通 AI Run 不跨实例迁移（见 §5）。
 
 ### 3.4 DB migration 窗口
 
 1. 备份数据库（见[备份与恢复](../operations/backup-restore.md)）。
 2. 兼容检查须同时覆盖新增与删除字段；当前含删除旧 ORM 仍映射的列时，先排空并停止旧业务实例，再只跑一次 `alembic upgrade head`（`backend-migrate` 或入口脚本）。
-3. 再滚动/启动业务副本。
+3. 再启动同版业务副本。
 4. 当前旧迁移器不包含新 revision，应用回滚须关闭它并保留补偿后的 schema；数据库恢复另走一致备份方案。
 
 `20260930_0200` 是 W05a 的前向补偿：恢复旧 ORM 需要的兼容列并设置服务端默认 0，当前 ORM 无需重新使用它。已应用的 `20260930_0100` 保持不变，补偿不能恢复历史代次。升级前排空页面任务并停旧实例；应用回滚保留补偿 schema，通过 `PLATFORM_SIMPLE_RUN_MIGRATIONS=false` / `PLATFORM_LITE_RUN_MIGRATIONS=false` 关闭旧镜像迁移器。旧列删除须另等旧实例退出和回滚窗口结束，不将数据库降回删列 revision 当应用回滚步骤。
@@ -124,7 +124,7 @@ W05c 将发布身份与传播机制收口为以下链路：
 2. **PID 重用**：历史未登记 Run 的 `process_is_alive` 为真时跳过；新实例以 UUID/持久化租约区分，不依赖 PID 存活探测。
 3. **同名主机、不同 PID namespace**：可能把异 namespace 进程误判为存活或死亡；多副本部署应保证 hostname 唯一（Docker 默认 container id 即可）。
 
-## 6. 验收用例（M05 / M04）
+## 6. 历史验收用例（M05 / M04；不作为新功能门禁）
 
 1. 组合 A：全 N 完成一次登录 → 预览 → 截图 → 构建下载。
 2. 组合 C：逐角色验证 Backend N 与 Renderer/Runtime N-1；先核对发布身份与入口，再执行截图。协议一致但 Runtime 缺身份的组合应按本轮负例明确失败，独立构建与加载另记。

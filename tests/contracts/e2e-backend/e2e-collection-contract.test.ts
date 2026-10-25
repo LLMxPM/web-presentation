@@ -1,7 +1,7 @@
 /**
  * 文件功能：以 --list 契约固定 Playwright project 的收集边界，并守护 E2E 侧 seed 版本与 Backend 一致。
  *
- * 依据 docs/developer/testing/e2e-redesign.md §3.6/验收标准 7：
+ * 依据 docs/archive/developer-work-2026-10/e2e-redesign.md §3.6/验收标准 7：
  * - 默认 test:e2e 只收集 auth + smoke；regression 与 all 的收集数量由本测试固定；
  * - tests/e2e/helpers/e2e-env.ts 的 EXPECTED_SEED_VERSION 必须与 backend SEED_VERSION 同步演进。
  */

@@ -1,54 +1,39 @@
 # 开发文档
 
-开发文档面向平台维护者、功能开发者和部署人员。文档按架构、Backend、Editor、Runtime 开发、跨服务接入、测试、部署和参考资料分组。独立 Chromium 服务的运行说明由 Renderer 自身维护。
+本目录面向维护 `web-presentation` 的开发者。先根据任务找到当前生效的模块边界、契约和操作指南；阶段计划、工作包与历史验收有独立入口，不作为现行实现的唯一依据。
 
-外部 Agent 接入分别位于 `web-presentation-cli`（CLI、同步客户端、Skill）与 `web-presentation-mcp`（MCP、异步客户端、部署）。两仓独立维护客户端；本目录维护平台侧 External API v1 契约、授权和集成规划。
+## 从哪里开始
 
-## 快速入口
-
-| 文档 | 内容 |
+| 要做的事 | 入口 |
 | :--- | :--- |
-| [本地开发指南](./getting-started.md) | 本地依赖、四个应用服务启动和常用诊断命令 |
-| [平台架构总览](./architecture/overview.md) | 平台目标、控制面/数据面关系、模块职责和主流程 |
-| [模块边界](./architecture/module-boundaries.md) | Backend、Editor、Runtime、Renderer、Infra 的修改边界 |
-| [翻页动画与自动放映实施计划](./runtime-integration/slideshow/README.md) | Backend 配置契约、各模块工作包、实施顺序和联调验收；待实施 |
-| [用户文件存储鉴权与缓存实施规划](./runtime-integration/file-storage-auth-cache-plan.md) | 预览、截图、构建的文件链路，票据授权、浏览器与 Backend 缓存、迁移和验收；待实施 |
-| [页面校验截图复用与智能体引导优化计划](./runtime-integration/page-validation-screenshot-agent-guidance-plan.md) | 图标与契约发现、恢复指引、同次渲染产图、版本发布和跨仓验收；待实施 |
-| [三维资源复用与 Three.js 渲染接入分析](./runtime-integration/threejs-rendering-and-management-analysis.md) | 标准 GLB/glTF 资源管理、多实例复用、渲染导出与分期实施；当前为设计分析 |
-| [三维资源复用与渲染实施计划](./runtime-integration/threejs-resource-implementation-plan.md) | 标准资源接入的接口、历史与缓存、14 个工作包、实施顺序及发布门槛；待实施 |
-| [现行架构评估与计划](../archive/architecture-2026-09/README.md) | 当前架构复核、改进工作包、下一轮测试机矩阵与归档 |
-| [测试文档入口](./testing/README.md) | 根仓、Backend、Editor、Runtime、契约和 E2E 测试入口 |
-| [部署文档入口](../deployment/production/README.md) | Compose 部署、环境变量、备份恢复、升级回滚和排障 |
-| [External Agent API v1 契约](./reference/external-agent-api.md) | CLI、MCP 和其他外部 Agent 共用的 Backend API、Scope、任务和交付契约 |
-| [CLI 主仓集成边界](./cli.md) | 主仓负责的 CLI 外部 API 契约和 CLI 仓库交接边界 |
-| [CLI OAuth 主仓实施计划](./cli-oauth-implementation-plan.md) | CLI 原生授权、API 直接凭证、Editor 回调和跨仓验收；当前为计划 |
-| [CLI 字体与主题配置实施规划](./cli-font-theme/implementation-plan.md) | 字体注册/字体族、主题图片与字体配置、9 个跨仓工作包及联合验收；待实施 |
-| [MCP 主仓集成边界](./mcp.md) | 主仓负责的 MCP External API 依赖和独立 MCP 仓交接边界 |
-| [远程 MCP 主仓实施计划](https://github.com/LLMxPM/web-presentation/blob/mcp/docs/developer/mcp-implementation-plan.md) | 远程多用户授权、API 适配、跨仓工作包及发布退出项；内容仅在 `mcp` 分支维护，未合入本分支 |
-| [MCP 域名前本地验收](https://github.com/LLMxPM/web-presentation/blob/mcp/docs/developer/testing/mcp-local-acceptance.md) | TLS 创作/PNG、SQLite/PG、迁移与当前域名/宿主依赖；同样只在 `mcp` 分支维护 |
-| [大文件与媒体资产管理](./large-files.md) | Git LFS 规则、媒体文件提交检查和历史迁移约束 |
+| 准备本地环境 | [本地开发指南](./getting-started.md)、[测试文档](./testing/README.md)；服务通常已运行，先按 `dev-start-test` 探测 |
+| 理解系统边界 | [架构总览](./architecture/README.md)、[模块边界](./architecture/module-boundaries.md) |
+| 修改 Backend | [Backend 开发文档](./backend/README.md)、[API 契约索引](./reference/README.md) |
+| 修改 Editor | [Editor 开发文档](./editor/README.md)、[项目级设计规范](../../DESIGN.md) |
+| 修改 Runtime 或页面 | [Runtime 开发文档](./runtime/README.md)、[Runtime 接入契约](./runtime-integration/README.md) |
+| 修改 Renderer | [Renderer 开发说明](../../renderer/README.md)、[远程渲染契约](./backend/remote-render-service-design.md) |
+| 修改 CLI 依赖的服务端接口 | [External API v1](./reference/external-agent-api.md)、[CLI 主仓边界](./cli.md) |
+| 部署或发布 | [部署文档](../deployment/README.md)、[发布检查清单](../deployment/release-checklist.md) |
 
-## 分组导航
+## 按功能查现行文档
 
-| 分组 | 内容 |
+| 功能 | 入口 |
 | :--- | :--- |
-| [架构](./architecture/overview.md) | 模块职责、数据模型、预览构建链路、Runtime 接入和权限 |
-| [Backend](./backend/README.md) | API 分层、AI Agent、工具规格、预览 artifact 和排障 |
-| [Renderer](../../renderer/README.md) | 独立 Chromium 服务、包边界、配置和真实截图验证 |
-| [Editor](./editor/README.md) | 前端结构、AI 侧边栏、状态管理和测试约定 |
-| [Runtime 开发](./runtime/README.md) | 页面、组件、Runtime Kit 与 Runtime 内部接入细节 |
-| [Runtime 接入](./runtime-integration/README.md) | 运行时架构、Runtime Kit manifest、previewSchema、构建产物和配置模板 |
-| [测试](./testing/README.md) | 测试分层、命令、契约测试和 E2E smoke |
-| [部署](../deployment/production/README.md) | Compose 模板、生产环境变量、CI/CD、备份、回滚和排障 |
-| [External Agent API](./reference/external-agent-api.md) | 外部 Agent 共用的 Backend 契约和变更流程 |
-| [CLI](./cli.md) | CLI 主仓集成边界；具体命令实现由 CLI 仓库维护 |
-| [MCP](./mcp.md) | MCP 主仓集成边界；具体协议适配由独立 MCP 仓库维护 |
-| [参考资料](./reference/conventions.md) | 编码约定、接口契约索引、环境变量索引、术语和模板包 |
+| 放映配置、媒体和演讲者模式 | [放映接入](./runtime-integration/slideshow/README.md)、[字段契约](./runtime-integration/slideshow/contract.md) |
+| 音频资源、旁白与 cue | [音频接入](./runtime-integration/audio/README.md)、[字段契约](./runtime-integration/audio/contract.md) |
+| 页面源码、Runtime Kit 和预览 | [Runtime 接入](./runtime-integration/README.md)、[Runtime Kit 契约](./runtime-integration/runtime-kit-contract.md) |
+| 页面与组件校验 | [组件 Check 设计](./runtime-integration/component-code-check-design.md)、[页面可视化编辑契约](./runtime-integration/page-visual-edit.md) |
+| 工作空间资源与三维模型 | [资源 API](./reference/api-contracts.md)、[Runtime 资源引用](./runtime/integration/asset-usage-guide.md) |
 
-## 维护原则
+## 专题工作与历史证据
 
-- 用户理解路径更新时，优先同步 `docs/user/`。
-- 开发边界、接口契约、测试入口或部署方式变化时，优先同步本目录。
-- 本地启动命令以[本地开发指南](./getting-started.md)为入口，测试命令以根目录 `package.json` 和[测试命令](./testing/commands.md)为准，部署服务以 `deploy/compose/` 为准。
-- Runtime 页面与组件能力更新时维护[Runtime 开发文档](./runtime/README.md)；跨服务协议变化时同步[Runtime 接入文档](./runtime-integration/README.md)和模块 README。
-- 阶段性设计记录应标明当前状态；可执行步骤优先写入对应专题文档，避免与历史方案混用。
+- [进行中的专题工作](./projects/README.md)：尚有实施、验收或发布收尾的计划与工作包。
+- [开发专题过程归档](../archive/developer-work-2026-10/README.md)：已结束的实施计划、审查和联合验收。
+- [架构治理归档](../archive/architecture-2026-09/README.md)：2026 年 9–10 月架构评估与运行证据。
+
+## 维护规则
+
+- 开发者需要据以修改代码的字段、边界和操作步骤，保留在模块文档或契约中；实施过程写入 `projects/`。
+- 阶段完成时，将仍有效的结论写回现行文档，过程记录移至 `docs/archive/`，并更新所有仓内链接。
+- 用户理解路径写入 `docs/user/`，部署事项写入 `docs/deployment/`，测试选择和环境排障优先维护 `.agents/skills/dev-start-test/`。
+- MCP 整体不在当前交付范围；本仓只维护它依赖的 External API 契约和边界说明。

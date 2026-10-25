@@ -1,7 +1,7 @@
 /**
  * 文件功能：为写型 E2E 用例提供用例级独立项目/页面夹具，通过真实 Backend API 创建并在 teardown 最佳努力归档。
  *
- * 依据 docs/developer/testing/e2e-redesign.md §3.1：写型可视化编辑用例不得修改全局 Smoke 数据，
+ * 依据 docs/archive/developer-work-2026-10/e2e-redesign.md §3.1：写型可视化编辑用例不得修改全局 Smoke 数据，
  * 每个用例创建专属项目/页面（名称包含 workerIndex + UUID），teardown 归档失败仅记录附件，
  * 不覆盖原始测试失败。不同 worker/project 不执行全局残留扫描，避免并行归档彼此的活动项目。
  */

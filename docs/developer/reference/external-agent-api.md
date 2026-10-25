@@ -106,7 +106,7 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 
 响应中的可选 `slideshow` 字段声明服务端当前实际支持的放映范围。当前结构版本为 schema 2，`advance_modes` 仍为 `manual`/`timer`、`single_window_auto_play` 为 true，`presenter_auto_play` 与 `capture_auto_play` 保持 false；schema 2 同时披露 `media_timeout_ms` 范围，但 `media_end` 在 M2 出口前不可写、不可执行。字段缺失或为 null 表示未声明该功能，客户端不能仅凭配置字段可写就推断可执行。
 
-`slideshow.audio` 声明音频能力（`schema_version=1`）：`audio_assets` 表示可上传和引用音频资源；`page_narration` 与 `audio_cues` 在对应阶段出口验收前保持 false。客户端只能在 `audio_cues=true` 时展示项目 cue 配置；后端写入校验独立于客户端开关。
+`slideshow.audio` 声明音频能力（`schema_version=1`）：`audio_assets` 表示可上传和引用音频资源，`page_narration` 和 `audio_cues` 分别表示旁白与 cue。三项自 2026-10-25 起默认返回 `true`；客户端仍按实际能力声明展示项目 cue 配置，后端写入校验独立于客户端开关。
 
 响应中的可选 `fonts` 声明字体预设能力：`presets.sans` 为 `["platform-sans", "system-ui"]`，`presets.mono` 为 `["platform-mono", "monospace"]`。来源统一以 Backend `app.core.platform_fonts` 为准，CLI 动态发现预设，不维护第二套手写枚举。
 

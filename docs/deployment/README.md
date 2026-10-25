@@ -26,7 +26,7 @@
 | [Compose 部署说明](./production/compose.md) | 三个模板差异、副本扩容与滚动发布 |
 | [部署环境变量](./production/env-vars.md) | 核心变量分组与关键约束 |
 | [多 Backend 一致性](./production/multi-backend.md) | 共享密钥、密钥轮换与 AI Run 停机语义 |
-| [版本兼容矩阵](./production/compatibility-matrix.md) | N/N-1 组合、升级窗口与摘流策略 |
+| [版本兼容与升级窗口](./production/compatibility-matrix.md) | 历史固定组合证据、同版升级与摘流策略；不保证内部服务混版 |
 | [执行隔离与权限](./production/execution-isolation.md) | 构建领取器、编译子进程边界与权限矩阵 |
 | [CI/CD 与容器发布](./production/cicd.md) | 镜像构建、发布策略和 GitHub Actions |
 

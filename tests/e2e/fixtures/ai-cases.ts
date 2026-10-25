@@ -1,7 +1,7 @@
 /**
  * 文件功能：维护 AI E2E 用例与 Backend mock 场景之间的契约：场景 ID、固定自然语言输入与用户可见期望。
  *
- * 依据 docs/developer/testing/e2e-redesign.md §3.3：本文件只保存场景 ID、用户输入和用户可见期望，
+ * 依据 docs/archive/developer-work-2026-10/e2e-redesign.md §3.3：本文件只保存场景 ID、用户输入和用户可见期望，
  * 不承载 Backend 响应脚本；场景执行逻辑全部收敛在 backend/app/ai/testing/。
  */
 

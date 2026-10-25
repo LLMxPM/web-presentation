@@ -1,12 +1,12 @@
 # 自动放映配置与接口契约
 
-状态：M0 字段与行为已通过 [WP12 联调验收](./work-packages/wp12-m0-integration.md)；M1 的 `timer`、自动开始与单窗口自动放映已通过 WP21 开放；M2 的 `media_end`、`media_timeout_ms` 与演讲者自动放映已通过 [WP30 验收](./work-packages/wp30-m2-integration-release.md)并于 2026-10-18 开放（schema 2）。2026-10-18 全屏放映统一模型调整了 `auto_start` 的运行语义，不改变字段、DTO 或存储；已发布事实以实际 DTO、OpenAPI 和契约测试为准，阶段定义见[总计划](./README.md)。
+状态：项目与路由放映配置已实现，当前为 schema 2。`timer`、`media_end`、`media_timeout_ms`、逐页覆盖和演讲者自动放映均已开放；`auto_start` 表示进入根元素全屏放映后的初始自动/手动模式。字段事实以 Backend DTO、OpenAPI 和契约测试为准；阶段验收见[实施归档](../../../archive/developer-work-2026-10/slideshow/README.md)。
 
 ## 1. 配置归属与名称
 
-Backend 拟新增独立 `schemas/slideshow.py`，定义严格 DTO 和统一解析器。数据库保存 API 规范化后的原始配置，导入、API、AI 业务工具均经过同一校验路径。
+Backend 的 `schemas/slideshow.py` 定义严格 DTO 和统一解析器。数据库保存 API 规范化后的原始配置，导入、API、AI 业务工具均经过同一校验路径。
 
-| 对象 | 拟定归属 | 对外字段 |
+| 对象 | 归属 | 对外字段 |
 | :--- | :--- | :--- |
 | 项目完整放映配置 | `Project.slideshow_config_json`，非空规范化 JSON | 项目创建、更新和详情的顶层 `slideshow` |
 | 叶子路由动画覆盖 | `ProjectRoute.transition_json`，可空 JSON | 路由节点 `transition` |
@@ -18,7 +18,7 @@ Backend 拟新增独立 `schemas/slideshow.py`，定义严格 DTO 和统一解�
 
 ## 2. 首期字段
 
-以下为 Backend 拟定的默认完整值，API 使用 snake_case，所有时间以整数毫秒表示：
+以下为 Backend 的默认完整值，API 使用 snake_case，所有时间以整数毫秒表示：
 
 ```json
 {
@@ -84,7 +84,7 @@ Backend 拟新增独立 `schemas/slideshow.py`，定义严格 DTO 和统一解�
 
 权限沿用项目所属工作空间访问控制；External 沿用现有 operation、`project:read` / `project:write` 和写操作幂等契约。只更新放映设置不会创建页面变更重任务。
 
-| 情形 | 拟定结果 |
+| 情形 | 结果 |
 | :--- | :--- |
 | 字段类型、范围、枚举、分组配置或完整性错误 | 422，沿用现有请求校验错误格式并定位字段 |
 | 项目、页面绑定无权访问或不存在 | 沿用现有对应资源错误与隐藏存在性规则 |
@@ -153,12 +153,12 @@ M2 在 `advance` 中增加 `mode=media_end` 和 `media_timeout_ms`（可省略�
 - 没有参与媒体时按 `delay_ms` 停留；播放被策略阻止进入受阻态，播放失败或超时进入错误暂停态，提供重试、手动下一页或停止。
 - 手动跳页清除旧计时和旧媒体回调；运行中从新页重新计算，暂停中保持暂停；停止保留当前页，重新开始从当前页重新计时。
 - 暂停保留剩余时间，并只恢复本会话暂停前正在播放的媒体。手动页保持放映会话开启，等待用户下一页。
-- 双窗口只有一个调度者；跨窗口只传命令和可验证状态，不以两套定时器同时推进。协议详情见 [Runtime 计划](./runtime.md)。
+- 双窗口只有一个调度者；跨窗口只传命令和可验证状态，不以两套定时器同时推进。协议详情见 [Runtime 计划](../../../archive/developer-work-2026-10/slideshow/runtime.md)。
 
 ## 7. 兼容与包格式
 
 旧项目升级为默认完整配置，旧路由覆盖保持 null；迁移不改页面源码，不把 Runtime fixture 中的示例动画写入真实项目。
 
-项目模板包拟升级 schema 3，保存项目 `slideshow` 和路由原始覆盖。新导入器同时接受 1、2、3：旧包补默认值，新包严格校验；不能把当前 `{1, CURRENT}` 的校验直接替换成 `{1, 3}` 导致 v2 失效。复制页面资源不复制路由设置，整项目模板导入保留它们。
+项目模板包 schema 3 保存项目 `slideshow` 和路由原始覆盖。导入器接受 1、2、3：旧包补默认值，新包严格校验；不能丢掉 v2 兼容。复制页面资源不复制路由设置，整项目模板导入保留它们。
 
-能力与版本组合、旧客户端往返和发布次序见[验收计划](./acceptance.md)。
+能力与版本组合、旧客户端往返和发布次序见[验收计划](../../../archive/developer-work-2026-10/slideshow/acceptance.md)。

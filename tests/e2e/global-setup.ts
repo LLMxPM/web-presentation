@@ -1,7 +1,7 @@
 /**
  * 文件功能：用例前校验 Backend 测试环境指纹、生成登录 storageState 并预热 Editor 冷启动编译。
  *
- * 依据 docs/developer/testing/e2e-redesign.md §3.2/§3.4：
+ * 依据 docs/archive/developer-work-2026-10/e2e-redesign.md §3.2/§3.4：
  * - 先通过 /api/testing/e2e-readiness 确认 Backend 处于 E2E mock 环境且 smoke 数据就绪，
  *   前置数据缺失时快速失败并提示执行 pnpm run test:e2e:prepare，不进入业务页面后才失败；
  * - 登录一次并保存 storageState 供 auth 以外的 project 复用；

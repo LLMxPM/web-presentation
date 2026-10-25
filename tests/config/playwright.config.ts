@@ -1,7 +1,7 @@
 /**
  * 文件功能：定义根仓平台级 E2E 测试配置，按 auth/smoke/visual-edit/ai/runtime-heavy 分层管理 project。
  *
- * 依据 docs/developer/testing/e2e-redesign.md §3.5/§3.6：
+ * 依据 docs/archive/developer-work-2026-10/e2e-redesign.md §3.5/§3.6：
  * - project 语义由本配置显式定义，命令脚本通过 --project 选择范围，不依赖目录或标签的隐式约定；
  * - auth project 使用空 storageState，其余 project 复用 globalSetup 生成的登录状态；
  * - expect 默认 15s、action 默认 10s，异步边界在用例内显式放宽。

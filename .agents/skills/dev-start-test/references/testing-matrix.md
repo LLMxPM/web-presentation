@@ -171,5 +171,5 @@ test:backend
 ## 6. 相关文档
 
 - [平台测试治理说明](../../../../docs/developer/testing/strategy.md)
-- [E2E 冒烟套件重设计](../../../../docs/developer/testing/e2e-redesign.md)
+- [E2E 冒烟套件重设计](../../../../docs/archive/developer-work-2026-10/e2e-redesign.md)
 - [本地 Docker 架构演练](../../../../docs/developer/testing/docker-architecture-drill.md)

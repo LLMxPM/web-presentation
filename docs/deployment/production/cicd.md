@@ -8,7 +8,7 @@
 - Docker Hub：`docker.io/llmxpm/web-presentation`、`docker.io/llmxpm/web-runtime-vue`、`docker.io/llmxpm/web-presentation-renderer`
 - 阿里云 ACR：`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-runtime-vue`、`${ACR_REGISTRY}/${ACR_NAMESPACE}/web-presentation-renderer`
 
-**已发布镜像的实际可拉取性**：2026-10-24 已在两个 Registry 查到 `v0.3.1` 的 platform、Lite、Runtime 和 Renderer 相同 digest；本机从 ACR 按 digest 拉取四镜像并核对 OCI revision 为 `a94ae57`。Docker Hub 公共标签元数据可读，但本机到其 Registry 的 HEAD 被代理中断，未在本机完成 Docker Hub 直接拉取。确切 digest、本机升级组合与限制见[动画前版本联合验收记录](../../developer/runtime-integration/pre-motion-joint-acceptance.md)。
+**已发布镜像的实际可拉取性**：2026-10-24 已在两个 Registry 查到 `v0.3.1` 的 platform、Lite、Runtime 和 Renderer 相同 digest；本机从 ACR 按 digest 拉取四镜像并核对 OCI revision 为 `a94ae57`。Docker Hub 公共标签元数据可读，但本机到其 Registry 的 HEAD 被代理中断，未在本机完成 Docker Hub 直接拉取。确切 digest、本机升级组合与限制见[动画前版本联合验收记录](../../archive/developer-work-2026-10/pre-motion-joint-acceptance.md)。
 
 `runtime/` 已 vendored 进本仓，Runtime 独立镜像由本仓 Release 使用 `runtime/Dockerfile` 构建推送，不再依赖外部 `web-runtime-vue` 子模块 SHA 镜像。本仓镜像变体：
 

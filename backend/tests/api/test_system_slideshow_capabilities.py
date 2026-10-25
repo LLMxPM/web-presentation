@@ -43,20 +43,20 @@ async def test_system_slideshow_capabilities_should_publish_executable_baseline(
     assert data["audio"] == {
         "schema_version": AUDIO_SCHEMA_VERSION,
         "audio_assets": True,
-        "page_narration": False,
-        "audio_cues": False,
+        "page_narration": True,
+        "audio_cues": True,
     }
 
 
 async def test_audio_capability_disclosure_matches_enabled_write_gate(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """联合验收开放音频时，公共声明和写入门禁使用同一能力集合。"""
+    """能力被关闭时，公共声明和写入门禁仍使用同一能力集合。"""
 
     monkeypatch.setattr(
         audio_schema,
         "get_open_audio_capabilities",
-        lambda: frozenset(audio_schema.AUDIO_MILESTONE_CAPABILITIES["m2"]),
+        lambda: frozenset({audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS}),
     )
     response = await client.get("/api/system/slideshow-capabilities")
 
@@ -64,7 +64,7 @@ async def test_audio_capability_disclosure_matches_enabled_write_gate(
     assert response.json()["audio"] == {
         "schema_version": AUDIO_SCHEMA_VERSION,
         "audio_assets": True,
-        "page_narration": True,
-        "audio_cues": True,
+        "page_narration": False,
+        "audio_cues": False,
     }
-    assert is_audio_capability_open(audio_schema.AUDIO_CAPABILITY_AUDIO_CUES)
+    assert not is_audio_capability_open(audio_schema.AUDIO_CAPABILITY_AUDIO_CUES)

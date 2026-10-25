@@ -155,7 +155,7 @@ cue key 规则为小写点分段：`^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$`，最大
 
 清空绑定使用原子入口 `POST /api/v1/projects/{project_id}/audio-cues/clear`：单事务只删除绑定，不读出并重写音量，因此保留三段当前值并避免覆盖并发音量更新。能力关闭时仍允许清空历史绑定，但不允许新增或恢复绑定；完整音量更新仍需显式提交完整 `audio_settings` 对象，不隐含在 clear 中。
 
-能力门禁与写入一致：
+自 2026-10-25 起，`slideshow.audio` 的 `audio_assets`、`page_narration`、`audio_cues` 均默认返回 `true`；以下关闭语义适用于能力集合被显式收窄的环境与回归测试。能力门禁与写入一致：
 
 - `audio_cues=false` 时，项目创建、项目更新、configuration 更新和模板导入只要携带非空 `cue_bindings` 就返回 422 `AUDIO_CAPABILITY_UNAVAILABLE`；音量更新与空 `cue_bindings` 继续允许。
 - `page_narration=false` 时，页面与组件保存拒绝可静态判定的 `purpose="narration"`；`audio_cues=false` 时拒绝可静态识别的 `useAudioCue` 调用（含别名导入）。`validate` 返回 `valid=false` 与同一业务码，真正写入仍独立校验。

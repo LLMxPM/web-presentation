@@ -11,7 +11,7 @@
 5. Runtime 使用 artifact 服务票据回源 Backend 读取 manifest、配置包和模块源码，交给 Vite 作为远程虚拟模块编译；浏览器向 Runtime 请求编译后的模块。
 6. iframe 内的浏览器按 manifest 资源映射向 Backend 请求图片、字体等素材；部分 S3 资源由 Backend 返回签名跳转。浏览器执行 Runtime 页面并展示结果。
 
-单页与整项目预览使用相同机制，分别以模块或路由作为入口；普通预览不把全部素材先复制到 Runtime 临时目录。源码及素材完整落盘发生在下述项目构建流程。当前素材公开入口与源码票据的权限边界不同，收口方案见[用户文件存储鉴权与缓存实施规划](../runtime-integration/file-storage-auth-cache-plan.md)，该规划尚未实施。
+单页与整项目预览使用相同机制，分别以模块或路由作为入口；普通预览不把全部素材先复制到 Runtime 临时目录。源码及素材完整落盘发生在下述项目构建流程。当前素材公开入口与源码票据的权限边界不同，收口方案见[用户文件存储鉴权与缓存实施规划](../projects/file-storage-auth-cache-plan.md)，该规划尚未实施。
 
 页面 iframe 使用版本 1 状态消息回传最终结果：成功发送 `page-preview:ready`，初始化或页面模块失败发送 `page-preview:error`；payload 必须包含当前 `artifactId`。Editor 同时校验消息窗口、origin、协议版本和 artifact，忽略旧预览迟到消息。Editor 在等待 8 秒后展示弱网提示，30 秒后进入可重试错误；超时不会销毁 iframe，因此同一 artifact 的迟到 ready 仍可恢复预览。
 
