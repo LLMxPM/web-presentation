@@ -6,7 +6,7 @@ English | [简体中文](./README.zh-CN.md)
 
 [Website](https://wp.llmxpm.com/) · [Showcases](https://wp.llmxpm.com/showcases.html) · [User Docs](https://wp.llmxpm.com/docs/user/)
 
-![Platform Overview](./docs/assets/平台总览.png)
+![Platform architecture: Editor, Backend, Runtime, and Renderer](./docs/assets/platform-architecture.en.svg)
 
 ## Key Features
 
@@ -69,7 +69,7 @@ All showcase presentations were generated using models like DeepSeek V4 Pro and 
 
 ## Online Demo
 
-Access URLs, trial credentials, and AI configuration instructions for the public demo are maintained in the [Demo Guide](https://wp.llmxpm.com/docs/user/demo-guide.html).
+Open the [public Demo](https://wp-demo.inputloom.com). Trial credentials and AI configuration instructions are in the [Demo Guide](https://wp.llmxpm.com/docs/user/demo-guide.html).
 
 ## Quick Deployment
 

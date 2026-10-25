@@ -6,7 +6,7 @@
 
 ## 公开 Demo 在哪里？
 
-访问方式、账号和推荐体验流程见 [Demo 使用指南](../demo-guide.md)。
+访问[公开 Demo](https://wp-demo.inputloom.com)；体验账号和推荐流程见 [Demo 使用指南](../demo-guide.md)。
 
 ## 我只想体验，需要部署吗？
 

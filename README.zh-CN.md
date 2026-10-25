@@ -6,7 +6,7 @@
 
 [官网](https://wp.llmxpm.com/) · [案例展示](https://wp.llmxpm.com/showcases.html) · [用户文档](https://wp.llmxpm.com/docs/user/)
 
-![平台产品总览图](./docs/assets/平台总览.png)
+![平台架构图：Editor、Backend、Runtime 与 Renderer 的协作关系](./docs/assets/平台架构.svg)
 
 ## 产品特点
 
@@ -67,7 +67,7 @@
 
 ## 在线 Demo
 
-公开 Demo 的访问地址、体验账号和 AI 设置说明统一维护在官网的 [Demo 使用指南](https://wp.llmxpm.com/docs/user/demo-guide.html)。
+访问[公开 Demo](https://wp-demo.inputloom.com)；体验账号和 AI 设置说明见官网的 [Demo 使用指南](https://wp.llmxpm.com/docs/user/demo-guide.html)。
 
 ## 快速部署
 

@@ -2,7 +2,7 @@
 
 ## 访问方式
 
-- Demo 地址：[http://49.235.130.241/](http://49.235.130.241/)
+- Demo 地址：[https://wp-demo.inputloom.com](https://wp-demo.inputloom.com)
 - 账号：`Demo`
 - 密码：`Demo123456`
 
