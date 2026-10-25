@@ -288,7 +288,7 @@ def test_compute_check_fingerprint_should_change_for_any_component() -> None:
         {"runtime_kit_version": "1.0.1"},
         {"compile_config": "compile-hash-2"},
         {"theme_style": "theme-hash-2"},
-        {"check_rules_version": "code-check-rules.v2"},
+        {"check_rules_version": f"{CODE_CHECK_RULES_VERSION}-changed"},
         {"module_path": "src/views/B.vue"},
         {"workspace_id": 9},
         {"project_id": 9},

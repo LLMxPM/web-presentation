@@ -469,8 +469,18 @@ class RenderExecutor:
         """运行布局分析脚本，返回诊断与布局事实。"""
 
         raw = await self._page.evaluate(build_page_render_layout_script())
-        layout = raw if isinstance(raw, dict) else {}
-        diagnostics = _diagnostics_from_layout(layout)
+        payload = raw if isinstance(raw, dict) else {}
+        layout = payload.get("layout_analysis") if isinstance(payload.get("layout_analysis"), dict) else {}
+        diagnostics = [
+            DiagnosticItem(
+                severity=str(item.get("severity") or "warning"),
+                code=str(item.get("code") or "PAGE_RENDER_LAYOUT_WARNING"),
+                message=str(item.get("message") or "页面布局分析需要关注。"),
+            )
+            for item in payload.get("diagnostics") or []
+            if isinstance(item, dict)
+        ]
+        diagnostics.extend(_diagnostics_from_layout(layout))
         base = self._base_result()
         return replace(
             base,
@@ -727,7 +737,7 @@ def _diagnostics_from_layout(layout: dict[str, Any]) -> list[DiagnosticItem]:
 
     items: list[DiagnosticItem] = []
     for overflow in layout.get("overflows") or []:
-        if not isinstance(overflow, dict):
+        if not isinstance(overflow, dict) or overflow.get("attention") not in {"review", "likely_issue"}:
             continue
         items.append(
             DiagnosticItem(
@@ -739,11 +749,14 @@ def _diagnostics_from_layout(layout: dict[str, Any]) -> list[DiagnosticItem]:
             )
         )
     summary = layout.get("summary") if isinstance(layout.get("summary"), dict) else {}
-    if str(summary.get("attention") or "") in {"error", "likely_issue"}:
+    summary_attention = str(summary.get("attention") or "")
+    if summary_attention in {"error", "review", "likely_issue"}:
         items.append(
             DiagnosticItem(
-                severity="error" if str(summary.get("attention")) == "error" else "warning",
-                code=str(summary.get("code") or "PAGE_RENDER_LAYOUT_ERROR"),
+                severity="error" if summary_attention == "error" else "warning",
+                code=str(summary.get("code") or (
+                    "PAGE_RENDER_LAYOUT_ERROR" if summary_attention == "error" else "PAGE_RENDER_LAYOUT_WARNING"
+                )),
                 message=str(summary.get("message") or "页面布局分析需要关注。"),
                 evidence={"summary": summary},
             )

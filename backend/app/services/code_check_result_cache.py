@@ -16,7 +16,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # 编译器与检查规则版本：检查语义或判定规则变化时必须提升，使旧缓存整体失效。
-CODE_CHECK_RULES_VERSION = "code-check-rules.v1"
+CODE_CHECK_RULES_VERSION = "code-check-rules.v2"
 
 # 默认有界容量与 TTL；调用方可按部署规模覆盖。
 DEFAULT_MAX_ENTRIES = 256
