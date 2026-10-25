@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -20,6 +23,7 @@ from wp_renderer.startup_check import (  # noqa: E402
     RENDERER_EVENT_LOOP_UNSUPPORTED,
     RendererSelfCheck,
     _detect_subprocess_support,
+    _verify_browser,
     run_renderer_self_check,
 )
 
@@ -56,6 +60,29 @@ async def test_self_check_records_loop_type_when_browser_check_is_skipped() -> N
         assert result.reason == RENDERER_EVENT_LOOP_UNSUPPORTED
     else:
         assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_headless_shell_succeeds_without_full_chromium_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """仅安装 headless shell 时，完整 Chromium 路径缺失不应阻断真实启动自检。"""
+
+    page = SimpleNamespace(set_content=AsyncMock(), close=AsyncMock())
+    browser = SimpleNamespace(new_page=AsyncMock(return_value=page), close=AsyncMock())
+    chromium = SimpleNamespace(
+        executable_path=str(tmp_path / "missing-chrome"),
+        launch=AsyncMock(return_value=browser),
+    )
+    playwright = SimpleNamespace(chromium=chromium, stop=AsyncMock())
+    manager = SimpleNamespace(start=AsyncMock(return_value=playwright))
+    monkeypatch.setattr("playwright.async_api.async_playwright", lambda: manager)
+
+    ok, executable, detail = await _verify_browser(1.0)
+
+    assert (ok, executable, detail) == (True, None, "")
+    chromium.launch.assert_awaited_once_with(headless=True)
+    page.set_content.assert_awaited_once()
 
 
 @pytest.mark.asyncio

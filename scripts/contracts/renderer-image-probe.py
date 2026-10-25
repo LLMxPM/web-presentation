@@ -31,9 +31,14 @@ class PreviewFixture(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         """由生产 Chromium 访问页面；固定内容可用于检查下载的截图确实来自该页面。"""
         content = (
-            f"<body style='margin:0;background:rgb(12,34,56)'><div style='height:120px;background:rgb(210,80,30)'></div>"
+            f"<body style='margin:0;background:rgb(12,34,56)'>"
+            "<div class='runtime-page-print-source' "
+            "data-runtime-route-path='/preview' "
+            f"style='width:320px;height:240px;background:rgb(12,34,56)'>"
+            f"<div style='height:120px;background:rgb(210,80,30)'></div></div>"
             f"<script>window.__RENDER_READY__={{protocol:'render-ready.v1',artifactId:'{ARTIFACT}',"
-            f"inputDigest:'{DIGEST}',mounted:true,fonts:{{ready:true}},visualAssets:{{ready:true}}}}</script>"
+            f"inputDigest:'{DIGEST}',executionContext:'capture',routePath:'/preview',"
+            f"entryPath:'/preview',mounted:true,fonts:{{ready:true}},visualAssets:{{ready:true}}}}</script>"
         ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

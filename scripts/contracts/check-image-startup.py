@@ -197,7 +197,18 @@ def verify(image: str, variant: str, output: Path) -> None:
             python_bin = (
                 "/app/.venv-renderer/bin/python" if variant == "lite" else "python"
             )
-            docker("exec", name, python_bin, "/tmp/renderer-image-probe.py", timeout=75)
+            result = docker(
+                "exec",
+                name,
+                python_bin,
+                "/tmp/renderer-image-probe.py",
+                check=False,
+                timeout=75,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Renderer 镜像执行探针失败：{result.stderr[-1600:]}"
+                )
             docker("cp", f"{name}:/tmp/wp-image-evidence/.", str(output))
             verify_renderer_fixture((output / "page.png").read_bytes())
             if variant == "lite":
