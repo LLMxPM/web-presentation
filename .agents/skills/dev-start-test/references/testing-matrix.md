@@ -61,7 +61,7 @@ pnpm run test:render-e2e
 ```
 
 - `test:render-contracts` 运行 `packages/render-contracts` 契约单测；`test:renderer` 运行 Renderer 单测。
-- `test:render-e2e` 先准备 E2E 环境，再运行真实页面截图 smoke，覆盖 Backend→Renderer→Runtime 和 PNG 下载；必须安装 Node/Python 两套 Playwright Chromium。
+- `test:render-e2e` 先准备 E2E 环境，再运行基础页面真实截图 smoke，覆盖 Backend→Renderer→Runtime 和 PNG 下载；三维模型像素截图在 `runtime-heavy` project。必须安装 Node/Python 两套 Playwright Chromium。
 
 ### E2E
 
@@ -78,6 +78,7 @@ pnpm run test:reset:data
 - `test:e2e:run` 只执行 Playwright，假设 prepare 已完成；globalSetup 仍校验 Backend 与 smoke 数据指纹。
 - `test:e2e` 会重置并播种 smoke 数据、确认服务，再执行 Playwright。
 - 默认 project：auth + smoke；扩展回归：visual-edit + ai + runtime-heavy；全部 project：`test:e2e:all`。
+- 三维模型真实像素截图在 `runtime-heavy/model3d-screenshot.spec.ts`；已准备好 E2E 环境时，可用 `pnpm exec playwright test --config tests/config/playwright.config.ts --project=runtime-heavy model3d-screenshot.spec.ts` 定向验证。
 - E2E 服务拓扑包含 Backend、Editor、Runtime、Renderer；报告与失败产物写入 `test-results/e2e/`。
 - E2E 使用独立数据库（库名含 `_e2e`）、Redis DB 15 和 `AI_TEST_MODE=mock`；`prepare` 会重置并播种 E2E 数据。
 - 每次重新 prepare 前必须先停 Backend，再让 prepare 启动；复用运行中的 Backend 可能因数据重置停止后台执行器。`prepare-e2e.mjs --stop-services` 已内置该顺序，并在副作用前拒绝禁用自启、非 mock 或 `TESTING_REUSE_BACKEND=true` 等冲突配置。
@@ -129,7 +130,7 @@ test:backend
 
 - **AI 工具规格、披露组或前端工具说明**：补充防漂移测试，确保工具 key、运行时 Tool、披露工具组和 `agent_guide` 一致。
 - **Runtime Kit manifest 或公开 import path**：补充 Backend 契约测试和 Runtime manifest 测试。
-- **预览、截图、构建、资源引用或 Runtime 回源**：补充相关 integration、contract 或 E2E smoke。
+- **预览、截图、构建、资源引用或 Runtime 回源**：补充相关 integration、contract 或 E2E smoke；三维模型渲染改动另补 `runtime-heavy/model3d-screenshot.spec.ts`。
 - **认证、权限、工作空间隔离**：补充多用户访问或 API 权限测试。
 - **HTTP DTO / OpenAPI**：运行 codegen 后执行 `test:contracts:generated`，并联动 Editor/Runtime/契约测试。
 - **DB 方言、写冲突、后台任务认领**：补充 `test:backend:unit`、`test:backend:integration` 与 `test:backend:pg-claim`。

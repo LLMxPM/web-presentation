@@ -390,7 +390,7 @@ flowchart LR
 
 | 编号 | 自动化证据 | 遗留 |
 | :--- | :--- | :--- |
-| T01 | `backend/tests/api/test_workspace_model3d_assets.py`（上传/下载同 hash）；E2E smoke「三维模型页面截图应包含真实模型像素」真实渲染 | — |
+| T01 | `backend/tests/api/test_workspace_model3d_assets.py`（上传/下载同 hash）；E2E runtime-heavy「三维模型页面截图应包含真实模型像素」真实渲染 | — |
 | T02 | `backend/tests/unit/test_model3d_glb_service.py` 与 api 反例（非法容器/引用/预算/外部 URI 拒绝且旧记录不变） | — |
 | T03 | `runtime/src/runtime-kit/internal/renderers/ModelViewer.test.ts`、`model3d/model-cache.test.ts`（实例独立、共享缓存引用计数、卸载隔离） | — |
 | T04 | W02 并发替换测试与 `backend/tests/integration/test_external_asset_replace.py`（仅一个基线成功、重放无重复历史） | — |
@@ -432,7 +432,7 @@ pnpm run test:render-e2e
 pnpm run test:e2e:regression
 ```
 
-`test:backend:pg-claim` 中的迁移对拍需要真实 PostgreSQL 配置；缺少 PostgreSQL 不能记为双库验收通过。变更远程 DTO 时补跑 test:render-contracts；变更交付镜像和生产依赖时补跑 test:contracts:docker-context、test:python-workspace，以及实际镜像构建和启动。render-e2e 需在现有截图用例中增加模型主流程；复杂多实例与包回归放 runtime-heavy，不能仅新增未被脚本选中的 spec。
+`test:backend:pg-claim` 中的迁移对拍需要真实 PostgreSQL 配置；缺少 PostgreSQL 不能记为双库验收通过。变更远程 DTO 时补跑 test:render-contracts；变更交付镜像和生产依赖时补跑 test:contracts:docker-context、test:python-workspace，以及实际镜像构建和启动。`test:render-e2e` 保留基础远程截图主流程；三维模型像素截图由 `runtime-heavy` project 覆盖，相关改动应定向补跑该用例，不能仅依赖默认 smoke。
 
 ## 合并安排与工作量
 

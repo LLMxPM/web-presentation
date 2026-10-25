@@ -40,28 +40,6 @@ def test_llm_reasoning_migration_should_use_portable_boolean_sql() -> None:
     assert "THEN TRUE ELSE FALSE" in source
 
 
-def test_alembic_head_should_migrate_sqlite_database(tmp_path: Path) -> None:
-    """SQLite 模式应能从空库迁移到当前 head，保障轻量部署首次启动可用。"""
-
-    backend_root = Path(__file__).resolve().parents[2]
-    database_path = tmp_path / "web_presentation.db"
-    env = os.environ.copy()
-    env["DATABASE_URL"] = f"sqlite+aiosqlite:///{database_path.as_posix()}"
-    env["REDIS_URL"] = "memory://sqlite-migration-test"
-
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
-        cwd=backend_root,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr or result.stdout
-    assert database_path.exists()
-
-
 def test_remove_self_delegation_migration_should_purge_history_and_restore_empty_schema(tmp_path: Path) -> None:
     """升级应清空 AI 历史并保留配置与业务数据，降级只恢复空 Member 结构。"""
 
@@ -256,7 +234,7 @@ def test_content_agent_toolset_migration_should_reset_configs_and_runtime_histor
 
 
 def test_model_split_migration_should_reset_legacy_values_and_restore_empty_tables_on_downgrade(tmp_path: Path) -> None:
-    """模型拆分不迁移旧值，降级也只恢复空的旧表结构。"""
+    """先验证旧推理布尔值的迁移语义，再验证模型拆分与降级只恢复空旧表。"""
 
     backend_root = Path(__file__).resolve().parents[2]
     database_path = tmp_path / "llm-reasoning-migration.db"
@@ -291,6 +269,22 @@ def test_model_split_migration_should_reset_legacy_values_and_restore_empty_tabl
             legacy_rows,
         )
         connection.commit()
+
+    _run_alembic(backend_root, env, "20260811_0100")
+
+    with sqlite3.connect(database_path) as connection:
+        reasoning_rows = connection.execute(
+            "SELECT id, reasoning_mode, reasoning_level FROM ai_llm_configs ORDER BY id"
+        ).fetchall()
+        assert reasoning_rows == [
+            (1, "auto", None),
+            (2, "enabled", "low"),
+            (3, "enabled", "low"),
+            (4, "enabled", "max"),
+            (5, "disabled", None),
+            (6, "enabled", "high"),
+            (7, "enabled", "medium"),
+        ]
 
     _run_alembic(backend_root, env, "head")
 

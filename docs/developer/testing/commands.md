@@ -96,7 +96,7 @@ pnpm run test:all
 - `test:python-workspace`：在全部 Python 成员共装后，从根目录、Backend、Renderer 分别导入 `app`、`wp_renderer`、`render_contracts`，并验证根目录诊断 CLI。
 - `test:contracts:docker-context`：向 Docker 发送临时合成配置，验证所有模块的 `.env`、密钥与缓存不会进入构建上下文，示例文件仍可交付。
 - `test:render-contracts` / `test:renderer`：纯契约与 Renderer 单元测试。
-- `test:render-e2e`：准备 E2E 环境后运行真实页面截图 smoke，覆盖四服务链路并检查 PNG 文件头、尺寸与任务状态，不再使用 Renderer 目录的占位用例。
+- `test:render-e2e`：准备 E2E 环境后运行基础页面真实截图 smoke，覆盖四服务链路并检查 PNG 文件头、尺寸与任务状态；三维模型像素截图在 `runtime-heavy` project。
 
 运行 E2E 前分别执行 `pnpm exec playwright install chromium` 与 `uv run --project renderer playwright install chromium`；Linux 首次安装加 `--with-deps`。准备脚本会启动/确认 Renderer，并使用 Backend 真实客户端校验服务认证、Worker ID 和 profile。测试凭据使用专门的 `E2E_RENDER_SERVICE_CREDENTIAL`，可通过 `E2E_RENDERER_BASE_URL` 覆盖 Renderer 地址，禁止复用生产身份。
 
