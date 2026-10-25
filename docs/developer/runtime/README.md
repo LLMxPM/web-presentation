@@ -21,15 +21,12 @@
 | [Connector 连接线组件](./components/connector.md) | DOM 连线能力和约束 |
 | [目录能力使用说明](./components/table-of-contents-guide.md) | 演示文稿目录组件 |
 
-## Runtime 内部接入细节
+## 预览与 Runtime 内部接入
 
 | 文档 | 内容 |
 | :--- | :--- |
-| [SaaS 运行时架构与时序](./integration/runtime-architecture.md) | 预览上下文与运行时边界 |
+| [预览源站与 artifact 接入](../runtime-integration/preview/README.md) | 跨服务预览入口、票据、资源读取和运行时边界 |
 | [放映运行时接入](../runtime-integration/slideshow/README.md) | 计时与媒体调度、双窗口、静态上下文和代码入口 |
-| [鉴权与安全契约](./integration/auth-and-security.md) | 令牌、访问范围与安全约束 |
-| [Backend 对接 API](./integration/backend-api.md) | Runtime 消费的 Backend 接口 |
-| [Preview Artifact 规范](./integration/release-artifact-spec.md) | 预览产物结构 |
 | [Vue 页面资源引用规范](./integration/asset-usage-guide.md) | 资源 URL 与特殊格式渲染 |
 | [三维资源引用规范](./integration/asset-usage-guide.md) | GLB Viewer、资源身份和页面引用入口；后续阶段见[专题工作](../projects/threejs-resource-implementation-plan.md) |
 | [PPTX 导出 DOM 契约](./integration/pptx-export-dom-contract.md) | 表格、媒体与连接线的显式导出属性、版本约定与识别优先级 |

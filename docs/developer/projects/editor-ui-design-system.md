@@ -866,5 +866,5 @@ pnpm run test:editor:gate
 - [`editor/tailwind.config.js`](../../../editor/tailwind.config.js)：当前 Tailwind 主题配置。
 - [`editor/src/components/ui/`](../../../editor/src/components/ui/)：当前基础组件目录。
 - [`editor/src/layouts/AdminLayout.vue`](../../../editor/src/layouts/AdminLayout.vue)：Editor 全局框架。
-- [Editor 前端结构约定](./structure.md)：视图、组件、状态和 API 分层要求。
-- [Editor 测试](./testing.md)：类型检查和 Vitest 入口。
+- [Editor 前端结构约定](../editor/structure.md)：视图、组件、状态和 API 分层要求。
+- [Editor 测试](../editor/testing.md)：类型检查和 Vitest 入口。

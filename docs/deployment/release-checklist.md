@@ -77,8 +77,16 @@ Backend `capabilities.slideshow` 已声明 `advance_modes` 为 `manual`/`timer`�
 
 ---
 
+## 6. CLI 字体与主题发布包对账
+
+**状态**：主仓与 CLI 的真实流程验收已通过，发布安装包仍须按拟发布提交重新构建并核对版本与摘要。
+
+**下一步**：固定两仓提交、CLI/Skill 版本与 OpenAPI 摘要；从最终提交重建安装包，核对包内容和摘要，不复用早期源码快照的包。历史实施和实测证据见[CLI 字体主题归档](../archive/developer-work-2026-10/cli-font-theme/implementation-plan.md)。
+
+---
+
 ## 使用说明
 
-- 以上事项的完整历史记录保留在 [`docs/archive/architecture-2026-09/`](../archive/architecture-2026-09/README.md)。
+- 架构治理事项的历史记录保留在[架构治理归档](../archive/architecture-2026-09/README.md)；CLI 字体主题的实施与验收记录保留在[开发专题归档](../archive/developer-work-2026-10/README.md)。
 - 事项闭环后在对应段落注明完成日期、证据位置和结论。
 - 新增待验证事项按相同格式追加，不混入已闭环条目。

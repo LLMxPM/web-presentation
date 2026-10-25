@@ -1,6 +1,6 @@
 # CLI 字体管理与主题图片、字体配置实施规划
 
-规划日期：2026-10-20。状态更新（2026-10-25）：WP01–WP08 已完成，WP09 功能验收通过，发布安装包对账待做；真实证据见[验收记录](live-validation-2026-10-20.md)。早期缺少真实环境证据的“全部完成/生产交付”结论已撤回，[修复记录](../../../archive/developer-work-2026-10/cli-font-theme/review-fixes.md)保留审查过程。
+规划日期：2026-10-20。状态更新（2026-10-25）：WP01–WP08 已完成，WP09 功能验收通过，发布安装包对账待做；真实证据见[验收记录](live-validation-2026-10-20.md)。早期缺少真实环境证据的“全部完成/生产交付”结论已撤回，[修复记录](review-fixes.md)保留审查过程。
 
 | 仓库 | 分支 | 分支起点与评估基线 | 职责 |
 | --- | --- | --- | --- |
@@ -9,7 +9,7 @@
 
 CLI 评估版本为 `0.3.4`，Skill 为 `1.4.2`。以上 commit 用于追溯分析，不能当作新功能的最低支持版本。发布时另行固定两仓完整 commit、CLI/Skill 版本及 OpenAPI 摘要。
 
-本文件维护平台侧契约候选、实施顺序和联合验收；[工作包清单](work-packages/README.md)记录依赖和进度。[CLI 实施规划](https://github.com/LLMxPM/web-presentation-cli/blob/feature/cli-font-theme/docs/font-theme/implementation-plan.md)维护具体命令与客户端工作包。跨仓 GitHub 链接在对应分支推送后可用；本地 CLI 文档位于同级 `web-presentation-cli/docs/font-theme/`。已交付契约仍以 [External API v1](../../reference/external-agent-api.md)为准，下文目标契约须经 WP01 冻结后实施。
+本文件维护平台侧契约候选、实施顺序和联合验收；[工作包清单](work-packages/README.md)记录依赖和进度。[CLI 实施规划](https://github.com/LLMxPM/web-presentation-cli/blob/feature/cli-font-theme/docs/font-theme/implementation-plan.md)维护具体命令与客户端工作包。跨仓 GitHub 链接在对应分支推送后可用；本地 CLI 文档位于同级 `web-presentation-cli/docs/font-theme/`。已交付契约仍以 [External API v1](../../../developer/reference/external-agent-api.md)为准，下文目标契约须经 WP01 冻结后实施。
 
 ## 1. 交付目标与范围
 

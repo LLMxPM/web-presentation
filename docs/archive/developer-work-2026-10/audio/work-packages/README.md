@@ -1,16 +1,16 @@
 # 音频工作包执行清单
 
-状态（2026-10-25）：WP01–WP19 的主仓实现与 CLI 音频命令已落地；原 WP06/WP12/WP20 已获得[动画前联合验收](../../../../archive/developer-work-2026-10/pre-motion-joint-acceptance.md)的主要 Chromium 实机证据，但原矩阵尚未逐项全数关闭。资源、旁白和 cue 已默认开放；未覆盖的放映联调交由 `feature/motion` 的 A1/B4 接续，MCP 不在当前交付范围。共 20 个历史工作包，原 M0/M1/M2 出口分别为 WP06、WP12、WP20。
+状态（2026-10-25）：WP01–WP19 的主仓实现与 CLI 音频命令已落地；原 WP06/WP12/WP20 已获得[动画前联合验收](../../pre-motion-joint-acceptance.md)的主要 Chromium 实机证据，但原矩阵尚未逐项全数关闭。资源、旁白和 cue 已默认开放；未覆盖的放映联调交由 `feature/motion` 的 A1/B4 接续，MCP 不在当前交付范围。共 20 个历史工作包，原 M0/M1/M2 出口分别为 WP06、WP12、WP20。
 
 ## 1. 使用方式
 
 每个工作包应对应一个可独立评审的提交或 PR。领取工作时引用 WP 编号，完成后在卡片中回填代码版本、测试命令、结果和未运行项。
 
-- 字段、默认值和运行行为只以[统一契约](../../../runtime-integration/audio/contract.md)为准。
+- 字段、默认值和运行行为只以[统一契约](../../../../developer/runtime-integration/audio/contract.md)为准。
 - 前置表示开始实现所需输入，不表示可以跳过本包自己的测试。
 - 状态按“待实施 → 实施中 → 待验收 → 完成”更新。
 - 修改 OpenAPI、Runtime Kit manifest、模板包 Schema 或数据库时，由指定工作包维护唯一变更，后续包只消费。
-- 单包合入不开放阶段能力；只有出口包完成并满足[验收计划](../acceptance.md)后才更新 capability 和用户文档。
+- 单包合入不开放阶段能力；只有出口包完成并满足[验收计划](../../../../developer/projects/audio/acceptance.md)后才更新 capability 和用户文档。
 - 实际测试选择遵循 [`dev-start-test`](../../../../../.agents/skills/dev-start-test/SKILL.md)，不在每张卡复制服务命令。
 
 ## 2. M0：音频资源基线

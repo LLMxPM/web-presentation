@@ -140,6 +140,6 @@ AI run/HITL **不依赖** Redis run hash 或 Redis stream；截图认领、资�
 
 - 部署与环境变量：[`../../deployment/production/env-vars.md`](../../deployment/production/env-vars.md)
 - Lite 拓扑：[`../../deployment/production/compose.md`](../../deployment/production/compose.md)
-- 渲染 artifact 生命周期：[`./remote-render-service-design.md`](./remote-render-service-design.md)
+- 渲染 artifact 生命周期：[远程渲染服务](./remote-render-service.md)
 - 任务租约与队列：[`./resource-queues.md`](./resource-queues.md)
 - 排障入口：[`./troubleshooting.md`](./troubleshooting.md)

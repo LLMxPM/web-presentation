@@ -19,7 +19,7 @@
 
 | 原报告判断或建议 | 当前证据 | 复核意见 |
 | :--- | :--- | :--- |
-| Backend 中的 `PlaywrightBrowserPool` 与 Uvicorn 共进程，应外移浏览器 | [应用启动](../../../../backend/app/main.py)启动 `RenderCoordinator`；[页面渲染业务入口](../../../../backend/app/services/page_render_diagnostics_service.py)调用远程渲染；[Renderer 设计实施摘要](../../../developer/backend/remote-render-service-design.md#16-实施落地摘要2026-09)列出旧池删除 | **已过时。** 浏览器执行已外移。当前应审查跨进程结果语义、租约、产物与发布一致性。 |
+| Backend 中的 `PlaywrightBrowserPool` 与 Uvicorn 共进程，应外移浏览器 | [应用启动](../../../../backend/app/main.py)启动 `RenderCoordinator`；[页面渲染业务入口](../../../../backend/app/services/page_render_diagnostics_service.py)调用远程渲染；[Renderer 设计实施摘要](../../developer-work-2026-10/remote-render-service-design.md#16-实施落地摘要2026-09)列出旧池删除 | **已过时。** 浏览器执行已外移。当前应审查跨进程结果语义、租约、产物与发布一致性。 |
 | Node/Vite 编译与 Chromium 渲染是无意义的“双重构建”，跳过编译可节省 50% | [代码检查](../../../../backend/app/services/code_check_service.py)先调用 Runtime 编译，成功后才追加页面渲染诊断；[组件校验](../../../../backend/app/services/component_validation_service.py)只覆盖契约与 Runtime 编译 | **问题存在，结论不成立。** 两阶段检查的失败集合不同。浏览器访问预览仍依赖 Runtime/Vite；删除显式编译检查可能改变错误归类与组件保障。50% 的收益没有基线。应按真实阶段耗时与等价测试判断是否合并。 |
 | 单容器容纳 Chromium，任一子进程失效都会带崩全站 | [SQLite Lite Compose](../../../../deploy/compose/compose.sqlite-lite.yml)已有独立 `renderer`，但 `platform-lite` 仍集成 Backend、Runtime、Gateway；[启动脚本](../../../../deploy/docker/entrypoints/start_lite.sh)发现任一平台子进程退出会结束其余进程 | **部分仍成立。** Chromium 已隔离；轻量平台内的三个服务仍共享故障域与内存预算。不能照旧报告写成“四进程含浏览器同容器”。 |
 | 数据库租约队列应换成纯进程内队列、固定租约、只在启动时恢复 | [页面变更队列](../../../../backend/app/ai/page_mutation_queue.py)采用进程内唤醒加数据库轮询兜底，运行时续租；[租约服务](../../../../backend/app/services/durable_job_lease_service.py)用拥有者条件更新 | **不应照搬。** 纯内存通知会丢失重启及跨实例唤醒；固定租约无法安全覆盖长时间模型或渲染步骤。SQLite 写放大仍值得测量，但优化对象应是轮询与心跳频率、事务量，而非删除持久化事实源。 |

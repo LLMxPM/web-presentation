@@ -18,7 +18,7 @@
 
 - [x] 同幂等键同载荷回放不重复写，异载荷冲突。
 - [x] 省略、空列表、非法 key、跨 workspace 和非 audio 错误语义在主仓 External API 已覆盖。
-- [x] CLI 命令与门禁已交付；真实上传/下载/替换 WAV 及项目音频配置读改见[动画前联合验收](../../../../archive/developer-work-2026-10/pre-motion-joint-acceptance.md)。
+- [x] CLI 命令与门禁已交付；真实上传/下载/替换 WAV 及项目音频配置读改见[动画前联合验收](../../pre-motion-joint-acceptance.md)。
 - [ ] cue 绑定与原子清空的完整 CLI 操作序列尚未单独逐项留证，交由后续播放联调接续。
 - [x] CLI 文档、Skill 和安装包检查已同步；MCP 说明另行维护。
 

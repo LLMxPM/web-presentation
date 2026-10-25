@@ -151,10 +151,9 @@ Backend 触发整项目构建时，Runtime 会使用专用的 `build-release-mai
 
 ### 外部对接文档
 
-- [SaaS 运行时架构与时序](../docs/developer/runtime/integration/runtime-architecture.md)
-- [鉴权与安全契约](../docs/developer/runtime/integration/auth-and-security.md)
-- [Backend 对接 API](../docs/developer/runtime/integration/backend-api.md)
-- [发布产物规范](../docs/developer/runtime/integration/release-artifact-spec.md)
+- [预览源站与 artifact 接入](../docs/developer/runtime-integration/preview/README.md)
+- [构建产物规格](../docs/developer/runtime-integration/build-artifact-spec.md)
+- [Backend 预览 artifact 与构建任务](../docs/developer/backend/preview-artifacts.md)
 - [平台接入流程](../docs/developer/runtime-integration/runtime-workflow.md)
 
 ## 说明

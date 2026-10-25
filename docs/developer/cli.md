@@ -15,7 +15,7 @@
 
 2026-10-05 已建立 [CLI OAuth 主仓实施计划](projects/cli-oauth-implementation-plan.md)，由平台扩展官方 CLI 客户端、原生回调和面向 API 的直接 OAuth 凭证；客户端实现归 CLI 仓库 `oauth` 分支。当前 CLI 仍使用 PAT，计划不代表新认证已经可用。
 
-CLI 字体与主题配置的主仓与 CLI 实现已完成真实流程、PostgreSQL、字体加载、PNG 和独立构建验证；发布安装包仍需按最终提交对账。证据与剩余事项见[专题计划](projects/cli-font-theme/implementation-plan.md)及[工作包清单](projects/cli-font-theme/work-packages/README.md)。具体命令、输出和 Skill 归 CLI 仓维护。
+CLI 字体与主题配置的主仓与 CLI 实现已完成真实流程、PostgreSQL、字体加载、PNG 和独立构建验证；[实施计划与工作包](../archive/developer-work-2026-10/cli-font-theme/implementation-plan.md)已归档。发布安装包仍需按最终提交对账，见[发布检查清单](../deployment/release-checklist.md)。具体命令、输出和 Skill 归 CLI 仓维护。
 
 ## 2. 责任分工
 

@@ -41,4 +41,4 @@ OpenAPI 导出使用独立进程，清除应用配置环境覆盖、禁读 `.env
 - Batch 的 collecting/waiting_tasks 属于前置等待，ready 才可续跑；不能将 pending 合计误作立即可执行量。
 - 没有待执行任务时最老年龄为 `null`，不是零。
 
-本地非空数据集覆盖排队、重试、执行、缺失/过期租约、终态和供应商等待，并验证 totals 排除重复投影。真实 PG 对账、混合负载采样开销及容量结论属于现行计划 M03，尚未验收。
+本地非空数据集覆盖排队、重试、执行、缺失/过期租约、终态和供应商等待，并验证 totals 排除重复投影。历史 M03 运行证据见[架构治理归档](../../archive/architecture-2026-09/README.md)；发布环境尚需补充的容量证据以[发布检查清单](../../deployment/release-checklist.md)为准。

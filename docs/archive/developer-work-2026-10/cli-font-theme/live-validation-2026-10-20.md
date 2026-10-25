@@ -78,7 +78,7 @@ $env:P4_POSTGRES_REQUIRED='1'
 uv run --no-sync --project backend pytest -c backend/pyproject.toml backend/tests/integration/test_pg_claim_contention.py backend/tests/integration/test_migration_behavior_contracts.py backend/tests/integration/test_pg_font_registration.py --tb=short -q -rs
 ```
 
-Backend 125 项命令在[修复记录](../../../archive/developer-work-2026-10/cli-font-theme/review-fixes.md)的 108 项列表上追加 `backend/tests/unit/test_theme_asset_fingerprint.py`、`backend/tests/unit/test_code_check_fingerprint_builder.py`、`backend/tests/unit/test_page_screenshot_fingerprint_service.py`、`backend/tests/unit/test_page_screenshot_job_service.py`，最后一次合并执行结果为 125 passed。
+Backend 125 项命令在[修复记录](review-fixes.md)的 108 项列表上追加 `backend/tests/unit/test_theme_asset_fingerprint.py`、`backend/tests/unit/test_code_check_fingerprint_builder.py`、`backend/tests/unit/test_page_screenshot_fingerprint_service.py`、`backend/tests/unit/test_page_screenshot_job_service.py`，最后一次合并执行结果为 125 passed。
 
 CLI 全量命令沿用修复记录。Runtime 定向命令为 `pnpm --dir runtime test -- src/core/utils/font-registry.test.ts` 和 `pnpm --dir runtime check`；本机复用依赖时在 pnpm 后增加 `--config.verify-deps-before-run=false`。最终 wheel 也重新装入 `.tmp/review-font-theme-install-20261020`，以 `python -I` 确认从隔离 site-packages 加载下载修复和 Skill 1.4.4。
 

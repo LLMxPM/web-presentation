@@ -32,4 +32,4 @@ Runtime Kit 是页面源码和工作空间组件可引用的公共能力集合�
 - [Runtime 接入文档入口](../runtime-integration/README.md)
 - [Runtime Kit 契约](../runtime-integration/runtime-kit-contract.md)
 - [previewSchema 契约](../runtime-integration/preview-schema.md)
-- [构建产物规格](../runtime-integration/release-artifact-spec.md)
+- [构建产物规格](../runtime-integration/build-artifact-spec.md)

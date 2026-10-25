@@ -2,7 +2,7 @@
 
 状态（2026-10-25）：主要 Chromium 实机证据已补齐，原 A01–A06 全格式和浏览器矩阵未全部关闭；`audio_assets` 已按实际范围开放。阶段：M0 出口。主责：跨模块验证 / 发布。
 
-后续证据见[动画前联合验收](../../../../archive/developer-work-2026-10/pre-motion-joint-acceptance.md)：真实 CLI WAV 上传/下载/替换、受保护音频 Range/HEAD/304 与鉴权负例、MP3 手动播放和离页停播、PDF/PPTX 静态禁播、含 WAV 的独立 ZIP 与模板包往返均通过。M4A/OGG、Firefox/WebKit，以及 A01–A06 未逐项覆盖的操作和格式仍按实际支持范围记录，不把这轮样本写成全矩阵通过。
+后续证据见[动画前联合验收](../../pre-motion-joint-acceptance.md)：真实 CLI WAV 上传/下载/替换、受保护音频 Range/HEAD/304 与鉴权负例、MP3 手动播放和离页停播、PDF/PPTX 静态禁播、含 WAV 的独立 ZIP 与模板包往返均通过。M4A/OGG、Firefox/WebKit，以及 A01–A06 未逐项覆盖的操作和格式仍按实际支持范围记录，不把这轮样本写成全矩阵通过。
 
 ## 前置与输入
 

@@ -4,7 +4,7 @@
 
 ## 前置与输入
 
-无。以[统一契约](../../../runtime-integration/audio/contract.md)为输入。
+无。以[统一契约](../../../../developer/runtime-integration/audio/contract.md)为输入。
 
 ## 修改范围与交付
 

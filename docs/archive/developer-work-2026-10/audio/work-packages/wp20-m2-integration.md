@@ -22,7 +22,7 @@
 
 ## 后续联合验收（2026-10-24 至 25）
 
-[动画前联合验收](../../../../archive/developer-work-2026-10/pre-motion-joint-acceptance.md)补证：CLI 真实读改音频配置及 cue，用户实听旁白与短 cue；独立 ZIP 在 Chromium 连续 30 分 55 秒完成 1000 次 interaction cue、1000 次前进 cue、2000 次导航，0 次 `play()` 拒绝、0 个外部请求、退出后播放中元素为 0；PDF/PPTX 静态禁播、完整主门禁和真实 Renderer 均通过。这覆盖了原卡所列的主要 Chromium 与 cue 长稳缺口，但 Firefox/WebKit、M4A/OGG 和 A14–A20 其它未逐项验证的场景尚不能标全通过。后续联调由 `feature/motion` 的放映收敛 A1/B4 接续；cue 已默认开放，未测路径不列为已验收。
+[动画前联合验收](../../pre-motion-joint-acceptance.md)补证：CLI 真实读改音频配置及 cue，用户实听旁白与短 cue；独立 ZIP 在 Chromium 连续 30 分 55 秒完成 1000 次 interaction cue、1000 次前进 cue、2000 次导航，0 次 `play()` 拒绝、0 个外部请求、退出后播放中元素为 0；PDF/PPTX 静态禁播、完整主门禁和真实 Renderer 均通过。这覆盖了原卡所列的主要 Chromium 与 cue 长稳缺口，但 Firefox/WebKit、M4A/OGG 和 A14–A20 其它未逐项验证的场景尚不能标全通过。后续联调由 `feature/motion` 的放映收敛 A1/B4 接续；cue 已默认开放，未测路径不列为已验收。
 
 ## 当时证据（2026-10-18）
 

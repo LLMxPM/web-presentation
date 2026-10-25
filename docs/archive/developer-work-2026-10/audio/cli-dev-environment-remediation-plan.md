@@ -1,8 +1,8 @@
 # CLI 连接开发环境实测复核与改造计划
 
-日期：2026-10-19。状态：部分实施；C01/C02/C03/C04、P01、P02、E03a、E04 已交付，E01/E02/E03b 未实施。本文保留当时的复核证据与改造方案；2026-10-25 进度以[音频总计划](README.md)为准，MCP 已移出当前交付范围。
+日期：2026-10-19。状态：部分实施；C01/C02/C03/C04、P01、P02、E03a、E04 已交付，E01/E02/E03b 未实施。本文保留当时的复核证据与改造方案；2026-10-25 进度以[音频总计划](plan.md)为准，MCP 已移出当前交付范围。
 
-适用仓库：`web-presentation`、`web-presentation-cli`；External 契约变化同步通知 `web-presentation-mcp`。音频字段、默认值和播放语义继续以[统一契约](../../runtime-integration/audio/contract.md)为准，本文承接 [WP19](work-packages/wp19-external-clients.md) 与 [WP20](work-packages/wp20-m2-integration.md)，不新增另一套音频契约。
+适用仓库：`web-presentation`、`web-presentation-cli`；External 契约变化同步通知 `web-presentation-mcp`。音频字段、默认值和播放语义继续以[统一契约](../../../developer/runtime-integration/audio/contract.md)为准，本文承接 [WP19](work-packages/wp19-external-clients.md) 与 [WP20](work-packages/wp20-m2-integration.md)，不新增另一套音频契约。
 
 ## 1. 复核结论与证据边界
 
@@ -186,7 +186,7 @@ HTTP DTO 变更运行 Editor API codegen 与 generated 防漂移；External 路�
 
 每批记录主仓/CLI 提交与工作树差异、安装包版本、命令、通过/失败/跳过数量、未运行项；CLI 帮助使用当前 Backend OpenAPI，失败不回退离线契约。MCP 后续适配单独记录，不因其未交付保留 WP19/WP20 未完成状态。
 
-真实声音验收仍按[音频验收计划](acceptance.md)：手动播放、autoplay blocked、Range/seek、旁白起止与 generation、单一播放窗口、切页/点击 cue、静音、长稳和离线构建。截图只能确认界面渲染，不能证明可听、自动旁白或 cue 播放。不得用本次两页截图或 API Client 绕行替代阶段门禁。
+真实声音验收仍按[音频验收计划](../../../developer/projects/audio/acceptance.md)：手动播放、autoplay blocked、Range/seek、旁白起止与 generation、单一播放窗口、切页/点击 cue、静音、长稳和离线构建。截图只能确认界面渲染，不能证明可听、自动旁白或 cue 播放。不得用本次两页截图或 API Client 绕行替代阶段门禁。
 
 ## 7. 现场对象与本轮文档验证
 

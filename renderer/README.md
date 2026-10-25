@@ -16,7 +16,7 @@ Linux 首次安装使用 `playwright install --with-deps chromium`。配置按�
 
 Backend 的 `RENDER_WORKERS_CONFIG` 必须包含本服务的 `RENDER_WORKER_ID` 和可达地址。两侧使用相同的 `RENDER_SERVICE_CREDENTIAL` 或凭据文件及 `RENDER_PROFILE_DIGEST`。空值、缺失文件和占位密钥会阻止服务启动。
 
-`/livez` 检查进程存活；`/readyz` 在启动自检后返回事件循环、子进程支持、Chromium 可执行条件与槽位状态。自检会实际启动一次 Chromium 并打开空白页；失败时 `/readyz` 返回 503 和稳定 `reason`（`RENDERER_EVENT_LOOP_UNSUPPORTED` / `RENDERER_BROWSER_UNAVAILABLE`），不会静默降级。`slot_state=busy` 只表示正在执行，不影响健康判定。`RENDER_SELF_CHECK_BROWSER=false` 可跳过浏览器验证，仅用于明确不需要渲染的排查场景。控制 API 还需要服务身份令牌。详细契约见 [远程渲染设计](../docs/developer/backend/remote-render-service-design.md)。
+`/livez` 检查进程存活；`/readyz` 在启动自检后返回事件循环、子进程支持、Chromium 可执行条件与槽位状态。自检会实际启动一次 Chromium 并打开空白页；失败时 `/readyz` 返回 503 和稳定 `reason`（`RENDERER_EVENT_LOOP_UNSUPPORTED` / `RENDERER_BROWSER_UNAVAILABLE`），不会静默降级。`slot_state=busy` 只表示正在执行，不影响健康判定。`RENDER_SELF_CHECK_BROWSER=false` 可跳过浏览器验证，仅用于明确不需要渲染的排查场景。控制 API 还需要服务身份令牌。详细契约见 [远程渲染服务](../docs/developer/backend/remote-render-service.md)。
 
 ## 测试与交付
 

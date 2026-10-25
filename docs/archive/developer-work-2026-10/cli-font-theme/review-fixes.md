@@ -56,6 +56,6 @@ uv run --no-sync python packages/cli/tests/verify_skill_distribution.py .tmp/rev
 
 ## 后续真实验收
 
-用户随后授权更新全局 Skill 并进行真实测试。全局 CLI 已升级为包含下载修复的 0.3.5，Skill 为 1.4.4；PostgreSQL、真实字体/主题流程、浏览器字形、PNG 刷新与独立构建已实际验证。测试又发现并修复字体 CSS 格式、ZIP 下载响应头、PG 并发注册及替换后的截图缓存问题。最终结果和替代本页首轮产物的摘要见[真实验收记录](../../../developer/projects/cli-font-theme/live-validation-2026-10-20.md)。
+用户随后授权更新全局 Skill 并进行真实测试。全局 CLI 已升级为包含下载修复的 0.3.5，Skill 为 1.4.4；PostgreSQL、真实字体/主题流程、浏览器字形、PNG 刷新与独立构建已实际验证。测试又发现并修复字体 CSS 格式、ZIP 下载响应头、PG 并发注册及替换后的截图缓存问题。最终结果和替代本页首轮产物的摘要见[真实验收记录](live-validation-2026-10-20.md)。
 
 WP09 仍需补齐旧平台版本兼容实测和发布前最终 commit 固定。本轮不修改用户开发数据，不推送、发版或部署。
