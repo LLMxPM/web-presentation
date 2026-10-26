@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
@@ -18,6 +18,7 @@ from app.schemas.project_build import (
     ProjectBuildJobResponse,
 )
 from app.services.auth_service import AuthContext
+from app.services.build_artifact_download import build_artifact_download_response
 from app.services.object_storage_service import ObjectStorageService
 from app.services.project_build_service import ProjectBuildService
 from app.services.project_service import ProjectService
@@ -100,27 +101,29 @@ async def get_project_build_job(
 async def download_project_build_artifact(
     project_id: int,
     job_id: int,
+    request: Request,
     current: Annotated[AuthContext, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-):
-    """下载指定项目构建任务的归档产物。"""
+) -> Response:
+    """下载指定项目构建任务的归档产物。
+
+    S3 驱动直接转发对象存储响应体，响应头不再等待整包回源；因此下载路径
+    不再做整包 sha256 复核，完整性由上传阶段校验。
+    """
 
     service = ProjectBuildService(session)
     job = await service.get_job_by_project_and_id(project_id, job_id)
     await ProjectService(session).get(job.project_id, user_id=current.user.id)
     if not job.artifact_storage_key:
         raise AppException(status_code=404, code="BUILD_ARTIFACT_NOT_FOUND", detail="当前构建任务尚未生成可下载产物。")
-    # 走本地可读路径流式发送，避免大归档整包进入响应内存；S3 驱动会先落派生缓存。
-    async with ObjectStorageService().open_object_for_read(
-        job.artifact_storage_key,
-        expected_sha256=job.artifact_sha256,
-        expected_size=job.artifact_size_bytes,
-    ) as archive_path:
-        return FileResponse(
-            path=str(archive_path),
-            media_type="application/zip",
-            filename=f"project-{project_id}-build-{job_id}.zip",
-        )
+
+    return await build_artifact_download_response(
+        request=request,
+        storage=ObjectStorageService(),
+        storage_key=job.artifact_storage_key,
+        filename=f"project-{project_id}-build-{job_id}.zip",
+        etag=job.artifact_sha256,
+    )
 
 
 @router.delete("/projects/{project_id}/build-jobs/{job_id}/artifact", status_code=204)

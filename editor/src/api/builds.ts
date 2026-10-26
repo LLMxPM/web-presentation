@@ -2,7 +2,7 @@
  * 文件功能：封装项目整包构建任务的创建与查询请求。
  */
 
-import { http } from '@/api/http'
+import { http, resolveApiBaseUrl } from '@/api/http'
 import type { ProjectBuildAssetSummary, ProjectBuildCreateRequest, ProjectBuildJob } from '@/types/api'
 import type { ProjectBuildJobAccessResponse } from '@/types/api.generated'
 export type { ProjectBuildJobAccessResponse } from '@/types/api.generated'
@@ -58,21 +58,49 @@ export async function getProjectBuildJob(jobId: number) {
 
 /**
  * 下载指定构建任务的 ZIP 归档。
+ *
+ * 归档大小与用户下行带宽共同决定传输时长，不能共用 axios 的固定超时预算：
+ * 这里只用 HEAD 拿明确的鉴权/存在性错误与响应头，真正的字节传输交给浏览器
+ * 下载管理器——不受脚本超时约束，弱网断流后还能按 Range 继续传输。
  * @param projectId 项目 ID
  * @param jobId 构建任务 ID
  */
 export async function downloadProjectBuildArtifact(projectId: number, jobId: number): Promise<void> {
-  const response = await http.get<Blob>(`/projects/${projectId}/build-jobs/${jobId}/artifact`, {
-    responseType: 'blob',
-  })
-  const downloadUrl = window.URL.createObjectURL(response.data)
+  const artifactPath = `/projects/${projectId}/build-jobs/${jobId}/artifact`
+  const response = await http.head(artifactPath)
+  triggerArtifactDownload(
+    resolveArtifactDownloadUrl(artifactPath),
+    resolveArtifactFileName(response.headers['content-disposition'], projectId, jobId),
+  )
+}
+
+/**
+ * 拼接下载地址。
+ * 优先沿用 API 基础地址，保证鉴权 Cookie 与其它请求落到同一入口；不使用后端
+ * 返回的绝对下载地址，避免反向代理或内外网域名不一致时丢失登录态。
+ * 合并语义与 axios 的 baseURL 一致：基础地址被显式配置成 `/`（API 挂在根路径）
+ * 时，撕掉尾部斜杠后前缀为空，结果是 `/projects/...`——这与 axios 实际发出的
+ * 路径相同，属于正确行为，不要在此补 `/api`，否则下载会与其它请求分叉。
+ * @param artifactPath 产物接口路径
+ * @returns 可由浏览器直接导航的下载地址
+ */
+export function resolveArtifactDownloadUrl(artifactPath: string): string {
+  return `${resolveApiBaseUrl().replace(/\/+$/, '')}${artifactPath}`
+}
+
+/**
+ * 创建临时 a 标签交给浏览器原生下载。
+ * @param downloadUrl 产物下载地址
+ * @param filename 浏览器保存时建议使用的文件名
+ */
+export function triggerArtifactDownload(downloadUrl: string, filename: string): void {
   const link = document.createElement('a')
   link.href = downloadUrl
-  link.download = resolveArtifactFileName(response.headers['content-disposition'], projectId, jobId)
+  link.download = filename
+  link.rel = 'noopener'
   document.body.appendChild(link)
   link.click()
   link.remove()
-  window.URL.revokeObjectURL(downloadUrl)
 }
 
 /**

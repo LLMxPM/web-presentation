@@ -55,6 +55,7 @@
         :history-loading="historyLoading"
         :latest-job-id="latestJobId"
         :deleting-job-id="deletingJobId"
+        :downloading-job-id="downloadingJobId"
         @refresh="emit('refresh')"
         @open="job => emit('open', job)"
         @download="job => emit('download', job)"
@@ -85,6 +86,7 @@ const props = withDefaults(defineProps<{
   latestJob?: ProjectBuildJob | null
   latestJobId?: number | null
   deletingJobId?: number | null
+  downloadingJobId?: number | null
   defaultBaseUrl?: string | null
   workspaceId?: number | null
   buildExtraAssetsJson?: ProjectBuildExtraAssetsJson | null
@@ -99,6 +101,7 @@ const props = withDefaults(defineProps<{
   latestJob: null,
   latestJobId: null,
   deletingJobId: null,
+  downloadingJobId: null,
   defaultBaseUrl: './',
   workspaceId: null,
   buildExtraAssetsJson: null,

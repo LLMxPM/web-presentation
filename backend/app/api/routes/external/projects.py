@@ -25,6 +25,7 @@ from app.schemas.external_api import (
 )
 from app.schemas.project import ProjectCreateRequest, ProjectItem, ProjectUpdateRequest
 from app.schemas.project_route import ProjectRouteTreeResponse, ProjectRouteTreeWriteRequest
+from app.services.build_artifact_download import build_artifact_download_response
 from app.services.business_operation_service import BusinessOperationService
 from app.services.idempotency_service import IdempotencyService
 from app.services.project_audio_settings_service import ProjectAudioSettingsService
@@ -537,12 +538,11 @@ async def get_external_project_build_artifact(
     auth: Annotated[ExternalAuthContext, Depends(require_external_operation("project.build_job.artifact"))],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     x_workspace_id: Annotated[int, Header(alias="X-Workspace-ID", description="目标工作空间 ID")],
-):
+) -> Response:
     """External API 读取或下载指定项目构建任务的 ZIP 归档产物。"""
 
-    from fastapi.responses import FileResponse
-    from app.services.project_build_service import ProjectBuildService
     from app.services.object_storage_service import ObjectStorageService
+    from app.services.project_build_service import ProjectBuildService
 
     service = ProjectBuildService(session)
     job = await service.get_job_by_project_and_id(project_id, job_id)
@@ -564,27 +564,11 @@ async def get_external_project_build_artifact(
             headers={"Cache-Control": "no-store"},
         )
 
-    async with ObjectStorageService().open_object_for_read(
-        job.artifact_storage_key,
-        expected_sha256=job.artifact_sha256,
-        expected_size=job.artifact_size_bytes,
-    ) as archive_path:
-        filename = f"project-{project_id}-build-{job_id}.zip"
-        headers = {"Cache-Control": "no-store"}
-        if request.method == "HEAD":
-            return Response(
-                status_code=200,
-                media_type="application/zip",
-                headers={
-                    **headers,
-                    "Content-Disposition": f'attachment; filename="{filename}"',
-                    "Content-Length": str(job.artifact_size_bytes or archive_path.stat().st_size),
-                },
-            )
-        return FileResponse(
-            path=str(archive_path),
-            media_type="application/zip",
-            filename=filename,
-            headers=headers,
-        )
+    return await build_artifact_download_response(
+        request=request,
+        storage=ObjectStorageService(),
+        storage_key=job.artifact_storage_key,
+        filename=f"project-{project_id}-build-{job_id}.zip",
+        etag=job.artifact_sha256,
+    )
 

@@ -41,6 +41,7 @@ Renderer 浏览器使用本次 artifact 的短期票据 P 读取受保护素材�
 6. Worker 以 `POST /internal/runtime/build-jobs/{job_id}/artifact` 上传产物：归档按分块流直接作为请求体，入口文件与 sha256、大小通过 `x-runtime-build-archive-*` 头声明，两侧都不再把整包读进内存，Backend 超过 `PROJECT_BUILD_ARTIFACT_MAX_BYTES` 即中止写入。校验和/大小不符、attempt 围栏失守或提交异常时，Backend 会删除这个没有任何行引用的 attempt 归档，避免对象存储积累 orphan；仍被任务行引用的产物一律保留。上传成功后调用 `complete`。Backend 只在 `attempt_id` 与**有效租约**同时匹配时才提升产物或写终态，失守的执行者只能留下等待恢复的 `running` 行。
 7. `complete(success)` 对同一 `attempt_id` 幂等：任务已是 `succeeded` 且产物已提升时返回 200 而不是 409，Runtime 侧对传输失败与 5xx 再做最多 3 次重试。否则「产物已上传、complete 响应丢失」只能等租约过期，用户会看到产物已生成但任务仍 `running` 十几分钟。4xx 是确定性拒绝，不重试。
 8. 恢复循环按过期租约接管或收敛：已经上传产物的任务收敛为 `succeeded`，超过总期限仍未被领取的任务收敛为 `failed`。
+9. 下载走 `GET /api/projects/{project_id}/build-jobs/{job_id}/artifact`：本地驱动用 `FileResponse`，S3 驱动在 `head_object` 取到元信息后直接把 `get_object` 的响应体转发给客户端，不再整包回源到 `_object-cache`，因此该路径不做整包 sha256 复核——完整性由第 6 步上传阶段保证。两条链路都支持单区间 `Range` 与 `If-Range`；Editor 先用 `HEAD` 预检拿鉴权/存在性错误，再把字节传输交给浏览器原生下载，避免把产物大小与带宽的乘积压进脚本超时预算。
 
 构建不存在第二跳执行路径：Backend 不再向 Runtime 同步派发构建，Runtime 也不暴露构建 HTTP 入口。凭证未配置时 Backend claim API fail-closed 且 Worker 不启动，构建任务停留在 `pending` 直到总期限把它收敛为失败。`RUNTIME_ROLE=build` 的容器在这种情况下直接启动失败，`/__runtime_readyz` 也不会就绪——「进程健康但永远不构建」比启动失败更难发现。
 
