@@ -23900,7 +23900,7 @@
           "build-jobs"
         ],
         "summary": "Download Project Build Artifact",
-        "description": "下载指定项目构建任务的归档产物。",
+        "description": "下载指定项目构建任务的归档产物。\n\nS3 驱动直接转发对象存储响应体，响应头不再等待整包回源；因此下载路径\n不再做整包 sha256 复核，完整性由上传阶段校验。",
         "operationId": "download_project_build_artifact_api_projects__project_id__build_jobs__job_id__artifact_get",
         "parameters": [
           {
