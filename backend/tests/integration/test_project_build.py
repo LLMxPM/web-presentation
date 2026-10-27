@@ -1189,6 +1189,15 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     assert download_response.headers["content-type"] == "application/zip"
     assert download_response.content == archive_content
 
+    # Editor 下载前先以 HEAD 检查鉴权、产物存在性和文件名。
+    head_response = await authenticated_client.head(
+        f"/api/projects/{project_id}/build-jobs/{build_job['id']}/artifact"
+    )
+    assert head_response.status_code == 200
+    assert head_response.headers["content-type"] == "application/zip"
+    assert head_response.headers["content-length"] == str(len(archive_content))
+    assert head_response.content == b""
+
     access_response = await authenticated_client.post(
         f"/api/projects/{project_id}/build-jobs/{build_job['id']}/access"
     )
@@ -1292,6 +1301,11 @@ async def test_project_build_artifact_upload_download_and_delete_should_persist_
     )
     assert deleted_download_response.status_code == 404
     assert deleted_download_response.json()["code"] == "BUILD_ARTIFACT_NOT_FOUND"
+
+    deleted_head_response = await authenticated_client.head(
+        f"/api/projects/{project_id}/build-jobs/{build_job['id']}/artifact"
+    )
+    assert deleted_head_response.status_code == 404
 
     # 产物删除后：即使票据仍在有效期内，也已读不到任何内容。
     deleted_proxy_response = await authenticated_client.get(
