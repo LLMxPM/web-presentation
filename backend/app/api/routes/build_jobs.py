@@ -98,6 +98,7 @@ async def get_project_build_job(
 
 
 @router.get("/projects/{project_id}/build-jobs/{job_id}/artifact")
+@router.head("/projects/{project_id}/build-jobs/{job_id}/artifact", include_in_schema=False)
 async def download_project_build_artifact(
     project_id: int,
     job_id: int,
