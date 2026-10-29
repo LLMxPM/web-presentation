@@ -138,6 +138,7 @@ test:backend
 - **文档、部署、仓库边界**：运行 `test:repository`；涉及 Docker/compose 时补对应契约测试。
 - **CLI/Gateway 契约**：运行 `test:contracts:gateway` 与 `test:contracts:cli-skill`。
 - **跨多端或发布前**：运行 `pnpm run test:all`，再按上表补未覆盖门禁。
+- **Motion 收敛规划的开发与实机分工**：按[当前工作包清单](../../../../docs/developer/runtime-integration/playback-redesign/work-packages/README.md)执行。A1/A2 只核对现状与准备契约、验收设计；B0–C2 逐包运行单测、无浏览器集成、类型/构建、契约与生成门禁，保持默认截图和导出的接线与开发回归；真实浏览器、远程 Renderer、生产镜像、独立产物、多窗口、发声、WebGL 与长稳统一由 C3 验收。以下旧 motion/G1 实验仅在对应旧实现仍存在时复用，不要求为即将删除的能力补一轮实机基线；新实现的浏览器夹具随责任包适配，C3 正式执行。未运行项明确记录，开发替身和历史证据不得记为新实现实机通过。
 - **WP01 动画技术原型**：按 [实验说明](../../../../tests/experiments/motion-wp01/README.md)准备隔离比较依赖，再运行 `node tests/experiments/motion-wp01/run.mjs`；使用独立浏览器、回环随机端口和生成素材，不 prepare E2E、不重置开发库。它不替代产品 Runtime/Renderer 门禁。
 - **Motion 实施回归**：按[回归说明](../../../../tests/experiments/motion-regression/README.md)运行 `node tests/experiments/motion-regression/run.mjs`，直接加载正式 Runtime 入口，覆盖真实视频调度、指定模式采样及 GLB 签名；需要已有 Playwright Chromium/ffmpeg，在回环随机端口运行，结束关闭浏览器与服务。不启动平台、不重置数据，不能替代 G1/G2 或远程 Renderer 验收。
 - **Motion G1 隔离浏览器场景**：按[夹具说明](../../../../tests/experiments/motion-g1/README.md)运行 `node tests/experiments/motion-g1/run.mjs`，覆盖 A03/A04/A06–A10/A12/A13 的本地 Runtime 真实媒体与 WebGL 行为；使用独立 Chromium、临时素材和回环随机端口，不启动平台或重置数据。该夹具不替代远程 Renderer、跨域票据、正式放映/导出或 G2 门禁。

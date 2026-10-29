@@ -12,10 +12,12 @@
 - 清理 `core/execution/execution-policy.ts` 的 `allowPresenterSync` 死标志：除 `mergeExecutionPolicies` 的与运算外全仓无消费者（其余四个 `allow*` 都有对应判定函数）。要么给它真实语义（在宿主初始化前拒绝同步参数），要么删除；缩略图与捕获链路的隔离本来就由 thumbnail 档禁媒体禁推进和 `resolveExecutionContext` 忽略 `channel` 参数保证，不依赖该标志。
 - `PresenterPageGrid.vue` 每页渲染一棵真实 Vue 组件树（`ViewPreview` + `inert`），成本随页数线性增长。本包只记录实测页数上限与卡顿边界，不重构；该成本与双窗口同步无关，缩略图不参与同步链路。
 - AI 以 `backend/app/ai/tool_specs.py` 为单一事实源更新，并同步派生文件：`backend/app/ai/animation_authoring_standard.py`（当前有多处 `usePageTimeline` 与 `Asset*.v2` 指引）、`ai/tools/generic/business_tools.py`、`agent_catalog.py`、`tools/disclosure.py` 与防漂移测试。去掉任意时刻截图与旧推进模式建议，新增 Scene 写法、真实片段索引与签名、自动发声主媒体限制、B0 静态态声明、`STATIC_PRESENTATION_UNAVAILABLE` 与资源/基础设施失败的区别；明确不支持 GSAP 插件、粒子只能用 DOM/CSS/Canvas。
-- 提供一个真实端到端创作样例与有界负例（数字滚动、打字机、SVG 描边、DOM/CSS/Canvas 粒子、两个模型动作、旁白与 cue），取代 G2-05 的量化门槛；CodeCheck 与页面 Mutation Job 走现有受信 Renderer 验证链。
+- 准备 A2 定义的端到端创作样例与有界负例（数字滚动、打字机、SVG 描边、DOM/CSS/Canvas 粒子、两个模型动作、旁白与 cue），完成源码、类型与开发回归，取代 G2-05 的量化门槛；C3 再经内置助手、Editor 与 CLI 运行真实流程，CodeCheck 与页面 Mutation Job 继续走受信 Renderer 验证链。
 - 跨仓 CLI：读写新放映配置；截图结果区分 `ready`、`pending`、内容 `unavailable`、任务 `skipped` 与执行失败，展示稳定原因码；删除旧时间轴与旧推进模式的命令与示例，同步 Skill 与包版本。已知涉及 `packages/cli/src/wp/commands/` 下的 `project_slideshow.py`、`screenshot.py`、`project_audio.py`、`page.py`、`project_route_add.py` 与 `skills/web-presentation/references/motion-authoring.md`。
 - External API 变化会使 `web-presentation-mcp` 的契约快照与 bindings 失配：同步刷新其快照，或明确记录该失败为非阻塞。
 
-## 验收
+## 开发验收
 
-API、服务与契约测试覆盖项目继承、逐路由覆盖、权限、快照往返、非法枚举、未知字段、cue 资源引用；双窗口协议测试覆盖有限意图、观众窗口唯一调度、原子状态重复与旧 revision 拒绝、观众窗口重开对齐、受阻摘要、`hold/release` 不连跳及演讲者窗口不自动播媒体；Editor 类型检查、单测与构建通过；工具规格/披露防漂移与 AI 页面任务测试通过；独立构建使用快照中的新配置。数据库结构变更验证 SQLite 与 PostgreSQL 适配边界。CLI 在其仓库提交与验证，主仓只做 External API 对拍。
+API、服务与无浏览器契约测试覆盖项目继承、逐路由覆盖、权限、快照往返、非法枚举、未知字段、cue 资源引用；协议单测覆盖有限意图、观众窗口唯一调度、原子状态重复与旧 revision 拒绝、重开对齐、受阻摘要、`hold/release` 不连跳及演讲者窗口不自动播媒体；Editor 类型检查、单测与构建通过；工具规格/披露防漂移与 AI 页面任务开发测试通过；验证构建配置快照使用新字段。数据库结构变更验证 SQLite 与 PostgreSQL 适配边界。CLI 在其仓库提交与验证，主仓只做 External API 对拍。
+
+真实联合创作、Mutation Job → Renderer、默认截图与诊断附图、正式多窗口协议、播放许可和独立构建产物统一在 C3 验证；不再补跑旧 v4 协议基线，也不以协议单测宣称多窗口实机通过。

@@ -85,19 +85,20 @@ Backend `capabilities.slideshow` 已声明 `advance_modes` 为 `manual`/`timer`�
 
 ---
 
-## 7. 页内动画与时间轴能力开放门禁
+## 7. 页内动画收敛与集中实机验收
 
-**状态**：时间轴与 `timeline_end` 已默认开放（2026-10-22）；G1 已关闭（2026-10-23），G2 未关闭；指定状态截图仍关闭。
+**状态**：旧时间轴与 `timeline_end` 已默认开放（2026-10-22）；G1 已关闭（2026-10-23），G2 未关闭。新的[放映动画收敛规划](../developer/runtime-integration/playback-redesign-proposal.md)尚未实施，2026-10-29 已调整为先完成工程替换，再由 C3 集中实机验收。
 
-首期编排 WP01–WP12 的代码、契约与客户端适配已实施。当前 `TIMELINE_CAPABILITY_ENABLED=true`、`TIMELINE_CAPTURE_SNAPSHOT_ENABLED=false`，放映可执行 `advance_modes` 已含 `timeline_end`；用户文档与顶层 README 已同步。G1 的 A01–A16 已有自动化、隔离 Chromium 与跨端 E2E 证据（见 [G1 映射](../developer/runtime-integration/motion/g1-automation-coverage.md)）；G2 的 Editor + 内置助手 + CLI 联合创作、生产依赖裁剪镜像最终重建、混版/回退、修正版 30 分钟长测与 B01–B08 模型基准尚未完成；长稳中需记录 A04 的 Three.js 模块级 DFG LUT 渲染器保留（活跃 context/canvas 为 0，属库层行为）。MCP 暂不提供服务，不列入本轮发布验证。逐项状态、关闭条件与边界补测见 [G2 遗留清单](../developer/runtime-integration/motion/g2-followups.md)。
+首期 WP01–WP12 与 [G1 证据](../developer/runtime-integration/motion/g1-automation-coverage.md)作为可复用实现和风险输入。旧 [G2 清单](../developer/runtime-integration/motion/g2-followups.md)不再是当前执行入口，逐项承接以[收敛工作包清单](../developer/runtime-integration/playback-redesign/work-packages/README.md)为准。指定时刻状态重建与截图已永久放弃；混版矩阵和 B01–B08 模型量化门槛作废，不再等待后续开放。默认 PNG、诊断附图、缩略图和静态导出继续保留，改用独立静态态。MCP 不列入本轮交付。
 
 **发布要求**：
 
-- 关闭 G2 前，必须先取得 [G2 验收](../developer/runtime-integration/motion/acceptance.md)真实证据，并在同一批部署中验证 Backend、Runtime、Renderer、CLI 的版本与能力一致；G1 已关闭，不再重复列为开放阻断。
-- 指定状态截图在 G2 关闭前保持关闭；临时时间轴截图不得更新页面默认截图；旧 v1 页面、旧 Worker 与旧 Runtime 遇到新请求必须明确失败，不能丢字段执行。
-- 继续维护已开放能力的用户文档与支持矩阵；Firefox/WebKit、移动端和未验证编码不得对外宣称。
+- A1/A2 仅完成现状核对和验收设计；B0–C2 逐包完成开发测试、契约与生成门禁，不以旧实现的实机验收作为开发前置。
+- [C3 集中验收](../developer/runtime-integration/playback-redesign/work-packages/c3-acceptance-release.md)必须覆盖内置助手/Editor/CLI 联合创作、真实 Renderer、静态跨产物一致性、媒体发声与播放许可、多窗口、WebGL、受保护媒体缓冲、取消清理、最终生产裁剪镜像三角色、独立 ZIP 和至少 30 分钟受控长稳；给出 A04 保留堆的修复或接受结论。
+- 最终候选源码、Backend/Runtime/Renderer 与 CLI 的契约和能力一致；失败回修后重验受影响场景并重新确认镜像/产物身份。全量主门禁与相关专项通过后才可宣布 GC 通过或 G2 关闭。
+- 回填用户文档、支持矩阵和证据位置；Firefox/WebKit、移动端、多屏授权及其它未验证环境不作支持承诺。旧 G1/G2 结果不能替代本次新实现验收。
 
-**下一步**：按 [G2 遗留清单](../developer/runtime-integration/motion/g2-followups.md) 补齐联合创作、生产镜像、混版/回退与长稳证据，再单独提交指定状态截图开放变更。
+**下一步**：按 `A1 → A2 → B0 → B1 → B2 → B3/B4/B5 → C1 → C2 → C3` 推进；实机任务集中到 C3，不再先验旧链再验新链。
 
 ---
 
