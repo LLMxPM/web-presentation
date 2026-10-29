@@ -34,10 +34,10 @@ pnpm run test:e2e:run
 | Project | 范围 | storageState |
 | :--- | :--- | :--- |
 | `auth` | 未登录重定向与登录成功 | 空状态 |
-| `smoke` | 登录后的只读核心链路和入口可见性 | 复用全局登录态 |
+| `smoke` | 核心导航、入口、基础远程截图与 PPTX 导出 | 复用全局登录态 |
 | `visual-edit` | 用例级独立项目/页面的真实写入 | 复用全局登录态 |
 | `ai` | FunctionModel、图片理解、图片生成与 deferred 恢复 | 复用全局登录态 |
-| `runtime-heavy` | 真实截图/构建与产物 | 复用全局登录态 |
+| `runtime-heavy` | 三维模型像素截图、真实项目构建与专项联动场景 | 复用全局登录态 |
 
 `auth` 与 `smoke` 没有 project dependency，可以并行执行；登录态由 globalSetup 生成。
 

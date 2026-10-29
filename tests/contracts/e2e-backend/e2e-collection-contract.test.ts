@@ -1,7 +1,7 @@
 /**
  * 文件功能：以 --list 契约固定 Playwright project 的收集边界，并守护 E2E 侧 seed 版本与 Backend 一致。
  *
- * 依据 docs/developer/testing/e2e-redesign.md §3.6/验收标准 7：
+ * 依据 docs/archive/developer-work-2026-10/e2e-redesign.md §3.6/验收标准 7：
  * - 默认 test:e2e 只收集 auth + smoke；regression 与 all 的收集数量由本测试固定；
  * - tests/e2e/helpers/e2e-env.ts 的 EXPECTED_SEED_VERSION 必须与 backend SEED_VERSION 同步演进。
  */
@@ -60,11 +60,11 @@ describe('E2E project 收集边界', () => {
 
     // auth + smoke 构成默认 test:e2e 的轻量核心链路。
     expect(counts['auth']).toBe(1)
-    expect(counts['smoke']).toBe(9)
+    expect(counts['smoke']).toBe(29)
     // regression 范围为写型夹具、AI 真实链路与 Runtime 重型链路；联合场景默认收集但按开关跳过。
     expect(counts['visual-edit']).toBe(3)
     expect(counts['ai']).toBe(4)
-    expect(counts['runtime-heavy']).toBe(2)
+    expect(counts['runtime-heavy']).toBe(6)
   })
 })
 

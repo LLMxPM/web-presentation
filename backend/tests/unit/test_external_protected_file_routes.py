@@ -15,7 +15,7 @@ from app.models.workspace import Project
 from app.models.project_build_job import ProjectBuildJob
 from app.models.user import User
 from app.services.asset_service import AssetService
-from app.services.object_storage_service import ObjectStorageService
+from app.services.object_storage_service import ObjectProbe, ObjectStorageService
 from app.services.page_service import PageService
 from app.services.project_build_service import ProjectBuildService
 from app.services.project_service import ProjectService
@@ -249,7 +249,7 @@ async def test_external_project_build_artifact_download(mock_auth, monkeypatch):
             status="success",
             artifact_storage_key="builds/p2-job7.zip",
             artifact_sha256="fake-sha256-zip",
-            artifact_size_bytes=18,
+            artifact_size_bytes=20,
         )
         mock_project = Project(
             id=2,
@@ -272,13 +272,15 @@ async def test_external_project_build_artifact_download(mock_auth, monkeypatch):
             temp_zip_path = Path(tf.name)
 
         try:
-            from contextlib import asynccontextmanager
+            async def mock_probe_object(self, storage_key, **kwargs):
+                return ObjectProbe(size_bytes=temp_zip_path.stat().st_size, etag=None)
 
-            @asynccontextmanager
-            async def mock_open_object(self, storage_key, **kwargs):
-                yield temp_zip_path
-
-            monkeypatch.setattr(ObjectStorageService, "open_object_for_read", mock_open_object)
+            monkeypatch.setattr(ObjectStorageService, "probe_object", mock_probe_object)
+            monkeypatch.setattr(
+                ObjectStorageService,
+                "resolve_local_path",
+                lambda self, storage_key: temp_zip_path,
+            )
 
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -291,15 +293,15 @@ async def test_external_project_build_artifact_download(mock_auth, monkeypatch):
                 resp = await client.get("/api/v1/projects/2/build-jobs/7/artifact", headers=headers)
                 assert resp.status_code == 200
                 assert resp.content == b"PK\x03\x04fake-zip-archive"
-                assert resp.headers["Cache-Control"] == "no-store"
+                assert resp.headers["Cache-Control"] == "private, no-store"
                 assert "attachment" in resp.headers["Content-Disposition"]
 
                 # 2. HEAD 请求
                 resp_head = await client.head("/api/v1/projects/2/build-jobs/7/artifact", headers=headers)
                 assert resp_head.status_code == 200
                 assert resp_head.content == b""
-                assert resp_head.headers["Cache-Control"] == "no-store"
-                assert resp_head.headers["Content-Length"] == "18"
+                assert resp_head.headers["Cache-Control"] == "private, no-store"
+                assert resp_head.headers["Content-Length"] == "20"
         finally:
             if temp_zip_path.exists():
                 temp_zip_path.unlink()

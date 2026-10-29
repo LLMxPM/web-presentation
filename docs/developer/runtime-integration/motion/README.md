@@ -63,7 +63,7 @@ flowchart TB
 | [完整故事研究](./story-authoring-comparison.md) | 真实旁白、视频、骨骼的六组合与创作入口、静默回调比较 |
 | [Luna 创作结果](./luna-authoring-results.md) | 独立上下文的首次生成、一次反馈、局部修改、函数复用与故障恢复 |
 
-字段与行为只在两份契约中维护，工作包引用契约。当前产品的用法仍以 [页内动画指南](../../runtime/page-animation-guide.md)、[音频计划](../audio/README.md) 和 [三维资源计划](../threejs-resource-implementation-plan.md) 中的实际实现与验收状态为准。
+字段与行为只在两份契约中维护，工作包引用契约。当前产品的用法仍以 [页内动画指南](../../runtime/page-animation-guide.md)、[音频计划](../audio/README.md) 和 [三维资源计划](../../projects/threejs-resource-implementation-plan.md) 中的实际实现与验收状态为准。
 
 ## 里程碑与开始顺序
 

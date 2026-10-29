@@ -1,7 +1,7 @@
 /**
  * 文件功能：检测或启动平台服务，并校验 Backend 的 E2E 测试指纹和 Runtime 构建就绪状态。
  *
- * 依据 docs/developer/testing/e2e-redesign.md §3.4/§3.7：
+ * 依据 docs/archive/developer-work-2026-10/e2e-redesign.md §3.4/§3.7：
  * - 先等待 /api/auth/me 返回 401/200，再校验 /api/testing/e2e-readiness 指纹；
  *   任一指纹不匹配立即失败，不能把指向开发库、关闭 mock 或使用非 E2E Redis 的服务当作测试环境；
  * - 新启动的 Backend 由 buildE2eBackendEnv() 注入环境；复用现有 Backend 仅在指纹完全匹配时允许；

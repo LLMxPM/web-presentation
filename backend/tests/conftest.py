@@ -10,18 +10,6 @@ import pytest
 from tests.fixtures.app import *  # noqa: F401,F403
 
 
-@pytest.fixture(autouse=True)
-def closed_development_audio_capabilities(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """后端测试默认使用正式能力集，显式联调用例再打开开发开关。"""
-
-    from app.core.config import get_settings
-
-    monkeypatch.setenv("AUDIO_DEV_CAPABILITIES_ENABLED", "false")
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
-
-
 @pytest.fixture
 def open_audio_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
     """把 M2 三个音频能力标记为已开放，供 cue/旁白写入正例复用。"""
@@ -38,6 +26,19 @@ def open_audio_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
                 audio_schema.AUDIO_CAPABILITY_AUDIO_CUES,
             }
         ),
+    )
+
+
+@pytest.fixture
+def closed_audio_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
+    """仅在拒绝路径测试中关闭旁白和 cue，验证能力降级时的写入边界。"""
+
+    from app.schemas import audio as audio_schema
+
+    monkeypatch.setattr(
+        audio_schema,
+        "AUDIO_OPEN_CAPABILITIES",
+        frozenset({audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS}),
     )
 
 

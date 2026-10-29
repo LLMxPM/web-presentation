@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import logging
 import os
 import time
@@ -16,6 +17,7 @@ from uuid import uuid4
 
 from app.core.config import AppSettings, get_settings
 from app.core.exceptions import AppException
+from app.services.http_byte_range import parse_single_byte_range
 
 try:
     import aioboto3
@@ -32,6 +34,9 @@ logger = logging.getLogger(__name__)
 # S3 分片上传的单片大小：最低要求 5 MiB，取 8 MiB 平衡内存占用与请求次数。
 S3_MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024
 
+# 下载直连的单次读取块大小：默认 1 KiB 会让大文件在事件循环上产生过多次调度。
+S3_STREAM_CHUNK_SIZE_BYTES = 512 * 1024
+
 
 @dataclass(frozen=True)
 class StreamedObjectWrite:
@@ -40,6 +45,14 @@ class StreamedObjectWrite:
     storage_key: str
     size_bytes: int
     sha256: str
+
+
+@dataclass(frozen=True)
+class ObjectProbe:
+    """对象元信息探测结果，供下载预检与字节区间计算使用。"""
+
+    size_bytes: int
+    etag: str | None
 
 
 class ObjectStorageService:
@@ -195,6 +208,122 @@ class ObjectStorageService:
                 self._read_pins[identity] = remaining
             else:
                 self._read_pins.pop(identity, None)
+
+    async def probe_object(self, storage_key: str, *, bucket_name: str | None = None) -> ObjectProbe:
+        """只读取对象元信息，不触发对象内容回源。
+
+        下载入口用它完成 HEAD 预检与字节区间计算：S3 驱动走 head_object，
+        本地驱动只做一次 stat，二者都不会把归档读进内存或派生缓存。
+        """
+
+        normalized_key = self.normalize_storage_key(storage_key)
+        if self.driver != "s3":
+            file_path = self.resolve_local_path(normalized_key)
+            try:
+                stat_result = await asyncio.to_thread(file_path.stat)
+            except OSError as error:
+                raise AppException(status_code=404, code="OBJECT_NOT_FOUND", detail="对象文件不存在。") from error
+            return ObjectProbe(size_bytes=stat_result.st_size, etag=None)
+
+        resolved_bucket = self._resolve_s3_bucket_name(bucket_name)
+        self._ensure_s3_config(resolved_bucket)
+        async with self._s3_client() as client:
+            try:
+                response = await client.head_object(Bucket=resolved_bucket, Key=normalized_key)
+            except Exception as error:  # noqa: BLE001
+                self._raise_s3_read_error(error, storage_key)
+            return ObjectProbe(
+                size_bytes=int(response.get("ContentLength") or 0),
+                etag=str(response.get("ETag") or "").strip('"') or None,
+            )
+
+    async def iter_object_body(
+        self,
+        storage_key: str,
+        *,
+        byte_range: str | None = None,
+        chunk_size: int = S3_STREAM_CHUNK_SIZE_BYTES,
+        bucket_name: str | None = None,
+    ) -> AsyncIterator[bytes]:
+        """按字节流读取对象，供大文件下载直接转发到客户端。
+
+        S3 驱动在整个响应体迭代期间保持 client 生命周期，边读边发，不再像
+        `open_object_for_read` 那样先整包落到本地派生缓存，因此本方法不做整包
+        sha256 复核——产物完整性由上传阶段校验保证。
+
+        `byte_range` 使用 `bytes=start-end` 形式，两条驱动都真正生效：本地驱动
+        用 `seek` 定位后限长读取，S3 驱动透传 `Range`。区间语法与越界判定统一
+        复用 `parse_single_byte_range`，避免同一参数在两处有不同解释。
+        """
+
+        normalized_key = self.normalize_storage_key(storage_key)
+        if self.driver != "s3":
+            file_path = self.resolve_local_path(normalized_key)
+            if not file_path.is_file():
+                raise AppException(status_code=404, code="OBJECT_NOT_FOUND", detail="对象文件不存在。")
+            stat_result = await asyncio.to_thread(file_path.stat)
+            resolved_range = parse_single_byte_range(byte_range, stat_result.st_size)
+            start = resolved_range.start if resolved_range is not None else 0
+            # 未指定区间时 remaining 为整个文件长度；空文件则为 0，直接不读。
+            remaining = (
+                resolved_range.length if resolved_range is not None else stat_result.st_size
+            )
+            handle = await asyncio.to_thread(file_path.open, "rb")
+            try:
+                if start:
+                    await asyncio.to_thread(handle.seek, start)
+                while remaining > 0:
+                    chunk = await asyncio.to_thread(handle.read, min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+            finally:
+                await asyncio.to_thread(handle.close)
+            return
+
+        resolved_bucket = self._resolve_s3_bucket_name(bucket_name)
+        self._ensure_s3_config(resolved_bucket)
+        async with self._s3_client() as client:
+            params: dict[str, object] = {"Bucket": resolved_bucket, "Key": normalized_key}
+            if byte_range:
+                params["Range"] = byte_range
+            try:
+                response = await client.get_object(**params)
+            except Exception as error:  # noqa: BLE001
+                self._raise_s3_read_error(error, storage_key)
+            body = response["Body"]
+            try:
+                async for chunk in body.iter_chunks(chunk_size):
+                    if chunk:
+                        yield chunk
+            finally:
+                await self._release_s3_body(body)
+
+    @staticmethod
+    async def _release_s3_body(body: object) -> None:
+        """归还 S3 响应体连接，避免客户端中断后连接滞留在连接池。
+
+        aiohttp 的 release/close 是同步方法，兼容实现可能是协程；这里统一按
+        可等待结果处理，并吞掉释放异常——此时响应字节已写出，重抛只会污染
+        已经提交的响应。
+        """
+
+        for method_name in ("release", "close"):
+            method = getattr(body, method_name, None)
+            if method is None:
+                continue
+            try:
+                result = method()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "S3 响应体释放失败，连接需由连接池超时回收。",
+                    extra={"event": "object_storage.stream.release_failed", "method": method_name},
+                    exc_info=True,
+                )
+            return
 
     def sweep_object_cache_if_needed(self) -> None:
         """按配置的扫描间隔机会式清理 S3 本地派生缓存。"""

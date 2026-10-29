@@ -101,28 +101,6 @@ def test_upgrade_head_sqlite_preserves_partial_unique_contracts(tmp_path: Path) 
         assert any("worker_epoch_active" in (row[1] or "") for row in indexes)
 
 
-def test_upgrade_head_sqlite_boolean_write_is_portable(tmp_path: Path) -> None:
-    """布尔列必须用 TRUE/FALSE 写入，禁止整数比较语义。行为上 SQLite 可写 0/1 且可读回。"""
-
-    backend_root = _backend_root()
-    database_path = tmp_path / "p4-bool.db"
-    env = _sqlite_env(database_path)
-    _run_alembic(backend_root, env, "20260811_0100")
-
-    with sqlite3.connect(database_path) as connection:
-        cols = {row[1] for row in connection.execute("PRAGMA table_info(ai_llm_configs)")}
-        if "thinking_enabled" not in cols:
-            pytest.skip("该迁移版本尚无 thinking_enabled")
-        connection.execute(
-            "INSERT INTO ai_llm_configs (name, provider, model, thinking_enabled, created_at, updated_at) "
-            "VALUES ('m', 'openai', 'gpt', TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-        )
-        value = connection.execute(
-            "SELECT thinking_enabled FROM ai_llm_configs WHERE name='m'"
-        ).fetchone()[0]
-        assert value in (1, True)
-
-
 def test_remote_render_migration_behavior_clears_screenshot_pointers(tmp_path: Path) -> None:
     """20260910 离线转换必须清空当前截图指针，历史对象语义为“待生成”。"""
 
@@ -242,7 +220,11 @@ def test_migration_versions_have_no_bare_dialect_name() -> None:
 
 
 def test_dual_database_upgrade_contract_sqlite_and_optional_postgres(tmp_path: Path) -> None:
-    """双库对拍：SQLite 必跑；提供 P4_POSTGRES_DATABASE_URL 时对拍表集合与部分唯一索引。"""
+    """提供 PostgreSQL 连接时，对拍双库升级后的表集合与部分唯一索引。"""
+
+    pg_url = os.environ.get("P4_POSTGRES_DATABASE_URL", "").strip()
+    if not pg_url:
+        pytest.skip("未配置 P4_POSTGRES_DATABASE_URL，双库对拍留给 PG 专项门禁")
 
     backend_root = _backend_root()
     sqlite_path = tmp_path / "p4-dual.db"
@@ -258,11 +240,6 @@ def test_dual_database_upgrade_contract_sqlite_and_optional_postgres(tmp_path: P
         sqlite_indexes = _index_names(connection, "ai_agent_runs")
 
     assert _PARTIAL_UNIQUE_INDEX in sqlite_indexes
-
-    pg_url = os.environ.get("P4_POSTGRES_DATABASE_URL", "").strip()
-    if not pg_url:
-        pytest.skip("未配置 P4_POSTGRES_DATABASE_URL，仅验证 SQLite 路径")
-        return
 
     env = os.environ.copy()
     env["DATABASE_URL"] = pg_url

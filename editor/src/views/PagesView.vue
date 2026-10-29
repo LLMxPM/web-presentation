@@ -273,6 +273,7 @@
       :resource-issue-code="projectBuildResourceIssueCode" :resource-issue="projectBuildResourceIssue"
       :extra-assets-saving="projectBuildExtraAssetsSaving" :loading="projectBuildSubmitting"
       :deleting-job-id="deletingBuildArtifactJobId"
+      :downloading-job-id="downloadingBuildArtifactJobId"
       @refresh="handleBuildHistoryRefresh" @download="handleBuildArtifactDownload"
       @open="handleBuildArtifactOpen" @delete="handleBuildArtifactDelete"
       @save-extra-assets="handleProjectBuildExtraAssetsSave"
@@ -522,6 +523,7 @@ const projectBuildExtraAssetsSaving = ref(false)
 const projectBuildResourceIssueCode = ref<string | null>(null)
 const projectBuildResourceIssue = ref<ProjectBuildResourceIssueData | null>(null)
 const deletingBuildArtifactJobId = ref<number | null>(null)
+const downloadingBuildArtifactJobId = ref<number | null>(null)
 const projectIdentityDialogVisible = ref(false)
 const presentationConfigDialogVisible = ref(false)
 const presentationConfigInitialTab = ref<'presentation' | 'slideshow'>('presentation')
@@ -1400,11 +1402,18 @@ async function handleBuildArtifactDownload(job: ProjectBuildJob): Promise<void> 
   if (!projectDetails.value || !canDownloadProjectBuildArtifact(job)) {
     return
   }
+  // 预检请求仍在飞行时忽略重复点击：下载本身由浏览器接管，无法中途取消。
+  if (downloadingBuildArtifactJobId.value !== null) {
+    return
+  }
 
+  downloadingBuildArtifactJobId.value = job.id
   try {
     await downloadProjectBuildArtifact(projectDetails.value.id, job.id)
   } catch (error) {
     Message.error(getErrorMessage(error, '下载构建产物失败。'))
+  } finally {
+    downloadingBuildArtifactJobId.value = null
   }
 }
 

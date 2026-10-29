@@ -7,11 +7,11 @@
 1. Editor 保存页面源码或配置。
 2. Backend 校验用户权限和源码导入边界。
 3. Backend 创建 preview artifact，并为 Runtime 签发短期上下文令牌。
-4. Editor iframe 打开 Backend 返回的签名预览地址；Backend 校验票据并代理 Runtime 生成的 HTML。
-5. Runtime 使用 artifact 服务票据回源 Backend 读取 manifest、配置包和模块源码，交给 Vite 作为远程虚拟模块编译；浏览器向 Runtime 请求编译后的模块。
-6. iframe 内的浏览器按 manifest 资源映射向 Backend 请求图片、字体等素材；部分 S3 资源由 Backend 返回签名跳转。浏览器执行 Runtime 页面并展示结果。
+4. Editor iframe 打开 Backend 返回的签名预览地址；Backend 校验票据、绑定 Runtime 版本并返回可信桥接宿主页。用户页面 HTML 在独立预览主机名的 Runtime iframe 中执行。
+5. Runtime 使用内部服务票据 S 回源 Backend 读取 manifest、配置包和模块源码，交给 Vite 作为远程虚拟模块编译；浏览器凭短期预览票据 P 向 Runtime 请求页面与模块。
+6. iframe 内的浏览器凭 P 按 artifact 资源映射从 Backend 受保护入口读取图片、字体等素材。Backend 在缓存、304、HEAD 与 Range 处理前完成授权和版本校验。
 
-单页与整项目预览使用相同机制，分别以模块或路由作为入口；普通预览不把全部素材先复制到 Runtime 临时目录。源码及素材完整落盘发生在下述项目构建流程。当前素材公开入口与源码票据的权限边界不同，收口方案见[用户文件存储鉴权与缓存实施规划](../runtime-integration/file-storage-auth-cache-plan.md)，该规划尚未实施。
+单页与整项目预览使用相同机制，分别以模块或路由作为入口；普通预览不把全部素材先复制到 Runtime 临时目录。源码及素材完整落盘发生在下述项目构建流程。当前入口、票据与续签语义见[预览源站接入](../runtime-integration/preview/README.md)；生产存储与多副本待验收项见[用户文件存储鉴权与缓存实施规划](../projects/file-storage-auth-cache-plan.md)。
 
 页面 iframe 使用版本 1 状态消息回传最终结果：成功发送 `page-preview:ready`，初始化或页面模块失败发送 `page-preview:error`；payload 必须包含当前 `artifactId`。Editor 同时校验消息窗口、origin、协议版本和 artifact，忽略旧预览迟到消息。Editor 在等待 8 秒后展示弱网提示，30 秒后进入可重试错误；超时不会销毁 iframe，因此同一 artifact 的迟到 ready 仍可恢复预览。
 
@@ -27,7 +27,7 @@
 2. Renderer 为本次执行创建独立 Chromium 和 Context，加载 Runtime 的受保护预览页面。
 3. Renderer 等待页面就绪，生成截图或诊断结果并回传 Backend；Backend 关联任务与产物。
 
-页面截图服务把素材交付模式设为 `backend_cache`：Chromium 从 Backend `/public/cached-assets/...` 读取素材，S3 对象可缓存在 Backend 的 `_object-cache`；这不是 Runtime 临时工作区。Renderer 的预览鉴权头只附加到初始文档请求，不能假设后续图片和字体请求带有用户会话或同一组头。
+Renderer 浏览器使用本次 artifact 的短期票据 P 读取受保护素材；Backend 可在授权后使用 `_object-cache` 缓存 S3 对象，这不是 Runtime 临时工作区。初始文档的受控请求头不能代替后续图片和字体请求各自的授权。
 
 截图任务需要关注 viewport、超时、并发、资源加载和页面 visual-ready 状态。Backend 进程不直接启动浏览器。
 
@@ -41,6 +41,7 @@
 6. Worker 以 `POST /internal/runtime/build-jobs/{job_id}/artifact` 上传产物：归档按分块流直接作为请求体，入口文件与 sha256、大小通过 `x-runtime-build-archive-*` 头声明，两侧都不再把整包读进内存，Backend 超过 `PROJECT_BUILD_ARTIFACT_MAX_BYTES` 即中止写入。校验和/大小不符、attempt 围栏失守或提交异常时，Backend 会删除这个没有任何行引用的 attempt 归档，避免对象存储积累 orphan；仍被任务行引用的产物一律保留。上传成功后调用 `complete`。Backend 只在 `attempt_id` 与**有效租约**同时匹配时才提升产物或写终态，失守的执行者只能留下等待恢复的 `running` 行。
 7. `complete(success)` 对同一 `attempt_id` 幂等：任务已是 `succeeded` 且产物已提升时返回 200 而不是 409，Runtime 侧对传输失败与 5xx 再做最多 3 次重试。否则「产物已上传、complete 响应丢失」只能等租约过期，用户会看到产物已生成但任务仍 `running` 十几分钟。4xx 是确定性拒绝，不重试。
 8. 恢复循环按过期租约接管或收敛：已经上传产物的任务收敛为 `succeeded`，超过总期限仍未被领取的任务收敛为 `failed`。
+9. 下载走 `GET /api/projects/{project_id}/build-jobs/{job_id}/artifact`：本地驱动用 `FileResponse`，S3 驱动在 `head_object` 取到元信息后直接把 `get_object` 的响应体转发给客户端，不再整包回源到 `_object-cache`，因此该路径不做整包 sha256 复核——完整性由第 6 步上传阶段保证。两条链路都支持单区间 `Range` 与 `If-Range`；Editor 先用 `HEAD` 预检拿鉴权/存在性错误，再把字节传输交给浏览器原生下载，避免把产物大小与带宽的乘积压进脚本超时预算。
 
 构建不存在第二跳执行路径：Backend 不再向 Runtime 同步派发构建，Runtime 也不暴露构建 HTTP 入口。凭证未配置时 Backend claim API fail-closed 且 Worker 不启动，构建任务停留在 `pending` 直到总期限把它收敛为失败。`RUNTIME_ROLE=build` 的容器在这种情况下直接启动失败，`/__runtime_readyz` 也不会就绪——「进程健康但永远不构建」比启动失败更难发现。
 

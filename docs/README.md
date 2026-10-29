@@ -39,6 +39,7 @@
 | [平台架构总览](./developer/architecture/overview.md) | 平台目标、模块职责、目标流程和 Runtime 运行时架构 |
 | [模块边界](./developer/architecture/module-boundaries.md) | Backend、Editor、Runtime、Renderer 和 Infra 修改边界 |
 | [架构评估归档](./archive/architecture-2026-09/README.md) | 历史架构评估与治理归档 |
+| [开发专题归档](./archive/developer-work-2026-10/README.md) | 已结束的实施计划、工作包、审查与验收记录 |
 | [Backend 开发文档](./developer/backend/README.md) | API、AI Agent、工具规格、预览 artifact 和排障 |
 | [Editor 开发文档](./developer/editor/README.md) | 前端结构、AI 侧边栏和 Editor 测试 |
 | [Runtime 开发文档](./developer/runtime/README.md) | 页面、组件、Runtime Kit 和内部接入细节 |

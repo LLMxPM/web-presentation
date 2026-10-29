@@ -392,4 +392,4 @@ await runtime.claim/renew/transition/cancel/recover(...)
 1. 本文是任务运行时**唯一契约**；字段/状态/错误码/恢复语义变更必须先改本文。
 2. A2/A3/A4 的实现 PR 应引用本文对应章节编号。
 3. 新发现的方言或旁路状态追加到 §5 映射表，**不得**另开文档或静默扩表。
-4. 产品边界（Run 会丢、Lite 规模、方言预算）见[已归档收尾计划的范围与边界](../../archive/architecture-2026-09/reports/architecture-closeout-plan-2026-10-01.md#2-本轮范围与后续边界)及[双库方言维护预算](./dialect-budget.md)，不由本契约扩展产品承诺。Lite 单镜像形态对规模与故障域的影响由[现行执行计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md)重开验收后回填。
+4. 产品边界（Run 会丢、Lite 规模、方言预算）见[已归档收尾计划的范围与边界](../../archive/architecture-2026-09/reports/architecture-closeout-plan-2026-10-01.md#2-本轮范围与后续边界)及[双库方言维护预算](./dialect-budget.md)，不由本契约扩展产品承诺。Lite 单镜像形态的容量与故障域待验证事项在[发布检查清单](../../deployment/release-checklist.md)跟踪。

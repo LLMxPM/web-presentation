@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title description" xml:lang="zh-CN">
+  <title id="title">web-presentation 平台架构</title>
+  <desc id="description">Editor 和 wp CLI 通过 Backend 协作；Editor 在独立预览域访问 Runtime。Backend 管理工作空间资产、AI Agent、任务与持久化数据，协调 Runtime 构建和 Renderer 截图诊断；Renderer 加载 Runtime 预览页。</desc>
+  <defs>
+    <linearGradient id="canvas" x2="0" y2="1">
+      <stop stop-color="#f7faff"/>
+      <stop offset="1" stop-color="#edf3fb"/>
+    </linearGradient>
+    <linearGradient id="backend" x2="1" y2="1">
+      <stop stop-color="#1c4a91"/>
+      <stop offset="1" stop-color="#16376d"/>
+    </linearGradient>
+    <filter id="shadow" x="-15%" y="-25%" width="130%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#183964" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1 9 5 1 9" fill="none" stroke="#416cad" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-blue-start" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M1 1 9 5 1 9" fill="none" stroke="#416cad" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1 9 5 1 9" fill="none" stroke="#1593a5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+      .title { fill: #172c4b; font-size: 46px; font-weight: 750; }
+      .subtitle { fill: #506580; font-size: 22px; }
+      .eyebrow { fill: #6c7e96; font-size: 18px; font-weight: 700; letter-spacing: 2px; }
+      .heading { fill: #193354; font-size: 29px; font-weight: 700; }
+      .body { fill: #49627e; font-size: 20px; }
+      .small { fill: #64809a; font-size: 17px; }
+      .white-heading { fill: #fff; font-size: 32px; font-weight: 720; }
+      .white-body { fill: #e8f2ff; font-size: 21px; }
+      .line-label { fill: #356196; font-size: 17px; font-weight: 650; }
+      .line-label-teal { fill: #0b7988; font-size: 17px; font-weight: 650; }
+      .flow { fill: none; stroke: #416cad; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow-blue); }
+      .flow-both { marker-start: url(#arrow-blue-start); }
+      .flow-teal { fill: none; stroke: #1593a5; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow-teal); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#canvas)"/>
+  <path d="M0 0h1600v9H0z" fill="#3175ca"/>
+  <text x="80" y="82" class="title">web-presentation 平台架构</text>
+  <text x="80" y="124" class="subtitle">创作入口 → 控制面协调 → 独立预览、构建与渲染执行</text>
+
+  <text x="80" y="176" class="eyebrow">创作与接入</text>
+  <text x="80" y="630" class="eyebrow">执行服务</text>
+
+  <!-- 连接线画在卡片下层，避免穿过模块文字。 -->
+  <path class="flow" d="M610 321v20h-22v43"/>
+  <path class="flow" d="M1015 321v20h-28v43"/>
+  <path class="flow-teal" d="M330 321v326"/>
+  <path class="flow flow-both" d="M650 576v32h-50v39"/>
+  <path class="flow flow-both" d="M940 576v32h300v39"/>
+  <path class="flow" d="M1110 478h83"/>
+  <path class="flow-teal" d="M884 745H717"/>
+
+  <text x="400" y="354" class="line-label">业务 API / AI 会话</text>
+  <text x="1022" y="354" class="line-label">External API v1</text>
+  <rect x="149" y="460" width="220" height="34" rx="17" fill="#e8f6f7"/>
+  <text x="169" y="483" class="line-label-teal">独立域 iframe 预览</text>
+  <text x="280" y="595" class="line-label">预览回源 / 构建任务与产物</text>
+  <text x="1031" y="595" class="line-label">渲染请求 / 结果</text>
+  <text x="741" y="725" class="line-label-teal">加载预览页</text>
+  <text x="1119" y="465" class="line-label">持久化</text>
+
+  <!-- Editor：用户的浏览器创作入口。 -->
+  <rect x="80" y="199" width="630" height="122" rx="22" fill="#fff" stroke="#cadbf0" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="105" y="225" width="64" height="64" rx="17" fill="#e8f1ff"/>
+  <rect x="120" y="240" width="34" height="27" rx="3" fill="none" stroke="#3978cd" stroke-width="4"/>
+  <path d="M127 274h20m-10-7v7" stroke="#3978cd" stroke-width="4" stroke-linecap="round"/>
+  <text x="190" y="250" class="heading">Editor · 创作工作台</text>
+  <text x="190" y="283" class="body">项目、页面与工作空间资产管理</text>
+  <text x="190" y="309" class="small">AI 对话 · 源码与可视化编辑 · 实时预览</text>
+
+  <!-- 外部 CLI 已接入；MCP 明确标记为待接入。 -->
+  <rect x="890" y="199" width="630" height="122" rx="22" fill="#fff" stroke="#cadbf0" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="915" y="225" width="64" height="64" rx="17" fill="#ecf5ff"/>
+  <path d="m929 244 10 10-10 10m18 0h17" fill="none" stroke="#3978cd" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1000" y="250" class="heading">wp CLI · 外部 Agent</text>
+  <text x="1000" y="283" class="body">专用 API Client 与 Agent Skill</text>
+  <text x="1000" y="309" class="small">MCP 服务：独立仓库，待接入</text>
+
+  <!-- Backend 持有业务事实与任务状态。 -->
+  <rect x="490" y="390" width="620" height="180" rx="24" fill="url(#backend)" filter="url(#shadow)"/>
+  <circle cx="548" cy="449" r="31" fill="#3976be"/>
+  <rect x="531" y="433" width="34" height="8" rx="2" fill="#fff"/>
+  <rect x="531" y="446" width="34" height="8" rx="2" fill="#fff"/>
+  <rect x="531" y="459" width="34" height="8" rx="2" fill="#fff"/>
+  <text x="600" y="455" class="white-heading">Backend · 平台控制面</text>
+  <text x="530" y="501" class="white-body">权限与隔离 · 工作空间资产 · AI Agent</text>
+  <text x="530" y="535" class="white-body">预览票据 · 持久化任务 · 产物托管</text>
+
+  <!-- 数据库与文件均由 Backend 管理，执行服务不直连业务数据库。 -->
+  <rect x="1200" y="405" width="320" height="150" rx="22" fill="#fff" stroke="#cadbf0" stroke-width="2" filter="url(#shadow)"/>
+  <circle cx="1247" cy="453" r="25" fill="#e8f1ff"/>
+  <ellipse cx="1247" cy="443" rx="13" ry="5" fill="none" stroke="#3978cd" stroke-width="3"/>
+  <path d="M1234 443v19c0 7 26 7 26 0v-19m-26 9c0 7 26 7 26 0" fill="none" stroke="#3978cd" stroke-width="3"/>
+  <text x="1284" y="452" class="heading" style="font-size:25px">数据与产物</text>
+  <text x="1231" y="496" class="body" style="font-size:18px">SQLite / PostgreSQL</text>
+  <text x="1231" y="525" class="body" style="font-size:18px">资源 · 截图 · 构建产物</text>
+
+  <!-- Runtime 在独立预览域渲染页面，并执行项目构建。 -->
+  <rect x="80" y="655" width="630" height="162" rx="22" fill="#fff" stroke="#a6dce0" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="106" y="683" width="64" height="64" rx="17" fill="#e4f7f7"/>
+  <path d="m139 695 19 11v23l-19 11-20-11v-23zm-20 11 20 12 19-12m-19 12v22" fill="none" stroke="#1593a5" stroke-width="3" stroke-linejoin="round"/>
+  <text x="191" y="710" class="heading">Runtime · Vue 3 / Vite</text>
+  <text x="191" y="746" class="body">页面与组件预览 · 项目构建</text>
+  <text x="191" y="778" class="small">受保护预览源站 · 版本化 Runtime Kit</text>
+
+  <!-- Renderer 只执行受信渲染请求。 -->
+  <rect x="890" y="655" width="630" height="162" rx="22" fill="#fff" stroke="#d7c7ef" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="916" y="683" width="64" height="64" rx="17" fill="#f1eafa"/>
+  <rect x="927" y="701" width="42" height="30" rx="6" fill="none" stroke="#8355bf" stroke-width="3"/>
+  <circle cx="948" cy="716" r="8" fill="none" stroke="#8355bf" stroke-width="3"/>
+  <text x="1001" y="710" class="heading">Renderer · Chromium</text>
+  <text x="1001" y="746" class="body">独立 Playwright 截图与布局诊断</text>
+  <text x="1001" y="778" class="small">按 Backend 渲染任务执行并回传结果</text>
+
+  <line x1="80" y1="855" x2="1520" y2="855" stroke="#d2deed" stroke-width="2"/>
+  <text x="80" y="881" class="small">部署形态：SQLite Lite 单容器 / 分服务部署；模块职责与数据流在两种形态下保持一致</text>
+</svg>

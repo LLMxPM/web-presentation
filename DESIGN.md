@@ -4,7 +4,7 @@
 
 本文档是 `web-presentation` 仓库当前生效的界面设计与实现规范，面向页面开发、组件开发、代码评审和视觉验收。
 
-- [Editor UI 设计系统建设方案](./docs/developer/editor/ui-design-system.md)说明设计目标、技术选型和迁移路线。
+- [Editor UI 设计系统建设方案](docs/developer/projects/editor-ui-design-system.md)说明设计目标、技术选型和迁移路线。
 - 本文档说明代码现在应当怎样写，以及哪些写法不能进入业务页面。
 - 实际 Token、组件 API 和页面行为发生变化时，应同步更新本文档。
 

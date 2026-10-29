@@ -58,17 +58,13 @@ AUDIO_MILESTONE_CAPABILITIES: dict[str, tuple[str, ...]] = {
         AUDIO_CAPABILITY_AUDIO_CUES,
     ),
 }
-# 已实现并允许 Editor/External 客户端展示的音频能力；阶段出口验收后在此开放。
-AUDIO_OPEN_CAPABILITIES: frozenset[str] = frozenset({AUDIO_CAPABILITY_AUDIO_ASSETS})
+# 默认开放的音频能力；Editor、External API 与写入门禁共同消费此集合。
+AUDIO_OPEN_CAPABILITIES: frozenset[str] = frozenset(AUDIO_MILESTONE_CAPABILITIES["m2"])
 
 
 def get_open_audio_capabilities() -> frozenset[str]:
-    """返回实例开放的音频能力；联合验收开关仅在显式配置时扩展到 M2。"""
+    """返回默认开放集合，供能力声明、保存校验和构建快照共用。"""
 
-    from app.core.config import get_settings
-
-    if get_settings().audio_dev_capabilities_enabled:
-        return AUDIO_OPEN_CAPABILITIES | frozenset(AUDIO_MILESTONE_CAPABILITIES["m2"])
     return AUDIO_OPEN_CAPABILITIES
 
 

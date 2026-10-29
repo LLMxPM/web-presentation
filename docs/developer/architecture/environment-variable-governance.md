@@ -5,7 +5,7 @@
 状态：架构契约（永久文档）
 面向对象：平台架构师、后端与前端开发者、运维交付人员
 
-> 本文只维护**长期成立的契约**：变量三分类、按部署形态的差异、配置解析优先级、热更新边界、密钥治理与安全防线。批次、排期、门禁改动与验收状态见[现行执行计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md)；本文不复制排期，避免两处漂移。
+> 本文维护配置治理契约：变量三分类、按部署形态的差异、解析优先级、热更新边界、密钥治理与安全防线。历史批次与排期见[归档计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md)；尚未闭环的发布事项见[发布检查清单](../../deployment/release-checklist.md)。
 
 ---
 
@@ -316,7 +316,8 @@ RUNTIME_BUILD_WORKER_CREDENTIAL=<强随机共享凭证>
 
 | 主题 | 归属文档 |
 | :--- | :--- |
-| 批次、排期、门禁改动、重开门与验收状态 | [现行执行计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md) |
+| 历史批次、排期与验收记录 | [归档计划](../../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md) |
+| 当前发布待验证事项 | [发布检查清单](../../deployment/release-checklist.md) |
 | Lite 规模、故障域与 Renderer 隔离决策 | [Lite 规模、故障域与隔离决策](../../deployment/operations/lite-scale-and-isolation.md) |
 | 变量逐项说明与创建方法 | [环境变量说明](../../deployment/production/env-vars.md) |
 | 部署模板与迁移步骤 | [Compose 模板说明](../../deployment/production/compose.md)、[生产部署指南](../../deployment/production/README.md) |

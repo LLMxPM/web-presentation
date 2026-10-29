@@ -26,7 +26,9 @@ async def _create_project(client: AsyncClient, workspace_id: int) -> int:
     return response.json()["id"]
 
 
-async def test_page_content_audio_allowed_but_narration_rejected(authenticated_client: AsyncClient) -> None:
+async def test_page_content_audio_allowed_but_narration_rejected(
+    authenticated_client: AsyncClient, closed_audio_capabilities: None
+) -> None:
     """内容音频随 audio_assets 继续可用；旁白在 page_narration 关闭时拒绝落库。"""
 
     workspace_id = await _create_workspace(authenticated_client, "页面音频能力空间")
@@ -66,7 +68,9 @@ async def test_page_content_audio_allowed_but_narration_rejected(authenticated_c
     assert titles == ["内容音频"]
 
 
-async def test_page_use_audio_cue_alias_is_rejected(authenticated_client: AsyncClient) -> None:
+async def test_page_use_audio_cue_alias_is_rejected(
+    authenticated_client: AsyncClient, closed_audio_capabilities: None
+) -> None:
     """别名导入的 useAudioCue 调用同样按 audio_cues 能力拒绝，避免绕过门禁。"""
 
     workspace_id = await _create_workspace(authenticated_client, "页面 cue 能力空间")
@@ -97,7 +101,9 @@ async def test_page_use_audio_cue_alias_is_rejected(authenticated_client: AsyncC
     assert "audio_cues" in response.json()["message"]
 
 
-async def test_component_narration_is_rejected(authenticated_client: AsyncClient) -> None:
+async def test_component_narration_is_rejected(
+    authenticated_client: AsyncClient, closed_audio_capabilities: None
+) -> None:
     """组件创建同样受能力门禁约束，不靠发布阶段兜底。"""
 
     workspace_id = await _create_workspace(authenticated_client, "组件音频能力空间")

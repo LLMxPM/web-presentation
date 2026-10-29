@@ -3,7 +3,7 @@
 
 以下事项从 [部署形态收敛与配置治理工作计划](../archive/architecture-2026-09/plans/deployment-form-and-config-governance-plan-2026-10-02.md) 提取，在计划归档后继续追踪。文档归档不代表验收完成。
 
-2026-10-16 文件鉴权修复新增发布条件，详见[文件存储鉴权规划](../developer/runtime-integration/file-storage-auth-cache-plan.md)：
+2026-10-16 文件鉴权修复新增发布条件，详见[文件存储鉴权规划](../developer/projects/file-storage-auth-cache-plan.md)：
 
 - 配置独立预览主机名的 DNS / TLS，验证 `/runtime/` 与受保护 `/build-artifacts/`；业务 Cookie 不设置父域 Domain，预览域不加入业务 CORS。
 - 旧字体桶关闭匿名 ACL / policy，保留 Backend 服务身份迁移读取权限；检查历史绝对 public URL，不能通过重新开放旧入口回滚。
@@ -17,7 +17,7 @@
 
 **状态**：`v0.3.1` 已发布；ACR 匿名 manifest 与本机 digest 拉取通过，Docker Hub Registry 直连拉取待从非故障网络复核。
 
-2026-10-24 查到两个 Registry 的 platform、Lite、Runtime、Renderer `v0.3.1` 相同 digest；本机从 ACR 按 digest 拉取四镜像，OCI revision 均为 `a94ae57`。Docker Hub 公共标签元数据可读，本机 Registry HEAD 经代理返回 EOF，不能记作直接拉取通过。确切 digest 与升级证据见[动画前版本联合验收记录](../developer/runtime-integration/pre-motion-joint-acceptance.md)。检查脚本 `scripts/contracts/check-compose-images.py` 与 npm script `test:contracts:compose-images` 已就绪。
+2026-10-24 查到两个 Registry 的 platform、Lite、Runtime、Renderer `v0.3.1` 相同 digest；本机从 ACR 按 digest 拉取四镜像，OCI revision 均为 `a94ae57`。Docker Hub 公共标签元数据可读，本机 Registry HEAD 经代理返回 EOF，不能记作直接拉取通过。确切 digest 与升级证据见[动画前版本联合验收记录](../archive/developer-work-2026-10/pre-motion-joint-acceptance.md)。检查脚本 `scripts/contracts/check-compose-images.py` 与 npm script `test:contracts:compose-images` 已就绪。
 
 **下一步**：从可直连 Docker Hub Registry 的 CI 或主机执行匿名 `docker manifest inspect` 与 `docker pull`，同时核对 ACR digest；将结果留在发布流水线。
 
@@ -71,13 +71,21 @@ Backend `capabilities.slideshow` 已声明 `advance_modes` 为 `manual`/`timer`�
 
 - Backend 与 Runtime 使用同版部署；不得把声明 timer/单窗口能力的 Backend 与旧 Runtime 执行池组合后对外宣布支持。
 - 已打开的放映窗口保持创建时的不可变快照；回滚应用不重写历史 artifact，也不保证旧版本可以完整编辑新配置。
-- 部署后执行真实浏览器计时、暂停/循环和 CLI/MCP 读改写抽查；证据记入 [WP21](../developer/runtime-integration/slideshow/work-packages/wp21-m1-integration-release.md)。
+- 部署后执行真实浏览器计时、暂停/循环和 CLI 读改写抽查；MCP 不在当前交付范围。证据记入 [WP21](../archive/developer-work-2026-10/slideshow/work-packages/wp21-m1-integration-release.md)。
 
 **下一步**：在目标部署拓扑执行同版升级与回滚演练，并记录版本矩阵和实际证据。
 
 ---
 
-## 6. 页内动画与时间轴能力开放门禁
+## 6. CLI 字体与主题发布包对账
+
+**状态**：主仓与 CLI 的真实流程验收已通过，发布安装包仍须按拟发布提交重新构建并核对版本与摘要。
+
+**下一步**：固定两仓提交、CLI/Skill 版本与 OpenAPI 摘要；从最终提交重建安装包，核对包内容和摘要，不复用早期源码快照的包。历史实施和实测证据见[CLI 字体主题归档](../archive/developer-work-2026-10/cli-font-theme/implementation-plan.md)。
+
+---
+
+## 7. 页内动画与时间轴能力开放门禁
 
 **状态**：时间轴与 `timeline_end` 已默认开放（2026-10-22）；G1 已关闭（2026-10-23），G2 未关闭；指定状态截图仍关闭。
 
@@ -95,6 +103,6 @@ Backend `capabilities.slideshow` 已声明 `advance_modes` 为 `manual`/`timer`�
 
 ## 使用说明
 
-- 以上事项的完整历史记录保留在 [`docs/archive/architecture-2026-09/`](../archive/architecture-2026-09/README.md)。
+- 架构治理事项的历史记录保留在[架构治理归档](../archive/architecture-2026-09/README.md)；CLI 字体主题的实施与验收记录保留在[开发专题归档](../archive/developer-work-2026-10/README.md)。
 - 事项闭环后在对应段落注明完成日期、证据位置和结论。
 - 新增待验证事项按相同格式追加，不混入已闭环条目。

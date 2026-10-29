@@ -89,6 +89,7 @@
                 variant="secondary"
                 size="sm"
                 class="h-8 whitespace-nowrap px-2"
+                :loading="downloadingJobId === job.id"
                 @click="emit('download', job)"
               >
                 <template #icon>
@@ -142,6 +143,8 @@ defineProps<{
   historyLoading: boolean
   latestJobId?: number | null
   deletingJobId?: number | null
+  /** 正在预检并触发下载的任务 ID，用于按钮加载态与防重复点击。 */
+  downloadingJobId?: number | null
 }>()
 
 const emit = defineEmits<{

@@ -226,6 +226,7 @@ async def test_project_workspace_move_should_clear_cue_bindings(
 
 async def test_project_audio_settings_should_reject_cues_when_capability_closed(
     authenticated_client: AsyncClient,
+    closed_audio_capabilities: None,
 ) -> None:
     """audio_cues 关闭时拒绝非空绑定，但允许只更新音量与空 cue。"""
 

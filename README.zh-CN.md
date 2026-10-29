@@ -6,7 +6,7 @@
 
 [官网](https://wp.llmxpm.com/) · [案例展示](https://wp.llmxpm.com/showcases.html) · [用户文档](https://wp.llmxpm.com/docs/user/)
 
-![平台产品总览图](./docs/assets/平台总览.png)
+![平台架构图：Editor、Backend、Runtime 与 Renderer 的协作关系](./docs/assets/平台架构.svg)
 
 ## 产品特点
 
@@ -21,6 +21,7 @@
 - **页面布局检测**：基于真实DOM，对超高、换行、堆叠等AI常见布局错误，提供自动检测工具，AI自主修复。
 - **资产抽象复用**：工作空间沉淀资源、组件、主题、样式和字体，支持 PPT、图文卡片、报告页、展示页等不同内容形态复用同一套基础资产。
 - **快速可视反馈**：Runtime 基于 Vue 与 Vite 加载页面、组件和配置包，为 Editor 提供 iframe 预览、截图预览、组件预览和构建能力。
+- **放映音频**：工作空间音频资源可用于页面旁白和项目 cue，并可在 Editor 设置音效绑定与音量；旁白和 cue 已默认开放。
 - **页内时间轴放映**：页面视觉与媒体可由同一时间轴编排，并可配置在时间轴结束后翻页。该能力默认开放，G2 验收仍待完成。
 - **受限可视化编辑**：在页面渲染结果旁查看 Vue 容器层级，以表单方式修改静态文本、组件参数和受控 Tailwind 样式。
 - **上下文隔离与注入**：Backend 为 AI 构造当前项目、页面、组件和资源的必要上下文，让 AI 聚焦具体创作，不需要关心 Runtime 内部实现。
@@ -67,7 +68,7 @@
 
 ## 在线 Demo
 
-公开 Demo 的访问地址、体验账号和 AI 设置说明统一维护在官网的 [Demo 使用指南](https://wp.llmxpm.com/docs/user/demo-guide.html)。
+访问[公开 Demo](https://wp-demo.inputloom.com)；体验账号和 AI 设置说明见官网的 [Demo 使用指南](https://wp.llmxpm.com/docs/user/demo-guide.html)。
 
 ## 快速部署
 

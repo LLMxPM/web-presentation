@@ -227,6 +227,7 @@ async def test_existing_preview_artifact_should_not_hot_read_updated_slideshow(
 async def test_preview_artifact_should_drop_cues_when_capability_closed(
     authenticated_client: AsyncClient,
     runtime_service_headers,
+    closed_audio_capabilities: None,
 ) -> None:
     """能力关闭时新快照不携带 cue；历史绑定只保留在存储中，不进入执行配置。"""
 

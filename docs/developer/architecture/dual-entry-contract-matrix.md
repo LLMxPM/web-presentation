@@ -1,6 +1,6 @@
 # 双入口契约矩阵（Top 操作）
 
-> 状态：Top 操作 method/path 与响应对拍已补强（2026-09-30）；真实跨入口联调仍待 M08。覆盖页面读写、校验、预览、归档 Top 操作；不追求全矩阵。
+> 状态：Top 操作 method/path 与响应对拍已补强（2026-09-30）；历史 M08 验收记录见[架构治理归档](../../archive/architecture-2026-09/README.md)。本矩阵覆盖页面读写、校验、预览、归档 Top 操作；不追求全矩阵。
 > 对拍测试：`backend/tests/contracts/test_dual_entry_contract_matrix.py`。
 
 ## 1. 入口定义

@@ -40,7 +40,10 @@ from app.services.component_validation_profile import (
     build_component_validation_profile,
 )
 from app.services.component_validation_service import ComponentValidationService
-from app.services.page_render_diagnostics_service import PageRenderDiagnosticsService
+from app.services.page_render_diagnostics_service import (
+    PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE_CODE,
+    PageRenderDiagnosticsService,
+)
 from app.services.page_service import PageService
 from app.services.preview_service import PreviewService
 from app.services.project_artifact_builder import ProjectPageModuleOverride
@@ -809,6 +812,11 @@ def _render_stage_status(render_result: Mapping[str, object], render_diagnostics
 
     render_status = render_result.get("status")
     if render_status == "unavailable":
+        return "unavailable"
+    if any(
+        isinstance(item, dict) and item.get("code") == PAGE_RENDER_DIAGNOSTICS_UNAVAILABLE_CODE
+        for item in render_diagnostics
+    ):
         return "unavailable"
     if render_status == "failed":
         return "failed"

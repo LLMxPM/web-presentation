@@ -3,7 +3,6 @@
 import pytest
 from httpx import AsyncClient
 
-from app.core.config import get_settings
 from app.schemas import audio as audio_schema
 from app.schemas.audio import AUDIO_SCHEMA_VERSION
 from app.schemas.slideshow import (
@@ -48,40 +47,20 @@ async def test_system_slideshow_capabilities_should_publish_executable_baseline(
     assert data["audio"] == {
         "schema_version": AUDIO_SCHEMA_VERSION,
         "audio_assets": True,
-        "page_narration": False,
-        "audio_cues": False,
+        "page_narration": True,
+        "audio_cues": True,
     }
-
-
-async def test_development_audio_capabilities_are_published(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """本地联调显式开关应同时开放旁白与 cue 的公开能力声明。"""
-
-    monkeypatch.setenv("AUDIO_DEV_CAPABILITIES_ENABLED", "true")
-    get_settings.cache_clear()
-    try:
-        response = await client.get("/api/system/slideshow-capabilities")
-        assert response.status_code == 200
-        assert response.json()["audio"] == {
-            "schema_version": AUDIO_SCHEMA_VERSION,
-            "audio_assets": True,
-            "page_narration": True,
-            "audio_cues": True,
-        }
-    finally:
-        get_settings.cache_clear()
 
 
 async def test_audio_capability_disclosure_matches_enabled_write_gate(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """联合验收开放音频时，公共声明和写入门禁使用同一能力集合。"""
+    """能力被关闭时，公共声明和写入门禁仍使用同一能力集合。"""
 
     monkeypatch.setattr(
         audio_schema,
         "get_open_audio_capabilities",
-        lambda: frozenset(audio_schema.AUDIO_MILESTONE_CAPABILITIES["m2"]),
+        lambda: frozenset({audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS}),
     )
     response = await client.get("/api/system/slideshow-capabilities")
 
@@ -89,7 +68,7 @@ async def test_audio_capability_disclosure_matches_enabled_write_gate(
     assert response.json()["audio"] == {
         "schema_version": AUDIO_SCHEMA_VERSION,
         "audio_assets": True,
-        "page_narration": True,
-        "audio_cues": True,
+        "page_narration": False,
+        "audio_cues": False,
     }
-    assert is_audio_capability_open(audio_schema.AUDIO_CAPABILITY_AUDIO_CUES)
+    assert not is_audio_capability_open(audio_schema.AUDIO_CAPABILITY_AUDIO_CUES)

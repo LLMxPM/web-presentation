@@ -15,11 +15,11 @@
 | [Compose 部署说明](./compose.md) | 两种部署方式、三个 compose 模板（Lite 单容器与生产分角色/小团队）、启动方式和访问关系 |
 | [部署环境变量](./env-vars.md) | production env 版变量分组和关键约束 |
 | [多 Backend 与密钥一致性](./multi-backend.md) | 多 Backend 共享存储/密钥前提、签名密钥轮换、旧票据语义、AI Run 停机语义与协调器幂等边界 |
-| [版本兼容矩阵](./compatibility-matrix.md) | N/N-1 支持组合、升级窗口、摘流策略与 Run 收敛边界（AR-05/W05） |
+| [版本兼容与升级窗口](./compatibility-matrix.md) | 历史固定组合证据、同版切换、摘流策略与 Run 收敛边界 |
 | [CI/CD 与容器发布](./cicd.md) | 平台、Runtime、Renderer 镜像与发布策略 |
 | [备份与恢复](../operations/backup-restore.md) | 数据库、资源、构建产物和密钥备份 |
 | [升级与回滚](../operations/upgrade-rollback.md) | 镜像升级、数据库迁移和回滚注意事项 |
-| [版本兼容矩阵](./compatibility-matrix.md) | N/N-1 支持组合、升级窗口、摘流策略与 Run 收敛边界（AR-05/W05） |
+| [版本兼容与升级窗口](./compatibility-matrix.md) | 平台内部服务不保证混版部署正常运行 |
 | [部署排障](../operations/troubleshooting.md) | 健康检查、Runtime、AI 设置和数据库迁移问题 |
 | [执行隔离与权限矩阵](./execution-isolation.md) | 构建领取器 / 编译子进程边界、单任务 token 与 M02 验收要点（AR-01/W01） |
 | [Lite 规模与隔离决策](../operations/lite-scale-and-isolation.md) | 推荐规模（5–10 人 / 并发 3，D2 前非 SLA）、Lite 故障域、G1 不拆容器与 G5 Renderer 隔离决策 |

@@ -86,7 +86,7 @@ uv run --project backend python scripts/testing/docker-architecture.py render-la
 
 ## 上一正式发布版的定向升级抽样
 
-本候选上一正式发布版为 `v0.3.1`，与下方固定 `4c7eee8` 的 M05 历史样本不是同一版本。先按[动画前版本联合验收记录](../runtime-integration/pre-motion-joint-acceptance.md)的四个 digest 拉取并标记平台/Lite、Runtime、Renderer 镜像；一个项目只选 platform 或 Lite 作为 Backend，另一变体使用另一个专属项目。每个项目按 `setup` → `seed` → `browser-same` → `pipeline` → `browser-build` 执行旧版基线，保存旧 ZIP 摘要后运行：
+本候选上一正式发布版为 `v0.3.1`，与下方固定 `4c7eee8` 的 M05 历史样本不是同一版本。先按[动画前版本联合验收记录](../../archive/developer-work-2026-10/pre-motion-joint-acceptance.md)的四个 digest 拉取并标记平台/Lite、Runtime、Renderer 镜像；一个项目只选 platform 或 Lite 作为 Backend，另一变体使用另一个专属项目。每个项目按 `setup` → `seed` → `browser-same` → `pipeline` → `browser-build` 执行旧版基线，保存旧 ZIP 摘要后运行：
 
 ```powershell
 uv run --project backend python scripts/testing/docker_architecture_release_upgrade.py --directory $drillDirectory --backend-image wp-platform:pre-motion-candidate --runtime-image wp-runtime:pre-motion-candidate --renderer-image wp-renderer:pre-motion-candidate

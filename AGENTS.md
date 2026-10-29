@@ -29,6 +29,8 @@
 
 面向外部桌面 Agent 的 CLI、专用同步 API Client 与配套 Skill 维护在同级独立仓库 `web-presentation-cli`，独立 MCP 服务维护在 `web-presentation-mcp`（待完成状态）；本仓只维护它们依赖的 Backend `/api/v1` External API v1 契约和集成文档。
 
+当前新功能交付范围不包含 MCP 服务及其客户端、工具和端到端验证；不得因 MCP 尚未实现阻塞主仓或 CLI 功能验收。External API 契约仍须保持准确，并记录 MCP 后续接入时需要适配的变更；只有用户明确将 MCP 纳入某次交付时，才增加相应交付门槛。
+
 当前已落地登录、多用户隔离、工作空间/项目/页面管理、资源库、组件库、主题库、样式库、AI Agent 会话、工具确认、预览、截图、构建和容器发布；跨项目资产治理、Dashboard、项目/页面使用关系运营视图和 Runtime 反向回传仍在建设中。
 
 ## 3. 目录职责
@@ -155,12 +157,12 @@ Runtime Kit 约束：
 
 多部署 / 多副本约束（与代码保持一致，禁止只改文档宣称）：
 
-- **私有文件与预览源站**：浏览器与 Renderer 浏览器使用 artifact 预览票据 P 读取素材，Runtime / 构建 Worker 使用内部服务票据 S 回源，不得混用端点或恢复 public fallback。用户 HTML 必须在 `RUNTIME_PUBLIC_BASE_URL` 的独立主机名执行；Backend 预览入口仅返回可信桥接宿主页，业务 Cookie 保持 host-only，预览域不得加入业务 CORS。文件鉴权先于缓存、304、HEAD 和 Range；截图内容 URL 绑定 hash，旧可变 key 仅按 latest 兼容。实施边界见[文件存储鉴权规划](./docs/developer/runtime-integration/file-storage-auth-cache-plan.md)。
+- **私有文件与预览源站**：浏览器与 Renderer 浏览器使用 artifact 预览票据 P 读取素材，Runtime / 构建 Worker 使用内部服务票据 S 回源，不得混用端点或恢复 public fallback。用户 HTML 必须在 `RUNTIME_PUBLIC_BASE_URL` 的独立主机名执行；Backend 预览入口仅返回可信桥接宿主页，业务 Cookie 保持 host-only，预览域不得加入业务 CORS。文件鉴权先于缓存、304、HEAD 和 Range；截图内容 URL 绑定 hash，旧可变 key 仅按 latest 兼容。实施边界见[文件存储鉴权规划](docs/developer/projects/file-storage-auth-cache-plan.md)。
 - **Runtime 角色**：`preview` / `build` / `check` / `all` 由 `runtime-role.ts` 与 `vite.config.ts` 真实注销端点；分角色 compose 见 `deploy/compose/compose.runtime-roles.yml`。角色独立执行预算与健康输出以 Runtime 插件为准，不得把死配置写成已达成门槛。
 - **构建 attempt 围栏**：产物提升必须匹配 Job 当前 `attempt_id`（INV-5）；租约过期/回收一律作废 attempt，禁止迟到上传提升旧产物。
 - **检查指纹缓存**：`CodeCheckFingerprintBuilder` 覆盖源码、依赖版本、引用资源身份、Runtime Kit 清单内容 hash、主题/字体与规则版本；新增会影响检查结果的输入必须进指纹，否则缓存会返回陈旧结果。截图/诊断身份只收会改变静态像素的输入：路由仅经 `page_render_identity` 的页码目录投影进入，且只在页面闭包引用 `vue-router` 或 `useCurrentPage`/`useRouteCatalog`/`usePageNavigation` 时纳入；`transition`/`advance`/`playback` 与模块入口不渲染的 `app` 展示字段不得进入身份。页码分配规则两侧共用 `tests/fixtures/route-page-number-cases.json` 对拍，改任一侧必须同步另一侧。
 - **签名密钥环**：多 Backend 必须共享同一 RS256 私钥（`signing_identity`）；轮换期 JWKS 同时公布新旧钥；预览/服务令牌固定 `algorithms: ['RS256']` 且要求 `exp`。摘除 Renderer Worker 前必须跑 `python -m app.scripts.check_render_worker_removal`。
-- **预览版本**：镜像生成并携带 `.runtime-build-id`（Runtime 执行输入与根锁文件 hash），同版副本共享发布身份，`RUNTIME_INSTANCE_ID` 只作观测。Backend 对预览签名票据绑定版本，Runtime 通过版本化 Vite base 检查 HTML/模块/CSS/HMR；不得退回只依赖人工请求头或副本缓存。交付镜像缺构建身份必须拒绝启动；混版池仍按兼容矩阵的实机验收与排空策略处理。
+- **预览版本**：镜像生成并携带 `.runtime-build-id`（Runtime 执行输入与根锁文件 hash），同版副本共享发布身份，`RUNTIME_INSTANCE_ID` 只作观测。Backend 对预览签名票据绑定版本，Runtime 通过版本化 Vite base 检查 HTML/模块/CSS/HMR；不得退回只依赖人工请求头或副本缓存。交付镜像缺构建身份必须拒绝启动。平台内部 Backend、Runtime、Renderer 等服务不保证不同发布版本混合部署正常运行；升级时排空旧服务并切换同版服务，无需为新功能安排内部服务混版组合测试。历史混版证据只说明当时的固定样本结果。
 - **普通 AI Run**：产品承诺「会丢」；新实例通过 `ai_agent_process_owners` 的 UUID/心跳租约和 `process_reaper` 独立 CAS 收敛，普通执行与工具写入传播进程写围栏；禁止凭模型事件空闲时间扫杀活跃 Run。paused、waiting_external 与未完成外部 Batch 交接由原协调器维护。历史未登记 owner 仍按 hostname/PID 启动过滤，跨容器历史遗留使用 `force_cancel`，升级前排空旧实例。
 
 ## 4. 测试与验证
@@ -191,6 +193,7 @@ Runtime Kit 约束：
 
 - 部署、CI/CD、测试设计文档、接口契约或跨模块联调发生变化。
 - 接口契约尚未稳定但需要跨模块联调，应先在文档中声明请求路径、入参、出参和错误语义。
+- 面向开发者的现行契约、模块说明和操作指南保留在对应模块目录；进行中的实施计划与工作包放入 `docs/developer/projects/`，完成后把稳定结论回填并将过程证据移至 `docs/archive/`。迁移文档时同步修复仓内链接。
 
 出现以下情况时，优先更新 `docs/user/` 下用户文档：
 
