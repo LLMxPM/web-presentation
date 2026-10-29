@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { chromium } from '@playwright/test'
 import { encodeVideo } from '../motion-wp01/encode-video.mjs'
 import { buildSpinGlb, buildToneWav } from './fixtures.mjs'
-import { domLayout, capture, modelInstances } from './scenarios-visual.mjs'
+import { domLayout, modelInstances } from './scenarios-visual.mjs'
 import { mediaClock, bufferPause, optionalFailure, secondaryBuffer, autoplayRefusal, seekHandover, audibleSeek, preference, mediaOwnership } from './scenarios-media.mjs'
 import { runSoak } from './soak.mjs'
 import { startMotionRuntimeServer } from './runtime-server.mjs'
@@ -31,7 +31,6 @@ const scenarios = [
   ['A08-autoplay', autoplayRefusal],
   ['A09-seek-handover', seekHandover],
   ['A09-audible-seek', audibleSeek],
-  ['A13-capture', capture],
   ['A12-preference', preference],
   ['A10-media-ownership', mediaOwnership],
   ['A04-model-instances', modelInstances],

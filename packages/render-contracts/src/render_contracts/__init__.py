@@ -19,7 +19,6 @@ from render_contracts.errors import (
     error_http_status_table,
     http_status_for_error_code,
 )
-from render_contracts.motion import AppliedMotion, MotionSnapshot
 from render_contracts.schema import (
     ArtifactDescriptor,
     DiagnosticItem,
@@ -65,8 +64,6 @@ __all__ = [
     "ArtifactDescriptor",
     "DiagnosticItem",
     "WorkerCapabilities",
-    "MotionSnapshot",
-    "AppliedMotion",
     "AdmissionTicket",
     "PreviewAccess",
     "compute_request_digest",

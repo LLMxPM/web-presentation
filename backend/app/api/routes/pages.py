@@ -288,7 +288,6 @@ async def create_page_screenshot_job(
         viewport_width=payload.viewport_width,
         viewport_height=payload.viewport_height,
         target_page_version_no=payload.target_page_version_no,
-        motion_snapshot=payload.motion_snapshot,
     )
 
 

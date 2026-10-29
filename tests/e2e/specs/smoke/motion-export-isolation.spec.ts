@@ -1,26 +1,25 @@
 /**
- * 文件功能：在真实 Runtime 浏览器中验证时间轴 PNG/PDF/PPTX 捕获静音，以及导出取消与主播放状态隔离。
+ * 文件功能：在真实 Runtime 浏览器中验证独立静态 PNG/PDF/PPTX 捕获静音，以及导出取消与主播放状态隔离。
  */
 import { readFileSync } from 'node:fs'
 import { inflateRawSync } from 'node:zlib'
 
 import type { APIRequestContext, BrowserContext, FrameLocator, Page } from '@playwright/test'
 import { expect, test } from '../../fixtures/test-data'
-import { countPixels, decodePngPixels } from '../../helpers/png-pixels'
+import { decodePngPixels } from '../../helpers/png-pixels'
 import { longWavDataUri } from '../../helpers/motion-media'
 
 interface RuntimeCaptureObservation {
-  kind: 'media-play' | 'capture-snapshot'
+  kind: 'media-play' | 'static-ready'
   captureMode?: boolean
   execution?: string | null
   muted?: boolean
   paused?: boolean
-  request?: unknown
-  receipt?: { status?: string; timelineId?: string; sampledTimeMs?: number }
+  receipt?: { status?: string; code?: string }
   media?: Array<{ muted: boolean; paused: boolean; currentTime: number }>
 }
 
-/** 为全部 Runtime 文档安装媒体与捕获桥探针，只经 Playwright binding 回传最小观察值。 */
+/** 为全部 Runtime 文档安装媒体与静态就绪探针，只经 Playwright binding 回传最小观察值。 */
 async function installCaptureObserver(context: BrowserContext) {
   const observations: Array<RuntimeCaptureObservation & { framePath: string }> = []
   await context.exposeBinding('__a15Observe', ({ frame }: { frame: { url(): string } }, value: RuntimeCaptureObservation) => {
@@ -44,56 +43,60 @@ async function installCaptureObserver(context: BrowserContext) {
       return result
     }
 
-    let applyMotionSnapshot: ((request?: unknown) => Promise<RuntimeCaptureObservation['receipt']>) | undefined
-    Object.defineProperty(window, '__RUNTIME_APPLY_MOTION_SNAPSHOT__', {
+    let readyState: { mounted?: boolean; staticPresentation?: RuntimeCaptureObservation['receipt'] } | undefined
+    Object.defineProperty(window, '__RENDER_READY__', {
       configurable: true,
-      get: () => applyMotionSnapshot,
-      set: handler => {
-        if (typeof handler !== 'function') {
-          applyMotionSnapshot = undefined
-          return
-        }
-        applyMotionSnapshot = async request => {
-          const receipt = await handler(request)
-          notify({
-            kind: 'capture-snapshot',
-            captureMode: new URLSearchParams(location.search).get('runtimeCapture') === '1' || location.hash.includes('runtimeCapture=1'),
-            execution: document.querySelector<HTMLElement>('[data-runtime-execution]')?.dataset.runtimeExecution ?? null,
-            request,
-            receipt,
-            media: Array.from(document.querySelectorAll<HTMLMediaElement>('audio, video')).map(media => ({
-              muted: media.muted,
-              paused: media.paused,
-              currentTime: media.currentTime,
-            })),
-          })
-          return receipt
-        }
+      get: () => readyState,
+      set: value => {
+        readyState = value
+        if (!value?.mounted || value.staticPresentation?.status !== 'ready') return
+        notify({
+          kind: 'static-ready',
+          captureMode: new URLSearchParams(location.search).get('runtimeCapture') === '1' || location.hash.includes('runtimeCapture=1'),
+          execution: document.querySelector<HTMLElement>('[data-runtime-execution]')?.dataset.runtimeExecution ?? null,
+          receipt: value.staticPresentation,
+          media: Array.from(document.querySelectorAll<HTMLMediaElement>('audio, video')).map(media => ({
+            muted: media.muted,
+            paused: media.paused,
+            currentTime: media.currentTime,
+          })),
+        })
       },
     })
   })
   return observations
 }
 
-/** 构造有声音频与可区分海报姿态的时间轴页面。 */
+/** 构造有声音频的播放页面，并声明独立于播放进度的可读静态态。 */
 function buildA15Page(): string {
   // 一次性 30s 音频覆盖两次导出与取消窗口，避免用重复片段干扰导出隔离判断。
   const audio = longWavDataUri(30)
   return `<template>
   <main ref="root" class="a15-page">
-    <h1 class="a15-title">A15 导出姿态</h1>
+    <h1 class="a15-title" :style="isStatic ? { opacity: 1, transform: 'translateX(150px)' } : undefined">A15 导出姿态</h1>
     <audio class="a15-audio" :src="audioSource" preload="auto" @play="markPlayed" @volumechange="syncMuted" />
     <span class="a15-sentinel" :class="{ 'is-muted': audioMuted, 'is-playing': audioPlayed }" aria-hidden="true"></span>
     <button class="a15-start" type="button" @click="startTimeline">启动主时间轴</button>
   </main>
 </template>
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import { usePageTimeline } from '@runtime-kit/public/composables/motion/usePageTimeline.v1'
+import { useStaticPresentation } from '@runtime-kit/public/composables/static/useStaticPresentation.v1'
 const root = ref<HTMLElement | null>(null)
 const audioSource = '${audio}'
 const audioMuted = ref(false)
 const audioPlayed = ref(false)
+const { isStatic } = useStaticPresentation({
+  root,
+  mode: 'poster',
+  async prepare() {
+    const audio = root.value?.querySelector<HTMLAudioElement>('.a15-audio')
+    if (audio) audio.muted = true
+    audioMuted.value = true
+    await nextTick()
+  },
+})
 const timeline = usePageTimeline({
   root,
   bindings: { title: '.a15-title' },
@@ -315,7 +318,7 @@ async function addStaticPages(api: APIRequestContext, workspaceId: number, proje
   return { pageIds, routeResponse }
 }
 
-test('PNG/PDF/PPTX 静态捕获应用海报并静音，完成与取消都隔离主时间轴', async ({ page, context, visualEditSandbox }, testInfo) => {
+test('PNG/PDF/PPTX 使用独立静态呈现，完成与取消都隔离主时间轴', async ({ page, context, visualEditSandbox }, testInfo) => {
   test.setTimeout(360_000)
   const api = context.request
   const observers = await installCaptureObserver(context)
@@ -336,9 +339,9 @@ test('PNG/PDF/PPTX 静态捕获应用海报并静音，完成与取消都隔离�
     const pngSummary = summarizePixels(decoded.width, decoded.height, decoded.channels, decoded.pixels)
     expect(pngSummary.green, '远程 PNG 应显示捕获时静音标记').toBeGreaterThan(500)
     expect(pngSummary.red, '远程 PNG 捕获页不得启动音频').toBe(0)
-    expect(pngSummary.blue, '远程 PNG 应包含海报姿态标题').toBeGreaterThan(500)
+    expect(pngSummary.blue, '远程 PNG 应包含独立静态标题').toBeGreaterThan(500)
     expect(pngSummary.blueCentroidX).not.toBeNull()
-    await testInfo.attach('a15-default-poster.png', { body: png, contentType: 'image/png' })
+    await testInfo.attach('a15-static-presentation.png', { body: png, contentType: 'image/png' })
 
     const artifactResponse = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
     expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
@@ -354,10 +357,10 @@ test('PNG/PDF/PPTX 静态捕获应用海报并静音，完成与取消都隔离�
     await expect.poll(async () => observers.filter(item => item.kind === 'media-play' && !item.captureMode).length)
       .toBeGreaterThan(0)
 
-    /** 完成一次真实浏览器导出，并校验离屏桥回执与主放映快照。 */
+    /** 完成一次真实浏览器导出，并校验离屏静态回执与主放映快照。 */
     async function exportAndCheck(method: 'pptx-editable' | 'canvas-pdf', label: 'HTML转PPTX' | '截图PDF') {
       const stateBefore = await readMainState(runtime)
-      const priorSnapshots = observers.filter(item => item.kind === 'capture-snapshot').length
+      const priorSnapshots = observers.filter(item => item.kind === 'static-ready').length
       await runtime.locator('.nav-button--export').click()
       const dialog = runtime.locator('[role="dialog"][aria-labelledby="export-dialog-title"]')
       await dialog.getByText(label, { exact: true }).click()
@@ -370,10 +373,10 @@ test('PNG/PDF/PPTX 静态捕获应用海报并静音，完成与取消都隔离�
         expect(file.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
         const slide = extractZipText(file, 'ppt/slides/slide1.xml')
         expect(slide).toContain('<a:t>A15 导出姿态</a:t>')
-        // 海报 5000ms 处 power2.out 进度为 0.875，PPTX 内部文本必须保留该姿态透明度。
-        const titleAlpha = Number(/<a:srgbClr val="2563EB"><a:alpha val="(\d+)"\/>/.exec(slide)?.[1] ?? 0)
-        expect(titleAlpha).toBeGreaterThan(80000)
-        expect(titleAlpha).toBeLessThan(95000)
+        // 独立静态标题完全可见；不得退回旧时间轴 5000ms 的半透明姿态。
+        expect(slide).toMatch(/<a:srgbClr val="2563EB"(?:\/>|>)/)
+        const titleAlpha = Number(/<a:srgbClr val="2563EB"><a:alpha val="(\d+)"\/>/.exec(slide)?.[1] ?? 100000)
+        expect(titleAlpha).toBe(100000)
       } else {
         expect(download.suggestedFilename()).toMatch(/\.pdf$/)
         expect(file.subarray(0, 5).toString('ascii')).toBe('%PDF-')
@@ -382,18 +385,17 @@ test('PNG/PDF/PPTX 静态捕获应用海报并静音，完成与取消都隔离�
         expect(pdfSummary.height).toBe(2160)
         expect(pdfSummary.green, 'PDF 内嵌图像应显示捕获时静音标记').toBeGreaterThan(500)
         expect(pdfSummary.red, 'PDF 内嵌图像不得启动音频').toBe(0)
-        expect(pdfSummary.blue, 'PDF 内嵌图像应包含海报姿态标题').toBeGreaterThan(500)
+        expect(pdfSummary.blue, 'PDF 内嵌图像应包含独立静态标题').toBeGreaterThan(500)
         expect(pdfSummary.blueCentroidX).not.toBeNull()
         expect(Math.abs((pdfSummary.blueCentroidX as number) - (pngSummary.blueCentroidX as number)))
           .toBeLessThan(0.01)
       }
       expect(file.length).toBeGreaterThan(4096)
-      await expect.poll(() => observers.filter(item => item.kind === 'capture-snapshot').length, { timeout: 30_000 })
+      await expect.poll(() => observers.filter(item => item.kind === 'static-ready').length, { timeout: 30_000 })
         .toBeGreaterThan(priorSnapshots)
-      const snapshots = observers.filter(item => item.kind === 'capture-snapshot').slice(priorSnapshots)
+      const snapshots = observers.filter(item => item.kind === 'static-ready').slice(priorSnapshots)
       expect(snapshots.length).toBeGreaterThan(0)
-      expect(snapshots.some(item => item.captureMode && item.execution === 'capture' && item.receipt?.status === 'applied'
-        && item.receipt.timelineId === 'a15-export-isolation' && item.receipt.sampledTimeMs === 5000
+      expect(snapshots.some(item => item.captureMode && item.execution === 'capture' && item.receipt?.status === 'ready'
         && item.media?.some(media => media.muted && media.paused))).toBe(true)
       await dialog.getByRole('button', { name: '关闭', exact: true }).click()
       const stateAfter = await readMainState(runtime)
@@ -401,7 +403,7 @@ test('PNG/PDF/PPTX 静态捕获应用海报并静音，完成与取消都隔离�
       expect(['ready', 'buffering']).toContain(stateAfter.phase)
       expect(stateAfter.positionMs).toBeGreaterThan(stateBefore.positionMs as number)
       expect(stateAfter.audioMuted).toBe(false)
-      // 导出期间的离屏采样会暂停音频；轮询确认导出结束后主时间轴音频恢复播放。
+      // 离屏静态页不控制主页面媒体，导出后主时间轴继续播放。
       await expect.poll(async () => (await readMainState(runtime)).audioPaused).toBe(false)
       expect(stateAfter.route).toBe(stateBefore.route)
     }
@@ -410,14 +412,14 @@ test('PNG/PDF/PPTX 静态捕获应用海报并静音，完成与取消都隔离�
     await exportAndCheck('canvas-pdf', '截图PDF')
 
     const stateBeforeCancel = await readMainState(runtime)
-    const priorSnapshots = observers.filter(item => item.kind === 'capture-snapshot').length
+    const priorSnapshots = observers.filter(item => item.kind === 'static-ready').length
     await runtime.locator('.nav-button--export').click()
     const dialog = runtime.locator('[role="dialog"][aria-labelledby="export-dialog-title"]')
     await dialog.getByText('截图PDF', { exact: true }).click()
     await dialog.getByText('所有页面', { exact: true }).click()
     await dialog.getByRole('button', { name: '开始导出' }).click()
     await expect(dialog.getByRole('button', { name: '取消导出' })).toBeVisible()
-    await expect.poll(() => observers.filter(item => item.kind === 'capture-snapshot').length, { timeout: 30_000 })
+    await expect.poll(() => observers.filter(item => item.kind === 'static-ready').length, { timeout: 30_000 })
       .toBeGreaterThan(priorSnapshots)
     await dialog.getByRole('button', { name: '取消导出' }).click()
     await expect(dialog.getByRole('heading', { name: '导出失败' })).toBeVisible()
@@ -437,32 +439,9 @@ test('PNG/PDF/PPTX 静态捕获应用海报并静音，完成与取消都隔离�
   }
 })
 
-test('远程 PNG 的指定姿态可读且捕获时音频保持静音', async ({ context, visualEditSandbox }, testInfo) => {
-    test.skip(process.env.MOTION_CAPTURE_TEST_OPT_IN !== '1', '远程指定状态 PNG 仅在临时开启 motion_snapshot 能力的 E2E Renderer 上运行')
-    test.setTimeout(180_000)
-    const api = context.request
-    const update = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, {
-      data: { page_content: buildA15Page() },
-    })
-    expect(update.ok(), await update.text()).toBeTruthy()
-    const response = await api.post(`/api/pages/${visualEditSandbox.pageId}/screenshot-jobs`, {
-      data: { motion_snapshot: { timeline_id: 'a15-export-isolation', at_ms: 6000, visual_mode: 'full' } },
-    })
-    expect(response.ok(), await response.text()).toBeTruthy()
-    const job = await response.json() as { id: number }
-    let result: { status: string; error_code: string | null; applied_motion: { status?: string; sampled_time_ms?: number } | null } | null = null
-    await expect(async () => {
-      const status = await api.get(`/api/pages/screenshot-jobs/${job.id}`)
-      expect(status.ok()).toBeTruthy()
-      result = await status.json()
-      expect(result!.status, result!.error_code ?? '').toBe('succeeded')
-    }).toPass({ timeout: 120_000, intervals: [1000, 2000] })
-    expect(result!.applied_motion).toMatchObject({ status: 'applied', sampled_time_ms: 6000 })
-    const content = await api.get(`/api/pages/${visualEditSandbox.pageId}/screenshot-jobs/${job.id}/content`)
-    expect(content.ok(), await content.text()).toBeTruthy()
-    const png = Buffer.from(await content.body())
-    const decoded = decodePngPixels(png)
-    expect(countPixels(decoded, (red, green, blue) => green > 190 && red < 60 && blue > 80 && blue < 180)).toBeGreaterThan(500)
-    expect(countPixels(decoded, (red, green, blue) => red > 220 && green < 60 && blue < 100)).toBe(0)
-    await testInfo.attach('a15-selected-pose.png', { body: png, contentType: 'image/png' })
+test('截图入口明确拒绝已移除的动画时刻选择器', async ({ context, visualEditSandbox }) => {
+  const response = await context.request.post(`/api/pages/${visualEditSandbox.pageId}/screenshot-jobs`, {
+    data: { motion_snapshot: { timeline_id: 'a15-export-isolation', at_ms: 6000, visual_mode: 'full' } },
+  })
+  expect(response.status()).toBe(422)
 })

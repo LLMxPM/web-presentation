@@ -95,11 +95,10 @@ class BrowserCaptureService:
         page_id: int | None = None,
         artifact_id: str | None = None,
         preview_token: str | None = None,
-        motion_snapshot: Mapping[str, object] | None = None,
         session: AsyncSession | None = None,
         facade: RenderDomainFacade | None = None,
     ) -> PageCaptureOutcome:
-        """打开预览地址生成截图，并返回显式时间轴选择器的采样回执。"""
+        """打开预览地址生成截图，并返回独立静态捕获产物。"""
 
         if workspace_id is None or int(workspace_id) <= 0:
             raise AppException(
@@ -130,7 +129,6 @@ class BrowserCaptureService:
                 preview_token=preview_token,
                 extra_http_headers=extra_http_headers,
                 timeout_seconds=timeout,
-                motion_snapshot=motion_snapshot,
             )
         except AppException:
             raise

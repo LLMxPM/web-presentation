@@ -45,7 +45,6 @@ from render_contracts.errors import (  # noqa: E402
     error_http_status_table,
     http_status_for_error_code,
 )
-from render_contracts.motion import AppliedMotion, MotionSnapshot  # noqa: E402
 from render_contracts.schema import (  # noqa: E402
     ArtifactDescriptor,
     DiagnosticItem,
@@ -292,65 +291,6 @@ def test_error_http_status_map_matches_json_schema() -> None:
         assert http_status_for_error_code(code) == status
         assert 400 <= status <= 599
     assert http_status_for_error_code("RENDER_UNKNOWN_CODE") == 500
-
-
-def test_v2_request_with_motion_snapshot_roundtrip_matches_json_schema() -> None:
-    """v2 请求可携带互斥时间选择器，v1 请求拒绝该字段。"""
-
-    snapshot = MotionSnapshot(timeline_id="intro", at_label="detail", offset_ms=600, visual_mode="reduced")
-    request = replace(
-        _request(),
-        contract_version=PROTOCOL_VERSION_V2,
-        motion_snapshot=snapshot,
-    )
-    schema = _load_schema("execution-request.v2.json")
-    payload = request.to_dict()
-    _validate_required_and_types(payload, schema, label="ExecutionRequestV2")
-    assert payload["motion_snapshot"] == {
-        "timeline_id": "intro",
-        "at_label": "detail",
-        "offset_ms": 600,
-        "visual_mode": "reduced",
-    }
-    assert ExecutionRequest.from_dict(payload).to_dict() == payload
-
-    with pytest.raises(RenderContractError, match="internal/render/v2"):
-        replace(_request(), motion_snapshot=snapshot).validate()
-
-
-def test_motion_snapshot_rejects_ambiguous_or_out_of_range_selection() -> None:
-    """时间选择器必须互斥、有界且只接受已知视觉模式。"""
-
-    with pytest.raises(RenderContractError, match="互斥"):
-        MotionSnapshot(at_ms=100, at_label="detail").validate()
-    with pytest.raises(RenderContractError, match="offset_ms"):
-        MotionSnapshot(offset_ms=100).validate()
-    with pytest.raises(RenderContractError, match="visual_mode"):
-        MotionSnapshot(visual_mode="fast").validate()
-    with pytest.raises(RenderContractError, match="at_ms"):
-        MotionSnapshot(at_ms=-1).validate()
-
-
-def test_v2_result_applied_motion_roundtrip_and_required_fields() -> None:
-    """v2 结果携带状态回执；applied 必须包含计划、时间与状态摘要。"""
-
-    applied = AppliedMotion(
-        status="applied",
-        timeline_id="intro",
-        plan_digest="plan-1",
-        sampled_time_ms=400,
-        state_digest="state-1",
-        visual_mode="full",
-    )
-    result = replace(_result(), applied_motion=applied)
-    payload = result.to_dict()
-    schema = _load_schema("execution-result.v2.json")
-    _validate_required_and_types(payload, schema, label="ExecutionResultV2")
-    assert ExecutionResult.from_dict(payload).to_dict() == payload
-
-    with pytest.raises(RenderContractError, match="缺少"):
-        AppliedMotion(status="applied", timeline_id="intro").validate()
-    assert AppliedMotion.from_dict({"status": "skipped"}).to_dict() == {"status": "skipped"}
 
 
 def test_worker_capabilities_support_versions_default_to_single_protocol() -> None:

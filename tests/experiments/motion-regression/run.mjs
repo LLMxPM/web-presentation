@@ -33,7 +33,7 @@ try {
   await page.goto(server.resolvedUrls.local[0])
   await page.waitForFunction(() => window.probe)
   await page.evaluate(async () => { await window.probe.ready; await window.probe.prepare() })
-  const receipt = await page.evaluate(() => window.__RUNTIME_APPLY_MOTION_SNAPSHOT__({ timelineId: 'browser', atMs: 250, visualMode: 'full' }))
+  const receipt = await page.evaluate(() => window.probe.sampleAt(250, 'full'))
   const opacity = await page.locator('.title').evaluate(element => Number(getComputedStyle(element).opacity))
   assert.equal(opacity, 0.5)
   assert.equal(receipt.visualMode, 'full')

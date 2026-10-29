@@ -1,4 +1,4 @@
-"""文件功能：验证 Backend 按 Worker 能力选择渲染 v2 并拒绝向旧 Worker 派发时间轴选择器。"""
+"""文件功能：验证 Backend 按 Worker 能力选择静态渲染协议，并拒绝已移除的时间轴选择器。"""
 
 from __future__ import annotations
 
@@ -97,28 +97,8 @@ def _attempt() -> SimpleNamespace:
     )
 
 
-def test_page_capture_with_selector_uses_v2_and_runtime_protocol() -> None:
-    """带选择器的请求升为 v2，导航 URL 固定 runtimeCaptureProtocol=2。"""
-
-    execution = _coordinator()._build_execution_request(
-        request=_request({"timeline_id": "intro", "at_ms": 500}),
-        attempt=_attempt(),
-        capabilities=_capabilities(v2=True),
-    )
-
-    assert execution.contract_version == PROTOCOL_VERSION_V2
-    assert execution.motion_snapshot is not None
-    assert execution.motion_snapshot.to_dict() == {
-        "timeline_id": "intro",
-        "at_ms": 500,
-        "visual_mode": "full",
-    }
-    assert "runtimeCaptureProtocol=2" in execution.preview_access.navigation_base_url
-    assert execution.preview_access.runtime_protocol_version == "render-ready.v2"
-
-
-def test_page_capture_without_selector_uses_v2_for_default_poster() -> None:
-    """支持 v2 的 Worker 默认截图走 poster 采样，不再落回 v1 静态首帧。"""
+def test_page_capture_without_selector_uses_v2_for_static_ready() -> None:
+    """支持 v2 的 Worker 使用独立静态就绪协议，请求不携带动画采样字段。"""
 
     execution = _coordinator()._build_execution_request(
         request=_request(),
@@ -127,7 +107,7 @@ def test_page_capture_without_selector_uses_v2_for_default_poster() -> None:
     )
 
     assert execution.contract_version == PROTOCOL_VERSION_V2
-    assert execution.motion_snapshot is None
+    assert "motion_snapshot" not in execution.to_dict()
     assert "runtimeCaptureProtocol=2" in execution.preview_access.navigation_base_url
 
 
@@ -143,14 +123,15 @@ def test_worker_with_control_v2_but_runtime_v1_is_rejected() -> None:
         )
 
 
-def test_selector_to_v1_worker_fails_before_http() -> None:
+@pytest.mark.parametrize("v2", [True, False])
+def test_removed_selector_fails_before_http(v2: bool) -> None:
     """旧 Worker 不能收到 v2 选择器，派发前明确失败。"""
 
-    with pytest.raises(Exception, match="internal/render/v2"):
+    with pytest.raises(Exception, match="不再支持"):
         _coordinator()._build_execution_request(
-            request=_request({"timeline_id": "intro", "at_label": "detail"}),
+            request=_request({"timeline_id": "intro", "at_ms": 300}),
             attempt=_attempt(),
-            capabilities=_capabilities(v2=False),
+            capabilities=_capabilities(v2=v2),
         )
 
 
@@ -163,7 +144,7 @@ def test_legacy_page_capture_without_selector_stays_v1_on_old_worker() -> None:
         capabilities=_capabilities(v2=False),
     )
     assert execution.contract_version == PROTOCOL_VERSION
-    assert execution.motion_snapshot is None
+    assert "motion_snapshot" not in execution.to_dict()
     assert execution.preview_access.runtime_protocol_version == "render-ready.v1"
     assert "runtimeCaptureProtocol" not in execution.preview_access.navigation_base_url
 
@@ -173,7 +154,7 @@ def test_selector_is_rejected_for_non_page_operation() -> None:
 
     request = _request({"timeline_id": "intro"})
     request.operation = "component.diagnose"
-    with pytest.raises(Exception, match="只支持页面"):
+    with pytest.raises(Exception, match="不再支持"):
         _coordinator()._build_execution_request(
             request=request,
             attempt=_attempt(),

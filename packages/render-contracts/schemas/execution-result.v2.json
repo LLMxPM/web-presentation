@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://web-presentation.local/schemas/render/execution-result.v2.json",
   "title": "RenderExecutionResult",
+  "not": { "required": ["applied_motion"] },
   "type": "object",
   "required": [
     "request_id",
@@ -211,64 +212,6 @@
     },
     "truncated": {
       "type": "boolean"
-    },
-    "applied_motion": {
-      "type": [
-        "object",
-        "null"
-      ],
-      "required": [
-        "status"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "status": {
-          "enum": [
-            "applied",
-            "skipped",
-            "degraded"
-          ]
-        },
-        "timeline_id": {
-          "type": "string"
-        },
-        "plan_digest": {
-          "type": "string"
-        },
-        "sampled_time_ms": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "state_digest": {
-          "type": "string"
-        },
-        "visual_mode": {
-          "enum": [
-            "full",
-            "reduced"
-          ]
-        },
-        "message": {
-          "type": "string"
-        }
-      },
-      "if": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "const": "applied"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "timeline_id",
-          "plan_digest",
-          "sampled_time_ms",
-          "state_digest",
-          "visual_mode"
-        ]
-      }
     }
   }
 }

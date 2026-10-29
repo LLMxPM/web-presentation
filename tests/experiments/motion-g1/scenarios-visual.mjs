@@ -37,57 +37,6 @@ export async function domLayout(page) {
   }
 }
 
-export async function capture(page) {
-  await mount(page, 'A13-capture')
-  const defaults = await page.evaluate(() => window.__RUNTIME_APPLY_MOTION_SNAPSHOT__())
-  assert.equal(defaults.sampledTimeMs, 800, '默认捕获应使用页面海报标签')
-  assert.equal(defaults.status, 'applied')
-
-  const atMs = await page.evaluate(() => window.__RUNTIME_APPLY_MOTION_SNAPSHOT__({ timelineId: 'capture', atMs: 500 }))
-  const middle = await readStyle(page, '.title')
-  assert.ok(middle.opacity > 0.2 && middle.opacity < 0.9, `500ms 应取到中间帧，实际 ${middle.opacity}`)
-  assert.equal(atMs.sampledTimeMs, 500)
-  assert.ok(atMs.planDigest && atMs.stateDigest, '回执必须包含计划与状态摘要')
-  const firstFrame = `data:image/png;base64,${(await page.locator('.stage').screenshot()).toString('base64')}`
-
-  const labelled = await page.evaluate(() => window.__RUNTIME_APPLY_MOTION_SNAPSHOT__({ timelineId: 'capture', atLabel: 'readable', offsetMs: 100 }))
-  assert.equal(labelled.sampledTimeMs, 900)
-  const tail = await readStyle(page, '.tail')
-  assert.ok(tail.opacity > 0.7 && tail.opacity < 1, `标签偏移后收尾轨道应处于正确中间状态，实际 ${tail.opacity}`)
-
-  const missing = await page.evaluate(async () => {
-    try {
-      await window.__RUNTIME_APPLY_MOTION_SNAPSHOT__({ timelineId: 'capture', atLabel: 'ghost' })
-      return 'resolved'
-    } catch (error) { return String(error?.message ?? error) }
-  })
-  assert.match(missing, /标签/, `不存在的标签必须明确失败，实际 ${missing}`)
-
-  await page.evaluate(() => window.__RUNTIME_APPLY_MOTION_SNAPSHOT__({ timelineId: 'capture', atMs: 500 }))
-  const frozen = await readStyle(page, '.title')
-  const returnedFrame = `data:image/png;base64,${(await page.locator('.stage').screenshot()).toString('base64')}`
-  const returnPixelDiff = await imageDiff(page, firstFrame, returnedFrame, 0)
-  assert.ok(returnPixelDiff < 0.001, `乱序返回同一时刻应得到相同画面，差异 ${returnPixelDiff}`)
-  await page.addStyleTag({ content: '*{animation:none!important;transition:none!important}' })
-  await page.waitForTimeout(200)
-  const afterDisable = await readStyle(page, '.title')
-  const disabledFrame = `data:image/png;base64,${(await page.locator('.stage').screenshot()).toString('base64')}`
-  const disabledPixelDiff = await imageDiff(page, returnedFrame, disabledFrame, 0)
-  assert.ok(disabledPixelDiff < 0.001, `兜底禁动画不得改写固化画面，差异 ${disabledPixelDiff}`)
-  assert.ok(Math.abs(afterDisable.opacity - frozen.opacity) < 0.01,
-    `兜底禁动画不得改写已固化帧：${frozen.opacity} -> ${afterDisable.opacity}`)
-  const media = await page.evaluate(() => ({
-    paused: document.querySelector('video').paused,
-    muted: document.querySelector('video').muted,
-    time: document.querySelector('video').currentTime,
-    seeking: document.querySelector('video').seeking,
-  }))
-  assert.equal(media.paused, true, '捕获不得播放媒体')
-
-  return { defaults, atMs, labelled, frozen: frozen.opacity, afterDisable: afterDisable.opacity,
-    returnPixelDiff, disabledPixelDiff, media, missing }
-}
-
 export async function modelInstances(page) {
   // WebGL 默认不保留 drawing buffer；Playwright 元素截图读取已合成画面。
   const frames = async () => Promise.all([0, 1].map(async index => {

@@ -66,7 +66,7 @@ describe('render-ready 静态捕获信息', () => {
     })
   })
 
-  it('捕获协议 v2 记录双版本能力与时间轴回执位置', () => {
+  it('捕获协议 v2 记录双版本能力与独立静态回执', () => {
     initializeRenderReadyHost({
       executionContext: 'capture',
       entryPath: '/cover',
@@ -76,7 +76,7 @@ describe('render-ready 静态捕获信息', () => {
     expect(window.__RENDER_READY__).toMatchObject({
       protocol: RENDER_READY_PROTOCOL_V2,
       protocolVersions: [RENDER_READY_PROTOCOL, RENDER_READY_PROTOCOL_V2],
-      motion: null,
+      staticPresentation: null,
     })
   })
 

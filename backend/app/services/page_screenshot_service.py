@@ -72,7 +72,6 @@ class PageScreenshotCaptureArtifact:
     viewport_width: int
     viewport_height: int
     sha256: str = ""
-    applied_motion: dict[str, object] | None = None
 
 
 class PageScreenshotService:
@@ -285,8 +284,6 @@ class PageScreenshotService:
         target_page_version_no: int,
         config_hash: str,
         viewport: CaptureViewport,
-        motion_snapshot: dict[str, object] | None = None,
-        motion_snapshot_hash: str = "",
     ) -> PageScreenshotCaptureArtifact:
         """捕获并写入不可变对象，但不修改页面元数据或任务状态。"""
 
@@ -313,7 +310,7 @@ class PageScreenshotService:
                 "extra_http_headers": capture_target.extra_http_headers,
                 "logical_owner_key": screenshot_render_owner_key(
                     page_id=page.id, version_no=target_page_version_no, config_hash=config_hash,
-                    width=viewport.width, height=viewport.height, motion_hash=motion_snapshot_hash,
+                    width=viewport.width, height=viewport.height,
                 ),
                 "workspace_id": page.workspace_id,
                 "project_id": page.project_id,
@@ -321,21 +318,9 @@ class PageScreenshotService:
                 "artifact_id": capture_target.artifact_id,
                 "preview_token": capture_target.preview_token,
             }
-            if motion_snapshot is None:
-                # 默认截图沿用既有入口，保持静态 poster 与历史行为不变。
-                screenshot_content = await self.browser_capture_service.capture_preview(
-                    capture_target.preview_url, viewport, **capture_kwargs
-                )
-                applied_motion = None
-            else:
-                outcome = await self.browser_capture_service.capture_preview_result(
-                    capture_target.preview_url,
-                    viewport,
-                    motion_snapshot=motion_snapshot,
-                    **capture_kwargs,
-                )
-                screenshot_content = outcome.content
-                applied_motion = outcome.applied_motion
+            screenshot_content = await self.browser_capture_service.capture_preview(
+                capture_target.preview_url, viewport, **capture_kwargs
+            )
             content_sha256 = hashlib.sha256(screenshot_content).hexdigest()
             storage_key = await self.object_storage_service.put_object(
                 self.build_page_screenshot_storage_key(
@@ -365,7 +350,6 @@ class PageScreenshotService:
                 viewport_width=viewport.width,
                 viewport_height=viewport.height,
                 sha256=content_sha256,
-                applied_motion=applied_motion,
             )
         except Exception:
             logger.exception(

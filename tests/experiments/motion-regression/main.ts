@@ -2,11 +2,9 @@
 import { createApp, defineComponent, h, ref } from 'vue'
 import { usePageTimeline } from '@/runtime-kit/public/composables/motion/usePageTimeline.v1'
 import { initializeRuntimeExecution } from '@/core/execution/execution-scope'
-import { installCaptureMotionBridge } from '@/core/motion/capture-bridge'
 import { parseGlbToResource, loadModel3dEngine } from '@/runtime-kit/internal/renderers/model3d/engine'
 
 initializeRuntimeExecution('?runtimeExecution=presentation')
-installCaptureMotionBridge()
 const app = createApp(defineComponent({ setup() {
   const root = ref<HTMLElement | null>(null)
   const api = usePageTimeline({ root, bindings: {}, timelineId: 'browser', applyPoster: false,

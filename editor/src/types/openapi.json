@@ -4330,7 +4330,7 @@
           "External Pages"
         ],
         "summary": "Create Page Screenshot Job External",
-        "description": "提交页面截图任务；提供 motion_snapshot 时只返回临时帧，不更新默认截图。",
+        "description": "提交独立静态截图任务；成功后按版本围栏更新默认截图。",
         "operationId": "create_page_screenshot_job_external_api_v1_pages__page_id__screenshot_jobs_post",
         "parameters": [
           {
@@ -34678,23 +34678,12 @@
             ],
             "title": "Target Page Version No",
             "description": "显式页面版本；与当前版本不一致时返回 409。"
-          },
-          "motion_snapshot": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PageScreenshotMotionSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "临时时间点或标签选择器；提供时不提升页面默认截图指针。"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "ExternalPageScreenshotJobCreateRequest",
-        "description": "External 临时页面截图任务请求；未提供选择器时按默认 poster 刷新最新截图。"
+        "description": "External 独立静态截图任务请求。"
       },
       "ExternalPageScreenshotJobResponse": {
         "properties": {
@@ -34728,19 +34717,6 @@
               "cancelled"
             ],
             "title": "Status"
-          },
-          "motion_snapshot": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Motion Snapshot",
-            "description": "请求的规范化选择器"
           },
           "result": {
             "anyOf": [
@@ -34840,19 +34816,6 @@
           "height": {
             "type": "integer",
             "title": "Height"
-          },
-          "applied_motion": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Applied Motion",
-            "description": "有界时间轴采样回执"
           }
         },
         "additionalProperties": false,
@@ -35776,10 +35739,6 @@
             "type": "array",
             "title": "Track Types"
           },
-          "capture_snapshot": {
-            "type": "boolean",
-            "title": "Capture Snapshot"
-          },
           "advance_modes": {
             "items": {
               "type": "string"
@@ -35794,7 +35753,6 @@
           "schema_version",
           "enabled",
           "track_types",
-          "capture_snapshot",
           "advance_modes"
         ],
         "title": "ExternalTimelineCapabilities",
@@ -37385,21 +37343,12 @@
               }
             ],
             "title": "Target Page Version No"
-          },
-          "motion_snapshot": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PageScreenshotMotionSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "PageScreenshotJobRequest",
-        "description": "创建单页截图任务请求，允许显式传入本次截图视口与临时采样选择器。"
+        "description": "创建独立静态截图任务；拒绝旧时刻选择器等未知字段。"
       },
       "PageScreenshotJobResponse": {
         "properties": {
@@ -37464,18 +37413,6 @@
             "type": "string",
             "title": "Config Hash"
           },
-          "motion_snapshot": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Motion Snapshot"
-          },
           "result_screenshot_id": {
             "anyOf": [
               {
@@ -37486,18 +37423,6 @@
               }
             ],
             "title": "Result Screenshot Id"
-          },
-          "applied_motion": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Applied Motion"
           },
           "status": {
             "type": "string",
@@ -37619,72 +37544,7 @@
           "cancel_requested_at"
         ],
         "title": "PageScreenshotJobResponse",
-        "description": "页面截图任务响应；临时选择器与结果摘要均不包含存储键或执行票据。"
-      },
-      "PageScreenshotMotionSnapshot": {
-        "properties": {
-          "timeline_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Timeline Id"
-          },
-          "at_ms": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 3600000,
-                "minimum": 0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "At Ms"
-          },
-          "at_label": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "At Label"
-          },
-          "offset_ms": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 3600000,
-                "minimum": -3600000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Offset Ms"
-          },
-          "visual_mode": {
-            "type": "string",
-            "enum": [
-              "full",
-              "reduced"
-            ],
-            "title": "Visual Mode",
-            "default": "full"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "timeline_id"
-        ],
-        "title": "PageScreenshotMotionSnapshot",
-        "description": "临时截图选择器；显式时间点或标签二选一，只用于采样，不授予播放许可。"
+        "description": "页面截图任务响应；结果摘要不包含存储键或执行票据。"
       },
       "PageScreenshotRequest": {
         "properties": {

@@ -1,6 +1,6 @@
 # B1 删除指定时刻截图协议
 
-状态：待实施。主责：Runtime / Backend / Renderer / render-contracts。前置：[B0](./b0-static-presentation.md)。出口：GB 的协议清理。
+状态：完成（2026-10-29，开发验证通过；实机验收移交 C3）。主责：Runtime / Backend / Renderer / render-contracts。前置：[B0](./b0-static-presentation.md)。出口：GB 的协议清理。
 
 本包先删除未正式开放的指定时刻截图协议。B0 已使默认截图和导出不再依赖时间轴 poster 采样；正向播放仍使用旧编译器与 Transport，其移除必须与 B2 的新播放会话同批完成，不能在替代执行器落地前删掉正在使用的 `applyAt`。
 
@@ -16,3 +16,11 @@
 ## 开发验收
 
 契约正反例与对拍测试、Renderer 单测及默认 PNG、附图、静态导出的无浏览器集成用例通过；API 与生成物无 `motion_snapshot` 有效字段，显式旧选择器明确拒绝。保持默认路径接线，真实 PNG 与导出产物在 C3 验证。旧内部编译器与 `applyAt` 暂留并记录调用点，由 B2 清零；不得为满足检索门槛删掉现有播放路径。
+
+## 实施记录
+
+基于 B0 `4d05161` 完成外部截图协议删除，详见[开发记录](../development-record.md#b1-删除指定时刻截图协议2026-10-29)。默认 PNG、附图和导出继续使用独立静态态。旧选择器在内部/External API、控制协议 v1/v2、Python DTO 和离屏导出均被明确拒绝，生成 DTO 已同步。
+
+新增删列迁移 `20261029_0100`：终止遗留的活跃选择器任务，保留 SQL NULL/JSON null 的默认任务、PNG 引用及发布围栏，恢复五字段静态去重。未运行开发库迁移。删除永久放弃的 opt-in 取帧 E2E，A15 改为静态就绪观察；旧播放浏览器夹具由 C2 继续适配，C3 正式执行。
+
+开发验证：Runtime 全量 1367 通过、3 跳过，check/build 通过；Renderer 53、RenderContracts 40、Backend 截图链 74 项通过；迁移行为 4 通过、1 跳过（未配置 PostgreSQL）；Editor check、API 生成和生成漂移检查通过。夹具 TypeScript/Vue/MJS 语法通过。未运行真实浏览器、远程截图、导出产物和生产镜像。

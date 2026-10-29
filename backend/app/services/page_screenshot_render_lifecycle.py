@@ -24,12 +24,10 @@ def screenshot_render_owner_key(
     config_hash: str,
     width: int,
     height: int,
-    motion_hash: str = "",
 ) -> str:
-    """生成同一截图快照的稳定关联键；不同时间点选择器不能复用同一渲染身份。"""
+    """生成同一截图快照的稳定关联键，固定页面版本、静态配置和视口。"""
 
-    selector = f":{motion_hash}" if motion_hash else ""
-    return f"page-screenshot:{page_id}:v{version_no}:{config_hash}:{width}x{height}{selector}"[:128]
+    return f"page-screenshot:{page_id}:v{version_no}:{config_hash}:{width}x{height}"[:128]
 
 
 async def cancel_screenshot_render_requests(session: AsyncSession, job: PageScreenshotJob) -> int:
@@ -40,7 +38,6 @@ async def cancel_screenshot_render_requests(session: AsyncSession, job: PageScre
         config_hash=job.config_hash,
         width=job.viewport_width,
         height=job.viewport_height,
-        motion_hash=job.motion_snapshot_hash,
     )
     ids = list(await session.scalars(select(RenderRequest.id).where(
         RenderRequest.workspace_id == job.workspace_id, RenderRequest.page_id == job.page_id,

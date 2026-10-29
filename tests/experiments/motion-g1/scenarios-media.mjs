@@ -83,13 +83,10 @@ export async function optionalFailure(page) {
   assert.equal(playing.videoPaused, false)
   assert.ok(playing.videoTime > 0.2)
   assert.ok(playing.titleOpacity > 0.1)
-  const capture = await page.evaluate(() => window.__RUNTIME_APPLY_MOTION_SNAPSHOT__({
-    timelineId: 'optional-failure', atMs: 500,
-  }))
-  assert.equal(capture.status, 'degraded', '可选资源失败不能伪报完整应用')
-  assert.equal(capture.sampledTimeMs, 500)
-  assert.match(capture.message, /已跳过 1 个失败的可选轨道/)
-  return { prepared, missing, playing, capture }
+  const sample = await page.evaluate(() => window.probe.sampleAt(500))
+  assert.equal(sample.degradedTrackIds.length, 1, '旧播放内部结果仍需记录失败的可选轨道')
+  assert.equal(sample.sampledTimeMs, 500)
+  return { prepared, missing, playing, sample }
 }
 
 /** 慢速次要视频在主视频播放期间真实缓冲，验证同步集合冻结。 */

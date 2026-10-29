@@ -17,20 +17,9 @@ export const RENDER_READY_PROTOCOL = 'render-ready.v1'
 export const RENDER_READY_PROTOCOL_V2 = 'render-ready.v2'
 let readinessGeneration = 0
 
-export interface RenderReadyMotionState {
-  status: 'applied' | 'skipped' | 'degraded'
-  timelineId?: string
-  planDigest?: string
-  sampledTimeMs?: number
-  stateDigest?: string
-  visualMode?: 'full' | 'reduced'
-  message?: string
-}
-
 export interface RenderReadyBridge {
   protocol: string
   protocolVersions: string[]
-  motion: RenderReadyMotionState | null
   staticPresentation: StaticPresentationReceipt | null
   artifactId: string | null
   inputDigest: string | null
@@ -70,7 +59,6 @@ declare global {
       slots?: Record<string, unknown> | null
       mocks?: Record<string, unknown> | null
     }) => Promise<{ requestId: string; ok: boolean; scenarioKey: string }>
-    __RUNTIME_APPLY_MOTION_SNAPSHOT__?: (request?: unknown) => Promise<RenderReadyMotionState>
   }
 }
 
@@ -92,7 +80,6 @@ export function initializeRenderReadyHost(meta?: {
   window.__RENDER_READY__ = {
     protocol: meta?.protocol === RENDER_READY_PROTOCOL_V2 ? RENDER_READY_PROTOCOL_V2 : RENDER_READY_PROTOCOL,
     protocolVersions: [RENDER_READY_PROTOCOL, RENDER_READY_PROTOCOL_V2],
-    motion: null,
     staticPresentation: null,
     artifactId: meta?.artifactId ?? null,
     inputDigest: meta?.inputDigest ?? null,
@@ -132,7 +119,6 @@ export function updateRenderReadyHost(patch: Partial<RenderReadyBridge>): void {
     ...patch,
     protocol: patch.protocol ?? current.protocol ?? RENDER_READY_PROTOCOL,
     protocolVersions: [RENDER_READY_PROTOCOL, RENDER_READY_PROTOCOL_V2],
-    motion: patch.motion === undefined ? current.motion ?? null : patch.motion,
     fonts: { ...current.fonts, ...(patch.fonts ?? {}) },
     visualAssets: { ...current.visualAssets, ...(patch.visualAssets ?? {}) },
   }

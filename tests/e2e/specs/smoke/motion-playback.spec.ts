@@ -169,13 +169,11 @@ test('真实媒体结束后推进，双页循环重新进入媒体页', async ({
   }
 })
 
-test('指定状态截图能力关闭时返回明确错误', async ({ context, visualEditSandbox }) => {
+test('已移除的指定状态截图字段返回校验错误', async ({ context, visualEditSandbox }) => {
   const response = await context.request.post(`/api/pages/${visualEditSandbox.pageId}/screenshot-jobs`, {
     data: { motion_snapshot: { timeline_id: 'e2e-advance', at_ms: 500, visual_mode: 'full' } },
   })
-  expect(response.status()).toBe(409)
-  const body = await response.json() as { code: string }
-  expect(body.code).toBe('TIMELINE_UNSUPPORTED')
+  expect(response.status()).toBe(422)
 })
 
 test('没有时间轴的放映页明确报错', async ({ page, context, visualEditSandbox }) => {

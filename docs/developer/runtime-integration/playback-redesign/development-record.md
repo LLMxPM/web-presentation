@@ -62,3 +62,21 @@
 开发验证：`pnpm run test:runtime` 169 文件、1373 项通过、3 项既有跳过；首轮旧 S0 取消测试仍走真实舞台而超时，调整为受控静态准备后完整重跑通过，保留转换/打包期间取消和零下载断言。`test:renderer` 55 项、`test:render-contracts` 35 项、Backend DTO/清单/附图发布 24 项、`test:repository` 8 文件 63 项通过；Runtime check/build、Editor check、Editor API 生成与 `test:contracts:generated` 通过。Renderer 测试替身延后到槽位释放后再撤销，修复单测误入真实执行器的竞态。
 
 未运行：真实浏览器/Renderer PNG、缩略图像素、实际 PDF/PPTX/打印产物、媒体禁播、生产镜像、独立构建产物、多窗口、WebGL 与长稳；全部移交 C3。本批未启动应用服务、未重置开发数据。
+
+## B1 删除指定时刻截图协议（2026-10-29）
+
+实现基于 B0 `4d05161`；源码与本记录同批提交。删除 Runtime 捕获桥、静态帧 motionKey、截图请求/响应选择器、Backend 任务持久化字段、Renderer 消费和控制契约采样回执。内部及 External API 明确返回 422；控制协议 v1/v2 与 Python DTO 对旧字段（含 null）均拒绝，operation_options 同样封口。能力自省删除 capture_snapshot，Editor OpenAPI/API 类型与 External API 文档同步。CLI/MCP 后续接入不得再读取这三个旧字段；MCP 不纳入本轮交付，CLI Scene 指引由 B5 维护。
+
+迁移 `20261029_0100` 在临时 SQLite 库从上一版本真实升级：JSON null 与 SQL NULL 默认任务不取消，旧活跃选择器任务取消，已完成任务和 PNG 引用保留；去重恢复页面/版本/配置/视口五字段唯一，版本/租约/取消发布围栏未删除。没有对开发库执行迁移。旧任务的 protected content、ETag、幂等重放、默认指针及取消/迟到发布回归通过。
+
+删除已作废的取帧 opt-in E2E 和本地 A13 捕获场景；A15 改为独立静态声明、就绪回执与全不透明静态标题。旧 G1/regression 夹具暂直接使用内部播放接口，C2 再切 Scene；历史 G1 结果保留为历史证据，不作为新静态链结论。usePageTimeline、compilePageTimeline、Transport、seek/sampleAt、适配器 applyAt 仍服务交互预览和放映，按 B2/B5 接管后删除。
+
+开发验证：
+
+- `pnpm run test:runtime`：168 文件、1367 项通过、3 项既有跳过；Runtime check/build 通过。
+- `pnpm run test:renderer`：53 项通过；`pnpm run test:render-contracts`：40 项通过（两版 DTO/JSON Schema 正反例）。
+- Backend 定向：external_screenshot_jobs、page_screenshot、system_timeline_capabilities、static_screenshot_migration、page_screenshot_job_durability、validation_screenshot_publisher、page_screenshot_job_service、page_screenshot_queue_worker、page_screenshot_fingerprint_service、db_adapter_layer、render_motion_dispatch、browser_capture_service，共 74 项通过。
+- `test_migration_behavior_contracts.py`：4 项通过、1 项跳过（未配置 PostgreSQL 测试库）。
+- `test:editor:check`、`codegen:editor-api`、`test:contracts:generated` 通过；4 个 TypeScript 夹具、A15 Vue 页面和修改过的 MJS 语法通过。
+
+未运行：真实浏览器/Renderer、导出实际产物、PostgreSQL 真实升级、生产镜像、独立产物和长稳；交 C3。未启动应用服务、未重置开发数据。

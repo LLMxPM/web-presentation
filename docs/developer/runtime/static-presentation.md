@@ -46,3 +46,5 @@ onMounted(() => {
 独立 PNG 对不可呈现返回不可重试错误；同 attempt 的诊断附图返回 `screenshot.status=unavailable`，保留成功布局。写入结果对应 `status=unavailable`，与 `pending/skipped` 分开。缩略图显示原因占位；批量导出默认整体失败并指出页码，不静默缺页。
 
 捕获策略为 `page-static-capture.v2`，Backend 截图身份、调度请求和 Renderer 能力声明共享 `render_contracts.screenshot.CAPTURE_POLICY_VERSION`，旧采样图片不能命中新策略缓存。发布权限、候选版本、租约、取消围栏和默认截图指针保持现有契约。
+
+指定时刻截图协议已在 B1 移除。截图请求不接受 `motion_snapshot`，结果不再返回 `applied_motion`，能力自省不再披露 `capture_snapshot`。Renderer 控制契约 v1/v2 和 Python DTO 均明确拒绝旧字段，离屏导出也拒绝旧 `motionSnapshot` 参数；旧播放内部 `sampleAt/seek/applyAt` 暂由 B2/B5 接管后删除，不用于静态产物。

@@ -19,7 +19,6 @@ from render_contracts.constants import (
     SUPPORTED_OPERATIONS,
 )
 from render_contracts.errors import RenderContractError, parse_bool
-from render_contracts.motion import AppliedMotion, MotionSnapshot
 from render_contracts.screenshot import ScreenshotPhaseResult
 from render_contracts.tokens import AdmissionTicket, PreviewAccess
 
@@ -129,7 +128,6 @@ class ExecutionRequest:
     admission_ticket: AdmissionTicket
     preview_access: PreviewAccess
     render_category: str = "background"
-    motion_snapshot: MotionSnapshot | None = None
 
     def validate(self) -> None:
         """校验契约版本、操作类型与关键身份字段。"""
@@ -138,16 +136,14 @@ class ExecutionRequest:
             raise RenderContractError(
                 f"契约版本不匹配：期望 {SUPPORTED_CONTROL_PROTOCOL_VERSIONS}，实际 {self.contract_version}。",
             )
-        if self.contract_version == PROTOCOL_VERSION and self.motion_snapshot is not None:
-            raise RenderContractError("motion_snapshot 只能用于 internal/render/v2。")
-        if self.motion_snapshot is not None:
-            self.motion_snapshot.validate()
         if self.operation not in SUPPORTED_OPERATIONS:
             raise RenderContractError(f"未知渲染操作：{self.operation}")
         if not self.request_id or not self.attempt_id or not self.request_digest:
             raise RenderContractError("执行请求缺少 request_id、attempt_id 或 request_digest。")
         if self.remaining_budget_ms <= 0:
             raise RenderContractError("remaining_budget_ms 必须为正。")
+        if "motion_snapshot" in self.operation_options:
+            raise RenderContractError("不再支持 motion_snapshot；请使用独立静态呈现。")
         self.viewport.validate()
         if "capture_screenshot" in self.operation_options:
             if self.operation != "page.diagnose" or type(self.operation_options["capture_screenshot"]) is not bool:
@@ -189,12 +185,14 @@ class ExecutionRequest:
             "admission_ticket": self.admission_ticket.to_dict(),
             "preview_access": self.preview_access.to_dict(),
             "render_category": self.render_category,
-            **({"motion_snapshot": self.motion_snapshot.to_dict()} if self.motion_snapshot else {}),
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "ExecutionRequest":
-        """从字典解析执行请求。"""
+        """从字典解析执行请求，明确拒绝已删除的时刻选择器。"""
+
+        if "motion_snapshot" in payload:
+            raise RenderContractError("不再支持 motion_snapshot；请使用独立静态呈现。")
 
         return cls(
             contract_version=str(payload.get("contract_version") or ""),
@@ -214,11 +212,6 @@ class ExecutionRequest:
             admission_ticket=AdmissionTicket.from_dict(dict(payload.get("admission_ticket") or {})),
             preview_access=PreviewAccess.from_dict(dict(payload.get("preview_access") or {})),
             render_category=str(payload.get("render_category") or "background"),
-            motion_snapshot=(
-                MotionSnapshot.from_dict(dict(payload["motion_snapshot"]))
-                if payload.get("motion_snapshot") is not None
-                else None
-            ),
         )
 
 
@@ -335,7 +328,6 @@ class ExecutionResult:
     resource_state: str = "released"
     truncated: bool = False
     screenshot: ScreenshotPhaseResult | None = None
-    applied_motion: AppliedMotion | None = None
 
     def to_dict(self) -> dict[str, object]:
         """序列化执行结果。"""
@@ -361,13 +353,14 @@ class ExecutionResult:
             "resource_state": self.resource_state,
             "truncated": self.truncated,
             "screenshot": self.screenshot.to_dict() if self.screenshot else None,
-            "applied_motion": self.applied_motion.to_dict() if self.applied_motion else None,
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "ExecutionResult":
         """从字典解析执行结果并做基础 Schema 校验。"""
 
+        if "applied_motion" in payload:
+            raise RenderContractError("不再支持 applied_motion 采样回执。")
         schema_version = str(payload.get("result_schema_version") or "")
         if schema_version != RESULT_SCHEMA_VERSION:
             raise RenderContractError(
@@ -440,11 +433,6 @@ class ExecutionResult:
             resource_state=resource_state,
             truncated=parse_bool(payload.get("truncated", False)),
             screenshot=(ScreenshotPhaseResult.from_dict(dict(payload["screenshot"])) if payload.get("screenshot") is not None else None),
-            applied_motion=(
-                AppliedMotion.from_dict(dict(payload["applied_motion"]))
-                if payload.get("applied_motion") is not None
-                else None
-            ),
         )
 
 

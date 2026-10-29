@@ -52,20 +52,3 @@ export function readModelMotionHandle(element: Element): ModelMotionHandle | nul
   if (typeof record.listAnimations !== 'function' || typeof record.applyAt !== 'function') return null
   return candidate as ModelMotionHandle
 }
-
-/** 由模型动作状态计算静态帧身份键；无动作时返回空串，保持旧缓存键兼容。 */
-export function buildModelMotionStateKey(
-  clipIndex: number,
-  clipTimeMs: number,
-  transform: Required<ModelMotionTransformState>,
-): string {
-  return JSON.stringify([
-    clipIndex,
-    Math.round(clipTimeMs * 1000) / 1000,
-    transform.x,
-    transform.y,
-    transform.z,
-    transform.scale,
-    transform.rotationY,
-  ])
-}

@@ -1,5 +1,7 @@
 # Motion G1 隔离浏览器验收夹具
 
+2026-10-29：B1 已移除指定时刻捕获桥与 A13 场景，其历史结果仅作风险输入。其余夹具暂覆盖旧播放内部行为，C2 统一适配新 Scene，C3 再执行实机验证；本批未运行浏览器。
+
 从仓库根目录运行：
 
 ```powershell
@@ -8,9 +10,9 @@ node tests/experiments/motion-g1/run.mjs
 
 可追加 `A08` 等场景名片段定向运行。脚本从正式 Runtime 源码加载 `usePageTimeline.v1`、媒体适配器、ModelViewer 和旧媒体会话；生成固定 WebM、WAV、GLB，使用回环随机端口与独立 Chromium，不启动或重置平台服务。临时素材放在系统临时目录，退出时删除；每场景截图与 `result.json` 写入 `.tmp/motion-g1/`，不入库。
 
-覆盖 A03、A04、A06–A10、A12、A13 的**本地 Runtime 行为**：DOM 布局与乱序采样、双 GLB 实例及相机隔离、真实媒体时钟和 Range 定位、主/次要媒体缓冲与 optional 加载失败降级、缓冲后用户暂停、无手势 autoplay 拒绝及手势恢复、有声媒体拖动不补播、主媒体交接、旧媒体所有权、降动效与静态作用域、捕获桥与固化帧。无手势尝试由页面加载脚本自行发起，避免 Playwright 的 `evaluate` 附带用户激活；WebGL 像素比较使用元素截图，避免非保留 drawing buffer 的 `toDataURL()` 空图。
+覆盖 A03、A04、A06–A10、A12 的**本地 Runtime 行为**：DOM 布局与乱序采样、双 GLB 实例及相机隔离、真实媒体时钟和 Range 定位、主/次要媒体缓冲与 optional 加载失败降级、缓冲后用户暂停、无手势 autoplay 拒绝及手势恢复、有声媒体拖动不补播、主媒体交接、旧媒体所有权、降动效与静态作用域。无手势尝试由页面加载脚本自行发起，避免 Playwright 的 `evaluate` 附带用户激活；WebGL 像素比较使用元素截图，避免非保留 drawing buffer 的 `toDataURL()` 空图。
 
-普通场景模式不覆盖 Backend 票据、跨域素材鉴权、远程 Renderer 请求/回执、项目放映和 `timeline_end`、PNG/PDF/PPTX 导出或双窗口演讲者模式。独立 soak 模式覆盖指定的 100 次挂载清理和受控媒体循环，但不替代以上跨端发布验收。A13 只核对本地捕获桥，不据此关闭远程截图验收。完整映射与剩余项见[验收计划](../../../docs/developer/runtime-integration/motion/acceptance.md)和[G1 覆盖映射](../../../docs/developer/runtime-integration/motion/g1-automation-coverage.md)。
+普通场景模式不覆盖 Backend 票据、跨域素材鉴权、远程 Renderer 请求/回执、项目放映和 `timeline_end`、PNG/PDF/PPTX 导出或双窗口演讲者模式。独立 soak 模式覆盖指定的 100 次挂载清理和受控媒体循环，但不替代以上跨端发布验收。默认静态截图与跨端产物由独立静态契约和 C3 验收承接。完整映射与剩余项见[验收计划](../../../docs/developer/runtime-integration/motion/acceptance.md)和[G1 覆盖映射](../../../docs/developer/runtime-integration/motion/g1-automation-coverage.md)。
 
 ## 挂载清理对比与生产预览
 

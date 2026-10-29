@@ -1,7 +1,8 @@
 /**
  * 文件功能：定义确定性状态采样结果与摘要计算。
  *
- * 采样摘要进入截图/检查身份：相同计划、时间与视觉模式必须得到相同摘要；
+ * 暂供旧播放内部使用，B2 接管后删除；不再进入静态截图/检查身份。
+ * 相同计划、时间与视觉模式必须得到相同摘要；
  * 事件历史、会话 ID 与墙上时间不参与。
  */
 import { digestMotionPayload, stableMotionStringify } from './compile'
@@ -14,7 +15,7 @@ export interface MotionSampleResult {
   visualMode: MotionVisualMode
   stateDigest: string
   proofs: MotionStateProof[]
-  /** 采样期间失败并跳过的可选轨道；捕获桥据此返回 degraded。 */
+  /** 旧播放内部采样期间失败并跳过的可选轨道。 */
   degradedTrackIds: string[]
 }
 

@@ -74,7 +74,6 @@ import {
 import { DEFAULT_MODEL_FALLBACK_MESSAGE, buildModelViewIdentityKey, normalizeModelViewOptions, isTransparentBackground, parseBackgroundColor } from './model3d/view-options'
 import {
   MODEL_MOTION_HANDLE_KEY,
-  buildModelMotionStateKey,
   type ModelAnimationSummary,
   type ModelMotionApplyRequest,
   type ModelMotionHandle,
@@ -186,7 +185,6 @@ let motionAction: ThreeNamespace.AnimationAction | null = null
 let motionWrapper: ThreeNamespace.Group | null = null
 let motionClipIndex: number | null = null
 /** 当前动作时刻与整体变换的身份键；参与静态帧缓存分区。 */
-let activeMotionStateKey = ''
 let registeredMotionHandle: ModelMotionHandle | null = null
 
 /**
@@ -413,7 +411,6 @@ function teardownInstance(): void {
   motionMixer = null
   motionWrapper = null
   motionClipIndex = null
-  activeMotionStateKey = ''
   autoFitSphere = null
   orthoSourceFrustum = null
   cameraMode = 'auto'
@@ -1146,7 +1143,6 @@ function describeStaticFrame(): ModelStaticFrameIdentity | null {
     viewKey: buildModelCameraViewKey(activeStaticFrameViewKey, context.camera),
     frameWidth: context.canvas.width,
     frameHeight: context.canvas.height,
-    motionKey: activeMotionStateKey || undefined,
   }
 }
 
@@ -1236,7 +1232,6 @@ function applyModelMotion(request: ModelMotionApplyRequest): ModelMotionStateDet
   motionWrapper.rotation.set(0, request.transform.rotationY * Math.PI / 180, 0)
   motionWrapper.updateMatrixWorld(true)
 
-  activeMotionStateKey = buildModelMotionStateKey(request.clipIndex, seconds * 1000, request.transform)
   renderFrame()
 
   return {

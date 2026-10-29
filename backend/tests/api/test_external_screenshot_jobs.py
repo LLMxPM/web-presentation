@@ -1,4 +1,4 @@
-"""文件功能：验证 External 异步截图任务的能力门禁、临时选择器与默认指针隔离。"""
+"""文件功能：验证 External 异步截图任务的能力门禁、独立静态态、过期选择器拒绝与默认指针发布。"""
 
 from __future__ import annotations
 
@@ -96,8 +96,8 @@ async def _seed_page(session, *, suffix: str) -> tuple[int, int, int, str]:
 
 
 @pytest.mark.asyncio
-async def test_external_screenshot_job_rejects_closed_timeline_capability(client: AsyncClient) -> None:
-    """时间轴临时截图能力关闭时返回稳定 409，不丢失选择器后静默执行。"""
+async def test_external_screenshot_job_rejects_removed_selector(client: AsyncClient) -> None:
+    """时刻选择器字段已删除时返回 422，不丢失选择器后静默执行。"""
 
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -119,8 +119,7 @@ async def test_external_screenshot_job_rejects_closed_timeline_capability(client
             }
         },
     )
-    assert response.status_code == 409
-    assert response.json()["code"] == "TIMELINE_UNSUPPORTED"
+    assert response.status_code == 422
     async with session_factory() as session:
         assert (await session.scalars(select(PageScreenshotJob))).all() == []
 
@@ -131,11 +130,8 @@ async def test_external_screenshot_job_status_and_content(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """临时任务成功后内容可读，且不修改页面默认截图指针。"""
+    """静态任务成功后内容可读，原子发布默认截图指针与任务结果。"""
 
-    from app.schemas import timeline as timeline_schema
-
-    monkeypatch.setattr(timeline_schema, "TIMELINE_CAPTURE_SNAPSHOT_ENABLED", True)
     monkeypatch.setattr(ObjectStorageService, "local_root", property(lambda self: tmp_path))
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -148,17 +144,13 @@ async def test_external_screenshot_job_status_and_content(
     created = await client.post(
         f"/api/v1/pages/{page_id}/screenshot-jobs",
         headers=headers,
-        json={"motion_snapshot": {"timeline_id": "intro", "at_ms": 1200}},
+        json={},
     )
     assert created.status_code == 202
     created_body = created.json()
     job_id = created_body["job_id"]
     assert created_body["status"] == "pending"
-    assert created_body["motion_snapshot"] == {
-        "visual_mode": "full",
-        "timeline_id": "intro",
-        "at_ms": 1200,
-    }
+    assert "motion_snapshot" not in created_body
 
     async with session_factory() as session:
         job_record = await session.get(PageScreenshotJob, job_id)
@@ -178,14 +170,6 @@ async def test_external_screenshot_job_status_and_content(
         viewport_width=width,
         viewport_height=height,
         sha256=FAKE_SHA,
-        applied_motion={
-            "status": "applied",
-            "timeline_id": "intro",
-            "plan_digest": "fnv1a-test",
-            "sampled_time_ms": 1200,
-            "state_digest": "state-test",
-            "visual_mode": "full",
-        },
     )
     async with session_factory() as session:
         service = PageScreenshotJobService(session, worker_id="test-worker")
@@ -201,9 +185,8 @@ async def test_external_screenshot_job_status_and_content(
         job = await session.get(PageScreenshotJob, job_id)
         assert job is not None and job.status == "succeeded"
         assert job.result_sha256 == FAKE_SHA
-        assert job.result_applied_motion_json["status"] == "applied"
         page = await session.get(Page, page_id)
-        assert page is not None and page.screenshot_storage_key is None
+        assert page is not None and page.screenshot_storage_key == storage_key
 
     status_response = await client.get(
         f"/api/v1/pages/{page_id}/screenshot-jobs/{job_id}", headers=headers
@@ -212,7 +195,7 @@ async def test_external_screenshot_job_status_and_content(
     status_body = status_response.json()
     assert status_body["result"]["screenshot_id"] == FAKE_SHA
     assert status_body["result"]["content_url"].endswith(f"/pages/{page_id}/screenshot-jobs/{job_id}/content")
-    assert status_body["result"]["applied_motion"]["sampled_time_ms"] == 1200
+    assert "applied_motion" not in status_body["result"]
 
     content_response = await client.get(
         f"/api/v1/pages/{page_id}/screenshot-jobs/{job_id}/content", headers=headers
@@ -221,26 +204,23 @@ async def test_external_screenshot_job_status_and_content(
     assert content_response.headers["etag"].strip('"') == FAKE_SHA
     assert content_response.content == FAKE_PNG
 
-    # 重复创建同一选择器应复用活动任务；已成功任务不会因重放再次执行。
+    # 重复创建同一静态输入应复用活动任务；已成功任务不会因重放再次执行。
     replay = await client.post(
         f"/api/v1/pages/{page_id}/screenshot-jobs",
         headers={**headers, "Idempotency-Key": "temp-motion-job-1"},
-        json={"motion_snapshot": {"timeline_id": "intro", "at_ms": 1200}},
+        json={},
     )
     assert replay.status_code == 202
     assert replay.json()["job_id"] == job_id
 
 
 @pytest.mark.asyncio
-async def test_external_screenshot_job_identity_includes_motion_time(
+async def test_external_screenshot_job_identity_includes_viewport(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """不同动作时间必须落在不同任务上；否则同一动作资源的不同时刻会共用同一帧。"""
+    """相同静态输入复用活跃任务，不同视口必须生成不同任务。"""
 
-    from app.schemas import timeline as timeline_schema
-
-    monkeypatch.setattr(timeline_schema, "TIMELINE_CAPTURE_SNAPSHOT_ENABLED", True)
     session_factory = get_session_factory()
     async with session_factory() as session:
         page_id, workspace_id, _user_id, token = await _seed_page(session, suffix="motion-identity")
@@ -249,12 +229,12 @@ async def test_external_screenshot_job_identity_includes_motion_time(
         "X-Workspace-ID": str(workspace_id),
     }
 
-    async def create(at_ms: int, idempotency_key: str) -> str:
-        # 使用不同的 Idempotency-Key，确保复用判断来自选择器身份而不是幂等重放。
+    async def create(width: int, idempotency_key: str) -> str:
+        # 使用不同的 Idempotency-Key，确保复用判断来自静态输入身份而不是幂等重放。
         response = await client.post(
             f"/api/v1/pages/{page_id}/screenshot-jobs",
             headers={**base_headers, "Idempotency-Key": idempotency_key},
-            json={"motion_snapshot": {"timeline_id": "intro", "at_ms": at_ms}},
+            json={"viewport_width": width},
         )
         assert response.status_code == 202, response.text
         return response.json()["job_id"]
@@ -269,6 +249,5 @@ async def test_external_screenshot_job_identity_includes_motion_time(
     async with session_factory() as session:
         jobs = (await session.scalars(select(PageScreenshotJob))).all()
         assert len(jobs) == 2
-        hashes = {job.motion_snapshot_hash for job in jobs}
-        assert len(hashes) == 2
-        assert "" not in hashes
+        widths = {job.viewport_width for job in jobs}
+        assert widths == {1200, 1800}

@@ -71,7 +71,7 @@ export interface MotionTransport {
   setMuted(muted: boolean): void
   /** 切换视觉映射偏好；已准备时立即重放当前状态。 */
   setVisualMode(mode: MotionVisualMode): void
-  /** 无播放副作用的指定状态采样；供捕获与诊断使用。 */
+  /** 暂供旧播放与预览内部使用的状态采样；静态截图不调用，B2 接管后删除。 */
   sampleAt(positionMs: number, visualMode?: MotionVisualMode): Promise<MotionSampleResult>
   subscribe(listener: (snapshot: MotionTransportSnapshot) => void): () => void
   dispose(): void

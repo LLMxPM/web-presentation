@@ -47,10 +47,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True, frozen=True)
 class PageCaptureOutcome:
-    """页面捕获产物与可选时间轴回执；回执不包含 DOM、场景或执行票据。"""
+    """独立静态捕获产物；不包含 DOM、场景或执行票据。"""
 
     content: bytes
-    applied_motion: dict[str, Any] | None = None
 
 
 class RenderDomainFacade:
@@ -117,13 +116,10 @@ class RenderDomainFacade:
         preview_token: str | None = None,
         extra_http_headers: Mapping[str, str] | None = None,
         timeout_seconds: float | None = None,
-        motion_snapshot: Mapping[str, Any] | None = None,
     ) -> PageCaptureOutcome:
-        """执行 page.capture，返回 PNG 与显式选择器对应的采样回执。"""
+        """执行 page.capture，返回独立静态 PNG。"""
 
         operation_options: dict[str, Any] = {"capture": "png"}
-        if motion_snapshot is not None:
-            operation_options["motion_snapshot"] = dict(motion_snapshot)
         payload = await self._execute(
             operation=OPERATION_PAGE_CAPTURE,
             logical_owner_key=logical_owner_key,
@@ -158,10 +154,8 @@ class RenderDomainFacade:
                 code="RENDER_RESULT_LOST",
                 detail="渲染成功但未返回可用截图产物。",
             )
-        raw_motion = payload.get("applied_motion")
         return PageCaptureOutcome(
             content=content,
-            applied_motion=dict(raw_motion) if isinstance(raw_motion, Mapping) else None,
         )
 
     async def diagnose_page_preview(

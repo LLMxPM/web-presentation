@@ -20,7 +20,6 @@ from app.schemas.audio import (
 from app.schemas.mutation_result import ExternalMutationResult
 from app.schemas.page import (
     PageScreenshotJobStatus,
-    PageScreenshotMotionSnapshot,
 )
 from app.schemas.presentation_style import (
     ProjectCreateConfiguration,
@@ -281,17 +280,13 @@ class ExternalPageMetadataUpdateRequest(BaseModel):
 
 
 class ExternalPageScreenshotJobCreateRequest(BaseModel):
-    """External 临时页面截图任务请求；未提供选择器时按默认 poster 刷新最新截图。"""
+    """External 独立静态截图任务请求。"""
 
     model_config = ConfigDict(extra="forbid")
 
     viewport_width: int | None = Field(default=None, ge=1, le=8192)
     viewport_height: int | None = Field(default=None, ge=1, le=8192)
     target_page_version_no: int | None = Field(default=None, ge=1, description="显式页面版本；与当前版本不一致时返回 409。")
-    motion_snapshot: PageScreenshotMotionSnapshot | None = Field(
-        default=None,
-        description="临时时间点或标签选择器；提供时不提升页面默认截图指针。",
-    )
 
 
 class ExternalPageScreenshotJobResult(BaseModel):
@@ -304,7 +299,6 @@ class ExternalPageScreenshotJobResult(BaseModel):
     version_no: int = Field(description="捕获对应的页面版本")
     width: int
     height: int
-    applied_motion: dict[str, Any] | None = Field(default=None, description="有界时间轴采样回执")
 
 
 class ExternalPageScreenshotJobResponse(BaseModel):
@@ -316,7 +310,6 @@ class ExternalPageScreenshotJobResponse(BaseModel):
     page_id: int
     workspace_id: int | None
     status: PageScreenshotJobStatus
-    motion_snapshot: dict[str, Any] | None = Field(default=None, description="请求的规范化选择器")
     result: ExternalPageScreenshotJobResult | None = None
     error: ExternalErrorDetail | None = None
     created_at: datetime

@@ -8,11 +8,9 @@ import { createApp, defineComponent, h, ref } from 'vue'
 import ModelViewer from '@/runtime-kit/internal/renderers/ModelViewer.vue'
 import { usePageTimeline } from '@/runtime-kit/public/composables/motion/usePageTimeline.v1'
 import { initializeRuntimeExecution } from '@/core/execution/execution-scope'
-import { installCaptureMotionBridge } from '@/core/motion/capture-bridge'
 import { createPageMediaSession } from '@/core/media/page-media-session'
 
 initializeRuntimeExecution('?runtimeExecution=presentation')
-installCaptureMotionBridge()
 
 const VIDEO = '/fixtures/clock.webm'
 const AUDIO = '/fixtures/tone.wav'
@@ -169,25 +167,6 @@ function buildScenario(name: string, options: ScenarioOptions) {
           h('h1', { class: 'title' }, '定位与交接'),
           h('video', { class: 'video', muted: true, preload: 'auto', src: VIDEO, width: 320 }),
           h('div', { class: 'tail' }, '收尾'),
-        ]),
-      }
-    case 'A13-capture':
-      return {
-        bindings,
-        definition: {
-          schemaVersion: 1 as const,
-          timelineId: 'capture',
-          poster: { atLabel: 'readable' },
-          tracks: [
-            { type: 'dom' as const, id: 'title', target: 'title', preset: 'fade' as const, durationMs: 1000 },
-            { type: 'video' as const, id: 'clip', asset: 'demo', selector: '.video', outMs: 2000, muted: true },
-            { type: 'dom' as const, id: 'tail', target: 'tail', from: { opacity: 0 }, to: { opacity: 1 }, durationMs: 200, startMs: 800, label: 'readable' },
-          ],
-        },
-        render: root => h('section', { class: 'stage', ref: root }, [
-          h('h1', { class: 'title' }, '指定状态捕获'),
-          h('video', { class: 'video', muted: true, preload: 'auto', src: VIDEO, width: 320 }),
-          h('div', { class: 'tail' }, '可读状态'),
         ]),
       }
     case 'A04-model-instances': {

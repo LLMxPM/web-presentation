@@ -32,7 +32,6 @@ from render_contracts.errors import (
     RenderError,
     RenderExecutionError,
 )
-from render_contracts.motion import MotionSnapshot
 from render_contracts.schema import ExecutionRequest, SnapshotRef, ViewportSpec
 from render_contracts.tokens import AdmissionTicket
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -657,36 +656,19 @@ class RenderCoordinator:
             else None
         )
         static_capture = is_static_capture_operation(request.operation)
-        raw_motion = dict(request.operation_options or {}).get("motion_snapshot")
-        motion_snapshot = MotionSnapshot.from_dict(dict(raw_motion)) if isinstance(raw_motion, dict) else None
+        if "motion_snapshot" in dict(request.operation_options or {}):
+            raise RenderExecutionError(RenderError.from_code(
+                ERROR_CODE_CONTRACT_MISMATCH, message="不再支持指定动画时刻截图。", stage="dispatch",
+            ))
         page_operation = request.operation in {OPERATION_PAGE_CAPTURE, OPERATION_PAGE_DIAGNOSE}
-        if motion_snapshot is not None and not page_operation:
-            raise RenderExecutionError(
-                RenderError.from_code(
-                    ERROR_CODE_CONTRACT_MISMATCH,
-                    message="motion_snapshot 只支持页面捕获与页面诊断。",
-                    stage="dispatch",
-                )
-            )
-        worker_supports_v2 = bool(capabilities and capabilities.supports_protocol(PROTOCOL_VERSION_V2))
-        use_v2 = page_operation and (
-            motion_snapshot is not None or (capabilities is not None and worker_supports_v2)
-        )
-        if use_v2 and capabilities is not None and not worker_supports_v2:
-            raise RenderExecutionError(
-                RenderError.from_code(
-                    ERROR_CODE_CONTRACT_MISMATCH,
-                    message="没有声明 internal/render/v2 的 Renderer，无法应用时间轴捕获选择器。",
-                    stage="dispatch",
-                )
-            )
+        use_v2 = bool(page_operation and capabilities and capabilities.supports_protocol(PROTOCOL_VERSION_V2))
         if use_v2 and capabilities is not None and not capabilities.supports_runtime_protocol(
             RUNTIME_RENDER_PROTOCOL_VERSION_V2
         ):
             raise RenderExecutionError(
                 RenderError.from_code(
                     ERROR_CODE_CONTRACT_MISMATCH,
-                    message="Renderer 未声明 render-ready.v2，无法核对时间轴状态回执。",
+                    message="Renderer 未声明 render-ready.v2，无法核对静态就绪回执。",
                     stage="dispatch",
                 )
             )
@@ -739,7 +721,6 @@ class RenderCoordinator:
             admission_ticket=ticket,
             preview_access=preview_access,
             render_category=request.schedule_category or SCHEDULE_CATEGORY_BACKGROUND,
-            motion_snapshot=motion_snapshot if use_v2 else None,
         )
 
     def _endpoint_for_worker(self, worker_id: str | None):

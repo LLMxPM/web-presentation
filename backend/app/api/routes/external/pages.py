@@ -333,7 +333,7 @@ async def create_page_screenshot_job_external(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> ExternalPageScreenshotJobResponse:
-    """提交页面截图任务；提供 motion_snapshot 时只返回临时帧，不更新默认截图。"""
+    """提交独立静态截图任务；成功后按版本围栏更新默认截图。"""
 
     page = await PageService(session)._get_page_or_raise(page_id)
     await auth.ensure_workspace_access(page.workspace_id, session)
@@ -349,7 +349,6 @@ async def create_page_screenshot_job_external(
             viewport_width=payload.viewport_width,
             viewport_height=payload.viewport_height,
             target_page_version_no=payload.target_page_version_no,
-            motion_snapshot=payload.motion_snapshot,
             source="external",
             commit=False,
         )
@@ -447,12 +446,10 @@ async def get_page_screenshot_job_content_external(
 
 
 def _external_screenshot_job_response(job) -> ExternalPageScreenshotJobResponse:
-    """把内部 ORM/响应模型收敛为外部 DTO；结果只暴露内容地址、版本与有界采样摘要。"""
+    """把内部 ORM/响应模型收敛为外部 DTO；结果只暴露内容地址、版本与尺寸。"""
 
     job_id = int(getattr(job, "job_id", None) or getattr(job, "id"))
     result_sha256 = getattr(job, "result_sha256", None) or getattr(job, "result_screenshot_id", None)
-    applied_motion = getattr(job, "result_applied_motion_json", None) or getattr(job, "applied_motion", None)
-    motion_snapshot = getattr(job, "motion_snapshot_json", None) or getattr(job, "motion_snapshot", None)
     page_id = int(job.page_id)
     result = None
     if job.status == "succeeded" and result_sha256:
@@ -462,14 +459,12 @@ def _external_screenshot_job_response(job) -> ExternalPageScreenshotJobResponse:
             version_no=job.target_page_version_no,
             width=job.viewport_width,
             height=job.viewport_height,
-            applied_motion=applied_motion,
         )
     return ExternalPageScreenshotJobResponse(
         job_id=job_id,
         page_id=page_id,
         workspace_id=job.workspace_id,
         status=job.status,
-        motion_snapshot=motion_snapshot,
         result=result,
         error=(
             ExternalErrorDetail(code=job.error_code, message=job.error_message or "页面截图任务失败。")
