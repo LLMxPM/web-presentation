@@ -22,6 +22,8 @@ import { findPageMotionHandle, type PageMotionHandle } from '@/core/motion/page-
 import { settleMotionReadiness } from '@/core/motion/readiness'
 import type { CompiledMotionPlan, MotionTransportSnapshot } from '@/core/motion/types'
 import { PlaybackController, type PlaybackPage, type PlaybackSnapshot } from './playback-controller'
+import { findPlaybackPageElement } from './playback-page-root'
+export { findPlaybackPageElement } from './playback-page-root'
 import { useScreenWakeLock, type WakeLockState } from './useScreenWakeLock'
 
 const PLAYBACK_READY_TIMEOUT_MS = 15000
@@ -87,13 +89,6 @@ export function buildPlaybackPages(): PlaybackPage[] {
     path: info.path,
     advance: resolvePageAdvance(info.advance),
   }))
-}
-
-/** 查找当前稳定页面的真实 DOM 根；过渡结束后只应存在目标层。 */
-export function findPlaybackPageElement(path: string): HTMLElement | null {
-  if (typeof document === 'undefined') return null
-  return Array.from(document.querySelectorAll<HTMLElement>('.runtime-page-print-source'))
-    .find(element => element.dataset.runtimeRoutePath === path) ?? null
 }
 
 /** 只保留参与完成判定的媒体；循环背景与冲突旁白不阻塞 media_end。 */

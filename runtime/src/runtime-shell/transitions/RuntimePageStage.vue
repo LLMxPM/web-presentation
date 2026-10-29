@@ -5,12 +5,12 @@
       :node="wrapPage(Component, route.path, route.query.runtimeCaptureTicket)" :page-key="route.path"
       :page-number="Number(route.meta.pageNumber) || undefined"
       :config="resolvePageTransition(route.meta.transition)" :disabled="disabled || session.suppressTransition.value"
-      @started="emit('started', $event)" @settled="handleSettled" @error="handleError" />
+      @started="handleStarted" @settled="handleSettled" @error="handleError" />
   </router-view>
 </template>
 
 <script setup lang="ts">
-import { h, type VNode } from 'vue'
+import { h, onBeforeUnmount, type VNode } from 'vue'
 import { useRouter } from 'vue-router'
 import { getRuntimeSession } from '@/core/router/runtime-session'
 import { resolvePageTransition } from '@/core/utils/page-transition'
@@ -25,12 +25,26 @@ const emit = defineEmits<{
 }>()
 const router = useRouter()
 const session = getRuntimeSession(router)
+let latestSettled: TransitionSettledEvent | null = null
+
+/** 新过渡立即作废旧回执，避免快速回到同一路径时误把旧稳定页当作已经完成。 */
+function handleStarted(event: TransitionStartedEvent): void {
+  session.transitionSettled.value = null
+  latestSettled = null
+  emit('started', event)
+}
 
 /** 把整页过渡完成信号写入会话并向上转发；只代表过渡完成，不代表资源就绪。 */
 function handleSettled(event: TransitionSettledEvent): void {
   session.transitionSettled.value = event
+  latestSettled = session.transitionSettled.value
   emit('settled', event)
 }
+
+/** 过渡层重挂会重新编号；只撤销本宿主留下的回执，不覆盖新宿主已经提交的结果。 */
+onBeforeUnmount(() => {
+  if (session.transitionSettled.value === latestSettled) session.transitionSettled.value = null
+})
 
 /** 为页面创建独立内容根节点，保持导出选择器和设计字号兼容。 */
 function wrapPage(component: VNode | undefined, path: string, captureTicket: unknown): VNode | undefined {

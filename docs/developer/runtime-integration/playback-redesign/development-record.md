@@ -110,3 +110,13 @@
 基于 `12a9d3b`。将视觉资源探测接入统一取消域并拆分图片任务；取消/超时/正常完成后撤销轮询、图片事件、RAF 和未胜出的长计时。原生解码或字体 Promise 的迟到拒绝被消费，不改变页面加载本身。现有 usePlaybackHost 已在停止、切页、换准备和卸载时取消旧探测，为 Scene 宿主复用准备提供基础。
 
 验证：`pnpm --filter web-runtime-vue exec vitest run src/runtime-shell/playback/usePlaybackHost.test.ts src/core/utils/visual-assets.test.ts src/core/utils/visual-assets-cancellation.test.ts src/core/utils/render-ready.test.ts`，4 文件 82 项通过；Runtime check 通过。首轮发现失败页的手动翻页会先建立目标准备，Router 提交时无条件取消导致两个旧回归不通过；调整为只取消不同路径的等待后完整定向重跑通过。覆盖预取消、各图表轮询、图片/背景监听、解码迟到、字体、RAF、正常结束与超时清理，以及宿主停止/切页/卸载后的零启动。未运行实机或实际产物；B2 继续实施中。
+
+## B2 第五批：页面准备屏障（2026-10-29）
+
+基于 `b8d3483`。新增[PageSceneStage](../../../../runtime/src/runtime-shell/playback/page-scene-stage.ts)，沿用 Scene slot 的本地 generation 和取消域，将导航、过渡、DOM、资源与页面/任务 prepare 合并为原有的一次准备期限；不额外创建 Deck 控制器或推进时钟。静态策略直接返回 null；用户显式 start 前没有任务 run。导航失败、画布替换与资源失败返回稳定摘要。
+
+现有 RuntimePageStage 在新过渡开始时撤销旧稳定回执，避免快速往返复用同路径的旧事件；卸载仅清自己的回执，允许过渡层重挂后重新编号。页面根节点发现从原宿主提取共用，现有放映控制器继续提供正式播放，尚未接入临时公共 Scene 入口。
+
+验证：`pnpm --filter web-runtime-vue exec vitest run src/runtime-shell/playback/page-scene-stage.test.ts src/runtime-shell/transitions/RuntimePageStage.test.ts`，2 文件 21 项通过；Runtime check 通过。测试使用真实 Router/Scene，覆盖不合作的旧资源 Promise、快速导航取消、守卫拒绝、准备前后屏障、总期限、静态零导航、空 Scene 与回执所有权。计时器清理断言隔离了导入 GSAP 自带的 ticker，未将动画库的后台句柄误当作 Scene 句柄。
+
+完整 `pnpm --filter web-runtime-vue test --maxWorkers=8`：177 文件、1463 项通过、3 项既有跳过；`pnpm --filter web-runtime-vue build` 通过；`pnpm run test:repository`：8 文件 63 项通过。本次完整集合包含第三至第五批新增用例及既有默认静态截图/导出开发回归。未运行浏览器/Renderer、真实导出产物、生产镜像、独立产物、多窗口或长稳；统一交 C3，B2 保持实施中。
