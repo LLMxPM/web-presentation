@@ -190,7 +190,10 @@ export function createPageSceneSession(options: PageSceneOptions): PageSceneSess
             throw new SceneSessionError('SCENE_COMPLETION_REQUIRED', 'scene_end 页面必须注册有限 blocking 任务。')
           }
           for (const task of tasks.values()) runs.set(task.id, { task, status: 'waiting', blocked: null })
-          await Promise.all([...tasks.values()].map(async task => { if (live()) await task.prepare?.(context(task.id)) }))
+          await Promise.all([...tasks.values()].map(async task => {
+            try { if (live()) await task.prepare?.(context(task.id)) }
+            catch (error) { fail(error, task.id) }
+          }))
         }, lifetime.signal, prepareMs)
         if (live()) { phase = 'ready'; publish() }
       } catch (error) { fail(error) }

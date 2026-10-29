@@ -37,3 +37,16 @@
 - slot 在 capture/export/thumbnail 下不创建会话、不执行 define；快速切到静态态先释放已有会话。
 
 后续批次：接入 GSAP（含 SVG/回调与多序列）和版本化公开入口、替换 Deck 与预览调用端、统一模型/媒体任务接口，再同批移除旧入口、Transport/编译器/采样及 applyAt。当前仅内部假任务可运行，公开入口和宿主仍待切换，B2 尚未完成。宿主 timer/末页/循环/过渡退出等用例随接入补齐，真实表现统一 C3。
+
+### 第二批：GSAP 正向序列（2026-10-29）
+
+新增内部 `createGsapSceneTask`：一条序列对应一个 Scene 任务，prepare 创建暂停实例，start 由 GSAP 自己的 ticker 正向播放，真实 onComplete 结算任务。支持多条并行序列、to/from/fromTo/set、标签/位置/错峰、DOM/SVG、额外 CSS 属性与数值对象；不生成计划摘要或取帧证明。
+
+- 有限重复参与 blocking 完成，无限 repeat=-1 只允许 ambient；内部暂挂通知直接暂停/继续当前实例，离页恢复 GSAP 管理的初始属性。
+- call 与生命周期回调每会话至多一次，onUpdate 和函数值在播放时可重复执行；prepare 不执行用户回调。异步工作使用独立 Scene 任务，GSAP 回调返回 Promise 明确失败并消费拒绝。
+- 回调异常经过任务 Promise 回报，不逃出 ticker；当前 render 栈退出后恢复样式，避免 onStart 异常的剩余渲染覆盖清理。DOM/SVG 目标检查同一画布，页面自有普通对象允许作为数值目标。
+- 序列填充完成后封口，不能迟到追加或在离页后创建子动画；公开填充接口不提供 seek/restart 或插件注册，已知可选插件参数在 prepare 拒绝。直接 GSAP/插件导入的生产校验门禁仍随公开入口切换补齐。
+
+使用真实 GSAP ticker 的假时钟单测，不启动浏览器。Scene 合计 47 项通过，Runtime check 通过；完整回归结果记入开发记录。GSAP 在导入时捕获 Date.now，因此测试必须在导入前安装同一只假时钟，不能只在每例 beforeEach 替换时钟后宣称已经推进真实 ticker。
+
+下一批接页级声明与宿主生命周期；公开入口、Deck 和旧链删除仍未完成。

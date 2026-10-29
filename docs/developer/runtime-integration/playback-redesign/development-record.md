@@ -88,3 +88,11 @@
 开发验证：`pnpm --filter web-runtime-vue exec vitest run src/core/scene`，3 文件 34 项通过；`pnpm --filter web-runtime-vue check` 通过。补测发现并修复了旧清理回调重入切页可覆盖新 generation，以及 Promise 无拒绝原因被误判成功的问题。覆盖快速离页再进入、旧 Promise 成败、重复 stop、逆序清理及迟到释放、准备/完成超时、startMs/真实 afterTrack 延时、资源受阻和宿主冻结合并、ambient 不阻塞、循环/无限前驱拒绝，以及静态零注册。
 
 本批未接公开入口、GSAP、Three.js、真实媒体或 Deck；旧公开播放入口仍由当前宿主使用，B2 后续批次接管后统一删除。B2 保持实施中；本批不重复已通过的 B1 全量 Runtime 回归，不作实机通过结论，真实验收统一 C3。未启动应用服务或迁移开发库。
+
+## B2 第二批：GSAP 正向序列（2026-10-29）
+
+基于 `b707c06`。新增内部 GSAP Scene 任务、受管填充接口、画布目标解析与参数/回调围栏；实际完成、冻结与取消均接入 PageSceneSession，不引入全局采样。支持多序列、DOM/SVG、数值对象、属性和标签/错峰、有限重复与无限装饰；回调在准备时禁用、call 至多一次、onUpdate 正向重复更新。异常回调转任务失败，render 退出后释放；异步回调明确拒绝。填充完成封口，静态入口仍由 slot 在创建前拦截。准备失败现在保留 taskId，并立即清理其余任务。
+
+验证：Scene 4 文件 47 项通过；Runtime check 通过。完整 `pnpm run test:runtime` 首次有一项已有 Mermaid SVG 测量在高并发下超时；定向将该文件与 GSAP 单测一起重跑 20 项通过，再用 `pnpm --filter web-runtime-vue test --maxWorkers=8` 重跑完整集合，172 文件 1414 项通过、3 项既有跳过。未修改 Mermaid 实现或测试时限。真实 GSAP ticker 单测在模块导入前安装同一只假时钟；首次只在 beforeEach 替换时钟时，GSAP 捕获的原 Date.now 未被推进，已修正测试接线后重跑。
+
+尚待公开入口、直接 GSAP/插件导入校验、页级声明与 Deck/预览宿主切换、旧链删除；B2 继续实施中。未运行真实浏览器、Renderer、导出产物或镜像，本批不作视觉验收结论。
