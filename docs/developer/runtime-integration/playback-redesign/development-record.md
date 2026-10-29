@@ -96,3 +96,11 @@
 验证：Scene 4 文件 47 项通过；Runtime check 通过。完整 `pnpm run test:runtime` 首次有一项已有 Mermaid SVG 测量在高并发下超时；定向将该文件与 GSAP 单测一起重跑 20 项通过，再用 `pnpm --filter web-runtime-vue test --maxWorkers=8` 重跑完整集合，172 文件 1414 项通过、3 项既有跳过。未修改 Mermaid 实现或测试时限。真实 GSAP ticker 单测在模块导入前安装同一只假时钟；首次只在 beforeEach 替换时钟时，GSAP 捕获的原 Date.now 未被推进，已修正测试接线后重跑。
 
 尚待公开入口、直接 GSAP/插件导入校验、页级声明与 Deck/预览宿主切换、旧链删除；B2 继续实施中。未运行真实浏览器、Renderer、导出产物或镜像，本批不作视觉验收结论。
+
+## B2 第三批：页级声明与卸载生命周期（2026-10-29）
+
+基于 `b0b3b79`。新增[页级声明登记](../../../../runtime/src/core/scene/page-scene-definition.ts)与内部 Vue 组合式绑定；挂载只登记，宿主 prepare 才执行 define 并登记任务/视觉。每画布只有一个声明，同页多序列由其统一拥有。卸载取消绑定会话，清理先移出发现范围再触发，避免重入或迟到结果复活旧页面；prepare 前失效的根节点明确失败。
+
+接入 B0 受管页面标记，静态执行仍需独立呈现声明；capture/export/thumbnail 下 Scene define、任务启动及 GSAP 构造均为零。尚未增加公开 manifest 项，避免新旧入口并存。
+
+验证：`pnpm --filter web-runtime-vue exec vitest run src/core/scene src/runtime-kit/internal/composables/use-page-scene-definition.test.ts`，6 文件 60 项通过；Runtime check 通过。覆盖真实 Vue 挂载/卸载、跨画布与重复声明、准备中/播放中取消、旧引用失效、静态声明缺失及静态零副作用。完整 Runtime 回归沿用上一批 1414 项通过的记录，本批运行受影响集合；实机、Renderer 与实际产物未运行，统一 C3。公开入口、Deck/预览宿主和旧链删除继续由 B2 后续批次处理。

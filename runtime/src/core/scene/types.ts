@@ -47,6 +47,8 @@ export interface SceneRegistration {
   signal: AbortSignal
   register(task: SceneTask): void
   onCleanup(cleanup: () => void): void
+  /** 内部宿主绑定页面声明寿命；页面卸载或替换的取消等同于停止当前会话。 */
+  linkSignal(signal: AbortSignal): void
 }
 
 export interface PageSceneOptions {

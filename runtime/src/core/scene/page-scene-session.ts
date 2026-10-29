@@ -176,6 +176,11 @@ export function createPageSceneSession(options: PageSceneOptions): PageSceneSess
         await waitForScenePrepare(async () => {
           registrationOpen = true
           await options.define({ generation: options.generation, signal: lifetime.signal, onCleanup: lifetime.onCleanup,
+            linkSignal(signal) {
+              if (signal.aborted) { stop(); return }
+              signal.addEventListener('abort', stop, { once: true })
+              lifetime.onCleanup(() => signal.removeEventListener('abort', stop))
+            },
             register(task) {
               if (!registrationOpen || !live()) throw new SceneSessionError('SCENE_REGISTRATION_CLOSED', '任务只能在当前会话 prepare 注册。')
               if (!task || typeof task.id !== 'string' || !task.id.trim() || task.id.length > 128 || tasks.has(task.id) || tasks.size >= MAX_SCENE_TASKS) {
