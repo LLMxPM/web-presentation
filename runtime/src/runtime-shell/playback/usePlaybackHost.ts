@@ -34,6 +34,7 @@ interface ReadinessAttempt {
   path: string
   generation: number
   settled: boolean
+  abort: AbortController
 }
 
 export interface PlaybackHost {
@@ -132,6 +133,15 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   let motionPath = ''
   let motionGeneration = -1
   let motionUnsubscribe: (() => void) | null = null
+
+  /** 撤销旧就绪等待；先移除所有权再取消，清理重入不能继续使用旧探测。 */
+  function cancelReadiness(): number {
+    const token = ++attemptSequence
+    const previous = pendingAttempt
+    pendingAttempt = null
+    previous?.abort.abort()
+    return token
+  }
 
   /** 按当前执行策略惰性创建控制器；目录为空时不创建。 */
   function ensureController(): PlaybackController | null {
@@ -429,8 +439,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     suspendPageMedia()
     disposePageMedia()
     disposePageMotion()
-    pendingAttempt = null
-    attemptSequence += 1
+    cancelReadiness()
     unsubscribe?.()
     unsubscribe = null
     controller.value?.dispose()
@@ -443,7 +452,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   /** 判断探测结果是否仍属于当前页面、generation 与最新一次尝试。 */
   function isAttemptCurrent(attempt: ReadinessAttempt, instance: PlaybackController | null): boolean {
     if (disposed || !instance || controller.value !== instance) return false
-    if (pendingAttempt?.id !== attempt.id) return false
+    if (pendingAttempt?.id !== attempt.id || attempt.abort.signal.aborted) return false
     const current = instance.getSnapshot()
     return current.path === attempt.path && current.generation === attempt.generation
   }
@@ -456,21 +465,27 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     if (!isAttemptCurrent(attempt, instance)) return
     const root = findPlaybackPageElement(attempt.path)
     if (!root) {
-      pendingAttempt = null
+      cancelReadiness()
       instance?.reportError(attempt.path, attempt.generation, PAGE_MISSING_MESSAGE)
       return
     }
-    const result = await waitForEditorVisualAssets({
-      root,
-      timeoutMs: PLAYBACK_READY_TIMEOUT_MS,
-      includeAnimations: false,
-    })
+    let result
+    try {
+      result = await waitForEditorVisualAssets({
+        root, timeoutMs: PLAYBACK_READY_TIMEOUT_MS, includeAnimations: false, signal: attempt.abort.signal,
+      })
+    } catch {
+      if (!isAttemptCurrent(attempt, instance)) return
+      cancelReadiness()
+      instance?.reportError(attempt.path, attempt.generation, PAGE_ASSET_MESSAGE)
+      return
+    }
     if (!isAttemptCurrent(attempt, instance)) return
     if (result.ok) {
       // 句柄可能先于默认海报采样登记；初始化完成前不能 prepare/play 与采样争用媒体。
       const initializationErrors = await settleMotionReadiness(root, false)
       if (!isAttemptCurrent(attempt, instance)) return
-      pendingAttempt = null
+      cancelReadiness()
       if (initializationErrors.length) {
         instance?.reportError(attempt.path, attempt.generation, `页内时间轴初始化失败：${initializationErrors[0].message}`)
         return
@@ -524,7 +539,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       }
       return
     }
-    pendingAttempt = null
+    cancelReadiness()
     const issue = result.failed[0] || result.pending[0]
     instance?.reportError(
       attempt.path,
@@ -543,11 +558,14 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     if (!instance) return
     const current = instance.getSnapshot()
     if (current.path !== path) return
+    const id = cancelReadiness()
+    if (id !== attemptSequence) return
     const attempt: ReadinessAttempt = {
-      id: ++attemptSequence,
+      id,
       path,
       generation: current.generation,
       settled: false,
+      abort: new AbortController(),
     }
     pendingAttempt = attempt
     const settled = session.transitionSettled.value
@@ -560,6 +578,8 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   const stopRouteWatch = watch(() => router.currentRoute.value.path, path => {
     const instance = controller.value
     if (!instance) return
+    // 失败态翻页会先为目标页建立准备；Router 随后提交同一路径时继续使用该准备。
+    if (pendingAttempt && pendingAttempt.path !== path) cancelReadiness()
     disposePageMedia()
     disposePageMotion()
     if (!instance.notifyPageChange(path)) return
@@ -581,7 +601,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     if (!instance) return
     const current = instance.getSnapshot()
     if (current.state !== 'preparing' && current.state !== 'playing') return
-    pendingAttempt = null
+    cancelReadiness()
     instance.reportError(current.path, current.generation, message)
   })
 
@@ -628,6 +648,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
 
   function stopPlayback(): boolean {
     if (!controller.value?.stop()) return false
+    cancelReadiness()
     motionHandle?.pause()
     if (mediaSession) disposePageMedia()
     else suspendPageMedia()

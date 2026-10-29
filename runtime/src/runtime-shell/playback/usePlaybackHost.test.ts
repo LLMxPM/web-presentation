@@ -394,6 +394,32 @@ describe('usePlaybackHost 自动开始与就绪', () => {
     app.unmount()
   })
 
+  it.each(['停止', '切页', '卸载'] as const)('%s 会取消资源准备，迟到成功不能启动旧页面', async action => {
+    let signal!: AbortSignal, lateResolve!: (result: typeof READY) => void
+    waitForAssets.mockImplementation(options => new Promise((resolve, reject) => {
+      signal = options.signal
+      lateResolve = resolve
+      signal.addEventListener('abort', () => reject(new DOMException('已取消', 'AbortError')), { once: true })
+    }))
+    const router = makeRouter()
+    await router.push('/a'); await router.isReady()
+    const { app, host } = mountPlaybackHost(router)
+    host.start()
+    getRuntimeSession(router).transitionSettled.value = { path: '/a', generation: 1 }
+    await flushAsync()
+    expect(signal.aborted).toBe(false)
+    expect(host.snapshot.value?.state).toBe('preparing')
+    if (action === '停止') host.stop()
+    else if (action === '切页') await router.push('/b')
+    else app.unmount()
+    await flushAsync()
+    expect(signal.aborted).toBe(true)
+    lateResolve(READY); await flushAsync()
+    expect(host.snapshot.value?.state).not.toBe('playing')
+    expect(host.errorMessage.value).toBe('')
+    if (action !== '卸载') app.unmount()
+  })
+
   it('忽略旧页面 settled，只接受当前路由的新事件', async () => {
     const router = makeRouter()
     await router.push('/a')

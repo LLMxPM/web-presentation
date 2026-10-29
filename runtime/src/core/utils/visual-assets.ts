@@ -3,6 +3,9 @@
  */
 import { getRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
 import { isStaticExecution } from '@/core/static-presentation/types'
+import { collectVisualAssetTasks, type VisualAssetTask } from './visual-asset-images'
+import { createVisualAssetWaitScope, type VisualAssetWaitScope } from './visual-asset-wait'
+export { extractCssUrls } from './visual-asset-images'
 
 export interface EditorVisualAssetWaitOptions {
   /** 最长等待时间，单位毫秒。 */
@@ -11,6 +14,8 @@ export interface EditorVisualAssetWaitOptions {
   root?: ParentNode
   /** 是否等待有限动画结束；放映页就绪由过渡信号负责时可关闭。 */
   includeAnimations?: boolean
+  /** 离页或退出时撤销探测；取消以 AbortError 拒绝，不记为资源失败。 */
+  signal?: AbortSignal
 }
 
 export interface EditorVisualAssetIssue {
@@ -37,13 +42,6 @@ export interface EditorVisualAssetWaitResult {
   pending: EditorVisualAssetIssue[]
   /** 实际等待耗时。 */
   waitedMs: number
-}
-
-interface VisualAssetTask {
-  type: EditorVisualAssetIssue['type']
-  url?: string
-  message: string
-  wait: () => Promise<void>
 }
 
 type TaskStatus = 'pending' | 'loaded' | 'failed'
@@ -108,7 +106,9 @@ export function registerEditorVisualAssetProbe(): void {
  */
 export async function waitForFiniteDocumentAnimations(timeoutMs = ANIMATION_SETTLE_TIMEOUT_MS): Promise<void> {
   const normalizedTimeout = Math.max(0, Math.round(Number(timeoutMs) || 0))
-  await waitForFiniteAnimationsSettled(Date.now() + normalizedTimeout, normalizedTimeout)
+  const scope = createVisualAssetWaitScope()
+  try { await waitForFiniteAnimationsSettled(Date.now() + normalizedTimeout, scope, normalizedTimeout) }
+  finally { scope.dispose() }
 }
 
 /**
@@ -119,6 +119,14 @@ export async function waitForFiniteDocumentAnimations(timeoutMs = ANIMATION_SETT
 export async function waitForEditorVisualAssets(
   options: EditorVisualAssetWaitOptions = {},
 ): Promise<EditorVisualAssetWaitResult> {
+  const scope = createVisualAssetWaitScope(options.signal)
+  try { return await waitForVisualAssetsInScope(options, scope) }
+  finally { scope.dispose() }
+}
+
+/** 整轮探测共享取消域，未胜出的超时和离页后的资源监听均在出口释放。 */
+async function waitForVisualAssetsInScope(options: EditorVisualAssetWaitOptions, scope: VisualAssetWaitScope): Promise<EditorVisualAssetWaitResult> {
+  scope.check()
   const startedAt = Date.now()
   const timeoutMs = normalizeTimeout(options.timeoutMs)
   const root = options.root ?? document
@@ -127,7 +135,7 @@ export async function waitForEditorVisualAssets(
   const pending: EditorVisualAssetIssue[] = []
   let timedOut = false
 
-  const viewPreviewResult = await waitForViewPreviewReady(deadlineAt, root)
+  const viewPreviewResult = await waitForViewPreviewReady(deadlineAt, root, scope)
   failed.push(...viewPreviewResult.failed)
   pending.push(...viewPreviewResult.pending)
   timedOut = timedOut || viewPreviewResult.timedOut
@@ -135,7 +143,7 @@ export async function waitForEditorVisualAssets(
   let diagramTotal = 0
   let diagramLoaded = 0
   for (const probe of RUNTIME_DIAGRAM_PROBES) {
-    const diagramResult = await waitForRuntimeDiagramReady(deadlineAt, probe, root)
+    const diagramResult = await waitForRuntimeDiagramReady(deadlineAt, probe, root, scope)
     diagramTotal += diagramResult.total
     diagramLoaded += diagramResult.loaded
     failed.push(...diagramResult.failed)
@@ -144,22 +152,22 @@ export async function waitForEditorVisualAssets(
   }
 
   const tasks = collectVisualAssetTasks(root)
-  const taskResult = await waitForTasks(tasks, deadlineAt)
+  const taskResult = await waitForTasks(tasks, deadlineAt, scope)
   failed.push(...taskResult.failed)
   pending.push(...taskResult.pending)
   timedOut = timedOut || taskResult.timedOut
 
-  const fontResult = await waitForFontsReady(deadlineAt)
+  const fontResult = await waitForFontsReady(deadlineAt, scope)
   failed.push(...fontResult.failed)
   pending.push(...fontResult.pending)
   timedOut = timedOut || fontResult.timedOut
 
   if (options.includeAnimations !== false && !isStaticExecution(getRuntimeExecutionPolicy().kind)) {
-    await waitForFiniteAnimationsSettled(deadlineAt)
+    await waitForFiniteAnimationsSettled(deadlineAt, scope)
   }
 
-  await waitForAnimationFrame()
-  await waitForAnimationFrame()
+  await scope.frame()
+  await scope.frame()
 
   return {
     ok: failed.length === 0 && pending.length === 0 && !timedOut,
@@ -190,12 +198,13 @@ function normalizeTimeout(timeoutMs: number | undefined): number {
  * @param deadlineAt 截止时间戳
  * @returns 等待结果
  */
-async function waitForViewPreviewReady(deadlineAt: number, root: ParentNode): Promise<{
+async function waitForViewPreviewReady(deadlineAt: number, root: ParentNode, scope: VisualAssetWaitScope): Promise<{
   failed: EditorVisualAssetIssue[]
   pending: EditorVisualAssetIssue[]
   timedOut: boolean
 }> {
-  while (Date.now() <= deadlineAt) {
+  while (Date.now() < deadlineAt) {
+    scope.check()
     const elements = Array.from(root.querySelectorAll<HTMLElement>(VIEW_PREVIEW_STATE_SELECTOR))
     if (elements.length === 0) {
       return { failed: [], pending: [], timedOut: false }
@@ -217,7 +226,7 @@ async function waitForViewPreviewReady(deadlineAt: number, root: ParentNode): Pr
       return { failed: [], pending: [], timedOut: false }
     }
 
-    await sleep(Math.min(50, Math.max(0, deadlineAt - Date.now())))
+    await scope.delay(Math.min(50, Math.max(0, deadlineAt - Date.now())))
   }
 
   return {
@@ -236,7 +245,7 @@ async function waitForViewPreviewReady(deadlineAt: number, root: ParentNode): Pr
  * @param probe 图表探针配置
  * @returns 等待结果
  */
-async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiagramProbe, root: ParentNode): Promise<{
+async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiagramProbe, root: ParentNode, scope: VisualAssetWaitScope): Promise<{
   total: number
   loaded: number
   failed: EditorVisualAssetIssue[]
@@ -244,7 +253,8 @@ async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiag
   timedOut: boolean
 }> {
   let latestElements: HTMLElement[] = []
-  while (Date.now() <= deadlineAt) {
+  while (Date.now() < deadlineAt) {
+    scope.check()
     latestElements = Array.from(root.querySelectorAll<HTMLElement>(probe.stateSelector))
     if (latestElements.length === 0) {
       return { total: 0, loaded: 0, failed: [], pending: [], timedOut: false }
@@ -274,7 +284,7 @@ async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiag
       }
     }
 
-    await sleep(Math.min(50, Math.max(0, deadlineAt - Date.now())))
+    await scope.delay(Math.min(50, Math.max(0, deadlineAt - Date.now())))
   }
 
   const elements = latestElements.length > 0
@@ -295,78 +305,12 @@ async function waitForRuntimeDiagramReady(deadlineAt: number, probe: RuntimeDiag
 }
 
 /**
- * 收集文档中的图片和 CSS 背景图加载任务。
- * @param root 查询根节点
- * @returns 视觉资源任务
- */
-function collectVisualAssetTasks(root: ParentNode): VisualAssetTask[] {
-  return [
-    ...collectImageTasks(root),
-    ...collectBackgroundImageTasks(root),
-  ]
-}
-
-/**
- * 收集 img 元素加载任务。
- * @param root 查询根节点
- * @returns 图片任务列表
- */
-function collectImageTasks(root: ParentNode): VisualAssetTask[] {
-  return Array.from(root.querySelectorAll<HTMLImageElement>('img'))
-    .map((image): VisualAssetTask | null => {
-      const url = image.currentSrc || image.src
-      if (!url) {
-        return null
-      }
-      return {
-        type: 'image',
-        url,
-        message: `图片资源未加载完成：${url}`,
-        wait: () => waitForHtmlImage(image, url),
-      }
-    })
-    .filter((task): task is VisualAssetTask => Boolean(task))
-}
-
-/**
- * 收集元素 background-image 中的 URL 加载任务。
- * @param root 查询根节点
- * @returns 背景图任务列表
- */
-function collectBackgroundImageTasks(root: ParentNode): VisualAssetTask[] {
-  const seenUrls = new Set<string>()
-  const tasks: VisualAssetTask[] = []
-  const elements = [
-    ...(root instanceof Document ? [root.documentElement, root.body] : [root]),
-    ...Array.from(root.querySelectorAll<HTMLElement>('*')),
-  ].filter((element): element is HTMLElement => element instanceof HTMLElement)
-
-  for (const element of elements) {
-    const backgroundImage = window.getComputedStyle(element).backgroundImage
-    for (const url of extractCssUrls(backgroundImage)) {
-      if (!url || seenUrls.has(url)) {
-        continue
-      }
-      seenUrls.add(url)
-      tasks.push({
-        type: 'background',
-        url,
-        message: `背景图资源未加载完成：${url}`,
-        wait: () => waitForDetachedImage(url),
-      })
-    }
-  }
-
-  return tasks
-}
-
-/**
  * 等待一组视觉资源任务，直至全部完成或达到截止时间。
  * @param tasks 任务列表
  * @param deadlineAt 截止时间戳
  * @returns 聚合结果
  */
-async function waitForTasks(tasks: VisualAssetTask[], deadlineAt: number): Promise<{
+async function waitForTasks(tasks: VisualAssetTask[], deadlineAt: number, scope: VisualAssetWaitScope): Promise<{
   loaded: number
   failed: EditorVisualAssetIssue[]
   pending: EditorVisualAssetIssue[]
@@ -379,14 +323,19 @@ async function waitForTasks(tasks: VisualAssetTask[], deadlineAt: number): Promi
   const statuses: TaskStatus[] = tasks.map(() => 'pending')
   const failed: EditorVisualAssetIssue[] = []
   const remainingMs = Math.max(0, deadlineAt - Date.now())
-  let timedOut = remainingMs <= 0
+  if (remainingMs === 0) {
+    return { loaded: 0, failed: [], pending: tasks.map(({ type, url, message }) => ({ type, url, message })), timedOut: true }
+  }
+  let timedOut = false
 
   const allTasks = Promise.all(tasks.map((task, index) => (
-    task.wait()
+    task.wait(scope)
       .then(() => {
+        scope.check()
         statuses[index] = 'loaded'
       })
       .catch((error) => {
+        scope.check()
         statuses[index] = 'failed'
         failed.push({
           type: task.type,
@@ -396,14 +345,12 @@ async function waitForTasks(tasks: VisualAssetTask[], deadlineAt: number): Promi
       })
   )))
 
-  if (!timedOut) {
-    await Promise.race([
-      allTasks,
-      sleep(remainingMs).then(() => {
-        timedOut = statuses.some(status => status === 'pending')
-      }),
-    ])
-  }
+  await Promise.race([
+    allTasks,
+    scope.delay(remainingMs).then(() => {
+      timedOut = statuses.some(status => status === 'pending')
+    }),
+  ])
 
   const pending = tasks
     .filter((_, index) => statuses[index] === 'pending')
@@ -422,93 +369,11 @@ async function waitForTasks(tasks: VisualAssetTask[], deadlineAt: number): Promi
 }
 
 /**
- * 等待已有 img 元素完成加载与解码。
- * @param image 图片元素
- * @param url 图片地址
- */
-async function waitForHtmlImage(image: HTMLImageElement, url: string): Promise<void> {
-  const hasFallback = image.dataset.runtimeImageFallback === 'true'
-  if (image.complete && !isHtmlImageLoaded(image)) {
-    if (hasFallback) {
-      return
-    }
-    throw new Error(`图片资源加载失败：${url}`)
-  }
-  if (!isHtmlImageLoaded(image)) {
-    await new Promise<void>((resolve, reject) => {
-      const cleanup = () => {
-        image.removeEventListener('load', handleLoad)
-        image.removeEventListener('error', handleError)
-      }
-      const handleLoad = () => {
-        cleanup()
-        resolve()
-      }
-      const handleError = () => {
-        cleanup()
-        if (hasFallback) {
-          resolve()
-        } else {
-          reject(new Error(`图片资源加载失败：${url}`))
-        }
-      }
-      image.addEventListener('load', handleLoad, { once: true })
-      image.addEventListener('error', handleError, { once: true })
-    })
-  }
-
-  if (!isHtmlImageLoaded(image)) {
-    if (hasFallback) {
-      return
-    }
-    throw new Error(`图片资源加载失败：${url}`)
-  }
-
-  if (typeof image.decode === 'function') {
-    await image.decode()
-  }
-}
-
-/**
- * 使用脱离 DOM 的 Image 对象等待背景图 URL 可加载。
- * @param url 背景图地址
- */
-async function waitForDetachedImage(url: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const image = new Image()
-    const cleanup = () => {
-      image.removeEventListener('load', handleLoad)
-      image.removeEventListener('error', handleError)
-    }
-    const handleLoad = () => {
-      cleanup()
-      resolve()
-    }
-    const handleError = () => {
-      cleanup()
-      reject(new Error(`背景图资源加载失败：${url}`))
-    }
-    image.addEventListener('load', handleLoad, { once: true })
-    image.addEventListener('error', handleError, { once: true })
-    image.src = url
-  })
-}
-
-/**
- * 判断 img 元素是否已有有效尺寸。
- * @param image 图片元素
- * @returns 是否加载完成
- */
-function isHtmlImageLoaded(image: HTMLImageElement): boolean {
-  return image.complete && image.naturalWidth > 0 && image.naturalHeight > 0
-}
-
-/**
  * 等待字体加载完成。
  * @param deadlineAt 截止时间戳
  * @returns 字体等待结果
  */
-async function waitForFontsReady(deadlineAt: number): Promise<{
+async function waitForFontsReady(deadlineAt: number, scope: VisualAssetWaitScope): Promise<{
   failed: EditorVisualAssetIssue[]
   pending: EditorVisualAssetIssue[]
   timedOut: boolean
@@ -524,17 +389,18 @@ async function waitForFontsReady(deadlineAt: number): Promise<{
 
   if (!timedOut) {
     await Promise.race([
-      document.fonts.ready
+      scope.wait(document.fonts.ready)
         .then(() => {
           completed = true
         })
         .catch((error) => {
+          scope.check()
           failed = {
             type: 'font',
             message: error instanceof Error ? error.message : '字体资源加载失败。',
           }
         }),
-      sleep(remainingMs).then(() => {
+      scope.delay(remainingMs).then(() => {
         timedOut = !completed && !failed
       }),
     ])
@@ -555,11 +421,12 @@ async function waitForFontsReady(deadlineAt: number): Promise<{
 
 /**
  * 尽力等待文档中有限次动画自然结束，让入场动画和 animationend 链路跑完。
- * 无限循环动画直接跳过；超时不计入失败，由截图侧 animations="disabled" 兜底快进。
+ * 无限循环动画直接跳过；超时不计入失败，静态捕获不会调用本等待。
  * @param deadlineAt 整体截止时间戳
  */
 async function waitForFiniteAnimationsSettled(
   deadlineAt: number,
+  scope: VisualAssetWaitScope,
   settleTimeoutMs = ANIMATION_SETTLE_TIMEOUT_MS,
 ): Promise<void> {
   if (typeof document.getAnimations !== 'function') {
@@ -570,7 +437,8 @@ async function waitForFiniteAnimationsSettled(
   const settleDeadlineAt = Math.min(deadlineAt, Date.now() + settleTimeoutMs)
   const awaited = new WeakSet<Animation>()
 
-  while (Date.now() <= settleDeadlineAt) {
+  while (Date.now() < settleDeadlineAt) {
+    scope.check()
     // 循环重新收集，覆盖交错动画链中等待期间新启动的动画。
     const running = document.getAnimations().filter(
       animation => !awaited.has(animation) && isWaitableFiniteAnimation(animation),
@@ -584,7 +452,7 @@ async function waitForFiniteAnimationsSettled(
     await Promise.race([
       // 动画被取消时 finished 会 reject，这里视为已结束。
       Promise.all(running.map(animation => animation.finished.catch(() => undefined))),
-      sleep(remainingMs),
+      scope.delay(remainingMs),
     ])
   }
 }
@@ -603,43 +471,4 @@ function isWaitableFiniteAnimation(animation: Animation): boolean {
     return false
   }
   return Number.isFinite(Number(timing.iterations ?? 1))
-}
-
-/**
- * 从 CSS url(...) 表达式中提取 URL。
- * @param cssValue CSS 属性值
- * @returns URL 列表
- */
-export function extractCssUrls(cssValue: string): string[] {
-  const urls: string[] = []
-  const pattern = /url\((?:"([^"]*)"|'([^']*)'|([^)]*))\)/g
-  let match: RegExpExecArray | null
-  while ((match = pattern.exec(cssValue || '')) !== null) {
-    const rawUrl = (match[1] || match[2] || match[3] || '').trim()
-    if (rawUrl) {
-      urls.push(rawUrl)
-    }
-  }
-  return urls
-}
-
-/**
- * 等待一次浏览器绘制帧。
- */
-function waitForAnimationFrame(): Promise<void> {
-  return new Promise(resolve => {
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => resolve())
-      return
-    }
-    window.setTimeout(resolve, 16)
-  })
-}
-
-/**
- * 延迟指定毫秒。
- * @param ms 延迟时间
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => window.setTimeout(resolve, Math.max(0, ms)))
 }

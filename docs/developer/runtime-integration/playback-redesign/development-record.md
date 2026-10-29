@@ -104,3 +104,9 @@
 接入 B0 受管页面标记，静态执行仍需独立呈现声明；capture/export/thumbnail 下 Scene define、任务启动及 GSAP 构造均为零。尚未增加公开 manifest 项，避免新旧入口并存。
 
 验证：`pnpm --filter web-runtime-vue exec vitest run src/core/scene src/runtime-kit/internal/composables/use-page-scene-definition.test.ts`，6 文件 60 项通过；Runtime check 通过。覆盖真实 Vue 挂载/卸载、跨画布与重复声明、准备中/播放中取消、旧引用失效、静态声明缺失及静态零副作用。完整 Runtime 回归沿用上一批 1414 项通过的记录，本批运行受影响集合；实机、Renderer 与实际产物未运行，统一 C3。公开入口、Deck/预览宿主和旧链删除继续由 B2 后续批次处理。
+
+## B2 第四批：可取消资源等待（2026-10-29）
+
+基于 `12a9d3b`。将视觉资源探测接入统一取消域并拆分图片任务；取消/超时/正常完成后撤销轮询、图片事件、RAF 和未胜出的长计时。原生解码或字体 Promise 的迟到拒绝被消费，不改变页面加载本身。现有 usePlaybackHost 已在停止、切页、换准备和卸载时取消旧探测，为 Scene 宿主复用准备提供基础。
+
+验证：`pnpm --filter web-runtime-vue exec vitest run src/runtime-shell/playback/usePlaybackHost.test.ts src/core/utils/visual-assets.test.ts src/core/utils/visual-assets-cancellation.test.ts src/core/utils/render-ready.test.ts`，4 文件 82 项通过；Runtime check 通过。首轮发现失败页的手动翻页会先建立目标准备，Router 提交时无条件取消导致两个旧回归不通过；调整为只取消不同路径的等待后完整定向重跑通过。覆盖预取消、各图表轮询、图片/背景监听、解码迟到、字体、RAF、正常结束与超时清理，以及宿主停止/切页/卸载后的零启动。未运行实机或实际产物；B2 继续实施中。
