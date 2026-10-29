@@ -80,3 +80,11 @@
 - `test:editor:check`、`codegen:editor-api`、`test:contracts:generated` 通过；4 个 TypeScript 夹具、A15 Vue 页面和修改过的 MJS 语法通过。
 
 未运行：真实浏览器/Renderer、导出实际产物、PostgreSQL 真实升级、生产镜像、独立产物和长稳；交 C3。未启动应用服务、未重置开发数据。
+
+## B2 第一批：内部会话与假任务（2026-10-29）
+
+基于 B1 `925b3d7`；新增[PageSceneSession](../../../../runtime/src/core/scene/page-scene-session.ts)、宿主 slot、任务图校验、有效经过时钟和释放域。只调度任务起点并聚合实际完成，不对动画/媒体每帧采样。明确 prepare 执行注册、静态创建前拦截、有限/装饰参与方式、失败传播、实际完成依赖、内部冻结、至多一次回调和有界期限；详见[B2 分批实施记录](./work-packages/b2-completion-aggregation.md#分批实施记录)。
+
+开发验证：`pnpm --filter web-runtime-vue exec vitest run src/core/scene`，3 文件 34 项通过；`pnpm --filter web-runtime-vue check` 通过。补测发现并修复了旧清理回调重入切页可覆盖新 generation，以及 Promise 无拒绝原因被误判成功的问题。覆盖快速离页再进入、旧 Promise 成败、重复 stop、逆序清理及迟到释放、准备/完成超时、startMs/真实 afterTrack 延时、资源受阻和宿主冻结合并、ambient 不阻塞、循环/无限前驱拒绝，以及静态零注册。
+
+本批未接公开入口、GSAP、Three.js、真实媒体或 Deck；旧公开播放入口仍由当前宿主使用，B2 后续批次接管后统一删除。B2 保持实施中；本批不重复已通过的 B1 全量 Runtime 回归，不作实机通过结论，真实验收统一 C3。未启动应用服务或迁移开发库。
