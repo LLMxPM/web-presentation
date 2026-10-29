@@ -32,6 +32,32 @@ describe('resolveRuntimeCaptureRoute', () => {
 })
 
 describe('OffscreenPageStage 静态帧准备', () => {
+  it('默认准备不等待或快进文档动画，也不调用旧采样桥', async () => {
+    const stage = createOffscreenPageStage()
+    const frame = document.querySelector('iframe')!
+    const pending = stage.preparePage('/static-page')
+    const { win, doc } = mountStaticPage(frame, '/static-page', 'ready')
+    const sample = vi.fn()
+    const finish = vi.fn()
+    Object.assign(win, { __RUNTIME_APPLY_MOTION_SNAPSHOT__: sample })
+    Object.defineProperty(doc, 'getAnimations', { value: () => [{ finish, finished: new Promise(() => {}) }] })
+    const prepared = await pending
+    expect(sample).not.toHaveBeenCalled()
+    expect(finish).not.toHaveBeenCalled()
+    prepared.cleanup()
+    stage.dispose()
+  })
+
+  it.each(['unsupported', 'failed'] as const)('静态 %s 立即中断并携带页码与原因', async status => {
+    const stage = createOffscreenPageStage()
+    const frame = document.querySelector('iframe')!
+    const pending = stage.preparePage('/static-page', { pageLabel: '第 2 页「图表」' })
+    mountStaticPage(frame, '/static-page', status)
+    await expect(pending).rejects.toThrow('第 2 页「图表」')
+    await expect(pending).rejects.toThrow('示例静态原因')
+    stage.dispose()
+  })
+
   it('capture 应把取消信号传入离屏准备，取消后立即终止', async () => {
     const stage = createOffscreenPageStage()
     const controller = new AbortController()
@@ -104,6 +130,7 @@ describe('OffscreenPageStage 静态帧准备', () => {
         return { status: 'applied', timelineId: 'intro', sampledTimeMs: 500 }
       }
       curWin.__EDITOR_RUNTIME_PREVIEW_READY__ = true
+      Object.assign(curWin, { __RENDER_READY__: { mounted: true, staticPresentation: { status: 'ready' } } })
     }, 20)
 
     await pending
@@ -161,6 +188,7 @@ describe('OffscreenPageStage 静态帧准备', () => {
       page.appendChild(modelRoot)
       curDoc.body.appendChild(page)
       curWin.__EDITOR_RUNTIME_PREVIEW_READY__ = true
+      Object.assign(curWin, { __RENDER_READY__: { mounted: true, staticPresentation: { status: 'ready' } } })
     }, 20)
 
     const prepared = await pending
@@ -181,3 +209,22 @@ describe('OffscreenPageStage 静态帧准备', () => {
     expect(document.querySelector('iframe')).toBeNull()
   })
 })
+
+/** 在当前导航票据内装配就绪桥，模拟 iframe 已完成目标页面静态准备。 */
+function mountStaticPage(frame: HTMLIFrameElement, route: string, status: 'ready' | 'unsupported' | 'failed') {
+  const doc = frame.contentDocument!
+  doc.open()
+  doc.write('<!doctype html><html><head></head><body></body></html>')
+  doc.close()
+  const win = frame.contentWindow!
+  const page = doc.createElement('section')
+  page.className = 'runtime-page-print-source'
+  page.dataset.runtimeRoutePath = route
+  page.dataset.runtimeCaptureTicket = new URLSearchParams(new URL(frame.src).hash.split('?')[1]).get('runtimeCaptureTicket')!
+  doc.body.append(page)
+  Object.assign(win, {
+    __EDITOR_RUNTIME_PREVIEW_READY__: status === 'ready',
+    __RENDER_READY__: { mounted: true, staticPresentation: { status, code: status === 'unsupported' ? 'STATIC_PRESENTATION_UNAVAILABLE' : 'STATIC_PRESENTATION_FAILED', message: '示例静态原因' } },
+  })
+  return { win, doc }
+}

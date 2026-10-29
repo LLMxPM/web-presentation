@@ -1948,7 +1948,34 @@
         ],
         "returns": "对象：plan、state、error、ready 及 prepare/play/pause/resume/restart/seek/sampleAt/setMuted/setVisualMode/dispose。",
         "return_example": ["timeline.state.value?.positionMs // 400", "timeline.plan.value?.planDigest // 'fnv1a-...'"],
-        "constraints": ["每个页面最多注册一个时间轴；组件片段必须通过填充函数合并，不能创建第二个全局播放者。", "define 仅在挂载时执行一次；原生视觉支持显式 fromTo、addLabel、位置字符串、数值 stagger 和段落函数复用，属性限 opacity/x/y/scale/rotation；禁止回调、插件、无限重复和外部目标。", "资源和捕获统一毫秒，GSAP 原生参数用秒，使用 seconds(ms) 转换；资源 id 自动登记为视觉标签。", "可读海报优先引用视觉末尾的 addLabel 标签，窗口预览需要时设置 applyPoster=true；poster 必须处于真实 0–durationMs 范围，初始化或准备失败必须按内容诊断修复。", "动作片段、资源时长与签名必须来自真实资源查询；运行错误带 code、trackId 或 fieldPath。"],
+        "constraints": ["每个页面最多注册一个时间轴；组件片段必须通过填充函数合并，不能创建第二个全局播放者。", "define 仅在非静态上下文挂载时执行一次；原生视觉支持显式 fromTo、addLabel、位置字符串、数值 stagger 和段落函数复用，属性限 opacity/x/y/scale/rotation；禁止回调、插件、无限重复和外部目标。", "资源和捕获统一毫秒，GSAP 原生参数用秒，使用 seconds(ms) 转换；资源 id 自动登记为视觉标签。", "capture/export/thumbnail 不创建或采样时间轴；同一 root 必须另用 useStaticPresentation.v1 声明 default/poster/unsupported，默认截图与导出不使用时间轴 poster。交互预览仍可设置 applyPoster=true。", "动作片段、资源时长与签名必须来自真实资源查询；运行错误带 code、trackId 或 fieldPath。"],
+        "audiences": ["backend", "agent"]
+      }
+    },
+    {
+      "kind": "composable",
+      "base_name": "useStaticPresentation",
+      "version_no": 1,
+      "name": "useStaticPresentation.v1",
+      "import_path": "@runtime-kit/public/composables/static/useStaticPresentation.v1",
+      "category": "runtime",
+      "description": "为截图、缩略图与静态导出声明独立可读态，不执行或采样动画。",
+      "capability": {
+        "enabled": true,
+        "previewable": false,
+        "recommendation_level": "default",
+        "display_name": "静态呈现声明",
+        "summary": "声明 default/poster/unsupported，静态上下文按需执行有界 prepare；返回 isStatic、ready 与状态。",
+        "tags": ["static", "capture", "export"],
+        "usage": [
+          "import { useStaticPresentation } from '@runtime-kit/public/composables/static/useStaticPresentation.v1'",
+          "const pageRoot = ref<HTMLElement | null>(null)",
+          "const { isStatic } = useStaticPresentation({ root: pageRoot, mode: 'default' })",
+          "// 模板默认完整可读；mounted 动画、CSS/Canvas 等自有副作用必须按 isStatic 显式分支。"
+        ],
+        "returns": "对象：isStatic、ready 与只读 state；回执状态为 ready/unsupported/failed。",
+        "return_example": ["isStatic.value // capture/export/thumbnail 时为 true", "await ready // { status: 'ready', code: null, message: null }"],
+        "constraints": ["每个页面 root 只声明一次；受托管动画与静态声明必须使用相同 root。", "default 使用可读默认态；poster 由模板或 prepare 显式提供；unsupported 可附简短 reason。", "prepare 只在静态上下文运行，最长 25 秒，必须响应 signal；不得播放动画、媒体或推进模型 Mixer。", "默认截图与导出不调用 seek/sampleAt，不等待动画终态；自有脚本和 CSS/Canvas 动画须提供静态分支。", "未使用受托管动画的普通页面可不声明，继续使用默认静态渲染。"],
         "audiences": ["backend", "agent"]
       }
     }

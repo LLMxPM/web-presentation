@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from render_contracts.screenshot import CAPTURE_POLICY_VERSION
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -192,7 +193,7 @@ class PageScreenshotFingerprintService:
             page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes},
             render_identity=render_identity)
         return PageScreenshotConfigSnapshot(page_config=snapshot.page_config,
-            config_hash=hashlib.sha256(f"{snapshot.config_hash}|{identity}|page-static-capture.v1|dpr=1".encode()).hexdigest(),
+            config_hash=hashlib.sha256(f"{snapshot.config_hash}|{identity}|{CAPTURE_POLICY_VERSION}|dpr=1".encode()).hexdigest(),
             theme_key=snapshot.theme_key, theme_config=snapshot.theme_config)
 
     def _apply_resource_tokens(

@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
 
 /**
- * 文件用途：验证 S1 阶段页面环境迁移（退出条件：不同宿主视口下相同几何、动画最终态不重开、三页切换无残留、无遗留舞台与投影节点）。
+ * 文件用途：验证页面环境迁移（固定几何、三页切换无残留、无遗留舞台与投影节点）。静态呈现隔离由 OffscreenPageStage 契约测试覆盖。
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createOffscreenPageStage,
-  freezeDocumentAnimationsToFinalState,
 } from '@/core/services/export/OffscreenPageStage'
 import { PPTXDomConverter } from './PPTXDomConverter'
 import { createSlideMock } from './PPTXDomConverter.test-support'
@@ -33,52 +32,6 @@ describe('S1 页面环境迁移与离屏舞台隔离', () => {
     expect(document.querySelector('[data-runtime-capture-projection]')).toBeNull()
   })
 
-  it('动画最终态不重新开始：有限动画被冻结至最终帧，不被 innerHTML 重构打回第 0 帧', async () => {
-    let finishedCalled = false
-    const mockAnimation = {
-      playState: 'running',
-      effect: {
-        getTiming: () => ({ iterations: 1, duration: 1000 }),
-      },
-      finish: vi.fn(() => {
-        finishedCalled = true
-      }),
-    } as unknown as Animation
-
-    const testDoc = document.implementation.createHTMLDocument('test')
-    Object.defineProperty(testDoc, 'getAnimations', {
-      value: () => [mockAnimation],
-      configurable: true,
-    })
-
-    await freezeDocumentAnimationsToFinalState(testDoc)
-
-    // 有限次动画必须被调用 finish() 推进至最终呈现状态
-    expect(finishedCalled).toBe(true)
-    expect(mockAnimation.finish).toHaveBeenCalledTimes(1)
-  })
-
-  it('无限循环动画不被强制 finish 打断', async () => {
-    const mockInfiniteAnimation = {
-      playState: 'running',
-      effect: {
-        getTiming: () => ({ iterations: Infinity, duration: 1000 }),
-      },
-      finish: vi.fn(),
-    } as unknown as Animation
-
-    const testDoc = document.implementation.createHTMLDocument('test-infinite')
-    Object.defineProperty(testDoc, 'getAnimations', {
-      value: () => [mockInfiniteAnimation],
-      configurable: true,
-    })
-
-    await freezeDocumentAnimationsToFinalState(testDoc)
-
-    // 无限循环动画不得被强制 finish
-    expect(mockInfiniteAnimation.finish).not.toHaveBeenCalled()
-  })
-
   it('多页连续采集：路由切换状态机确保三页切换无上一页残余 DOM', async () => {
     const stage = createOffscreenPageStage()
     const iframe = document.querySelector('iframe') as HTMLIFrameElement
@@ -101,6 +54,7 @@ describe('S1 页面环境迁移与离屏舞台隔离', () => {
       page1.style.height = '1080px'
       curDoc.body.appendChild(page1)
       curWin.__EDITOR_RUNTIME_PREVIEW_READY__ = true
+      Object.assign(curWin, { __RENDER_READY__: { mounted: true, staticPresentation: { status: 'ready' } } })
     }, 20)
     const prepared1 = await p1
     expect(prepared1.element.dataset.runtimeRoutePath).toBe('/page-1')
@@ -120,6 +74,7 @@ describe('S1 页面环境迁移与离屏舞台隔离', () => {
       page2.style.height = '1080px'
       curDoc.body.appendChild(page2)
       curWin.__EDITOR_RUNTIME_PREVIEW_READY__ = true
+      Object.assign(curWin, { __RENDER_READY__: { mounted: true, staticPresentation: { status: 'ready' } } })
     }, 20)
     const prepared2 = await p2
     expect(prepared2.element.dataset.runtimeRoutePath).toBe('/page-2')
@@ -140,6 +95,7 @@ describe('S1 页面环境迁移与离屏舞台隔离', () => {
       page3.style.height = '1080px'
       curDoc.body.appendChild(page3)
       curWin.__EDITOR_RUNTIME_PREVIEW_READY__ = true
+      Object.assign(curWin, { __RENDER_READY__: { mounted: true, staticPresentation: { status: 'ready' } } })
     }, 20)
     const prepared3 = await p3
     expect(prepared3.element.dataset.runtimeRoutePath).toBe('/page-3')

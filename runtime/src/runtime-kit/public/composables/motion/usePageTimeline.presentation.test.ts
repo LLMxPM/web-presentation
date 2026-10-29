@@ -6,6 +6,7 @@ import { createApp, defineComponent, h, ref } from 'vue'
 import type { ExecutionContextKind } from '@/core/execution/execution-policy'
 import { initializeRuntimeExecution, provideRuntimeExecutionScope, resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
 import { settleMotionReadiness } from '@/core/motion/readiness'
+import { settleStaticPresentation } from '@/core/static-presentation/registry'
 import { usePageTimeline, type UsePageTimelineApi } from './usePageTimeline.v1'
 
 const unmounts: Array<() => void> = []
@@ -73,12 +74,14 @@ it('预览海报准备期间快速离页，不采样已释放的时间轴或上�
   expect(log).not.toHaveBeenCalled()
 })
 
-it.each(['capture', 'thumbnail'] as const)('%s 静态就绪仍显示海报且不启动播放', async kind => {
+it.each(['capture', 'export', 'thumbnail'] as const)('%s 不构造时间轴，缺少独立静态声明时返回不可用', async kind => {
   const { api, host } = mountTimeline(kind)
   await api.ready
   expect(await settleMotionReadiness(host, true)).toEqual([])
-  expect(api.state.value).toMatchObject({ positionMs: api.plan.value!.posterTimeMs, intent: 'stopped' })
-  expect(host.querySelector<HTMLElement>('.title')!.style.opacity).toBe('1')
+  expect(api.plan.value).toBeNull()
+  expect(api.state.value).toBeNull()
+  expect(host.querySelector<HTMLElement>('.title')!.style.opacity).toBe('')
+  expect(await settleStaticPresentation(host)).toMatchObject({ status: 'unsupported', code: 'STATIC_PRESENTATION_UNAVAILABLE' })
 })
 
 it('降动效放映在零点保持可读状态，不闪回完整入场动效', async () => {

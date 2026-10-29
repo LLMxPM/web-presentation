@@ -13,6 +13,8 @@ import { createDefaultMotionAdapterFactory } from '@/core/motion/default-adapter
 import { createNativeVisual, type NativeVisualBuilder } from '@/core/motion/native-visual'
 import { createMotionResourceBuilder, type MotionResourceBuilder } from '@/core/motion/resource-builder'
 import { registerMotionReadiness } from '@/core/motion/readiness'
+import { registerManagedPresentation } from '@/core/static-presentation/registry'
+import { isStaticExecution } from '@/core/static-presentation/types'
 import { MOTION_ERROR_TARGET_INVALID, MotionError, toMotionError } from '@/core/motion/errors'
 import {
   createPageMotionHandle,
@@ -72,7 +74,7 @@ interface PageTimelineCommonOptions<B extends PageTimelineBindingMap> {
   visualMode?: MotionVisualMode
   /** 会话静音初值；放映宿主仍可覆盖。 */
   muted?: boolean
-  /** 预览中是否自动应用 poster；放映始终保留动画初态，静态捕获由就绪协议采样。 */
+  /** 交互预览中是否应用旧 poster；放映保留初态，静态捕获使用独立静态声明。 */
   applyPoster?: boolean
 }
 
@@ -122,13 +124,12 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
   })
   // 页面不消费 ready 时也不能产生未处理拒绝。
   void ready.catch(() => {})
+  const unregisterManaged = registerManagedPresentation(() => toValue(options.root))
   const unregisterReadiness = registerMotionReadiness({
     root: () => toValue(options.root),
     ready,
     async prepareStatic() {
-      const current = ensureHandle()
-      await current.prepare()
-      await current.sampleAt(current.plan.posterTimeMs, 'full')
+      // 默认静态呈现由独立声明完成，不能构造或采样时间轴。
     },
   })
 
@@ -214,6 +215,7 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
   /** 安装 transport；放映在切页过渡前准备初态，预览按需固化 poster。 */
   async function mountTimeline(): Promise<void> {
     if (disposed) return
+    if (isStaticExecution(execution.value.kind)) return
     const root = toValue(options.root)
     if (!(root instanceof HTMLElement)) {
       throw new MotionError(MOTION_ERROR_TARGET_INVALID, '页面时间轴缺少有效根节点。', {
@@ -297,6 +299,7 @@ export function usePageTimeline<B extends PageTimelineBindingMap>(
     if (disposed) return
     disposed = true
     unregisterReadiness()
+    unregisterManaged()
     handle?.dispose()
     handle = null
     clearBindings()

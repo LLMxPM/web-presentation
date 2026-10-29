@@ -1587,7 +1587,7 @@ export type ModelCatalogSyncItem = {
 }
 
 export type MutationScreenshotResult = {
-  "status": "ready" | "pending" | "skipped"
+  "status": "ready" | "pending" | "skipped" | "unavailable"
   "version_no": number
   "screenshot_id"?: string
   "width"?: number

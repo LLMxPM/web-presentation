@@ -21,6 +21,7 @@ from render_contracts.errors import (
     RenderExecutionError,
 )
 from render_contracts.tokens import sha256_hex
+from render_contracts.screenshot import CAPTURE_POLICY_VERSION
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -195,7 +196,7 @@ class RenderDomainFacade:
                 artifact_id=artifact_id,
                 preview_token=preview_token,
                 source_override=source_override,
-                operation_options=({"capture_screenshot": True, "capture_policy_version": "page-static-capture.v1"} if capture_screenshot else {}),
+                operation_options=({"capture_screenshot": True, "capture_policy_version": CAPTURE_POLICY_VERSION} if capture_screenshot else {}),
                 timeout_seconds=timeout_seconds,
                 extra_http_headers=extra_http_headers,
             )

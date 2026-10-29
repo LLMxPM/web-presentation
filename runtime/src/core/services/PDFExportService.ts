@@ -103,7 +103,7 @@ export class PDFExportService {
       const routePath = currentRoute?.path
       const routeLocation = currentRoute?.fullPath || routePath
       const signal = this.taskRunner.getSignal(task.id) ?? undefined
-      const stage = currentRoute?.meta?.runtimeProject ? createOffscreenPageStage() : undefined
+      const stage = routeLocation ? createOffscreenPageStage() : undefined
       offscreenStage = stage
       const canvas = stage && routeLocation
         ? await stage.capture(routeLocation, this.buildCaptureOptions(routePath, signal))
@@ -190,7 +190,7 @@ export class PDFExportService {
 
       // 逐页捕获和添加到PDF
       for (let i = 0; i < pages.length; i++) {
-        // 取消检查必须放在逐页 try 之外：内层 catch 会吞掉单页错误并继续，取消需要真正中断整个导出。
+        // 取消立即中断；任何单页失败都不能生成缺页的成功文件。
         if (!this.taskRunner.isRunning()) {
           throw new Error('用户取消导出')
         }
@@ -237,8 +237,7 @@ export class PDFExportService {
           if (this.taskRunner.isTaskCancelled(task.id)) {
             throw error
           }
-          console.error(`页面 ${page.title} 导出失败:`, error)
-          // 继续处理下一页，不中断整个导出过程
+          throw new Error(`第 ${i + 1} 页「${page.title}」导出失败：${error instanceof Error ? error.message : '页面捕获失败'}`)
         }
       }
 

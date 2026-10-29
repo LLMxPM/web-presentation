@@ -50,7 +50,6 @@ import { appConfig as runtimeAppConfig, appPageConfig } from '@/core/utils/confi
 import { findRuntimePageSource } from '@/core/utils/export-dom'
 import { collectAllExportPages } from '@/core/utils/export-pages'
 import { PptxResourceSession, type PptxCanvasSnapshot } from '@/core/services/pptx/session/PptxResourceSession'
-import { waitForFiniteDocumentAnimations } from '@/core/utils/visual-assets'
 
 const DEFAULT_CAPTURE_TIMEOUT = 15000
 const DEFAULT_RASTER_SCALE = 2
@@ -91,7 +90,7 @@ export class PPTXExportService {
 
   /**
    * 导出当前页面为可编辑 PPTX。
-   * 遵循方案 A：在平台项目路由（meta.runtimeProject）下使用离屏 1:1 舞台采集，非项目或单测环境回退当前 DOM。
+   * 有路由的页面统一在离屏静态舞台采集；未绑定路由时仅采集普通静态 DOM。
    * @param options 导出选项
    */
   async exportCurrentPage(options?: PptxExportOptions): Promise<PptxExportResult> {
@@ -114,7 +113,7 @@ export class PPTXExportService {
       const startedAt = Date.now()
       let pageElement: HTMLElement | null = null
 
-      if (currentRoute?.meta?.runtimeProject && routeLocation) {
+      if (routeLocation) {
         const stage = createOffscreenPageStage()
         offscreenStage = stage
         const prepared = await stage.preparePage(routeLocation, { signal: this.taskRunner.getSignal(task.id) ?? undefined })
@@ -277,7 +276,10 @@ export class PPTXExportService {
         const page = pages[index]
         this.taskRunner.reportProgress(index, pages.length, page.title, page.route, task.id)
 
-        const prepared = await stage.preparePage(page.route, { signal: this.taskRunner.getSignal(task.id) ?? undefined })
+        const prepared = await stage.preparePage(page.route, {
+          signal: this.taskRunner.getSignal(task.id) ?? undefined,
+          pageLabel: `第 ${index + 1} 页「${page.title}」`,
+        })
         try {
           if (this.taskRunner.isTaskCancelled(task.id)) {
             throw new Error('用户取消导出')
@@ -581,7 +583,6 @@ export class PPTXExportService {
       }
     }
 
-    await waitForFiniteDocumentAnimations(DEFAULT_CAPTURE_TIMEOUT)
     await this.waitForAnimationFrame()
     await this.waitForAnimationFrame()
   }

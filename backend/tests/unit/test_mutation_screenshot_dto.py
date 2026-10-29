@@ -11,5 +11,7 @@ def test_mutation_result_preserves_legacy_fields():
     assert adapter.validate_python({"page_id": 21, "validation": "检查通过"}) == {"page_id": 21, "validation": "检查通过"}
     ready = {"status": "ready", "version_no": 2, "screenshot_id": "a" * 64, "width": 1920, "height": 1080}
     assert adapter.validate_python({"screenshot": ready})["screenshot"] == ready
+    unavailable = {"status": "unavailable", "version_no": 2, "reason_code": "STATIC_PRESENTATION_UNAVAILABLE"}
+    assert adapter.validate_python({"screenshot": unavailable})["screenshot"] == unavailable
     with pytest.raises(ValidationError):
         adapter.validate_python({"screenshot": {"status": "available", "version_no": 2}})

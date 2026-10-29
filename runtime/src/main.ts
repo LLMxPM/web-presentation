@@ -17,6 +17,7 @@ import { getPreviewEntryNavigationPath, getRuntimePreviewContext, shouldNavigate
 import { initializeRuntimeExecution } from './core/execution/execution-scope'
 import { installMediaPlaybackGuard } from './core/execution/media-playback-guard'
 import { mediaPlaybackMode } from './core/execution/execution-policy'
+import { isStaticExecution } from './core/static-presentation/types'
 import { notifyParentPagePreviewError } from './core/utils/page-preview-parent'
 import { registerEditorVisualAssetProbe } from './core/utils/visual-assets'
 import {
@@ -24,6 +25,7 @@ import {
   markRenderPreviewMounted,
   RENDER_READY_PROTOCOL_V2,
   markRenderReadyFailure,
+  resetRenderPreviewReadiness,
 } from './core/utils/render-ready'
 import { installRuntimeClientLogger, reportRuntimeClientError } from './core/utils/client-logger'
 
@@ -107,6 +109,24 @@ async function initializeApp(): Promise<void> {
     }
 
     await router.isReady()
+    if (isStaticExecution(executionPolicy.kind)) {
+      let navigationGeneration = 0
+      router.beforeEach(() => {
+        navigationGeneration += 1
+        resetRenderPreviewReadiness()
+      })
+      router.afterEach(async (to, _from, failure) => {
+        if (failure) return
+        const generation = navigationGeneration
+        try {
+          await waitForPreviewStabilized()
+          if (generation !== navigationGeneration) return
+          await markRenderPreviewMounted({ executionContext: executionPolicy.kind, routePath: to.path })
+        } catch (error) {
+          if (generation === navigationGeneration) markRenderReadyFailure(String(error))
+        }
+      })
+    }
     app.mount('#app')
     const disposeVisualEditSelectionBridge = registerPageVisualEditSelectionBridge()
     if (disposeVisualEditSelectionBridge) {

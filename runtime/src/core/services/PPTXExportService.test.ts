@@ -125,7 +125,7 @@ describe('PPTXExportService', () => {
     }))
   })
 
-  it('页面就绪检查应等待有限次入场动画结束', async () => {
+  it('普通静态 DOM 就绪不等待有限入场动画结束', async () => {
     const service = new PPTXExportService() as unknown as PptxExportServicePrivate
     let animationFinished = false
     const animation = {
@@ -133,10 +133,7 @@ describe('PPTXExportService', () => {
       effect: {
         getTiming: () => ({ iterations: 1 }),
       },
-      finished: new Promise<void>(resolve => window.setTimeout(() => {
-        animationFinished = true
-        resolve()
-      }, 20)),
+      get finished() { animationFinished = true; return new Promise<void>(() => {}) },
     } as unknown as Animation
     Object.defineProperty(document, 'getAnimations', {
       value: () => [animation],
@@ -145,10 +142,10 @@ describe('PPTXExportService', () => {
 
     await service.waitForPageReady()
 
-    expect(animationFinished).toBe(true)
+    expect(animationFinished).toBe(false)
   })
 
-  it('单页导出在平台项目路由（meta.runtimeProject）下应通过离屏 1:1 舞台采集（方案 A）', async () => {
+  it.each([true, false])('单页路由统一通过独立静态舞台采集（runtimeProject=%s）', async runtimeProject => {
     const offscreenElement = document.createElement('div')
     mockPreparePage.mockResolvedValue({
       element: offscreenElement,
@@ -163,7 +160,7 @@ describe('PPTXExportService', () => {
           fullPath: '/slide-1?theme=dark',
           path: '/slide-1',
           meta: {
-            runtimeProject: true,
+            runtimeProject,
             title: '第一页',
           },
         },

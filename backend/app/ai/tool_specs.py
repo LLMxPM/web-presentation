@@ -820,7 +820,7 @@ _COORDINATOR_OPERATION_GUIDES = (
                           "页面颜色、字体和品牌视觉优先使用 Runtime 主题语义类与 Runtime Kit；只使用 Runtime 契约中列出的语义键，不要引入未列出的 Token，不要硬编码品牌色、字体文件或 Logo 路径。",
                           "Tailwind 类必须是源码中的完整静态字符串；动态视觉选择使用顶层枚举映射，禁止拼接 text-${tone}、from-${color} 等类名。",
                       ),
-                     side_effects=("通过持久化页面任务队列执行并创建页面初始版本；校验附带截图与页面原子发布，结果 screenshot 只表达 ready/pending/skipped。",),
+                     side_effects=("通过持久化页面任务队列执行并创建页面初始版本；校验附带截图与页面原子发布，结果 screenshot 表达 ready/pending/skipped/unavailable，静态不可呈现不覆盖成功诊断。",),
                      error_recovery=(
                          "校验返回 status=unavailable 表示 Renderer 执行不可用，属于基础设施故障而非源码错误：默认拒写，应重试或等待 Renderer 恢复，不要据此重写页面源码。",
                          "只有在用户明确要求 Renderer 不可用时仍要写入的情况下才传 skip_visual_verification=true；此时不做视觉校验，结果会带 skipped_visual_verification 审计标记。",

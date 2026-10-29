@@ -1,6 +1,8 @@
 /**
  * 文件用途：提供编辑器截图前的视觉资源就绪探针，等待页面组件、图片、背景图和字体完成渲染。
  */
+import { getRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
+import { isStaticExecution } from '@/core/static-presentation/types'
 
 export interface EditorVisualAssetWaitOptions {
   /** 最长等待时间，单位毫秒。 */
@@ -152,7 +154,7 @@ export async function waitForEditorVisualAssets(
   pending.push(...fontResult.pending)
   timedOut = timedOut || fontResult.timedOut
 
-  if (options.includeAnimations !== false) {
+  if (options.includeAnimations !== false && !isStaticExecution(getRuntimeExecutionPolicy().kind)) {
     await waitForFiniteAnimationsSettled(deadlineAt)
   }
 

@@ -12,6 +12,16 @@ import { ExportStatus } from '@/core/types/export-common'
 import { PPTXExportService } from '../PPTXExportService'
 import { createSlideMock } from './PPTXDomConverter.test-support'
 
+const stageCleanup = vi.hoisted(() => vi.fn())
+const stageDispose = vi.hoisted(() => vi.fn())
+vi.mock('@/core/services/export/OffscreenPageStage', () => ({
+  // 生命周期测试聚焦取消围栏；静态准备在舞台契约测试中覆盖。
+  createOffscreenPageStage: () => ({
+    preparePage: async () => ({ element: document.querySelector('.runtime-page-print-source'), cleanup: stageCleanup }),
+    dispose: stageDispose,
+  }),
+}))
+
 describe('S0 生命周期与取消隔离', () => {
   let service: PPTXExportService
   let saveBlobSpy: ReturnType<typeof vi.fn>
@@ -79,6 +89,8 @@ describe('S0 生命周期与取消隔离', () => {
     expect(runningTask).not.toBeNull()
     expect(runningTask?.status).toBe(ExportStatus.CANCELLED)
     expect(service.isTaskCancelled(runningTask?.id)).toBe(true)
+    expect(stageCleanup).toHaveBeenCalledOnce()
+    expect(stageDispose).toHaveBeenCalledOnce()
   })
 
   it('取消后保持互斥直到旧任务释放，释放后才允许重试', async () => {

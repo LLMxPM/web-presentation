@@ -139,6 +139,10 @@
       ]
     },
     "screenshot": {
+      "allOf": [{
+        "if": { "type": "object", "properties": { "status": { "const": "unavailable" } } },
+        "then": { "properties": { "reason_code": { "const": "STATIC_PRESENTATION_UNAVAILABLE" }, "retryable": { "const": false } } }
+      }],
       "type": [
         "object",
         "null"
@@ -154,7 +158,8 @@
           "enum": [
             "available",
             "failed",
-            "skipped"
+            "skipped",
+            "unavailable"
           ]
         },
         "reason_code": {
@@ -173,7 +178,8 @@
           "status": {
             "enum": [
               "failed",
-              "skipped"
+              "skipped",
+              "unavailable"
             ]
           }
         }

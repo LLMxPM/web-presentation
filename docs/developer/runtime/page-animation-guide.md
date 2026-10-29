@@ -73,9 +73,9 @@
 
 ## 截图、诊断与导出
 
-[Renderer](../../../renderer/wp_renderer/engine/executor.py) 在截图和诊断的独立 Chromium 上下文中主动设置 `reduced_motion="reduce"`，截图还使用 `animations="disabled"`。这些设置属于捕获链路，不能推断 Editor 实时预览也被强制禁用动画。
+[Renderer](../../../renderer/wp_renderer/engine/executor.py) 在截图和诊断的独立 Chromium 上下文中设置 `reduced_motion="reduce"`；截图使用 `animations="allow"`，不再借 Playwright 快进有限动画。该偏好不能替代页面自己的静态分支，也不能推断 Editor 实时预览被强制禁用动画。
 
-静态导出对有限原生动画有等待和收尾处理，无限循环不会一直等待；任意 JavaScript/Canvas 动画不保证自动冻结。PPTX 呈现静态结果，不保留网页动画时间轴。正文、标题、关键数据在禁用动画、减少动态效果、截图和打印中都应可读。
+截图、缩略图、PDF/PPTX 与浏览器打印统一使用[独立静态呈现声明](./static-presentation.md)，不等待或快进动画，不采样时间轴海报。页面自有 CSS/Canvas 动画与 mounted 副作用应显式分支；PPTX 只保留静态结果。不可呈现时缩略图显示原因，导出整体失败并指出页面，诊断附图不可用不会覆盖已完成的布局诊断。
 
 截图成功只能作为静态结果证据；验收播放、触发、循环、暂停或重播需要实时验证。未实测时应在交付回复说明，必要的实现解释放源码注释或助手回复，不主动添加到成品画布。
 

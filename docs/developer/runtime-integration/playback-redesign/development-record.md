@@ -50,3 +50,15 @@
 支持矩阵初始状态：桌面 Chromium、单窗口/同浏览器双窗口、Runtime 全屏和独立构建为目标支持，全部待 C3；多屏授权、Firefox/WebKit、移动端与操作系统真实睡眠未验证，不作支持承诺。
 
 开发入口复用 Runtime execution/render-ready/OffscreenPageStage/motion/manifest 单测，Renderer readiness/joint_capture/static_media 单测，RenderContracts DTO/JSON Schema 对拍，Backend publisher/code_check/指纹/队列测试，以及 Editor 类型、单测与生成门禁。旧浏览器夹具由 C2 适配、C3 正式运行，A 段不补跑旧链路。
+
+## B0 独立静态呈现（2026-10-29）
+
+实现基于 `2587f06`；源码与本记录同批提交。新增版本化 `useStaticPresentation.v1`、同根声明要求、静态准备期限与取消、逐画布就绪聚合。capture/export/thumbnail 不执行时间轴 define、编译或采样；页面自有 CSS/Canvas 与 mounted 副作用使用显式静态分支。
+
+默认 PNG、同 attempt 附图、缩略图与离屏导出共用独立静态态。移除导出动画 finish 与等待终点，Renderer 不再借 Playwright 快进；有路由的当前页导出统一走离屏舞台。导航撤销旧回执、忽略迟到准备，批量 PDF 任一页失败即整体失败；PPTX/打印静态准备错误携带页码。旧显式选择器暂留至 B1，旧交互预览与放映内部采样暂留至 B2/B5。
+
+冻结静态回执 `ready/unsupported/failed`；不可呈现使用不可重试的 `STATIC_PRESENTATION_UNAVAILABLE`。Renderer 附图与写入结果增加 `unavailable`，保留已完成布局，不伪装为 pending/skipped。捕获策略升级 `page-static-capture.v2`，共享常量驱动缓存身份、调度与 Worker 能力；发布权限、候选版本及默认指针围栏保留。
+
+开发验证：`pnpm run test:runtime` 169 文件、1373 项通过、3 项既有跳过；首轮旧 S0 取消测试仍走真实舞台而超时，调整为受控静态准备后完整重跑通过，保留转换/打包期间取消和零下载断言。`test:renderer` 55 项、`test:render-contracts` 35 项、Backend DTO/清单/附图发布 24 项、`test:repository` 8 文件 63 项通过；Runtime check/build、Editor check、Editor API 生成与 `test:contracts:generated` 通过。Renderer 测试替身延后到槽位释放后再撤销，修复单测误入真实执行器的竞态。
+
+未运行：真实浏览器/Renderer PNG、缩略图像素、实际 PDF/PPTX/打印产物、媒体禁播、生产镜像、独立构建产物、多窗口、WebGL 与长稳；全部移交 C3。本批未启动应用服务、未重置开发数据。

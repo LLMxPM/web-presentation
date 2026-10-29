@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from render_contracts.errors import ERROR_CODE_CANCELLED, RenderExecutionError
+from render_contracts.errors import ERROR_CODE_CANCELLED, ERROR_CODE_STATIC_PRESENTATION_UNAVAILABLE, RenderExecutionError
 from render_contracts.screenshot import ScreenshotPhaseResult
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,9 @@ async def append_screenshot(executor: Any, result: Any, *, ready: dict, artifact
         if isinstance(exc, TimeoutError):
             code = "SCREENSHOT_DEADLINE_EXCEEDED"
         logger.warning("诊断已完成，附带截图失败。", extra={"event": "render.screenshot.failed", "reason_code": code})
-        return replace(result, artifacts=[], screenshot=ScreenshotPhaseResult("failed", code, True))
+        unavailable = code == ERROR_CODE_STATIC_PRESENTATION_UNAVAILABLE
+        retryable = exc.error.retryable if isinstance(exc, RenderExecutionError) else True
+        return replace(result, artifacts=[], screenshot=ScreenshotPhaseResult("unavailable" if unavailable else "failed", code, retryable))
     finally:
         logger.info("附带截图阶段结束。", extra={"event": "render.screenshot.finished", "attempt_id": executor.execution.request.attempt_id,
                     "duration_ms": round((time.perf_counter() - started) * 1000, 2)})

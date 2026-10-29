@@ -4,6 +4,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
+from render_contracts.screenshot import CAPTURE_POLICY_VERSION
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
@@ -52,7 +53,7 @@ async def test_publish_only_matching_candidate(authenticated_client, drift):
         base = await CodeCheckFingerprintBuilder(session).build_page_fingerprint(workspace_id=ws, project_id=project,
             source=page.page_content, importer_module_path=f"src/views/{page.code}.vue",
             page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes})
-        identity = compute_check_fingerprint({"diagnostics": base, "capture_screenshot": True, "capture_policy": "page-static-capture.v1"})
+        identity = compute_check_fingerprint({"diagnostics": base, "capture_screenshot": True, "capture_policy": CAPTURE_POLICY_VERSION})
         snapshot = await PageScreenshotFingerprintService(session).build_page_snapshot(page)
         expires = utc_now() + timedelta(minutes=-1 if drift == "expired" else 10)
         artifact = PageScreenshotArtifact(artifact_id="candidate", workspace_id=ws, sha256="a" * 64,

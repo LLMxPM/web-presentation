@@ -310,7 +310,7 @@ describe('BrowserPrintService', () => {
     expect(mockStage.dispose).toHaveBeenCalled()
   })
 
-  it('项目路由打印当前页时使用离屏舞台并保留 fullPath', async () => {
+  it.each([true, false])('路由打印当前页统一使用离屏静态舞台（runtimeProject=%s）', async runtimeProject => {
     stubIframePrint()
     mockStage.preparePage.mockResolvedValue(createPreparedPage('/current', '离屏当前页'))
     const router = {
@@ -318,7 +318,7 @@ describe('BrowserPrintService', () => {
         value: {
           fullPath: '/current?period=2026',
           path: '/current',
-          meta: { runtimeProject: true },
+          meta: { runtimeProject },
         },
       },
       push: vi.fn(async () => undefined),

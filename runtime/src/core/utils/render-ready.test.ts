@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   initializeRenderReadyHost,
   markRenderPreviewMounted,
+  resetRenderPreviewReadiness,
   RENDER_READY_PROTOCOL,
   RENDER_READY_PROTOCOL_V2,
 } from './render-ready'
@@ -16,6 +17,19 @@ afterEach(() => {
 })
 
 describe('render-ready 静态捕获信息', () => {
+  it('逐页导航使旧等待失效，迟到结果不能覆盖下一页回执', async () => {
+    vi.useFakeTimers()
+    initializeRenderReadyHost({ executionContext: 'capture' })
+    document.body.innerHTML = '<main class="standalone-preview-view"><div data-runtime-view-preview-state="loading"></div></main>'
+    const previous = markRenderPreviewMounted({ routePath: '/old', visualTimeoutMs: 50 })
+    resetRenderPreviewReadiness()
+    document.body.innerHTML = '<section class="runtime-page-print-source">新页面</section>'
+    await markRenderPreviewMounted({ routePath: '/new' })
+    await vi.advanceTimersByTimeAsync(50)
+    await previous
+    expect(window.__RENDER_READY__).toMatchObject({ routePath: '/new', staticPresentation: { status: 'ready' }, contentExceptions: [] })
+    expect(window.__EDITOR_RUNTIME_PREVIEW_READY__).toBe(true)
+  })
   it.each(['error', 'empty'])('主预览模块 %s 时不能把空画布标记为成功', async state => {
     document.body.innerHTML = `<main class="standalone-preview-view"><div data-runtime-view-preview-state="${state}" data-runtime-view-preview-message="模块不存在"></div></main>`
     await markRenderPreviewMounted()

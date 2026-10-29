@@ -32,6 +32,7 @@ interface MockPdfOptions {
 
 interface MockPdfInstance {
   options: MockPdfOptions
+  save: ReturnType<typeof vi.fn>
   internal: {
     pageSize: {
       getWidth: () => number
@@ -171,6 +172,15 @@ afterEach(() => {
 })
 
 describe('PDFExportService', () => {
+  it('任一页静态不可呈现时整体失败，不下载缺页 PDF', async () => {
+    const service = new PDFExportService()
+    service.setRouter(createRouterStub('/origin') as unknown as Router)
+    mockCaptureCurrentPage.mockResolvedValueOnce(createCanvas()).mockRejectedValueOnce(new Error('STATIC_PRESENTATION_UNAVAILABLE：需要静态海报'))
+    await expect(service.exportAllPages({ mode: 'all' })).rejects.toThrow('第 2 页「第二页」')
+    expect(mockPdfRuntime.instances[0]?.save).not.toHaveBeenCalled()
+    expect(mockDisposeCapture).toHaveBeenCalled()
+    expect(service.isCurrentlyExporting()).toBe(false)
+  })
   it('导出所有页面时应按页码顺序传入 routePath 且不改变交互窗口路由', async () => {
     const router = createRouterStub('/origin')
     const service = new PDFExportService()

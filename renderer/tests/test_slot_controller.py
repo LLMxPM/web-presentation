@@ -187,8 +187,11 @@ async def test_admission_ticket_requires_next_slot_generation() -> None:
         assert receipt.slot_generation == 1
         assert slot.slot_generation == 1
     finally:
-        executor_module.RenderExecutor = original
-        await slot.shutdown(grace_seconds=1.0)
+        try:
+            await slot.shutdown(grace_seconds=1.0)
+        finally:
+            # 后台任务可能尚未构造执行器；释放完成前必须保留替身，避免误启动真实浏览器。
+            executor_module.RenderExecutor = original
 
     # 槽位释放后，仍用旧 generation=1 签发的票据必须被严格相等拒绝。
     stale = SlotController(worker_id="renderer-local", worker_epoch="epoch-1")
@@ -386,8 +389,10 @@ async def test_receipt_snapshots_slot_generation_at_accept() -> None:
         slot.slot_generation = 99
         assert slot.build_receipt(direct).slot_generation == 7
     finally:
-        executor_module.RenderExecutor = original
-        await slot.shutdown(grace_seconds=1.0)
+        try:
+            await slot.shutdown(grace_seconds=1.0)
+        finally:
+            executor_module.RenderExecutor = original
 
 
 def test_mark_consumed_race_keeps_released_state() -> None:

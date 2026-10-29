@@ -79,6 +79,9 @@ async def publish_validation_screenshot(session: AsyncSession, *, page: Page, va
     """调用方先持有 Job/页面围栏；同事务核验最终源码、依赖与渲染上下文后发布指针。"""
     if prepared is None:
         phase = validation.get("_screenshot_phase") or {}
+        if phase.get("status") == "unavailable":
+            return {"status": "unavailable", "version_no": page.current_version_no,
+                    "reason_code": "STATIC_PRESENTATION_UNAVAILABLE"}
         if (validation.get("stages") or {}).get("render") in {"unavailable", "skipped"}:
             return screenshot_status(version_no=page.current_version_no, reason="VISUAL_VERIFICATION_SKIPPED", skipped=True)
         return screenshot_status(version_no=page.current_version_no, reason=phase.get("reason_code") or "SCREENSHOT_NOT_AVAILABLE",

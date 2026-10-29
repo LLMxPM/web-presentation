@@ -56,6 +56,7 @@ def test_runtime_kit_capability_directory_should_include_doc_only_items() -> Non
     by_name = {item["name"]: item for item in capabilities}
 
     assert by_name["usePageSize.v1"]["kind"] == "composable"
+    assert by_name["useStaticPresentation.v1"]["import_path"] == "@runtime-kit/public/composables/static/useStaticPresentation.v1"
     assert by_name["usePageSize.v1"]["previewable"] is False
     assert len(by_name["usePageSize.v1"]["usage"]) >= 1
     assert len(by_name["usePageSize.v1"]["return_example"]) >= 1

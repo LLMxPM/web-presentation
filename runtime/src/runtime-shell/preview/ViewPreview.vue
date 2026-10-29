@@ -23,6 +23,7 @@
       <div
         v-bind="inert ? { inert: true } : {}"
         class="runtime-view-preview-source"
+        :class="{ 'runtime-view-preview-source--unavailable': Boolean(staticIssue) }"
         :style="previewContentStyles"
       >
         <div v-if="previewState === 'loading'" class="runtime-view-preview-placeholder">
@@ -35,6 +36,9 @@
           {{ previewStateMessage || '页面预览加载失败' }}
         </div>
         <component :is="previewComponent" v-else-if="previewComponent" :key="refreshKey" />
+        <div v-if="staticIssue" class="runtime-view-preview-placeholder runtime-view-preview-static-placeholder" role="status">
+          {{ staticIssue }}
+        </div>
       </div>
     </ScaledCanvasViewport>
   </div>
@@ -50,6 +54,8 @@ import { appPageConfig } from '@/core/utils/config'
 import { buildPageContentScaleStyles } from '@/core/utils/page-scale'
 import { createRafResizeObserver } from '@/core/utils/resize-observer'
 import { importViewModule } from '@/core/utils/view-module'
+import { settleStaticPresentation } from '@/core/static-presentation/registry'
+import { isStaticExecution } from '@/core/static-presentation/types'
 
 interface Props {
   filePath: string
@@ -85,6 +91,8 @@ const scale = ref(1)
 const refreshKey = ref(0)
 const previewState = ref<'loading' | 'ready' | 'error' | 'empty'>('loading')
 const previewStateMessage = ref('')
+const staticIssue = ref('')
+let previewGeneration = 0
 let resizeObserver: ResizeObserver | null = null
 
 /**
@@ -147,6 +155,8 @@ function computeScale(): void {
  * 加载预览页面模块。
  */
 async function loadPreviewComponent(): Promise<void> {
+  const generation = ++previewGeneration
+  staticIssue.value = ''
   setPreviewState('loading')
   emitPreviewState()
   previewComponent.value = null
@@ -159,6 +169,7 @@ async function loadPreviewComponent(): Promise<void> {
 
   try {
     const module = await importViewModule(props.filePath)
+    if (generation !== previewGeneration) return
     if (!module?.default) {
       setPreviewState('error', '页面模块缺少默认导出')
       return
@@ -166,11 +177,21 @@ async function loadPreviewComponent(): Promise<void> {
     previewComponent.value = module.default
     setPreviewState('ready')
   } catch (error) {
+    if (generation !== previewGeneration) return
     console.error('缩略预览加载失败：', error)
     setPreviewState('error', error instanceof Error ? error.message : `页面加载失败：${props.filePath}`)
   } finally {
+    if (generation !== previewGeneration) return
     refreshKey.value += 1
     await nextTick()
+    if (generation !== previewGeneration) return
+    if (previewState.value === 'ready' && containerRef.value && isStaticExecution(execution.value.kind)) {
+      const receipt = await settleStaticPresentation(containerRef.value)
+      if (generation !== previewGeneration) return
+      if (execution.value.kind === 'thumbnail' && receipt.status !== 'ready') {
+        staticIssue.value = receipt.message || '页面无法静态呈现'
+      }
+    }
     computeScale()
     emitPreviewState()
   }
@@ -204,6 +225,7 @@ watch([effectiveDesignWidth, effectiveDesignHeight], () => {
 })
 
 onUnmounted(() => {
+  previewGeneration += 1
   resizeObserver?.disconnect()
   resizeObserver = null
 })
@@ -211,6 +233,7 @@ onUnmounted(() => {
 
 <style scoped>
 .runtime-view-preview-source {
+  position: relative;
   width: 100%;
   height: 100%;
   overflow: auto;
@@ -233,5 +256,14 @@ onUnmounted(() => {
 .runtime-view-preview-placeholder--error {
   color: #b91c1c;
   background: #fef2f2;
+}
+
+.runtime-view-preview-source--unavailable > :not(.runtime-view-preview-static-placeholder) {
+  visibility: hidden;
+}
+
+.runtime-view-preview-static-placeholder {
+  position: absolute;
+  inset: 0;
 }
 </style>

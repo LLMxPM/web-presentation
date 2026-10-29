@@ -22,9 +22,9 @@ afterEach(() => {
 })
 
 /** 在真实 Vue 生命周期创建独立画布；测试本身不替换时间轴编译或适配器。 */
-function mount(make: (root: ReturnType<typeof ref<HTMLElement | null>>) => UsePageTimelineApi, count = 1, thumbnail = false) {
-  initializeRuntimeExecution('?runtimeExecution=capture')
-  initializeRenderReadyHost({ executionContext: 'capture' })
+function mount(make: (root: ReturnType<typeof ref<HTMLElement | null>>) => UsePageTimelineApi, count = 1, thumbnail = false, context = 'interactive-preview') {
+  initializeRuntimeExecution(`?runtimeExecution=${context}`)
+  initializeRenderReadyHost({ executionContext: context })
   vi.spyOn(console, 'error').mockImplementation(() => {})
   const host = document.createElement('div')
   if (!thumbnail) host.className = 'runtime-view-preview-source'
@@ -41,7 +41,7 @@ function mount(make: (root: ReturnType<typeof ref<HTMLElement | null>>) => UsePa
   return { api, host }
 }
 
-it('海报越界被渲染协议记录，不能静态降级后标记校验就绪', async () => {
+it('交互预览海报越界被渲染协议记录，不能静默降级', async () => {
   const { api } = mount(root => usePageTimeline({ root, bindings: {}, timelineId: 'invalid-poster', poster: { atMs: 3000 },
     define: ctx => ({ plan: ctx.resources().build(), visual(tl) {
       tl.fromTo('.title', { opacity: 0 }, { opacity: 1, duration: 2.57 }, 0)
@@ -56,13 +56,13 @@ it('海报越界被渲染协议记录，不能静态降级后标记校验就绪'
   expect(window.__EDITOR_RUNTIME_PREVIEW_READY__).toBe(false)
 })
 
-it('未自动应用海报的静态上下文也必须等待适配器准备失败', async () => {
+it('放映上下文必须等待适配器准备失败', async () => {
   const { api } = mount(root => usePageTimeline({ root, bindings: { title: '.missing' }, applyPoster: false,
     definition: { schemaVersion: 1, timelineId: 'missing-target', tracks: [
       {type:'dom',id:'title',target:'title',preset:'fade',durationMs:1000},
     ] },
-  }))
-  await api.ready
+  }), 1, false, 'presentation')
+  await expect(api.ready).rejects.toMatchObject({ code: 'TIMELINE_TARGET_INVALID' })
   await markRenderPreviewMounted()
   expect(window.__RENDER_READY__?.contentExceptions).toEqual([expect.objectContaining({
     code: 'TIMELINE_TARGET_INVALID', trackId: 'title',
@@ -70,7 +70,7 @@ it('未自动应用海报的静态上下文也必须等待适配器准备失败'
   expect(window.__EDITOR_RUNTIME_PREVIEW_READY__).toBe(false)
 })
 
-it.each([1, 3, 5])('末尾标签随 %i 个错峰目标变化，静态校验固化可读海报', async count => {
+it.each([1, 3, 5])('交互预览末尾标签随 %i 个错峰目标变化', async count => {
   const { api, host } = mount(root => usePageTimeline({ root, bindings: {}, timelineId: 'labels', poster: { atLabel:'readable' },
     define: ctx => ({ plan: ctx.resources().build(), visual(tl) {
       tl.fromTo('.title', {opacity:0,y:24}, {opacity:1,y:0,duration:0.4}, 0)
@@ -86,7 +86,7 @@ it.each([1, 3, 5])('末尾标签随 %i 个错峰目标变化，静态校验固�
   expect([...host.querySelectorAll<HTMLElement>('.title,.step')].every(element => element.style.opacity === '1')).toBe(true)
 })
 
-it('主画布延迟加载后才初始化的错误旁白不能被占位画面的就绪结果漏过', async () => {
+it('主画布延迟加载后缺失静态声明不能被占位画面的就绪结果漏过', async () => {
   initializeRuntimeExecution('?runtimeExecution=capture')
   initializeRenderReadyHost({ executionContext: 'capture' })
   vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -114,10 +114,8 @@ it('主画布延迟加载后才初始化的错误旁白不能被占位画面的�
   expect(window.__RENDER_READY__?.mounted).toBe(false)
   resolveModule({ default: BadPage })
   await completion
-  expect(window.__RENDER_READY__?.contentExceptions).toEqual([expect.objectContaining({
-    // 未知字段按实际写错的键定位，而不是只报必填字段缺失。
-    code: 'TIMELINE_SCHEMA_INVALID', fieldPath: 'timeline.tracks[0].assetName',
-  })])
+  expect(window.__RENDER_READY__?.contentExceptions).toEqual([])
+  expect(window.__RENDER_READY__?.staticPresentation).toMatchObject({ status: 'unsupported', code: 'STATIC_PRESENTATION_UNAVAILABLE' })
   expect(window.__EDITOR_RUNTIME_PREVIEW_READY__).toBe(false)
 })
 

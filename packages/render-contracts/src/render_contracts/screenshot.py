@@ -3,9 +3,9 @@
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from render_contracts.errors import RenderContractError
+from render_contracts.errors import ERROR_CODE_STATIC_PRESENTATION_UNAVAILABLE, RenderContractError
 
-CAPTURE_POLICY_VERSION = "page-static-capture.v1"
+CAPTURE_POLICY_VERSION = "page-static-capture.v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,10 +18,12 @@ class ScreenshotPhaseResult:
 
     def __post_init__(self) -> None:
         """拒绝未知状态与非布尔重试值，避免把字符串 false 当成真。"""
-        if self.status not in {"available", "failed", "skipped"} or type(self.retryable) is not bool:
+        if self.status not in {"available", "failed", "skipped", "unavailable"} or type(self.retryable) is not bool:
             raise RenderContractError("截图阶段 status/retryable 非法。")
         if self.status != "available" and not self.reason_code:
             raise RenderContractError("未生成图片时必须提供 reason_code。")
+        if self.status == "unavailable" and (self.reason_code != ERROR_CODE_STATIC_PRESENTATION_UNAVAILABLE or self.retryable):
+            raise RenderContractError("静态不可呈现必须使用稳定原因码且不可重试。")
 
     def to_dict(self) -> dict[str, Any]:
         """输出可跨进程往返的有界截图阶段结果。"""

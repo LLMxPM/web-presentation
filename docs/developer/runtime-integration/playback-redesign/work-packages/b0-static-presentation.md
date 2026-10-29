@@ -1,6 +1,6 @@
 # B0 静态呈现契约与默认截图替代
 
-状态：待实施。主责：Runtime / Renderer / render-contracts / Backend。前置：[A2](./a2-support-matrix.md)。出口：GB 的前置门槛。
+状态：完成（工程与开发测试，实机待 C3）。主责：Runtime / Renderer / render-contracts / Backend。前置：[A2](./a2-support-matrix.md)。出口：GB 的前置门槛。实现与验证见[开发记录](../development-record.md#b0-独立静态呈现2026-10-29)；稳定契约见[独立静态呈现](../../../runtime/static-presentation.md)。
 
 本包先让默认截图脱离时间轴采样，再允许 B1 删除指定时刻取帧。现有默认海报由 `poster.atMs/atLabel → sampleAt` 实现；直接删除采样器会破坏已经运行的 PNG、缩略图与 PDF/PPTX。B0 保留现有放映 Transport，不改变正向播放行为。
 

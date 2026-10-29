@@ -252,7 +252,7 @@ class RenderExecutor:
             self._check_cancel(stage="ready")
             await self._wait_visual_assets(request)
             await self._prepare_static_capture(request, ready)
-            if request.contract_version == PROTOCOL_VERSION_V2:
+            if request.contract_version == PROTOCOL_VERSION_V2 and request.motion_snapshot is not None:
                 await self._apply_motion_snapshot(request)
             self._check_cancel(stage="capture")
             if request.operation == OPERATION_PAGE_CAPTURE:
@@ -404,6 +404,8 @@ class RenderExecutor:
             )
         if request.operation != OPERATION_PAGE_CAPTURE and not capture:
             return
+        from wp_renderer.engine.static_presentation import require_static_presentation
+        require_static_presentation(bridge)
         remaining_ms = self._deadline.remaining_ms() if self._deadline else STATIC_MEDIA_TIMEOUT_MS
         timeout_ms = min(STATIC_MEDIA_TIMEOUT_MS, max(MIN_STATIC_MEDIA_TIMEOUT_MS, remaining_ms - 500))
         result = await self._await_bounded(
@@ -553,7 +555,7 @@ class RenderExecutor:
                   if (typeof waitForVisualAssets !== 'function') {
                     return { ok: true, skipped: true, total: 0, failed: [], pending: [] };
                   }
-                  return await waitForVisualAssets({ timeoutMs });
+                  return await waitForVisualAssets({ timeoutMs, includeAnimations: false });
                 }
                 """,
                 timeout_ms,
@@ -582,7 +584,7 @@ class RenderExecutor:
         """捕获静态 PNG；字体/资源未就绪不能输出成功图片。"""
 
         await self._page.wait_for_timeout(150)
-        png_bytes = await self._page.screenshot(type="png", animations="disabled", full_page=False)
+        png_bytes = await self._page.screenshot(type="png", animations="allow", full_page=False)
         if len(png_bytes) > self.settings.max_png_bytes:
             raise RenderExecutionError(
                 RenderError.from_code(ERROR_CODE_OUTPUT_LIMIT_EXCEEDED, message="PNG 超过 32MiB 上限。")

@@ -4,12 +4,14 @@ import type { CaptureOptions } from '@/core/types/export-common'
 import { appPageConfig } from '@/core/utils/config'
 import { runWithExportDeadline, throwIfExportAborted } from './ExportCancellation'
 import { ModelStaticFrameCache, cleanupModelStaticFrames, prepareModelStaticFrames, type ModelStaticFramesHandle } from './model-static-frames'
+import { STATIC_PRESENTATION_UNAVAILABLE } from '@/core/static-presentation/types'
 
 export interface RuntimeCaptureRoute { path: string; hash: string }
 export interface OffscreenPreparedPage { element: HTMLElement; cleanup: () => void }
 export interface OffscreenPrepareOptions {
   signal?: AbortSignal
   timeoutMs?: number
+  pageLabel?: string
   /** 指定时刻/标签采样；缺省使用页面 poster。 */
   motionSnapshot?: import('@/core/motion/capture-bridge').CaptureMotionSnapshot
 }
@@ -27,35 +29,6 @@ export function resolveRuntimeCaptureRoute(route: string, baseHref = window.loca
   searchParams.set('runtimeCapture', '1')
   return { path: routeUrl.pathname || '/', hash: `${routeUrl.pathname || '/'}?${searchParams.toString()}` }
 }
-
-/**
- * 冻结文档中的所有有限动画到最终状态，避免截图或几何测量采到动画起始帧或重新开始。
- * @param doc 目标文档
- */
-export async function freezeDocumentAnimationsToFinalState(doc?: Document | null): Promise<void> {
-  if (!doc || typeof doc.getAnimations !== 'function') {
-    return
-  }
-  try {
-    const animations = doc.getAnimations()
-    for (const anim of animations) {
-      const timing = anim.effect?.getTiming()
-      const iterations = timing?.iterations ?? 1
-      if (Number.isFinite(iterations) && iterations > 0) {
-        if (typeof anim.finish === 'function') {
-          try {
-            anim.finish()
-          } catch {
-            // 忽略只读或已完成动画异常
-          }
-        }
-      }
-    }
-  } catch {
-    // 忽略不受支持环境异常
-  }
-}
-
 
 /**
  * 暂停离屏页面内的原生媒体，避免隐藏舞台在导出期间继续播放或产生声音。
@@ -137,18 +110,23 @@ export function createOffscreenPageStage(): OffscreenPageStage {
         const doc = frame.contentDocument
         const target = doc?.querySelector<HTMLElement>('.runtime-page-print-source')
         if (win?.__RENDER_READY__?.initFailed) throw new Error(win.__RENDER_READY__.message || '导出页面初始化失败')
+        const matchesTicket = target?.dataset.runtimeRoutePath === captureRoute.path && target?.dataset.runtimeCaptureTicket === ticket
+        const receipt = matchesTicket && win?.__RENDER_READY__?.mounted ? win.__RENDER_READY__.staticPresentation : null
+        const pageLabel = options?.pageLabel || captureRoute.path
+        if (receipt?.status === 'unsupported') throw new Error(`${pageLabel}：${STATIC_PRESENTATION_UNAVAILABLE}：${receipt.message}`)
+        if (receipt?.status === 'failed') throw new Error(`${pageLabel}：${receipt.code}：${receipt.message}`)
         if (win?.__EDITOR_RUNTIME_PREVIEW_READY__ && target?.dataset.runtimeRoutePath === captureRoute.path &&
           target.dataset.runtimeCaptureTicket === ticket && !doc?.querySelector('[role="alert"]')) {
+          if (receipt?.status !== 'ready') throw new Error(`${pageLabel}：导出页面缺少独立静态呈现回执`)
           await doc?.fonts?.ready
           const probe = win.__EDITOR_RUNTIME_WAIT_FOR_VISUAL_ASSETS__
           if (probe) {
-            const result = await probe({ timeoutMs: options?.timeoutMs ?? 15000 })
+            const result = await probe({ timeoutMs: options?.timeoutMs ?? 15000, includeAnimations: false })
             if (!result.ok) throw new Error('导出页面视觉资源未就绪')
           }
           throwIfExportAborted(signal)
-          await freezeDocumentAnimationsToFinalState(doc)
           pauseOffscreenMedia(target)
-          await applyOffscreenMotionSnapshot(win, options?.motionSnapshot)
+          if (options?.motionSnapshot) await applyOffscreenMotionSnapshot(win, options.motionSnapshot)
           // 页面就绪后逐实例准备静态帧：克隆与转换阶段看到的是 PNG 覆盖图，而不是空白 WebGL 画布。
           const staticFrames = prepareModelStaticFrames(target, { cache: staticFrameCache })
           cleanupModelStaticFrames(activeStaticFrameHandle)

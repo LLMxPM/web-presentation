@@ -67,12 +67,16 @@
       "required": ["status", "reason_code", "retryable"],
       "additionalProperties": false,
       "properties": {
-        "status": { "enum": ["available", "failed", "skipped"] },
+        "status": { "enum": ["available", "failed", "skipped", "unavailable"] },
         "reason_code": { "type": ["string", "null"] },
         "retryable": { "type": "boolean" }
       },
-      "if": { "type": "object", "properties": { "status": { "enum": ["failed", "skipped"] } } },
-      "then": { "properties": { "reason_code": { "type": "string", "minLength": 1 } } }
+      "if": { "type": "object", "properties": { "status": { "enum": ["failed", "skipped", "unavailable"] } } },
+      "then": { "properties": { "reason_code": { "type": "string", "minLength": 1 } } },
+      "allOf": [{
+        "if": { "type": "object", "properties": { "status": { "const": "unavailable" } } },
+        "then": { "properties": { "reason_code": { "const": "STATIC_PRESENTATION_UNAVAILABLE" }, "retryable": { "const": false } } }
+      }]
     },
     "scenarios": { "type": "array" },
     "finished_at": { "type": "string" },

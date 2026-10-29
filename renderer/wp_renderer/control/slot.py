@@ -27,6 +27,7 @@ from render_contracts.errors import (
     RenderExecutionError,
 )
 from render_contracts.schema import ExecutionReceipt, ExecutionRequest, ExecutionResult
+from render_contracts.screenshot import CAPTURE_POLICY_VERSION
 
 from wp_renderer.config import get_renderer_settings
 
@@ -97,7 +98,7 @@ class SlotController:
                 "platform": "linux-container",
                 "playwright_mode": "async",
                 "chromium": "launched-per-attempt",
-                "page_diagnose_capture": "page-static-capture.v1",
+                "page_diagnose_capture": CAPTURE_POLICY_VERSION,
                 "browser_launches_total": self.browser_launches_total,
                 "navigations_total": self.navigations_total,
             },

@@ -3,6 +3,8 @@
  */
 import { settleMotionReadiness } from '@/core/motion/readiness'
 import { waitForMainPreviewContent } from './render-content-ready'
+import { settleStaticPresentation } from '@/core/static-presentation/registry'
+import { isStaticExecution, type StaticPresentationReceipt } from '@/core/static-presentation/types'
 
 export interface RenderContentException {
   code: string
@@ -13,6 +15,7 @@ export interface RenderContentException {
 
 export const RENDER_READY_PROTOCOL = 'render-ready.v1'
 export const RENDER_READY_PROTOCOL_V2 = 'render-ready.v2'
+let readinessGeneration = 0
 
 export interface RenderReadyMotionState {
   status: 'applied' | 'skipped' | 'degraded'
@@ -28,6 +31,7 @@ export interface RenderReadyBridge {
   protocol: string
   protocolVersions: string[]
   motion: RenderReadyMotionState | null
+  staticPresentation: StaticPresentationReceipt | null
   artifactId: string | null
   inputDigest: string | null
   runtimeBuildId: string | null
@@ -84,10 +88,12 @@ export function initializeRenderReadyHost(meta?: {
   if (typeof window === 'undefined') {
     return
   }
+  readinessGeneration += 1
   window.__RENDER_READY__ = {
     protocol: meta?.protocol === RENDER_READY_PROTOCOL_V2 ? RENDER_READY_PROTOCOL_V2 : RENDER_READY_PROTOCOL,
     protocolVersions: [RENDER_READY_PROTOCOL, RENDER_READY_PROTOCOL_V2],
     motion: null,
+    staticPresentation: null,
     artifactId: meta?.artifactId ?? null,
     inputDigest: meta?.inputDigest ?? null,
     runtimeBuildId: meta?.runtimeBuildId ?? null,
@@ -104,6 +110,13 @@ export function initializeRenderReadyHost(meta?: {
     lastScenarioAck: null,
     contentExceptions: [],
   }
+}
+
+/** 导航前撤销旧页面回执，失效仍在等待的异步准备；保留当前预览身份。 */
+export function resetRenderPreviewReadiness(): void {
+  readinessGeneration += 1
+  updateRenderReadyHost({ mounted: false, staticPresentation: null, contentExceptions: [], message: null })
+  if (typeof window !== 'undefined') window.__EDITOR_RUNTIME_PREVIEW_READY__ = false
 }
 
 /**
@@ -149,13 +162,23 @@ export async function markRenderPreviewMounted(options?: {
       protocol: options?.protocol ?? null,
     })
   }
+  const generation = ++readinessGeneration
+  updateRenderReadyHost({ mounted: false, staticPresentation: null })
+  window.__EDITOR_RUNTIME_PREVIEW_READY__ = false
   const contentErrors = await waitForMainPreviewContent(options?.visualTimeoutMs ?? 25000)
+  if (generation !== readinessGeneration) return
   const fontsReady = typeof document !== 'undefined' && document.fonts?.ready
     ? await document.fonts.ready.then(() => true).catch(() => false)
     : true
   const context = options?.executionContext ?? window.__RENDER_READY__?.executionContext
   const scope = document.querySelector('.runtime-page-print-source, .runtime-view-preview-source') ?? document
-  const motionErrors = [...contentErrors, ...await settleMotionReadiness(scope, ['capture', 'export', 'thumbnail'].includes(context ?? ''))]
+  const staticMode = isStaticExecution(context)
+  const staticPresentation = staticMode ? await settleStaticPresentation(scope, options?.visualTimeoutMs ?? 25000) : null
+  const motionErrors = [...contentErrors, ...await settleMotionReadiness(scope, false)]
+  if (generation !== readinessGeneration) return
+  if (staticPresentation?.status === 'failed') {
+    motionErrors.push({ code: staticPresentation.code!, message: staticPresentation.message! })
+  }
   if (motionErrors.length) {
     updateRenderReadyHost({
       contentExceptions: [...(window.__RENDER_READY__?.contentExceptions ?? []), ...motionErrors].slice(-20),
@@ -171,6 +194,7 @@ export async function markRenderPreviewMounted(options?: {
   if (typeof waitForVisualAssets === 'function') {
     const result = await waitForVisualAssets({
       timeoutMs: options?.visualTimeoutMs ?? 25000,
+      includeAnimations: !staticMode,
     })
     const failed = Array.isArray(result?.failed) ? result.failed.length : 0
     const timedOut = Boolean(result?.timedOut)
@@ -182,6 +206,7 @@ export async function markRenderPreviewMounted(options?: {
       timedOut: timedOut || !ok,
     }
   }
+  if (generation !== readinessGeneration) return
   updateRenderReadyHost({
     mounted: true,
     initFailed: false,
@@ -192,10 +217,12 @@ export async function markRenderPreviewMounted(options?: {
     routePath: options?.routePath ?? window.__RENDER_READY__?.routePath ?? null,
     fonts: { ready: Boolean(fontsReady), loaded: document.fonts?.size ?? 0, failed: 0 },
     visualAssets,
+    staticPresentation,
     message: visualAssets.ready ? null : '视觉资源未在限定时间内就绪',
   })
   // 兼容既有 Editor 截图探针。
   window.__EDITOR_RUNTIME_PREVIEW_READY__ = visualAssets.ready && !window.__RENDER_READY__?.contentExceptions.length
+    && staticPresentation?.status !== 'unsupported'
 }
 
 /**

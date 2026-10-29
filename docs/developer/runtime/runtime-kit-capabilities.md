@@ -4,6 +4,8 @@
 
 ## 1. 设计原则
 
+动画页面的截图、缩略图与导出声明使用 [`useStaticPresentation.v1`](./static-presentation.md)，与播放入口和时间轴进度独立。
+
 - Runtime Kit 只公开运行时能力：资源 URL 解析、特殊格式资源渲染、页面尺寸与路由上下文、图标资源处理、少量 DOM 运行期能力。
 - Backend/Agent 负责生成页面结构、内容块、卡片、网格、页头页脚、目录样式、分页样式和其他视觉布局。
 - 页面源码、工作空间组件源码和 preview schema 只能引用 manifest 中公开的版本化 `@runtime-kit/public/...` 路径，公开能力文件名必须带 `.vN`。

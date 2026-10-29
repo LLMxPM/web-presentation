@@ -7,9 +7,9 @@ from typing_extensions import NotRequired, TypedDict
 
 
 class MutationScreenshotResult(TypedDict):
-    """ready 表示可读取的正式图片；pending 不暗示已入队，skipped 表示未请求截图。"""
+    """ready 为正式图片，pending 不暗示已入队，unavailable 表示内容无法静态呈现。"""
 
-    status: Literal["ready", "pending", "skipped"]
+    status: Literal["ready", "pending", "skipped", "unavailable"]
     version_no: int
     screenshot_id: NotRequired[str]
     width: NotRequired[int]

@@ -5,7 +5,8 @@
  * 文件用途：验证单页预览组件向截图探针暴露 loading、ready 与 error 状态。
  */
 
-import { createApp, nextTick } from 'vue'
+import { createApp, defineComponent, h, nextTick, ref } from 'vue'
+import { useStaticPresentation } from '@/runtime-kit/public/composables/static/useStaticPresentation.v1'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import ViewPreview from './ViewPreview.vue'
@@ -44,6 +45,26 @@ afterEach(() => {
 })
 
 describe('ViewPreview screenshot state marker', () => {
+  it('不可静态呈现的缩略图显示原因占位，保留声明直到卸载', async () => {
+    vi.stubGlobal('ResizeObserver', MockResizeObserver)
+    mockImportViewModule.mockResolvedValue({ default: defineComponent({ setup() {
+      const root = ref<HTMLElement | null>(null)
+      useStaticPresentation({ root, mode: 'unsupported', reason: '粒子场景需要独立静态海报' })
+      return () => h('section', { ref: root }, '动态内容')
+    } }) })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(ViewPreview, { filePath: 'src/views/particles.vue' })
+    app.mount(host)
+    await waitForState(host, 'ready')
+    for (let index = 0; index < 10 && !host.querySelector('[role="status"]'); index += 1) {
+      await Promise.resolve()
+      await nextTick()
+    }
+    expect(host.querySelector('[role="status"]')?.textContent).toContain('粒子场景需要独立静态海报')
+    expect(host.querySelector('.runtime-view-preview-source--unavailable')).not.toBeNull()
+    app.unmount()
+  })
   it('页面模块尚未返回时应展示加载态且不误报未找到页面', async () => {
     vi.stubGlobal('ResizeObserver', MockResizeObserver)
     const deferred = createDeferred<{ default: { name: string; setup: () => () => null } }>()

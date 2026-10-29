@@ -7,7 +7,6 @@ import type { Router } from 'vue-router'
 import { ExportTaskRunner } from '@/core/services/export/ExportTaskRunner'
 import {
   createOffscreenPageStage,
-  freezeDocumentAnimationsToFinalState,
   type OffscreenPageStage,
 } from '@/core/services/export/OffscreenPageStage'
 import {
@@ -76,17 +75,17 @@ export class BrowserPrintService {
       const currentRoute = this.router?.currentRoute.value
       let pageElement: HTMLElement | null = null
 
-      if (currentRoute?.meta?.runtimeProject && currentRoute.fullPath) {
+      const routeLocation = currentRoute?.fullPath || currentRoute?.path
+      if (routeLocation) {
         // 放映中打印当前页也走离屏静态舞台，避免主画布在采集期间被计时器翻页。
         const stage = createOffscreenPageStage()
         offscreenStage = stage
-        const prepared = await stage.preparePage(currentRoute.fullPath, { signal })
+        const prepared = await stage.preparePage(routeLocation, { signal })
         pageElement = prepared.element
         cleanupPreparedPage = prepared.cleanup
       } else {
         await this.waitForPageReady()
         pageElement = this.getCurrentPageElement()
-        if (pageElement) await freezeDocumentAnimationsToFinalState(pageElement.ownerDocument)
       }
 
       if (!pageElement) {
@@ -176,7 +175,7 @@ export class BrowserPrintService {
         const page = pages[index]
         this.taskRunner.reportProgress(index, pages.length, page.title, page.route, task.id)
 
-        const prepared = await stage.preparePage(page.route, { signal })
+        const prepared = await stage.preparePage(page.route, { signal, pageLabel: `第 ${index + 1} 页「${page.title}」` })
         try {
           if (this.taskRunner.isTaskCancelled(task.id)) {
             throw new Error('用户取消打印')
