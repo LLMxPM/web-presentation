@@ -92,3 +92,11 @@ usePageScene({ root, define(scene) {
 ## 合并前收口
 
 完整责任和实机清单见[工作包清单](../runtime-integration/playback-redesign/work-packages/README.md)。合并 main 前必须完成正式宿主切换、旧时间轴/Transport/采样与旧 manifest 清除、各调用端及生成物收敛，并通过 C3 的全量与集中实机验收。开发阶段保持版本化公开路径、最小充分测试、静态截图和导出开发回归；不再用“尚未删除旧入口”阻止新能力调试。
+
+## Presenter v5
+
+控制台发送 start/next/stop/hold/release、失败 retry、指定页 navigate 和退出 close；观众窗口是唯一 Deck/Scene/媒体调度者。状态一次发布 page、phase、held、fullscreen、issue、revision 和 ownerId，不传播放位置、倒计时、时间轴阶段或远程时钟。较新 owner 代际接管时旧观众停止，旧 owner 或同一 owner 的旧 revision 均不能覆盖当前状态。
+
+BroadcastChannel 和即时 storage 事件可以重复投递，由同一接收器去重。storage 不保存或恢复播放快照；控制台重开通过 request-state 获取当前事实，不重放开始/翻页。旧 v4 消息严格拒绝。控制台根作用域为 interactive-preview，ViewPreview 小窗仍收紧为 thumbnail，不自动播放媒体。观众窗口的播放/重试、静音以及全局许可提示在本窗口触发 play；全屏成功不能保证浏览器授予后续发声许可。
+
+平铺仍为每页真实 Vue 树，成本随页数增长。本批未建立页数性能上限；C3 必须测量实际页数、卡顿与后台节流，不把消息单测计为实机证据。

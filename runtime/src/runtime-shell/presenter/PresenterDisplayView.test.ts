@@ -221,7 +221,7 @@ describe('PresenterDisplayView', () => {
 
     expect(playbackFixture.options).toBeUndefined()
     expect(presenterFixture.postPlaybackState).toHaveBeenCalled()
-    expect(presenterFixture.updatePlayback).toHaveBeenCalledWith(expect.objectContaining({ state: 'stopped' }))
+    expect(presenterFixture.updatePlayback).toHaveBeenCalledWith(expect.objectContaining({ phase: 'stopped' }))
 
     presenterFixture.commandHandler?.('start')
     await flushVueUpdates()
@@ -240,7 +240,8 @@ describe('PresenterDisplayView', () => {
     presenterFixture.commandHandler?.('resume')
     presenterFixture.commandHandler?.('next')
     presenterFixture.commandHandler?.('stop')
-    presenterFixture.commandHandler?.('set-auto-advance', { autoAdvance: false })
+    presenterFixture.commandHandler?.('hold')
+    presenterFixture.commandHandler?.('release')
 
     expect(playbackFixture.pause).not.toHaveBeenCalled()
     expect(playbackFixture.resume).not.toHaveBeenCalled()

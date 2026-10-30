@@ -1,192 +1,35 @@
-<!--
-  文件用途：演讲者控制台的唯一传输栏，回显观众放映状态并发送翻页、自动/手动与失败恢复命令。
--->
+<!-- 文件功能：展示观众原子状态，只提供开始、停止、保持、释放和失败重试，不计算第二份播放进度。 -->
 <template>
-  <section class="presenter-playback-panel" aria-label="观众放映状态">
+  <section class="presenter-playback-panel">
     <div class="presenter-playback-panel__transport">
-      <button
-        type="button" class="presenter-playback-panel__icon-button"
-        title="上一页" aria-label="上一页"
-        :disabled="!displayAvailable || !canGoPrevious" @click="emit('previous')">
-        <ChevronLeft :size="14" />
-      </button>
-      <button
-        type="button" class="presenter-playback-panel__button presenter-playback-panel__button--mode"
-        data-testid="presenter-playback-auto"
-        :title="autoAdvanceEnabled ? '切换为手动：停止自动翻页，媒体继续播放' : '切换为自动：按当前页配置重新计时'"
-        :disabled="!displayAvailable" @click="emit('auto', !autoAdvanceEnabled)">
-        <span>{{ autoAdvanceEnabled ? '自动' : '手动' }}</span>
-      </button>
-      <button
-        type="button" class="presenter-playback-panel__icon-button"
-        title="下一页" aria-label="下一页"
-        :disabled="!displayAvailable || !canGoNext" @click="emit('next')">
-        <ChevronRight :size="14" />
-      </button>
-
-      <span class="presenter-playback-panel__page" data-testid="presenter-playback-page">{{ pageLabel }}</span>
-      <strong class="presenter-playback-panel__state" data-testid="presenter-playback-state">
-        {{ stateLabel }}
-      </strong>
-      <span class="presenter-playback-panel__remaining" data-testid="presenter-playback-remaining">
-        {{ remainingLabel }}
-      </span>
+      <button type="button" class="presenter-playback-panel__icon-button" aria-label="上一页" :disabled="!displayAvailable || !canGoPrevious" @click="emit('previous')"><ChevronLeft :size="14" /></button>
+      <button type="button" class="presenter-playback-panel__button" data-testid="presenter-playback-hold" :disabled="!displayAvailable || !active" @click="emit('command', playback?.held ? 'release' : 'hold')">{{ playback?.held ? '释放当前页' : '保持当前页' }}</button>
+      <button type="button" class="presenter-playback-panel__icon-button" aria-label="下一页" :disabled="!displayAvailable || !canGoNext" @click="emit('next')"><ChevronRight :size="14" /></button>
+      <span class="presenter-playback-panel__page">{{ pageLabel }}</span>
+      <strong data-testid="presenter-playback-state">{{ stateLabel }}</strong>
     </div>
-
-    <div class="presenter-playback-panel__actions">
-      <button
-        v-if="primaryAction"
-        type="button"
-        class="presenter-playback-panel__button presenter-playback-panel__button--primary"
-        data-testid="presenter-playback-primary"
-        @click="emit('command', primaryAction.command)"
-      >
-        {{ primaryAction.label }}
-      </button>
-      <button
-        v-if="showStop"
-        type="button"
-        class="presenter-playback-panel__button presenter-playback-panel__button--danger"
-        data-testid="presenter-playback-stop"
-        @click="emit('command', 'stop')"
-      >
-        停止
-      </button>
+    <p v-if="playback?.issue" class="text-xs" role="status">{{ playback.issue.message }}</p>
+    <p v-if="playback?.phase === 'blocked'" class="text-xs">请在观众窗口点击允许播放；控制台无法代替该窗口授予媒体许可。</p>
+    <div v-if="displayAvailable" class="presenter-playback-panel__actions">
+      <button v-if="!playback || ['stopped', 'ended'].includes(playback.phase)" type="button" data-testid="presenter-playback-primary" class="presenter-playback-panel__button" @click="emit('command', 'start')">开始放映</button>
+      <button v-if="playback?.phase === 'failed'" type="button" class="presenter-playback-panel__button" @click="emit('command', 'retry')">重试失败页</button>
+      <button v-if="active || playback?.phase === 'failed'" type="button" data-testid="presenter-playback-stop" class="presenter-playback-panel__button" @click="emit('command', 'stop')">停止</button>
     </div>
   </section>
 </template>
-
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { ChevronLeft, ChevronRight } from '@lucide/vue'
-
-import type {
-  PresenterSyncPlaybackCommandAction,
-  ReceivedPresenterSync,
-} from './presenter-sync-protocol'
-
-const props = defineProps<{
-  playback: ReceivedPresenterSync | null
-  displayAvailable: boolean
-  canGoPrevious: boolean
-  canGoNext: boolean
-  pageLabel: string
-}>()
-
-const emit = defineEmits<{
-  command: [action: PresenterSyncPlaybackCommandAction]
-  previous: []
-  next: []
-  auto: [enabled: boolean]
-}>()
-
-const nowMs = ref(Date.now())
-let tickerId: ReturnType<typeof setInterval> | undefined
-const snapshot = computed(() => {
-  const message = props.playback?.message
-  return message && 'playback' in message ? message.playback : null
-})
-const autoAdvanceEnabled = computed(() => snapshot.value?.autoAdvanceEnabled ?? false)
-
+import type { PresenterStateMessage, PresenterSyncPlaybackCommandAction } from './presenter-sync-protocol'
+const props = defineProps<{ playback: PresenterStateMessage | null; displayAvailable: boolean; canGoPrevious: boolean; canGoNext: boolean; pageLabel: string }>()
+const emit = defineEmits<{ command: [action: PresenterSyncPlaybackCommandAction]; previous: []; next: [] }>()
+const active = computed(() => Boolean(props.playback && ['preparing', 'playing', 'blocked'].includes(props.playback.phase)))
 const stateLabel = computed(() => {
   if (!props.displayAvailable) return '等待观众窗口全屏'
-  const current = snapshot.value
-  if (!current) return '等待观众窗口'
-  if (current.timelinePhase === 'buffering') return '时间轴缓冲'
-  if (current.waitingForTimeline) return current.state === 'paused' ? '时间轴已暂停' : '时间轴播放中'
-  if (current.waitingForMedia) return current.state === 'paused' ? '媒体已暂停' : '媒体播放中'
-  switch (current.state) {
-    case 'preparing':
-      return '准备中'
-    case 'playing':
-      return '放映中'
-    case 'paused':
-      return '已暂停'
-    case 'ended':
-      return '已结束'
-    case 'blocked':
-      return '受阻'
-    case 'error':
-      return '错误'
-    default:
-      return '未开始'
-  }
-})
-
-const remainingMs = computed(() => {
-  const current = snapshot.value
-  if (!current) return 0
-  if (current.state === 'playing' && props.playback?.deadline != null) {
-    return Math.max(0, props.playback.deadline - nowMs.value)
-  }
-  return current.remainingMs
-})
-
-const remainingLabel = computed(() => {
-  const current = snapshot.value
-  if (!props.displayAvailable || !current) return '—'
-  if (!current.autoAdvanceEnabled) return '手动'
-  if (current.delayMs != null) return formatDuration(remainingMs.value)
-  if (current.waitingForTimeline) return '等待时间轴'
-  return current.waitingForMedia ? '等待媒体' : '本页手动'
-})
-
-const primaryAction = computed<{ label: string; command: PresenterSyncPlaybackCommandAction } | null>(() => {
-  if (!props.displayAvailable) return null
-  switch (snapshot.value?.state) {
-    case 'stopped':
-    case 'ended':
-      return { label: '开始放映', command: 'start' }
-    case 'preparing':
-    case 'playing':
-      return { label: '暂停', command: 'pause' }
-    case 'paused':
-      return { label: '继续', command: 'resume' }
-    case 'blocked':
-    case 'error':
-      return { label: '重试', command: 'retry' }
-    default:
-      return null
-  }
-})
-
-const showStop = computed(() => {
-  if (!props.displayAvailable) return false
-  const state = snapshot.value?.state
-  return state === 'preparing'
-    || state === 'playing'
-    || state === 'paused'
-    || state === 'blocked'
-    || state === 'error'
-})
-
-/** 仅在观众窗口计时播放时刷新本地倒计时；本组件不推进页面。 */
-function syncTicker(): void {
-  nowMs.value = Date.now()
-  if (tickerId !== undefined) {
-    clearInterval(tickerId)
-    tickerId = undefined
-  }
-  if (snapshot.value?.state === 'playing' && snapshot.value.delayMs != null) {
-    tickerId = setInterval(() => {
-      nowMs.value = Date.now()
-    }, 250)
-  }
-}
-
-/** 把毫秒格式化为 m:ss，向上取整避免显示 0:00 时仍在计时。 */
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
-  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`
-}
-
-watch([() => snapshot.value?.state, () => snapshot.value?.delayMs], syncTicker, { immediate: true })
-
-onBeforeUnmount(() => {
-  if (tickerId !== undefined) clearInterval(tickerId)
+  if (props.playback?.held) return '保持当前页，页内播放继续'
+  return ({ stopped: '未开始', preparing: '准备中', playing: '放映中', blocked: '受阻', failed: '失败', ended: '已结束', closed: '观众窗口已关闭' } as const)[props.playback?.phase ?? 'stopped']
 })
 </script>
-
 <style scoped>
 .presenter-playback-panel {
   display: flex;

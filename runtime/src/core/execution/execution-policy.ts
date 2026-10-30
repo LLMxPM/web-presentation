@@ -18,7 +18,6 @@ export interface ExecutionPolicy {
   kind: ExecutionContextKind
   allowAutoStart: boolean
   allowAutoAdvance: boolean
-  allowPresenterSync: boolean
   allowMediaPlayback: boolean
   allowAutoplay: boolean
 }
@@ -31,11 +30,11 @@ export interface ExecutionPolicy {
  * - capture/export：截图与导出，全部禁用以保证静态结果。
  */
 export const EXECUTION_POLICIES: Record<ExecutionContextKind, ExecutionPolicy> = {
-  presentation: { kind: 'presentation', allowAutoStart: true, allowAutoAdvance: true, allowPresenterSync: true, allowMediaPlayback: true, allowAutoplay: true },
-  'interactive-preview': { kind: 'interactive-preview', allowAutoStart: false, allowAutoAdvance: false, allowPresenterSync: false, allowMediaPlayback: true, allowAutoplay: false },
-  thumbnail: { kind: 'thumbnail', allowAutoStart: false, allowAutoAdvance: false, allowPresenterSync: false, allowMediaPlayback: false, allowAutoplay: false },
-  capture: { kind: 'capture', allowAutoStart: false, allowAutoAdvance: false, allowPresenterSync: false, allowMediaPlayback: false, allowAutoplay: false },
-  export: { kind: 'export', allowAutoStart: false, allowAutoAdvance: false, allowPresenterSync: false, allowMediaPlayback: false, allowAutoplay: false },
+  presentation: { kind: 'presentation', allowAutoStart: true, allowAutoAdvance: true, allowMediaPlayback: true, allowAutoplay: true },
+  'interactive-preview': { kind: 'interactive-preview', allowAutoStart: false, allowAutoAdvance: false, allowMediaPlayback: true, allowAutoplay: false },
+  thumbnail: { kind: 'thumbnail', allowAutoStart: false, allowAutoAdvance: false, allowMediaPlayback: false, allowAutoplay: false },
+  capture: { kind: 'capture', allowAutoStart: false, allowAutoAdvance: false, allowMediaPlayback: false, allowAutoplay: false },
+  export: { kind: 'export', allowAutoStart: false, allowAutoAdvance: false, allowMediaPlayback: false, allowAutoplay: false },
 }
 
 const KIND_RANK: Record<ExecutionContextKind, number> = {
@@ -85,7 +84,6 @@ export function mergeExecutionPolicies(parent: ExecutionPolicy, child: Execution
     kind: KIND_RANK[child.kind] > KIND_RANK[parent.kind] ? child.kind : parent.kind,
     allowAutoStart: parent.allowAutoStart && child.allowAutoStart,
     allowAutoAdvance: parent.allowAutoAdvance && child.allowAutoAdvance,
-    allowPresenterSync: parent.allowPresenterSync && child.allowPresenterSync,
     allowMediaPlayback: parent.allowMediaPlayback && child.allowMediaPlayback,
     allowAutoplay: parent.allowAutoplay && child.allowAutoplay,
   }

@@ -117,13 +117,13 @@ afterEach(() => {
 })
 
 describe('PresenterConsoleView', () => {
-  it('控制台根节点应声明 thumbnail 执行作用域并阻断媒体播放', async () => {
+  it('控制台根节点应声明 interactive-preview 执行作用域且不自动播放', async () => {
     const { app, host } = mountPresenterConsoleView()
     await nextTick()
 
     const root = host.querySelector<HTMLElement>('.presenter-console')
-    expect(root?.dataset.runtimeExecution).toBe('thumbnail')
-    expect(root?.dataset.runtimeMedia).toBe('block')
+    expect(root?.dataset.runtimeExecution).toBe('interactive-preview')
+    expect(root?.dataset.runtimeMedia).toBe('gesture')
 
     app.unmount()
   })
@@ -155,29 +155,7 @@ describe('PresenterConsoleView', () => {
   })
 
   it('应从观众快照显示放映状态并发送控制台命令', async () => {
-    presenterFixture.remotePlayback = {
-      receivedAt: 1000,
-      deadline: 6000,
-      message: {
-        type: 'playback-state',
-        playback: {
-          state: 'stopped',
-          currentPath: '/intro',
-          remainingMs: 0,
-          delayMs: null,
-          waitingForMedia: false,
-          waitingForTimeline: false,
-          autoAdvanceEnabled: true,
-          timelineId: null,
-          planDigest: null,
-          positionMs: 0,
-          timelineIntent: 'stopped',
-          timelinePhase: 'idle',
-          index: 0,
-          total: 2,
-        },
-      },
-    }
+    presenterFixture.remotePlayback = { phase: 'stopped', held: false }
 
     const { app, host } = mountPresenterConsoleView()
     await nextTick()

@@ -173,7 +173,7 @@ import {
   createPresenterChannelId,
   normalizePresenterRoutePath,
 } from '@/runtime-shell/presenter/presenter-url'
-import { buildPresenterPages, writePresenterInitialNavigateMessage } from '@/runtime-shell/presenter/usePresenterController'
+import { buildPresenterPages } from '@/runtime-shell/presenter/usePresenterController'
 import { openPresenterDisplayWindow } from '@/runtime-shell/presenter/presenter-window'
 import {
   isEditableKeyboardTarget,
@@ -784,12 +784,10 @@ const openPresenterMode = (): void => {
 
   // 先释放本窗口推进和任务；观众窗口依照各页配置重新建立放映。
   session.stopPlayback?.()
-  const autoAdvance = true
   void exitSlideshow()
   const currentPath = normalizePresenterRoutePath(router.currentRoute.value.path)
   const channelId = createPresenterChannelId()
-  const displayWindow = openPresenterDisplayWindow(channelId, currentPath, autoAdvance)
-  writePresenterInitialNavigateMessage(channelId, currentPath, autoAdvance)
+  const displayWindow = openPresenterDisplayWindow(channelId, currentPath)
 
   const presenterQuery: Record<string, string> = {
     channel: channelId,

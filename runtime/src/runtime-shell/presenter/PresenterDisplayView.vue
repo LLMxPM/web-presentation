@@ -76,6 +76,10 @@
       </button>
     </section>
 
+    <div v-if="isInFullscreen" class="presenter-display-screen__local-controls">
+      <button type="button" data-testid="presenter-display-play" @click="localPlay">播放 / 重试</button>
+      <button type="button" @click="toggleMute">{{ audioMuted ? '取消静音' : '静音' }}</button>
+    </div>
     <p v-if="playbackErrorMessage" class="presenter-display-screen__playback-warning" role="alert">
       {{ playbackErrorMessage }}
     </p>
@@ -95,10 +99,8 @@ import type { TransitionStartedEvent } from '@/core/types/page-transition'
 import { useAudioCues } from '@/runtime-shell/audio/useAudioCues'
 import { usePlaybackHost } from '@/runtime-shell/playback/usePlaybackHost'
 import PresenterPageStage from './PresenterPageStage.vue'
-import {
-  usePresenterController,
-  type PresenterPlaybackCommandDetails,
-} from '@/runtime-shell/presenter/usePresenterController'
+import { usePresenterController } from '@/runtime-shell/presenter/usePresenterController'
+import { runtimeAudioBus } from '@/core/audio/runtime-audio-bus'
 import type { PresenterSyncPlaybackCommandAction } from './presenter-sync-protocol'
 
 interface PresenterDetailedScreen {
@@ -136,10 +138,10 @@ interface PresenterScreenOption {
 }
 
 const route = useRoute()
-// 观众窗口是普通放映主画布；调度权与入口由后续工作包接入。
+// 观众窗口是普通放映主画布；独占 Scene 与 Deck 调度。
 const execution = provideRuntimeExecutionScope('presentation')
 const executionAttrs = computed(() => executionAttributes(execution.value))
-// 观众 Display 是演讲模式唯一媒体 owner；控制台已收紧为静态 thumbnail。
+// 观众 Display 是演讲模式唯一媒体 owner；控制台仅展示预览。
 const { playTransitionCue } = useAudioCues(ref(true))
 
 /** 观众窗口每次真实翻页都播放方向 cue；控制台不会形成第二次发声。 */
@@ -173,23 +175,17 @@ const {
   goNext: nextPlayback, hold: holdPlayback, release: releasePlayback,
 } = usePlaybackHost()
 
-/** 现有 Presenter 通道只投影页面放映状态；时间轴位置不再来自播放宿主，协议删减由 B5 完成。 */
+/** 原子投影同一 Deck 快照，不传递时间位置或剩余时长。 */
 function syncPlaybackPresentation(): void {
   const value = playbackSnapshot.value
-  updatePlayback({
-    state: value?.state === 'failed' ? 'error' : value?.state ?? 'stopped',
-    remainingMs: value?.remainingMs ?? 0, delayMs: null,
-    waitingForMedia: false, waitingForTimeline: false,
-    autoAdvanceEnabled: Boolean(value && !value.held),
-  })
-  postPlaybackState()
+  updatePlayback({ page: value?.path || currentPage.value?.path || '/', phase: value?.state ?? 'stopped', held: value?.held ?? false, issue: value?.issue ?? null })
 }
 watch(playbackSnapshot, syncPlaybackPresentation, { immediate: true })
 
-/** 观众窗口独占 Deck；旧协议中的时间轴命令明确不可用，不转为另一种动作。 */
-function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction, details?: PresenterPlaybackCommandDetails): void {
+/** 有限控制意图只在唯一观众宿主执行；媒体许可重试必须来自本窗口手势。 */
+function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction): void {
   if (action === 'start' && !isInFullscreen.value) {
-    fullscreenMessage.value = '请先在观众窗口进入全屏，再从控制台开始放映。'
+    fullscreenMessage.value = '请先在观众窗口进入全屏，再开始放映。'
     postDisplayStatus('windowed', false)
     return
   }
@@ -198,12 +194,19 @@ function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction, detai
     case 'stop': stopPlayback(); break
     case 'retry': retryPlayback(); break
     case 'next': nextPlayback(); break
-    case 'set-auto-advance': details?.autoAdvance ? releasePlayback() : holdPlayback(); break
-    case 'pause':
-    case 'resume':
-    case 'seek': fullscreenMessage.value = 'Scene 不支持暂停或定位，请使用停止、翻页或保持当前页。'; break
+    case 'hold': holdPlayback(); break
+    case 'release': releasePlayback(); break
   }
 }
+/** 当前窗口点击直接发起许可重试，不把控制台点击当成浏览器手势。 */
+function localPlay(): void {
+  if (playbackSnapshot.value?.state === 'failed') retryPlayback()
+  else if (playbackSnapshot.value?.state === 'stopped' || playbackSnapshot.value?.state === 'ended') startPlayback()
+  void runtimeAudioBus.retryBlocked()
+}
+/** 静音是本窗口音频选择，解除静音时立即在同一手势中尝试受阻媒体。 */
+function toggleMute(): void { runtimeAudioBus.muted.value = !runtimeAudioBus.muted.value; void runtimeAudioBus.retryBlocked() }
+const audioMuted = runtimeAudioBus.muted
 
 /**
  * 请求观众窗口授权检测屏幕，并把可选屏幕展示给用户。
@@ -399,6 +402,7 @@ function handleBeforeUnload(): void {
 </script>
 
 <style scoped>
+.presenter-display-screen__local-controls { position: fixed; right: 16px; bottom: 16px; z-index: 3; display: flex; gap: 12px; color: white; }
 .presenter-display-screen {
   position: fixed;
   inset: 0;

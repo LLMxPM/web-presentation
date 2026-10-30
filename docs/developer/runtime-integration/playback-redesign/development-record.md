@@ -193,3 +193,11 @@ Backend DTO、Editor 共享放映字段与 Runtime 读取/构建边界同步改�
 开发回归中的旧 schema 断言已联动更新；UI 架构测试扫描到测试辅助原生控件后，将其移至测试目录，未扩大业务白名单。未启动服务或修改开发数据。后续继续收敛 Presenter、AI/样例与 CLI。
 
 验证：Backend 配置定向 73 项通过（首次模板旧包用例因上传字段错误失败，修正后包含在补充 API/快照/迁移/渲染身份回归 49 项通过、1 项既有跳过）；Editor 6 文件 36 项通过；Runtime 配置 56 项、边界补测 20 项通过、3 项既有跳过。Runtime/Editor check、codegen 与生成契约门禁通过。SQLite 实迁与 PostgreSQL 离线 DDL 已覆盖；真实 PostgreSQL、服务迁移和浏览器留待 C3。
+
+## B5 第二批：Presenter v5（2026-10-31）
+
+删除 v4 的位置、剩余时长、暂停/恢复/定位、会话自动切换与持久化重放。协议只剩 request-state、有限 intent 和观众原子 state；严格校验版本、产物、角色、owner 与修订。新观众接管会停止旧窗口；控制台导航先发意图，收到观众事实后才更新页码和预览。较新状态不能被旧 revision 或旧 owner 覆盖。
+
+控制器按页面映射、即时双通道与协议拆分。控制台不建立播放时钟；观众本地播放/重试、静音按钮允许当前窗口重新尝试许可。删除无消费者的 allowPresenterSync 策略标志。PresenterPageGrid 仍保留真实 Vue 树，性能页数边界交 C3 实测。
+
+验证：Presenter、执行策略、正式 Deck 与主布局 12 文件 79 项通过；Runtime check 通过。包括双通道重复投递、storage 回退、重开对齐、旧 owner 停止及 hold/release 不连跳。均为无浏览器开发回归，正式多窗口与媒体许可仍未执行。

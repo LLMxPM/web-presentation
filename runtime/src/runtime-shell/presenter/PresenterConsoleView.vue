@@ -92,7 +92,6 @@
                 @command="handlePlaybackCommand"
                 @previous="goPrevious"
                 @next="handleTransportNext"
-                @auto="handleAutoAdvanceCommand"
               />
               <PresenterTimerPanel :current-path="currentPath" />
             </div>
@@ -141,7 +140,7 @@ const route = useRoute()
 const router = useRouter()
 // 控制台不是主放映画布；其中的当前/下一页小窗由 ViewPreview 进一步收紧为 thumbnail。
 // 演讲者控制台只展示静态预览；唯一媒体 owner 是 audience Display 窗口。
-const execution = provideRuntimeExecutionScope('thumbnail')
+const execution = provideRuntimeExecutionScope('interactive-preview')
 const executionAttrs = computed(() => executionAttributes(execution.value))
 const channelId = computed(() => String(route.query.channel || ''))
 const initialPath = computed(() => String(route.query.route || route.path))
@@ -175,14 +174,7 @@ const {
   initialPath: initialPath.value,
 })
 
-const remotePlaybackState = computed(() => {
-  const message = remotePlayback.value?.message
-  return message && 'playback' in message ? message.playback.state : null
-})
-const remoteAutoAdvance = computed(() => {
-  const message = remotePlayback.value?.message
-  return message && 'playback' in message ? message.playback.autoAdvanceEnabled : false
-})
+const remoteHeld = computed(() => remotePlayback.value?.held ?? false)
 
 const displayStatusLabel = computed(() => {
   switch (displayStatus.value.state) {
@@ -246,24 +238,10 @@ function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction): void
 /**
  * 传输栏翻页：失败态让观众窗口跳过当前页，其余情况发送普通页面导航。
  */
-function handleTransportNext(): void {
-  if (remotePlaybackState.value === 'error' || remotePlaybackState.value === 'blocked') {
-    sendPlaybackCommand('next')
-    return
-  }
-  goNext()
-}
+function handleTransportNext(): void { goNext() }
 
 /**
- * 切换观众窗口的自动/手动推进。
- * @param enabled 目标状态
- */
-function handleAutoAdvanceCommand(enabled: boolean): void {
-  sendPlaybackCommand('set-auto-advance', enabled)
-}
-
-/**
- * 处理控制台快捷键：空格切换自动/手动，方向键翻页。
+ * 处理控制台快捷键：空格保持/释放当前页，方向键翻页。
  * @param event 键盘事件
  */
 function handleKeydown(event: KeyboardEvent): void {
@@ -275,7 +253,7 @@ function handleKeydown(event: KeyboardEvent): void {
   }
   if (event.key === ' ') {
     event.preventDefault()
-    handleAutoAdvanceCommand(!remoteAutoAdvance.value)
+    sendPlaybackCommand(remoteHeld.value ? 'release' : 'hold')
     return
   }
   if (event.key === 'PageDown' || event.key === 'ArrowRight') {

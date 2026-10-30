@@ -62,7 +62,6 @@ describe('执行策略判定', () => {
     for (const policy of [EXECUTION_POLICIES.capture, EXECUTION_POLICIES.export, EXECUTION_POLICIES.thumbnail]) {
       expect(shouldStartAutomatically(policy, true)).toBe(false)
       expect(shouldAdvanceAutomatically(policy)).toBe(false)
-      expect(policy.allowPresenterSync).toBe(false)
       expect(mediaPlaybackMode(policy)).toBe('block')
     }
   })
@@ -86,7 +85,6 @@ describe('执行策略判定', () => {
       kind: 'thumbnail',
       allowAutoStart: false,
       allowAutoAdvance: false,
-      allowPresenterSync: false,
       allowMediaPlayback: false,
       allowAutoplay: false,
     })
