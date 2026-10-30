@@ -126,6 +126,11 @@ async function initializeApp(): Promise<void> {
       })
     }
     app.mount('#app')
+    if (import.meta.env.DEV && !isStaticExecution(executionPolicy.kind)) {
+      const { installPageSceneDebug } = await import('./core/scene/dev-debug')
+      const disposeSceneDebug = installPageSceneDebug(router)
+      import.meta.hot?.dispose(disposeSceneDebug)
+    }
     const disposeVisualEditSelectionBridge = registerPageVisualEditSelectionBridge()
     if (disposeVisualEditSelectionBridge) {
       window.addEventListener('beforeunload', disposeVisualEditSelectionBridge, { once: true })

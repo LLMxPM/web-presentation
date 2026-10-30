@@ -1954,6 +1954,42 @@
     },
     {
       "kind": "composable",
+      "base_name": "usePageScene",
+      "version_no": 1,
+      "name": "usePageScene.v1",
+      "import_path": "@runtime-kit/public/composables/motion/usePageScene.v1",
+      "category": "runtime",
+      "description": "声明页级正向 Scene，支持多条视觉序列与实际完成任务。",
+      "capability": {
+        "enabled": true,
+        "previewable": false,
+        "recommendation_level": "advanced",
+        "display_name": "页级 Scene（开发调试）",
+        "summary": "挂载只登记，播放时执行 define；通过 visual/task 管理正向视觉和异步任务。开发分支已开放，正式放映宿主仍在接线。",
+        "tags": ["scene", "animation"],
+        "usage": [
+          "import { usePageScene } from '@runtime-kit/public/composables/motion/usePageScene.v1'",
+          "const pageRoot = ref<HTMLElement | null>(null)",
+          "usePageScene({ root: pageRoot, define(scene) { scene.visual({ id: 'intro', role: 'blocking', define(tl) { tl.fromTo('.title', { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.4 }) } }) } })",
+          "// 同一 root 使用 useStaticPresentation.v1 声明独立静态态。",
+          "// 开发预览 frame 控制台：await window.__RUNTIME_SCENE_DEBUG__.play()；.read() 读取状态，.stop() 停止。"
+        ],
+        "returns": "void；只登记声明，播放与停止由宿主负责。",
+        "return_example": ["usePageScene({ root: pageRoot, define(scene) { scene.task({ id: 'finite', role: 'blocking', run(context) { context.onCleanup(() => {}); return Promise.resolve() } }) } })"],
+        "constraints": [
+          "每个页面 root 只登记一个 Scene，多条序列通过 visual/task 放在同一声明内。",
+          "blocking 任务必须有限；repeat=-1 只允许 ambient，ambient 不阻塞有限任务完成。",
+          "视觉支持 DOM/SVG、CSS 属性、数值对象、标签、错峰与同步回调；不支持 GSAP 插件、seek/sampleAt、暂停或历史状态重建。",
+          "任务时间用毫秒，GSAP 视觉 duration 用秒；afterTrack 基于实际完成，offsetMs 只能非负。",
+          "异步工作使用 task 的 Promise；页面自有监听、计时器和 RAF 必须用 onCleanup 清理并响应 signal。",
+          "capture/export/thumbnail 不执行 define；同一 root 必须另用 useStaticPresentation.v1 声明独立静态呈现。",
+          "开发分支暂与 usePageTimeline.v1 并存；同一页只选一种编排。正式宿主切换、旧链清除与实机验收须在合并 main 前完成。开发调试控制台仅在 Vite DEV 模式安装。"
+        ],
+        "audiences": ["backend", "agent"]
+      }
+    },
+    {
+      "kind": "composable",
       "base_name": "useStaticPresentation",
       "version_no": 1,
       "name": "useStaticPresentation.v1",

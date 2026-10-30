@@ -1,4 +1,4 @@
-/** 文件功能：将页级 Scene 声明绑定到 Vue 页面寿命；公开入口切换前只供内部开发接线使用。 */
+/** 文件功能：为公开页级 Scene 入口绑定 Vue 页面寿命，保持登记与实际播放准备分离。 */
 import { onBeforeUnmount, toValue, type MaybeRefOrGetter } from 'vue'
 import { registerPageSceneDefinition, type PageSceneDefinition } from '@/core/scene/page-scene-definition'
 

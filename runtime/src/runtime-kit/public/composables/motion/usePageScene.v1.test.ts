@@ -9,7 +9,7 @@ import { createPageSceneSlot } from '@/core/scene/page-scene-slot'
 import { deferred, flushScenePromises } from '@/core/scene/session-test-helpers'
 import type { SceneTaskContext } from '@/core/scene/types'
 import { useStaticPresentation } from '@/runtime-kit/public/composables/static/useStaticPresentation.v1'
-import { usePageSceneDefinition } from './use-page-scene-definition'
+import { usePageScene } from './usePageScene.v1'
 
 const cleanups: Array<() => void> = []
 
@@ -28,7 +28,7 @@ function mount(context = 'presentation', declareStatic = false) {
   let active: SceneTaskContext
   const app = createApp(defineComponent({ setup() {
     const root = ref<HTMLElement | null>(null)
-    usePageSceneDefinition({ root, define })
+    usePageScene({ root, define })
     if (declareStatic) useStaticPresentation({ root, mode: 'default' })
     return () => h('section', { ref: root }, '独立可读内容')
   } }))

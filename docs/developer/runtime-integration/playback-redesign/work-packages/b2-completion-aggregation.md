@@ -1,6 +1,6 @@
 # B2 完成聚合取代统一时钟
 
-状态：实施中（2026-10-29，内部会话、GSAP、页级声明、可取消资源等待与页面准备屏障五批开发验证完成，公开入口和宿主待切换）。主责：Runtime core / shell。前置：[B1](./b1-drop-arbitrary-moment.md)。出口：GB。
+状态：实施中（2026-10-30，公开 usePageScene.v1、manifest 与开发调试已接入；正式宿主及旧链待切换）。主责：Runtime core / shell。前置：[B1](./b1-drop-arbitrary-moment.md)。出口：GB。
 
 本包是削减的核心：在 B0 静态态和 B1 外部取帧协议已替换后，把仍驱动正向播放的「全局时间计划 ＋ transport」削成「本页任务调度与完成聚合」。**这些语义由本包定死，不留给后续包各自假设。**
 
@@ -11,7 +11,7 @@
 - **定死标记词汇**：视觉、三维与媒体共用 `blocking`/`ambient` 一套标记，媒体的「必需/非必需」映射到该词汇，不留下「blocking 的 ambient 媒体」这类歧义。
 - **定死回调与计时语义**：回调正向经过触发点执行一次、掉帧与内部暂挂恢复下的至多一次保证；`timer` 到点即离页并取消未完成 `blocking` 任务，不等待。
 - **定死资源轨道时序**：保留 `startMs` 时以本页开始为基准；`afterTrack` 以该任务实际完成为基准，`offsetMs` 只允许非负延时。旧编译器依赖预估结束时间计算的负偏移、媒体缓冲时的预估起点一律删除；缺失前驱、循环依赖、无限前驱与结束期限必须在 prepare 阶段报错。内部暂挂期间的延时按会话时钟处理，不在恢复时补发多次回调。
-- 新增版本化 `usePageScene.v1`，就地删除 `usePageTimeline.v1` 与其 manifest 登记，不保留并存窗口；放开 `native-visual.ts:14` 的 `opacity/x/y/scale/rotation` 属性白名单；不支持 GSAP 插件，导入校验与 CodeCheck 拒绝插件用法。
+- 新增版本化 `usePageScene.v1`，开发分支先公开入口、manifest 与可执行调试方式，允许旧 `usePageTimeline.v1` 暂时并存；同一页只选一种编排。删除旧入口、manifest 与完整验收属于合并 main 前的门禁，不阻止开发调试。放开 `native-visual.ts:14` 的 `opacity/x/y/scale/rotation` 属性白名单；不支持 GSAP 插件，导入校验与 CodeCheck 拒绝插件用法。
 - 新会话接管真实正向播放后，同批移除旧 `compilePageTimeline`、`digestMotionPayload`、`deriveSampledState`/`digestMotionStateProof`、Transport 内部 `sampleAt/seek`、各适配器 `applyAt` 和状态证明；不能在仍有播放调用点时提前删除。B0 的静态态不依赖这些模块。
 - 在观众窗口建立唯一 `DeckPlaybackSession`：点击播放进入放映、过渡结束后启动当前页、退出立即停止当前页与音频；推进只支持 `manual/timer/scene_end`，删除 `timeline_end`、`media_end`、`auto_start` 会话级切换与 Scene 的 pause/resume/restart/seek；保留演讲者仅阻止自动翻页的 `hold/release`，释放后重算当前页结束停留，不连跳。保留「非全屏是预览、根元素全屏才创建放映会话」的入口语义、翻页过渡与路由；冻结与后台节流恢复后不连跳多页。generation 只服务本窗口内的快速翻页与旧会话事件丢弃，不做跨窗口 generation 协商。
 
@@ -57,7 +57,7 @@
 
 声明卸载先从发现范围移除，再通过取消信号停止绑定会话；准备中的异步 define、播放中的任务和保存过的旧声明都不能复活。迟到登记拒绝、迟到清理立即执行。声明同时登记为受管页面，capture/export/thumbnail 必须具有独立静态声明；这些场景不创建 Scene，也不执行 define。
 
-开发验证：Scene 与 Vue 绑定共 6 文件 60 项通过；Runtime check 通过。使用真实 Vue 挂载/卸载和 GSAP 构造监听，覆盖静态零构造、画布隔离、重复声明、根节点失效及准备/播放中卸载。公开 `usePageScene.v1` 与旧入口仍须在宿主接管时一起替换；本批没有暴露临时公共入口。
+开发验证：Scene 与 Vue 绑定共 6 文件 60 项通过；Runtime check 通过。使用真实 Vue 挂载/卸载和 GSAP 构造监听，覆盖静态零构造、画布隔离、重复声明、根节点失效及准备/播放中卸载。本批当时未暴露公共入口；该阶段的“公开与旧入口一起替换”约束已由 2026-10-30 第六批开发入口规则替代。
 
 ### 第四批：可取消资源等待（2026-10-29）
 
@@ -72,3 +72,9 @@
 静态入口在创建前拦截，既不导航也不等待资源或执行定义；准备中停止、快速往返、迟到路由/资源结果均由 slot 取消。导航被守卫拒绝、根节点缺失/替换和资源失败返回有界原因。实际过渡开始立即清空原稳定回执，卸载只清自己的回执；过渡层重新挂载后可以重新编号，不与 Scene generation 混用。
 
 开发验证：真实 Memory Router 与 Scene 会话、可控资源和过渡子层共 2 文件 21 项通过；Runtime check 通过。覆盖准备屏障、共享期限、过渡中退出、静态零导航、快速切页、原回执失效和过渡层重挂。完整 Runtime 回归及构建结果见开发记录；未运行实机。后续继续替换正式放映/预览调用端、公开入口与导入门禁，再删除旧时间轴编译与采样链。
+
+### 第六批：公开开发入口（2026-10-30）
+
+按用户要求，开发分支立即公开 `usePageScene.v1`，通过 manifest 向 Backend/Agent 披露并允许页面按公开路径导入；旧入口清零改为合并 main 前的门禁。Vue 生命周期测试移至公开入口，避免只验证私有实现。正式放映宿主仍由后续批次接管，不把开发调试记为 B2 全部完成。
+
+Vite DEV 模式提供 `window.__RUNTIME_SCENE_DEBUG__.play(scope?)/read()/stop()`，复用现有 Scene slot、prepare 和实际完成聚合。导航、卸载、重复播放、HMR 与全屏交接停止旧任务；静态策略与嵌套静态画布零播放。同一画布不能同时启动旧时间轴和新 Scene。生产构建不安装此控制台入口。使用方式见[开发调试指南](../../../runtime/scene-development.md)，实际验证结果见开发记录。

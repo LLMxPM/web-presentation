@@ -54,6 +54,16 @@ describe('runtime kit manifest', () => {
     expect(exportNames).toContain('AssetAudio.v2')
     expect(exportNames).toContain('AssetModel.v2')
     expect(exportNames).toContain('usePageTimeline.v1')
+    expect(exportNames).toContain('usePageScene.v1')
+  })
+
+  it('开发 Scene 公开可发现的版本化入口，调试说明明确宿主仍在接线', () => {
+    const scene = manifest.exports.find(item => item.name === 'usePageScene.v1')!
+    expect(scene.import_path).toBe('@runtime-kit/public/composables/motion/usePageScene.v1')
+    expect(scene.capability.enabled).toBe(true)
+    expect(scene.capability.previewable).toBe(false)
+    expect(scene.capability.usage.join('\n')).toContain('__RUNTIME_SCENE_DEBUG__')
+    expect(scene.capability.constraints.join('\n')).toContain('合并 main 前')
   })
 
   it('时间轴入口默认向普通能力目录披露，但组件不单独预览', () => {

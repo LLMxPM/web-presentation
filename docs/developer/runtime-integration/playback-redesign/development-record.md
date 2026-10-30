@@ -2,6 +2,8 @@
 
 本记录承接[工作包清单](./work-packages/README.md)。实机、生产镜像、独立产物和长稳证据由 C3 统一取得，工程完成不代表实机通过。
 
+现行开发入口规则于 2026-10-30 按用户要求调整：功能分支先公开入口、manifest 与可执行调试方式，允许新旧入口暂时并存；旧链清零和完整验收在合并 main 前收口。下文早期记录中的“暂不公开以避免并存”仅保留为历史，不再约束后续开发。
+
 ## A1 现状核对（2026-10-29）
 
 核对基线：`630d429`，工作区干净；未启动服务、未重置数据库。
@@ -120,3 +122,11 @@
 验证：`pnpm --filter web-runtime-vue exec vitest run src/runtime-shell/playback/page-scene-stage.test.ts src/runtime-shell/transitions/RuntimePageStage.test.ts`，2 文件 21 项通过；Runtime check 通过。测试使用真实 Router/Scene，覆盖不合作的旧资源 Promise、快速导航取消、守卫拒绝、准备前后屏障、总期限、静态零导航、空 Scene 与回执所有权。计时器清理断言隔离了导入 GSAP 自带的 ticker，未将动画库的后台句柄误当作 Scene 句柄。
 
 完整 `pnpm --filter web-runtime-vue test --maxWorkers=8`：177 文件、1463 项通过、3 项既有跳过；`pnpm --filter web-runtime-vue build` 通过；`pnpm run test:repository`：8 文件 63 项通过。本次完整集合包含第三至第五批新增用例及既有默认静态截图/导出开发回归。未运行浏览器/Renderer、真实导出产物、生产镜像、独立产物、多窗口或长稳；统一交 C3，B2 保持实施中。
+
+## B2 第六批：公开开发入口（2026-10-30）
+
+基于 `3eb0b74`，按用户要求把旧入口清零与完整验收后移到合并 main 前。新增公开 `usePageScene.v1`，登记 manifest、Backend/Agent 能力目录和公开导入白名单；保留旧入口支持开发分支逐步替换。Vue 生命周期测试迁到公开路径，不重复维护一套私有入口测试。
+
+Vite DEV 挂载后提供 `window.__RUNTIME_SCENE_DEBUG__.play(scope?)/read()/stop()`，复用已有 Scene slot、prepare、GSAP 与任务聚合；导航、卸载、HMR、重复播放和全屏交接释放旧会话。静态上下文与嵌套静态画布不启动；同页旧时间轴冲突明确拒绝。正式放映/Editor 桥仍在 B2/B5 接线，此开发入口不承担自动翻页或生产放映。
+
+验证：Scene、公开入口和 manifest 共 8 文件 93 项通过；Runtime 类型检查与 `pnpm --filter web-runtime-vue build` 通过。Backend manifest/能力目录契约共 16 项通过；根仓 manifest 与文档/技能检查共 9 文件 68 项通过。检索生产 JS，未包含 `installPageSceneDebug` 或调试专用错误码，确认开发执行入口已排除。未重复全量 Runtime 集合，本批运行受影响集合；未启动服务或重置开发库，未运行浏览器/Renderer、真实导出、独立产物或长稳；正式验收继续交 C3。调试步骤见[Scene 开发调试](../../runtime/scene-development.md)。

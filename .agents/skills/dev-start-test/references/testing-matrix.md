@@ -129,7 +129,7 @@ test:backend
 ## 3. 按改动补测映射
 
 - **AI 工具规格、披露组或前端工具说明**：补充防漂移测试，确保工具 key、运行时 Tool、披露工具组和 `agent_guide` 一致。
-- **Runtime Kit manifest 或公开 import path**：补充 Backend 契约测试和 Runtime manifest 测试。
+- **Runtime Kit manifest 或公开 import path**：补充 Backend 契约测试和 Runtime manifest 测试。Motion 功能分支可先公开已实现的 Scene 入口和调试方式，允许新旧入口暂时并存；旧链清零、全量与 C3 必需验收在合并 main 前收口，不以未完成正式验收阻止开发调试。
 - **预览、截图、构建、资源引用或 Runtime 回源**：补充相关 integration、contract 或 E2E smoke；三维模型渲染改动另补 `runtime-heavy/model3d-screenshot.spec.ts`。
 - **认证、权限、工作空间隔离**：补充多用户访问或 API 权限测试。
 - **HTTP DTO / OpenAPI**：运行 codegen 后执行 `test:contracts:generated`，并联动 Editor/Runtime/契约测试。

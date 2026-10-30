@@ -57,11 +57,12 @@ def test_runtime_kit_capability_directory_should_include_doc_only_items() -> Non
 
     assert by_name["usePageSize.v1"]["kind"] == "composable"
     assert by_name["useStaticPresentation.v1"]["import_path"] == "@runtime-kit/public/composables/static/useStaticPresentation.v1"
+    assert by_name["usePageScene.v1"]["import_path"] == "@runtime-kit/public/composables/motion/usePageScene.v1"
     assert by_name["usePageSize.v1"]["previewable"] is False
     assert len(by_name["usePageSize.v1"]["usage"]) >= 1
     assert len(by_name["usePageSize.v1"]["return_example"]) >= 1
     assert len(by_name["usePageSize.v1"]["constraints"]) >= 1
-    for name in ("usePageTimeline.v1", "AssetAudio.v2", "AssetVideo.v2", "AssetModel.v2"):
+    for name in ("usePageTimeline.v1", "usePageScene.v1", "AssetAudio.v2", "AssetVideo.v2", "AssetModel.v2"):
         assert by_name[name]["previewable"] is False
         assert by_name[name]["usage"]
     assert "ComponentPreviewSchema" not in by_name
@@ -116,6 +117,8 @@ def test_runtime_public_local_module_should_be_manifest_based() -> None:
     """Runtime 本地公共模块校验应只接受 manifest 中的 @runtime-kit 路径。"""
 
     assert is_runtime_public_local_module("@runtime-kit/public/components/assets/AssetImage.v1.vue") is True
+    assert is_runtime_public_local_module("@runtime-kit/public/composables/motion/usePageScene.v1") is True
+    assert is_runtime_public_local_module("@runtime-kit/internal/composables/use-page-scene-definition") is False
     assert is_runtime_public_local_module("@runtime-kit/public/components/primitives/Icon.v1.vue") is True
     assert is_runtime_public_local_module("@runtime-kit/public/components/primitives/ThemeLogo.v1.vue") is True
     assert is_runtime_public_local_module("@runtime-kit/public/components/primitives/Icon.vue") is False
