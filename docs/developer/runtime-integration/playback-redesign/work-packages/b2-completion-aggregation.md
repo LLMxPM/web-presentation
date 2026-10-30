@@ -1,6 +1,6 @@
 # B2 完成聚合取代统一时钟
 
-状态：实施中（2026-10-30，公开 usePageScene.v1、manifest 与开发调试已接入；正式宿主及旧链待切换）。主责：Runtime core / shell。前置：[B1](./b1-drop-arbitrary-moment.md)。出口：GB。
+状态：实施中（2026-10-30，正式 Deck/Scene 宿主已接入；单页预览、插件边界和样例收口中）。主责：Runtime core / shell。前置：[B1](./b1-drop-arbitrary-moment.md)。出口：GB。
 
 本包是削减的核心：在 B0 静态态和 B1 外部取帧协议已替换后，把仍驱动正向播放的「全局时间计划 ＋ transport」削成「本页任务调度与完成聚合」。**这些语义由本包定死，不留给后续包各自假设。**
 
@@ -12,12 +12,12 @@
 - **定死回调与计时语义**：回调正向经过触发点执行一次、掉帧与内部暂挂恢复下的至多一次保证；`timer` 到点即离页并取消未完成 `blocking` 任务，不等待。
 - **定死资源轨道时序**：保留 `startMs` 时以本页开始为基准；`afterTrack` 以该任务实际完成为基准，`offsetMs` 只允许非负延时。旧编译器依赖预估结束时间计算的负偏移、媒体缓冲时的预估起点一律删除；缺失前驱、循环依赖、无限前驱与结束期限必须在 prepare 阶段报错。内部暂挂期间的延时按会话时钟处理，不在恢复时补发多次回调。
 - 新增版本化 `usePageScene.v1`，开发分支先公开入口、manifest 与可执行调试方式，允许旧 `usePageTimeline.v1` 暂时并存；同一页只选一种编排。删除旧入口、manifest 与完整验收属于合并 main 前的门禁，不阻止开发调试。放开 `native-visual.ts:14` 的 `opacity/x/y/scale/rotation` 属性白名单；不支持 GSAP 插件，导入校验与 CodeCheck 拒绝插件用法。
-- 新会话接管真实正向播放后，同批移除旧 `compilePageTimeline`、`digestMotionPayload`、`deriveSampledState`/`digestMotionStateProof`、Transport 内部 `sampleAt/seek`、各适配器 `applyAt` 和状态证明；不能在仍有播放调用点时提前删除。B0 的静态态不依赖这些模块。
+- 正式放映和单页预览接管后，移除这些宿主对旧 Transport/采样/媒体会话的调用，不补运行时 fallback。B3/B4/B5 尚需替换的模型、媒体、配置与客户端消费分别由对应包移除；`compilePageTimeline`、摘要/状态证明、Transport 内部 `sampleAt/seek`、各适配器 `applyAt` 和旧公开入口的全仓清零由 C2 在合并 main 前兜底。不能要求 B2 等后续包全部完成，造成前置互等；B0 静态态保持独立。
 - 在观众窗口建立唯一 `DeckPlaybackSession`：点击播放进入放映、过渡结束后启动当前页、退出立即停止当前页与音频；推进只支持 `manual/timer/scene_end`，删除 `timeline_end`、`media_end`、`auto_start` 会话级切换与 Scene 的 pause/resume/restart/seek；保留演讲者仅阻止自动翻页的 `hold/release`，释放后重算当前页结束停留，不连跳。保留「非全屏是预览、根元素全屏才创建放映会话」的入口语义、翻页过渡与路由；冻结与后台节流恢复后不连跳多页。generation 只服务本窗口内的快速翻页与旧会话事件丢弃，不做跨窗口 generation 协商。
 
 ## 开发验收
 
-单测覆盖重复 stop、开始失败、任务超时、快速离页再进入、旧 Promise 迟到、多任务只完成一次、受托管静态模式零副作用、三种推进模式、末页/循环、过渡中退出、冻结恢复不连跳、没有完成目标时的配置错误；资源轨道覆盖 `startMs`、实际完成后的非负延时、缓冲、缺失/循环/无限前驱。一个页面的旁白与视觉不得由两个控制器重复启动。准备使用正式入口的数字滚动、打字机、SVG 描边、DOM/CSS/Canvas 粒子和两条并行序列样例，完成类型与非浏览器回归；不得把新会话逻辑塞进旧 `MotionTransport`。结束时检索旧编译器、采样与 `applyAt` 无有效调用点。
+单测覆盖重复 stop、开始失败、任务超时、快速离页再进入、旧 Promise 迟到、多任务只完成一次、受托管静态模式零副作用、三种推进模式、末页/循环、过渡中退出、冻结恢复不连跳、没有完成目标时的配置错误；资源轨道覆盖 `startMs`、实际完成后的非负延时、缓冲、缺失/循环/无限前驱。一个页面的任务不得由两个控制器重复启动。准备使用正式入口的数字滚动、打字机、SVG 描边、DOM/CSS/Canvas 粒子和两条并行序列样例，完成类型与非浏览器回归；不得把新会话逻辑塞进旧 `MotionTransport`。本包出口检索正式宿主和预览无旧 Transport/采样调用；其余有效消费者明确交接 B3/B4/B5，再由 C2 全仓清零。
 
 本包内部先用假任务实现生命周期、时序与完成聚合，再接入 GSAP 与宿主调用点；开发出口不以实机放映为前置。样例的实际视觉效果、有限任务完成、无限装饰不阻塞、离页清理和冻结恢复统一在 C3 验证。SVG 描边样例需检查 SVG 目标支持，不能只移除属性白名单却保留仅接受 `HTMLElement` 的校验。
 
@@ -78,3 +78,11 @@
 按用户要求，开发分支立即公开 `usePageScene.v1`，通过 manifest 向 Backend/Agent 披露并允许页面按公开路径导入；旧入口清零改为合并 main 前的门禁。Vue 生命周期测试移至公开入口，避免只验证私有实现。正式放映宿主仍由后续批次接管，不把开发调试记为 B2 全部完成。
 
 Vite DEV 模式提供 `window.__RUNTIME_SCENE_DEBUG__.play(scope?)/read()/stop()`，复用现有 Scene slot、prepare 和实际完成聚合。导航、卸载、重复播放、HMR 与全屏交接停止旧任务；静态策略与嵌套静态画布零播放。同一画布不能同时启动旧时间轴和新 Scene。生产构建不安装此控制台入口。使用方式见[开发调试指南](../../../runtime/scene-development.md)，实际验证结果见开发记录。
+
+### 第七批：正式 Deck 与宿主（2026-10-30）
+
+原 PlaybackController 就地替换为 DeckPlaybackSession，不保留双控制器。正式 usePlaybackHost 只使用 PageSceneStage，不再发现 PageMotionHandle 或创建 PageMediaSession。根元素全屏才允许启动；配置中旧 media_end/timeline_end 明确失败，不静默转 manual。Runtime 已识别 scene_end 和 completionDelayMs，Backend DTO/Editor 配置升级仍由 B5 同批完成。
+
+完成三种推进、结束停留、末页/循环、timer 取消未完成 blocking、保持/释放、内部冻结预算与迟到计时守卫。控制条保持/释放不暂停 Scene，退出与演讲交接立即释放当前窗口任务。声明增加跨宿主单一所有权，调试和正式播放不能重复启动同一页。Presenter 现有协议暂只投影页面状态，旧暂停/定位命令明确不可用；完整协议删减由 B5 继续。
+
+开发验证与全量结果见开发记录；实机不在本批执行。旧时间轴/媒体会话相关宿主单测随消费者删除，替换为正式 Scene 调度和宿主接线回归。

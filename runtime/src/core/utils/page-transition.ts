@@ -38,12 +38,13 @@ export function resolvePageAdvance(value: unknown, fallback: PageAdvanceConfig =
     const input = value as Partial<PageAdvanceConfig>
     const delay = input.delayMs ?? DEFAULT_PAGE_ADVANCE.delayMs
     if (
-      (input.mode === 'manual' || input.mode === 'timer' || input.mode === 'media_end' || input.mode === 'timeline_end')
+      (input.mode === 'manual' || input.mode === 'timer' || input.mode === 'scene_end' || input.mode === 'media_end' || input.mode === 'timeline_end')
       && Number.isInteger(delay) && delay >= 1000 && delay <= 3600000
     ) {
       return {
         mode: input.mode,
         delayMs: delay,
+        ...(input.mode === 'scene_end' ? { completionDelayMs: input.completionDelayMs ?? 300 } : {}),
         mediaTimeoutMs: resolveTimeout(input.mediaTimeoutMs, DEFAULT_MEDIA_TIMEOUT_MS),
         timelineTimeoutMs: resolveTimeout(input.timelineTimeoutMs, DEFAULT_TIMELINE_TIMEOUT_MS),
       }

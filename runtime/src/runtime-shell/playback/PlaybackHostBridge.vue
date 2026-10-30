@@ -1,79 +1,29 @@
-<!-- 文件功能：全屏放映的唯一控制条，负责翻页、自动/手动切换、状态提示、演讲与退出；指针移入窗口底部时显示，移开后隐藏。 -->
+<!-- 文件功能：全屏放映控制条，提供翻页、保持/释放、静音、错误状态和退出，不暂停 Scene。 -->
 <template>
   <div v-if="errorMessage" class="runtime-playback-error" role="alert">{{ errorMessage }}</div>
-  <div
-    ref="controlsElement"
-    class="runtime-playback-controls" role="group" aria-label="放映控制" :data-wake-lock="wakeLockState"
+  <div ref="controlsElement" class="runtime-playback-controls" role="group" aria-label="放映控制" :data-wake-lock="wakeLockState"
     :class="{ 'runtime-playback-controls--hidden': !controlsShown }">
     <template v-if="snapshot">
-      <button
-        type="button" class="runtime-playback-controls__button" title="上一页" aria-label="上一页"
-        :disabled="!canGoPrevious" @click="goPrevious">
-        <ChevronLeft :size="16" />
+      <button type="button" class="runtime-playback-controls__button" aria-label="上一页" :disabled="!canGoPrevious" @click="goPrevious"><ChevronLeft :size="16" /></button>
+      <button type="button" class="runtime-playback-controls__button runtime-playback-controls__button--mode" data-testid="playback-hold-toggle"
+        :title="snapshot.held ? '释放后重新计算本页停留，页面动画持续播放' : '保持当前页，页面动画持续播放'" :aria-pressed="snapshot.held" @click="toggleHold">
+        <Hand v-if="snapshot.held" :size="14" /><Timer v-else :size="14" /><span>{{ snapshot.held ? '释放本页' : '保持本页' }}</span>
       </button>
-      <button
-        type="button" class="runtime-playback-controls__button runtime-playback-controls__button--mode"
-        data-testid="playback-auto-toggle" :title="autoTitle" @click="toggleAutoAdvance">
-        <Timer v-if="snapshot.autoAdvanceEnabled" :size="14" />
-        <Hand v-else :size="14" />
-        <span>{{ autoLabel }}</span>
-      </button>
-      <button
-        type="button" class="runtime-playback-controls__button" title="下一页" aria-label="下一页"
-        :disabled="!canGoNext" @click="goNext">
-        <ChevronRight :size="16" />
-      </button>
-
+      <button type="button" class="runtime-playback-controls__button" aria-label="下一页" :disabled="!canGoNext" @click="goNext"><ChevronRight :size="16" /></button>
       <span class="runtime-playback-controls__divider" aria-hidden="true"></span>
-      <button
-        type="button" class="runtime-playback-controls__button"
-        :title="muted ? '取消静音 (M)' : '静音 (M)'" :aria-label="muted ? '取消静音' : '静音'"
-        :aria-pressed="muted" data-testid="playback-mute-toggle" @click="toggleMute">
-        <VolumeX v-if="muted" :size="14" />
-        <Volume2 v-else :size="14" />
-        <span>{{ muted ? '已静音' : '静音' }}</span>
+      <button type="button" class="runtime-playback-controls__button" :aria-label="muted ? '取消静音' : '静音'" :aria-pressed="muted" data-testid="playback-mute-toggle" @click="toggleMute">
+        <VolumeX v-if="muted" :size="14" /><Volume2 v-else :size="14" /><span>{{ muted ? '已静音' : '静音' }}</span>
       </button>
-
-      <span class="runtime-playback-controls__divider" aria-hidden="true"></span>
-      <span class="runtime-playback-controls__page">{{ pageLabel }}</span>
+      <span class="runtime-playback-controls__page">{{ snapshot.index + 1 }} / {{ snapshot.total }}</span>
       <span class="runtime-playback-controls__state">{{ stateLabel }}</span>
       <span class="runtime-playback-controls__remaining" data-testid="playback-remaining">{{ remainingLabel }}</span>
-
-      <button
-        v-if="snapshot.state === 'paused'" type="button"
-        class="runtime-playback-controls__button runtime-playback-controls__button--primary"
-        title="继续放映（空格）" @click="resume">
-        <Play :size="14" />
-        <span>继续</span>
-      </button>
-      <button
-        v-else-if="snapshot.state === 'error' || snapshot.state === 'blocked'" type="button"
-        class="runtime-playback-controls__button runtime-playback-controls__button--primary"
-        title="重试当前页" @click="retry">
-        <RotateCcw :size="14" />
-        <span>重试</span>
-      </button>
-      <button
-        v-else-if="snapshot.state === 'ended'" type="button"
-        class="runtime-playback-controls__button runtime-playback-controls__button--primary"
-        title="从当前页重新开始" @click="start">
-        <Play :size="14" />
-        <span>重新开始</span>
-      </button>
+      <button v-if="snapshot.state === 'failed'" type="button" class="runtime-playback-controls__button" @click="retry"><RotateCcw :size="14" /><span>重试当前页</span></button>
+      <button v-if="snapshot.state === 'ended'" type="button" class="runtime-playback-controls__button" @click="start"><Play :size="14" /><span>重新开始</span></button>
     </template>
-    <span v-else class="runtime-playback-controls__state">当前项目未启用放映配置</span>
-
+    <span v-else class="runtime-playback-controls__state">当前项目未启用有效的放映配置</span>
     <span class="runtime-playback-controls__divider" aria-hidden="true"></span>
-    <button
-      v-if="presenterAvailable" type="button" class="runtime-playback-controls__button"
-      title="演讲模式 (Shift+P)" aria-label="进入演讲模式" @click="emit('presenter')">
-      <Monitor :size="14" />
-    </button>
-    <button
-      type="button" class="runtime-playback-controls__button" title="退出放映 (Esc)"
-      aria-label="退出放映" @click="emit('exit')">
-      <Minimize2 :size="14" />
-    </button>
+    <button v-if="presenterAvailable" type="button" class="runtime-playback-controls__button" title="演讲模式 (Shift+P)" aria-label="进入演讲模式" @click="emit('presenter')"><Monitor :size="14" /></button>
+    <button type="button" class="runtime-playback-controls__button" aria-label="退出放映" @click="emit('exit')"><Minimize2 :size="14" /></button>
   </div>
 </template>
 <script setup lang="ts">
@@ -83,81 +33,23 @@ import { ChevronLeft, ChevronRight, Hand, Minimize2, Monitor, Play, RotateCcw, T
 import { getRuntimeSession } from '@/core/router/runtime-session'
 import { isEditableKeyboardTarget } from '@/runtime-shell/keyboard/keyboard-map'
 import { usePlaybackHost } from './usePlaybackHost'
-import type { PlaybackState } from './playback-controller'
+import type { DeckState } from './deck-types'
 
-const props = withDefaults(defineProps<{
-  /** 进入放映时的初始推进模式；来自项目 auto_start。 */
-  initialAutoAdvance?: boolean
-  /** 当前项目是否存在可演讲页面。 */
-  presenterAvailable?: boolean
-}>(), {
-  initialAutoAdvance: true,
-  presenterAvailable: false,
-})
-
-const emit = defineEmits<{
-  presenter: []
-  exit: []
-}>()
-
-const {
-  snapshot, errorMessage, wakeLockState, muted, canGoPrevious, canGoNext,
-  start, pause, resume, retry, goPrevious, goNext, toggleAutoAdvance, toggleMute, refresh,
-} = usePlaybackHost({ autoStart: true, initialAutoAdvance: props.initialAutoAdvance })
+withDefaults(defineProps<{ presenterAvailable?: boolean }>(), { presenterAvailable: false })
+const emit = defineEmits<{ presenter: []; exit: [] }>()
+const { snapshot, errorMessage, wakeLockState, muted, canGoPrevious, canGoNext,
+  start, stop, retry, goPrevious, goNext, toggleHold, toggleMute, refresh } = usePlaybackHost({ startOnMount: true })
 const session = getRuntimeSession(useRouter())
 
-/** 全局静音快捷键；输入框和系统组合键不劫持。 */
-function handleMuteKeydown(event: KeyboardEvent): void {
-  if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return
-  if (isEditableKeyboardTarget(event.target)) return
-  if (event.key.toLowerCase() !== 'm') return
-  event.preventDefault()
-  toggleMute()
+/** 快捷键只改变保持或静音，不提供 Scene 暂停。 */
+function handleKeydown(event: KeyboardEvent): void {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.repeat || isEditableKeyboardTarget(event.target)) return
+  if (event.key.toLowerCase() === 'm') { event.preventDefault(); toggleMute() }
 }
-
-/** 进入演讲交接前暂停本窗口放映；观众窗口会从同一页重新开始。 */
-onMounted(() => {
-  session.pausePlayback = pause
-  session.playbackAutoAdvance = () => snapshot.value?.autoAdvanceEnabled ?? props.initialAutoAdvance
-  document.addEventListener('keydown', handleMuteKeydown)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('keydown', handleMuteKeydown)
-  if (session.pausePlayback === pause) {
-    session.pausePlayback = null
-  }
-  session.playbackAutoAdvance = null
-})
-
-const STATE_LABELS: Record<PlaybackState, string> = {
-  stopped: '已停止',
-  preparing: '准备中',
-  playing: '放映中',
-  paused: '已暂停',
-  ended: '已结束',
-  blocked: '受阻',
-  error: '错误',
-}
-
-const stateLabel = computed(() => {
-  const current = snapshot.value
-  if (!current) return ''
-  if (current.waitingForMedia) return current.state === 'paused' ? '媒体已暂停' : '媒体播放中'
-  return STATE_LABELS[current.state]
-})
-
-const pageLabel = computed(() => {
-  const current = snapshot.value
-  if (!current || current.index < 0 || current.total === 0) return '— / —'
-  return `${current.index + 1} / ${current.total}`
-})
-
-const autoLabel = computed(() => snapshot.value?.autoAdvanceEnabled ? '自动' : '手动')
-const autoTitle = computed(() => snapshot.value?.autoAdvanceEnabled
-  ? '切换为手动：停止自动翻页，媒体继续播放（空格）'
-  : '切换为自动：按当前页配置重新计时（空格）')
-
+onMounted(() => { session.stopPlayback = stop; document.addEventListener('keydown', handleKeydown) })
+onBeforeUnmount(() => { if (session.stopPlayback === stop) session.stopPlayback = null; document.removeEventListener('keydown', handleKeydown) })
+const STATE_LABELS: Record<DeckState, string> = { stopped: '已停止', preparing: '准备中', playing: '放映中', ended: '已结束', blocked: '等待页面恢复', failed: '错误' }
+const stateLabel = computed(() => snapshot.value?.suspended ? '后台暂挂' : snapshot.value ? STATE_LABELS[snapshot.value.state] : '')
 /** 指针进入窗口底部多高时唤出控制条。 */
 const CONTROLS_REVEAL_ZONE_PX = 120
 const controlsElement = ref<HTMLElement | null>(null)
@@ -168,7 +60,7 @@ const controlsVisible = ref(true)
 const controlsPinned = computed(() => {
   const current = snapshot.value
   if (!current) return true
-  return current.state === 'paused' || current.state === 'error'
+  return current.held || current.state === 'failed'
     || current.state === 'blocked' || current.state === 'ended'
 })
 const controlsShown = computed(() => controlsVisible.value || controlsPinned.value)
@@ -226,39 +118,22 @@ onBeforeUnmount(() => {
 })
 
 const remainingLabel = computed(() => {
-  const current = snapshot.value
-  if (!current) return ''
-  if (current.state === 'ended' || current.state === 'error' || current.state === 'blocked') return '—'
-  if (!current.autoAdvanceEnabled) return '手动'
-  if (current.effectiveAdvanceMode === 'manual') return '本页手动'
-  if (current.waitingForMedia) return '等待媒体'
-  if (current.delayMs != null) return formatDuration(current.remainingMs)
-  return '手动'
+  const value = snapshot.value
+  if (!value || ['ended', 'failed', 'stopped'].includes(value.state)) return '—'
+  if (value.held) return '保持当前页'
+  if (value.advanceMode === 'manual') return '本页手动'
+  if (value.waitingForScene) return '等待完成'
+  return `${Math.ceil(value.remainingMs / 1000)} 秒`
 })
-
-/** 将剩余毫秒格式化为 m:ss，向上取整避免显示 0:00 时仍在计时。 */
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
-  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`
-}
-
 let tickTimer: ReturnType<typeof setInterval> | undefined
-
-/** 仅在自动计时页刷新剩余时间；控制条不参与调度。 */
+/** 控制条只刷新显示，不参与自动推进。 */
 function syncTicker(): void {
-  if (tickTimer !== undefined) {
-    clearInterval(tickTimer)
-    tickTimer = undefined
-  }
-  if (snapshot.value?.state === 'playing' && snapshot.value.delayMs != null) {
-    tickTimer = setInterval(refresh, 250)
-  }
+  clearInterval(tickTimer)
+  tickTimer = undefined
+  if (snapshot.value && ['playing', 'blocked'].includes(snapshot.value.state) && !snapshot.value.held && !snapshot.value.suspended) tickTimer = setInterval(refresh, 250)
 }
-
-watch(() => [snapshot.value?.state, snapshot.value?.delayMs], syncTicker, { immediate: true })
-onBeforeUnmount(() => {
-  if (tickTimer !== undefined) clearInterval(tickTimer)
-})
+watch(() => [snapshot.value?.state, snapshot.value?.held, snapshot.value?.suspended], syncTicker, { immediate: true })
+onBeforeUnmount(() => clearInterval(tickTimer))
 </script>
 <style scoped>
 .runtime-playback-error {

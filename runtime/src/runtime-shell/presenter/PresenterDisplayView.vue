@@ -90,7 +90,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { executionAttributes, provideRuntimeExecutionScope } from '@/core/execution/execution-scope'
-import { playbackConfig } from '@/core/utils/config'
 
 import type { TransitionStartedEvent } from '@/core/types/page-transition'
 import { useAudioCues } from '@/runtime-shell/audio/useAudioCues'
@@ -156,11 +155,6 @@ const screenOptions = ref<PresenterScreenOption[]>([])
 const fullscreenMessage = ref('')
 const shouldShowFullscreenPrompt = computed(() => !isInFullscreen.value && !isFullscreenPromptDismissed.value)
 const isScreenDetectionSupported = computed(() => typeof getScreenDetailsApi() === 'function')
-const autoParam = route.query.auto
-const initialAutoAdvance = autoParam === '1'
-  ? true
-  : autoParam === '0' ? false : playbackConfig.value.autoStart
-
 const {
   currentPage,
   postDisplayStatus,
@@ -174,100 +168,40 @@ const {
 })
 
 const {
-  snapshot: playbackSnapshot,
-  errorMessage: playbackErrorMessage,
-  motion,
-  start: startPlayback,
-  pause: pausePlayback,
-  resume: resumePlayback,
-  stop: stopPlayback,
-  retry: retryPlayback,
-  next: nextPlayback,
-  seekMotion,
-  setAutoAdvance: setPlaybackAutoAdvance,
-} = usePlaybackHost({ autoStart: false, initialAutoAdvance })
+  snapshot: playbackSnapshot, errorMessage: playbackErrorMessage,
+  start: startPlayback, stop: stopPlayback, retry: retryPlayback,
+  goNext: nextPlayback, hold: holdPlayback, release: releasePlayback,
+} = usePlaybackHost()
 
-let motionPostTimer: ReturnType<typeof setTimeout> | null = null
-
-/** 把控制器状态与当前页时间轴状态合并上报；观众窗口是双窗口唯一时钟来源。 */
+/** 现有 Presenter 通道只投影页面放映状态；时间轴位置不再来自播放宿主，协议删减由 B5 完成。 */
 function syncPlaybackPresentation(): void {
-  const snapshot = playbackSnapshot.value
-  const timeline = motion.value
+  const value = playbackSnapshot.value
   updatePlayback({
-    state: snapshot?.state ?? 'stopped',
-    remainingMs: snapshot?.remainingMs ?? 0,
-    delayMs: snapshot?.delayMs ?? null,
-    waitingForMedia: snapshot?.waitingForMedia ?? false,
-    waitingForTimeline: snapshot?.waitingForTimeline ?? false,
-    autoAdvanceEnabled: snapshot?.autoAdvanceEnabled ?? initialAutoAdvance,
-    timelineId: timeline?.timelineId ?? null,
-    planDigest: timeline?.planDigest ?? null,
-    positionMs: timeline?.positionMs ?? 0,
-    timelineIntent: timeline?.intent ?? 'stopped',
-    timelinePhase: timeline?.phase ?? 'idle',
+    state: value?.state === 'failed' ? 'error' : value?.state ?? 'stopped',
+    remainingMs: value?.remainingMs ?? 0, delayMs: null,
+    waitingForMedia: false, waitingForTimeline: false,
+    autoAdvanceEnabled: Boolean(value && !value.held),
   })
   postPlaybackState()
 }
-
 watch(playbackSnapshot, syncPlaybackPresentation, { immediate: true })
 
-/** 位置播放期间按固定间隔上报，阶段或意图变化立即上报，避免逐帧广播。 */
-watch(motion, (next, previous) => {
-  if (next?.phase !== previous?.phase || next?.intent !== previous?.intent || next?.timelineId !== previous?.timelineId) {
-    syncPlaybackPresentation()
-    return
-  }
-  if (motionPostTimer !== null) return
-  motionPostTimer = setTimeout(() => {
-    motionPostTimer = null
-    syncPlaybackPresentation()
-  }, 250)
-})
-
-/**
- * 执行控制台命令；观众窗口是双窗口中的唯一调度者。
- * 未全屏时拒绝开始/继续，避免窗口化放映。
- * @param action 控制台命令动作
- * @param details 命令附加数据；seek 使用 positionMs
- */
-function handlePlaybackCommand(
-  action: PresenterSyncPlaybackCommandAction,
-  details?: PresenterPlaybackCommandDetails,
-): void {
-  if ((action === 'start' || action === 'resume') && !isInFullscreen.value) {
+/** 观众窗口独占 Deck；旧协议中的时间轴命令明确不可用，不转为另一种动作。 */
+function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction, details?: PresenterPlaybackCommandDetails): void {
+  if (action === 'start' && !isInFullscreen.value) {
     fullscreenMessage.value = '请先在观众窗口进入全屏，再从控制台开始放映。'
     postDisplayStatus('windowed', false)
     return
   }
   switch (action) {
-    case 'start':
-      startPlayback()
-      break
+    case 'start': startPlayback(); break
+    case 'stop': stopPlayback(); break
+    case 'retry': retryPlayback(); break
+    case 'next': nextPlayback(); break
+    case 'set-auto-advance': details?.autoAdvance ? releasePlayback() : holdPlayback(); break
     case 'pause':
-      pausePlayback()
-      break
     case 'resume':
-      resumePlayback()
-      break
-    case 'stop':
-      stopPlayback()
-      break
-    case 'retry':
-      retryPlayback()
-      break
-    case 'next':
-      nextPlayback()
-      break
-    case 'seek':
-      if (details?.positionMs !== undefined) {
-        void seekMotion(details.positionMs).catch(() => {
-          // 定位失败由 transport 快照进入错误态，宿主不需要重复提示。
-        })
-      }
-      break
-    case 'set-auto-advance':
-      setPlaybackAutoAdvance(Boolean(details?.autoAdvance))
-      break
+    case 'seek': fullscreenMessage.value = 'Scene 不支持暂停或定位，请使用停止、翻页或保持当前页。'; break
   }
 }
 
@@ -421,7 +355,7 @@ function isSameDetailedScreen(left: PresenterDetailedScreen, right: PresenterDet
 
 /**
  * 同步观众窗口全屏状态。
- * 进入全屏才启动放映；退出全屏立即暂停并恢复全屏提示。
+ * 进入全屏才启动放映；退出全屏立即停止任务并恢复全屏提示。
  */
 function updateFullscreenState(): void {
   const element = document.fullscreenElement
@@ -437,8 +371,7 @@ function updateFullscreenState(): void {
     if (!wasFullscreen && (!state || state === 'stopped' || state === 'ended')) startPlayback()
   } else {
     isFullscreenPromptDismissed.value = false
-    const state = playbackSnapshot.value?.state
-    if (state === 'playing' || state === 'preparing') pausePlayback()
+    if (wasFullscreen) stopPlayback()
   }
   postDisplayStatus(next ? 'fullscreen' : 'windowed', next)
 }
@@ -452,10 +385,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (motionPostTimer !== null) {
-    clearTimeout(motionPostTimer)
-    motionPostTimer = null
-  }
   postDisplayStatus('closed', false)
   document.removeEventListener('fullscreenchange', updateFullscreenState)
   window.removeEventListener('beforeunload', handleBeforeUnload)

@@ -121,4 +121,19 @@ describe('PageSceneDefinition', () => {
     expect(session!.getSnapshot().issue?.code).toBe('SCENE_ROOT_INVALID')
     expect(define).not.toHaveBeenCalled()
   })
+
+  it('同一声明跨宿主播放时先取消旧所有者，不让调试和正式预览重复启动', async () => {
+    const element = root(), first = createPageSceneSlot(), second = createPageSceneSlot(), pending = deferred(), cleanup = vi.fn()
+    cleanups.push(registerPageSceneDefinition({ root: () => element, define: scene => {
+      scene.task({ id: 'owned', role: 'blocking', run(context) { context.onCleanup(cleanup); return pending.promise } })
+    } }), first.stop, second.stop)
+    const entry = findPageSceneDefinition(element)!
+    const old = await first.prepare({ execution: 'interactive-preview', advanceMode: 'manual', define: entry.define })
+    await old!.start()
+    const current = await second.prepare({ execution: 'presentation', advanceMode: 'manual', define: entry.define })
+    expect(old!.getSnapshot().phase).toBe('stopped')
+    expect(cleanup).toHaveBeenCalledOnce()
+    await current!.start(); first.stop()
+    expect(current!.getSnapshot().phase).toBe('running')
+  })
 })

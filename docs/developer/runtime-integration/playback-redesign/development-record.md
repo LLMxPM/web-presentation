@@ -130,3 +130,11 @@
 Vite DEV 挂载后提供 `window.__RUNTIME_SCENE_DEBUG__.play(scope?)/read()/stop()`，复用已有 Scene slot、prepare、GSAP 与任务聚合；导航、卸载、HMR、重复播放和全屏交接释放旧会话。静态上下文与嵌套静态画布不启动；同页旧时间轴冲突明确拒绝。正式放映/Editor 桥仍在 B2/B5 接线，此开发入口不承担自动翻页或生产放映。
 
 验证：Scene、公开入口和 manifest 共 8 文件 93 项通过；Runtime 类型检查与 `pnpm --filter web-runtime-vue build` 通过。Backend manifest/能力目录契约共 16 项通过；根仓 manifest 与文档/技能检查共 9 文件 68 项通过。检索生产 JS，未包含 `installPageSceneDebug` 或调试专用错误码，确认开发执行入口已排除。未重复全量 Runtime 集合，本批运行受影响集合；未启动服务或重置开发库，未运行浏览器/Renderer、真实导出、独立产物或长稳；正式验收继续交 C3。调试步骤见[Scene 开发调试](../../runtime/scene-development.md)。
+
+## B2 第七批：正式 Deck 与宿主（2026-10-30）
+
+基于 `31bfa40`，原控制器就地替换为 DeckPlaybackSession；正式 usePlaybackHost 接入 PageSceneStage，不再构造 PageMediaSession 或寻找旧时间轴句柄。根元素全屏才创建/启动放映，退出、切页、失败和卸载立即释放任务；同一声明跨调试/正式宿主互斥所有权。三种推进、实际完成后停留、末页/循环、保持/释放、内部冻结和迟到计时守卫完成。Runtime 接受 scene_end/completionDelayMs，Backend DTO 与 Editor 配置仍留 B5 同批升级；旧推进方式明确拒绝。
+
+控制条改为保持/释放，不暂停 Scene；演讲交接停止本窗口任务。Presenter 当前协议继续投影页面状态，旧暂停/定位命令明确不可用，不伪装执行；全协议删减交 B5。宿主相关旧时间轴/媒体测试随消费者移除，新增真实 Scene 调度与 Router/Vue 接线回归。
+
+验证：Deck 15 项、宿主/过渡/Scene/公开入口定向 135 项、布局/宿主/观众调用端定向 60 项通过，Runtime check 通过。完整 Runtime 首轮有既有 Mermaid 测量超时及控制条 tooltip/旧 auto 参数断言问题，恢复 tooltip 并更新已变更的参数语义后定向通过；降低到 `pnpm --filter web-runtime-vue test --maxWorkers=4` 完整重跑，177 文件 1420 项通过、3 项既有跳过。未修改 Mermaid 时限。检索正式放映目录无旧控制器、PageMediaSession、PageMotionHandle、sampleAt/seekMotion 有效调用。未运行浏览器/Renderer、实际产物、镜像或长稳；C3 继续承接。

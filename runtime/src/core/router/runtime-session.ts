@@ -24,10 +24,8 @@ function createSession(router: Router) {
     transitionSettled: ref<TransitionSettledEvent | null>(null),
     // 会话级静音同时作用于页面媒体和 shell cue；跨模式交接保持一致，不写回 Backend。
     audioMuted: ref(false),
-    // 普通放映宿主挂载时登记暂停入口；进入演讲模式先暂停，避免交接期间继续计时。
-    pausePlayback: null as (() => void) | null,
-    // 进入演讲模式时读取当前放映的自动/手动模式，观众窗口继承它而不是重新读 auto_start。
-    playbackAutoAdvance: null as (() => boolean) | null,
+    // 普通放映宿主登记停止入口；演讲交接立即释放本窗口页面所有权。
+    stopPlayback: null as (() => void) | null,
   }
 }
 

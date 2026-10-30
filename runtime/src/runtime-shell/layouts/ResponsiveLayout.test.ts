@@ -767,7 +767,7 @@ describe('ResponsiveLayout', () => {
     openMock.mockRestore()
   })
 
-  it('预览页工具栏可直接进入演讲模式，并按项目默认模式打开观众窗口', async () => {
+  it('预览页工具栏可直接进入演讲模式，打开观众窗口并保留当前页面', async () => {
     mockMenuMode.value = 'preview'
     mockNavigableRoutes.value = [{ path: '/', name: '首页', pageNumber: 1 }]
     const openMock = vi.spyOn(window, 'open').mockReturnValue({} as Window)
@@ -815,7 +815,6 @@ describe('ResponsiveLayout', () => {
     expect(openMock).toHaveBeenCalledTimes(1)
     const displayUrl = String(openMock.mock.calls[0][0])
     expect(displayUrl).toContain('runtimeMode=display')
-    expect(displayUrl).toContain('auto=0')
     expect(router.currentRoute.value.path).toBe('/')
     expect(router.currentRoute.value.query.runtimeMode).toBe('presenter')
 

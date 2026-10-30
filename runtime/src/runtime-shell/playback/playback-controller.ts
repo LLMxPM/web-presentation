@@ -1,794 +1,221 @@
-/**
- * 文件功能：与路由和 DOM 解耦的单窗口放映调度核心。
- * 负责播放状态迁移、单调时钟下的剩余时间、一次性计时句柄、页面 generation
- * 以及末页结束/循环；就绪、错误和页面切换由外部适配层上报。
- */
-import type { PageAdvanceConfig } from '@/core/types/page-transition'
-import { DEFAULT_MEDIA_TIMEOUT_MS, DEFAULT_TIMELINE_TIMEOUT_MS } from '@/core/utils/page-transition'
+/** 文件功能：观众窗口唯一 Deck 调度，复用页级 Scene 聚合，只维护自动翻页的一次性计时。 */
+import { SceneSessionError, type PageSceneSession, type SceneIssue, type SceneSnapshot } from '@/core/scene/types'
+import type { DeckClock, DeckOptions, DeckPage, DeckSnapshot, DeckState } from './deck-types'
 
-export type PlaybackState =
-  | 'stopped'
-  | 'preparing'
-  | 'playing'
-  | 'paused'
-  | 'ended'
-  | 'blocked'
-  | 'error'
-
-/** 参与自动序列的可见叶子页；隐藏页由构造器过滤。 */
-export interface PlaybackPage {
-  path: string
-  advance: PageAdvanceConfig
-  hidden?: boolean
+const defaultClock: DeckClock = {
+  now: () => performance.now(),
+  setTimeout: (callback, delay) => setTimeout(callback, delay),
+  clearTimeout: handle => clearTimeout(handle as ReturnType<typeof setTimeout>),
 }
 
-/** 单调时钟与一次性计时注入点，测试使用虚拟时钟获得确定性断言。 */
-export interface PlaybackClock {
-  now(): number
-  setTimeout(callback: () => void, delayMs: number): unknown
-  clearTimeout(handle: unknown): void
-}
-
-export interface PlaybackSnapshot {
-  state: PlaybackState
-  path: string
-  generation: number
-  remainingMs: number
-  delayMs: number | null
-  advanceMode: PageAdvanceConfig['mode']
-  /** 当前页实际生效的推进方式；会话关闭自动推进时为 manual。 */
-  effectiveAdvanceMode: PageAdvanceConfig['mode']
-  /** 本次放映是否允许自动推进；关闭后所有页面等待用户翻页。 */
-  autoAdvanceEnabled: boolean
-  /** 当前页正在等待媒体结束；暂停时保留，供恢复与界面提示。 */
-  waitingForMedia: boolean
-  /** 当前页正在等待页内时间轴完成；与媒体等待互斥。 */
-  waitingForTimeline: boolean
-  index: number
-  total: number
-  loop: boolean
-  message: string
-}
-
-export type PlaybackListener = (snapshot: PlaybackSnapshot) => void
-export type PlaybackNavigate = (path: string) => void | Promise<void>
-
-export interface PlaybackOptions {
-  pages: readonly PlaybackPage[]
-  loop?: boolean
-  clock?: PlaybackClock
-  navigate: PlaybackNavigate
-  initialPath?: string
-  /** 会话初始是否允许自动推进；默认 true，供手动全屏浏览和演讲交接使用。 */
-  autoAdvance?: boolean
-}
-
-const defaultClock: PlaybackClock = {
-  now: () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
-  setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
-  clearTimeout: handle => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
-}
-
-const NAVIGATION_ERROR_MESSAGE = '页面切换失败，请重试或手动翻页。'
-const READY_ERROR_MESSAGE = '页面加载或资源准备失败，请重试。'
-const BLOCKED_MESSAGE = '播放被浏览器阻止，请手动开始。'
-const MEDIA_TIMEOUT_MESSAGE = '媒体播放超时，请重试、跳到下一页或停止放映。'
-const TIMELINE_TIMEOUT_MESSAGE = '页内时间轴播放超时，请重试、跳到下一页或停止放映。'
-const TIMELINE_UNAVAILABLE_MESSAGE = '当前页没有可执行时间轴，无法使用 timeline_end。'
-const MEDIA_ERROR_MESSAGE = '媒体播放失败，请重试、跳到下一页或停止放映。'
-/** 计时回调明显晚于截止时间时视为系统休眠/长中断，先暂停等待显式继续。 */
-const TIMER_WAKE_GAP_MS = 3000
-
-/**
- * 单窗口放映控制器。
- * 所有外部输入（页面切换、就绪、错误）均携带/核对 generation，旧回调只被丢弃；
- * 任意时刻最多持有一个推进计时句柄。
- */
-export class PlaybackController {
-  private readonly pages: PlaybackPage[]
-  private readonly loop: boolean
-  private readonly clock: PlaybackClock
-  private readonly navigate: PlaybackNavigate
-  private readonly listeners = new Set<PlaybackListener>()
-
-  private state: PlaybackState = 'stopped'
+/** 原放映控制器就地收敛；不持有动画、媒体的帧时钟，也不提供 Scene 暂停或定位。 */
+export class DeckPlaybackSession {
+  private readonly pages: DeckPage[]
+  private readonly clock: DeckClock
+  private readonly listeners = new Set<(value: DeckSnapshot) => void>()
+  private scene: PageSceneSession | null = null
+  private unsubscribe: (() => void) | null = null
+  private state: DeckState = 'stopped'
   private path: string
-  private generation = 0
-  private pageReady = false
-  private readyPath = ''
+  private issue: SceneIssue | null = null
+  private held = false
+  private suspended = false
+  private completed = false
+  private disposed = false
+  private request = 0
   private timer: unknown
   private deadline = 0
   private remaining = 0
-  private message = ''
-  private disposed = false
-  private mediaWait = false
-  private mediaTargetCount = 0
-  private timelineWait = false
-  private timelineTargetCount = 0
-  /** 时间轴缓冲期间冻结超时预算；恢复后按剩余预算继续。 */
-  private timelineBuffering = false
-  private timerKind: 'stay' | 'media-timeout' | 'timeline-timeout' | null = null
-  private autoAdvanceEnabled: boolean
 
-  constructor(options: PlaybackOptions) {
+  constructor(private readonly options: DeckOptions) {
     this.clock = options.clock ?? defaultClock
-    this.navigate = options.navigate
-    this.loop = Boolean(options.loop)
-    this.pages = dedupeVisiblePages(options.pages)
+    const paths = new Set<string>()
+    this.pages = options.pages.filter(page => {
+      if (page.hidden || !page.path || paths.has(page.path)) return false
+      paths.add(page.path); return true
+    }).map(page => ({ ...page, advance: { ...page.advance } }))
     this.path = options.initialPath ?? this.pages[0]?.path ?? ''
-    this.autoAdvanceEnabled = options.autoAdvance ?? true
   }
 
-  /** 订阅状态变化；返回取消订阅函数。 */
-  subscribe(listener: PlaybackListener): () => void {
+  /** 快照不公开内部实例，Scene generation 由唯一 slot 分配。 */
+  getSnapshot(): DeckSnapshot {
+    const index = this.pages.findIndex(page => page.path === this.path), page = this.pages[index]
+    return { state: this.state, path: this.path, index, total: this.pages.length, loop: Boolean(this.options.loop),
+      held: this.held, suspended: this.suspended, advanceMode: page?.advance.mode ?? 'manual',
+      remainingMs: this.timer === undefined ? this.remaining : Math.max(0, this.deadline - this.clock.now()),
+      waitingForScene: page?.advance.mode === 'scene_end' && !this.completed,
+      scene: this.scene?.getSnapshot() ?? null, issue: this.issue ? { ...this.issue } : null }
+  }
+
+  /** 观察方异常不破坏执行和清理；返回取消订阅函数。 */
+  subscribe(listener: (value: DeckSnapshot) => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
 
-  /**
-   * 当前快照。playing 且持有计时句柄时，剩余时间按单调时钟实时计算，
-   * 不依赖定时器的触发精度。
-   */
-  getSnapshot(): PlaybackSnapshot {
-    const page = this.currentPage()
-    const pageMode = page?.advance.mode ?? 'manual'
-    const effectiveMode = this.autoAdvanceEnabled ? pageMode : 'manual'
-    return {
-      state: this.state,
-      path: this.path,
-      generation: this.generation,
-      remainingMs: effectiveMode === 'manual' ? 0 : this.currentRemaining(),
-      delayMs: this.autoAdvanceEnabled && (pageMode === 'timer' || (pageMode === 'media_end' && !this.mediaWait))
-        ? page?.advance.delayMs ?? null
-        : null,
-      advanceMode: pageMode,
-      effectiveAdvanceMode: effectiveMode,
-      autoAdvanceEnabled: this.autoAdvanceEnabled,
-      waitingForMedia: this.mediaWait,
-      waitingForTimeline: this.timelineWait,
-      index: this.indexOf(this.path),
-      total: this.pages.length,
-      loop: this.loop,
-      message: this.message,
-    }
+  /** 显式开始；活跃页不重启，失败后的重试由 retry 表达。 */
+  start(path = this.path): boolean {
+    if (this.disposed || this.active()) return false
+    const page = this.pages.find(entry => entry.path === path) ?? this.pages[0]
+    if (!page) return false
+    this.enter(page)
+    return true
   }
 
-  /**
-   * 开始放映。stopped/ended/blocked/error 可进入；preparing/playing/paused 重复调用无效。
-   * 优先使用显式路径，其次当前页；当前页不在目录中时从第一个可见叶子页开始。
-   */
-  start(preferredPath?: string): boolean {
-    if (this.disposed) return false
-    if (this.state === 'preparing' || this.state === 'playing' || this.state === 'paused') return false
-    const target = this.resolveStartPath(preferredPath)
+  /** 手动导航沿用同一准备流程，目录边界不绕回；循环只控制自动推进。 */
+  go(offset: -1 | 1): boolean {
+    if (this.disposed || this.state === 'stopped') return false
+    const target = this.pages[this.pages.findIndex(page => page.path === this.path) + offset]
     if (!target) return false
-    if (target !== this.path) {
-      this.path = target
-      this.pageReady = false
-      this.readyPath = ''
-    }
-    this.generation += 1
-    this.message = ''
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.timelineWait = false
-    this.timelineTargetCount = 0
-    this.timelineBuffering = false
-    this.remaining = this.pageDelay(this.currentPage())
-    if (this.pageReady && this.readyPath === this.path) {
-      // 停止/结束后当前页仍在画布中，重新开始只重置停留时钟。
-      this.enterPlaying(this.remaining)
-    } else {
-      this.state = 'preparing'
-      this.emit()
-    }
-    return true
+    this.enter(target); return true
   }
 
-  /** 暂停等待或播放中的放映；保留当前页与剩余停留时间，重复调用无效。 */
-  pause(): boolean {
-    if (this.disposed) return false
-    if (this.state !== 'preparing' && this.state !== 'playing') return false
-    if (this.state === 'playing' && this.timer !== undefined) {
-      this.remaining = this.currentRemaining()
+  /** 页内链接或路由导航使旧准备立即失效；自身导航提交不重复创建会话。 */
+  visit(path: string): boolean {
+    if (this.disposed || this.state === 'stopped' || path === this.path) return false
+    const page = this.pages.find(entry => entry.path === path)
+    if (!page) { this.stop(); return false }
+    this.enter(page); return true
+  }
+
+  /** 保持当前页仅取消翻页计时，Scene 和媒体继续，不改变推进配置。 */
+  hold(): boolean {
+    if (this.disposed || this.held || !this.active()) return false
+    this.held = true; this.clearTimer(); this.remaining = this.fullDelay(); this.emit(); return true
+  }
+
+  /** 释放后重算当前页完整停留，忽略 hold 期间已经过期的计时。 */
+  release(): boolean {
+    if (this.disposed || !this.held || !this.active()) return false
+    this.held = false; this.schedule(this.fullDelay()); this.emit(); return true
+  }
+
+  /** 内部冻结暂停 Scene 和推进预算；恢复按剩余值重新计时，不补发过期翻页。 */
+  setSuspended(value: boolean): void {
+    if (this.disposed || this.suspended === value) return
+    this.suspended = value
+    if (value) {
+      if (this.timer !== undefined) this.remaining = Math.max(0, this.deadline - this.clock.now())
       this.clearTimer()
-    } else {
-      this.remaining = this.mediaWait || this.timelineWait
-        ? this.remaining
-        : this.autoAdvanceEnabled ? this.pageDelay(this.currentPage()) : 0
     }
-    this.state = 'paused'
+    this.scene?.setSuspended(value)
+    if (!value) this.schedule(this.remaining)
     this.emit()
-    return true
   }
 
-  /**
-   * 从暂停恢复：页面已就绪时按原剩余时间继续，否则回到 preparing 等待就绪信号。
-   * 暂停期间发生手动跳页时，剩余时间已重置为新页完整停留周期。
-   */
-  resume(): boolean {
-    if (this.disposed || this.state !== 'paused') return false
-    if (!this.pageReady || this.readyPath !== this.path) {
-      this.state = 'preparing'
-      this.remaining = this.pageDelay(this.currentPage())
-      this.emit()
-      return true
-    }
-    this.enterPlaying(Math.max(0, this.remaining), this.mediaTargetCount, this.timelineTargetCount)
-    return true
+  /** 只重试失败页；blocking 的本地播放许可恢复由资源适配器处理。 */
+  retry(): boolean {
+    if (this.disposed || this.state !== 'failed') return false
+    const page = this.pages.find(entry => entry.path === this.path)
+    if (!page) return false
+    this.enter(page); return true
   }
 
-  /**
-   * 切换本次放映的自动推进开关。
-   * 关闭时取消当前页计时但保留媒体播放；开启时按当前页配置重新进入一轮自动逻辑。
-   * manual 配置页在开启后仍保持手动，不会被会话开关强行推进。
-   */
-  setAutoAdvance(enabled: boolean): boolean {
-    if (this.disposed || this.autoAdvanceEnabled === enabled) return false
-    this.autoAdvanceEnabled = enabled
-    const page = this.currentPage()
-    if (!page) {
-      this.emit()
-      return true
-    }
-    if (this.state === 'playing' && this.pageReady) {
-      this.clearTimer()
-      if (!enabled || page.advance.mode === 'manual') {
-        this.remaining = 0
-        this.emit()
-        return true
-      }
-      if (page.advance.mode === 'timeline_end' && this.timelineWait && this.timelineTargetCount > 0) {
-        this.remaining = this.timelineTimeout(page)
-        if (!this.timelineBuffering) this.armTimer(this.remaining, 'timeline-timeout')
-      } else if (page.advance.mode === 'media_end' && this.mediaWait && this.mediaTargetCount > 0) {
-        this.remaining = this.mediaTimeout(page)
-        this.armTimer(this.remaining, 'media-timeout')
-      } else {
-        this.mediaWait = false
-        this.timelineWait = false
-        this.timelineBuffering = false
-        this.remaining = this.pageDelay(page)
-        this.armTimer(this.remaining, 'stay')
-      }
-      this.emit()
-      return true
-    }
-    if (this.state === 'paused') {
-      if (!enabled || page.advance.mode === 'manual') {
-        this.remaining = 0
-      } else if (page.advance.mode === 'timeline_end' && this.timelineWait && this.timelineTargetCount > 0) {
-        this.remaining = this.timelineTimeout(page)
-      } else if (page.advance.mode === 'media_end' && this.mediaWait && this.mediaTargetCount > 0) {
-        this.remaining = this.mediaTimeout(page)
-      } else {
-        this.remaining = this.pageDelay(page)
-      }
-    }
-    this.emit()
-    return true
-  }
-
-  /** 停止放映并保留当前页；重复停止无效。 */
+  /** 退出立即停止所有页级任务与准备，不等媒体或 Promise 自行结束。 */
   stop(): boolean {
     if (this.disposed || this.state === 'stopped') return false
-    this.clearTimer()
-    this.generation += 1
-    this.state = 'stopped'
-    this.message = ''
-    this.remaining = 0
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.timelineWait = false
-    this.timelineTargetCount = 0
-    this.timelineBuffering = false
-    // 页面仍在画布中，保留 pageReady，重新开始时无需等待新的过渡信号。
-    this.emit()
-    return true
+    const token = ++this.request
+    this.clearPage()
+    if (token !== this.request) return true
+    this.state = 'stopped'; this.issue = null; this.remaining = 0; this.held = false
+    this.emit(); return true
   }
 
-  /** 错误/受阻后重试当前页，等待外部重新上报就绪。 */
-  retry(): boolean {
-    if (this.disposed || (this.state !== 'error' && this.state !== 'blocked')) return false
-    this.clearTimer()
-    this.generation += 1
-    this.state = 'preparing'
-    this.message = ''
-    this.pageReady = false
-    this.readyPath = ''
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.timelineWait = false
-    this.timelineTargetCount = 0
-    this.timelineBuffering = false
-    this.remaining = this.pageDelay(this.currentPage())
-    this.emit()
-    return true
-  }
-
-  /**
-   * 失败态跳到下一页：清除旧媒体等待并重新走就绪流程；循环时从末页回到首页。
-   * 末页且不循环时没有下一页，返回 false 由界面保持当前错误提示。
-   */
-  next(): boolean {
-    return this.skipFailure(1)
-  }
-
-  /** 失败态回到上一页；不从首页绕到末页，仍须重新准备目标页。 */
-  previous(): boolean {
-    return this.skipFailure(-1)
-  }
-
-  /** 手动离开失败页时统一重置等待与 generation，拒绝旧页迟到事件。 */
-  private skipFailure(offset: -1 | 1): boolean {
-    if (this.disposed || (this.state !== 'error' && this.state !== 'blocked')) return false
-    const currentIndex = this.indexOf(this.path)
-    if (currentIndex < 0) return false
-    let targetIndex = currentIndex + offset
-    if (targetIndex >= this.pages.length && this.loop && offset === 1) targetIndex = 0
-    const next = this.pages[targetIndex]
-    if (!next) return false
-    this.clearTimer()
-    this.generation += 1
-    this.path = next.path
-    this.state = 'preparing'
-    this.message = ''
-    this.pageReady = false
-    this.readyPath = ''
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.timelineWait = false
-    this.timelineTargetCount = 0
-    this.timelineBuffering = false
-    this.remaining = this.pageDelay(next)
-    this.emit()
-    this.navigateTo(next.path)
-    return true
-  }
-
-  /** 外部适配层确认当前页已完成路由提交、DOM/资源就绪与过渡；旧 generation 被丢弃。 */
-  reportReady(path: string, generation: number, mediaTargets = 0, timelineTargets = 0): boolean {
-    if (this.disposed || path !== this.path || generation !== this.generation) return false
-    if (this.pageReady) return false
-    if (this.state !== 'preparing' && this.state !== 'paused') return false
-    const page = this.currentPage()
-    if (page?.advance.mode === 'timeline_end' && timelineTargets <= 0) {
-      return this.enterFailure('error', path, generation, TIMELINE_UNAVAILABLE_MESSAGE)
-    }
-    this.pageReady = true
-    this.readyPath = path
-    this.mediaTargetCount = mediaTargets
-    this.timelineTargetCount = timelineTargets
-    if (this.state === 'preparing') {
-      const waitingForTimeline = page?.advance.mode === 'timeline_end' && timelineTargets > 0
-      const waitingForMedia = page?.advance.mode === 'media_end' && mediaTargets > 0
-      this.enterPlaying(
-        waitingForTimeline
-          ? this.timelineTimeout(page)
-          : waitingForMedia ? this.mediaTimeout(page) : this.pageDelay(page),
-        mediaTargets,
-        timelineTargets,
-      )
-    } else {
-      this.emit()
-    }
-    return true
-  }
-
-  /** 媒体会话重建或目标增减后同步完成集合；已处于相同等待状态时只更新数量。 */
-  reportMediaTargets(path: string, generation: number, targetCount: number): boolean {
-    if (this.disposed || path !== this.path || generation !== this.generation) return false
-    if (this.state !== 'playing') return false
-    const page = this.currentPage()
-    if (!page || page.advance.mode !== 'media_end') return false
-    const waiting = targetCount > 0
-    this.mediaTargetCount = targetCount
-    if (this.mediaWait === waiting) return true
-    this.clearTimer()
-    this.enterPlaying(
-      waiting ? this.mediaTimeout(page) : this.pageDelay(page),
-      targetCount,
-    )
-    return true
-  }
-
-  /** 当前页全部参与媒体已结束；手动会话只更新状态，自动会话推进一次。 */
-  reportMediaEnded(path: string, generation: number): boolean {
-    if (this.disposed || path !== this.path || generation !== this.generation) return false
-    if (this.state !== 'playing' || !this.mediaWait) return false
-    this.clearTimer()
-    this.mediaWait = false
-    this.remaining = 0
-    if (!this.autoAdvanceEnabled) {
-      this.emit()
-      return true
-    }
-    this.advanceAfterStay(true)
-    return true
-  }
-
-  /** 页内时间轴完成：只在 timeline_end 且当前 generation 匹配时推进一次。 */
-  reportTimelineEnded(path: string, generation: number): boolean {
-    if (this.disposed || path !== this.path || generation !== this.generation) return false
-    if (this.state !== 'playing' || !this.timelineWait) return false
-    this.clearTimer()
-    this.timelineWait = false
-    this.timelineBuffering = false
-    this.remaining = 0
-    if (!this.autoAdvanceEnabled) {
-      this.emit()
-      return true
-    }
-    this.advanceAfterStay(true)
-    return true
-  }
-
-  /**
-   * 时间轴进入或离开缓冲：冻结/恢复超时预算，不改变用户暂停与完成语义。
-   * @returns 状态是否发生变化
-   */
-  reportTimelineBuffering(path: string, generation: number, buffering: boolean): boolean {
-    if (this.disposed || path !== this.path || generation !== this.generation) return false
-    if (this.timelineBuffering === buffering) return false
-    const page = this.currentPage()
-    if (!page || page.advance.mode !== 'timeline_end' || !this.timelineWait) return false
-    this.timelineBuffering = buffering
-    if (this.state !== 'playing') {
-      this.emit()
-      return true
-    }
-    if (buffering) {
-      if (this.timerKind === 'timeline-timeout') {
-        this.remaining = this.currentRemaining()
-        this.clearTimer()
-      }
-      this.emit()
-      return true
-    }
-    if (this.timer === undefined && !this.timelineBuffering) {
-      this.armTimer(Math.max(0, this.remaining), 'timeline-timeout')
-    }
-    this.emit()
-    return true
-  }
-
-  /** 时间轴缺失、准备失败或状态损坏：进入错误态，不静默退回 timer。 */
-  reportTimelineUnavailable(path: string, generation: number, message = TIMELINE_UNAVAILABLE_MESSAGE): boolean {
-    return this.enterFailure('error', path, generation, message)
-  }
-
-  /** 动态移除后已无参与媒体：退回停留时间，不把空集合当作完成。 */
-  reportMediaEmpty(path: string, generation: number): boolean {
-    if (this.disposed || path !== this.path || generation !== this.generation) return false
-    if (!this.mediaWait || (this.state !== 'playing' && this.state !== 'paused')) return false
-    const page = this.currentPage()
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.clearTimer()
-    this.remaining = this.pageDelay(page)
-    if (this.state === 'playing') this.enterPlaying(this.remaining, 0)
-    else this.emit()
-    return true
-  }
-
-  /** 媒体被浏览器策略阻止：进入受阻态，等待重试、下一页或停止。 */
-  reportMediaBlocked(path: string, generation: number, message = BLOCKED_MESSAGE): boolean {
-    return this.enterFailure('blocked', path, generation, message)
-  }
-
-  /** 媒体加载/解码失败：进入错误暂停态，等待重试、下一页或停止。 */
-  reportMediaError(path: string, generation: number, message = MEDIA_ERROR_MESSAGE): boolean {
-    return this.enterFailure('error', path, generation, message)
-  }
-
-  /** 页面加载或必要资源失败：清除计时并进入可见错误态，不无限等待就绪。 */
-  reportError(path: string, generation: number, message = READY_ERROR_MESSAGE): boolean {
-    return this.enterFailure('error', path, generation, message)
-  }
-
-  /** 播放被浏览器策略阻止：进入受阻态，由用户重试或手动翻页。 */
-  reportBlocked(path: string, generation: number, message = BLOCKED_MESSAGE): boolean {
-    return this.enterFailure('blocked', path, generation, message)
-  }
-
-  /**
-   * 外部适配层观察到路由路径变化时调用（自动翻页、手动跳页、浏览器导航）。
-   * 播放中回到 preparing，暂停中保持暂停；同路径的查询参数变化不打断停留计时。
-   */
-  notifyPageChange(path: string): boolean {
-    if (this.disposed || !path || path === this.path) return false
-    this.clearTimer()
-    this.generation += 1
-    this.path = path
-    this.pageReady = false
-    this.readyPath = ''
-    this.message = ''
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.timelineWait = false
-    this.timelineTargetCount = 0
-    this.timelineBuffering = false
-    const delay = this.pageDelay(this.currentPage())
-    if (this.state === 'playing' || this.state === 'preparing') {
-      this.state = 'preparing'
-      this.remaining = delay
-    } else if (this.state === 'paused') {
-      this.remaining = delay
-    } else if (this.state === 'error' || this.state === 'blocked') {
-      this.state = 'stopped'
-      this.remaining = 0
-    } else {
-      this.remaining = 0
-    }
-    this.emit()
-    return true
-  }
-
-  /** 释放计时句柄与监听器；之后所有输入无效。 */
+  /** 宿主卸载后永远不能再次启动。 */
   dispose(): void {
     if (this.disposed) return
-    this.clearTimer()
-    this.disposed = true
-    this.generation += 1
-    this.state = 'stopped'
-    this.pageReady = false
-    this.readyPath = ''
-    this.remaining = 0
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.timelineWait = false
-    this.timelineTargetCount = 0
-    this.listeners.clear()
+    this.disposed = true; this.request += 1; this.clearPage(); this.state = 'stopped'; this.remaining = 0; this.listeners.clear()
   }
 
-  /** 停留或媒体等待到期：按末页/循环规则推进，或为单页循环开启新周期。 */
-  private handleTimer(token: number): void {
-    if (this.disposed || token !== this.generation || this.state !== 'playing' || !this.pageReady) return
-    if (!this.autoAdvanceEnabled) {
-      this.clearTimer()
-      this.remaining = 0
-      this.emit()
-      return
-    }
-    const kind = this.timerKind
-    this.timer = undefined
-    this.timerKind = null
-    const page = this.currentPage()
-    if (!page) return
-    // 休眠或长时间冻结会让回调远晚于截止时间；此时先停在当前页，避免醒来立即连跳。
-    if (this.clock.now() - this.deadline > TIMER_WAKE_GAP_MS) {
-      this.remaining = kind === 'timeline-timeout'
-        ? this.timelineTimeout(page)
-        : kind === 'media-timeout' ? this.mediaTimeout(page) : this.pageDelay(page)
-      this.state = 'paused'
-      this.emit()
-      return
-    }
-    if (kind === 'timeline-timeout') {
-      this.enterFailure('error', this.path, token, TIMELINE_TIMEOUT_MESSAGE)
-      return
-    }
-    if (kind === 'media-timeout') {
-      this.enterFailure('error', this.path, token, MEDIA_TIMEOUT_MESSAGE)
-      return
-    }
-    if (page.advance.mode === 'manual') return
-    this.advanceAfterStay(false)
-  }
-
-  /**
-   * 当前页停留完成后的统一推进。
-   * replayMedia 表示这次完成来自媒体结束；单页循环需要重置媒体时限并通知宿主重播。
-   */
-  private advanceAfterStay(replayMedia: boolean): void {
-    if (!this.autoAdvanceEnabled) return
-    const page = this.currentPage()
-    if (!page) return
-    const currentIndex = this.indexOf(this.path)
-    if (currentIndex < 0) return
-    const isLast = currentIndex === this.pages.length - 1
-
-    if (isLast && !this.loop) {
-      this.generation += 1
-      this.state = 'ended'
-      this.remaining = 0
-      this.mediaWait = false
-      this.mediaTargetCount = 0
-      this.timelineWait = false
-      this.timelineTargetCount = 0
-      this.timelineBuffering = false
-      this.emit()
-      return
-    }
-    if (isLast && this.pages.length === 1) {
-      // 单页循环不产生路由切换，但每轮都必须有完整停留或媒体周期。
-      this.generation += 1
-      if (replayMedia && page.advance.mode === 'timeline_end' && this.timelineTargetCount > 0) {
-        this.timelineWait = true
-        this.remaining = this.timelineTimeout(page)
-        this.armTimer(this.remaining, 'timeline-timeout')
-      } else if (replayMedia && page.advance.mode === 'media_end' && this.mediaTargetCount > 0) {
-        this.mediaWait = true
-        this.remaining = this.mediaTimeout(page)
-        this.armTimer(this.remaining, 'media-timeout')
-      } else {
-        this.mediaWait = false
-        this.timelineWait = false
-        this.timelineBuffering = false
-        this.remaining = this.pageDelay(page)
-        this.armTimer(this.remaining, 'stay')
-      }
-      this.emit()
-      return
-    }
-
-    const next = this.pages[isLast ? 0 : currentIndex + 1]
-    this.generation += 1
-    this.state = 'preparing'
-    this.pageReady = false
-    this.readyPath = ''
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.timelineWait = false
-    this.timelineTargetCount = 0
-    this.timelineBuffering = false
-    this.remaining = this.pageDelay(next)
-    this.emit()
-    this.navigateTo(next.path)
-  }
-
-  /** 发起导航并把当前尝试的迟到失败收敛到错误态；用户跳页后旧尝试自动失效。 */
-  private navigateTo(path: string): void {
-    const attempt = this.generation
-    let result: void | Promise<void>
+  /** 一次进页复用 Stage 的导航/过渡/资源共享准备期限，旧清理重入不能覆盖新请求。 */
+  private enter(page: DeckPage): void {
+    const token = ++this.request
+    this.clearPage()
+    if (token !== this.request || this.disposed) return
+    this.path = page.path; this.state = 'preparing'; this.issue = null; this.completed = false; this.remaining = 0
     try {
-      result = this.navigate(path)
-    } catch (error) {
-      this.failNavigation(attempt, error)
-      return
-    }
-    Promise.resolve(result).catch(error => this.failNavigation(attempt, error))
-  }
-
-  /** 自动翻页失败时只处理当前尝试，用户已跳页或被新状态覆盖的旧失败直接丢弃。 */
-  private failNavigation(attempt: number, error: unknown): void {
-    if (this.disposed || attempt !== this.generation) return
-    console.error('[runtime-playback] 自动翻页失败', error)
-    this.clearTimer()
-    this.generation += 1
-    this.state = 'error'
-    this.message = NAVIGATION_ERROR_MESSAGE
-    this.pageReady = false
-    this.readyPath = ''
-    this.remaining = 0
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.emit()
-  }
-
-  private enterFailure(state: 'error' | 'blocked', path: string, generation: number, message: string): boolean {
-    if (this.disposed || path !== this.path || generation !== this.generation) return false
-    if (this.state !== 'preparing' && this.state !== 'playing' && this.state !== 'paused') return false
-    this.clearTimer()
-    this.generation += 1
-    this.state = state
-    this.message = message
-    this.pageReady = false
-    this.readyPath = ''
-    this.remaining = 0
-    this.mediaWait = false
-    this.mediaTargetCount = 0
-    this.timelineWait = false
-    this.timelineTargetCount = 0
-    this.timelineBuffering = false
-    this.emit()
-    return true
-  }
-
-  /** 从就绪状态进入播放；手动页无计时，media_end/timeline_end 等待对应完成信号。 */
-  private enterPlaying(delayMs: number, mediaTargets = this.mediaTargetCount, timelineTargets = this.timelineTargetCount): void {
-    this.state = 'playing'
-    const page = this.currentPage()
-    const waitingForMedia = Boolean(page?.advance.mode === 'media_end' && mediaTargets > 0)
-    const waitingForTimeline = Boolean(page?.advance.mode === 'timeline_end' && timelineTargets > 0)
-    this.mediaTargetCount = mediaTargets
-    this.timelineTargetCount = timelineTargets
-    this.mediaWait = waitingForMedia
-    this.timelineWait = waitingForTimeline
-    if (!page || page.advance.mode === 'manual' || !this.autoAdvanceEnabled) {
-      this.remaining = 0
-      this.emit()
-      return
-    }
-    if (waitingForTimeline) {
-      this.remaining = delayMs
-      if (!this.timelineBuffering) this.armTimer(delayMs, 'timeline-timeout')
-    } else if (waitingForMedia) {
-      this.remaining = delayMs
-      this.armTimer(delayMs, 'media-timeout')
-    } else {
-      this.remaining = delayMs
-      this.armTimer(delayMs, 'stay')
-    }
-    this.emit()
-  }
-
-  /** 建立唯一推进句柄；覆盖前始终清理旧句柄。 */
-  private armTimer(delayMs: number, kind: 'stay' | 'media-timeout' | 'timeline-timeout'): void {
-    this.clearTimer()
-    this.timerKind = kind
-    const token = this.generation
-    this.deadline = this.clock.now() + delayMs
-    this.timer = this.clock.setTimeout(() => this.handleTimer(token), delayMs)
-  }
-
-  private clearTimer(): void {
-    if (this.timer !== undefined) {
-      this.clock.clearTimeout(this.timer)
-      this.timer = undefined
-    }
-    this.timerKind = null
-  }
-
-  /** 播放中按单调时钟计算剩余毫秒，其余状态返回保存值。 */
-  private currentRemaining(): number {
-    if (this.state === 'playing' && this.timer !== undefined) {
-      return Math.max(0, Math.round(this.deadline - this.clock.now()))
-    }
-    return this.remaining
-  }
-
-  /** 页面的推进时长：timer 为停留时间，media_end 为无媒体时的兜底停留。 */
-  private pageDelay(page: PlaybackPage | undefined): number {
-    return page && (page.advance.mode === 'timer' || page.advance.mode === 'media_end')
-      ? page.advance.delayMs
-      : 0
-  }
-
-  private mediaTimeout(page: PlaybackPage | undefined): number {
-    return page?.advance.mediaTimeoutMs ?? DEFAULT_MEDIA_TIMEOUT_MS
-  }
-
-  private timelineTimeout(page: PlaybackPage | undefined): number {
-    return page?.advance.timelineTimeoutMs ?? DEFAULT_TIMELINE_TIMEOUT_MS
-  }
-
-  private currentPage(): PlaybackPage | undefined {
-    const index = this.indexOf(this.path)
-    return index >= 0 ? this.pages[index] : undefined
-  }
-
-  private indexOf(path: string): number {
-    return this.pages.findIndex(page => page.path === path)
-  }
-
-  private resolveStartPath(preferredPath?: string): string | undefined {
-    if (preferredPath && this.indexOf(preferredPath) >= 0) return preferredPath
-    if (this.indexOf(this.path) >= 0) return this.path
-    return this.pages[0]?.path
-  }
-
-  private emit(): void {
-    if (this.disposed) return
-    const snapshot = this.getSnapshot()
-    for (const listener of [...this.listeners]) {
-      try {
-        listener(snapshot)
-      } catch (error) {
-        console.error('[runtime-playback] 状态监听失败', error)
+      if (!['manual', 'timer', 'scene_end'].includes(page.advance.mode)) throw new SceneSessionError('DECK_ADVANCE_UNSUPPORTED', '当前推进配置已不支持，请改为 manual、timer 或 scene_end。')
+      if (!Number.isFinite(page.advance.delayMs) || page.advance.delayMs < 1 || page.advance.delayMs > 3600000
+        || (page.advance.completionDelayMs !== undefined && (!Number.isFinite(page.advance.completionDelayMs) || page.advance.completionDelayMs < 0 || page.advance.completionDelayMs > 3600000))) {
+        throw new SceneSessionError('DECK_ADVANCE_INVALID', '页面停留必须是有限毫秒值，定时停留须为正数。')
       }
-    }
+      const preparing = this.options.stage.prepare({ path: page.path, execution: 'presentation', advanceMode: page.advance.mode })
+      this.scene = this.options.stage.getCurrent()
+      const scene = this.scene
+      if (!scene) throw new SceneSessionError('DECK_SCENE_MISSING', '当前执行策略不能创建放映会话。')
+      this.unsubscribe = scene.subscribe(value => { if (token === this.request) this.onScene(value) })
+      this.emit()
+      void preparing.then(async ready => {
+        if (token !== this.request || this.disposed || ready !== this.scene) return
+        if (ready?.getSnapshot().phase !== 'ready') { this.onScene(scene.getSnapshot()); return }
+        this.state = 'playing'; this.emit()
+        if (token !== this.request || this.disposed) return
+        scene.setSuspended(this.suspended)
+        await scene.start()
+        if (token !== this.request || this.disposed) return
+        if (page.advance.mode === 'timer') this.schedule(page.advance.delayMs)
+      }).catch(error => { if (token === this.request && !this.disposed) this.fail(error) })
+    } catch (error) { this.fail(error) }
   }
-}
 
-/** 过滤隐藏页并按路径去重，构造器保存的配置不再受外部数组修改影响。 */
-function dedupeVisiblePages(pages: readonly PlaybackPage[]): PlaybackPage[] {
-  const result: PlaybackPage[] = []
-  const seen = new Set<string>()
-  for (const page of pages) {
-    if (page.hidden || seen.has(page.path)) continue
-    seen.add(page.path)
-    result.push({ path: page.path, advance: { ...page.advance } })
+  /** 聚合真实完成；timer 不因 blocking 受阻而等待，scene_end 只在完成后计时。 */
+  private onScene(value: SceneSnapshot): void {
+    if (value.phase === 'failed') { this.fail(value.issue); return }
+    if (value.phase === 'stopped') { this.fail(new SceneSessionError('DECK_SCENE_STOPPED', '页面声明已经卸载，播放已停止。')); return }
+    if (value.phase === 'blocked') this.state = 'blocked'
+    else if (value.phase === 'running' || value.phase === 'completed') this.state = 'playing'
+    if (value.phase === 'completed' && !this.completed) {
+      this.completed = true
+      if (this.getSnapshot().advanceMode === 'scene_end') this.schedule(this.fullDelay())
+    }
+    this.emit()
   }
-  return result
+
+  /** 一次性翻页计时；冻结、hold、准备或完成目标未满足时不持有句柄。 */
+  private schedule(delay: number): void {
+    this.clearTimer(); this.remaining = delay
+    if (!['playing', 'blocked'].includes(this.state) || this.held || this.suspended) return
+    const mode = this.getSnapshot().advanceMode
+    if (mode === 'manual' || (mode === 'scene_end' && !this.completed)) return
+    const token = this.request
+    this.deadline = this.clock.now() + Math.max(1, delay)
+    this.timer = this.clock.setTimeout(() => {
+      this.timer = undefined
+      if (token !== this.request || !this.active() || this.held || this.suspended) return
+      if (this.clock.now() - this.deadline > 3000) { this.held = true; this.remaining = this.fullDelay(); this.emit(); return }
+      const index = this.pages.findIndex(page => page.path === this.path)
+      const next = this.pages[index + 1] ?? (this.options.loop ? this.pages[0] : undefined)
+      if (next) this.enter(next)
+      else {
+        const ended = ++this.request
+        this.clearPage()
+        if (ended !== this.request) return
+        this.state = 'ended'; this.remaining = 0; this.emit()
+      }
+    }, Math.max(1, delay))
+  }
+
+  /** release 和迟到守卫都使用完整当前页停留，不累计遗漏的翻页次数。 */
+  private fullDelay(): number {
+    const advance = this.pages.find(page => page.path === this.path)?.advance
+    return advance?.mode === 'timer' ? advance.delayMs : advance?.mode === 'scene_end' && this.completed ? advance.completionDelayMs ?? 300 : 0
+  }
+
+  /** 先退订再取消，防止离页清理的 stopped 被误识别成当前页失败。 */
+  private clearPage(): void { this.clearTimer(); this.unsubscribe?.(); this.unsubscribe = null; this.scene = null; this.options.stage.stop() }
+  /** 统一撤销唯一计时句柄。 */
+  private clearTimer(): void { if (this.timer !== undefined) this.clock.clearTimeout(this.timer); this.timer = undefined }
+  /** 失败立即释放当前页，摘要有界且不会暴露任意异常堆栈。 */
+  private fail(error: unknown): void {
+    const known = error instanceof SceneSessionError ? error : error && typeof error === 'object' && 'code' in error ? error as SceneIssue : null
+    const issue = { code: String(known?.code ?? 'DECK_PLAYBACK_FAILED').slice(0, 128), message: String(known?.message ?? '页面播放失败。').slice(0, 240) }
+    const token = ++this.request
+    this.clearPage()
+    if (token !== this.request || this.disposed) return
+    this.issue = issue; this.state = 'failed'; this.remaining = 0; this.emit()
+  }
+  /** 只有活跃状态允许保持/释放；ended 不再拥有页面资源。 */
+  private active(): boolean { return ['preparing', 'playing', 'blocked'].includes(this.state) }
+  /** 订阅回调可以重入停止或切页，不传播观察方错误。 */
+  private emit(): void { for (const listener of this.listeners) { try { listener(this.getSnapshot()) } catch { /* 继续通知其他观察方。 */ } } }
 }

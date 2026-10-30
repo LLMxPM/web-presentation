@@ -24,7 +24,7 @@
 | [A2 契约责任与验收设计](./a2-support-matrix.md) | Runtime / 跨模块 | A1 | 跨包契约责任、共同样例、支持范围草稿与 C3 证据清单 |
 | [B0 静态呈现契约与默认截图替代](./b0-static-presentation.md) | Runtime / Renderer / Backend | A2 | 默认 PNG/附图/导出脱离时间轴采样；静态结果与不可呈现语义冻结 |
 | [B1 删除指定时刻截图协议](./b1-drop-arbitrary-moment.md) | Runtime / Backend / render-contracts | B0 | `motion_snapshot` 与对外选择器删除；旧正向播放调用点暂留 |
-| [B2 完成聚合取代统一时钟](./b2-completion-aggregation.md) | Runtime core / shell | B1 | `usePageScene.v1`、generation、`scene_end`；旧编译器/Transport/采样调用点同批删除 |
+| [B2 完成聚合取代统一时钟](./b2-completion-aggregation.md) | Runtime core / shell | B1 | 正式 Scene/Deck 与单页预览接管、三种推进、约束/样例及开发回归；宿主旧调用移除 |
 | [B3 三维正向片段播放](./b3-model-forward-playback.md) | Runtime model3d | B2 | ModelViewer 拆分、renderer 所有权、实例 Mixer |
 | [B4 音频所有权统一](./b4-audio-ownership.md) | Runtime media | B2 | AudioBus、三类所有权、媒体用途声明 |
 | [B5 配置与调用端收敛](./b5-config-and-clients.md) | Backend / Editor / AI / CLI | B2 | 新放映 DTO、最小意图与原子状态协议、AI 指引、CLI |
@@ -34,7 +34,7 @@
 
 执行顺序：`A1 → A2 → B0 → B1 → B2 → B3/B4/B5 → C1 → C2 → C3`。
 
-B0 是 B1 删除默认海报采样依赖的硬前置；B1 只移除未开放的外部截图选择器，旧播放内部编译器直到 B2 新会话接管才删除。B3、B4、B5 共同依赖 B2，分别负责 model3d、media 与配置/调用端；共享组件、manifest 和入口由各包明确交接，按资源情况安排实现顺序。B5 中 Backend 放映 DTO 与 Editor 配置表单必须同批落地。C1 独占最终截图与 Renderer 契约收口，B5 不修改截图 DTO。真实浏览器、远程 Renderer、生产镜像、独立产物和长稳验证统一由 C3 执行，不作为 A/B/C1/C2 的完成前置。
+B0 是 B1 删除默认海报采样依赖的硬前置；B1 只移除未开放的外部截图选择器。B2 接管正式宿主和预览并删除对应旧调用；B3、B4、B5 依次替换仍消费旧模型、媒体、配置和客户端协议的调用点，再由 C2 在合并 main 前清零旧编译器、Transport、采样及公开入口，避免 B2 与后续包前置互等。B3、B4、B5 共同依赖 B2，分别负责 model3d、media 与配置/调用端；共享组件、manifest 和入口由各包明确交接，按资源情况安排实现顺序。B5 中 Backend 放映 DTO 与 Editor 配置表单必须同批落地。C1 独占最终截图与 Renderer 契约收口，B5 不修改截图 DTO。真实浏览器、远程 Renderer、生产镜像、独立产物和长稳验证统一由 C3 执行，不作为 A/B/C1/C2 的完成前置。
 
 ## 旧未闭环项处置
 

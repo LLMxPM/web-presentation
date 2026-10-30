@@ -8,7 +8,6 @@
     :class="{ 'responsive-layout--fullscreen': isFullscreen }" :style="layoutStyles">
     <PlaybackHostBridge
       v-if="isFullscreen"
-      :initial-auto-advance="playbackAutoStart"
       :presenter-available="shouldShowPresenterButton"
       @presenter="openPresenterMode"
       @exit="exitSlideshow"
@@ -300,7 +299,6 @@ watch(currentMenuMode, value => writeRuntimePreference('menuMode', value))
 const isBottomStripCollapsed = session.bottomCollapsed
 
 /** 进入放映时的初始自动推进模式，来自项目 auto_start。 */
-const playbackAutoStart = computed(() => playbackConfig.value.autoStart)
 
 /**
  * 当前布局实际使用的菜单模式；全屏放映不显示任何预览导航。
@@ -784,9 +782,9 @@ const openPresenterMode = (): void => {
     return
   }
 
-  // 先停住本窗口推进和媒体，再把当前页和自动/手动模式交给观众窗口。
-  session.pausePlayback?.()
-  const autoAdvance = session.playbackAutoAdvance?.() ?? playbackConfig.value.autoStart
+  // 先释放本窗口推进和任务；观众窗口依照各页配置重新建立放映。
+  session.stopPlayback?.()
+  const autoAdvance = true
   void exitSlideshow()
   const currentPath = normalizePresenterRoutePath(router.currentRoute.value.path)
   const channelId = createPresenterChannelId()

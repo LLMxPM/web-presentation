@@ -27,10 +27,17 @@ export function registerPageSceneDefinition(options: PageSceneDefinition): () =>
   const token = Symbol('page-scene')
   const { root, define } = options
   const lifetime = new AbortController()
+  let active: AbortController | null = null
   const unregisterManaged = registerManagedPresentation(root)
   definitions.set(token, { root, define(context) {
     context.linkSignal(lifetime.signal)
     if (context.signal.aborted) return
+    const previous = active, owner = new AbortController()
+    active = owner
+    context.linkSignal(owner.signal)
+    context.onCleanup(() => { if (active === owner) active = null })
+    previous?.abort()
+    if (context.signal.aborted || active !== owner) return
     const element = root()
     if (!(element instanceof HTMLElement)) throw new SceneSessionError('SCENE_ROOT_INVALID', 'Scene 缺少已挂载的页面根节点。')
     return define({ root: element, generation: context.generation, signal: context.signal, onCleanup: context.onCleanup,

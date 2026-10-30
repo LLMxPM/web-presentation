@@ -23,7 +23,8 @@ const playbackFixture = vi.hoisted(() => ({
   stop: vi.fn(),
   retry: vi.fn(),
   next: vi.fn(),
-  setAutoAdvance: vi.fn(),
+  hold: vi.fn(),
+  release: vi.fn(),
   seekMotion: vi.fn().mockResolvedValue(true),
 }))
 
@@ -74,9 +75,10 @@ vi.mock('@/runtime-shell/playback/usePlaybackHost', async () => {
         resume: playbackFixture.resume,
         stop: playbackFixture.stop,
         retry: playbackFixture.retry,
-        next: playbackFixture.next,
+        goNext: playbackFixture.next,
         seekMotion: playbackFixture.seekMotion,
-        setAutoAdvance: playbackFixture.setAutoAdvance,
+        hold: playbackFixture.hold,
+        release: playbackFixture.release,
         refresh: vi.fn(),
       }
     },
@@ -204,12 +206,12 @@ describe('PresenterDisplayView', () => {
     app.unmount()
   })
 
-  it('继承进入演讲时 URL 携带的自动/手动模式', async () => {
+  it('URL 的旧自动/手动参数不再改变 Scene 推进配置', async () => {
     routeFixture.query = { channel: 'channel-display', route: '/intro', auto: '1' }
     const { app } = mountPresenterDisplayView()
     await flushVueUpdates()
 
-    expect(playbackFixture.options).toMatchObject({ autoStart: false, initialAutoAdvance: true })
+    expect(playbackFixture.options).toBeUndefined()
     app.unmount()
   })
 
@@ -217,7 +219,7 @@ describe('PresenterDisplayView', () => {
     const { app, host } = mountPresenterDisplayView()
     await flushVueUpdates()
 
-    expect(playbackFixture.options).toMatchObject({ autoStart: false, initialAutoAdvance: false })
+    expect(playbackFixture.options).toBeUndefined()
     expect(presenterFixture.postPlaybackState).toHaveBeenCalled()
     expect(presenterFixture.updatePlayback).toHaveBeenCalledWith(expect.objectContaining({ state: 'stopped' }))
 
@@ -240,14 +242,14 @@ describe('PresenterDisplayView', () => {
     presenterFixture.commandHandler?.('stop')
     presenterFixture.commandHandler?.('set-auto-advance', { autoAdvance: false })
 
-    expect(playbackFixture.pause).toHaveBeenCalledTimes(1)
-    expect(playbackFixture.resume).toHaveBeenCalledTimes(1)
+    expect(playbackFixture.pause).not.toHaveBeenCalled()
+    expect(playbackFixture.resume).not.toHaveBeenCalled()
     expect(playbackFixture.next).toHaveBeenCalledTimes(1)
     expect(playbackFixture.stop).toHaveBeenCalledTimes(1)
-    expect(playbackFixture.setAutoAdvance).toHaveBeenCalledWith(false)
+    expect(playbackFixture.hold).toHaveBeenCalledOnce()
 
     presenterFixture.commandHandler?.('seek', { positionMs: 1200, seekRevision: 3 })
-    expect(playbackFixture.seekMotion).toHaveBeenCalledWith(1200)
+    expect(playbackFixture.seekMotion).not.toHaveBeenCalled()
 
     app.unmount()
   })
