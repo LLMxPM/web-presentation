@@ -1903,25 +1903,25 @@
     {
       "kind": "component",
       "base_name": "AssetModel",
-      "version_no": 2,
-      "name": "AssetModel.v2",
-      "import_path": "@runtime-kit/public/components/assets/AssetModel.v2.vue",
+      "version_no": 3,
+      "name": "AssetModel.v3",
+      "import_path": "@runtime-kit/public/components/assets/AssetModel.v3.vue",
       "category": "asset",
-      "description": "页内时间轴受控的三维模型渲染。",
+      "description": "Scene 正向片段与实例数值动画的三维模型。",
       "capability": {
         "enabled": true,
         "previewable": false,
         "recommendation_level": "advanced",
-        "display_name": "时间轴三维模型",
-        "summary": "按资源逻辑名渲染标准 GLB 模型，固定关闭查看交互；片段采样与整体包装变换由页内时间轴独占。",
-        "tags": ["timeline-model"],
+        "display_name": "Scene 三维模型",
+        "summary": "每个模型实例独立正向播放真实片段；getHandle() 返回片段任务、整体变换和相机数值副本，不暴露共享材质或骨骼。",
+        "tags": ["scene-model"],
         "usage": [
-          "import AssetModelV2 from '@runtime-kit/public/components/assets/AssetModel.v2.vue'",
-          "<AssetModelV2 name=\"product\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />"
+          "import AssetModelV3 from '@runtime-kit/public/components/assets/AssetModel.v3.vue'",
+          "<AssetModelV3 name=\"product\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />"
         ],
-        "returns": "Vue 组件；渲染受控模型目标，并提供时间轴所需的动作与整体变换句柄。",
-        "return_example": ["<AssetModelV2 name=\"product\" class=\"w-full h-80\" />"],
-        "constraints": ["片段引用必须来自真实资源查询的 index 与 signature；时间轴不猜测动作名称。", "组件固定关闭查看交互；普通可交互模型继续使用 AssetModel.v1。"],
+        "returns": "Vue 组件；ref.getHandle() 返回 ModelSceneHandle，animation({ id, role, clipIndex, signature }) 生成 Scene task。",
+        "return_example": ["<AssetModelV3 name=\"product\" class=\"w-full h-80\" />"],
+        "constraints": ["片段引用必须来自真实资源查询的 index 与 signature；开始前校验，不猜测动作名称；有限片段可 blocking，repeat=-1 仅 ambient。", "组件固定关闭查看交互；普通可交互模型继续使用 AssetModel.v1。", "数值副本可由 scene.visual 驱动，onUpdate 调用 handle.invalidate；Scene.onCleanup 登记 handle.reset。"],
         "audiences": ["backend", "agent"]
       }
     },

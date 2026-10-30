@@ -12,6 +12,13 @@ interface PooledRenderer {
 
 const MAX_IDLE_RENDERERS = 4
 const idleRenderers: PooledRenderer[] = []
+const activeRenderers = new Set<ThreeNamespace.WebGLRenderer>()
+let createdCount = 0, disposedCount = 0, peakActive = 0
+
+/** C3 采集所有权曲线的内部观测口径；累计创建/销毁不代表浏览器已实际回收 GPU 或 JS 堆。 */
+export function readModelRendererPoolStats() {
+  return { active: activeRenderers.size, idle: idleRenderers.length, created: createdCount, disposed: disposedCount, peakActive, maxIdle: MAX_IDLE_RENDERERS }
+}
 
 /**
  * 借用同版本渲染器；没有空闲实例时创建新 canvas 与 WebGL 上下文。
@@ -22,14 +29,18 @@ export function acquireModelRenderer(engine: Model3dEngine): ThreeNamespace.WebG
   const constructorRef = engine.THREE.WebGLRenderer
   const index = idleRenderers.findIndex(entry => entry.constructorRef === constructorRef)
   if (index >= 0) {
-    return idleRenderers.splice(index, 1)[0].renderer
+    const renderer = idleRenderers.splice(index, 1)[0].renderer
+    activeRenderers.add(renderer); peakActive = Math.max(peakActive, activeRenderers.size)
+    return renderer
   }
-  return new constructorRef({
+  const renderer = new constructorRef({
     canvas: document.createElement('canvas'),
     alpha: true,
     antialias: true,
     preserveDrawingBuffer: false,
   })
+  createdCount += 1; activeRenderers.add(renderer); peakActive = Math.max(peakActive, activeRenderers.size)
+  return renderer
 }
 
 /**
@@ -38,7 +49,9 @@ export function acquireModelRenderer(engine: Model3dEngine): ThreeNamespace.WebG
  * @param engine 创建该渲染器所用的引擎
  */
 export function releaseModelRenderer(renderer: ThreeNamespace.WebGLRenderer, engine: Model3dEngine): void {
+  if (!activeRenderers.delete(renderer)) return
   try {
+    if (renderer.getContext?.().isContextLost()) { disposeRenderer(renderer); return }
     renderer.setAnimationLoop?.(null)
     renderer.renderLists?.dispose()
     renderer.resetState?.()
@@ -64,6 +77,7 @@ export function drainModelRendererPool(): void {
 
 /** 销毁超额或主动排空的渲染器。 */
 function disposeRenderer(renderer: ThreeNamespace.WebGLRenderer): void {
+  disposedCount += 1
   try {
     renderer.dispose()
     renderer.forceContextLoss()

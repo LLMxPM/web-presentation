@@ -102,4 +102,3 @@ export function applyBackground(
   const clearColor = new THREE.Color().setRGB(color.r, color.g, color.b, THREE.SRGBColorSpace)
   targetRenderer.setClearColor(clearColor, color.a)
 }
-

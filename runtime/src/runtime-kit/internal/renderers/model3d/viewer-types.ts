@@ -34,4 +34,3 @@ export interface OrbitControlsLike {
   addEventListener?: (type: 'change', listener: () => void) => void
   removeEventListener?: (type: 'change', listener: () => void) => void
 }
-

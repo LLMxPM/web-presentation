@@ -66,6 +66,12 @@ Editor 单页预览与放大预览提供播放、停止和完整 Scene 状态，
 
 Runtime 根元素全屏后由唯一 Deck 启动当前页，过渡与资源就绪前不运行任务。manual 等待手动翻页，timer 到点取消未完成任务，scene_end 等全部 blocking 实际完成后再停留；保持/释放只阻止自动翻页，不暂停动画。冻结恢复按剩余预算继续，计时严重迟到时保持当前页等待释放。Runtime 内部配置已识别 scene_end 与 completionDelayMs；Backend DTO 和 Editor 配置表单升级由 B5 同批完成，旧 media_end/timeline_end 在正式宿主明确报错。
 
+## 模型与实例数值
+
+模型使用 `AssetModel.v3.vue`，通过组件 ref 的 `getHandle()` 在首帧就绪后取得句柄。`handle.animations()` 读取当前真实片段摘要；将资源查询确认的 `clipIndex/signature` 传入 `handle.animation({ id, role, clipIndex, signature, repeat?, rate? })`，再交给 `scene.task(...)`。有限动作可 blocking；repeat=-1 只能 ambient，同一实例同时仅允许一个动作，连续动作可用 afterTrack；多实例各自独立播放。资源替换后旧句柄失效，不能按名称猜测新片段。
+
+`handle.transform` 提供 x/y/z/scale/rotationY（角度），`handle.camera` 提供位置、targetX/Y/Z 与 fov 数值副本；可用 scene.visual 驱动，并在 onUpdate 调用 handle.invalidate()。在 define 中登记 `scene.onCleanup(handle.reset)` 恢复初始视角与整体变换。材质、几何、骨骼与动作混合不通过此句柄开放。静态/可交互展示继续使用 AssetModel.v1；v2 已删除。实际 WebGL 和多模型资源曲线待 C3。
+
 ## 合并前收口
 
 完整责任和实机清单见[工作包清单](../runtime-integration/playback-redesign/work-packages/README.md)。合并 main 前必须完成正式宿主切换、旧时间轴/Transport/采样与旧 manifest 清除、各调用端及生成物收敛，并通过 C3 的全量与集中实机验收。开发阶段保持版本化公开路径、最小充分测试、静态截图和导出开发回归；不再用“尚未删除旧入口”阻止新能力调试。

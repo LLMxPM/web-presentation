@@ -10,7 +10,7 @@ import { resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
 
 import AssetAudioV2 from './AssetAudio.v2.vue'
-import AssetModelV2 from './AssetModel.v2.vue'
+import AssetModelV3 from './AssetModel.v3.vue'
 import AssetVideoV2 from './AssetVideo.v2.vue'
 
 vi.mock('@runtime-kit/internal/renderers/ModelViewer.vue', async () => {
@@ -110,11 +110,11 @@ describe('Asset*.v2', () => {
     expect(audio?.dataset.runtimeMediaPurpose).toBe('narration')
   })
 
-  it('模型固定关闭交互并声明时间轴目标', async () => {
-    const host = await mount(AssetModelV2, { name: 'product', interactive: true })
+  it('Scene 模型固定关闭交互且不声明旧时间轴目标', async () => {
+    const host = await mount(AssetModelV3, { name: 'product', interactive: true })
 
     const stub = host.querySelector<HTMLElement>('.model-viewer-stub')
-    expect(stub?.dataset.runtimeKitMotion).toBe('timeline')
+    expect(stub?.dataset.runtimeKitMotion).toBeUndefined()
     expect(stub?.dataset.runtimeAssetName).toBe('product')
     expect(stub?.querySelector('[data-stub-interactive]')?.getAttribute('data-stub-interactive')).toBe('false')
   })

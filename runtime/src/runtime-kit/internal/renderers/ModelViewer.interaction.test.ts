@@ -7,6 +7,7 @@ import { clearDefaultModelStaticFrameCache, prepareModelStaticFrames } from '@/c
 import { findModelStaticFrameImage } from '@/core/shared/model-static-frame-contract'
 import ModelViewer from './ModelViewer.vue'
 import { drainModelRendererPool } from './model3d/renderer-pool'
+import { readModelSceneHandle } from './model3d/scene-contract'
 
 const probes = vi.hoisted(() => ({
   renderers: [] as Array<{ camera: Camera | null }>,
@@ -137,6 +138,16 @@ async function mountViewer(extraProps: Record<string, unknown> = {}): Promise<HT
 }
 
 describe('ModelViewer 交互与静态帧', () => {
+  it('非交互模型首帧后提供受限 Scene 句柄，数值相机更新走真实重绘入口且卸载注销', async () => {
+    const root = await mountViewer({ interactive: false })
+    const handle = readModelSceneHandle(root)
+    expect(handle).not.toBeNull(); expect(handle?.animations()).toEqual([])
+    handle!.camera.x = 7; handle!.invalidate()
+    await vi.waitFor(() => expect(probes.renderers[0].camera?.position.x).toBe(7))
+    mounted.pop()!.unmount()
+    expect(readModelSceneHandle(root)).toBeNull(); expect(handle?.isReady()).toBe(false)
+  })
+
   it('尺寸变化后继续渲染控制器持有的同一相机，并保留交互姿态', async () => {
     await mountViewer()
     const originalCamera = probes.controls[0].object

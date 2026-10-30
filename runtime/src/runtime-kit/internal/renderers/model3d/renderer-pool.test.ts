@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Model3dEngine } from './engine'
-import { acquireModelRenderer, drainModelRendererPool, releaseModelRenderer } from './renderer-pool'
+import { acquireModelRenderer, drainModelRendererPool, releaseModelRenderer, readModelRendererPoolStats } from './renderer-pool'
 
 let created = 0
 let disposed = 0
@@ -36,6 +36,7 @@ describe('模型 WebGL 渲染器池', () => {
     const second = acquireModelRenderer(engine)
     expect(first).not.toBe(second)
     expect(created).toBe(2)
+    expect(readModelRendererPoolStats()).toMatchObject({ active: 2, idle: 0, maxIdle: 4 })
 
     releaseModelRenderer(first, engine)
     const reused = acquireModelRenderer(engine)
@@ -45,6 +46,8 @@ describe('模型 WebGL 渲染器池', () => {
 
     releaseModelRenderer(second, engine)
     releaseModelRenderer(reused, engine)
+    releaseModelRenderer(reused, engine)
+    expect(readModelRendererPoolStats()).toMatchObject({ active: 0, idle: 2 })
     expect(disposed).toBe(0)
   })
 

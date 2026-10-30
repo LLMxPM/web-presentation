@@ -52,7 +52,7 @@ describe('runtime kit manifest', () => {
     expect(exportNames).toContain('useAudioCue.v1')
     expect(exportNames).toContain('AssetVideo.v2')
     expect(exportNames).toContain('AssetAudio.v2')
-    expect(exportNames).toContain('AssetModel.v2')
+    expect(exportNames).toContain('AssetModel.v3')
     expect(exportNames).toContain('usePageTimeline.v1')
     expect(exportNames).toContain('usePageScene.v1')
   })
@@ -70,7 +70,7 @@ describe('runtime kit manifest', () => {
     const motion = manifest.exports.filter(item => (
       item.name === 'AssetVideo.v2'
       || item.name === 'AssetAudio.v2'
-      || item.name === 'AssetModel.v2'
+      || item.name === 'AssetModel.v3'
       || item.name === 'usePageTimeline.v1'
     ))
 

@@ -169,3 +169,11 @@ Editor 普通/放大预览共享播放/停止控件；移除进度、定位、�
 - 根仓仓库约束、Scene 预览协议、项目模板与 Kit manifest 共 11 文件 72 项通过。
 
 B2 状态改为工程完成；正式宿主与单页预览不再消费旧 Transport/采样/媒体会话。保留的模型、媒体、配置/客户端消费分别交 B3/B4/B5，旧内核/公开入口/剩余 readiness 和浏览器夹具由 C2 全仓清理；责任表见[B2 工程出口](./work-packages/b2-completion-aggregation.md#第十批公开样例与-b2-工程出口2026-10-30)。GB 尚需 B3–B5，C3 实机尚未执行。未启动开发服务、未重置开发数据；未运行真实浏览器、Renderer、实际导出、镜像、独立产物、多窗口、发声、WebGL、长稳及 test:all，这些按当前顺序统一靠后。
+
+## B3：模型正向播放与实例所有权（2026-10-30）
+
+第一批 `a3b6a33` 抽离相机、首帧证明、实例资源与静态采集，第二批进一步拆出 WebGL 生命周期并由实例 Scene 控制器替换 Viewer 的旧姿态采样句柄。新增 AssetModel.v3，移除 v2；每实例独立 Mixer/action，以真实 finished 完成任务，支持有限/无限、实际依赖、冻结、资源替换和离页取消。页面只能修改实例数值副本，不获得共享几何/材质/骨骼。静态帧保持同步重绘/PNG 读回与独立静态初始姿态。
+
+Renderer 采用使用中独占、空闲上限 4 的有界池；明确保留上下文的成本并补 active/idle/创建/销毁计数，决策和 C3 的 A04 观测口径见 [B3](./work-packages/b3-model-forward-playback.md)。不把池计数、模拟 canvas 或 Three.js CPU 动作当成真实 GPU 回收证据。
+
+开发验证：模型/静态帧/资源组件 109 项、manifest 16 项、根仓契约 68 项、Backend Kit 契约 6 项通过；Runtime check/build 通过。完整 Runtime 首轮仅两条仍期待 AssetModel.v2 的断言失败，其余 1457 项通过、3 项跳过；更新后该 manifest 文件 16 项通过，B4/B5 之后再跑最终完整回归。B3 工程完成，真实 WebGL、上下文恢复、PNG 像素、独立产物与 A04 资源曲线统一留 C3。没有启动服务或修改开发数据。
