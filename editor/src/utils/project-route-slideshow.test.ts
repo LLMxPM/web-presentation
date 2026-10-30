@@ -27,14 +27,13 @@ import {
 
 const defaults: SlideshowSettings = {
   transition: { effect: 'fade', duration_ms: 400 },
-  advance: { mode: 'timer', delay_ms: 5000, media_timeout_ms: 300000 },
+  advance: { mode: 'timer', delay_ms: 5000, completion_delay_ms: 300 },
   loop: false,
-  auto_start: false,
 }
 
 const manualDefaults: SlideshowSettings = {
   ...defaults,
-  advance: { mode: 'manual', delay_ms: 5000, media_timeout_ms: 300000 },
+  advance: { mode: 'manual', delay_ms: 5000, completion_delay_ms: 300 },
 }
 
 /** 构造一个最小路由树，覆盖顶层页面、分组与子页。 */
@@ -85,7 +84,7 @@ function buildRoutes(): ProjectRouteItemWrite[] {
       order: 40,
       hidden: false,
       page_id: 5,
-      advance: { mode: 'media_end', delay_ms: 6000, media_timeout_ms: 120000 },
+      advance: { mode: 'scene_end', delay_ms: 6000, completion_delay_ms: 300 },
       children: [],
     },
   ]
@@ -108,7 +107,7 @@ describe('project-route-slideshow', () => {
     expect(overridden.advance).toEqual(defaults.advance)
   })
 
-  it('行内摘要应区分继承、覆盖与媒体结束', () => {
+  it('行内摘要应区分继承、覆盖与本页完成', () => {
     expect(formatRouteSlideshowSummary({ hidden: false, transition: null, advance: null }, defaults).label)
       .toBe('5s · 继承')
     expect(formatRouteSlideshowSummary({
@@ -119,16 +118,16 @@ describe('project-route-slideshow', () => {
     expect(formatRouteSlideshowSummary({
       hidden: false,
       transition: null,
-      advance: { mode: 'media_end', delay_ms: 6000, media_timeout_ms: 120000 },
-    }, defaults).label).toBe('媒体结束 · 覆盖')
+      advance: { mode: 'scene_end', delay_ms: 6000, completion_delay_ms: 300 },
+    }, defaults).label).toBe('本页完成 · 覆盖')
   })
 
-  it('时长估算应跳过隐藏页和隐藏分组，并单独统计手动页与媒体页', () => {
+  it('时长估算应跳过隐藏页和隐藏分组，并单独统计手动页与完成页', () => {
     const estimate = estimateProjectRoutesDuration(buildRoutes(), defaults)
     expect(estimate.playablePageCount).toBe(3)
     expect(estimate.manualCount).toBe(0)
-    expect(estimate.mediaCount).toBe(1)
-    expect(estimate.totalMs).toBe(400 + 5000 + 500 + 5000 + 400 + 6000)
+    expect(estimate.sceneCount).toBe(1)
+    expect(estimate.totalMs).toBe(400 + 5000 + 500 + 5000 + 400 + 300)
   })
 
   it('手动页应只计动画时长并计入手动页数量', () => {
@@ -140,7 +139,7 @@ describe('project-route-slideshow', () => {
     }))
     const estimate = estimateProjectRoutesDuration(routes, manualDefaults)
     expect(estimate.manualCount).toBe(3)
-    expect(estimate.mediaCount).toBe(0)
+    expect(estimate.sceneCount).toBe(0)
     expect(estimate.totalMs).toBe(400 + 400 + 400)
   })
 

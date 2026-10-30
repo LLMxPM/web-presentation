@@ -591,7 +591,7 @@ class ProjectTemplatePackageService:
             errors.append("导入文件 package_type 不受支持。")
         if schema_version not in SUPPORTED_PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSIONS:
             errors.append(
-                "导入文件 schema_version 必须是 1、2、3 或 4。"
+                "导入文件 schema_version 必须是 5；旧模板请重新导出。"
             )
         if await self.workspace_repository.get_by_id(workspace_id) is None:
             errors.append("目标工作空间不存在。")
@@ -1408,7 +1408,7 @@ class ProjectTemplatePackageService:
         schema_version: int | None,
         errors: list[str],
     ) -> None:
-        """校验模板项目放映配置：schema 3 必须完整，旧包省略时补默认值。"""
+        """校验模板项目放映配置：schema 5 必须完整，不转换旧放映语义。"""
 
         raw = project.get("slideshow")
         if raw is None:
@@ -1427,7 +1427,7 @@ class ProjectTemplatePackageService:
         schema_version: int | None,
         errors: list[str],
     ) -> None:
-        """校验模板音频设置和 cue 资源；旧包省略时按默认静音设置兼容。"""
+        """校验模板音频设置和 cue 资源；schema 5 必须携带音频设置。"""
 
         raw = parsed.project.get("audio_settings")
         if raw is None:

@@ -22,7 +22,7 @@ beforeEach(async () => {
   gsap.ticker.sleep(); vi.useFakeTimers(); assets.mockReset(); assets.mockResolvedValue(READY)
   initializeRuntimeExecution('?runtimeExecution=presentation')
   Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: document.documentElement })
-  setRuntimePreloadedConfig({ routes: { playback: { autoStart: false, loop: false }, routes: ['/a', '/b'].map((path, index) => ({
+  setRuntimePreloadedConfig({ routes: { playback: { schemaVersion: 4, loop: false }, routes: ['/a', '/b'].map((path, index) => ({
     route: path.slice(1), component: `@/views/${path.slice(1)}.vue`, meta: { order: index + 1, title: path, advance: { mode: 'timer', delayMs: 1000 } },
   })) }, app: {}, icons: { static_icons: [] } } as never)
   await reloadAllConfigs()

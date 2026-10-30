@@ -143,74 +143,17 @@ def test_project_settings_should_reject_non_object_values() -> None:
             normalize_slideshow_settings(value)
 
 
-def test_media_end_should_parse_and_map() -> None:
-    """能力开放后 media_end 可按完整结构解析，并下发超时与停留时间。"""
 
-    settings = normalize_slideshow_settings(
-        {
-            "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "media_end", "delay_ms": 6000, "media_timeout_ms": 120000},
-            "loop": False,
-            "auto_start": True,
-        }
-    )
-    assert settings.advance.timeline_timeout_ms == 300000
-    assert build_runtime_advance(settings.advance) == {
-        "mode": "media_end",
-        "delayMs": 6000,
-        "mediaTimeoutMs": 120000,
-        "timelineTimeoutMs": 300000,
-    }
-    with pytest.raises(ValidationError):
-        normalize_slideshow_settings(
-            {
-                "transition": {"effect": "fade", "duration_ms": 400},
-                "advance": {"mode": "media_end", "delay_ms": 6000, "media_timeout_ms": 999},
-                "loop": False,
-                "auto_start": False,
-            }
-        )
+def test_scene_end_and_old_configuration_failure() -> None:
+    """版本提升后无静默旧模式映射，读取旧保存配置返回有界冲突。"""
+    from app.core.exceptions import AppException
+    from app.schemas.slideshow import SLIDESHOW_SCHEMA_VERSION
 
-
-def test_timeline_end_should_be_writable_with_bounded_timeout() -> None:
-    """开放后的 timeline_end 可保存，等待上限仍按公共范围校验。"""
-
-    timeline_settings = normalize_slideshow_settings(
-        {
-            "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {
-                "mode": "timeline_end",
-                "delay_ms": 5000,
-                "media_timeout_ms": 300000,
-                "timeline_timeout_ms": 300000,
-            },
-            "loop": False,
-            "auto_start": False,
-        }
-    )
-    assert timeline_settings.advance.mode == "timeline_end"
-    assert build_runtime_advance(timeline_settings.advance)["mode"] == "timeline_end"
-
-    settings = normalize_slideshow_settings(
-        {
-            "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000},
-            "loop": False,
-            "auto_start": False,
-        }
-    )
-    assert settings.advance.timeline_timeout_ms == 300000
-    with pytest.raises(ValidationError):
-        normalize_slideshow_settings(
-            {
-                "transition": {"effect": "fade", "duration_ms": 400},
-                "advance": {
-                    "mode": "manual",
-                    "delay_ms": 5000,
-                    "media_timeout_ms": 300000,
-                    "timeline_timeout_ms": 999,
-                },
-                "loop": False,
-                "auto_start": False,
-            }
-        )
+    assert SLIDESHOW_SCHEMA_VERSION == 4
+    valid = default_slideshow_payload()
+    valid["advance"] = {"mode": "scene_end", "delay_ms": 5000, "completion_delay_ms": 0}
+    assert build_runtime_advance(normalize_slideshow_settings(valid).advance)["completionDelayMs"] == 0
+    with pytest.raises(AppException) as error:
+        load_slideshow_settings({**valid, "auto_start": False})
+    assert error.value.status_code == 409
+    assert error.value.code == "SLIDESHOW_CONFIG_UNSUPPORTED"

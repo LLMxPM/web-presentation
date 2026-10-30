@@ -1,139 +1,284 @@
 {
-  "schema_version": 3,
-  "description": "自动放映配置共享正反例：Backend 解析器与 Runtime 契约测试共用；字段语义以 docs/developer/runtime-integration/slideshow/contract.md 为准。",
+  "schema_version": 4,
+  "description": "Scene schema 4 共享正反例；删除旧推进模式、自动开始和超时预算，完成后停留允许零。",
   "defaults": {
     "api": {
-      "transition": { "effect": "fade", "duration_ms": 400 },
-      "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-      "loop": false,
-      "auto_start": false
+      "transition": {
+        "effect": "fade",
+        "duration_ms": 400
+      },
+      "advance": {
+        "mode": "manual",
+        "delay_ms": 5000,
+        "completion_delay_ms": 300
+      },
+      "loop": false
     },
     "runtime": {
-      "transitionDefaults": { "effect": "fade", "durationMs": 400 },
+      "transitionDefaults": {
+        "effect": "fade",
+        "durationMs": 400
+      },
       "playback": {
-        "autoStart": false,
+        "schemaVersion": 4,
         "loop": false,
-        "advanceDefaults": { "mode": "manual", "delayMs": 5000, "mediaTimeoutMs": 300000, "timelineTimeoutMs": 300000 }
+        "advanceDefaults": {
+          "mode": "manual",
+          "delayMs": 5000,
+          "completionDelayMs": 300
+        }
       }
     }
   },
   "project_cases": [
     {
-      "name": "default-complete",
+      "name": "default",
       "valid": true,
       "input": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
-      }
-    },
-    {
-      "name": "timer-push-valid",
-      "valid": true,
-      "input": {
-        "transition": { "effect": "push", "duration_ms": 2000 },
-        "advance": { "mode": "timer", "delay_ms": 3600000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": true,
-        "auto_start": true
-      }
-    },
-    {
-      "name": "none-zero-valid",
-      "valid": true,
-      "input": {
-        "transition": { "effect": "none", "duration_ms": 0 },
-        "advance": { "mode": "manual", "delay_ms": 1000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
-      }
-    },
-    {
-      "name": "unknown-top-level-field",
-      "valid": false,
-      "error": "extra_forbidden",
-      "input": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false,
-        "media_end": true
-      }
-    },
-    {
-      "name": "missing-auto-start",
-      "valid": false,
-      "error": "missing",
-      "input": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
         "loop": false
       }
     },
     {
-      "name": "null-transition-group",
+      "name": "timer-loop",
+      "valid": true,
+      "input": {
+        "transition": {
+          "effect": "push",
+          "duration_ms": 800
+        },
+        "advance": {
+          "mode": "timer",
+          "delay_ms": 8000,
+          "completion_delay_ms": 300
+        },
+        "loop": true
+      }
+    },
+    {
+      "name": "scene-end-zero",
+      "valid": true,
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "scene_end",
+          "delay_ms": 5000,
+          "completion_delay_ms": 0
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "scene-end-max",
+      "valid": true,
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "scene_end",
+          "delay_ms": 5000,
+          "completion_delay_ms": 3600000
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "none-zero",
+      "valid": true,
+      "input": {
+        "transition": {
+          "effect": "none",
+          "duration_ms": 0
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "legacy-auto-start",
+      "valid": false,
+      "error": "extra_forbidden",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false,
+        "auto_start": false
+      }
+    },
+    {
+      "name": "legacy-media-mode",
+      "valid": false,
+      "error": "literal_error",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "media_end",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "legacy-timeline-mode",
+      "valid": false,
+      "error": "literal_error",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "timeline_end",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "legacy-media-budget",
+      "valid": false,
+      "error": "extra_forbidden",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300,
+          "media_timeout_ms": 300000
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "legacy-timeline-budget",
+      "valid": false,
+      "error": "extra_forbidden",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300,
+          "timeline_timeout_ms": 300000
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "null-transition",
       "valid": false,
       "error": "model_type",
       "input": {
         "transition": null,
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       }
     },
     {
-      "name": "null-duration-subfield",
+      "name": "duration-string",
       "valid": false,
       "error": "int_type",
       "input": {
-        "transition": { "effect": "fade", "duration_ms": null },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": "400"
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       }
     },
     {
-      "name": "string-duration",
+      "name": "duration-bool",
       "valid": false,
       "error": "int_type",
       "input": {
-        "transition": { "effect": "fade", "duration_ms": "400" },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": true
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       }
     },
     {
-      "name": "float-duration",
+      "name": "duration-too-small",
       "valid": false,
-      "error": "int_type",
+      "error": "value_error",
       "input": {
-        "transition": { "effect": "fade", "duration_ms": 400.0 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 99
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       }
     },
     {
-      "name": "bool-as-int-loop",
+      "name": "duration-too-large",
       "valid": false,
-      "error": "bool_type",
+      "error": "less_than_equal",
       "input": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": 0,
-        "auto_start": false
-      }
-    },
-    {
-      "name": "string-bool-loop",
-      "valid": false,
-      "error": "bool_type",
-      "input": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": "false",
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 2001
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       }
     },
     {
@@ -141,64 +286,16 @@
       "valid": false,
       "error": "literal_error",
       "input": {
-        "transition": { "effect": "wipe", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
-      }
-    },
-    {
-      "name": "unknown-advance-mode",
-      "valid": false,
-      "error": "literal_error",
-      "input": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "media", "delay_ms": 5000 },
-        "loop": false,
-        "auto_start": false
-      }
-    },
-    {
-      "name": "media-mode-valid",
-      "valid": true,
-      "input": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
-      }
-    },
-    {
-      "name": "none-with-positive-duration",
-      "valid": false,
-      "error": "value_error",
-      "input": {
-        "transition": { "effect": "none", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
-      }
-    },
-    {
-      "name": "fade-duration-too-short",
-      "valid": false,
-      "error": "value_error",
-      "input": {
-        "transition": { "effect": "fade", "duration_ms": 50 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
-      }
-    },
-    {
-      "name": "fade-duration-too-long",
-      "valid": false,
-      "error": "less_than_equal",
-      "input": {
-        "transition": { "effect": "fade", "duration_ms": 2001 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
+        "transition": {
+          "effect": "spin",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       }
     },
     {
@@ -206,10 +303,16 @@
       "valid": false,
       "error": "greater_than_equal",
       "input": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "timer", "delay_ms": 999 },
-        "loop": false,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 999,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       }
     },
     {
@@ -217,198 +320,457 @@
       "valid": false,
       "error": "less_than_equal",
       "input": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "timer", "delay_ms": 3600001 },
-        "loop": false,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 3600001,
+          "completion_delay_ms": 300
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "delay-fraction",
+      "valid": false,
+      "error": "int_type",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 1.5,
+          "completion_delay_ms": 300
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "completion-negative",
+      "valid": false,
+      "error": "greater_than_equal",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": -1
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "completion-too-large",
+      "valid": false,
+      "error": "less_than_equal",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 3600001
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "completion-bool",
+      "valid": false,
+      "error": "int_type",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": true
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "completion-null",
+      "valid": false,
+      "error": "int_type",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": null
+        },
+        "loop": false
+      }
+    },
+    {
+      "name": "loop-string",
+      "valid": false,
+      "error": "bool_type",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": "true"
+      }
+    },
+    {
+      "name": "missing-loop",
+      "valid": false,
+      "error": "missing",
+      "input": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        }
       }
     }
   ],
   "route_transition_cases": [
     {
-      "name": "null-inherits",
+      "name": "inherit",
       "valid": true,
       "input": null,
       "expected": null
     },
     {
-      "name": "complete-push",
+      "name": "push",
       "valid": true,
-      "input": { "effect": "push", "duration_ms": 600 },
-      "expected": { "effect": "push", "duration_ms": 600 }
+      "input": {
+        "effect": "push",
+        "duration_ms": 600
+      },
+      "expected": {
+        "effect": "push",
+        "duration_ms": 600
+      }
     },
     {
-      "name": "partial-group-rejected",
+      "name": "none-positive",
       "valid": false,
-      "error": "missing",
-      "input": { "effect": "push" }
+      "input": {
+        "effect": "none",
+        "duration_ms": 100
+      },
+      "error": "value_error"
     },
     {
-      "name": "explicit-null-subfield-rejected",
+      "name": "missing-duration",
       "valid": false,
-      "error": "int_type",
-      "input": { "effect": "push", "duration_ms": null }
-    },
-    {
-      "name": "unknown-field-rejected",
-      "valid": false,
-      "error": "extra_forbidden",
-      "input": { "effect": "push", "duration_ms": 600, "easing": "linear" }
-    },
-    {
-      "name": "none-with-duration-rejected",
-      "valid": false,
-      "error": "value_error",
-      "input": { "effect": "none", "duration_ms": 600 }
+      "input": {
+        "effect": "fade"
+      },
+      "error": "missing"
     }
   ],
   "route_advance_cases": [
     {
-      "name": "null-inherits",
+      "name": "inherit",
       "valid": true,
       "input": null,
       "expected": null
     },
     {
-      "name": "complete-timer",
+      "name": "scene-zero",
       "valid": true,
-      "input": { "mode": "timer", "delay_ms": 8000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-      "expected": { "mode": "timer", "delay_ms": 8000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 }
+      "input": {
+        "mode": "scene_end",
+        "delay_ms": 5000,
+        "completion_delay_ms": 0
+      },
+      "expected": {
+        "mode": "scene_end",
+        "delay_ms": 5000,
+        "completion_delay_ms": 0
+      }
     },
     {
-      "name": "partial-group-rejected",
-      "valid": false,
-      "error": "missing",
-      "input": { "mode": "timer" }
-    },
-    {
-      "name": "string-delay-rejected",
-      "valid": false,
-      "error": "int_type",
-      "input": { "mode": "timer", "delay_ms": "8000" }
-    },
-    {
-      "name": "complete-media-end",
+      "name": "default-completion",
       "valid": true,
-      "input": { "mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-      "expected": { "mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 }
+      "input": {
+        "mode": "timer",
+        "delay_ms": 9000
+      },
+      "expected": {
+        "mode": "timer",
+        "delay_ms": 9000,
+        "completion_delay_ms": 300
+      }
+    },
+    {
+      "name": "old-mode",
+      "valid": false,
+      "input": {
+        "mode": "media_end",
+        "delay_ms": 5000
+      },
+      "error": "literal_error"
+    },
+    {
+      "name": "removed-budget",
+      "valid": false,
+      "input": {
+        "mode": "manual",
+        "delay_ms": 5000,
+        "media_timeout_ms": 300000
+      },
+      "error": "extra_forbidden"
+    },
+    {
+      "name": "missing-delay",
+      "valid": false,
+      "input": {
+        "mode": "scene_end"
+      },
+      "error": "missing"
     }
   ],
   "resolution_cases": [
     {
-      "name": "both-inherit",
+      "name": "inherit",
       "slideshow": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "scene_end",
+          "delay_ms": 5000,
+          "completion_delay_ms": 450
+        },
+        "loop": false
       },
       "transition": null,
       "advance": null,
       "expected": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 }
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "scene_end",
+          "delay_ms": 5000,
+          "completion_delay_ms": 450
+        }
       }
     },
     {
-      "name": "transition-override-only",
+      "name": "transition-only",
       "slideshow": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "timer", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": true,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       },
-      "transition": { "effect": "push", "duration_ms": 600 },
+      "transition": {
+        "effect": "push",
+        "duration_ms": 700
+      },
       "advance": null,
       "expected": {
-        "transition": { "effect": "push", "duration_ms": 600 },
-        "advance": { "mode": "timer", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 }
+        "transition": {
+          "effect": "push",
+          "duration_ms": 700
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        }
       }
     },
     {
-      "name": "advance-override-only",
+      "name": "advance-only",
       "slideshow": {
-        "transition": { "effect": "none", "duration_ms": 0 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "timer",
+          "delay_ms": 8000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       },
       "transition": null,
-      "advance": { "mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
+      "advance": {
+        "mode": "scene_end",
+        "delay_ms": 5000,
+        "completion_delay_ms": 0
+      },
       "expected": {
-        "transition": { "effect": "none", "duration_ms": 0 },
-        "advance": { "mode": "timer", "delay_ms": 12000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 }
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "scene_end",
+          "delay_ms": 5000,
+          "completion_delay_ms": 0
+        }
       }
     }
   ],
   "runtime_cases": [
     {
-      "name": "defaults",
+      "name": "manual",
       "slideshow": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": false,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delay_ms": 5000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
       },
-      "transition": null,
-      "advance": null,
       "expected_defaults": {
-        "transitionDefaults": { "effect": "fade", "durationMs": 400 },
+        "transitionDefaults": {
+          "effect": "fade",
+          "durationMs": 400
+        },
         "playback": {
-          "autoStart": false,
+          "schemaVersion": 4,
           "loop": false,
-          "advanceDefaults": { "mode": "manual", "delayMs": 5000, "mediaTimeoutMs": 300000, "timelineTimeoutMs": 300000 }
+          "advanceDefaults": {
+            "mode": "manual",
+            "delayMs": 5000,
+            "completionDelayMs": 300
+          }
         }
-      },
-      "expected_route": {
-        "transition": { "effect": "fade", "durationMs": 400 },
-        "advance": { "mode": "manual", "delayMs": 5000, "mediaTimeoutMs": 300000, "timelineTimeoutMs": 300000 }
-      }
-    },
-    {
-      "name": "project-timer-loop-autostart",
-      "slideshow": {
-        "transition": { "effect": "push", "duration_ms": 800 },
-        "advance": { "mode": "timer", "delay_ms": 9000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": true,
-        "auto_start": true
       },
       "transition": null,
       "advance": null,
-      "expected_defaults": {
-        "transitionDefaults": { "effect": "push", "durationMs": 800 },
-        "playback": {
-          "autoStart": true,
-          "loop": true,
-          "advanceDefaults": { "mode": "timer", "delayMs": 9000, "mediaTimeoutMs": 300000, "timelineTimeoutMs": 300000 }
-        }
-      },
       "expected_route": {
-        "transition": { "effect": "push", "durationMs": 800 },
-        "advance": { "mode": "timer", "delayMs": 9000, "mediaTimeoutMs": 300000, "timelineTimeoutMs": 300000 }
+        "transition": {
+          "effect": "fade",
+          "durationMs": 400
+        },
+        "advance": {
+          "mode": "manual",
+          "delayMs": 5000,
+          "completionDelayMs": 300
+        }
       }
     },
     {
-      "name": "leaf-overrides-both-groups",
+      "name": "scene_end",
       "slideshow": {
-        "transition": { "effect": "fade", "duration_ms": 400 },
-        "advance": { "mode": "timer", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
-        "loop": true,
-        "auto_start": false
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "scene_end",
+          "delay_ms": 5000,
+          "completion_delay_ms": 0
+        },
+        "loop": true
       },
-      "transition": { "effect": "none", "duration_ms": 0 },
-      "advance": { "mode": "manual", "delay_ms": 3000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000 },
       "expected_defaults": {
-        "transitionDefaults": { "effect": "fade", "durationMs": 400 },
+        "transitionDefaults": {
+          "effect": "fade",
+          "durationMs": 400
+        },
         "playback": {
-          "autoStart": false,
+          "schemaVersion": 4,
           "loop": true,
-          "advanceDefaults": { "mode": "timer", "delayMs": 5000, "mediaTimeoutMs": 300000, "timelineTimeoutMs": 300000 }
+          "advanceDefaults": {
+            "mode": "scene_end",
+            "delayMs": 5000,
+            "completionDelayMs": 0
+          }
         }
       },
+      "transition": null,
+      "advance": null,
       "expected_route": {
-        "transition": { "effect": "none", "durationMs": 0 },
-        "advance": { "mode": "manual", "delayMs": 3000, "mediaTimeoutMs": 300000, "timelineTimeoutMs": 300000 }
+        "transition": {
+          "effect": "fade",
+          "durationMs": 400
+        },
+        "advance": {
+          "mode": "scene_end",
+          "delayMs": 5000,
+          "completionDelayMs": 0
+        }
+      }
+    },
+    {
+      "name": "timer",
+      "slideshow": {
+        "transition": {
+          "effect": "fade",
+          "duration_ms": 400
+        },
+        "advance": {
+          "mode": "timer",
+          "delay_ms": 8000,
+          "completion_delay_ms": 300
+        },
+        "loop": false
+      },
+      "expected_defaults": {
+        "transitionDefaults": {
+          "effect": "fade",
+          "durationMs": 400
+        },
+        "playback": {
+          "schemaVersion": 4,
+          "loop": false,
+          "advanceDefaults": {
+            "mode": "timer",
+            "delayMs": 8000,
+            "completionDelayMs": 300
+          }
+        }
+      },
+      "transition": null,
+      "advance": null,
+      "expected_route": {
+        "transition": {
+          "effect": "fade",
+          "durationMs": 400
+        },
+        "advance": {
+          "mode": "timer",
+          "delayMs": 8000,
+          "completionDelayMs": 300
+        }
       }
     }
   ]

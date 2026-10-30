@@ -23,7 +23,8 @@ def test_project_slideshow_column_default_should_render_as_json_literal() -> Non
         ddl = _compiled_create_table(Project.__table__, dialect)
         assert '"duration_ms":400' in ddl
         assert '"duration_ms"NULL' not in ddl
-        assert '"auto_start":false' in ddl
+        assert '"completion_delay_ms":300' in ddl
+        assert 'auto_start' not in ddl
 
 
 def test_route_override_columns_should_be_nullable_json() -> None:

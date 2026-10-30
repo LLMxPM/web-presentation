@@ -12,6 +12,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import type { Plugin, ViteDevServer } from 'vite'
 
 import type { RuntimePreloadedConfigBundle, RuntimePreviewArtifactManifest } from '../shared/runtime-preview'
+import { assertSlideshowConfig, SlideshowConfigError } from '../shared/slideshow-config'
 import { normalizeAssetKey, normalizeRuntimeModulePath } from '../shared/runtime-preview'
 import { logRuntimeServer } from '../utils/runtime-logger'
 import {
@@ -1460,10 +1461,14 @@ async function collectTextFileViolations(rootDir: string, violations: string[]):
  * @param manifest build snapshot manifest
  * @param configBundle build snapshot config bundle
  */
-function validateConfigAssetReferences(
+export function validateConfigAssetReferences(
   manifest: RuntimePreviewArtifactManifest,
   configBundle: RuntimePreloadedConfigBundle,
 ): void {
+  if (configBundle.routes) {
+    try { assertSlideshowConfig(configBundle.routes) }
+    catch (error) { if (error instanceof SlideshowConfigError) throw new RuntimeBuildError(409, error.code, error.message); throw error }
+  }
   const assetKeys = new Set(Object.keys(manifest.assets || {}).map(item => normalizeAssetKey(item)))
   const missingAssetKeys = collectConfigAssetKeys(configBundle).filter(assetKey => !assetKeys.has(assetKey))
   if (missingAssetKeys.length > 0) {

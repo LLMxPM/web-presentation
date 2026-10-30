@@ -185,3 +185,11 @@ Renderer 采用使用中独占、空闲上限 4 的有界池；明确保留上�
 删除 PageMediaSession、AssetAudio/Video.v2 和旧同步 useAudioCue.v1，新增显式 createSceneMediaTask.v1 和 Promise useAudioCue.v2；保留 Audio/Video.v1 的用途与静态/内容展示。当前 Runtime frame 的媒体许可提示直接触发本地重试，不能从父窗口代理手势。Backend 删除 page_narration/audio_cues 功能门、开放集合、写入/披露/快照分支及关闭夹具，API 支持字段固定 true；参数、资源归属与用户权限校验保留，检查缓存使用 audio-bus.v1 执行身份。
 
 开发验证：完整 Runtime 183 文件 1450 项通过、3 项既有跳过；Runtime check/build 通过。Backend 参数、CodeCheck/缓存、Kit、默认开放 API、项目设置、External API、模板导入与预览 109 项通过；根仓音频 fixture、Kit、预览协议与仓库约束 76 项通过。修改 Python 的 F401/F821 检查通过。首轮只发现路由测试旧 config mock 未覆盖 audioConfig、三条已删文件文档链接，以及旧清单断言；修正后复验通过。真实发声、浏览器许可、受保护慢速缓冲、多窗口与镜像/产物均未执行，仍由 C3 验收。B4 工程完成，B5 继续配置、Presenter、AI/CLI 和联合样例。
+
+## B5 第一批：版本化配置与 Editor（2026-10-31）
+
+Backend DTO、Editor 共享放映字段与 Runtime 读取/构建边界同步改为 schema 4。只保留 manual/timer/scene_end、完成后停留与 loop；零停留有效，旧模式与旧字段明确拒绝。Scene capability 取代 timeline。模板包 schema 5，旧包要求重建；迁移只修改新行默认，保留既有 JSON 并在读取时给出稳定 409。
+
+开发回归中的旧 schema 断言已联动更新；UI 架构测试扫描到测试辅助原生控件后，将其移至测试目录，未扩大业务白名单。未启动服务或修改开发数据。后续继续收敛 Presenter、AI/样例与 CLI。
+
+验证：Backend 配置定向 73 项通过（首次模板旧包用例因上传字段错误失败，修正后包含在补充 API/快照/迁移/渲染身份回归 49 项通过、1 项既有跳过）；Editor 6 文件 36 项通过；Runtime 配置 56 项、边界补测 20 项通过、3 项既有跳过。Runtime/Editor check、codegen 与生成契约门禁通过。SQLite 实迁与 PostgreSQL 离线 DDL 已覆盖；真实 PostgreSQL、服务迁移和浏览器留待 C3。

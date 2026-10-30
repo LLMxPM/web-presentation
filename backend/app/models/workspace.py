@@ -1,5 +1,6 @@
 """文件功能：定义工作空间与项目的层级数据模型。"""
 
+import json
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
@@ -93,7 +94,7 @@ class Project(TimestampMixin, AuditMixin, SoftDeleteMixin, Base):
         JSON,
         nullable=False,
         default=default_slideshow_payload,
-        server_default='{"transition":{"effect":"fade","duration_ms":400},"advance":{"mode":"manual","delay_ms":5000,"media_timeout_ms":300000},"loop":false,"auto_start":false}',
+        server_default=json.dumps(default_slideshow_payload(), separators=(",", ":")),
     )
     audio_settings_json: Mapped[Mapping[str, Any]] = mapped_column(
         JSON,

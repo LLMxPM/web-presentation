@@ -472,3 +472,12 @@ describe('runtime build entry is pull-only', () => {
     }
   })
 })
+
+
+it('构建与诊断配置在执行前拒绝旧放映 schema', async () => {
+  const { validateConfigAssetReferences } = await import('./runtime-build-runner')
+  const manifest = {} as Parameters<typeof validateConfigAssetReferences>[0]
+  expect(() => validateConfigAssetReferences(manifest, { routes: { playback: { autoStart: false }, routes: [] } }))
+    .toThrow(expect.objectContaining({ statusCode: 409, code: 'RUNTIME_SLIDESHOW_SCHEMA_UNSUPPORTED' }))
+  expect(() => validateConfigAssetReferences(manifest, { routes: { playback: { schemaVersion: 4, advanceDefaults: { mode: 'scene_end', completionDelayMs: 0 } }, routes: [] } })).not.toThrow()
+})

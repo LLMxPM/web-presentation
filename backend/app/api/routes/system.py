@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 from app.core.config import get_settings
 from app.schemas.external_api import ExternalSlideshowCapabilities, build_slideshow_capabilities
-from app.schemas.timeline import ExternalTimelineCapabilities, build_timeline_capabilities
+from app.schemas.scene import ExternalSceneCapabilities, build_scene_capabilities
 from app.schemas.project_app_config import DEFAULT_PROJECT_STYLE_SPEC_MARKDOWN
 
 router = APIRouter()
@@ -31,8 +31,8 @@ async def get_slideshow_capabilities() -> ExternalSlideshowCapabilities:
     return build_slideshow_capabilities()
 
 
-@router.get("/system/timeline-capabilities", response_model=ExternalTimelineCapabilities)
-async def get_timeline_capabilities() -> ExternalTimelineCapabilities:
+@router.get("/system/scene-capabilities", response_model=ExternalSceneCapabilities)
+async def get_scene_capabilities() -> ExternalSceneCapabilities:
     """返回页内编排能力声明；G2 前 enabled=false，不宣称可执行。"""
 
-    return build_timeline_capabilities()
+    return build_scene_capabilities()

@@ -152,7 +152,7 @@ class ProjectBuildAssetsPayload(ProjectBuildExtraAssetsConfig):
 class ProjectSlideshowPayload(OperationArgumentsModel):
     """完整替换项目默认放映配置；不做字段级补全。"""
 
-    slideshow: SlideshowSettings = Field(description="完整放映配置：transition、advance、loop、auto_start。")
+    slideshow: SlideshowSettings = Field(description="完整放映配置：transition、advance、loop。")
 
 
 class PageCreatePayload(OperationArgumentsModel):

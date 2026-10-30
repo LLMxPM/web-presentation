@@ -356,9 +356,9 @@ async def test_access_tokens_scopes_and_capabilities(authenticated_client: Async
     assert "project.get" in cap_data["operations"]
     assert "page.get" in cap_data["operations"]
     assert "validate.entity" in cap_data["operations"]
-    assert cap_data["timeline"]["enabled"] is True
-    assert cap_data["timeline"]["track_types"] == ["dom", "audio", "video", "model3d"]
-    assert cap_data["timeline"]["advance_modes"] == ["timeline_end"]
+    assert cap_data["scene"]["enabled"] is True
+    assert cap_data["scene"]["task_types"] == ["visual", "model3d", "media", "custom"]
+    assert cap_data["scene"]["advance_modes"] == ["manual", "timer", "scene_end"]
 
 
 @pytest.mark.asyncio

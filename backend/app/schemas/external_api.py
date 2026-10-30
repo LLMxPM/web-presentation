@@ -23,17 +23,15 @@ from app.schemas.presentation_style import (
     StyleConfiguration,
 )
 from app.schemas.project_app_config import ProjectMenuMode
-from app.schemas.timeline import ExternalTimelineCapabilities
+from app.schemas.scene import ExternalSceneCapabilities
 from app.schemas.slideshow import (
+    COMPLETION_DELAY_MIN_MS,
+    COMPLETION_DELAY_MAX_MS,
     ADVANCE_DELAY_MAX_MS,
     ADVANCE_DELAY_MIN_MS,
-    MEDIA_TIMEOUT_MAX_MS,
-    MEDIA_TIMEOUT_MIN_MS,
     SLIDESHOW_EXECUTABLE_ADVANCE_MODES,
     SLIDESHOW_SCHEMA_VERSION,
     SLIDESHOW_TRANSITION_EFFECTS,
-    TIMELINE_TIMEOUT_MAX_MS,
-    TIMELINE_TIMEOUT_MIN_MS,
     TRANSITION_DURATION_MAX_MS,
     TRANSITION_DURATION_MIN_MS,
     SlideshowSettings,
@@ -113,8 +111,7 @@ class ExternalSlideshowCapabilities(BaseModel):
     capture_auto_play: bool
     transition_duration_ms: ExternalTransitionDurationRange
     delay_ms: ExternalAdvanceDelayRange
-    media_timeout_ms: ExternalAdvanceDelayRange
-    timeline_timeout_ms: ExternalAdvanceDelayRange
+    completion_delay_ms: ExternalAdvanceDelayRange
     audio: ExternalAudioCapabilities
 
 
@@ -130,7 +127,7 @@ def build_audio_capabilities() -> ExternalAudioCapabilities:
 
 
 def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
-    """构造当前能力声明：schema 3 仅新增时间轴结束的字段与预算，模式仍按写入门禁开放。"""
+    """构造 schema 4 的 Scene 能力声明；开发支持与 C3 实机结论分开追踪。"""
 
     return ExternalSlideshowCapabilities(
         schema_version=SLIDESHOW_SCHEMA_VERSION,
@@ -145,8 +142,7 @@ def build_slideshow_capabilities() -> ExternalSlideshowCapabilities:
             none=0,
         ),
         delay_ms=ExternalAdvanceDelayRange(min=ADVANCE_DELAY_MIN_MS, max=ADVANCE_DELAY_MAX_MS),
-        media_timeout_ms=ExternalAdvanceDelayRange(min=MEDIA_TIMEOUT_MIN_MS, max=MEDIA_TIMEOUT_MAX_MS),
-        timeline_timeout_ms=ExternalAdvanceDelayRange(min=TIMELINE_TIMEOUT_MIN_MS, max=TIMELINE_TIMEOUT_MAX_MS),
+        completion_delay_ms=ExternalAdvanceDelayRange(min=COMPLETION_DELAY_MIN_MS, max=COMPLETION_DELAY_MAX_MS),
         audio=build_audio_capabilities(),
     )
 
@@ -221,7 +217,7 @@ class ExternalCapabilitiesResponse(BaseModel):
         default=None,
         description="字体系统能力声明",
     )
-    timeline: ExternalTimelineCapabilities | None = Field(
+    scene: ExternalSceneCapabilities | None = Field(
         default=None,
         description="页内编排能力声明；null 表示服务端未声明该功能。",
     )

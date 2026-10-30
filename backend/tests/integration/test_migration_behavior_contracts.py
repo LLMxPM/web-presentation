@@ -184,12 +184,7 @@ def test_slideshow_migration_backfills_defaults_and_keeps_route_overrides_empty(
         ).fetchone()
         assert row is not None
         payload = json.loads(row[0])
-        assert payload == {
-            "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
-            "loop": False,
-            "auto_start": False,
-        }
+        assert payload == {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'manual', 'delay_ms': 5000, 'completion_delay_ms': 300}, 'loop': False}
 
         route_row = connection.execute(
             "SELECT transition_json, advance_json FROM project_routes WHERE project_id=1"

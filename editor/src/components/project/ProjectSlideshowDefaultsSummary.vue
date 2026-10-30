@@ -5,7 +5,6 @@
     <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-text-emphasis">{{ transitionText }}</span>
     <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-text-emphasis">{{ advanceText }}</span>
     <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-text-emphasis">{{ loopText }}</span>
-    <span v-if="settings.auto_start" class="rounded-full border border-border bg-surface px-2 py-0.5 text-text-emphasis">自动开始</span>
     <UiButton
       v-if="editable"
       variant="ghost"
@@ -54,7 +53,7 @@ const advanceText = computed(() => {
   if (advance.mode === 'manual') {
     return label
   }
-  return `${label} ${formatMillisecondsAsSeconds(advance.delay_ms)}s`
+  return `${label} ${formatMillisecondsAsSeconds(advance.mode === 'scene_end' ? advance.completion_delay_ms ?? 300 : advance.delay_ms)}s`
 })
 
 const loopText = computed(() => props.settings.loop ? '循环开' : '循环关')

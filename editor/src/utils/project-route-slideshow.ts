@@ -59,7 +59,7 @@ export interface RouteDurationEstimate {
   totalMs: number
   playablePageCount: number
   manualCount: number
-  mediaCount: number
+  sceneCount: number
 }
 
 /** 页面结构顶部汇总。 */
@@ -203,7 +203,7 @@ export function estimateProjectRoutesDuration(
     totalMs: 0,
     playablePageCount: 0,
     manualCount: 0,
-    mediaCount: 0,
+    sceneCount: 0,
   }
   const visitPage = (item: ProjectRouteChildWrite | ProjectRouteItemWrite): void => {
     const effective = resolveEffectiveSlideshow(defaults, item.transition, item.advance)
@@ -213,9 +213,9 @@ export function estimateProjectRoutesDuration(
       estimate.totalMs += effective.advance.delay_ms
       return
     }
-    if (effective.advance.mode === 'media_end') {
-      estimate.totalMs += effective.advance.delay_ms
-      estimate.mediaCount += 1
+    if (effective.advance.mode === 'scene_end') {
+      estimate.totalMs += effective.advance.completion_delay_ms ?? 300
+      estimate.sceneCount += 1
       return
     }
     estimate.manualCount += 1
@@ -561,8 +561,8 @@ function formatAdvanceTiming(advance: SlideshowAdvance): string {
   if (advance.mode === 'manual') {
     return '手动'
   }
-  if (advance.mode === 'media_end') {
-    return '媒体结束'
+  if (advance.mode === 'scene_end') {
+    return '本页完成'
   }
   return `${formatMillisecondsAsSeconds(advance.delay_ms)}s`
 }

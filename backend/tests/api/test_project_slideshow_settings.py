@@ -4,19 +4,9 @@ from __future__ import annotations
 
 from httpx import AsyncClient
 
-DEFAULT_SLIDESHOW = {
-    "transition": {"effect": "fade", "duration_ms": 400},
-    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
-    "loop": False,
-    "auto_start": False,
-}
+DEFAULT_SLIDESHOW = {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'manual', 'delay_ms': 5000, 'completion_delay_ms': 300}, 'loop': False}
 
-TIMER_SLIDESHOW = {
-    "transition": {"effect": "push", "duration_ms": 800},
-    "advance": {"mode": "timer", "delay_ms": 9000, "media_timeout_ms": 450000, "timeline_timeout_ms": 300000},
-    "loop": True,
-    "auto_start": True,
-}
+TIMER_SLIDESHOW = {'transition': {'effect': 'push', 'duration_ms': 800}, 'advance': {'mode': 'timer', 'delay_ms': 9000, 'completion_delay_ms': 450000}, 'loop': True}
 
 
 async def _create_workspace(client: AsyncClient, name: str) -> int:
@@ -73,37 +63,17 @@ async def test_project_create_should_accept_media_end_advance(authenticated_clie
         authenticated_client,
         workspace_id,
         "媒体默认超时",
-        slideshow={
-            "transition": {"effect": "none", "duration_ms": 0},
-            "advance": {"mode": "media_end", "delay_ms": 5000},
-            "loop": False,
-            "auto_start": False,
-        },
+        slideshow={'transition': {'effect': 'none', 'duration_ms': 0}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000}, 'loop': False},
     )
-    assert default_timeout["slideshow"]["advance"] == {
-        "mode": "media_end",
-        "delay_ms": 5000,
-        "media_timeout_ms": 300000,
-        "timeline_timeout_ms": 300000,
-    }
+    assert default_timeout["slideshow"]["advance"] == {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 300}
 
     explicit_timeout = await _create_project(
         authenticated_client,
         workspace_id,
         "媒体显式超时",
-        slideshow={
-            "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "media_end", "delay_ms": 6000, "media_timeout_ms": 120000, "timeline_timeout_ms": 300000},
-            "loop": True,
-            "auto_start": True,
-        },
+        slideshow={'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 6000, 'completion_delay_ms': 120000}, 'loop': True},
     )
-    assert explicit_timeout["slideshow"]["advance"] == {
-        "mode": "media_end",
-        "delay_ms": 6000,
-        "media_timeout_ms": 120000,
-        "timeline_timeout_ms": 300000,
-    }
+    assert explicit_timeout["slideshow"]["advance"] == {'mode': 'scene_end', 'delay_ms': 6000, 'completion_delay_ms': 120000}
 
 
 async def test_project_create_should_accept_timeline_end_advance(authenticated_client: AsyncClient) -> None:
@@ -114,19 +84,9 @@ async def test_project_create_should_accept_timeline_end_advance(authenticated_c
         authenticated_client,
         workspace_id,
         "时间轴放映项目",
-        slideshow={
-            "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "timeline_end", "delay_ms": 5000, "timeline_timeout_ms": 120000},
-            "loop": False,
-            "auto_start": True,
-        },
+        slideshow={'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 120000}, 'loop': False},
     )
-    assert project["slideshow"]["advance"] == {
-        "mode": "timeline_end",
-        "delay_ms": 5000,
-        "media_timeout_ms": 300000,
-        "timeline_timeout_ms": 120000,
-    }
+    assert project["slideshow"]["advance"] == {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 120000}
 
 
 async def test_project_patch_should_preserve_or_replace_slideshow(authenticated_client: AsyncClient) -> None:
@@ -178,30 +138,10 @@ async def test_project_slideshow_should_reject_invalid_numbers_on_create(authent
     workspace_id = await _create_workspace(authenticated_client, "放映非法空间")
 
     invalid_cases = [
-        {
-            "transition": {"effect": "fade", "duration_ms": "400"},
-            "advance": {"mode": "manual", "delay_ms": 5000},
-            "loop": False,
-            "auto_start": False,
-        },
-        {
-            "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "timer", "delay_ms": 500},
-            "loop": False,
-            "auto_start": False,
-        },
-        {
-            "transition": {"effect": "wipe", "duration_ms": 400},
-            "advance": {"mode": "manual", "delay_ms": 5000},
-            "loop": False,
-            "auto_start": False,
-        },
-        {
-            "transition": {"effect": "fade", "duration_ms": 400},
-            "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 999, "timeline_timeout_ms": 300000},
-            "loop": False,
-            "auto_start": False,
-        },
+        {'transition': {'effect': 'fade', 'duration_ms': '400'}, 'advance': {'mode': 'manual', 'delay_ms': 5000}, 'loop': False},
+        {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'timer', 'delay_ms': 500}, 'loop': False},
+        {'transition': {'effect': 'wipe', 'duration_ms': 400}, 'advance': {'mode': 'manual', 'delay_ms': 5000}, 'loop': False},
+        {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'manual', 'delay_ms': 5000, 'completion_delay_ms': -1}, 'loop': False},
     ]
     for payload in invalid_cases:
         response = await authenticated_client.post(

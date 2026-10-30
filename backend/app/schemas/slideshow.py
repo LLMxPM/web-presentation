@@ -1,6 +1,6 @@
 """文件功能：定义项目与路由的自动放映配置 Schema、严格解析器及 Runtime 下发映射。
 
-本模块是放映参数（翻页动画、停留时间、循环与自动开始）的唯一字段基线：
+本模块是放映参数（翻页动画、停留时间、循环与完成后停留）的唯一字段基线：
 项目保存完整规范化对象，叶子路由保存按组覆盖，Runtime 由同一解析器派生 camelCase 结构。
 """
 
@@ -9,37 +9,35 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from app.core.exceptions import AppException
 
 from app.core.slideshow_defaults import default_slideshow_payload
 
-# 放映配置结构版本，随能力自省与模板包 schema 一起演进；WP08 结构为 3。
-SLIDESHOW_SCHEMA_VERSION = 3
+# 放映配置结构版本，随能力自省与模板包 schema 一起演进；Scene 结构为 4。
+SLIDESHOW_SCHEMA_VERSION = 4
 
 TransitionEffect = Literal["none", "fade", "push"]
-AdvanceMode = Literal["manual", "timer", "media_end", "timeline_end"]
+AdvanceMode = Literal["manual", "timer", "scene_end"]
 
 SLIDESHOW_TRANSITION_EFFECTS: tuple[TransitionEffect, ...] = ("none", "fade", "push")
-SLIDESHOW_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "media_end", "timeline_end")
+SLIDESHOW_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "scene_end")
 # 能力声明与写入门禁共用，确保 Editor 与外部客户端只写入可执行模式。
-SLIDESHOW_EXECUTABLE_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "media_end", "timeline_end")
+SLIDESHOW_EXECUTABLE_ADVANCE_MODES: tuple[AdvanceMode, ...] = ("manual", "timer", "scene_end")
 
 # 与契约一致的数值边界；none 效果必须为 0，由模型校验器强制。
 TRANSITION_DURATION_MIN_MS = 100
 TRANSITION_DURATION_MAX_MS = 2000
 ADVANCE_DELAY_MIN_MS = 1000
 ADVANCE_DELAY_MAX_MS = 3600000
-MEDIA_TIMEOUT_MIN_MS = 1000
-MEDIA_TIMEOUT_MAX_MS = 3600000
-TIMELINE_TIMEOUT_MIN_MS = 1000
-TIMELINE_TIMEOUT_MAX_MS = 3600000
+COMPLETION_DELAY_MIN_MS = 0
+COMPLETION_DELAY_MAX_MS = 3600000
 
 DEFAULT_TRANSITION_EFFECT: TransitionEffect = "fade"
 DEFAULT_TRANSITION_DURATION_MS = 400
 DEFAULT_ADVANCE_MODE: AdvanceMode = "manual"
 DEFAULT_ADVANCE_DELAY_MS = 5000
-DEFAULT_MEDIA_TIMEOUT_MS = 300000
-DEFAULT_TIMELINE_TIMEOUT_MS = 300000
+DEFAULT_COMPLETION_DELAY_MS = 300
 
 StrictInt = Annotated[int, Field(strict=True)]
 StrictBool = Annotated[bool, Field(strict=True)]
@@ -77,23 +75,17 @@ class SlideshowAdvance(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: AdvanceMode = Field(description="翻页模式：手动、定时、媒体结束或页内时间轴结束。")
+    mode: AdvanceMode = Field(description="翻页模式：手动、定时或本页有限 Scene 任务实际完成。")
     delay_ms: StrictInt = Field(
         ge=ADVANCE_DELAY_MIN_MS,
         le=ADVANCE_DELAY_MAX_MS,
-        description="当前页就绪且过渡结束后的停留时间（毫秒）；媒体结束模式无媒体时回退使用。",
+        description="当前页就绪且过渡结束后的定时停留（毫秒）；只在 timer 模式使用。",
     )
-    media_timeout_ms: StrictInt = Field(
-        default=DEFAULT_MEDIA_TIMEOUT_MS,
-        ge=MEDIA_TIMEOUT_MIN_MS,
-        le=MEDIA_TIMEOUT_MAX_MS,
-        description="媒体结束模式等待媒体结束的最长时间（毫秒），默认 300000。",
-    )
-    timeline_timeout_ms: StrictInt = Field(
-        default=DEFAULT_TIMELINE_TIMEOUT_MS,
-        ge=TIMELINE_TIMEOUT_MIN_MS,
-        le=TIMELINE_TIMEOUT_MAX_MS,
-        description="时间轴结束模式的实际播放时间预算（毫秒），默认 300000；暂停与缓冲不推进该预算。",
+    completion_delay_ms: StrictInt = Field(
+        default=DEFAULT_COMPLETION_DELAY_MS,
+        ge=COMPLETION_DELAY_MIN_MS,
+        le=COMPLETION_DELAY_MAX_MS,
+        description="scene_end 的有限任务全部实际完成后停留时间（毫秒），允许 0，默认 300。",
     )
 
     @model_validator(mode="after")
@@ -113,7 +105,6 @@ class SlideshowSettings(BaseModel):
     transition: SlideshowTransition = Field(description="项目默认翻页动画。")
     advance: SlideshowAdvance = Field(description="项目默认翻页推进设置。")
     loop: StrictBool = Field(description="自动到达末页后是否回到第一个可放映叶子页。")
-    auto_start: StrictBool = Field(description="进入全屏放映时的初始自动推进模式；运行中可切换，不写回配置。")
 
 
 def default_slideshow_settings() -> SlideshowSettings:
@@ -137,7 +128,10 @@ def load_slideshow_settings(value: object | None) -> SlideshowSettings:
 
     if value is None:
         return default_slideshow_settings()
-    return normalize_slideshow_settings(value)
+    try:
+        return normalize_slideshow_settings(value)
+    except (TypeError, ValidationError) as error:
+        raise AppException(status_code=409, code="SLIDESHOW_CONFIG_UNSUPPORTED", detail="旧放映配置不再支持，请按 schema 4 重新保存；不自动转换旧推进模式。") from error
 
 
 def parse_route_transition_override(value: object | None) -> SlideshowTransition | None:
@@ -162,6 +156,14 @@ def parse_route_advance_override(value: object | None) -> SlideshowAdvance | Non
     if not isinstance(value, dict):
         raise TypeError("路由翻页覆盖必须是完整 JSON 对象或 null。")
     return SlideshowAdvance.model_validate(value)
+
+
+def load_route_advance_override(value: object | None) -> SlideshowAdvance | None:
+    """读取已保存覆盖时以有界冲突拒绝旧字段；写入仍使用严格 DTO 校验，不转换旧模式。"""
+    try:
+        return parse_route_advance_override(value)
+    except (TypeError, ValidationError) as error:
+        raise AppException(status_code=409, code="SLIDESHOW_CONFIG_UNSUPPORTED", detail="旧路由放映覆盖不再支持，请重新保存当前格式。") from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,13 +211,12 @@ def build_runtime_transition(transition: SlideshowTransition) -> dict[str, Any]:
 
 
 def build_runtime_advance(advance: SlideshowAdvance) -> dict[str, Any]:
-    """将推进设置转换为 Runtime camelCase 结构，四种模式保持完整字段。"""
+    """将推进设置转换为 Runtime camelCase 结构，三种模式保持完整字段。"""
 
     return {
         "mode": advance.mode,
         "delayMs": advance.delay_ms,
-        "mediaTimeoutMs": advance.media_timeout_ms,
-        "timelineTimeoutMs": advance.timeline_timeout_ms,
+        "completionDelayMs": advance.completion_delay_ms,
     }
 
 
@@ -225,7 +226,7 @@ def build_runtime_slideshow_defaults(settings: SlideshowSettings) -> dict[str, A
     return {
         "transitionDefaults": build_runtime_transition(settings.transition),
         "playback": {
-            "autoStart": settings.auto_start,
+            "schemaVersion": SLIDESHOW_SCHEMA_VERSION,
             "loop": settings.loop,
             "advanceDefaults": build_runtime_advance(settings.advance),
         },

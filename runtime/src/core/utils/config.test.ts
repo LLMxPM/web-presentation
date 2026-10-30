@@ -55,6 +55,15 @@ afterEach(() => {
 })
 
 describe('runtime config default routes', () => {
+  it('旧配置刷新失败后清除可播放缓存，不保留上次成功配置', async () => {
+    const config = buildPreloadedConfig([])
+    setRuntimePreloadedConfig(config)
+    const { loadRouteConfig } = await import('./config')
+    await expect(loadRouteConfig(true)).resolves.toHaveProperty('routes')
+    setRuntimePreloadedConfig({ ...config, routes: { playback: { autoStart: true }, routes: [] } })
+    await expect(loadRouteConfig(true)).rejects.toHaveProperty('code', 'RUNTIME_SLIDESHOW_SCHEMA_UNSUPPORTED')
+    await expect(loadRouteConfig()).rejects.toHaveProperty('code', 'RUNTIME_SLIDESHOW_SCHEMA_UNSUPPORTED')
+  })
   it('应使用预加载路由中的首个可见页面作为默认重定向', async () => {
     setRuntimePreloadedConfig(buildPreloadedConfig([
       {

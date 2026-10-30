@@ -19,16 +19,10 @@ export interface TransitionStartedEvent {
   effect: 'none' | 'fade' | 'push'
 }
 
-/** 页面停留与翻页推进配置；旧产物可能缺少 mediaTimeoutMs/timelineTimeoutMs。 */
-export type PageAdvanceMode = 'manual' | 'timer' | 'scene_end' | 'media_end' | 'timeline_end'
-
+/** Scene schema 4 的页面推进配置，不包含旧媒体/时间轴模式或等待预算。 */
+export type PageAdvanceMode = 'manual' | 'timer' | 'scene_end'
 export interface PageAdvanceConfig {
   mode: PageAdvanceMode
   delayMs: number
-  /** scene_end 实际完成后的停留；旧 DTO 字段由 B5 同步收敛。 */
   completionDelayMs?: number
-  /** media_end 等待上限；其它模式保留同一结构供往返与显示。 */
-  mediaTimeoutMs?: number
-  /** timeline_end 实际播放时间预算；用户暂停、后台与缓冲不消耗。 */
-  timelineTimeoutMs?: number
 }

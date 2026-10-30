@@ -4,6 +4,7 @@ transitionDefaults:
   durationMs: 400
 
 playback:
+  schemaVersion: 4
   loop: false
   advanceDefaults:
     mode: manual

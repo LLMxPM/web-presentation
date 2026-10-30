@@ -24692,21 +24692,21 @@
         }
       }
     },
-    "/api/system/timeline-capabilities": {
+    "/api/system/scene-capabilities": {
       "get": {
         "tags": [
           "system"
         ],
-        "summary": "Get Timeline Capabilities",
+        "summary": "Get Scene Capabilities",
         "description": "返回页内编排能力声明；G2 前 enabled=false，不宣称可执行。",
-        "operationId": "get_timeline_capabilities_api_system_timeline_capabilities_get",
+        "operationId": "get_scene_capabilities_api_system_scene_capabilities_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExternalTimelineCapabilities"
+                  "$ref": "#/components/schemas/ExternalSceneCapabilities"
                 }
               }
             }
@@ -33597,10 +33597,10 @@
             ],
             "description": "字体系统能力声明"
           },
-          "timeline": {
+          "scene": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ExternalTimelineCapabilities"
+                "$ref": "#/components/schemas/ExternalSceneCapabilities"
               },
               {
                 "type": "null"
@@ -35093,6 +35093,70 @@
         "title": "ExternalProjectCreateRequest",
         "description": "External API 项目创建请求（workspace_id 优先使用 Header 中的 X-Workspace-ID）。"
       },
+      "ExternalSceneCapabilities": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "task_roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Task Roles"
+          },
+          "task_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Task Types"
+          },
+          "advance_modes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Advance Modes"
+          },
+          "max_tasks": {
+            "type": "integer",
+            "title": "Max Tasks"
+          },
+          "prepare_timeout_ms": {
+            "type": "integer",
+            "title": "Prepare Timeout Ms"
+          },
+          "completion_timeout_ms": {
+            "type": "integer",
+            "title": "Completion Timeout Ms"
+          },
+          "static_presentation": {
+            "type": "string",
+            "title": "Static Presentation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "enabled",
+          "task_roles",
+          "task_types",
+          "advance_modes",
+          "max_tasks",
+          "prepare_timeout_ms",
+          "completion_timeout_ms",
+          "static_presentation"
+        ],
+        "title": "ExternalSceneCapabilities",
+        "description": "开发支持范围；真实浏览器、媒体与产物证据由 C3 独立验收。"
+      },
       "ExternalSlideshowCapabilities": {
         "properties": {
           "schema_version": {
@@ -35131,10 +35195,7 @@
           "delay_ms": {
             "$ref": "#/components/schemas/ExternalAdvanceDelayRange"
           },
-          "media_timeout_ms": {
-            "$ref": "#/components/schemas/ExternalAdvanceDelayRange"
-          },
-          "timeline_timeout_ms": {
+          "completion_delay_ms": {
             "$ref": "#/components/schemas/ExternalAdvanceDelayRange"
           },
           "audio": {
@@ -35152,8 +35213,7 @@
           "capture_auto_play",
           "transition_duration_ms",
           "delay_ms",
-          "media_timeout_ms",
-          "timeline_timeout_ms",
+          "completion_delay_ms",
           "audio"
         ],
         "title": "ExternalSlideshowCapabilities",
@@ -35721,42 +35781,6 @@
         "type": "object",
         "title": "ExternalThemeUpdateRequest",
         "description": "External API 主题更新请求。"
-      },
-      "ExternalTimelineCapabilities": {
-        "properties": {
-          "schema_version": {
-            "type": "integer",
-            "title": "Schema Version"
-          },
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled"
-          },
-          "track_types": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Track Types"
-          },
-          "advance_modes": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Advance Modes"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "schema_version",
-          "enabled",
-          "track_types",
-          "advance_modes"
-        ],
-        "title": "ExternalTimelineCapabilities",
-        "description": "编排能力基线；enabled=false 时客户端不得声明可执行。"
       },
       "ExternalTransitionDurationRange": {
         "properties": {
@@ -43095,34 +43119,25 @@
             "enum": [
               "manual",
               "timer",
-              "media_end",
-              "timeline_end"
+              "scene_end"
             ],
             "title": "Mode",
-            "description": "翻页模式：手动、定时、媒体结束或页内时间轴结束。"
+            "description": "翻页模式：手动、定时或本页有限 Scene 任务实际完成。"
           },
           "delay_ms": {
             "type": "integer",
             "maximum": 3600000,
             "minimum": 1000,
             "title": "Delay Ms",
-            "description": "当前页就绪且过渡结束后的停留时间（毫秒）；媒体结束模式无媒体时回退使用。"
+            "description": "当前页就绪且过渡结束后的定时停留（毫秒）；只在 timer 模式使用。"
           },
-          "media_timeout_ms": {
+          "completion_delay_ms": {
             "type": "integer",
             "maximum": 3600000,
-            "minimum": 1000,
-            "title": "Media Timeout Ms",
-            "description": "媒体结束模式等待媒体结束的最长时间（毫秒），默认 300000。",
-            "default": 300000
-          },
-          "timeline_timeout_ms": {
-            "type": "integer",
-            "maximum": 3600000,
-            "minimum": 1000,
-            "title": "Timeline Timeout Ms",
-            "description": "时间轴结束模式的实际播放时间预算（毫秒），默认 300000；暂停与缓冲不推进该预算。",
-            "default": 300000
+            "minimum": 0,
+            "title": "Completion Delay Ms",
+            "description": "scene_end 的有限任务全部实际完成后停留时间（毫秒），允许 0，默认 300。",
+            "default": 300
           }
         },
         "additionalProperties": false,
@@ -43148,11 +43163,6 @@
             "type": "boolean",
             "title": "Loop",
             "description": "自动到达末页后是否回到第一个可放映叶子页。"
-          },
-          "auto_start": {
-            "type": "boolean",
-            "title": "Auto Start",
-            "description": "进入全屏放映时的初始自动推进模式；运行中可切换，不写回配置。"
           }
         },
         "additionalProperties": false,
@@ -43160,8 +43170,7 @@
         "required": [
           "transition",
           "advance",
-          "loop",
-          "auto_start"
+          "loop"
         ],
         "title": "SlideshowSettings",
         "description": "项目完整放映配置，所有字段必须显式提供，避免客户端猜测补全。"

@@ -30,7 +30,7 @@ def test_projection_should_not_mutate_input() -> None:
 
     routes = {
         "transitionDefaults": {"effect": "fade", "durationMs": 400},
-        "playback": {"autoStart": False, "loop": False},
+        "playback": {'loop': False, 'schemaVersion': 4},
         "routes": [
             {"route": "b", "meta": {"title": "B", "order": 1, "hidden": False}},
             {"route": "a", "meta": {"title": "A", "order": 0, "hidden": False}},
@@ -48,7 +48,7 @@ def test_projection_should_ignore_playback_and_display_fields() -> None:
     base = {"routes": [{"route": "a", "meta": {"title": "A", "order": 0, "hidden": False}}]}
     noisy = {
         "transitionDefaults": {"effect": "push", "durationMs": 900},
-        "playback": {"autoStart": True, "loop": True},
+        "playback": {'loop': True, 'schemaVersion': 4},
         "routes": [
             {
                 "route": "a",
@@ -59,7 +59,7 @@ def test_projection_should_ignore_playback_and_display_fields() -> None:
                     "hidden": False,
                     "speakerNotes": "备注",
                     "transition": {"effect": "fade", "durationMs": 600},
-                    "advance": {"mode": "timer", "delayMs": 1000, "mediaTimeoutMs": 60000, "timelineTimeoutMs": 300000},
+                    "advance": {'mode': 'timer', 'delayMs': 1000, 'completionDelayMs': 60000},
                 },
             }
         ],

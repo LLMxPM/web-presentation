@@ -1153,7 +1153,7 @@ export type ExternalCapabilitiesResponse = {
   "operations": (string)[]
   "slideshow"?: (ExternalSlideshowCapabilities) | (null)
   "fonts"?: (ExternalFontsCapabilities) | (null)
-  "timeline"?: (ExternalTimelineCapabilities) | (null)
+  "scene"?: (ExternalSceneCapabilities) | (null)
 }
 
 export type ExternalComponentApplyEditsMutationRequest = {
@@ -1373,6 +1373,18 @@ export type ExternalProjectCreateRequest = {
   "audio_settings"?: ProjectAudioSettings
 }
 
+export type ExternalSceneCapabilities = {
+  "schema_version": number
+  "enabled": boolean
+  "task_roles": (string)[]
+  "task_types": (string)[]
+  "advance_modes": (string)[]
+  "max_tasks": number
+  "prepare_timeout_ms": number
+  "completion_timeout_ms": number
+  "static_presentation": string
+}
+
 export type ExternalSlideshowCapabilities = {
   "schema_version": number
   "transition_effects": (string)[]
@@ -1382,8 +1394,7 @@ export type ExternalSlideshowCapabilities = {
   "capture_auto_play": boolean
   "transition_duration_ms": ExternalTransitionDurationRange
   "delay_ms": ExternalAdvanceDelayRange
-  "media_timeout_ms": ExternalAdvanceDelayRange
-  "timeline_timeout_ms": ExternalAdvanceDelayRange
+  "completion_delay_ms": ExternalAdvanceDelayRange
   "audio": ExternalAudioCapabilities
 }
 
@@ -1449,13 +1460,6 @@ export type ExternalThemeUpdateRequest = {
   "body_font_preset"?: (string) | (null)
   "code_font_preset"?: (string) | (null)
   "palette"?: (ThemePalette) | (null)
-}
-
-export type ExternalTimelineCapabilities = {
-  "schema_version": number
-  "enabled": boolean
-  "track_types": (string)[]
-  "advance_modes": (string)[]
 }
 
 export type ExternalTransitionDurationRange = {
@@ -2612,17 +2616,15 @@ export type S3TestConnectionResponse = {
 }
 
 export type SlideshowAdvance = {
-  "mode": "manual" | "timer" | "media_end" | "timeline_end"
+  "mode": "manual" | "timer" | "scene_end"
   "delay_ms": number
-  "media_timeout_ms"?: number
-  "timeline_timeout_ms"?: number
+  "completion_delay_ms"?: number
 }
 
 export type SlideshowSettings = {
   "transition": SlideshowTransition
   "advance": SlideshowAdvance
   "loop": boolean
-  "auto_start": boolean
 }
 
 export type SlideshowTransition = {

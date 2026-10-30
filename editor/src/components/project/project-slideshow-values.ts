@@ -1,179 +1,58 @@
-/**
- * 文件功能：项目放映配置在表单草稿与 API 毫秒值之间的转换、范围收敛与默认值。
- */
-
+/** 文件功能：以生成 DTO 为准转换 schema 4 放映草稿、范围与摘要，项目/单页/批量表单共用。 */
 import type { SlideshowCapabilities, SlideshowSettings } from '@/types/api'
 
-export type SlideshowEffect = 'none' | 'fade' | 'push'
-export type SlideshowAdvanceMode = 'manual' | 'timer' | 'media_end' | 'timeline_end'
-
-export const ADVANCE_MODE_LABELS: Record<SlideshowAdvanceMode, string> = {
-  manual: '手动翻页',
-  timer: '定时翻页',
-  media_end: '媒体结束',
-  timeline_end: '页内时间轴结束',
-}
-
-export const TRANSITION_EFFECT_LABELS: Record<SlideshowEffect, string> = {
-  none: '无动画',
-  fade: '淡入淡出',
-  push: '推入',
-}
-
-export const TRANSITION_EFFECT_OPTIONS: Array<{ label: string; value: SlideshowEffect }> = [
-  { label: TRANSITION_EFFECT_LABELS.fade, value: 'fade' },
-  { label: TRANSITION_EFFECT_LABELS.push, value: 'push' },
-  { label: TRANSITION_EFFECT_LABELS.none, value: 'none' },
-]
+export type SlideshowEffect = SlideshowSettings['transition']['effect']
+export type SlideshowAdvanceMode = SlideshowSettings['advance']['mode']
+export const ADVANCE_MODE_LABELS: Record<SlideshowAdvanceMode, string> = { manual: '手动翻页', timer: '定时翻页', scene_end: '本页完成后翻页' }
+export const TRANSITION_EFFECT_LABELS: Record<SlideshowEffect, string> = { none: '无动画', fade: '淡入淡出', push: '推入' }
+export const TRANSITION_EFFECT_OPTIONS = (['fade', 'push', 'none'] as const).map(value => ({ value, label: TRANSITION_EFFECT_LABELS[value] }))
+export const DEFAULT_SLIDESHOW_SETTINGS: SlideshowSettings = { transition: { effect: 'fade', duration_ms: 400 }, advance: { mode: 'manual', delay_ms: 5000, completion_delay_ms: 300 }, loop: false }
+export const TRANSITION_DURATION_MIN_MS = 100, TRANSITION_DURATION_MAX_MS = 2000
+export const ADVANCE_DELAY_MIN_MS = 1000, ADVANCE_DELAY_MAX_MS = 3_600_000
+export const COMPLETION_DELAY_MIN_MS = 0, COMPLETION_DELAY_MAX_MS = 3_600_000
 
 export interface SlideshowDraft {
   effect: SlideshowEffect
   durationSeconds: string
   advanceMode: SlideshowAdvanceMode
   delaySeconds: string
-  mediaTimeoutSeconds?: string
-  timelineTimeoutSeconds?: string
+  completionDelaySeconds: string
   loop: boolean
-  autoStart: boolean
 }
 
-export const DEFAULT_SLIDESHOW_SETTINGS: SlideshowSettings = {
-  transition: { effect: 'fade', duration_ms: 400 },
-  advance: { mode: 'manual', delay_ms: 5000, media_timeout_ms: 300000, timeline_timeout_ms: 300000 },
-  loop: false,
-  auto_start: false,
+/** 实时能力目录必须声明 schema 4 的实际完成模式，未知旧服务不显示该选项。 */
+export function isSceneEndAdvanceAvailable(capabilities?: SlideshowCapabilities | null): boolean {
+  return Boolean(capabilities && capabilities.schema_version === 4 && capabilities.advance_modes.includes('scene_end'))
 }
-
-export const TRANSITION_DURATION_MIN_MS = 100
-export const TRANSITION_DURATION_MAX_MS = 2000
-export const ADVANCE_DELAY_MIN_MS = 1000
-export const ADVANCE_DELAY_MAX_MS = 3_600_000
-export const MEDIA_TIMEOUT_MIN_MS = 1000
-export const MEDIA_TIMEOUT_MAX_MS = 3_600_000
-export const TIMELINE_TIMEOUT_MIN_MS = 1000
-export const TIMELINE_TIMEOUT_MAX_MS = 3_600_000
-
-/**
- * 判断服务端是否已开放媒体结束模式；能力缺失或读取失败时按未开放处理。
- * @param capabilities 服务端放映能力声明
- */
-export function isMediaEndAdvanceAvailable(capabilities?: SlideshowCapabilities | null): boolean {
-  return capabilities?.advance_modes.includes('media_end') ?? false
+/** 项目与路由表单使用相同模式集合，不再提供旧媒体/时间轴选项。 */
+export function buildAdvanceModeOptions(capabilities?: SlideshowCapabilities | null): Array<{ label: string; value: SlideshowAdvanceMode }> {
+  const modes: SlideshowAdvanceMode[] = ['manual', 'timer']
+  if (isSceneEndAdvanceAvailable(capabilities)) modes.push('scene_end')
+  return modes.map(value => ({ value, label: ADVANCE_MODE_LABELS[value] }))
 }
-
-/** 判断服务端是否已开放页内时间轴结束模式；以实时能力声明为准。 */
-export function isTimelineEndAdvanceAvailable(capabilities?: SlideshowCapabilities | null): boolean {
-  return capabilities?.advance_modes.includes('timeline_end') ?? false
-}
-
-/**
- * 按能力声明构建翻页模式选项，未开放的模式不出现在表单中。
- * @param capabilities 服务端放映能力声明
- */
-export function buildAdvanceModeOptions(
-  capabilities?: SlideshowCapabilities | null,
-): Array<{ label: string; value: SlideshowAdvanceMode }> {
-  const options: Array<{ label: string; value: SlideshowAdvanceMode }> = [
-    { label: ADVANCE_MODE_LABELS.manual, value: 'manual' },
-    { label: ADVANCE_MODE_LABELS.timer, value: 'timer' },
-  ]
-  if (isMediaEndAdvanceAvailable(capabilities)) {
-    options.push({ label: ADVANCE_MODE_LABELS.media_end, value: 'media_end' })
-  }
-  if (isTimelineEndAdvanceAvailable(capabilities)) {
-    options.push({ label: ADVANCE_MODE_LABELS.timeline_end, value: 'timeline_end' })
-  }
-  return options
-}
-
-/**
- * 把毫秒值转换为无冗余小数的秒字符串。
- * @param value 毫秒值
- */
-export function formatMillisecondsAsSeconds(value: number): string {
-  return (value / 1000).toFixed(3).replace(/\.?0+$/, '')
-}
-
-/**
- * 把秒字符串转换为毫秒；非法输入返回 null，由调用方决定兜底值。
- * @param value 秒字符串
- */
+/** 毫秒转换为无冗余小数的秒字符串。 */
+export function formatMillisecondsAsSeconds(value: number): string { return (value / 1000).toFixed(3).replace(/\.?0+$/, '') }
+/** 只接受完整有限的非负秒值，空值和夹带文字不能部分解析。 */
 export function parseSecondsToMilliseconds(value: string): number | null {
-  const parsed = Number.parseFloat(String(value ?? '').trim())
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return null
-  }
-  return Math.round(parsed * 1000)
+  const text = String(value ?? '').trim(), number = Number(text)
+  return text && Number.isFinite(number) && number >= 0 ? Math.round(number * 1000) : null
 }
-
-/**
- * 将项目放映配置转换为表单草稿。
- * @param settings 项目放映配置；缺失时使用平台默认值
- */
-export function createSlideshowDraft(settings?: SlideshowSettings | null): SlideshowDraft {
-  const resolved = settings ?? DEFAULT_SLIDESHOW_SETTINGS
-  return {
-    effect: resolved.transition.effect,
-    durationSeconds: formatMillisecondsAsSeconds(resolved.transition.duration_ms),
-    advanceMode: resolved.advance.mode,
-    delaySeconds: formatMillisecondsAsSeconds(resolved.advance.delay_ms),
-    mediaTimeoutSeconds: formatMillisecondsAsSeconds(resolved.advance.media_timeout_ms ?? 300000),
-    timelineTimeoutSeconds: formatMillisecondsAsSeconds(resolved.advance.timeline_timeout_ms ?? 300000),
-    loop: resolved.loop,
-    autoStart: resolved.auto_start,
-  }
+/** API 值转为表单草稿，未配置时使用当前版本默认值。 */
+export function createSlideshowDraft(settings: SlideshowSettings | null | undefined = DEFAULT_SLIDESHOW_SETTINGS): SlideshowDraft {
+  const value = settings ?? DEFAULT_SLIDESHOW_SETTINGS
+  return { effect: value.transition.effect, durationSeconds: formatMillisecondsAsSeconds(value.transition.duration_ms), advanceMode: value.advance.mode,
+    delaySeconds: formatMillisecondsAsSeconds(value.advance.delay_ms), completionDelaySeconds: formatMillisecondsAsSeconds(value.advance.completion_delay_ms ?? 300), loop: value.loop }
 }
-
-/**
- * 把表单草稿收敛为可提交的放映配置，保证范围合法且 none 动画提交 0ms。
- * @param draft 表单草稿
- */
+/** 表单提交时收敛范围；完成后停留允许零，定时停留至少一秒。 */
 export function normalizeSlideshowDraft(draft: SlideshowDraft): SlideshowSettings {
-  const durationMs = draft.effect === 'none'
-    ? 0
-    : clampMilliseconds(
-      parseSecondsToMilliseconds(draft.durationSeconds),
-      TRANSITION_DURATION_MIN_MS,
-      TRANSITION_DURATION_MAX_MS,
-      DEFAULT_SLIDESHOW_SETTINGS.transition.duration_ms,
-    )
-  const delayMs = clampMilliseconds(
-    parseSecondsToMilliseconds(draft.delaySeconds),
-    ADVANCE_DELAY_MIN_MS,
-    ADVANCE_DELAY_MAX_MS,
-    DEFAULT_SLIDESHOW_SETTINGS.advance.delay_ms,
-  )
-  const mediaTimeoutMs = clampMilliseconds(
-    draft.mediaTimeoutSeconds === undefined ? null : parseSecondsToMilliseconds(draft.mediaTimeoutSeconds),
-    MEDIA_TIMEOUT_MIN_MS,
-    MEDIA_TIMEOUT_MAX_MS,
-    DEFAULT_SLIDESHOW_SETTINGS.advance.media_timeout_ms ?? 300000,
-  )
-  const timelineTimeoutMs = clampMilliseconds(
-    draft.timelineTimeoutSeconds === undefined ? null : parseSecondsToMilliseconds(draft.timelineTimeoutSeconds),
-    TIMELINE_TIMEOUT_MIN_MS,
-    TIMELINE_TIMEOUT_MAX_MS,
-    DEFAULT_SLIDESHOW_SETTINGS.advance.timeline_timeout_ms ?? 300000,
-  )
-  return {
-    transition: { effect: draft.effect, duration_ms: durationMs },
-    advance: {
-      mode: draft.advanceMode,
-      delay_ms: delayMs,
-      media_timeout_ms: mediaTimeoutMs,
-      timeline_timeout_ms: timelineTimeoutMs,
-    },
-    loop: draft.loop,
-    auto_start: draft.autoStart,
-  }
+  return { transition: { effect: draft.effect, duration_ms: draft.effect === 'none' ? 0 : clamp(parseSecondsToMilliseconds(draft.durationSeconds), 100, 2000, 400) },
+    advance: { mode: draft.advanceMode, delay_ms: clamp(parseSecondsToMilliseconds(draft.delaySeconds), 1000, 3_600_000, 5000),
+      completion_delay_ms: clamp(parseSecondsToMilliseconds(draft.completionDelaySeconds), 0, 3_600_000, 300) }, loop: draft.loop }
 }
-
-/**
- * 将毫秒值收敛到指定范围；非法输入使用兜底值。
- */
-function clampMilliseconds(value: number | null, min: number, max: number, fallback: number): number {
-  if (value === null) {
-    return fallback
-  }
-  return Math.min(max, Math.max(min, value))
+/** 共享摘要描述真实完成后的停留，不预估 Scene 的结束时刻。 */
+export function formatSlideshowAdvance(advance: SlideshowSettings['advance']): string {
+  const label = ADVANCE_MODE_LABELS[advance.mode]
+  return advance.mode === 'manual' ? label : advance.mode === 'scene_end' ? `${label}，完成后停留 ${formatMillisecondsAsSeconds(advance.completion_delay_ms ?? 300)} 秒` : `${label} ${formatMillisecondsAsSeconds(advance.delay_ms)} 秒`
 }
+/** 非法输入使用契约默认，有限输入限制在当前字段范围内。 */
+function clamp(value: number | null, min: number, max: number, fallback: number): number { return value === null ? fallback : Math.min(max, Math.max(min, value)) }

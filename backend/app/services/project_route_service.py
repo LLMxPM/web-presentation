@@ -34,7 +34,7 @@ from app.schemas.slideshow import (
     build_runtime_slideshow_defaults,
     build_runtime_transition,
     load_slideshow_settings,
-    parse_route_advance_override,
+    load_route_advance_override,
     parse_route_transition_override,
     resolve_effective_slideshow,
 )
@@ -330,7 +330,7 @@ class ProjectRouteService:
         """解析单个叶子路由的原始覆盖与只读生效值。"""
 
         transition = parse_route_transition_override(route.transition_json)
-        advance = parse_route_advance_override(route.advance_json)
+        advance = load_route_advance_override(route.advance_json)
         effective = resolve_effective_slideshow(project_settings, transition, advance)
         return transition, advance, ProjectRouteService._build_effective_item(effective)
 

@@ -17,19 +17,9 @@ from app.schemas.preview_size_preset import build_default_preview_size_presets
 from app.services.api_access_token_service import ApiAccessTokenService
 from app.services.workspace_style_service import WorkspaceStyleService
 
-DEFAULT_SLIDESHOW = {
-    "transition": {"effect": "fade", "duration_ms": 400},
-    "advance": {"mode": "manual", "delay_ms": 5000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
-    "loop": False,
-    "auto_start": False,
-}
+DEFAULT_SLIDESHOW = {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'manual', 'delay_ms': 5000, 'completion_delay_ms': 300}, 'loop': False}
 
-TIMER_SLIDESHOW = {
-    "transition": {"effect": "push", "duration_ms": 700},
-    "advance": {"mode": "timer", "delay_ms": 8000, "media_timeout_ms": 450000, "timeline_timeout_ms": 300000},
-    "loop": True,
-    "auto_start": False,
-}
+TIMER_SLIDESHOW = {'transition': {'effect': 'push', 'duration_ms': 700}, 'advance': {'mode': 'timer', 'delay_ms': 8000, 'completion_delay_ms': 450000}, 'loop': True}
 
 
 async def _create_external_identity() -> tuple[str, int, int]:
@@ -221,7 +211,7 @@ async def test_external_route_tree_should_roundtrip_route_overrides(client: Asyn
                     "order": 0,
                     "page_id": page_id,
                     "transition": {"effect": "none", "duration_ms": 0},
-                    "advance": {"mode": "manual", "delay_ms": 1500, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+                    "advance": {'mode': 'manual', 'delay_ms': 1500, 'completion_delay_ms': 300},
                 }
             ]
         },
@@ -230,10 +220,10 @@ async def test_external_route_tree_should_roundtrip_route_overrides(client: Asyn
     assert put_response.status_code == 200, put_response.text
     route = put_response.json()["routes"][0]
     assert route["transition"] == {"effect": "none", "duration_ms": 0}
-    assert route["advance"] == {"mode": "manual", "delay_ms": 1500, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
+    assert route["advance"] == {'mode': 'manual', 'delay_ms': 1500, 'completion_delay_ms': 300}
     assert route["effective_slideshow"] == {
         "transition": {"effect": "none", "duration_ms": 0},
-        "advance": {"mode": "manual", "delay_ms": 1500, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+        "advance": {'mode': 'manual', 'delay_ms': 1500, 'completion_delay_ms': 300},
     }
 
     get_response = await client.get(
@@ -295,8 +285,8 @@ async def test_external_idempotency_should_distinguish_slideshow_and_omitted_fie
 
 
 @pytest.mark.asyncio
-async def test_external_capabilities_should_declare_schema3_timeline_advance(client: AsyncClient) -> None:
-    """schema 3 对外声明时间轴结束推进及独立等待预算。"""
+async def test_external_capabilities_should_declare_schema4_scene_advance(client: AsyncClient) -> None:
+    """schema 4 对外声明 Scene 完成推进和允许零的完成后停留。"""
 
     token, workspace_id, _ = await _create_external_identity()
     response = await client.get(
@@ -305,14 +295,13 @@ async def test_external_capabilities_should_declare_schema3_timeline_advance(cli
     )
     assert response.status_code == 200, response.text
     slideshow = response.json()["slideshow"]
-    assert slideshow["schema_version"] == 3
+    assert slideshow["schema_version"] == 4
     assert slideshow["transition_effects"] == ["none", "fade", "push"]
-    assert slideshow["advance_modes"] == ["manual", "timer", "media_end", "timeline_end"]
+    assert slideshow["advance_modes"] == ["manual", "timer", "scene_end"]
     assert slideshow["single_window_auto_play"] is True
     assert slideshow["presenter_auto_play"] is True
     assert slideshow["capture_auto_play"] is False
     assert slideshow["transition_duration_ms"] == {"min": 100, "max": 2000, "none": 0}
     assert slideshow["delay_ms"] == {"min": 1000, "max": 3600000}
-    assert slideshow["media_timeout_ms"] == {"min": 1000, "max": 3600000}
-    assert slideshow["timeline_timeout_ms"] == {"min": 1000, "max": 3600000}
-    assert "timeline_end" in slideshow["advance_modes"]
+    assert slideshow['completion_delay_ms'] == {'min': 0, 'max': 3600000}
+    assert 'scene_end' in slideshow["advance_modes"]

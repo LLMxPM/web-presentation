@@ -134,8 +134,8 @@ const summaryHint = computed(() => {
   if (summary.value.estimate.manualCount > 0) {
     parts.push(`${summary.value.estimate.manualCount} 个手动页未计停留时间`)
   }
-  if (summary.value.estimate.mediaCount > 0) {
-    parts.push(`${summary.value.estimate.mediaCount} 个媒体页按兜底停留估算`)
+  if (summary.value.estimate.sceneCount > 0) {
+    parts.push(`${summary.value.estimate.sceneCount} 个完成页的播放时长待实际播放确定`)
   }
   if (summary.value.hiddenCount > 0) {
     parts.push('隐藏页不参与放映')

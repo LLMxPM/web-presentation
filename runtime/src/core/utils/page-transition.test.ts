@@ -20,54 +20,17 @@ describe('过渡配置', () => {
 })
 
 describe('翻页推进配置', () => {
-  it('缺省保持手动翻页，合法 timer 覆盖生效并补齐媒体时限', () => {
-    expect(resolvePageAdvance(undefined)).toEqual({ mode: 'manual', delayMs: 5000, mediaTimeoutMs: 300000, timelineTimeoutMs: 300000 })
-    expect(resolvePageAdvance(null, { mode: 'manual', delayMs: 9000 })).toEqual({ mode: 'manual', delayMs: 9000, mediaTimeoutMs: 300000, timelineTimeoutMs: 300000 })
-    expect(resolvePageAdvance({ mode: 'timer', delayMs: 8000 })).toEqual({ mode: 'timer', delayMs: 8000, mediaTimeoutMs: 300000, timelineTimeoutMs: 300000 })
-  })
-  it('接受 media_end 并保留合法媒体时限，非法时限回退默认值', () => {
-    expect(resolvePageAdvance({ mode: 'media_end', delayMs: 5000, mediaTimeoutMs: 120000 })).toEqual({
-      mode: 'media_end',
-      delayMs: 5000,
-      mediaTimeoutMs: 120000,
-      timelineTimeoutMs: 300000,
-    })
-    expect(resolvePageAdvance({ mode: 'media_end', delayMs: 5000, mediaTimeoutMs: 999 })).toEqual({
-      mode: 'media_end',
-      delayMs: 5000,
-      mediaTimeoutMs: 300000,
-      timelineTimeoutMs: 300000,
-    })
-    expect(resolvePageAdvance({ mode: 'timer', delayMs: 8000, mediaTimeoutMs: 3600000 })).toEqual({
-      mode: 'timer',
-      delayMs: 8000,
-      mediaTimeoutMs: 3600000,
-      timelineTimeoutMs: 300000,
-    })
-  })
-  it('接受 timeline_end 并补齐独立超时预算', () => {
-    expect(resolvePageAdvance({ mode: 'timeline_end', delayMs: 5000, timelineTimeoutMs: 120000 })).toEqual({
-      mode: 'timeline_end',
-      delayMs: 5000,
-      mediaTimeoutMs: 300000,
-      timelineTimeoutMs: 120000,
-    })
-    expect(resolvePageAdvance({ mode: 'timeline_end', delayMs: 5000, timelineTimeoutMs: 999 })).toEqual({
-      mode: 'timeline_end',
-      delayMs: 5000,
-      mediaTimeoutMs: 300000,
-      timelineTimeoutMs: 300000,
-    })
+  it('缺省手动、覆盖不逐字段继承，完成停留允许零', () => {
+    expect(resolvePageAdvance(undefined)).toEqual({ mode: 'manual', delayMs: 5000, completionDelayMs: 300 })
+    expect(resolvePageAdvance(null, { mode: 'timer', delayMs: 9000 })).toEqual({ mode: 'timer', delayMs: 9000, completionDelayMs: 300 })
+    expect(resolvePageAdvance({ mode: 'scene_end', completionDelayMs: 0 })).toEqual({ mode: 'scene_end', delayMs: 5000, completionDelayMs: 0 })
   })
   it.each([
-    { mode: 'unknown', delayMs: 5000 },
-    { mode: 'timer', delayMs: 999 },
-    { mode: 'timer', delayMs: 3600001 },
-    { mode: 'timer', delayMs: '5000' },
-  ])('非法配置回退并告警：%j', value => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    expect(resolvePageAdvance(value)).toEqual({ mode: 'manual', delayMs: 5000, mediaTimeoutMs: 300000, timelineTimeoutMs: 300000 })
-    expect(warn).toHaveBeenCalled()
-    warn.mockRestore()
+    { mode: 'media_end' }, { mode: 'timeline_end' }, { mode: 'timer', mediaTimeoutMs: 5000 },
+    { mode: 'timer', timelineTimeoutMs: 5000 }, { mode: 'unknown' }, { mode: 'timer', delayMs: 999 },
+    { mode: 'timer', delayMs: '5000' }, { mode: 'scene_end', completionDelayMs: -1 },
+    { mode: 'scene_end', completionDelayMs: true }, { mode: 'timer', delayMs: 3600001 },
+  ])('非法或旧配置明确拒绝：%j', value => {
+    expect(() => resolvePageAdvance(value)).toThrow('schema 4')
   })
 })

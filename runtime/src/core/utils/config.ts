@@ -8,6 +8,7 @@ import {
   normalizeRuntimeAudioConfig,
   type RuntimeAudioConfig,
 } from '@/core/audio/audio-config'
+import { assertSlideshowConfig, SlideshowConfigError } from '@/core/shared/slideshow-config'
 import { resolvePageAdvance, resolvePageTransition } from './page-transition'
 import { assignPageNumbers } from './page-numbers'
 import type { PageAdvanceConfig, PageTransitionConfig } from '../types/page-transition'
@@ -57,7 +58,7 @@ export const DEFAULT_PAGE_CONFIG: RuntimePageConfig = {
 export interface RouteConfigYaml {
   transitionDefaults?: PageTransitionConfig | null
   playback?: {
-    autoStart?: boolean
+    schemaVersion: number
     loop?: boolean
     advanceDefaults?: PageAdvanceConfig | null
   } | null
@@ -262,7 +263,7 @@ export async function loadAppConfig(force = false): Promise<AppConfig> {
     configState.appConfig = await loadYamlFromUrl<AppConfig>(configUrl, !force)
     notifyListeners('app')
   } catch (error) {
-    if (hasExternalConfigSource() || isPreviewMode()) {
+    if (error instanceof SlideshowConfigError || hasExternalConfigSource() || isPreviewMode()) {
       configState.error = error instanceof Error ? error.message : 'Unknown error'
       throw error
     }
@@ -336,6 +337,7 @@ export async function loadRouteConfig(force = false): Promise<RouteConfigYaml> {
 
     const preloadedRouteConfig = getPreloadedConfigSection<RouteConfigYaml>('routes')
     if (preloadedRouteConfig) {
+      assertSlideshowConfig(preloadedRouteConfig)
       configState.routeConfig = preloadedRouteConfig
       notifyListeners('routes')
       return preloadedRouteConfig
@@ -346,10 +348,13 @@ export async function loadRouteConfig(force = false): Promise<RouteConfigYaml> {
     }
 
     const configUrl = buildConfigUrl('routes')
-    configState.routeConfig = await loadYamlFromUrl<RouteConfigYaml>(configUrl, !force)
+    const loaded = await loadYamlFromUrl<RouteConfigYaml>(configUrl, !force)
+    assertSlideshowConfig(loaded)
+    configState.routeConfig = loaded
     notifyListeners('routes')
   } catch (error) {
-    if (hasExternalConfigSource() || isPreviewMode()) {
+    if (error instanceof SlideshowConfigError) configState.routeConfig = null
+    if (error instanceof SlideshowConfigError || hasExternalConfigSource() || isPreviewMode()) {
       configState.error = error instanceof Error ? error.message : 'Unknown error'
       throw error
     }
@@ -393,7 +398,7 @@ export async function loadIconConfig(force = false): Promise<IconConfigYaml> {
     configState.iconConfig = await loadYamlFromUrl<IconConfigYaml>(configUrl, !force)
     notifyListeners('icons')
   } catch (error) {
-    if (hasExternalConfigSource() || isPreviewMode()) {
+    if (error instanceof SlideshowConfigError || hasExternalConfigSource() || isPreviewMode()) {
       configState.error = error instanceof Error ? error.message : 'Unknown error'
       throw error
     }
@@ -558,7 +563,6 @@ export const routeConfigs = computed(() => getCurrentRouteConfigs())
 /** 项目级播放入口设置；supported 表示产物携带 M1 playback 配置。 */
 export const playbackConfig = computed(() => ({
   supported: Boolean(configState.routeConfig?.playback),
-  autoStart: Boolean(configState.routeConfig?.playback?.autoStart),
   loop: Boolean(configState.routeConfig?.playback?.loop),
 }))
 

@@ -1,6 +1,6 @@
 # B5 配置与调用端收敛
 
-状态：待实施。主责：Backend / Editor / AI / CLI。前置：[B2](./b2-completion-aggregation.md)。出口：GB。
+状态：实施中。主责：Backend / Editor / AI / CLI。前置：[B2](./b2-completion-aggregation.md)。出口：GB。
 
 ## 交付
 
@@ -23,3 +23,7 @@ B2 交接：正式 Deck 与 Editor 普通/放大预览已使用 Scene；预览�
 API、服务与无浏览器契约测试覆盖项目继承、逐路由覆盖、权限、快照往返、非法枚举、未知字段、cue 资源引用；协议单测覆盖有限意图、观众窗口唯一调度、原子状态重复与旧 revision 拒绝、重开对齐、受阻摘要、`hold/release` 不连跳及演讲者窗口不自动播媒体；Editor 类型检查、单测与构建通过；工具规格/披露防漂移与 AI 页面任务开发测试通过；验证构建配置快照使用新字段。数据库结构变更验证 SQLite 与 PostgreSQL 适配边界。CLI 在其仓库提交与验证，主仓只做 External API 对拍。
 
 真实联合创作、Mutation Job → Renderer、默认截图与诊断附图、正式多窗口协议、播放许可和独立构建产物统一在 C3 验证；不再补跑旧 v4 协议基线，也不以协议单测宣称多窗口实机通过。
+
+## 配置批次（2026-10-31）
+
+Backend/Editor/Runtime 同批切换 schema 4；模板包 schema 5。删除旧模式、超时与自动开始，支持完成后零停留。严格读入边界覆盖 API、旧持久化数据、预加载/外部配置、构建与诊断；旧产物需要重新生成。数据库迁移只改默认，尚未操作开发库。Presenter、AI 和 CLI 待本包后续批次收敛，不能将本批记为 GB 通过。

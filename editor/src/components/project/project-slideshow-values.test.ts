@@ -1,166 +1,30 @@
-/** 文件功能：验证放映表单草稿与毫秒配置的转换、范围收敛和无动画 0ms 语义。 */
-import { describe, expect, it } from 'vitest'
+/** 文件功能：验证 schema 4 草稿往返、秒值边界、能力选项与旧字段清除。 */
+import { expect, it } from 'vitest'
+import { createSlideshowDraft, normalizeSlideshowDraft, DEFAULT_SLIDESHOW_SETTINGS, buildAdvanceModeOptions, parseSecondsToMilliseconds, formatSlideshowAdvance } from './project-slideshow-values'
+import { sceneCapabilities } from '@/test/slideshow-helpers'
 
-import type { SlideshowCapabilities } from '@/types/api'
-import {
-  buildAdvanceModeOptions,
-  createSlideshowDraft,
-  formatMillisecondsAsSeconds,
-  isMediaEndAdvanceAvailable,
-  isTimelineEndAdvanceAvailable,
-  normalizeSlideshowDraft,
-  parseSecondsToMilliseconds,
-} from './project-slideshow-values'
+it('默认完整往返且无 auto_start 或旧预算', () => {
+  expect(normalizeSlideshowDraft(createSlideshowDraft())).toEqual(DEFAULT_SLIDESHOW_SETTINGS)
+  expect(normalizeSlideshowDraft(createSlideshowDraft())).not.toHaveProperty('auto_start')
+  const draft = createSlideshowDraft({ transition: { effect: 'push', duration_ms: 650 }, advance: { mode: 'scene_end', delay_ms: 5000, completion_delay_ms: 450 }, loop: true })
+  expect(draft).toMatchObject({ durationSeconds: '0.65', completionDelaySeconds: '0.45' })
+  expect(normalizeSlideshowDraft(draft).advance).toEqual({ mode: 'scene_end', delay_ms: 5000, completion_delay_ms: 450 })
+})
 
-const capabilities: SlideshowCapabilities = {
-  schema_version: 2,
-  transition_effects: ['none', 'fade', 'push'],
-  advance_modes: ['manual', 'timer', 'media_end'],
-  single_window_auto_play: true,
-  presenter_auto_play: false,
-  capture_auto_play: false,
-  transition_duration_ms: { min: 100, max: 2000, none: 0 },
-  delay_ms: { min: 1000, max: 3600000 },
-  media_timeout_ms: { min: 1000, max: 3600000 },
-  timeline_timeout_ms: { min: 1000, max: 3600000 },
-}
+it.each([['0', 0], ['0.1235', 124], ['99999', 3600000], ['oops', 300], ['-1', 300]])('完成后停留 %s 收敛为 %s 毫秒', (input, output) => {
+  const value = normalizeSlideshowDraft({ ...createSlideshowDraft(), advanceMode: 'scene_end', completionDelaySeconds: String(input) })
+  expect(value.advance.completion_delay_ms).toBe(output)
+})
 
-describe('project slideshow values', () => {
-  it('应把毫秒配置转换为秒草稿并保留合法值', () => {
-    const draft = createSlideshowDraft({
-      transition: { effect: 'push', duration_ms: 650 },
-      advance: { mode: 'timer', delay_ms: 8000 },
-      loop: true,
-      auto_start: false,
-    })
+it('定时停留和动画范围独立，未使用字段也保持完整结构', () => {
+  const draft = { ...createSlideshowDraft(), advanceMode: 'timer' as const, delaySeconds: '0', durationSeconds: '99' }
+  expect(normalizeSlideshowDraft(draft)).toMatchObject({ transition: { duration_ms: 2000 }, advance: { delay_ms: 1000, completion_delay_ms: 300 } })
+  expect(normalizeSlideshowDraft({ ...draft, effect: 'none' }).transition.duration_ms).toBe(0)
+  expect(parseSecondsToMilliseconds('3abc')).toBeNull(); expect(parseSecondsToMilliseconds('')).toBeNull()
+})
 
-    expect(draft).toEqual({
-      effect: 'push',
-      durationSeconds: '0.65',
-      advanceMode: 'timer',
-      delaySeconds: '8',
-      mediaTimeoutSeconds: '300',
-      timelineTimeoutSeconds: '300',
-      loop: true,
-      autoStart: false,
-    })
-  })
-
-  it('应把小数秒四舍五入为整数毫秒', () => {
-    expect(parseSecondsToMilliseconds('0.3004')).toBe(300)
-    expect(parseSecondsToMilliseconds(' 12.5 ')).toBe(12500)
-    expect(parseSecondsToMilliseconds('abc')).toBeNull()
-    expect(parseSecondsToMilliseconds('-1')).toBeNull()
-    expect(formatMillisecondsAsSeconds(650)).toBe('0.65')
-    expect(formatMillisecondsAsSeconds(1000)).toBe('1')
-  })
-
-  it('无动画时必须提交 0ms，其它效果收敛到 100–2000ms', () => {
-    expect(normalizeSlideshowDraft({
-      effect: 'none',
-      durationSeconds: '0.8',
-      advanceMode: 'manual',
-      delaySeconds: '5',
-      loop: false,
-      autoStart: false,
-    }).transition).toEqual({ effect: 'none', duration_ms: 0 })
-
-    expect(normalizeSlideshowDraft({
-      effect: 'fade',
-      durationSeconds: '0.01',
-      advanceMode: 'manual',
-      delaySeconds: '5',
-      loop: false,
-      autoStart: false,
-    }).transition.duration_ms).toBe(100)
-
-    expect(normalizeSlideshowDraft({
-      effect: 'push',
-      durationSeconds: '9',
-      advanceMode: 'manual',
-      delaySeconds: '5',
-      loop: false,
-      autoStart: false,
-    }).transition.duration_ms).toBe(2000)
-  })
-
-  it('停留时长应收敛到 1000–3600000ms 并对非法输入使用兜底值', () => {
-    const base = {
-      effect: 'fade' as const,
-      durationSeconds: '0.4',
-      advanceMode: 'timer' as const,
-      loop: false,
-      autoStart: false,
-    }
-
-    expect(normalizeSlideshowDraft({ ...base, delaySeconds: '0.2' }).advance.delay_ms).toBe(1000)
-    expect(normalizeSlideshowDraft({ ...base, delaySeconds: '9999' }).advance.delay_ms).toBe(3600000)
-    expect(normalizeSlideshowDraft({ ...base, delaySeconds: 'oops' }).advance.delay_ms).toBe(5000)
-    expect(normalizeSlideshowDraft({ ...base, delaySeconds: '' }).advance.delay_ms).toBe(5000)
-  })
-
-  it('媒体结束超时应保留合法值并收敛到 1000–3600000ms', () => {
-    const base = {
-      effect: 'fade' as const,
-      durationSeconds: '0.4',
-      advanceMode: 'timer' as const,
-      delaySeconds: '5',
-      loop: false,
-      autoStart: false,
-    }
-
-    expect(normalizeSlideshowDraft({ ...base, mediaTimeoutSeconds: '120' }).advance.media_timeout_ms).toBe(120000)
-    expect(normalizeSlideshowDraft({ ...base, mediaTimeoutSeconds: '0.2' }).advance.media_timeout_ms).toBe(1000)
-    expect(normalizeSlideshowDraft({ ...base, mediaTimeoutSeconds: '9999' }).advance.media_timeout_ms).toBe(3600000)
-    expect(normalizeSlideshowDraft({ ...base, mediaTimeoutSeconds: 'oops' }).advance.media_timeout_ms).toBe(300000)
-  })
-
-  it('媒体结束模式应提交完整 advance 对象并保留等待上限', () => {
-    const settings = normalizeSlideshowDraft({
-      effect: 'fade',
-      durationSeconds: '0.4',
-      advanceMode: 'media_end',
-      delaySeconds: '6',
-      mediaTimeoutSeconds: '120',
-      loop: false,
-      autoStart: false,
-    })
-
-    expect(settings.advance).toEqual({
-      mode: 'media_end',
-      delay_ms: 6000,
-      media_timeout_ms: 120000,
-      timeline_timeout_ms: 300000,
-    })
-  })
-
-  it('翻页模式选项应只包含服务端已声明的模式', () => {
-    expect(buildAdvanceModeOptions(null).map(option => option.value)).toEqual(['manual', 'timer'])
-    expect(isMediaEndAdvanceAvailable(null)).toBe(false)
-    expect(buildAdvanceModeOptions(capabilities).map(option => option.value)).toEqual(['manual', 'timer', 'media_end'])
-    expect(isMediaEndAdvanceAvailable(capabilities)).toBe(true)
-    expect(isMediaEndAdvanceAvailable({ ...capabilities, advance_modes: ['manual', 'timer'] })).toBe(false)
-    expect(isTimelineEndAdvanceAvailable(capabilities)).toBe(false)
-    expect(isTimelineEndAdvanceAvailable({ ...capabilities, advance_modes: ['manual', 'timer', 'timeline_end'] })).toBe(true)
-    expect(buildAdvanceModeOptions({
-      ...capabilities,
-      advance_modes: ['manual', 'timer', 'timeline_end'],
-    }).map(option => option.value)).toEqual(['manual', 'timer', 'timeline_end'])
-  })
-
-  it('页内时间轴结束超时应保留合法值并收敛到 1000–3600000ms', () => {
-    const base = {
-      effect: 'fade' as const,
-      durationSeconds: '0.4',
-      advanceMode: 'timer' as const,
-      delaySeconds: '5',
-      loop: false,
-      autoStart: false,
-    }
-
-    expect(normalizeSlideshowDraft({ ...base, timelineTimeoutSeconds: '120' }).advance.timeline_timeout_ms).toBe(120000)
-    expect(normalizeSlideshowDraft({ ...base, timelineTimeoutSeconds: '0.2' }).advance.timeline_timeout_ms).toBe(1000)
-    expect(normalizeSlideshowDraft({ ...base, timelineTimeoutSeconds: '9999' }).advance.timeline_timeout_ms).toBe(3600000)
-    expect(normalizeSlideshowDraft({ ...base, timelineTimeoutSeconds: 'oops' }).advance.timeline_timeout_ms).toBe(300000)
-  })
+it('Scene 选项要求当前版本声明，摘要不会预估任务完成时间', () => {
+  expect(buildAdvanceModeOptions(sceneCapabilities).map(item => item.value)).toEqual(['manual', 'timer', 'scene_end'])
+  expect(buildAdvanceModeOptions({ ...sceneCapabilities, schema_version: 3 }).map(item => item.value)).toEqual(['manual', 'timer'])
+  expect(formatSlideshowAdvance({ mode: 'scene_end', delay_ms: 5000, completion_delay_ms: 0 })).toContain('完成后停留 0 秒')
 })

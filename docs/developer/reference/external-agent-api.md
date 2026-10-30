@@ -104,9 +104,9 @@ GET /api/v1/workspaces/{workspace_id}/capabilities
 
 `capabilities` 返回当前 Token 在指定空间可用的 Scope 和 operation。CLI 可以用它决定命令提示，MCP 可以用它决定工具是否披露；两者都不能把客户端判断当作最终授权。
 
-响应中的可选 `slideshow` 字段声明服务端当前实际支持的放映范围。当前结构版本为 schema 2，`advance_modes` 仍为 `manual`/`timer`、`single_window_auto_play` 为 true，`presenter_auto_play` 与 `capture_auto_play` 保持 false；schema 2 同时披露 `media_timeout_ms` 范围，但 `media_end` 在 M2 出口前不可写、不可执行。字段缺失或为 null 表示未声明该功能，客户端不能仅凭配置字段可写就推断可执行。
+响应中的 `slideshow` 声明 schema 4：`manual/timer/scene_end`、定时 `delay_ms` 和允许零的 `completion_delay_ms`；单窗口与演讲者自动推进已实现，捕获不自动播放。删除 auto_start、旧媒体/时间轴模式和等待超时；旧字段写入 422，旧持久化配置读取为 409 `SLIDESHOW_CONFIG_UNSUPPORTED`。完整规则见[放映契约](../runtime-integration/slideshow/contract.md)。
 
-`slideshow.audio` 声明音频能力（`schema_version=1`）：`audio_assets` 表示可上传和引用音频资源，`page_narration` 和 `audio_cues` 分别表示旁白与 cue。三项自 2026-10-25 起默认返回 `true`；客户端仍按实际能力声明展示项目 cue 配置，后端写入校验独立于客户端开关。
+`slideshow.audio` 三项描述已实现的音频资源、旁白和 cue，不作为阶段开关。`scene` 取代旧 timeline 能力，声明 blocking/ambient 与 visual/model3d/media/custom 任务，以及独立静态呈现；Scene 使用模型真实片段索引和签名，媒体完成依据真实事件。
 
 响应中的可选 `fonts` 声明字体预设能力：`presets.sans` 为 `["platform-sans", "system-ui"]`，`presets.mono` 为 `["platform-mono", "monospace"]`。来源统一以 Backend `app.core.platform_fonts` 为准，CLI 动态发现预设，不维护第二套手写枚举。
 

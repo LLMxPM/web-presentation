@@ -4,12 +4,7 @@ from __future__ import annotations
 
 from httpx import AsyncClient
 
-PROJECT_SLIDESHOW = {
-    "transition": {"effect": "fade", "duration_ms": 400},
-    "advance": {"mode": "timer", "delay_ms": 7000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
-    "loop": False,
-    "auto_start": False,
-}
+PROJECT_SLIDESHOW = {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'timer', 'delay_ms': 7000, 'completion_delay_ms': 300}, 'loop': False}
 
 
 async def _create_workspace(client: AsyncClient, name: str) -> int:
@@ -96,7 +91,7 @@ async def test_route_overrides_should_return_raw_and_effective_values(authentica
                 "hidden": False,
                 "page_id": page_ids[0],
                 "transition": {"effect": "push", "duration_ms": 600},
-                "advance": {"mode": "timer", "delay_ms": 8000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+                "advance": {'mode': 'timer', 'delay_ms': 8000, 'completion_delay_ms': 300},
                 "children": [],
             },
             {
@@ -117,7 +112,7 @@ async def test_route_overrides_should_return_raw_and_effective_values(authentica
                         "order": 2,
                         "hidden": False,
                         "page_id": page_ids[2],
-                        "advance": {"mode": "manual", "delay_ms": 3000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+                        "advance": {'mode': 'manual', 'delay_ms': 3000, 'completion_delay_ms': 300},
                     },
                 ],
             },
@@ -129,10 +124,10 @@ async def test_route_overrides_should_return_raw_and_effective_values(authentica
 
     overview = _find_route(tree, "overview")
     assert overview["transition"] == {"effect": "push", "duration_ms": 600}
-    assert overview["advance"] == {"mode": "timer", "delay_ms": 8000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
+    assert overview["advance"] == {'mode': 'timer', 'delay_ms': 8000, 'completion_delay_ms': 300}
     assert overview["effective_slideshow"] == {
         "transition": {"effect": "push", "duration_ms": 600},
-        "advance": {"mode": "timer", "delay_ms": 8000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+        "advance": {'mode': 'timer', 'delay_ms': 8000, 'completion_delay_ms': 300},
     }
 
     intro = _find_route(tree, "intro")
@@ -140,15 +135,15 @@ async def test_route_overrides_should_return_raw_and_effective_values(authentica
     assert intro["advance"] is None
     assert intro["effective_slideshow"] == {
         "transition": {"effect": "fade", "duration_ms": 400},
-        "advance": {"mode": "timer", "delay_ms": 7000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+        "advance": {'mode': 'timer', 'delay_ms': 7000, 'completion_delay_ms': 300},
     }
 
     detail = _find_route(tree, "detail")
     assert detail["transition"] is None
-    assert detail["advance"] == {"mode": "manual", "delay_ms": 3000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
+    assert detail["advance"] == {'mode': 'manual', 'delay_ms': 3000, 'completion_delay_ms': 300}
     assert detail["effective_slideshow"] == {
         "transition": {"effect": "fade", "duration_ms": 400},
-        "advance": {"mode": "manual", "delay_ms": 3000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+        "advance": {'mode': 'manual', 'delay_ms': 3000, 'completion_delay_ms': 300},
     }
 
     group = _find_route(tree, "chapter")
@@ -174,7 +169,7 @@ async def test_legacy_client_reorder_should_preserve_overrides(authenticated_cli
                 "hidden": False,
                 "page_id": page_ids[0],
                 "transition": {"effect": "push", "duration_ms": 700},
-                "advance": {"mode": "timer", "delay_ms": 6000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+                "advance": {'mode': 'timer', 'delay_ms': 6000, 'completion_delay_ms': 300},
                 "children": [],
             },
             {
@@ -217,7 +212,7 @@ async def test_legacy_client_reorder_should_preserve_overrides(authenticated_cli
     tree = await _get_tree(authenticated_client, project_id)
     home = _find_route(tree, "home")
     assert home["transition"] == {"effect": "push", "duration_ms": 700}
-    assert home["advance"] == {"mode": "timer", "delay_ms": 6000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
+    assert home["advance"] == {'mode': 'timer', 'delay_ms': 6000, 'completion_delay_ms': 300}
 
     # 新节点省略字段时继承项目默认值。
     added = await _put_tree(
@@ -267,7 +262,7 @@ async def test_explicit_null_should_clear_single_override_group(authenticated_cl
                 "hidden": False,
                 "page_id": page_ids[0],
                 "transition": {"effect": "none", "duration_ms": 0},
-                "advance": {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+                "advance": {'mode': 'manual', 'delay_ms': 2000, 'completion_delay_ms': 300},
                 "children": [],
             },
         ],
@@ -285,7 +280,7 @@ async def test_explicit_null_should_clear_single_override_group(authenticated_cl
                 "hidden": False,
                 "page_id": page_ids[0],
                 "transition": None,
-                "advance": {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+                "advance": {'mode': 'manual', 'delay_ms': 2000, 'completion_delay_ms': 300},
                 "children": [],
             },
         ],
@@ -295,7 +290,7 @@ async def test_explicit_null_should_clear_single_override_group(authenticated_cl
     tree = await _get_tree(authenticated_client, project_id)
     node = _find_route(tree, "clear")
     assert node["transition"] is None
-    assert node["advance"] == {"mode": "manual", "delay_ms": 2000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
+    assert node["advance"] == {'mode': 'manual', 'delay_ms': 2000, 'completion_delay_ms': 300}
     assert node["effective_slideshow"]["transition"] == {"effect": "fade", "duration_ms": 400}
 
 
@@ -316,7 +311,7 @@ async def test_group_override_or_invalid_group_should_reject_whole_tree(authenti
                 "hidden": False,
                 "page_id": page_ids[0],
                 "transition": {"effect": "push", "duration_ms": 500},
-                "advance": {"mode": "timer", "delay_ms": 4000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+                "advance": {'mode': 'timer', 'delay_ms': 4000, 'completion_delay_ms': 300},
                 "children": [],
             },
         ],
@@ -361,7 +356,7 @@ async def test_group_override_or_invalid_group_should_reject_whole_tree(authenti
     assert len(tree["routes"]) == 1
     node = _find_route(tree, "keep")
     assert node["transition"] == {"effect": "push", "duration_ms": 500}
-    assert node["advance"] == {"mode": "timer", "delay_ms": 4000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
+    assert node["advance"] == {'mode': 'timer', 'delay_ms': 4000, 'completion_delay_ms': 300}
 
 
 async def test_same_page_referenced_twice_should_keep_independent_overrides(authenticated_client: AsyncClient) -> None:
@@ -389,7 +384,7 @@ async def test_same_page_referenced_twice_should_keep_independent_overrides(auth
                 "order": 2,
                 "hidden": False,
                 "page_id": page_ids[0],
-                "advance": {"mode": "manual", "delay_ms": 1000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
+                "advance": {'mode': 'manual', 'delay_ms': 1000, 'completion_delay_ms': 300},
                 "children": [],
             },
         ],
@@ -402,4 +397,4 @@ async def test_same_page_referenced_twice_should_keep_independent_overrides(auth
     assert first["transition"] == {"effect": "push", "duration_ms": 600}
     assert first["advance"] is None
     assert second["transition"] is None
-    assert second["advance"] == {"mode": "manual", "delay_ms": 1000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000}
+    assert second["advance"] == {'mode': 'manual', 'delay_ms': 1000, 'completion_delay_ms': 300}

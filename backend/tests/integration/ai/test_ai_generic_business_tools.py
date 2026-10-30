@@ -610,14 +610,9 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
     guide_schema = json.dumps(guide["parameters"], ensure_ascii=False)
     for field_name in ("slideshow", "transition", "advance", "loop", "auto_start", "duration_ms", "delay_ms"):
         assert f'"{field_name}"' in guide_schema
-    assert "media_end" in guide_schema
+    assert 'scene_end' in guide_schema
 
-    slideshow = {
-        "transition": {"effect": "push", "duration_ms": 900},
-        "advance": {"mode": "timer", "delay_ms": 7000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
-        "loop": True,
-        "auto_start": False,
-    }
+    slideshow = {'transition': {'effect': 'push', 'duration_ms': 900}, 'advance': {'mode': 'timer', 'delay_ms': 7000, 'completion_delay_ms': 300}, 'loop': True}
     updated = await tools["update_entity"].entrypoint(
         context,
         "project",
@@ -631,12 +626,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
     assert detail.status_code == 200
     assert detail.json()["slideshow"] == slideshow
 
-    media_end = {
-        "transition": {"effect": "fade", "duration_ms": 400},
-        "advance": {"mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 120000, "timeline_timeout_ms": 300000},
-        "loop": False,
-        "auto_start": False,
-    }
+    media_end = {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 120000}, 'loop': False}
     media_updated = await tools["update_entity"].entrypoint(
         context,
         "project",
@@ -654,12 +644,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
             "project",
             project_id,
             {
-                "slideshow": {
-                    "transition": {"effect": "fade", "duration_ms": 400},
-                    "advance": {"mode": "media_end", "delay_ms": 5000, "media_timeout_ms": 999, "timeline_timeout_ms": 300000},
-                    "loop": False,
-                    "auto_start": False,
-                }
+                "slideshow": {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 999}, 'loop': False}
             },
             "slideshow",
         )
@@ -675,12 +660,7 @@ async def test_project_create_should_accept_slideshow_payload(authenticated_clie
     workspace_id = await _create_workspace(authenticated_client, "AI 放映创建空间")
     tools = {item.name: item for item in build_generic_business_tools(get_session_factory())}
     context = _build_tool_run_context(workspace_id, approved=True)
-    slideshow = {
-        "transition": {"effect": "none", "duration_ms": 0},
-        "advance": {"mode": "manual", "delay_ms": 6000, "media_timeout_ms": 300000, "timeline_timeout_ms": 300000},
-        "loop": False,
-        "auto_start": True,
-    }
+    slideshow = {'transition': {'effect': 'none', 'duration_ms': 0}, 'advance': {'mode': 'manual', 'delay_ms': 6000, 'completion_delay_ms': 300}, 'loop': False}
 
     created = await tools["create_entity"].entrypoint(
         context,
