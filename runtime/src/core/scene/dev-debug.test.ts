@@ -140,7 +140,7 @@ it('播放中页面卸载会取消任务，迟到完成不复活', async () => {
   expect(p.active().signal.aborted).toBe(true)
   expect(p.cleanup).toHaveBeenCalledOnce()
   p.completion.resolve(); await flush()
-  expect(api.read()?.phase).toBe('stopped')
+  expect(api.read()).toBeNull()
 })
 
 it('准备中 DOM 被移除也立即取消，尚未执行 define 时同样释放', async () => {

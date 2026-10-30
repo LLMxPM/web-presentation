@@ -7,7 +7,7 @@ import { createApp, nextTick } from 'vue'
 import App from './App.vue'
 import { loadThemeConfigs } from './core/composables/useTheme'
 import { registerPageVisualEditSelectionBridge } from './core/visual-edit/browser/selection-bridge'
-import { installPreviewMotionBridge } from './core/motion/preview-bridge'
+import { installPreviewSceneBridge } from './core/scene/preview-bridge'
 import { initializeStaticIcons } from './core/utils/static-icons'
 import { initializeConfig } from './core/utils/config'
 import { initializeRuntimeFaviconSync } from './core/utils/favicon'
@@ -82,7 +82,8 @@ async function initializeApp(): Promise<void> {
     protocol: captureProtocol,
   })
   registerEditorVisualAssetProbe()
-  installPreviewMotionBridge()
+  const disposePreviewSceneBridge = installPreviewSceneBridge()
+  import.meta.hot?.dispose(disposePreviewSceneBridge)
 
   try {
     await initializeConfig()

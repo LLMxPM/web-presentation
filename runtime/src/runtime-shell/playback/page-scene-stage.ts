@@ -5,6 +5,7 @@ import type { ExecutionContextKind } from '@/core/execution/execution-policy'
 import type { TransitionSettledEvent } from '@/core/types/page-transition'
 import { getRuntimeSession, navigateRuntimePage } from '@/core/router/runtime-session'
 import { findPageSceneDefinition } from '@/core/scene/page-scene-definition'
+import { isStaticSceneRoot } from '@/core/scene/scene-scope'
 import { createPageSceneSlot } from '@/core/scene/page-scene-slot'
 import { SceneSessionError, type PageSceneOptions, type SceneAdvanceMode } from '@/core/scene/types'
 import { createVisualAssetWaitScope } from '@/core/utils/visual-asset-wait'
@@ -27,7 +28,7 @@ export function createPageSceneStage(router: Router) {
     return slot.prepare({ ...input, define: async context => {
       const root = await prepareScenePage(router, input, context.signal)
       if (context.signal.aborted) return
-      await findPageSceneDefinition(root)?.define(context)
+      await findPageSceneDefinition(root, element => !isStaticSceneRoot(element))?.define(context)
     } })
   }
   return { prepare, stop: slot.stop, getCurrent: slot.getCurrent }

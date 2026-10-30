@@ -138,3 +138,11 @@ Vite DEV 挂载后提供 `window.__RUNTIME_SCENE_DEBUG__.play(scope?)/read()/sto
 控制条改为保持/释放，不暂停 Scene；演讲交接停止本窗口任务。Presenter 当前协议继续投影页面状态，旧暂停/定位命令明确不可用，不伪装执行；全协议删减交 B5。宿主相关旧时间轴/媒体测试随消费者移除，新增真实 Scene 调度与 Router/Vue 接线回归。
 
 验证：Deck 15 项、宿主/过渡/Scene/公开入口定向 135 项、布局/宿主/观众调用端定向 60 项通过，Runtime check 通过。完整 Runtime 首轮有既有 Mermaid 测量超时及控制条 tooltip/旧 auto 参数断言问题，恢复 tooltip 并更新已变更的参数语义后定向通过；降低到 `pnpm --filter web-runtime-vue test --maxWorkers=4` 完整重跑，177 文件 1420 项通过、3 项既有跳过。未修改 Mermaid 时限。检索正式放映目录无旧控制器、PageMediaSession、PageMotionHandle、sampleAt/seekMotion 有效调用。未运行浏览器/Renderer、实际产物、镜像或长稳；C3 继续承接。
+
+## B2 第八批：正式单页预览（2026-10-30）
+
+基于 `37b1921`。新增 PageScenePreview 与正式 Scene 预览协议，删除旧 motion 预览桥及其轮询/采样命令；开发控制台复用同一执行器。声明目录事件使挂载后可发现但不自动执行，过滤静态缩略图，保持每页单一所有权。父窗口握手固定 origin，所有消息同时验证窗口、版本与字段；unsync、卸载、HMR 和资源准备中的取消均释放任务。
+
+Editor 普通/放大预览共享播放/停止控件；移除进度、定位、暂停、重播和降动效控制。放大前停止原画布，关闭/卸载取消 iframe；completed 仍允许停止 ambient。iframe 消失时发送取消消息的异常被隔离，避免影响组件清理。Backend DTO 与 Presenter 全协议仍归 B5；本批没有引入兼容消息或旧动作映射。
+
+开发验证：Scene/预览/宿主/公开入口 11 文件 136 项通过；Editor 控件与 iframe 消息 8 项通过；协议对拍 2 项通过；Runtime 和 Editor check 通过。完整 Editor 160 文件 913 项通过，Editor build 通过；根仓协议与文档检查 9 文件 65 项通过。`pnpm --filter web-runtime-vue test --maxWorkers=4` 完整回归：177 文件 1428 项通过、3 项既有跳过；真实浏览器、Renderer、发声和产物不在本批执行。

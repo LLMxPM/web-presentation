@@ -10,7 +10,7 @@
       :class="props.iframeClass"
       allow="autoplay; fullscreen"
       referrerpolicy="origin"
-      @load="syncMotion"
+      @load="syncScene"
     />
     <div v-else-if="props.status === 'idle'" :class="props.emptyContentClass">
       <div class="space-y-3">
@@ -35,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onBeforeUnmount, computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { UiButton } from '@/components/ui'
 import { useRuntimePreviewRecovery } from '@/composables/useRuntimePreviewRecovery'
@@ -46,15 +46,15 @@ import {
 import {
   PAGE_PREVIEW_ERROR_EVENT,
   PAGE_PREVIEW_READY_EVENT,
-  PREVIEW_MOTION_PROTOCOL_VERSION,
-  PREVIEW_MOTION_REQUEST_TYPE,
-  PREVIEW_MOTION_STATE_TYPE,
+  PREVIEW_SCENE_PROTOCOL_VERSION,
+  PREVIEW_SCENE_REQUEST_TYPE,
+  PREVIEW_SCENE_STATE_TYPE,
   type PagePreviewErrorMessage,
   type PagePreviewReadyMessage,
-  type PreviewMotionAction,
-  type PreviewMotionState,
-  type PreviewMotionStateMessage,
-  type PreviewMotionVisualMode,
+  type PreviewSceneAction,
+  type PreviewSceneState,
+  type PreviewSceneStateMessage,
+  isPreviewSceneState,
   type RuntimePreviewStatus,
 } from '@/types/runtime-preview'
 
@@ -100,12 +100,12 @@ const emit = defineEmits<{
   error: [message: string, code?: string]
   retry: []
   renew: [newUrl: string]
-  'motion-state': [state: PreviewMotionState]
+  'scene-state': [state: PreviewSceneState]
 }>()
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
-const motionState = ref<PreviewMotionState | null>(null)
-let motionRequestSequence = 0
+const sceneState = ref<PreviewSceneState | null>(null)
+let sceneRequestSequence = 0
 const renewedFrameUrl = ref('')
 const effectiveFrameUrl = computed(() => renewedFrameUrl.value || props.frameUrl)
 const localError = ref('')
@@ -127,7 +127,7 @@ watch(() => props.frameUrl, () => {
   renewedFrameUrl.value = ''
   localError.value = ''
   lastErrorFingerprint = ''
-  motionState.value = null
+  sceneState.value = null
 })
 
 const showStatusOverlay = computed(() => (
@@ -192,66 +192,36 @@ function runtimeOrigin(): string | null {
   }
 }
 
-/** 向 Runtime 发送时间轴命令；只发给当前 iframe 与已校验 origin。 */
-function postMotionCommand(action: PreviewMotionAction, extra: Record<string, unknown> = {}): void {
+/** 向 Runtime 发送Scene命令；只发给当前 iframe 与已校验 origin。 */
+function postSceneCommand(action: PreviewSceneAction, extra: Record<string, unknown> = {}): void {
   const target = iframeRef.value?.contentWindow
   const origin = runtimeOrigin()
   if (!target || !origin) return
-  motionRequestSequence += 1
-  target.postMessage({
-    type: PREVIEW_MOTION_REQUEST_TYPE,
-    version: PREVIEW_MOTION_PROTOCOL_VERSION,
-    requestId: `motion-${motionRequestSequence}`,
-    action,
-    ...extra,
-  }, origin)
+  sceneRequestSequence += 1
+  try {
+    target.postMessage({
+      type: PREVIEW_SCENE_REQUEST_TYPE,
+      version: PREVIEW_SCENE_PROTOCOL_VERSION,
+      requestId: `scene-${sceneRequestSequence}`,
+      action,
+      ...extra,
+    }, origin)
+  } catch { /* iframe 已导航或卸载时，取消消息不能阻止宿主清理。 */ }
 }
 
-/** 订阅当前页时间轴状态；iframe 重载后由 ready/load 再次触发。 */
-function syncMotion(): void {
-  postMotionCommand('sync')
+/** 订阅当前页Scene状态；iframe 重载后由 ready/load 再次触发。 */
+function syncScene(): void {
+  postSceneCommand('sync')
 }
 
-function playMotion(): void {
-  postMotionCommand('play')
+function playScene(): void {
+  postSceneCommand('play')
 }
 
-function pauseMotion(): void {
-  postMotionCommand('pause')
-}
+/** 停止并释放当前页预览任务，不暂停或定位。 */
+function stopScene(): void { postSceneCommand('stop') }
 
-function restartMotion(): void {
-  postMotionCommand('restart')
-}
-
-function seekMotion(positionMs: number): void {
-  if (!Number.isFinite(positionMs)) return
-  postMotionCommand('seek', { positionMs })
-}
-
-function setMotionVisualMode(visualMode: PreviewMotionVisualMode): void {
-  postMotionCommand('set-visual-mode', { visualMode })
-}
-
-/** 校验 Runtime 回传的时间轴状态结构，拒绝缺字段或错误类型。 */
-function isPreviewMotionState(value: unknown): value is PreviewMotionState {
-  if (!value || typeof value !== 'object') return false
-  const state = value as Record<string, unknown>
-  return typeof state.hasTimeline === 'boolean'
-    && typeof state.positionMs === 'number'
-    && typeof state.durationMs === 'number'
-    && (state.visualMode === 'full' || state.visualMode === 'reduced')
-}
-
-defineExpose({
-  motionState,
-  syncMotion,
-  playMotion,
-  pauseMotion,
-  restartMotion,
-  seekMotion,
-  setMotionVisualMode,
-})
+defineExpose({ sceneState, syncScene, playScene, stopScene })
 
 /**
  * 接收当前 iframe 的页面预览终态消息，并校验窗口、来源、协议版本与 artifact。
@@ -272,13 +242,13 @@ function handleWindowMessage(event: MessageEvent<unknown>): void {
     return
   }
 
-  const rawMessage = event.data as Partial<PreviewMotionStateMessage> & Record<string, unknown>
-  if (rawMessage.type === PREVIEW_MOTION_STATE_TYPE) {
-    if (rawMessage.version !== PREVIEW_MOTION_PROTOCOL_VERSION || !isPreviewMotionState(rawMessage.state)) {
+  const rawMessage = event.data as Partial<PreviewSceneStateMessage> & Record<string, unknown>
+  if (rawMessage.type === PREVIEW_SCENE_STATE_TYPE) {
+    if (rawMessage.version !== PREVIEW_SCENE_PROTOCOL_VERSION || !isPreviewSceneState(rawMessage.state)) {
       return
     }
-    motionState.value = rawMessage.state
-    emit('motion-state', rawMessage.state)
+    sceneState.value = rawMessage.state
+    emit('scene-state', rawMessage.state)
     return
   }
 
@@ -293,7 +263,7 @@ function handleWindowMessage(event: MessageEvent<unknown>): void {
     localError.value = ''
     lastErrorFingerprint = ''
     recovery.reset()
-    syncMotion()
+    syncScene()
     emit('ready')
     return
   }
@@ -310,5 +280,6 @@ function handleWindowMessage(event: MessageEvent<unknown>): void {
 }
 
 onMounted(() => window.addEventListener('message', handleWindowMessage))
+onBeforeUnmount(() => postSceneCommand('unsync'))
 onUnmounted(() => window.removeEventListener('message', handleWindowMessage))
 </script>

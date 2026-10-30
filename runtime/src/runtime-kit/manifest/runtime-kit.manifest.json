@@ -1937,14 +1937,14 @@
         "enabled": true,
         "previewable": false,
         "recommendation_level": "advanced",
-        "display_name": "页内时间轴",
-        "summary": "通过 define 返回有限资源 builder 计划与原生 GSAP 视觉填充函数；Runtime 托管暂停时间轴、作用域、采样和唯一 transport。",
+        "display_name": "旧页内时间轴（待清理）",
+        "summary": "开发分支保留的旧入口；正式放映与单页预览使用 usePageScene.v1，旧时间轴随 C2 在合并 main 前清除。",
         "tags": ["timeline"],
         "usage": [
           "import { usePageTimeline, seconds } from '@runtime-kit/public/composables/motion/usePageTimeline.v1'",
           "const pageRoot = ref<HTMLElement | null>(null)",
           "const timeline = usePageTimeline({ root: pageRoot, bindings: {}, timelineId: 'intro', applyPoster: true, poster: { atLabel: 'readable' }, define: ctx => ({ plan: ctx.resources().build(), visual(tl) { tl.fromTo('.title', { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: seconds(400) }, 0); tl.addLabel('readable') } }) })",
-          "// 放映宿主负责播放；timeline.state 只读，调试时可使用 timeline.pause()/seek() 等受控接口。"
+          "// 旧入口仅供开发分支已有页面手动调试；新增页面使用 usePageScene.v1。"
         ],
         "returns": "对象：plan、state、error、ready 及 prepare/play/pause/resume/restart/seek/sampleAt/setMuted/setVisualMode/dispose。",
         "return_example": ["timeline.state.value?.positionMs // 400", "timeline.plan.value?.planDigest // 'fnv1a-...'"],
@@ -1964,8 +1964,8 @@
         "enabled": true,
         "previewable": false,
         "recommendation_level": "advanced",
-        "display_name": "页级 Scene（开发调试）",
-        "summary": "挂载只登记，播放时执行 define；通过 visual/task 管理正向视觉和异步任务。开发分支已开放，正式放映宿主仍在接线。",
+        "display_name": "页级 Scene",
+        "summary": "挂载只登记，显式播放时执行 define；通过 visual/task 管理正向视觉和异步任务，按实际完成聚合并在离页时清理。",
         "tags": ["scene", "animation"],
         "usage": [
           "import { usePageScene } from '@runtime-kit/public/composables/motion/usePageScene.v1'",
