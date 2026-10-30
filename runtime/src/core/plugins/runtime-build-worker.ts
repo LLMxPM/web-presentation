@@ -9,6 +9,7 @@ import { tmpdir } from 'os'
 import { resolve } from 'path'
 
 import { RuntimeTaskAbortedError } from './runtime-task-deadline'
+import { createSceneImportPolicySource } from '../shared/scene-authoring-policy'
 
 const DEFAULT_WORKER_MAX_OLD_SPACE_MB = 1024
 const DEFAULT_WORKER_TIMEOUT_MS = 600000
@@ -1159,8 +1160,9 @@ export function createRuntimeBuildWorkerScript(): string {
  * 第二道闸：拒绝 internal/、未版本化与不在白名单中的 @runtime-kit 导入。
  * 白名单优先取 Backend 下发的 runtime_kit_exports；否则读取本地 manifest。
  */
-function createRuntimeKitImportGatePluginSource(): string {
+export function createRuntimeKitImportGatePluginSource(): string {
   return [
+    createSceneImportPolicySource(),
     'async function loadLocalRuntimeKitAllowedImports(tempRoot) {',
     '  try {',
     '    const { readFile } = await import("node:fs/promises")',
@@ -1209,7 +1211,12 @@ function createRuntimeKitImportGatePluginSource(): string {
     '    async buildStart() {',
     '      await ensureAllowed()',
     '    },',
-    '    async resolveId(source) {',
+    '    async resolveId(source, importer) {',
+    '      if (rejectSceneImport(source, importer)) {',
+    '        const error = new Error(sceneImportMessage)',
+    '        error.code = "SCENE_GSAP_IMPORT_FORBIDDEN"',
+    '        throw error',
+    '      }',
     '      await ensureAllowed()',
     '      const reason = decide(source)',
     '      if (reason) {',

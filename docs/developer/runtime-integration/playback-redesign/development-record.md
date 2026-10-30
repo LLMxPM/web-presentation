@@ -146,3 +146,9 @@ Vite DEV 挂载后提供 `window.__RUNTIME_SCENE_DEBUG__.play(scope?)/read()/sto
 Editor 普通/放大预览共享播放/停止控件；移除进度、定位、暂停、重播和降动效控制。放大前停止原画布，关闭/卸载取消 iframe；completed 仍允许停止 ambient。iframe 消失时发送取消消息的异常被隔离，避免影响组件清理。Backend DTO 与 Presenter 全协议仍归 B5；本批没有引入兼容消息或旧动作映射。
 
 开发验证：Scene/预览/宿主/公开入口 11 文件 136 项通过；Editor 控件与 iframe 消息 8 项通过；协议对拍 2 项通过；Runtime 和 Editor check 通过。完整 Editor 160 文件 913 项通过，Editor build 通过；根仓协议与文档检查 9 文件 65 项通过。`pnpm --filter web-runtime-vue test --maxWorkers=4` 完整回归：177 文件 1428 项通过、3 项既有跳过；真实浏览器、Renderer、发声和产物不在本批执行。
+
+## B2 第九批：GSAP 源码边界（2026-10-30）
+
+基于 `fdbb0e1`。页面和工作空间组件只通过 Scene 受管门面使用 GSAP；直接核心包/插件导入与重导出由 Backend 依赖解析、远程预览和构建/诊断插件拒绝。平台内部 GSAP 实现继续正常解析。生成 Worker 从同一 TS 策略生成纯 JS，Backend 与 Runtime 以共享正反例对拍。策略版本加入 CodeCheck 指纹，防止旧检查通过结果绕过新规则；这不是任意 JS 沙箱。
+
+开发验证：Runtime 导入边界、远程预览和 Worker 三文件 70 项通过，Runtime check 通过；Backend 策略、依赖解析、指纹、缓存与 CodeCheck 五文件 63 项通过。首次新增用例发现原依赖正则未识别副作用导入，修正后全通过；首次 Runtime 共享 fixture 相对路径错误已修正。未运行浏览器或启动服务。下一批补齐正式公开入口样例并关闭 B2 工程出口。

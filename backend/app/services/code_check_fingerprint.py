@@ -16,6 +16,7 @@ from app.core.runtime_module_policy import (
     load_runtime_kit_manifest,
 )
 from app.core.text_normalizer import normalize_text_to_lf
+from app.core.scene_authoring_policy import SCENE_AUTHORING_POLICY_VERSION
 from app.models.asset import WorkspaceAsset
 from app.models.enums import RecordStatus
 from app.models.font import WorkspaceFontConfig
@@ -527,6 +528,7 @@ def _compiler_identity() -> dict[str, object]:
         "runtime_kit_version": str(manifest.get("version") or ""),
         "runtime_kit_manifest_hash": manifest_hash,
         "compile_config": _hash_json_payload(build_runtime_module_resolver_config()),
+        "scene_authoring_policy": SCENE_AUTHORING_POLICY_VERSION,
         "runtime_build": current_runtime_release_identity(),
         # 三维接受规则与运行时引擎策略同源入指纹：规则或引擎策略变化必须使检查缓存失效。
         "model3d_rules_identity": _hash_json_payload(build_model3d_support_matrix()),

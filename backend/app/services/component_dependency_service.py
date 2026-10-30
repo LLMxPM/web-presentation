@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
+from app.core.scene_authoring_policy import assert_scene_import_allowed
 from app.core.runtime_module_policy import (
     RUNTIME_REMOTE_COMPONENT_PREFIX,
     RuntimeKitImportDependency,
@@ -30,10 +31,14 @@ from app.repositories.workspace_component_version_repository import WorkspaceCom
 
 _SCRIPT_BLOCK_PATTERN = re.compile(r"<script\b[^>]*>(.*?)</script>", flags=re.IGNORECASE | re.DOTALL)
 _STATIC_IMPORT_PATTERN = re.compile(
-    r"(?:^|\n)\s*import(?:\s+type)?(?:[\s\w*{},$]+?\s+from\s+)?[\"']([^\"']+)[\"']",
+    r"(?:^|\n)\s*import(?:\s+type)?(?:[\s\w*{},$]+?\s+from\s+)?\s*[\"']([^\"']+)[\"']",
     flags=re.MULTILINE,
 )
 _DYNAMIC_IMPORT_PATTERN = re.compile(r"\bimport\s*\(", flags=re.MULTILINE)
+_STATIC_REEXPORT_PATTERN = re.compile(
+    r"(?:^|\n)\s*export\s+(?:type\s+)?(?:\*\s*(?:as\s+\w+\s*)?|\{[^}]*\})\s*from\s*[\"']([^\"']+)[\"']",
+    flags=re.MULTILINE,
+)
 _REMOTE_COMPONENT_IMPORT_PATTERN = re.compile(
     r"^@workspace-components/(?P<component_code>[A-Za-z0-9_-]+)/v/(?P<version_no>\d+)(?:\.vue)?$"
 )
@@ -176,6 +181,9 @@ class ComponentDependencyService:
         """从 Vue 源码中解析静态 import 依赖，并校验 Runtime 本地公共模块边界。"""
 
         script_content = self._extract_script_content(source_text)
+        # 独立 JS/TS 辅助模块也经过策略检查；不把无 script 的 Vue 模板当作脚本。
+        if not script_content and importer_module_path and importer_module_path.endswith((".js", ".ts")):
+            script_content = source_text
         if not script_content:
             return ParsedModuleDependencies(
                 component_imports=tuple(),
@@ -195,10 +203,13 @@ class ComponentDependencyService:
         runtime_local_imports: list[RuntimeKitImportDependency] = []
         page_module_imports: list[str] = []
         bare_imports: list[str] = []
+        for reexport_source in _STATIC_REEXPORT_PATTERN.findall(script_content):
+            assert_scene_import_allowed(reexport_source)
         for import_source in _STATIC_IMPORT_PATTERN.findall(script_content):
             normalized_source = str(import_source or "").strip()
             if not normalized_source:
                 continue
+            assert_scene_import_allowed(normalized_source)
 
             remote_match = _REMOTE_COMPONENT_IMPORT_PATTERN.match(normalized_source)
             if remote_match:

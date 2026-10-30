@@ -41,6 +41,8 @@ usePageScene({ root, define(scene) {
 
 默认内容完整可读，截图和导出不执行 define。视觉参数 duration 使用秒，任务 startMs/offsetMs 使用毫秒。有限工作标 blocking；无限装饰标 ambient，不阻塞完成聚合。异步工作通过 task 返回 Promise，页面自建监听、计时器、RAF 等用 onCleanup 释放并响应 signal。当前不支持 GSAP 插件或任意时刻重建。
 
+页面与工作空间组件只能通过 `scene.visual` 使用受管 GSAP，不直接导入 `gsap`、`gsap/*`、`gsap-trial/*` 或 `@gsap/*`。Backend 写入/CodeCheck、远程预览和构建/诊断编译均拒绝这些导入，返回 `SCENE_GSAP_IMPORT_FORBIDDEN`；平台内部实现仍可依赖 GSAP。此规则限定支持的创作方式，不构成任意 JavaScript 的安全沙箱。检查缓存指纹包含创作策略版本，修改规则时必须升级版本。
+
 ## 控制台播放
 
 复用已运行的 Vite 开发服务，打开页面或 Editor 预览，在浏览器开发者工具中选择 **Runtime 预览 iframe 的执行上下文**。全屏放映退出后执行：

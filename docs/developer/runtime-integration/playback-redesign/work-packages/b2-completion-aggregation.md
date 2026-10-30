@@ -23,6 +23,8 @@
 
 ## 分批实施记录
 
+第九批已完成源码边界：页面/组件直接 GSAP 核心和插件导入由 Backend、远程预览和构建/诊断统一拒绝，使用 `scene.visual` 受管门面；规则版本进入检查指纹。开发验证为 Runtime 70 项、Backend 63 项和 Runtime check 通过，详见[开发记录](../development-record.md#b2-第九批gsap-源码边界2026-10-30)。仍待样例和工程出口收口。
+
 ### 第一批：会话与假任务（2026-10-29）
 
 基于 B1 `925b3d7`，在 `runtime/src/core/scene/` 实现内部 PageSceneSession、宿主 slot、任务依赖校验、有效经过时钟与释放域。开发检查为 Scene 三文件 34 项单测及 Runtime check，通过；不运行浏览器。

@@ -393,6 +393,15 @@ describe('runtime saas preview 服务令牌可恢复', () => {
     })
   }
 
+  it('远程页面拒绝直接 GSAP 和插件导入，平台内部实现仍可解析 GSAP', async () => {
+    const plugin = createPlugin()
+    const importer = '/@runtime-preview/artifact-1/src/views/Foo.vue?ctx=preview-token-value'
+    for (const source of ['gsap', 'gsap/DrawSVGPlugin', 'gsap-trial/SplitText', '@gsap/react']) {
+      await expect(callResolveId(plugin, source, importer)).rejects.toMatchObject({ code: 'SCENE_GSAP_IMPORT_FORBIDDEN' })
+    }
+    await expect(callResolveId(plugin, 'gsap', '/src/core/scene/gsap-scene-task.ts')).resolves.toBeNull()
+  })
+
   /** 以普通函数形式调用插件 load 钩子（测试内不依赖 Vite PluginContext）。 */
   function callLoad(plugin: ReturnType<typeof createPlugin>, id: string): Promise<string | null> {
     return (plugin.load as (moduleId: string) => Promise<string | null>).call({}, id)

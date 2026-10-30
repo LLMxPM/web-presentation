@@ -1,0 +1,15 @@
+[
+  { "source": "gsap", "forbidden": true },
+  { "source": "gsap/all", "forbidden": true },
+  { "source": "gsap/ScrollTrigger", "forbidden": true },
+  { "source": "gsap/dist/DrawSVGPlugin.js?raw", "forbidden": true },
+  { "source": "gsap-trial/SplitText", "forbidden": true },
+  { "source": "@gsap/react", "forbidden": true },
+  { "source": " GSAP\\MotionPathPlugin#x ", "forbidden": true },
+  { "source": "gsap?raw", "forbidden": true },
+  { "source": "gsap-like", "forbidden": false },
+  { "source": "@gsap-other/test", "forbidden": false },
+  { "source": "vue", "forbidden": false },
+  { "source": "./gsap-helper", "forbidden": false },
+  { "source": "@runtime-kit/public/composables/motion/usePageScene.v1", "forbidden": false }
+]

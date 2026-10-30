@@ -5,6 +5,7 @@
 import { posix } from 'path'
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import type { Plugin, ViteDevServer } from 'vite'
+import { isForbiddenSceneImport, SCENE_GSAP_IMPORT_MESSAGE } from '../shared/scene-authoring-policy'
 
 import {
   DEFAULT_PREVIEW_TAILWIND_PATH,
@@ -343,6 +344,9 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
       const importerInfo = importer ? parseRemoteModuleId(importer) : null
       if (!importerInfo) {
         return null
+      }
+      if (isForbiddenSceneImport(source)) {
+        throw new PreviewGatewayError(400, 'SCENE_GSAP_IMPORT_FORBIDDEN', SCENE_GSAP_IMPORT_MESSAGE)
       }
 
       const resolveResult = resolveRemoteModuleImport(source, importerInfo.modulePath)
