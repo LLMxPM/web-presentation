@@ -3,6 +3,12 @@ transitionDefaults:
   effect: fade
   durationMs: 400
 
+playback:
+  loop: false
+  advanceDefaults:
+    mode: manual
+    delayMs: 5000
+
 routes:
   - route: home
     component: '@/examples/local/views/defaultpage/HomePage.vue'
@@ -67,6 +73,15 @@ routes:
         meta:
           title: DataTable表格
           order: 8
+      - route: scene-showcase
+        component: '@/examples/local/views/feature-showcase/SceneShowcase.vue'
+        meta:
+          title: Scene 多序列
+          order: 9
+          advance:
+            mode: scene_end
+            delayMs: 5000
+            completionDelayMs: 300
   - route: runtime-kit-capabilities
     meta:
       title: Runtime Kit能力说明

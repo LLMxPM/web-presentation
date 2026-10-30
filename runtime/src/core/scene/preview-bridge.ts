@@ -27,20 +27,14 @@ export function installPreviewSceneBridge(): () => void {
     if (command.action === 'stop') { preview.stop(); publish(command.requestId); return }
     void preview.play().catch(() => false).then(() => publish(command.requestId))
   }
-  const freeze = () => preview.setSuspended(true)
-  const resume = () => preview.setSuspended(document.hidden)
   /** 页面退出时先终止任务，再移除属于本桥的监听。 */
   function dispose(): void {
     if (disposed) return
     disposed = true; origin = null; unsubscribe(); preview.dispose()
     window.removeEventListener('message', message)
     window.removeEventListener('beforeunload', dispose)
-    document.removeEventListener('freeze', freeze); document.removeEventListener('resume', resume)
-    document.removeEventListener('visibilitychange', resume)
   }
   window.addEventListener('message', message)
   window.addEventListener('beforeunload', dispose, { once: true })
-  document.addEventListener('freeze', freeze); document.addEventListener('resume', resume)
-  document.addEventListener('visibilitychange', resume)
   return dispose
 }

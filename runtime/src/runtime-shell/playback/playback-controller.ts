@@ -135,7 +135,8 @@ export class DeckPlaybackSession {
     this.path = page.path; this.state = 'preparing'; this.issue = null; this.completed = false; this.remaining = 0
     try {
       if (!['manual', 'timer', 'scene_end'].includes(page.advance.mode)) throw new SceneSessionError('DECK_ADVANCE_UNSUPPORTED', '当前推进配置已不支持，请改为 manual、timer 或 scene_end。')
-      if (!Number.isFinite(page.advance.delayMs) || page.advance.delayMs < 1 || page.advance.delayMs > 3600000
+      if (!Number.isFinite(page.advance.delayMs) || page.advance.delayMs < 0 || page.advance.delayMs > 3600000
+        || (page.advance.mode === 'timer' && page.advance.delayMs === 0)
         || (page.advance.completionDelayMs !== undefined && (!Number.isFinite(page.advance.completionDelayMs) || page.advance.completionDelayMs < 0 || page.advance.completionDelayMs > 3600000))) {
         throw new SceneSessionError('DECK_ADVANCE_INVALID', '页面停留必须是有限毫秒值，定时停留须为正数。')
       }

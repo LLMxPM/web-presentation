@@ -71,6 +71,22 @@ it('只有根元素全屏时才创建 Deck；原 auto_start=false 不改变页�
   expect(f.router.currentRoute.value.path).toBe('/b'); expect(f.context().signal.aborted).toBe(true)
 })
 
+it('创建时已隐藏不运行 Scene，visibility 不能提前解除 freeze', async () => {
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  const f = await mount()
+  f.host.start(); f.session.transitionSettled.value = { path: '/a', generation: 1 }; await flush()
+  expect(f.host.snapshot.value?.suspended).toBe(true)
+  expect(f.run).not.toHaveBeenCalled()
+  document.dispatchEvent(new Event('freeze'))
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+  document.dispatchEvent(new Event('visibilitychange')); await flush()
+  expect(f.host.snapshot.value?.suspended).toBe(true)
+  expect(f.run).not.toHaveBeenCalled()
+  document.dispatchEvent(new Event('resume')); await flush()
+  expect(f.run).toHaveBeenCalledOnce()
+  expect(f.host.snapshot.value?.suspended).toBe(false)
+})
+
 it.each(['capture', 'export', 'thumbnail', 'interactive-preview'])('%s 不创建放映控制器或资源等待', async kind => {
   initializeRuntimeExecution(`?runtimeExecution=${kind}`)
   const f = await mount(false, true); await flush()

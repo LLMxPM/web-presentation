@@ -53,7 +53,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   const snapshot = shallowRef<DeckSnapshot | null>(null), setupError = ref('')
   const scene = computed(() => snapshot.value?.scene ?? null)
   const errorMessage = computed(() => snapshot.value?.issue?.message ?? setupError.value)
-  let deck: DeckPlaybackSession | null = null, unsubscribe: (() => void) | null = null, disposed = false
+  let deck: DeckPlaybackSession | null = null, unsubscribe: (() => void) | null = null, disposed = false, frozen = false
 
   /** 放映只能由根元素全屏窗口拥有，视频自身全屏不创建 Deck。 */
   function allowed(): boolean {
@@ -69,6 +69,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
       const pages = buildPlaybackPages()
       if (!pages.length) return null
       deck = new DeckPlaybackSession({ pages, loop: playbackConfig.value.loop, initialPath: router.currentRoute.value.path, stage: createPageSceneStage(router) })
+      deck.setSuspended(document.hidden || frozen)
       unsubscribe = deck.subscribe(value => {
         snapshot.value = value
         if (!value.suspended && ['preparing', 'playing', 'blocked'].includes(value.state)) wakeLock.request()
@@ -108,12 +109,12 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
   const stopRouteWatch = watch(() => router.currentRoute.value.path, path => { deck?.visit(path) }, { flush: 'sync' })
   const stopPolicyWatch = watch(() => policy.value.allowAutoAdvance, value => { if (!value) disposeDeck() })
   /** 隐藏/冻结仅使用内部暂挂；不引入可由页面或 Presenter 控制的暂停接口。 */
-  const visibility = () => deck?.setSuspended(document.hidden)
-  const freeze = () => deck?.setSuspended(true)
-  const resume = () => deck?.setSuspended(document.hidden)
+  const visibility = () => deck?.setSuspended(document.hidden || frozen)
+  const freeze = () => { frozen = true; visibility() }
+  const resume = () => { frozen = false; visibility() }
   const pageShow = (event: PageTransitionEvent) => {
     if (!event.persisted) return
-    deck?.setSuspended(true); deck?.setSuspended(document.hidden)
+    deck?.setSuspended(true); resume()
   }
   const fullscreen = () => { if (!allowed()) stop() }
 

@@ -1,6 +1,6 @@
 # B2 完成聚合取代统一时钟
 
-状态：实施中（2026-10-30，正式 Deck 与单页 Scene 预览已接入；插件边界和样例收口中）。主责：Runtime core / shell。前置：[B1](./b1-drop-arbitrary-moment.md)。出口：GB。
+状态：工程完成（2026-10-30，Scene/Deck、正式预览、插件边界和公开入口样例开发回归通过；实机待 C3）。主责：Runtime core / shell。前置：[B1](./b1-drop-arbitrary-moment.md)。出口：GB。
 
 本包是削减的核心：在 B0 静态态和 B1 外部取帧协议已替换后，把仍驱动正向播放的「全局时间计划 ＋ transport」削成「本页任务调度与完成聚合」。**这些语义由本包定死，不留给后续包各自假设。**
 
@@ -23,7 +23,7 @@
 
 ## 分批实施记录
 
-第九批已完成源码边界：页面/组件直接 GSAP 核心和插件导入由 Backend、远程预览和构建/诊断统一拒绝，使用 `scene.visual` 受管门面；规则版本进入检查指纹。开发验证为 Runtime 70 项、Backend 63 项和 Runtime check 通过，详见[开发记录](../development-record.md#b2-第九批gsap-源码边界2026-10-30)。仍待样例和工程出口收口。
+第九批完成源码边界：页面/组件直接 GSAP 核心和插件导入由 Backend、远程预览和构建/诊断统一拒绝，使用 `scene.visual` 受管门面；规则版本进入检查指纹。开发验证为 Runtime 70 项、Backend 63 项和 Runtime check 通过，详见[开发记录](../development-record.md#b2-第九批gsap-源码边界2026-10-30)。第十批样例与工程出口见文末。
 
 ### 第一批：会话与假任务（2026-10-29）
 
@@ -96,3 +96,22 @@ Vite DEV 模式提供 `window.__RUNTIME_SCENE_DEBUG__.play(scope?)/read()/stop()
 Editor 普通与放大预览使用共享播放/停止控件；放大前停止原画布，关闭或卸载时停止 iframe。有限完成后保留停止入口以清理 ambient，状态严格核对 source、origin、协议和字段边界。父窗口首次 sync 固定 origin，unsync 释放任务；准备中取消、HMR 和页面卸载不复活旧执行。
 
 开发验证见开发记录；实际双窗口、发声和浏览器交互仍统一交 C3。B5 继续负责持久配置、Presenter 全协议、AI/CLI 指引和其余界面收敛。
+
+### 第十批：公开样例与 B2 工程出口（2026-10-30）
+
+新增 `SceneShowcase.vue`，只使用公开 `usePageScene.v1` 与同根 `useStaticPresentation.v1`。多条 GSAP 序列并行驱动数字、SVG 和 DOM/CSS 无限装饰；文字在数字实际完成后开始。Canvas 有限粒子任务在 run 才获取上下文，以真实 RAF 完成回报，支持冻结且离页清理。默认数字、完整文字、已绘曲线和 SVG 粒子海报独立可读，静态执行零 Scene、Canvas 与自建 RAF。独立 Runtime fixture 路由 `/feature-showcase/scene-showcase` 配置 `scene_end` 和 300ms 结束停留，不改变平台 Backend 模板。
+
+补齐已隐藏时创建放映/预览会话的暂挂；freeze 与 visibility 分开记忆，前者不会被后者提前解除。开发调试复用预览执行器的相同生命周期监听。Deck 允许 manual 未使用的零停留，只有 timer 必须有正预算。
+
+开发出口已满足：完整 Runtime 179 文件 1451 项通过、3 项既有跳过，Runtime check/build 通过；本轮 Editor 160 文件 913 项、check/build 通过；Backend 策略/CodeCheck/指纹/缓存等 63 项、静态截图/Kit 契约 7 项通过；根仓协议、模板、manifest 与仓库约束 72 项通过。实际视觉、真实浏览器/Renderer、独立产物、镜像、多窗口、音频、WebGL 与长稳留 C3，本包不宣称实机通过。未修改 HTTP DTO，无需重新生成 API 类型。
+
+正式放映宿主与单页预览已无旧 Transport、`sampleAt/applyAt/compilePageTimeline` 或 PageMediaSession 的有效调用，不保留 fallback。剩余责任明确交接：
+
+| 后续包 | 尚存消费与交付 |
+| :--- | :--- |
+| B3 | `ModelViewer.vue`、`model3d/motion/motion-contract.ts` 与旧模型适配器迁为实例 Mixer/正向任务，删除 AssetModel.v2 |
+| B4 | `core/media/page-media-session.ts`、旧媒体适配器和 AssetAudio/Video.v2 迁为 AudioBus/Scene 任务，接旁白、自动视频与 cue |
+| B5 | Backend 放映 DTO、Editor 配置表单、Presenter v4 全协议、AI/CLI 旧指引和配置收敛；旧模式不在 B2 静默兼容 |
+| C2 | `core/motion/` 编译器、Transport、采样和摘要证明；旧 usePageTimeline/manifest、开发冲突探测和 render-ready 静态 readiness 引用全仓清理，并刷新旧浏览器夹具 |
+
+以上保留项不能反向要求 B2 等待 B3/B4/B5 实现，旧链全仓清零仍是合并 main 前门禁。B2 已工程完成，GB 要求的其余包与 C3 交付验收继续独立追踪。

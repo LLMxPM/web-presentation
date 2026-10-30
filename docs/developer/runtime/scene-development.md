@@ -45,6 +45,8 @@ usePageScene({ root, define(scene) {
 
 ## 控制台播放
 
+完整样例位于 `runtime/src/examples/local/views/feature-showcase/SceneShowcase.vue`。Runtime 独立运行时进入 `/feature-showcase/scene-showcase`；公开声明根为 `#scene-showcase`，可执行 `await window.__RUNTIME_SCENE_DEBUG__.play('#scene-showcase')`。本地路由 fixture 为该页设置 `scene_end`，有限数字、文字、描边与 Canvas 任务完成后停留 300ms 再推进，DOM/CSS 无限装饰不阻塞；它不修改平台项目的 Backend 配置。样例已通过类型、构建和真实 GSAP ticker 的假时钟开发回归，像素表现和实际浏览器生命周期待 C3。
+
 复用已运行的 Vite 开发服务，打开页面或 Editor 预览，在浏览器开发者工具中选择 **Runtime 预览 iframe 的执行上下文**。全屏放映退出后执行：
 
 ```js

@@ -20,6 +20,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanups.splice(0).reverse().forEach(cleanup => cleanup()); document.body.innerHTML = ''
+  Reflect.deleteProperty(document, 'hidden')
   Object.defineProperty(window, 'parent', originalParent); gsap.ticker.sleep(); vi.useRealTimers(); resetRuntimeExecutionForTests()
 })
 
@@ -69,6 +70,20 @@ it('声明挂载可发现但不会自动运行，正式预览显式播放和停�
   preview.stop(); expect(preview.read().phase).toBe('stopped')
   expect(p.active().signal.aborted).toBe(true); expect(p.cleanup).toHaveBeenCalledOnce()
   p.unmount(); expect(preview.read().hasScene).toBe(false)
+})
+
+it('隐藏时开始预览不运行任务，freeze 不被 visibility 提前解除，resume 才运行', async () => {
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  const p = page(), preview = createPageScenePreview(); cleanups.push(preview.dispose)
+  await preview.play(); expect(p.run).not.toHaveBeenCalled()
+  document.dispatchEvent(new Event('freeze'))
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+  document.dispatchEvent(new Event('visibilitychange')); await flush()
+  expect(p.run).not.toHaveBeenCalled()
+  document.dispatchEvent(new Event('resume')); await flush()
+  expect(p.run).toHaveBeenCalledOnce()
+  preview.dispose(); document.dispatchEvent(new Event('freeze')); document.dispatchEvent(new Event('resume')); await flush()
+  expect(p.cleanup).toHaveBeenCalledOnce()
 })
 
 it('有限完成保持 completed 状态直到显式停止，不生成位置或进度字段', async () => {

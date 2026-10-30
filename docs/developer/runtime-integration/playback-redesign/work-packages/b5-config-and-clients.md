@@ -4,6 +4,8 @@
 
 ## 交付
 
+B2 交接：正式 Deck 与 Editor 普通/放大预览已使用 Scene；预览只提供播放/停止，放映只提供推进与保持/释放。Runtime 内部已识别 `scene_end/completionDelayMs`，Backend DTO 与 Editor 表单仍需本包同批升级；旧 `media_end/timeline_end` 在正式宿主明确拒绝。Presenter v4 目前只连接新宿主并投影有界状态，完整最小意图/原子状态协议仍未交付；不能把 B2 单窗口开发回归记为本包多窗口通过。AI/CLI 旧指引和配置消费者也归本包收敛。
+
 - Backend 放映配置直接重定义为 `manual/timer/scene_end`、定时值、完成后停留、末页循环、翻页过渡与音频 cue；删除 `auto_start`（`schemas/slideshow.py:116`、`core/slideshow_defaults.py:13`、`models/workspace.py:96`）、`media_end`、`timeline_end` 与对应超时字段。提升 schema 版本，并定义旧预览 artifact 与已生成构建快照读到旧版本时的失败语义；不复用旧版本号承载新字段含义。
 - 放映默认值的真实落点是 `backend/app/core/slideshow_defaults.py` 与 `backend/app/schemas/slideshow.py`；`backend/app/config_templates/` 的 yaml 目前不含放映字段，Runtime 侧另有 `runtime/public/config/*.config.yaml`。改动前先确认落点，不要假设模板包已有这些字段。
 - **Editor 配置表单与 DTO 同批落地**：只展示新推进模式、停留时间、完成后停留、过渡与 cue，移除旧字段；预览与放映入口保留播放、退出及演讲者自动翻页 `hold/release`，删除页内进度、定位、Scene 暂停与重播控件；不再提供会话级自动/手动配置切换入口。UI 遵守 `DESIGN.md`，数据层使用生成类型，不增加手写镜像 DTO。

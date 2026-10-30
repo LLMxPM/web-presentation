@@ -48,6 +48,16 @@ it('manual 页实际完成后仍等待手动翻页，旧页面任务离场清理
   expect(paths).toEqual(['/a', '/b'])
 })
 
+it('manual 允许未使用的零停留，只有 timer 拒绝零预算', async () => {
+  const manual = fixture({ mode: 'manual', delayMs: 0 })
+  manual.deck.start(); await flush()
+  expect(manual.deck.getSnapshot().state).toBe('playing')
+  manual.deck.dispose()
+  const timer = fixture({ mode: 'timer', delayMs: 0 })
+  timer.deck.start(); await flush()
+  expect(timer.deck.getSnapshot()).toMatchObject({ state: 'failed', issue: { code: 'DECK_ADVANCE_INVALID' } })
+})
+
 it('timer 到点取消未完成的 blocking，即使该任务受阻也不等待', async () => {
   const { deck, r, paths } = fixture()
   deck.start(); await flush(); r.context().setBlocked('缓冲')

@@ -12,7 +12,16 @@ import { isStaticSceneRoot } from './scene-scope'
 export function createPageScenePreview(scope: () => ParentNode | null = () => document) {
   const slot = createPageSceneSlot(), listeners = new Set<() => void>()
   let active: RegisteredPageScene | null = null, previous: SceneSnapshot | null = null
-  let unsubscribe: (() => void) | null = null, disposed = false
+  let unsubscribe: (() => void) | null = null, disposed = false, frozen = false
+
+  /** 生命周期监听归执行器所有，使正式 iframe 与开发控制台共享冻结语义。 */
+  const visibility = () => slot.getCurrent()?.setSuspended(document.hidden || frozen)
+  const freeze = () => { frozen = true; visibility() }
+  const resume = () => { frozen = false; visibility() }
+  const pageShow = (event: PageTransitionEvent) => { if (event.persisted) resume() }
+  document.addEventListener('visibilitychange', visibility)
+  document.addEventListener('freeze', freeze); document.addEventListener('resume', resume)
+  window.addEventListener('pageshow', pageShow)
 
   /** 只发现当前画布，静态上下文不披露可播放声明。 */
   function definition(): RegisteredPageScene | null {
@@ -71,6 +80,7 @@ export function createPageScenePreview(scope: () => ParentNode | null = () => do
     emit()
     const session = await preparing
     if (!session || session !== slot.getCurrent()) return false
+    visibility()
     const started = await session.start()
     return ['running', 'blocked', 'completed'].includes(started.phase)
   }
@@ -83,9 +93,14 @@ export function createPageScenePreview(scope: () => ParentNode | null = () => do
   })
 
   /** 组件/iframe 卸载撤销监听、实例和所有迟到准备，不依赖 Promise 合作取消。 */
-  function dispose(): void { if (disposed) return; disposed = true; unsubscribeDefinitions(); stop(); listeners.clear() }
+  function dispose(): void {
+    if (disposed) return
+    disposed = true; unsubscribeDefinitions(); stop(); listeners.clear()
+    document.removeEventListener('visibilitychange', visibility)
+    document.removeEventListener('freeze', freeze); document.removeEventListener('resume', resume)
+    window.removeEventListener('pageshow', pageShow)
+  }
   return { play, stop, read, dispose, getSnapshot: () => slot.getCurrent()?.getSnapshot() ?? null,
-    setSuspended(value: boolean) { slot.getCurrent()?.setSuspended(value) },
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
 }
