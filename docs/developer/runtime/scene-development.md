@@ -1,6 +1,6 @@
 # Scene 开发调试
 
-`usePageScene.v1` 已进入 Runtime Kit manifest 和 Backend/Agent 能力目录，页面可以使用公开路径导入。正式全屏放映与 Editor 单页预览已使用 Scene，开发控制台复用同一套预览执行逻辑。B3 模型正向动作与 B4 显式媒体/AudioBus 已接入；持久配置、Presenter 和 AI/CLI 由 B5 继续收敛。开发分支暂保留旧时间轴供已有页面手动调试，旧入口清除与完整验收在合并 `main` 前完成。
+`usePageScene.v1` 已进入 Runtime Kit manifest 和 Backend/Agent 能力目录，页面可以使用公开路径导入。正式全屏放映与 Editor 单页预览已使用 Scene，开发控制台复用同一套预览执行逻辑。B3 模型正向动作与 B4 显式媒体/AudioBus 已接入；schema 4 配置、Presenter v5 和 AI/CLI 适配已完成工程回归。开发分支暂保留旧时间轴供已有页面手动调试，旧入口清除与完整验收在合并 `main` 前完成。
 
 已运行的 Backend 会缓存 manifest；首次拉取本批改动后需重启 Backend 才能刷新能力目录与导入白名单。页面源码改动继续使用 Vite HMR。启动与重启入口见[本地开发指南](../getting-started.md)。
 

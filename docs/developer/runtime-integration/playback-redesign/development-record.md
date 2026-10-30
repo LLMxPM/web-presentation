@@ -211,3 +211,9 @@ Backend DTO、Editor 共享放映字段与 Runtime 读取/构建边界同步改�
 AI 目录/工具/业务集成 39 项通过；样例、模型与核心入口 21 项通过；Runtime/Editor build 通过。首次完整 Runtime 1461 项断言通过但核心导出测试的空配置引发未处理拒绝；fixture 已提供 schema 4 并定向通过，完整回归继续执行。无浏览器或服务数据变更。
 
 第三批收口验证：完整 Runtime 185 文件 1461 项通过、3 项既有跳过，无未处理拒绝；完整 Editor 160 文件 904 项通过。根仓 20 文件 129 项契约、生成门禁、Gateway、Backend Kit/CLI Skill 10 项通过。E2E 收集基线同步到 B1 删除任意时刻截图后剩余的 3 项 runtime-heavy；仅执行 --list，不执行浏览器。
+
+## B5 第四批：CLI 与 GB 工程出口（2026-10-31）
+
+CLI 仓库提交 `9f13ca5`，分支 feature/motion-scene-clients。CLI 0.5.0 / Skill 1.5.0 使用新配置、Scene 模型/媒体/cue 指引；删除旧采样参数和音频阶段门禁，静态截图任务返回独立状态及稳定原因码，可按 job_id 继续查询，下载不信任远程 content_url。完整 209 项通过，无跳过；最终边界 45 项通过，包含任务/页面身份和版本负例。wheel/sdist、分发、help、实时主仓 OpenAPI、锁文件离线校验与技能 quick_validate 通过。在线同步遇 PyPI TLS 失败后，沿用现有环境并离线构建成功，产物未发布。
+
+B3/B4/B5 均工程完成，GB 开发出口关闭。MCP 快照/bindings 因 capability/配置升级可能失配，未刷新或测试，按项目边界明确为非阻塞。C1/C2 工程收口与 C3 集中实机仍未执行；未重启开发服务、未修改 .env 或开发数据、未推送远端。Presenter 网格页数性能边界同样交 C3，不将开发替身计入真实多窗口或声音证据。
