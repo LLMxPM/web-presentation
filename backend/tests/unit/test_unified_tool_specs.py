@@ -140,3 +140,22 @@ def test_audio_guides_should_gate_narration_by_runtime_capability() -> None:
     assert any("不允许把 url" in item.lower() and "audio" in item.lower() for item in asset_detail.constraints)
     assert any("AssetAudio.v1" in item and "narration" in item for item in runtime_detail.constraints)
     assert any("loop" in item and "autoplay" in item for item in runtime_detail.constraints)
+
+
+def test_scene_authoring_standard_and_operation_guide_should_agree() -> None:
+    """派生规范、工具参数与操作手册统一使用当前 Scene 能力与 schema 4。"""
+    from app.ai.animation_authoring_standard import ANIMATION_AUTHORING_STANDARD
+
+    for target in ("page", "component"):
+        standard = get_default_code_standard(target)
+        for required in ("usePageScene.v1", "AssetModel.v3", "createSceneMediaTask.v1", "useAudioCue.v2",
+                         "blocking", "ambient", "STATIC_PRESENTATION_UNAVAILABLE", "DOM/CSS/Canvas", "signature"):
+            assert required in standard
+        assert "不提供任意动作时刻截图" in standard
+        assert "禁止直接 import GSAP" in standard
+    guide = get_operation_guide_spec("project.update.slideshow")
+    assert guide is not None
+    text = " ".join(guide.constraints)
+    assert "schema 4" in text and "scene_end" in text and "completion_delay_ms" in text
+    assert "timeline_timeout_ms" not in text and "media_end" not in text
+    assert "STATIC_PRESENTATION_UNAVAILABLE" in ANIMATION_AUTHORING_STANDARD

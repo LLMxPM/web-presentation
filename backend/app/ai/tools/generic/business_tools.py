@@ -201,7 +201,7 @@ def build_generic_business_tools(session_factory: async_sessionmaker[AsyncSessio
     @agent_tool(show_result=False)
     async def get_runtime_kit_capability(
         run_context: AgentToolContext,
-        name: Annotated[str, Field(min_length=1, description="从 Runtime Kit 列表取得的版本化能力名称，例如 usePageTimeline.v1；此工具没有数字 ID。")],
+        name: Annotated[str, Field(min_length=1, description="从 Runtime Kit 列表取得的版本化能力名称，例如 usePageScene.v1；此工具没有数字 ID。")],
         kind: Annotated[Literal["component", "composable", "util", "type"] | None, Field(description="可选能力类型，用于消除同名歧义。")] = None,
     ) -> dict[str, Any]:
         """按版本化名称读取单个 Runtime Kit 能力及其导入契约。"""

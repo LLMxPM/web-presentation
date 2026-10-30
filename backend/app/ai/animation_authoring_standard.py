@@ -1,40 +1,37 @@
-"""文件功能：维护页面与组件共用的动画能力、降动效适配及动态验收提示。"""
+"""文件功能：维护正向 Scene、多序列、模型/媒体实际完成与独立静态呈现的共同创作规范。"""
 
 ANIMATION_AUTHORING_STANDARD = """
-## 页内动画与动态效果规范
+## 页内 Scene 与动态效果规范
 
-### 能力与实现
+### 能力与写法
 
-- 页内元素动效可使用 CSS transition、@keyframes、Vue Transition/TransitionGroup 和页面自身的响应式状态；首次挂载需要过渡时显式使用 appear。数字变化、SVG 路径等可由局部 JavaScript 或浏览器原生动画 API 实现；定时器、requestAnimationFrame、动画实例和事件监听必须在卸载时清理，不修改宿主或其它页面的全局状态。
-- 需要统一时钟、音视频定位或三维片段采样时，先调用 `runtime_kit.query`（`list`/`detail`）查询 `usePageTimeline` 与 `AssetVideo.v2`、`AssetAudio.v2`、`AssetModel.v2`。只有查询结果明确返回该能力且可用时，才可按其 `import_path` 创建定义；未返回、`enabled=false` 或只存在于文档时视为未开放，不得凭记忆导入未登记的 Runtime Kit 路径，也不得改用未注册的 GSAP、Motion、Lottie 等动画库。
-- 时间轴公共入口与三个 `Asset*.v2` 是否开放以当前服务能力查询为准；能力可用不代表已经通过最终实机验收。未开放时继续使用 CSS/原生动画或既有 v1 静态/手动能力，不伪造已经可用的时间轴示例。
-- 可用时，页面通过 `usePageTimeline({ root: pageRoot, bindings: {}, timelineId, poster, define(ctx) { return { plan: ctx.resources().build(), visual(tl) { /* 填充原生视觉 */ } } } })` 注册唯一时间轴。`define` 仅在非静态上下文挂载时执行一次；资源 builder 支持 voice/audio/video/clip，真实资源用逻辑名，媒体和模型由对应 `Asset*.v2` 渲染。纯视觉使用空资源计划，旧静态 definition 仅兼容已有内部内容，不作为默认创作入口。
-- 原生视觉只使用受控时间轴的显式 `fromTo`、`addLabel`、GSAP 原生位置字符串、非负数值 stagger 与段落函数复用；支持 opacity/x/y/scale/rotation，from/to 提供相同属性和正数 duration。禁止直接导入 GSAP、另建时钟、call/add/to/from、回调、插件、无限重复或 root 外元素；Runtime 托管初态、暂停、采样和释放。
-- 资源轨道使用稳定 id、startMs 或 afterTrack/offsetMs 表达并行与顺延；资源 id 自动成为视觉标签。资源/transport 用毫秒，原生视觉 duration、stagger 和位置用秒，从同一个 usePageTimeline.v1 路径导入 seconds(ms) 转换。poster 的 atMs 与 atLabel 互斥，选择可读的稳定画面；同元素同属性非重叠段落允许，重叠段落必须修正。
-- 默认在全部视觉段落末尾登记 `tl.addLabel('readable')`，用 `poster: { atLabel: 'readable' }` 引用可读终态；窗口项目预览需要预先显示海报时使用 applyPoster=true。不要猜固定 poster.atMs 或在末尾额外加等待时间，海报必须位于真实 0–durationMs 范围内；初始化/准备失败属于内容校验错误，应按 code、fieldPath 和实际时长修正。
-- 三维片段只使用资源详情 `analysis_metadata.model3d.animations` 中真实返回的动作：`supported=true`，引用其 `index`、`signature` 与 `duration_ms`，裁切终点不得超出真实时长。`supported=false`、未分析、只有动画数量或只凭 GLB 文件含动画数据都不能宣称可播放；动作签名或资源版本变化后必须重新查询，不复用过期引用。
-- 动效应服务于内容表达和操作反馈；入场、强调、退场、错峰与循环按需要选择，不默认让正文和标题反复隐藏重播。定位变换与动画变换使用不同包裹层，避免动画 transform 覆盖居中、旋转等既有布局。
-- 页内动画与项目 none/fade/push 翻页过渡分别控制。只有放映能力明确声明 `timeline_end`（`advance_modes` 包含且 `schema_version >= 3`）时才能写入该推进模式与 `timeline_timeout_ms`；未声明时写入会被拒绝，应保留 manual/timer/media_end 并明确说明，不得静默替换为 timer。
+- 先查询 runtime_kit list/detail，按真实返回的版本化 import_path 使用 usePageScene.v1、useStaticPresentation.v1、AssetModel.v3、AssetAudio.v1、AssetVideo.v1、createSceneMediaTask.v1 与 useAudioCue.v2。未查询到的路径不可凭记忆导入；历史 usePageTimeline/Asset*.v2 示例不再作为当前创作方式。
+- 一页只声明一次 usePageScene({ root, define(scene) { ... } })，同一 Scene 可登记多条 scene.visual({ id, role, define(tl) { ... } }) 和 scene.task(task)。挂载只登记，点击播放或正式放映才 prepare/start。每条任务 id 唯一，role 为 blocking 或 ambient；startMs 与 afterTrack/offsetMs 分别表达起始延时和前驱实际完成后顺延，不能同时填写。
+- scene.visual 托管 GSAP 的 to/from/fromTo/set/addLabel/call、位置字符串、stagger、回调和页面数值对象，支持 DOM、SVG 和数值驱动。数字滚动用数值对象与 onUpdate；打字机更新本页文本；SVG 描边可直接修改 strokeDashoffset。GSAP 的 duration/位置用秒，Scene 的 startMs/offsetMs 用毫秒。禁止直接 import GSAP、插件或自己创建全局 timeline/ticker；插件包括 DrawSVG、SplitText、ScrollTrigger，不能因为门面支持回调就推断插件已开放。
+- 有限 blocking 实际完成才推动 scene_end；repeat:-1 只允许 ambient，无限任务不可作为依赖前驱。DOM/CSS 无限呼吸、Canvas 粒子可作装饰；有限 Canvas 自定义任务 run 必须返回实际完成的 Promise，不能用估计时长伪造完成。不得依赖 GSAP 粒子插件。自建 RAF、计时器、事件、模型数值和文本变化用 scene.onCleanup 或 task context.onCleanup 恢复；内部冻结时自定义任务必须通过 setSuspended 停止有效推进，恢复不补跑后台积压。
+- 组件首轮不自行声明页级 Scene；页面通过真实组件实例句柄协调，避免一页多个调度所有者。CSS/浏览器原生动画也必须有独立静态分支，不能绕过本页生命周期修改全局或其它页面。
 
-### 静态基线与减少动态效果
+### 模型、媒体与 cue
 
-- 动画页面必须在相同 root 另用 `useStaticPresentation.v1` 声明 default/poster/unsupported，import_path 以能力查询为准。default 使用完整可读默认态，poster 由模板或 prepare 提供独立海报，unsupported 附短原因。capture/export/thumbnail 不创建或采样时间轴；`isStatic` 用于模板和 mounted、CSS/Canvas 副作用分支，prepare 必须响应 signal，不播放媒体或推进 Mixer。
-- 先保证无动画时的稳定可读状态，再叠加动效；核心内容不以 opacity: 0、隐藏或画布外位置作为唯一基础样式，也不依赖 animationend 回调才出现。有限入场动画应保留结束状态；无限循环只用于适合循环的内容或装饰，并提供可读静态状态。
-- 默认响应 prefers-reduced-motion 偏好，可在 no-preference 分支启用完整动效，或在 reduce 分支减弱/关闭动效并恢复静态可读状态；规则只作用于本页或本组件的动效元素，保留布局所需的定位变换，不能把全页统一设为 opacity: 1 导致闪光、遮罩等装饰覆盖正文。
-- prefers-reduced-motion: reduce 是系统/浏览器向网页报告的偏好信号，不会自动禁止所有 CSS/JavaScript 动画；网页是否减弱或停止由自身样式/逻辑决定。同一环境中，一页响应 reduce 而另一页未适配，便可能分别呈现静态与动态，不能据此判断平台兼容性不同。
-- 使用 `usePageTimeline` 时，视觉模式由显式参数、调试参数或系统偏好解析；降低视觉运动不等于静音，也不等于触发播放完成。捕获/导出使用独立静态声明，不能通过修改用户系统偏好或等待播放取得海报。
+- AssetModel.v1 展示静态/手动交互，片段使用 AssetModel.v3 的组件 ref.getHandle()；只有真实首帧就绪才有句柄。查询资源 analysis_metadata.model3d.animations，要求 supported=true，使用真实 index、signature 和 duration_ms。动画数据不代表支持动画播放，不能猜片段名称、索引或签名；资源替换后重新查询。
+- scene.task(handle.animation({ id:'action-a', role:'blocking', clipIndex, signature })) 注册动作；第二个动作使用 afterTrack:'action-a'。同一模型实例不能同时运行两个动作；并行需不同实例。只支持正向 rate，不能 seek、倒放或采样。handle.transform/camera 是实例数值副本，visual onUpdate 调 handle.invalidate()；scene.onCleanup(handle.reset) 恢复，不能访问共享材质、几何、骨骼或 Three.js 内部实例。
+- AssetAudio.v1 purpose=narration 和 AssetVideo.v1 purpose=automatic 通过 media-ready 暴露目标；显式 scene.task(createSceneMediaTask({ id, role:'blocking', target:()=>mediaElement })) 接管，实际 ended 才完成。purpose=content 仅用户手动播放，不得交给 Scene 自动接管，不在源码写 autoplay。
+- 同页最多一个自动发声主媒体；其它自动视频必须 muted。旁白不循环，无限媒体仅 ambient。总静音不改变主媒体数量约束。播放许可受阻时在当前 Runtime/观众窗口点击允许播放；Editor 或演讲者窗口的点击不能代替该窗口的用户手势。全屏成功不能保证发声成功。资源错误与缓冲应按真实失败/受阻处理，不能按 duration 估计结束。
+- useAudioCue.v2 返回 playCue('interaction.*') 的 Promise，只等待真实 play 许可回执，不等待短音效结束；cue 不作为主媒体或 blocking 完成目标。不存在绑定、无 provider、静态环境或静音时按返回值处理，不伪造成功或直接构造 Audio。
+- 项目放映 schema 4 只有 manual/timer/scene_end、delay_ms、completion_delay_ms 与 loop。scene_end 要有 blocking 目标，完成后可停留零毫秒；timer 到点会停止尚未完成的任务。删除 auto_start、旧媒体/时间轴推进和超时字段。保持/释放只抑制自动翻页，不暂停 Scene、声音或改写项目配置。
 
-### 创作与验收流程
+### 独立静态态
 
-1. 读取 `runtime_kit` 能力，确认时间轴与所需 `Asset*.v2` 已开放；未开放则停止统一编排方案。
-2. 查询真实资源与动作摘要，记录资源逻辑名、动作 index/signature/duration。不使用猜测的片段名或不存在的资源。
-3. 在页面源码中声明唯一时间轴与绑定，通过页面/组件 Mutation Job 写入并等待终态；修改后重新读取最终版本，确认依赖与校验结果。
-4. 需要图片时，默认截图、缩略图和导出使用独立静态态，不等待或快进动画，也不从时间轴 poster 取帧；`STATIC_PRESENTATION_UNAVAILABLE` 表示内容不能静态呈现、不可重试，写入 screenshot.unavailable 不覆盖已成功的布局诊断。指定动作时刻截图不作为创作方案。
-5. 静态截图、缩略图和导出只能证明某一确定画面的像素与可读性，不能证明动画已经播放、声音已经播放、自动播放未被拒绝或实时预览也处于 reduce。动态验收需在实时预览分别检查 no-preference 与 reduce，并说明实际观察到的暂停、定位、重播与 timeline_end 结果。
+- 同一个 root 声明 useStaticPresentation.v1 的 default/poster/unsupported。default 是完整可读默认模板；poster 用模板或响应 AbortSignal 的 prepare 生成独立海报；unsupported 附短原因。capture/export/thumbnail 不执行 Scene 或快进、定位、采样模型/媒体来取帧。
+- 默认样式保持正文完整可读，有限动画保留完成态，定位与动画使用不同包裹层。静态分支不创建 Canvas RAF 或自动播放媒体；模型静态渲染遵守其独立资源契约。PPTX 不保留网页动画。
+- STATIC_PRESENTATION_UNAVAILABLE 表示内容没有可用静态态，截图状态为 unavailable，不可重试，不覆盖已成功布局诊断。资源缺失、解码错误、Renderer 断连或超时属于资源/执行失败，不能伪装为 unsupported 或 skipped；pending、skipped 和 failed 也不能当成 ready。
+- 响应 prefers-reduced-motion 时只减弱本页视觉运动，不能据此静音或伪造任务完成；保留可读布局。不能把整页统一 opacity:1 导致装饰覆盖正文，也不修改用户系统偏好。
 
-### 排查与验收
+### 创作与复核
 
-- 用户反馈实时预览没有动画时，先确认查看的是实时 iframe、截图/缩略图还是导出；有真实环境访问能力时，在实际渲染 iframe 检查 matchMedia('(prefers-reduced-motion: reduce)').matches，再检查样式/关键帧是否加载、animationName/animationDuration/animationPlayState、触发时机及延迟；transition 同时检查过渡属性与前后状态。命中 reduce 且计算样式为 animation: none 时，应说明是页面按偏好降动效，不直接归因于 Vue scoped、Runtime 或浏览器不兼容，也不把删除降动效适配作为默认修复。
-- Windows 关闭动画效果或开发者工具模拟可能产生 reduce；只能按真实检测结果说明原因，不能仅凭媒体查询就断言是哪项系统设置被谁修改。无法访问用户实际环境时，明确待核实项，不编造检测值，不擅自修改用户系统或浏览器偏好。
-- Renderer 与静态导出使用独立静态态，不通过禁用/快进动画推导终态；页面自有 JavaScript/CSS/Canvas 副作用须显式提供静态分支，PPTX 不保留网页动画。截图成功不能证明动效、声音或播放许可已通过；动态验收需在实时预览检查 no-preference 与 reduce 下的表现，未实测时明确说明。
+1. 查询当前 Runtime Kit、项目配置、真实资源与动作索引/签名。一个联合作品应包含数值、打字机、SVG、DOM/CSS/Canvas 粒子、两个真实模型动作、旁白和 cue；有限目标与装饰角色清楚。
+2. 源码创建/修改走页面 Mutation Job，等待终态并读取最终源码与校验结果；CodeCheck 与页面诊断继续经过受信 Renderer，不能自行启动浏览器替代服务验证。不要重复调用自动写入已执行的校验。
+3. 默认截图/诊断附图使用独立静态态；不提供任意动作时刻截图。截图只能证明静态像素与布局，不能证明播放、声音、许可或 scene_end 推进。
+4. 实时预览检查播放/停止、实际完成依赖、停止清理与 no-preference/reduce。正式放映检查 manual/timer/scene_end、保持/释放和本地许可。未实测时逐项写明，不能将单测或截图宣称为浏览器、音频、WebGL 或多窗口通过。
+5. 反馈无动画时先确认 iframe/截图/导出，检查实际 matchMedia、样式与触发时机；无法访问真实环境时明确待核实，不编造系统设置或检测值。
 """.strip()

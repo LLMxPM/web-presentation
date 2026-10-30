@@ -397,7 +397,7 @@ def test_generic_tools_should_expose_flat_top_level_schemas() -> None:
     assert not validators["update_entity"].is_valid({"resource_type": "project", "action": "content", "target_id": 8})
     assert not validators["list_entities"].is_valid({})
     assert not validators["get_entity"].is_valid({"resource_type": "runtime_kit"})
-    assert validators["get_runtime_kit_capability"].is_valid({"name": "usePageTimeline.v1"})
+    assert validators["get_runtime_kit_capability"].is_valid({"name": "usePageScene.v1"})
     assert not validators["get_runtime_kit_capability"].is_valid({})
     assert not validators["get_runtime_kit_capability"].is_valid({"target_id": 1})
     assert validators["create_project_page"].is_valid({"title": "封面", "page_content": "<template />"})
@@ -536,15 +536,15 @@ async def test_runtime_kit_detail_tool_should_dispatch_versioned_name(monkeypatc
     tools = {item.name: item for item in build_generic_business_tools(None)}  # type: ignore[arg-type]
     result = await tools["get_runtime_kit_capability"].entrypoint(
         AgentToolContext(run_id="run-1", session_id="session-1", dependencies={}),
-        name="usePageTimeline.v1",
+        name="usePageScene.v1",
         kind="composable",
     )
 
     assert captured["resource_type"] == "runtime_kit"
     assert captured["action"] == "detail"
     assert captured["target_id"] is None
-    assert captured["filters"] == {"name": "usePageTimeline.v1", "kind": "composable"}
-    assert result["data"] == {"name": "usePageTimeline.v1"}
+    assert captured["filters"] == {"name": "usePageScene.v1", "kind": "composable"}
+    assert result["data"] == {"name": "usePageScene.v1"}
 
 
 async def test_removed_action_should_return_unsupported_business_error() -> None:

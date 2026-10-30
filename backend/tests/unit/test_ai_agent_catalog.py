@@ -75,8 +75,8 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "ThemeLogo" in page_standard
     assert "AssetModel" in page_standard
     assert "AssetAudio" in page_standard
-    assert "旁白自动播放已开放" in page_standard
-    assert "能力未开放时只使用 content" in page_standard
+    assert "createSceneMediaTask.v1" in page_standard
+    assert "最多一个自动发声主媒体" in page_standard
     assert "组件不暴露 autoplay" in page_standard
     assert "build_extra_assets_json" in page_standard
     assert "cameraIndex 与显式 cameraPosition/cameraTarget 互斥" in page_standard
@@ -84,7 +84,7 @@ def test_agent_default_prompt_should_keep_content_baseline_and_query_guidance() 
     assert "preview_schema" in component_standard
     assert "Runtime 主题语义颜色键包括" in component_standard
     assert "AssetAudio" in component_standard
-    assert "旁白自动播放已开放" in component_standard
+    assert "createSceneMediaTask.v1" in component_standard
     assert "Icon、AssetImage、AssetVideo、AssetAudio、AssetModel 等组件的 name" in component_standard
     assert "build_extra_assets_json" in component_standard
     assert "AssetModel" in component_standard

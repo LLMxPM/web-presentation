@@ -608,7 +608,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
     assert any(item["operation_key"] == "project.update.slideshow" for item in guide_index["operations"])
     guide = await tools["get_operation_guide"].entrypoint(context, "project.update.slideshow")
     guide_schema = json.dumps(guide["parameters"], ensure_ascii=False)
-    for field_name in ("slideshow", "transition", "advance", "loop", "auto_start", "duration_ms", "delay_ms"):
+    for field_name in ("slideshow", "transition", "advance", "loop", "completion_delay_ms", "duration_ms", "delay_ms"):
         assert f'"{field_name}"' in guide_schema
     assert 'scene_end' in guide_schema
 
@@ -644,7 +644,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
             "project",
             project_id,
             {
-                "slideshow": {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 999}, 'loop': False}
+                "slideshow": {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': -1}, 'loop': False}
             },
             "slideshow",
         )

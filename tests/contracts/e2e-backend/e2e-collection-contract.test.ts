@@ -64,7 +64,8 @@ describe('E2E project 收集边界', () => {
     // regression 范围为写型夹具、AI 真实链路与 Runtime 重型链路；联合场景默认收集但按开关跳过。
     expect(counts['visual-edit']).toBe(3)
     expect(counts['ai']).toBe(4)
-    expect(counts['runtime-heavy']).toBe(6)
+    // B1 已删除三个任意时刻截图用例；保留构建、模型静态截图与联合创作夹具。
+    expect(counts['runtime-heavy']).toBe(3)
   })
 })
 

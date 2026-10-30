@@ -20,6 +20,7 @@ export function createModelSceneController(options: ModelSceneOptions) {
   const { engine, parsed, root, wrapper } = options
   const mixer = new engine.THREE.AnimationMixer(root)
   let current: RunningAction | null = null, disposed = false, suspended = false, viewerSuspended = false
+  let completedAction: Three.AnimationAction | null = null
   let frame: number | null = null, previous: number | null = null
   const transform = { x: 0, y: 0, z: 0, scale: 1, rotationY: 0 }
   const camera = { x: options.camera.position.x, y: options.camera.position.y, z: options.camera.position.z,
@@ -79,18 +80,21 @@ export function createModelSceneController(options: ModelSceneOptions) {
             mixer.removeEventListener('finished', finished)
             if (current === owner) { current = null; cancelFrame() }
             action.stop()
+            if (completedAction === action) completedAction = null
             if (!settled) { settled = true; resolve() }
           }
           const fail = (error: unknown) => { if (!settled) { settled = true; stop(); reject(error) } }
           /** Three.js finished 是实际完成事实，不能用预估 duration 的 timer 代替。 */
           const finished = (event: { action: Three.AnimationAction }) => {
             if (event.action !== action || settled || current !== owner) return
-            settled = true; mixer.removeEventListener('finished', finished); current = null; cancelFrame(); resolve()
+            settled = true; mixer.removeEventListener('finished', finished); completedAction = action; current = null; cancelFrame(); resolve()
           }
           owner = { context, action, stop, reject: fail }; current = owner
           suspended = taskSuspended
           mixer.addEventListener('finished', finished)
           try {
+            // 保留上一动作终态直到下一段开始；开始前释放权重，避免两个 clamp 终态被 Mixer 混成平均姿态。
+            completedAction?.stop(); completedAction = null
             action.reset(); action.enabled = true; action.clampWhenFinished = true
             action.setLoop(spec.repeat === -1 ? engine.THREE.LoopRepeat : (spec.repeat ?? 0) > 0 ? engine.THREE.LoopRepeat : engine.THREE.LoopOnce,
               spec.repeat === -1 ? Infinity : (spec.repeat ?? 0) + 1)

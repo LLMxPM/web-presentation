@@ -1,13 +1,28 @@
 <!-- 文件功能：通过正式公开入口展示多序列 Scene；静态模板无需动画、Canvas 或采样即可完整呈现。 -->
 <script setup lang="ts">
 import { ref } from 'vue'
+import AssetModel, { type ModelSceneComponent } from '@runtime-kit/public/components/assets/AssetModel.v3.vue'
+import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
+import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v2'
+import { defineModelNarration } from './scene-showcase/define-model-narration'
 import { usePageScene } from '@runtime-kit/public/composables/motion/usePageScene.v1'
 import { useStaticPresentation } from '@runtime-kit/public/composables/static/useStaticPresentation.v1'
 import { defineShowcase, SCENE_SENTENCE } from './scene-showcase/define-scene'
 
+const props = withDefaults(defineProps<{ modelName?: string; narrationName?: string }>(), { modelName: '', narrationName: '' })
 const root = ref<HTMLElement | null>(null)
+const model = ref<ModelSceneComponent | null>(null), narration = ref<HTMLMediaElement | null>(null)
+const { playCue } = useAudioCue()
+/** 资源组件只交出当前媒体实例，源变更与卸载后不能沿用旧目标。 */
+function mediaReady(element: HTMLMediaElement): void { narration.value = element }
 useStaticPresentation({ root, mode: 'default' })
-usePageScene({ root, define: defineShowcase })
+usePageScene({ root, define(scene) {
+  defineShowcase(scene)
+  if (props.modelName || props.narrationName) {
+    if (!props.modelName || !props.narrationName) throw new Error('联合样例必须同时提供真实模型与旁白资源名。')
+    defineModelNarration(scene, model.value?.getHandle() ?? null, narration.value, playCue)
+  }
+} })
 </script>
 
 <template>
@@ -17,7 +32,7 @@ usePageScene({ root, define: defineShowcase })
       <h1>让内容按节奏发生</h1>
       <p>数值、文字与描边并行起步，有限任务完成后继续保留轻量装饰。</p>
     </header>
-    <div class="scene-grid">
+    <div class="scene-grid" :class="{ 'scene-grid--media': modelName || narrationName }">
       <article class="scene-card">
         <h2>01 / 数值变化</h2>
         <div class="scene-metric"><span data-counter>100</span><small>%</small></div>
@@ -47,6 +62,16 @@ usePageScene({ root, define: defineShowcase })
         </div>
         <p>Canvas 有限扩散，DOM / CSS 装饰持续呼吸。</p>
       </article>
+      <article v-if="modelName" class="scene-card">
+        <h2>05 / 两段真实动作</h2>
+        <AssetModel ref="model" :name="modelName" class="min-h-0 flex-1 w-full" />
+        <p>先完成第一段，再开始第二段。</p>
+      </article>
+      <article v-if="narrationName" class="scene-card">
+        <h2>06 / 旁白与提示</h2>
+        <p>旁白实际结束后才完成本页；动作完成可播放已绑定的提示音。</p>
+        <AssetAudio :name="narrationName" purpose="narration" @media-ready="mediaReady" @media-unmounted="narration = null" />
+      </article>
     </div>
   </section>
 </template>
@@ -58,6 +83,7 @@ h1 { font-size:42px; line-height:1.2; margin:0 0 12px; font-weight:700; }
 header > p:last-child, article > p:last-child { color:var(--color-text-secondary,#64748b); font-size:17px; margin:0; }
 .scene-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:20px; flex:1; min-height:0; }
 .scene-card { padding:22px 28px; border:1px solid var(--color-border,#dbe3f0); background:var(--color-background-subtle,#fff); border-radius:18px; display:flex; flex-direction:column; justify-content:space-between; overflow:hidden; }
+.scene-grid--media { grid-template-columns:repeat(3,1fr); }
 h2 { font-size:16px; margin:0; font-weight:500; color:var(--color-primary,#4f46e5); }
 .scene-metric { font-size:74px; line-height:1; font-weight:700; font-variant-numeric:tabular-nums; }
 .scene-metric small { font-size:24px; margin-left:8px; }

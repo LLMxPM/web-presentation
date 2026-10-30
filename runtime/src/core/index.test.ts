@@ -14,7 +14,7 @@ describe('Core 模块对外接口 (External API)', () => {
     // 模拟全局 fetch，防止模块级初始化的路由器和配置加载由于无效的相对路径报错
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      text: vi.fn().mockResolvedValue('')
+      text: vi.fn().mockResolvedValue(JSON.stringify({ routes: [], playback: { schemaVersion: 4 }, static_icons: [], app: { title: '测试', page: {} } }))
     }))
 
     // 动态导入以确保在 mock 之后再执行模块顶层代码
