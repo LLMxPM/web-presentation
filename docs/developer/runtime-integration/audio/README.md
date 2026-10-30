@@ -14,9 +14,9 @@
 | 需求 | 代码或文档入口 |
 | :--- | :--- |
 | DTO、能力集合与默认值 | [`schemas/audio.py`](../../../../backend/app/schemas/audio.py)、[`core/audio_defaults.py`](../../../../backend/app/core/audio_defaults.py)、[音频契约](./contract.md) |
-| 写入门禁与项目设置 | [`audio_capability_gate.py`](../../../../backend/app/services/audio_capability_gate.py)、[`project_audio_settings_service.py`](../../../../backend/app/services/project_audio_settings_service.py) |
+| 总线与项目设置 | [`AudioBus`](../../../../runtime/src/core/audio/audio-bus.ts)、[`project_audio_settings_service.py`](../../../../backend/app/services/project_audio_settings_service.py)；旁白/cue 阶段功能门已删除，参数与权限校验保留 |
 | Editor 音量与 cue 绑定 | [`ProjectPresentationConfigDialog.vue`](../../../../editor/src/components/project/ProjectPresentationConfigDialog.vue) |
-| Runtime cue 和页面能力 | [`useAudioCues.ts`](../../../../runtime/src/runtime-shell/audio/useAudioCues.ts)、[`useAudioCue.v1.ts`](../../../../runtime/src/runtime-kit/public/composables/audio/useAudioCue.v1.ts) |
+| Runtime cue 和页面能力 | [`useAudioCues.ts`](../../../../runtime/src/runtime-shell/audio/useAudioCues.ts)、[`useAudioCue.v2.ts`](../../../../runtime/src/runtime-kit/public/composables/audio/useAudioCue.v2.ts) |
 | 测试选择与环境 | [`dev-start-test`](../../../../.agents/skills/dev-start-test/SKILL.md) |
 
 原 M0–M2 实施顺序与工作包在[音频进行中工作区](../../projects/audio/README.md)保留；历史联调证据见[动画前联合验收归档](../../../archive/developer-work-2026-10/pre-motion-joint-acceptance.md)。

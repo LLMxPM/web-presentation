@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * 文件功能：验证 Asset*.v2 固定受控属性、目标标记与 v1 兼容边界。
+ * 文件功能：验证 Scene 资源组件 固定受控属性、目标标记与 v1 兼容边界。
  */
 
 import { createApp, nextTick, type App } from 'vue'
@@ -9,9 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
 
-import AssetAudioV2 from './AssetAudio.v2.vue'
+import AssetAudioV1 from './AssetAudio.v1.vue'
 import AssetModelV3 from './AssetModel.v3.vue'
-import AssetVideoV2 from './AssetVideo.v2.vue'
+import AssetVideoV1 from './AssetVideo.v1.vue'
 
 vi.mock('@runtime-kit/internal/renderers/ModelViewer.vue', async () => {
   const { defineComponent, h } = await import('vue')
@@ -79,13 +79,13 @@ async function mount(component: unknown, props: Record<string, unknown>): Promis
   return host
 }
 
-describe('Asset*.v2', () => {
-  it('视频固定隐藏控件、禁止自动播放并声明时间轴目标', async () => {
-    const host = await mount(AssetVideoV2, { name: 'demo-video', controls: true })
+describe('Scene 资源组件', () => {
+  it('视频显式 automatic 用途隐藏控件且等待 Scene 播放', async () => {
+    const host = await mount(AssetVideoV1, { name: 'demo-video', controls: true, autoplay: true, purpose: 'automatic' })
 
     const root = host.querySelector<HTMLElement>('[data-runtime-kit-media-kind="video"]')
     const video = host.querySelector<HTMLVideoElement>('video')
-    expect(root?.dataset.runtimeKitMotion).toBe('timeline')
+    expect(root?.dataset.runtimeKitMotion).toBeUndefined()
     expect(root?.dataset.runtimeAssetName).toBe('demo-video')
     expect(video?.getAttribute('src')).toBe('/assets/workspace-7/video-hash')
     expect(video?.controls).toBe(false)
@@ -93,17 +93,17 @@ describe('Asset*.v2', () => {
     expect(video?.loop).toBe(false)
   })
 
-  it('音频固定隐藏控件、拒绝 autoplay 且保留旁白用途', async () => {
-    const host = await mount(AssetAudioV2, {
+  it('音频旁白用途保留在 v1，拒绝 autoplay 且默认隐藏控件', async () => {
+    const host = await mount(AssetAudioV1, {
       name: 'page-voice',
       purpose: 'narration',
       autoplay: true,
-      controls: true,
+      controls: false,
     })
 
     const root = host.querySelector<HTMLElement>('[data-runtime-kit-media-kind="audio"]')
     const audio = host.querySelector<HTMLAudioElement>('audio')
-    expect(root?.dataset.runtimeKitMotion).toBe('timeline')
+    expect(root?.dataset.runtimeKitMotion).toBeUndefined()
     expect(root?.dataset.runtimeAssetName).toBe('page-voice')
     expect(audio?.controls).toBe(false)
     expect(audio?.hasAttribute('autoplay')).toBe(false)

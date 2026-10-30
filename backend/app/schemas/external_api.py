@@ -8,11 +8,7 @@ from typing import Any, Generic, Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
-from app.schemas import audio as audio_schema
 from app.schemas.audio import (
-    AUDIO_CAPABILITY_AUDIO_ASSETS,
-    AUDIO_CAPABILITY_AUDIO_CUES,
-    AUDIO_CAPABILITY_PAGE_NARRATION,
     AUDIO_SCHEMA_VERSION,
     ProjectAudioSettings,
     default_project_audio_settings,
@@ -123,14 +119,13 @@ class ExternalSlideshowCapabilities(BaseModel):
 
 
 def build_audio_capabilities() -> ExternalAudioCapabilities:
-    """按当前实例开放集合声明音频能力，与写入门禁保持一致。"""
+    """音频能力在所有环境默认开放，此处仅声明支持范围，不再维护功能门。"""
 
-    open_capabilities = audio_schema.get_open_audio_capabilities()
     return ExternalAudioCapabilities(
         schema_version=AUDIO_SCHEMA_VERSION,
-        audio_assets=AUDIO_CAPABILITY_AUDIO_ASSETS in open_capabilities,
-        page_narration=AUDIO_CAPABILITY_PAGE_NARRATION in open_capabilities,
-        audio_cues=AUDIO_CAPABILITY_AUDIO_CUES in open_capabilities,
+        audio_assets=True,
+        page_narration=True,
+        audio_cues=True,
     )
 
 
@@ -791,4 +786,3 @@ class ExternalStandardResponse(BaseModel):
 
     standard_type: str = Field(..., description="规范类型 (page / component)")
     markdown: str = Field(..., description="标准规范 Markdown 文本")
-

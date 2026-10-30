@@ -15,14 +15,15 @@
       ref="mediaElement"
       class="video-viewer__media"
       data-runtime-media-target="video"
+      :data-runtime-media-purpose="purpose"
       :src="src"
       :poster="poster || undefined"
-      :controls="controls"
-      :autoplay="autoplay"
+      :controls="purpose === 'content' && controls"
+      :autoplay="false"
       :loop="loop"
-      :muted="muted"
+      :muted="!execution.allowMediaPlayback || muted"
       :playsinline="playsInline"
-      :preload="preload"
+      :preload="execution.allowMediaPlayback ? preload : 'none'"
       :style="videoStyle"
       @play="emit('play', $event)"
       @pause="emit('pause', $event)"
@@ -38,19 +39,22 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch, type CSSProperties } from 'vue'
+import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
+import { useResourceMedia } from './use-resource-media'
 import { useViewerSurfaceStyle, type ViewerSurfaceProps } from '@runtime-kit/internal/utils/viewer-style'
 
 type VideoPreload = 'none' | 'metadata' | 'auto'
 
 interface Props extends ViewerSurfaceProps {
+  /** 普通内容由用户播放；automatic 只允许显式 Scene 任务认领。 */
+  purpose?: 'content' | 'automatic'
+  volume?: number
   /** 视频可访问地址 */
   src?: string
   /** 视频封面图地址 */
   poster?: string
   /** 是否展示浏览器默认播放控件 */
   controls?: boolean
-  /** 是否自动播放 */
-  autoplay?: boolean
   /** 是否循环播放 */
   loop?: boolean
   /** 是否静音 */
@@ -67,9 +71,10 @@ interface Props extends ViewerSurfaceProps {
 
 const props = withDefaults(defineProps<Props>(), {
   src: '',
+  purpose: 'content',
+  volume: 1,
   poster: '',
   controls: true,
-  autoplay: false,
   loop: false,
   muted: false,
   playsInline: true,
@@ -94,7 +99,9 @@ const videoStyle = computed<CSSProperties>(() => ({
   objectFit: props.fit,
   objectPosition: props.position,
 }))
+const execution = useRuntimeExecutionPolicy()
 const mediaElement = ref<HTMLVideoElement | null>(null)
+useResourceMedia(mediaElement, () => ({ src: props.src, purpose: props.purpose, gain: props.volume, muted: props.muted, loop: props.loop }))
 
 watch(mediaElement, (element, previous) => {
   if (previous) emit('media-unmounted')

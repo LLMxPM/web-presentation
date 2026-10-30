@@ -8,11 +8,12 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { initializeRuntimeExecution, resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
+import { runtimeAudioBus, installRuntimeAudioBusLifecycle } from '@/core/audio/runtime-audio-bus'
 import { getRuntimeSession } from '@/core/router/runtime-session'
 import type { RuntimePreloadedConfigBundle } from '@/core/shared/runtime-preview'
 import { loadAudioConfig } from '@/core/utils/config'
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
-import { useAudioCue } from '@/runtime-kit/public/composables/audio/useAudioCue.v1'
+import { useAudioCue } from '@/runtime-kit/public/composables/audio/useAudioCue.v2'
 import { useAudioCues, type RuntimeAudioCues } from './useAudioCues'
 
 /** 记录创建与播放操作的 Audio 替身。 */
@@ -38,7 +39,11 @@ class FakeAudio {
 
 const mountedApps: App[] = []
 
+let disposeLifecycle: (() => void) | undefined
 beforeEach(async () => {
+  runtimeAudioBus.muted.value = false; runtimeAudioBus.setSuspended(false)
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: document.documentElement })
+  disposeLifecycle = installRuntimeAudioBusLifecycle()
   FakeAudio.instances = []
   vi.stubGlobal('Audio', FakeAudio)
   resetRuntimeExecutionForTests()
@@ -69,6 +74,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  disposeLifecycle?.()
+  Reflect.deleteProperty(document, 'fullscreenElement')
   mountedApps.splice(0).forEach(app => app.unmount())
   setRuntimePreloadedConfig(undefined)
   resetRuntimeExecutionForTests()
@@ -83,7 +90,7 @@ interface AudioHarness {
   router: ReturnType<typeof createRouter>
   active: { value: boolean }
   host: RuntimeAudioCues
-  pagePlay: (key: string) => string
+  pagePlay: (key: string) => Promise<string>
 }
 
 /** 挂载同时暴露 shell API 与页面 composable 的最小宿主。 */
@@ -97,7 +104,7 @@ async function mountAudio(activeValue = true): Promise<AudioHarness> {
 
   const active = ref(activeValue)
   let hostApi: RuntimeAudioCues | undefined
-  let pagePlay: ((key: string) => string) | undefined
+  let pagePlay: ((key: string) => Promise<string>) | undefined
   const Page = defineComponent({
     setup() {
       const { playCue } = useAudioCue()
@@ -127,16 +134,16 @@ describe('useAudioCues', () => {
   it('窗口化预览不发声，即使页面请求 cue 也返回 unavailable', async () => {
     const { host, pagePlay } = await mountAudio(false)
 
-    expect(host.playInteractionCue('interaction.confirm')).toBe('unavailable')
-    expect(host.playTransitionCue(1)).toBe('unavailable')
-    expect(pagePlay('interaction.confirm')).toBe('unavailable')
+    expect(await host.playInteractionCue('interaction.confirm')).toBe('unavailable')
+    expect(await host.playTransitionCue(1)).toBe('unavailable')
+    expect(await pagePlay('interaction.confirm')).toBe('unavailable')
     expect(FakeAudio.instances).toHaveLength(0)
   })
 
   it('放映态页面通过公开 composable 播放绑定音效并应用音量', async () => {
     const { pagePlay } = await mountAudio(true)
 
-    expect(pagePlay('interaction.confirm')).toBe('played')
+    expect(await pagePlay('interaction.confirm')).toBe('played')
     expect(FakeAudio.instances).toHaveLength(1)
     expect(FakeAudio.instances[0].src).toBe('https://cdn.example/assets/confirm.mp3')
     expect(FakeAudio.instances[0].volume).toBeCloseTo(0.2)
@@ -145,29 +152,29 @@ describe('useAudioCues', () => {
   it('空 key 返回 unavailable，不创建音频元素', async () => {
     const { pagePlay } = await mountAudio(true)
 
-    expect(pagePlay('')).toBe('unavailable')
-    expect(pagePlay('   ')).toBe('unavailable')
-    expect(pagePlay('interaction.CONFIRM')).toBe('unavailable')
+    expect(await pagePlay('')).toBe('unavailable')
+    expect(await pagePlay('   ')).toBe('unavailable')
+    expect(await pagePlay('interaction.CONFIRM')).toBe('unavailable')
     expect(FakeAudio.instances).toHaveLength(0)
   })
 
   it('公开 API 与注入服务拒绝 transition.*，不能抢占切页单通道', async () => {
     const { host, pagePlay } = await mountAudio(true)
 
-    expect(pagePlay('transition.forward')).toBe('unavailable')
-    expect(host.playInteractionCue('transition.forward')).toBe('unavailable')
+    expect(await pagePlay('transition.forward')).toBe('unavailable')
+    expect(await host.playInteractionCue('transition.forward')).toBe('unavailable')
     expect(FakeAudio.instances).toHaveLength(0)
 
-    expect(pagePlay('interaction.confirm')).toBe('played')
+    expect(await pagePlay('interaction.confirm')).toBe('played')
     expect(FakeAudio.instances).toHaveLength(1)
   })
 
   it('方向映射到前进/后退绑定并复用切页通道', async () => {
     const { host } = await mountAudio(true)
 
-    expect(host.playTransitionCue(1)).toBe('played')
+    expect(await host.playTransitionCue(1)).toBe('played')
     expect(FakeAudio.instances[0].src).toBe('https://cdn.example/assets/forward.mp3')
-    expect(host.playTransitionCue(-1)).toBe('played')
+    expect(await host.playTransitionCue(-1)).toBe('played')
     expect(FakeAudio.instances).toHaveLength(1)
     expect(FakeAudio.instances[0].src).toBe('https://cdn.example/assets/backward.mp3')
   })
@@ -177,19 +184,19 @@ describe('useAudioCues', () => {
     const session = getRuntimeSession(router)
 
     session.audioMuted.value = true
-    expect(pagePlay('interaction.confirm')).toBe('skipped')
+    expect(await pagePlay('interaction.confirm')).toBe('skipped')
     expect(FakeAudio.instances).toHaveLength(0)
 
     session.audioMuted.value = false
-    expect(pagePlay('interaction.confirm')).toBe('played')
+    expect(await pagePlay('interaction.confirm')).toBe('played')
   })
 
   it('非播放执行上下文不创建引擎，切页与页面 cue 全部 no-op', async () => {
     initializeRuntimeExecution('?runtimeMode=cards')
     const { host, pagePlay } = await mountAudio(true)
 
-    expect(host.playTransitionCue(1)).toBe('unavailable')
-    expect(pagePlay('interaction.confirm')).toBe('unavailable')
+    expect(await host.playTransitionCue(1)).toBe('unavailable')
+    expect(await pagePlay('interaction.confirm')).toBe('unavailable')
     expect(FakeAudio.instances).toHaveLength(0)
   })
 
@@ -204,34 +211,34 @@ describe('useAudioCues', () => {
     await loadAudioConfig(true)
     const { pagePlay } = await mountAudio(true)
 
-    expect(pagePlay('interaction.confirm')).toBe('unavailable')
+    expect(await pagePlay('interaction.confirm')).toBe('unavailable')
     expect(FakeAudio.instances).toHaveLength(0)
   })
 
   it('窗口隐藏与冻结暂停音效，恢复可见后允许新的 cue', async () => {
     const { pagePlay } = await mountAudio(true)
-    expect(pagePlay('interaction.confirm')).toBe('played')
+    expect(await pagePlay('interaction.confirm')).toBe('played')
     expect(FakeAudio.instances[0].paused).toBe(false)
 
     Object.defineProperty(document, 'hidden', { configurable: true, value: true })
     document.dispatchEvent(new Event('visibilitychange'))
     expect(FakeAudio.instances[0].paused).toBe(true)
-    expect(pagePlay('interaction.open')).toBe('unavailable')
+    expect(await pagePlay('interaction.open')).toBe('unavailable')
 
     Object.defineProperty(document, 'hidden', { configurable: true, value: false })
     document.dispatchEvent(new Event('visibilitychange'))
-    expect(pagePlay('interaction.open')).toBe('played')
+    expect(await pagePlay('interaction.open')).toBe('played')
 
     document.dispatchEvent(new Event('freeze'))
     expect(FakeAudio.instances.at(-1)?.paused).toBe(true)
 
-    window.dispatchEvent(new Event('pageshow'))
-    expect(pagePlay('interaction.after-resume')).toBe('played')
+    document.dispatchEvent(new Event('resume'))
+    expect(await pagePlay('interaction.after-resume')).toBe('played')
   })
 
   it('BFCache persisted pageshow 停止残留音效后恢复新 cue', async () => {
     const { pagePlay } = await mountAudio(true)
-    expect(pagePlay('interaction.confirm')).toBe('played')
+    expect(await pagePlay('interaction.confirm')).toBe('played')
     const element = FakeAudio.instances[0]
 
     const event = new Event('pageshow') as PageTransitionEvent
@@ -239,23 +246,23 @@ describe('useAudioCues', () => {
     window.dispatchEvent(event)
 
     expect(element.paused).toBe(true)
-    expect(pagePlay('interaction.open')).toBe('played')
+    expect(await pagePlay('interaction.open')).toBe('played')
   })
 
   it('卸载时移除监听并释放正在播放的音频', async () => {
     const removeDocument = vi.spyOn(document, 'removeEventListener')
     const removeWindow = vi.spyOn(window, 'removeEventListener')
     const { pagePlay } = await mountAudio(true)
-    expect(pagePlay('interaction.confirm')).toBe('played')
+    expect(await pagePlay('interaction.confirm')).toBe('played')
     const element = FakeAudio.instances[0]
     const app = mountedApps.pop()
 
     app?.unmount()
 
     expect(element.paused).toBe(true)
-    expect(removeDocument).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
-    expect(removeDocument).toHaveBeenCalledWith('freeze', expect.any(Function))
-    expect(removeWindow).toHaveBeenCalledWith('pageshow', expect.any(Function))
-    expect(pagePlay('interaction.confirm')).toBe('unavailable')
+    // 窗口生命周期由 App 安装一次；当前 cue provider 只释放自己持有的租约。
+    expect(removeDocument).not.toHaveBeenCalledWith('visibilitychange', expect.any(Function))
+    expect(removeWindow).not.toHaveBeenCalledWith('pageshow', expect.any(Function))
+    expect(await pagePlay('interaction.confirm')).toBe('unavailable')
   })
 })

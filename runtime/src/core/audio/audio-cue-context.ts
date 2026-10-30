@@ -8,7 +8,7 @@ import type { AudioCueResult } from './audio-cue-engine'
 
 export interface AudioCueService {
   /** 播放交互 cue；无 provider、静态上下文或未绑定时返回 no-op。 */
-  playInteractionCue: (key: string) => AudioCueResult
+  playInteractionCue: (key: string) => Promise<AudioCueResult>
 }
 
 export const AUDIO_CUE_SERVICE_KEY: InjectionKey<AudioCueService> = Symbol('runtime-audio-cue-service')
@@ -16,6 +16,6 @@ export const AUDIO_CUE_SERVICE_KEY: InjectionKey<AudioCueService> = Symbol('runt
 /** 读取最近的 cue 服务；没有 provider 时返回稳定 no-op。 */
 export function useInjectedAudioCueService(): AudioCueService {
   return inject(AUDIO_CUE_SERVICE_KEY, null) ?? {
-    playInteractionCue: () => 'unavailable',
+    playInteractionCue: async () => 'unavailable',
   }
 }

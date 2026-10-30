@@ -2,7 +2,7 @@
   文件用途：AssetVideo — 基于 manifest 资源名称渲染 Backend 托管视频。
 -->
 <template>
-  <VideoViewer :src="src" :poster="posterSrc" v-bind="$attrs" :data-runtime-asset-name="props.name">
+  <VideoViewer :src="src" :poster="posterSrc" :purpose="props.purpose" :muted="props.muted" :volume="props.volume" v-bind="$attrs" :data-runtime-asset-name="props.name">
     <template #fallback>
       <slot v-if="$slots.fallback" name="fallback" />
       <div v-else class="asset-video__fallback">{{ fallbackMessage }}</div>
@@ -34,6 +34,10 @@ import {
 } from '@runtime-kit/internal/utils/asset-fallback'
 
 interface Props {
+  /** content 只由用户播放；automatic 必须交给显式 Scene 任务。 */
+  purpose?: 'content' | 'automatic'
+  muted?: boolean
+  volume?: number
   /** 视频资源的逻辑名 `asset.name` */
   name: string
   /** 未命中 manifest 时展示的兜底文案；URL 值仍可作为兼容视频地址 */
@@ -48,6 +52,9 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   fallback: DEFAULT_ASSET_FALLBACK_MESSAGE,
+  purpose: 'content',
+  muted: false,
+  volume: 1,
   poster: '',
   posterName: '',
   posterFallback: '',

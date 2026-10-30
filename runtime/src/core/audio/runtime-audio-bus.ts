@@ -16,7 +16,7 @@ export function installRuntimeAudioBusLifecycle(): () => void {
   const visibility = () => runtimeAudioBus.setSuspended(document.hidden || frozen)
   const freeze = () => { frozen = true; visibility() }
   const resume = () => { frozen = false; visibility() }
-  const pageShow = (event: PageTransitionEvent) => { if (event.persisted) resume() }
+  const pageShow = (event: PageTransitionEvent) => { if (event.persisted) { runtimeAudioBus.setSuspended(true); resume() } }
   document.addEventListener('visibilitychange', visibility); document.addEventListener('freeze', freeze); document.addEventListener('resume', resume)
   window.addEventListener('pageshow', pageShow); visibility()
   return () => {

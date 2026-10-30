@@ -46,7 +46,7 @@ flowchart TB
     F --> V
 ```
 
-复用现有 [执行策略](../../../../runtime/src/core/execution/execution-policy.ts)、[放映宿主](../../../../runtime/src/runtime-shell/playback/usePlaybackHost.ts)、[页面媒体会话](../../../../runtime/src/core/media/page-media-session.ts)、[模型引擎与实例克隆](../../../../runtime/src/runtime-kit/internal/renderers/model3d/engine.ts) 和 [离屏捕获舞台](../../../../runtime/src/core/services/export/OffscreenPageStage.ts)。新增职责拆入 `core/motion/` 与 `model3d/motion/`，不继续向单个 ModelViewer 或放映宿主堆积逻辑。
+复用现有 [执行策略](../../../../runtime/src/core/execution/execution-policy.ts)、[放映宿主](../../../../runtime/src/runtime-shell/playback/usePlaybackHost.ts)、[页面媒体会话](../../../../runtime/src/core/media/scene-media-task.ts)、[模型引擎与实例克隆](../../../../runtime/src/runtime-kit/internal/renderers/model3d/engine.ts) 和 [离屏捕获舞台](../../../../runtime/src/core/services/export/OffscreenPageStage.ts)。新增职责拆入 `core/motion/` 与 `model3d/motion/`，不继续向单个 ModelViewer 或放映宿主堆积逻辑。
 
 ## 文档与事实源
 

@@ -46,28 +46,6 @@ AUDIO_ALLOWED_CONTENT_TYPES = frozenset(
     for content_type in content_types
 )
 
-AUDIO_CAPABILITY_AUDIO_ASSETS = "audio_assets"
-AUDIO_CAPABILITY_PAGE_NARRATION = "page_narration"
-AUDIO_CAPABILITY_AUDIO_CUES = "audio_cues"
-AUDIO_MILESTONE_CAPABILITIES: dict[str, tuple[str, ...]] = {
-    "m0": (AUDIO_CAPABILITY_AUDIO_ASSETS,),
-    "m1": (AUDIO_CAPABILITY_AUDIO_ASSETS, AUDIO_CAPABILITY_PAGE_NARRATION),
-    "m2": (
-        AUDIO_CAPABILITY_AUDIO_ASSETS,
-        AUDIO_CAPABILITY_PAGE_NARRATION,
-        AUDIO_CAPABILITY_AUDIO_CUES,
-    ),
-}
-# 默认开放的音频能力；Editor、External API 与写入门禁共同消费此集合。
-AUDIO_OPEN_CAPABILITIES: frozenset[str] = frozenset(AUDIO_MILESTONE_CAPABILITIES["m2"])
-
-
-def get_open_audio_capabilities() -> frozenset[str]:
-    """返回默认开放集合，供能力声明、保存校验和构建快照共用。"""
-
-    return AUDIO_OPEN_CAPABILITIES
-
-
 AUDIO_CUE_KEY_MAX_LENGTH = 80
 AUDIO_CUE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$")
 AUDIO_SYSTEM_CUE_KEYS = frozenset(

@@ -4,6 +4,7 @@
  * 暂停前确实在播放的媒体，不启动用户手动暂停的元素。
  */
 import type { MediaPlaybackMode } from './execution-policy'
+import { isAudioBusManaged } from '@/core/audio/audio-bus'
 
 export interface MediaPlaybackGuardOptions {
   root?: Document | HTMLElement
@@ -83,7 +84,7 @@ export function createMediaPlaybackCoordinator(): MediaPlaybackCoordinator {
     if (suspended) return recorded.length
     if (!target) return 0
     recorded = [...target.querySelectorAll<HTMLMediaElement>('audio, video')]
-      .filter(element => !element.paused && !element.ended)
+      .filter(element => !isAudioBusManaged(element) && !element.paused && !element.ended)
     for (const element of recorded) element.pause()
     suspended = true
     return recorded.length

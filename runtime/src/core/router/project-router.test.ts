@@ -15,7 +15,8 @@ const {
   loadAppConfigMock: vi.fn(),
 }))
 
-vi.mock('@/core/utils/config', () => ({
+vi.mock('@/core/utils/config', async importOriginal => ({
+  ...await importOriginal<typeof import('@/core/utils/config')>(),
   getDefaultRouteConfigAsync: getDefaultRouteConfigAsyncMock,
   getRouteConfigsAsync: getRouteConfigsAsyncMock,
   loadAppConfig: loadAppConfigMock,

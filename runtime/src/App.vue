@@ -1,3 +1,4 @@
+<!-- 文件功能：Runtime 根组件，提供主题、页面、反馈与当前窗口媒体许可提示。 -->
 <template>
   <div 
     id="app" 
@@ -6,6 +7,7 @@
     <router-view />
     <!-- 全局 Toast 容器 -->
     <ToastContainer />
+    <MediaPermissionPrompt />
   </div>
 </template>
 
@@ -14,9 +16,13 @@
  * 文件用途：应用根组件，应用主题样式并提供路由视图容器。
  * 本版本移除全局主题依赖，直接根据配置文件默认主题应用样式。
  */
-import { watch, onMounted } from 'vue'
+import { watch, onMounted, onBeforeUnmount } from 'vue'
 import { useTheme } from '@runtime-kit/public/composables/theme/useTheme.v1'
 import ToastContainer from '@/runtime-shell/feedback/ToastContainer.vue'
+import MediaPermissionPrompt from '@/runtime-shell/audio/MediaPermissionPrompt.vue'
+import { installRuntimeAudioBusLifecycle } from '@/core/audio/runtime-audio-bus'
+let disposeAudio: (() => void) | undefined
+onBeforeUnmount(() => disposeAudio?.())
 
 /**
  * 主应用组件
@@ -54,6 +60,7 @@ watch(
 
 // 组件挂载时确保主题样式已应用
 onMounted(() => {
+  disposeAudio = installRuntimeAudioBusLifecycle()
   applyThemeToRoot()
 })
 </script>

@@ -19,7 +19,6 @@ from app.models.enums import AssetType, RecordStatus
 from app.models.project_audio_cue import ProjectAudioCueBinding
 from app.models.workspace import Project
 from app.schemas.audio import (
-    AUDIO_CAPABILITY_AUDIO_CUES,
     AudioCueBindingInput,
     ProjectAudioSettings,
     ResolvedAudioCueBinding,
@@ -27,7 +26,6 @@ from app.schemas.audio import (
     default_project_audio_settings,
     load_audio_volume_settings,
 )
-from app.services.audio_capability_gate import is_audio_capability_open
 
 
 class ProjectAudioSettingsService:
@@ -288,9 +286,6 @@ class ProjectAudioSettingsService:
             )
             for cue_key, gain_percent, asset_name in rows.all()
         ]
-        if not is_audio_capability_open(AUDIO_CAPABILITY_AUDIO_CUES):
-            # 能力关闭时新快照不携带 cue；历史 artifact 不可变，不承诺全局停声。
-            resolved = []
         return build_runtime_audio_config(volume, resolved)
 
     async def _replace_cues(

@@ -5,8 +5,7 @@
  * 不创建可播放音频元素。静音读取会话状态，跨模式交接保持一致。
  */
 
-import { onBeforeUnmount, onMounted, provide, type Ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeUnmount, provide, watch, type Ref } from 'vue'
 import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
 import { AUDIO_CUE_SERVICE_KEY, type AudioCueService } from '@/core/audio/audio-cue-context'
 import { AudioCueEngine, type AudioCueResult } from '@/core/audio/audio-cue-engine'
@@ -14,12 +13,12 @@ import { isInteractionCueKey } from '@/core/audio/audio-config'
 import { audioConfig } from '@/core/utils/config'
 import { getRuntimePreloadedConfig, resolveResourcePath } from '@/core/utils/path'
 import { normalizeAssetKey } from '@/core/shared/runtime-preview'
-import { getRuntimeSession } from '@/core/router/runtime-session'
+import { runtimeAudioBus } from '@/core/audio/runtime-audio-bus'
 
 export interface RuntimeAudioCues {
   /** 切页方向 cue；仅放映态生效。 */
-  playTransitionCue: (direction: 1 | -1) => AudioCueResult
-  playInteractionCue: (key: string) => AudioCueResult
+  playTransitionCue: (direction: 1 | -1) => Promise<AudioCueResult>
+  playInteractionCue: (key: string) => Promise<AudioCueResult>
 }
 
 /**
@@ -40,64 +39,33 @@ function createCueAssetResolver(): (name: string) => string | null {
  * @param active 当前窗口是否实际承担放映发声；普通预览为 false。
  */
 export function useAudioCues(active: Ref<boolean>): RuntimeAudioCues {
-  const router = useRouter()
-  const session = getRuntimeSession(router)
   const policy = useRuntimeExecutionPolicy()
   const allowed = policy.value.allowMediaPlayback && policy.value.allowAutoplay
   const engine = allowed
     ? new AudioCueEngine({
-      config: audioConfig.value,
+      config: () => audioConfig.value,
+      bus: runtimeAudioBus,
       resolveAssetUrl: createCueAssetResolver(),
       allowPlayback: true,
-      isMuted: () => session.audioMuted.value,
     })
     : null
 
-  const noop = (): AudioCueResult => 'unavailable'
-  const playInteractionCue = (key: string): AudioCueResult => {
+  const noop = async (): Promise<AudioCueResult> => 'unavailable'
+  const playInteractionCue = async (key: string): Promise<AudioCueResult> => {
     if (!engine || !active.value) return 'unavailable'
     // transition 只能通过 shell 的单通道入口触发，页面与注入服务都不能抢占。
     if (!isInteractionCueKey(key)) return 'unavailable'
     return engine.playInteraction(key)
   }
-  const playTransitionCue = (direction: 1 | -1): AudioCueResult => {
+  const playTransitionCue = async (direction: 1 | -1): Promise<AudioCueResult> => {
     if (!engine || !active.value) return 'unavailable'
     return engine.playTransition(direction === -1 ? 'transition.backward' : 'transition.forward')
   }
 
   provide<AudioCueService>(AUDIO_CUE_SERVICE_KEY, { playInteractionCue })
 
-  /** 窗口隐藏、页面冻结时立即停掉短音效；恢复可见后允许新的 cue，不补播。 */
-  const handleVisibility = (): void => {
-    if (document.hidden) engine?.suspend()
-    else engine?.resume()
-  }
-  const handleFreeze = (): void => {
-    engine?.suspend()
-  }
-  /**
-   * BFCache 恢复时浏览器先派发 visibilitychange 再派发 persisted pageshow；
-   * 这里先停掉页面冻结前的残留短音效，再按可见性恢复，避免恢复后永久 suspend。
-   */
-  const handlePageShow = (event: PageTransitionEvent): void => {
-    if (!event.persisted) {
-      engine?.resume()
-      return
-    }
-    engine?.suspend()
-    if (!document.hidden) engine?.resume()
-  }
-  onMounted(() => {
-    document.addEventListener('visibilitychange', handleVisibility)
-    document.addEventListener('freeze', handleFreeze)
-    window.addEventListener('pageshow', handlePageShow)
-  })
-  onBeforeUnmount(() => {
-    document.removeEventListener('visibilitychange', handleVisibility)
-    document.removeEventListener('freeze', handleFreeze)
-    window.removeEventListener('pageshow', handlePageShow)
-    engine?.dispose()
-  })
+  const stopActive = watch(active, value => { if (value) engine?.resume(); else engine?.suspend() }, { immediate: true, flush: 'sync' })
+  onBeforeUnmount(() => { stopActive(); engine?.dispose() })
 
   return {
     playTransitionCue: engine ? playTransitionCue : noop,

@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
 
 from app.core.runtime_module_policy import (
     build_runtime_module_resolver_config,
@@ -15,7 +14,6 @@ from app.core.runtime_module_policy import (
     load_runtime_kit_manifest,
     normalize_runtime_module_path,
 )
-from app.schemas import audio as audio_schema
 
 
 def test_runtime_kit_manifest_loader_should_expose_public_contract() -> None:
@@ -62,29 +60,11 @@ def test_runtime_kit_capability_directory_should_include_doc_only_items() -> Non
     assert len(by_name["usePageSize.v1"]["usage"]) >= 1
     assert len(by_name["usePageSize.v1"]["return_example"]) >= 1
     assert len(by_name["usePageSize.v1"]["constraints"]) >= 1
-    for name in ("usePageTimeline.v1", "usePageScene.v1", "AssetAudio.v2", "AssetVideo.v2", "AssetModel.v2"):
+    for name in ("usePageTimeline.v1", "usePageScene.v1", "createSceneMediaTask.v1", "useAudioCue.v2", "AssetModel.v3"):
         assert by_name[name]["previewable"] is False
         assert by_name[name]["usage"]
     assert "ComponentPreviewSchema" not in by_name
     assert "useComponentPreviewMock" not in by_name
-
-
-def test_audio_cue_disclosure_follows_audio_capability_gate(monkeypatch: pytest.MonkeyPatch) -> None:
-    """未开放 cue 时能力目录不披露，联合验收开启后才允许内容助手发现。"""
-
-    monkeypatch.setattr(
-        audio_schema,
-        "get_open_audio_capabilities",
-        lambda: frozenset({audio_schema.AUDIO_CAPABILITY_AUDIO_ASSETS}),
-    )
-    assert "useAudioCue.v1" not in {item["name"] for item in list_runtime_kit_capabilities()}
-
-    monkeypatch.setattr(
-        audio_schema,
-        "get_open_audio_capabilities",
-        lambda: frozenset(audio_schema.AUDIO_MILESTONE_CAPABILITIES["m2"]),
-    )
-    assert "useAudioCue.v1" in {item["name"] for item in list_runtime_kit_capabilities()}
 
 
 def test_runtime_kit_capability_directory_should_filter_latest_versions(tmp_path: Path) -> None:

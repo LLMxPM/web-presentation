@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { Router, RouteLocationNormalized, LocationQueryRaw } from 'vue-router'
 import type { TransitionSettledEvent } from '@/core/types/page-transition'
+import { runtimeAudioBus } from '@/core/audio/runtime-audio-bus'
 
 export type RuntimeMode = 'normal' | 'cards' | 'presenter' | 'display'
 const modes: RuntimeMode[] = ['normal', 'cards', 'presenter', 'display']
@@ -23,7 +24,7 @@ function createSession(router: Router) {
     suppressTransition: ref(false),
     transitionSettled: ref<TransitionSettledEvent | null>(null),
     // 会话级静音同时作用于页面媒体和 shell cue；跨模式交接保持一致，不写回 Backend。
-    audioMuted: ref(false),
+    audioMuted: runtimeAudioBus.muted,
     // 普通放映宿主登记停止入口；演讲交接立即释放本窗口页面所有权。
     stopPlayback: null as (() => void) | null,
   }

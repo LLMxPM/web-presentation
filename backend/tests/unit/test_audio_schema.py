@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 from app.schemas.audio import (
     AUDIO_ALLOWED_CONTENT_TYPES_BY_EXTENSION,
-    AUDIO_MILESTONE_CAPABILITIES,
     AUDIO_SCHEMA_VERSION,
     AssetAudioPropsContract,
     AudioCueBindingInput,
@@ -46,7 +45,6 @@ def test_resource_and_capability_constants_should_match_fixture() -> None:
     assert {key: list(value) for key, value in AUDIO_ALLOWED_CONTENT_TYPES_BY_EXTENSION.items()} == cases["resource"][
         "extensions"
     ]
-    assert {key: list(value) for key, value in AUDIO_MILESTONE_CAPABILITIES.items()} == cases["capabilities"]
 
 
 def test_defaults_should_match_fixture_and_historical_null() -> None:

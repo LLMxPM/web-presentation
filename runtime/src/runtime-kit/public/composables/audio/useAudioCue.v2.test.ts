@@ -6,7 +6,7 @@
 import { createApp, defineComponent } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { useAudioCue } from './useAudioCue.v1'
+import { useAudioCue } from './useAudioCue.v2'
 
 const mounted: ReturnType<typeof createApp>[] = []
 
@@ -31,18 +31,18 @@ function mountComposable(): ReturnType<typeof useAudioCue> {
   return api!
 }
 
-describe('useAudioCue.v1', () => {
-  it('没有 shell provider 时返回 unavailable，不抛异常', () => {
+describe('useAudioCue.v2', () => {
+  it('没有 shell provider 时返回 unavailable，不抛异常', async () => {
     const { playCue } = mountComposable()
 
-    expect(playCue('interaction.confirm')).toBe('unavailable')
-    expect(playCue('transition.forward')).toBe('unavailable')
+    expect(await playCue('interaction.confirm')).toBe('unavailable')
+    expect(await playCue('transition.forward')).toBe('unavailable')
   })
 
-  it('空 key 直接 no-op，不要求页面处理异常', () => {
+  it('空 key 直接 no-op，不要求页面处理异常', async () => {
     const { playCue } = mountComposable()
 
-    expect(playCue('')).toBe('unavailable')
-    expect(playCue('   ')).toBe('unavailable')
+    expect(await playCue('')).toBe('unavailable')
+    expect(await playCue('   ')).toBe('unavailable')
   })
 })

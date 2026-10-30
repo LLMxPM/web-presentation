@@ -34,9 +34,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-import { resolveNarrationVolume } from '@/core/audio/audio-config'
+import { useResourceMedia } from './use-resource-media'
 import { useRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
-import { audioConfig } from '@/core/utils/config'
 import {
   resolveAudioPlaybackOptions,
   type AudioPreload,
@@ -94,6 +93,7 @@ const emit = defineEmits<{
 
 const executionPolicy = useRuntimeExecutionPolicy()
 const mediaElement = ref<HTMLAudioElement | null>(null)
+
 const activeSrc = ref(props.src)
 const failed = ref(false)
 const resolved = computed(() => {
@@ -112,11 +112,7 @@ const resolved = computed(() => {
   return options
 })
 /** 旁白叠加项目 master × narration；内容音频只使用组件自身音量。 */
-const effectiveVolume = computed(() => (
-  resolved.value.error || resolved.value.purpose !== 'narration'
-    ? resolved.value.volume
-    : resolveNarrationVolume(audioConfig.value, resolved.value.volume)
-))
+
 const showMedia = computed(() => Boolean(activeSrc.value) && !resolved.value.error && !failed.value)
 const audioState = computed(() => (
   resolved.value.error || failed.value ? 'error' : activeSrc.value ? 'ready' : 'empty'
@@ -125,10 +121,12 @@ const fallbackError = computed(() => (
   resolved.value.error || (failed.value ? props.fallbackMessage : '')
 ))
 
+const media = useResourceMedia(mediaElement, () => ({ src: activeSrc.value, purpose: resolved.value.purpose, gain: resolved.value.volume, muted: false, loop: resolved.value.loop }))
+
 /** 把已校验的动态音量和速率同步到原生媒体属性。 */
 function syncMediaProperties(element = mediaElement.value): void {
   if (!element || resolved.value.error) return
-  element.volume = effectiveVolume.value
+  media.refresh()
   element.playbackRate = resolved.value.playbackRate
 }
 
@@ -153,7 +151,7 @@ watch(mediaElement, (element, previous) => {
 }, { flush: 'post' })
 
 watch(
-  () => [effectiveVolume.value, resolved.value.playbackRate] as const,
+  () => [resolved.value.volume, resolved.value.playbackRate] as const,
   () => syncMediaProperties(),
 )
 

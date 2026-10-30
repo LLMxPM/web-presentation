@@ -1616,9 +1616,9 @@
     {
       "kind": "composable",
       "base_name": "useAudioCue",
-      "version_no": 1,
-      "name": "useAudioCue.v1",
-      "import_path": "@runtime-kit/public/composables/audio/useAudioCue.v1",
+      "version_no": 2,
+      "name": "useAudioCue.v2",
+      "import_path": "@runtime-kit/public/composables/audio/useAudioCue.v2",
       "category": "runtime",
       "description": "按语义 cue key 请求播放项目绑定的交互音效。",
       "capability": {
@@ -1629,12 +1629,12 @@
         "summary": "在页面交互中按语义 cue key 请求播放项目绑定的交互音效，音量、静音与执行上下文由 Runtime 统一处理。",
         "tags": ["audio", "cue", "interaction"],
         "usage": [
-          "import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v1'",
+          "import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v2'",
           "const { playCue } = useAudioCue()",
           "<button @click=\"playCue('interaction.confirm')\">确认</button>"
         ],
-        "returns": "对象：playCue(key) 同步返回 'played' | 'skipped' | 'unavailable'，不等待播放结束。",
-        "return_example": ["const { playCue } = useAudioCue()", "playCue('interaction.confirm') // 'played'"],
+        "returns": "对象：playCue(key) 返回 Promise<'played' | 'skipped' | 'unavailable'>；等待真实 play 许可回执，不等待短音效结束。",
+        "return_example": ["const { playCue } = useAudioCue()", "await playCue('interaction.confirm') // 'played'"],
         "constraints": [
           "只接受 interaction.* 形式的语义 cue key；transition.forward / transition.backward 由 Runtime 切页通道独占，页面调用返回 unavailable。",
           "只接受项目音频设置中绑定的语义 cue key，不接受 URL、资源 ID、音量或 Audio 实例。",
@@ -1852,56 +1852,6 @@
     },
     {
       "kind": "component",
-      "base_name": "AssetVideo",
-      "version_no": 2,
-      "name": "AssetVideo.v2",
-      "import_path": "@runtime-kit/public/components/assets/AssetVideo.v2.vue",
-      "category": "asset",
-      "description": "页内时间轴受控的视频资源渲染。",
-      "capability": {
-        "enabled": true,
-        "previewable": false,
-        "recommendation_level": "advanced",
-        "display_name": "时间轴视频资源",
-        "summary": "按资源逻辑名渲染视频，固定隐藏播放控件并禁止自动播放，位置、裁剪、音量与循环由页内时间轴声明。",
-        "tags": ["timeline-video"],
-        "usage": [
-          "import AssetVideoV2 from '@runtime-kit/public/components/assets/AssetVideo.v2.vue'",
-          "<AssetVideoV2 name=\"demo-video\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />"
-        ],
-        "returns": "Vue 组件；渲染受控 video 目标，供时间轴按 data-runtime-asset-name 定位。",
-        "return_example": ["<AssetVideoV2 name=\"demo-video\" class=\"w-full h-80\" />"],
-        "constraints": ["必须与 usePageTimeline.v1 的 video 轨道配合使用，轨道声明裁切终点与静音策略。", "组件不展示播放控件，也不接受 autoplay 旁路；普通手动视频继续使用 AssetVideo.v1。"],
-        "audiences": ["backend", "agent"]
-      }
-    },
-    {
-      "kind": "component",
-      "base_name": "AssetAudio",
-      "version_no": 2,
-      "name": "AssetAudio.v2",
-      "import_path": "@runtime-kit/public/components/assets/AssetAudio.v2.vue",
-      "category": "asset",
-      "description": "页内时间轴受控的音频资源渲染。",
-      "capability": {
-        "enabled": true,
-        "previewable": false,
-        "recommendation_level": "advanced",
-        "display_name": "时间轴音频资源",
-        "summary": "按资源逻辑名渲染内容音频或旁白，固定隐藏控件并禁止自动播放、原生循环，播放位置由时间轴声明。",
-        "tags": ["timeline-audio"],
-        "usage": [
-          "import AssetAudioV2 from '@runtime-kit/public/components/assets/AssetAudio.v2.vue'",
-          "<AssetAudioV2 name=\"chapter-01-narration\" purpose=\"narration\" class=\"w-full h-16\" />"
-        ],
-        "returns": "Vue 组件；渲染受控 audio 目标，供时间轴按 data-runtime-asset-name 定位。",
-        "return_example": ["<AssetAudioV2 name=\"chapter-01-narration\" purpose=\"narration\" class=\"w-full h-16\" />"],
-        "constraints": ["必须与 usePageTimeline.v1 的 audio 轨道配合使用；旁白轨道只能有一条。", "组件不展示播放控件，也不接受 autoplay 旁路；普通内容音频继续使用 AssetAudio.v1。"],
-        "audiences": ["backend", "agent"]
-      }
-    },
-    {
-      "kind": "component",
       "base_name": "AssetModel",
       "version_no": 3,
       "name": "AssetModel.v3",
@@ -2013,6 +1963,42 @@
         "return_example": ["isStatic.value // capture/export/thumbnail 时为 true", "await ready // { status: 'ready', code: null, message: null }"],
         "constraints": ["每个页面 root 只声明一次；受托管动画与静态声明必须使用相同 root。", "default 使用可读默认态；poster 由模板或 prepare 显式提供；unsupported 可附简短 reason。", "prepare 只在静态上下文运行，最长 25 秒，必须响应 signal；不得播放动画、媒体或推进模型 Mixer。", "默认截图与导出不调用 seek/sampleAt，不等待动画终态；自有脚本和 CSS/Canvas 动画须提供静态分支。", "未使用受托管动画的普通页面可不声明，继续使用默认静态渲染。"],
         "audiences": ["backend", "agent"]
+      }
+    },
+    {
+      "kind": "composable",
+      "base_name": "createSceneMediaTask",
+      "version_no": 1,
+      "name": "createSceneMediaTask.v1",
+      "import_path": "@runtime-kit/public/composables/media/createSceneMediaTask.v1",
+      "category": "runtime",
+      "description": "将显式用途媒体登记为 Scene 任务。",
+      "capability": {
+        "enabled": true,
+        "previewable": false,
+        "recommendation_level": "advanced",
+        "display_name": "Scene 自动媒体任务",
+        "summary": "由资源组件 media-ready 取得原生目标，prepare 只认领，run 才播放，ended 表示实际完成；本地受阻提示负责当前窗口用户重试。",
+        "tags": [
+          "scene-media"
+        ],
+        "usage": [
+          "import { createSceneMediaTask } from '@runtime-kit/public/composables/media/createSceneMediaTask.v1'",
+          "scene.task(createSceneMediaTask({ id: 'voice', role: 'blocking', target: () => voice.value }))"
+        ],
+        "returns": "SceneTask；支持 startMs/afterTrack/offsetMs，有限 blocking 或循环 ambient。",
+        "return_example": [
+          "<AssetAudio name=\"voice\" purpose=\"narration\" @media-ready=\"voice = $event\" />"
+        ],
+        "constraints": [
+          "每页最多一个自动发声主媒体，其余自动视频静音；视频显式 purpose=automatic，旁白 purpose=narration。",
+          "普通 content 不自动播放；任务不能认领未登记用途的任意 HTML 媒体。",
+          "静态执行不创建通道、不 play、不 cue；播放受阻必须当前 Runtime frame 的用户手势恢复。"
+        ],
+        "audiences": [
+          "backend",
+          "agent"
+        ]
       }
     }
   ]

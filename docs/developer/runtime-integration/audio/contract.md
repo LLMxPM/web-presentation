@@ -1,6 +1,6 @@
 # 音频统一契约
 
-状态：v1 基线已冻结（WP01，2026-10-18）；后续实现不得另建默认值或 cue key 规则。本文是音频字段、默认值、引用方式和运行语义的单一事实源。
+状态：字段与默认值沿用音频 v1，执行按 B4（2026-10-30）收敛为 AudioBus 与显式 Scene 媒体任务；cue Promise 创作入口为 useAudioCue.v2。本文是音频字段、默认值、引用方式和运行语义的单一事实源。
 
 ## 1. 资源类型
 
@@ -83,24 +83,16 @@ interface AssetAudioProps {
 
 ## 3. 页面媒体语义
 
-`PageMediaSession` 收集当前稳定页面中的原生 `audio, video`，并读取 `data-runtime-media-purpose`。未声明 purpose 的现有媒体按 `content` 兼容。
+页面不扫描 DOM 收集完成目标。资源组件明确声明用途：AssetAudio.v1 的 `content/narration`，AssetVideo.v1 的 `content/automatic`。通过组件 `media-ready` 事件保存目标，再在页级 define 中把 `createSceneMediaTask.v1` 交给 `scene.task`；未显式注册的媒体不自动播放，也不参与完成。
 
-### 3.1 内容音频
-
-- 手动页不会因为存在 content 音频而自动播放；用户通过控件或页面业务操作播放。
-- `advance.mode=media_end` 时，所有非循环、可参与的 content 媒体继续沿用现有媒体集合语义。
-- `loop=true` 的 content 音频参与暂停、恢复和离页清理，但不参与完成判定。
-
-### 3.2 页面旁白
-
-- 只在真实放映执行上下文自动启动；普通交互预览必须先由用户显式试听或进入放映。
-- 开始条件为：当前 route generation 仍有效、整页过渡已 `settled`、页面 render-ready 已完成、播放状态允许媒体。
-- `advance.mode=manual`：旁白自动播放，但结束不翻页。
-- `advance.mode=timer`：计时与旁白并行；计时到达时正常翻页并停止旁白。Editor 对明显短于已知音频时长的配置给出警告，不静默改写为 `media_end`。
-- `advance.mode=media_end`：旁白与其它参与媒体纳入同一完成集合，全部结束后翻页；无参与媒体时仍按现有 `delay_ms` 回退。
-- 暂停放映、页面隐藏或 freeze 时暂停；只有本会话记录为正在播放的旁白才在恢复时继续。
-- 离开页面、generation 作废或宿主卸载时立即暂停、归零并释放监听；返回页面从头播放，不跨页续播。
-- 浏览器拒绝 `play()` 时进入现有 blocked 状态，等待用户手势重试；解码或网络错误使用现有媒体错误链路。
+- content 由用户手动操作，资源组件登记内容租约，音量和静音同样经过当前窗口 AudioBus。
+- narration/automatic 的播放与停止归当前 Scene；prepare 只认领，run 才 play，有限任务以原生 ended 完成。循环媒体只能是 ambient，不能作为 afterTrack 前驱。
+- 每页最多一个自动发声主媒体，其余自动视频必须 muted；Scene.prepare 校验，不能靠全局临时静音绕过限制。
+- manual 等待手动翻页；timer 到点取消未完成任务；scene_end 等所有 blocking 实际完成后停留，不回退猜测时长。旧 media_end/timeline_end 正式宿主已拒绝，持久配置升级由 B5 接续。
+- 真实 play Promise 拒绝进入 blocked，在当前 Runtime frame 显示许可提示。只有本窗口点击才能重试，Editor 父窗口或演讲者控制台的点击不能代理浏览器许可。
+- waiting/stalled 冻结 blocking 的有效时钟，canplay/playing 恢复；自身缓冲不暂停加载。隐藏与 freeze 由窗口总线暂停通道，恢复不补跑墙钟。
+- 资源替换、组件卸载、离页和取消撤销租约/事件/重试，迟到 Promise 不会启动旧页。普通内容与 cue 不参与 blocking；可选媒体失败只释放自身。
+- 截图、缩略图、检查与导出保持静态：不创建播放通道、不自动 play、不触发 cue；PDF/PPTX 首版省略音频。真实浏览器播放许可、缓冲与发声统一 C3 验收。
 
 ## 4. 项目音量和 cue 绑定
 
@@ -134,7 +126,8 @@ M2 新增项目级音频设置，存储中把音量设置与资源绑定分开�
 所有百分比为严格整数 `0–100`。最终有效增益：
 
 ```text
-旁白 = master × narration × AssetAudio.volume
+内容 = master × component.volume
+旁白/自动发声主媒体 = master × narration × component.volume
 音效 = master × effects × binding.gain
 ```
 
@@ -153,14 +146,9 @@ cue key 规则为小写点分段：`^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)+$`，最大
 
 允许项目增加其它 `interaction.*` key；首版拒绝未知的系统命名空间。绑定资产必须属于项目所在工作空间、状态可用且类型为 `audio`。项目归档不级联归档资产；资产归档/删除前引用检查必须显示项目 cue 绑定。
 
-清空绑定使用原子入口 `POST /api/v1/projects/{project_id}/audio-cues/clear`：单事务只删除绑定，不读出并重写音量，因此保留三段当前值并避免覆盖并发音量更新。能力关闭时仍允许清空历史绑定，但不允许新增或恢复绑定；完整音量更新仍需显式提交完整 `audio_settings` 对象，不隐含在 clear 中。
+清空绑定使用原子入口 `POST /api/v1/projects/{project_id}/audio-cues/clear`：单事务只删除绑定，不读出并重写音量，因此保留三段当前值并避免覆盖并发音量更新。完整音量更新仍需显式提交完整 `audio_settings` 对象，不隐含在 clear 中。
 
-自 2026-10-25 起，`slideshow.audio` 的 `audio_assets`、`page_narration`、`audio_cues` 均默认返回 `true`；以下关闭语义适用于能力集合被显式收窄的环境与回归测试。能力门禁与写入一致：
-
-- `audio_cues=false` 时，项目创建、项目更新、configuration 更新和模板导入只要携带非空 `cue_bindings` 就返回 422 `AUDIO_CAPABILITY_UNAVAILABLE`；音量更新与空 `cue_bindings` 继续允许。
-- `page_narration=false` 时，页面与组件保存拒绝可静态判定的 `purpose="narration"`；`audio_cues=false` 时拒绝可静态识别的 `useAudioCue` 调用（含别名导入）。`validate` 返回 `valid=false` 与同一业务码，真正写入仍独立校验。
-- 检查指纹包含当前开放能力集合，能力开关变化后不复用旧 `valid` 缓存。
-- 新 preview/build 快照在 `audio_cues=false` 时不携带 cue；已生成 artifact 与旧 Runtime 版本不因开关变化自动失效，也不承诺 capability 是全局紧急停声开关。
+自 2026-10-30 起，删除 `page_narration/audio_cues` 阶段功能门及开放集合。`slideshow.audio` 的三个布尔字段继续描述默认支持范围，均为 true；写入继续校验用户权限、工作空间资产类型与播放参数，不存在可切换的能力关闭路径。CodeCheck 指纹包含 `audio-bus.v1` 执行规则身份，修改规则时升级；不再包含动态开放能力集合。开发默认开放不代表 C3 实机验收已通过。
 
 ## 5. Runtime artifact 结构
 
@@ -192,20 +180,20 @@ Runtime 不接收 `asset_id`，也不接收带票据的固定 URL；它通过当
 
 项目 cue 资产必须由 `ProjectArtifactBuilder` 主动加入资源集合，因为它们不一定出现在页面源码中。模板包导出使用逻辑资源名和文件内容表达绑定，导入时在目标工作空间解析/创建资产并重建 ID 绑定。
 
-## 6. `AudioCueEngine` 与 `useAudioCue.v1`
+## 6. `AudioCueEngine` 与 `useAudioCue.v2`
 
 Runtime shell 创建一个项目级 `AudioCueEngine`，首版使用 `HTMLAudioElement`：
 
 - transition channel 只有一个实例；新切页 cue 立即停止并归零前一个 cue。
 - interaction channel 使用最多 4 个实例的小型池；池满时丢弃最旧的非关键播放，不无限创建元素。
 - 同一 key 默认 80ms 节流；缺失绑定、静态上下文、静音或加载失败均返回 no-op，不阻塞业务动作。
-- 常用短 cue 可 `preload=auto`；旁白只预取当前页与下一页 metadata，不全量预载。
+- cue 仅在请求时创建原生 Audio；旁白按资源组件 preload 和 Scene 准备，不扫描或全量预载。
 - `visibilitychange`、freeze、页面卸载和会话结束时暂停并释放；恢复不自动补播已经错过的短 cue。
 
 页面源码只使用公开 composable：
 
 ```ts
-import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v1'
+import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v2'
 
 const { playCue } = useAudioCue()
 
@@ -215,7 +203,7 @@ function confirm(): void {
 }
 ```
 
-返回值只表达 `played | skipped | unavailable` 等同步可观察状态，页面不得依赖 cue 播放完成推进业务。composable 通过 Runtime 注入服务工作；组件预览、捕获、导出和未提供 shell 的上下文返回稳定 no-op。公开 API 只接受合法 `interaction.*` key；`transition.forward` / `transition.backward` 由 shell 切页单通道独占，页面调用返回 `unavailable`。
+返回 Promise，等待真实 play 许可回执后返回 `played | skipped | unavailable`，不等待音效结束；可读取结果，但不得以音效完成阻塞导航或 Scene。composable 通过 Runtime 注入服务工作；组件预览、捕获、导出和未提供 shell 的上下文返回稳定 no-op。公开 API 只接受合法 `interaction.*` key；`transition.forward` / `transition.backward` 由 shell 切页单通道独占，页面调用返回 `unavailable`。
 
 ## 7. 切页音效触发
 
@@ -254,7 +242,7 @@ interface PageTransitionStartedEvent {
 ## 9. 兼容与版本
 
 - 没有 `audio_settings_json` 的历史项目读取为默认音量且无 cue 绑定，因此行为完全静默。
-- Runtime 未声明音频能力时，Backend/Editor 不开放旁白或 cue 配置；`AssetAudio.v1` 依赖 manifest 版本化能力。
+- Runtime Kit 公开路径始终版本化；AssetAudio/Video.v2 已删除，保留 v1 的用途声明并新增显式 Scene 媒体任务。useAudioCue.v2 是 Promise 入口，旧同步 v1 已删除。
 - 旧客户端省略 audio 设置时，项目更新不得清空现有 cue；显式 `null`、空列表和省略必须在 API 契约中区分。
 - `AssetAudio.v1` 一旦发布不做破坏性修改；未来不兼容演进新增 `AssetAudio.v2`。
 - 跨页 BGM 若未来立项，应新增独立 ambient channel 和会话模型，不复用 narration 的页面 DOM 生命周期。

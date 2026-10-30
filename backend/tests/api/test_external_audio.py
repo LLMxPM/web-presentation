@@ -147,7 +147,7 @@ async def test_external_audio_asset_should_upload_list_and_replace(client: Async
 
 
 async def test_external_project_audio_settings_should_roundtrip_and_preserve(
-    client: AsyncClient, open_audio_capabilities: None
+    client: AsyncClient
 ) -> None:
     """项目音频设置可创建、读取带资源摘要、更新、省略保留与显式清空。"""
 
@@ -258,7 +258,7 @@ async def test_external_project_audio_settings_should_roundtrip_and_preserve(
 
 
 async def test_external_project_audio_settings_should_reject_invalid_bindings(
-    client: AsyncClient, open_audio_capabilities: None
+    client: AsyncClient
 ) -> None:
     """显式 null、跨空间、非 audio 与重复 key 均返回 422 且不部分落库。"""
 
@@ -345,7 +345,7 @@ async def test_external_project_audio_settings_should_reject_invalid_bindings(
 
 
 async def test_external_project_audio_cues_clear_should_keep_volumes_and_replay(
-    client: AsyncClient, open_audio_capabilities: None
+    client: AsyncClient
 ) -> None:
     """原子清空只删除 cue 绑定，保留音量并支持同键重放。"""
 

@@ -177,3 +177,11 @@ B2 状态改为工程完成；正式宿主与单页预览不再消费旧 Transpo
 Renderer 采用使用中独占、空闲上限 4 的有界池；明确保留上下文的成本并补 active/idle/创建/销毁计数，决策和 C3 的 A04 观测口径见 [B3](./work-packages/b3-model-forward-playback.md)。不把池计数、模拟 canvas 或 Three.js CPU 动作当成真实 GPU 回收证据。
 
 开发验证：模型/静态帧/资源组件 109 项、manifest 16 项、根仓契约 68 项、Backend Kit 契约 6 项通过；Runtime check/build 通过。完整 Runtime 首轮仅两条仍期待 AssetModel.v2 的断言失败，其余 1457 项通过、3 项跳过；更新后该 manifest 文件 16 项通过，B4/B5 之后再跑最终完整回归。B3 工程完成，真实 WebGL、上下文恢复、PNG 像素、独立产物与 A04 资源曲线统一留 C3。没有启动服务或修改开发数据。
+
+## B4：AudioBus、显式媒体与 cue（2026-10-30）
+
+基础批 `c5d8100` 后，资源组件、Scene、Deck cue 与会话静音统一接入窗口 AudioBus。内容由用户控制，旁白/自动视频由页面显式登记任务，cue 保持 Deck 所有权；没有默认 DOM 认领或独立 cue 静音/许可状态。支持实际 play Promise、ended 完成、受阻本地手势恢复、缓冲与外部冻结、角色失败传播、资源替换和离页清理。新原生调用前执行资格由同一总线判断，隐藏期间的失败请求不占用交互池/节流名额，旧 Promise 不能停止新 cue。
+
+删除 PageMediaSession、AssetAudio/Video.v2 和旧同步 useAudioCue.v1，新增显式 createSceneMediaTask.v1 和 Promise useAudioCue.v2；保留 Audio/Video.v1 的用途与静态/内容展示。当前 Runtime frame 的媒体许可提示直接触发本地重试，不能从父窗口代理手势。Backend 删除 page_narration/audio_cues 功能门、开放集合、写入/披露/快照分支及关闭夹具，API 支持字段固定 true；参数、资源归属与用户权限校验保留，检查缓存使用 audio-bus.v1 执行身份。
+
+开发验证：完整 Runtime 183 文件 1450 项通过、3 项既有跳过；Runtime check/build 通过。Backend 参数、CodeCheck/缓存、Kit、默认开放 API、项目设置、External API、模板导入与预览 109 项通过；根仓音频 fixture、Kit、预览协议与仓库约束 76 项通过。修改 Python 的 F401/F821 检查通过。首轮只发现路由测试旧 config mock 未覆盖 audioConfig、三条已删文件文档链接，以及旧清单断言；修正后复验通过。真实发声、浏览器许可、受保护慢速缓冲、多窗口与镜像/产物均未执行，仍由 C3 验收。B4 工程完成，B5 继续配置、Presenter、AI/CLI 和联合样例。

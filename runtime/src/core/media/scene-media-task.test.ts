@@ -74,3 +74,12 @@ it('组件注销或源替换立即终止任务，有限必需失败不被伪装�
   next.element.src = '/changed.mp4'; next.element.dispatchEvent(new Event('loadstart')); await flushScenePromises()
   expect(other.getSnapshot().phase).toBe('failed')
 })
+
+it('非必需媒体失败释放自己的通道，不终止其它 blocking 任务', async () => {
+  const m = media(), pending = { resolve: () => {} }
+  m.play.mockRejectedValueOnce(new DOMException('unsupported', 'NotSupportedError'))
+  const session = scene([{ id: 'required', role: 'blocking', run: () => new Promise<void>(resolve => { pending.resolve = resolve }) }, m.task({ role: 'ambient' })])
+  cleanups.push(session.stop); await session.prepare(); await session.start(); await flushScenePromises()
+  expect(session.getSnapshot()).toMatchObject({ phase: 'running', issue: null }); expect(m.bus.state.value.channels).toBe(0)
+  pending.resolve(); await flushScenePromises(); expect(session.getSnapshot().phase).toBe('completed')
+})

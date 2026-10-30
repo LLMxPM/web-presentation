@@ -32,13 +32,16 @@ export class AudioBus {
     this.stopMuteWatch = watch(this.muted, () => this.refresh(), { flush: 'sync' })
   }
 
+  /** 通道开始前共享同一执行资格，防止隐藏/静态 cue 占用实例池与节流名额。 */
+  canPlay(owner: AudioOwner): boolean { return !this.disposed && !this.suspended && this.options.allowed?.(owner) !== false }
+
   /** 声明资源所有权，不自动开始播放；静态执行由宿主 allowed 阻断。 */
   claim(element: HTMLMediaElement, input: AudioChannelOptions): AudioLease {
     if (this.disposed || this.channels.has(element) || managed.has(element)) throw new Error('媒体已经被其它所有者持有或 AudioBus 已释放。')
     const channel: Channel = { element, options: { ...input }, lease: null!, permission: 'unknown', released: false, attempt: 0 }
     const lease: AudioLease = {
       play: async () => {
-        if (channel.released || this.disposed || this.suspended || this.options.allowed?.(input.owner) === false) return 'unavailable'
+        if (channel.released || !this.canPlay(input.owner)) return 'unavailable'
         channel.cancelWait?.()
         const attempt = ++channel.attempt
         const cancelled = new Promise<boolean>(resolve => { channel.cancelWait = () => resolve(false) })

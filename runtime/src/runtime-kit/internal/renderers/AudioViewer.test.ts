@@ -11,6 +11,8 @@ import type { RuntimePreloadedConfigBundle } from '@/core/shared/runtime-preview
 import { loadAudioConfig } from '@/core/utils/config'
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
 import AudioViewer from './AudioViewer.vue'
+import { createSceneMediaTask } from '@/core/media/scene-media-task'
+import { scene } from '@/core/scene/session-test-helpers'
 
 const mountedApps: App<Element>[] = []
 const pauseMock = vi.fn()
@@ -75,17 +77,22 @@ describe('AudioViewer', () => {
     expect(audio?.preload).toBe('auto')
   })
 
-  it('旁白叠加项目 master × narration，内容音频不受项目音量影响', async () => {
+  it('自动媒体由 Scene 认领后叠加 master × narration，内容也统一经过 master', async () => {
     setRuntimePreloadedConfig({
       audio: { volume: { master: 0.5, narration: 0.4, effects: 1 }, cues: {} },
     } as unknown as RuntimePreloadedConfigBundle)
     await loadAudioConfig(true)
 
     const narration = await mountViewer({ purpose: 'narration', volume: 0.5 })
-    expect(narration.host.querySelector<HTMLAudioElement>('audio')?.volume).toBeCloseTo(0.1)
+    const target = narration.host.querySelector<HTMLAudioElement>('audio')!
+    expect(target.volume).toBeCloseTo(0.5)
+    const session = scene([createSceneMediaTask({ id: 'narration', role: 'blocking', target: () => target })])
+    await session.prepare()
+    expect(target.volume).toBeCloseTo(0.1)
+    session.stop()
 
     const content = await mountViewer({ volume: 0.5 })
-    expect(content.host.querySelector<HTMLAudioElement>('audio')?.volume).toBeCloseTo(0.5)
+    expect(content.host.querySelector<HTMLAudioElement>('audio')?.volume).toBeCloseTo(0.25)
   })
 
   it('主资源失败时切换到兜底且不报最终错误，兜底再失败才上报', async () => {

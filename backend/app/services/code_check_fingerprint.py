@@ -25,7 +25,6 @@ from app.models.workspace import Workspace
 from app.models.workspace_component import WorkspaceComponent
 from app.models.workspace_component_version import WorkspaceComponentVersion
 from app.repositories.module_dependency_repository import ModuleDependencyRepository
-from app.services.audio_capability_gate import open_audio_capabilities
 from app.services.code_check_result_cache import (
     CODE_CHECK_RULES_VERSION,
     compute_check_fingerprint,
@@ -103,12 +102,6 @@ def _hash_json_payload(payload: object) -> str:
 
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
-
-
-def audio_capability_identity() -> list[str]:
-    """返回当前开放音频能力集合，能力开关变化必须使检查缓存失效。"""
-
-    return sorted(open_audio_capabilities())
 
 
 def _collect_source_asset_names(*sources: str | None) -> list[str]:
@@ -192,7 +185,7 @@ class CodeCheckFingerprintBuilder:
             "check_rules_version": CODE_CHECK_RULES_VERSION,
             "component_validation_profile_version": COMPONENT_VALIDATION_PROFILE_VERSION,
             # 能力集合变化必须使旧的 valid 结果失效，避免复用关闭能力期间的缓存。
-            "audio_capabilities": audio_capability_identity(),
+            "audio_execution": "audio-bus.v1",
         }
         return compute_check_fingerprint(payload)
 
@@ -272,7 +265,7 @@ class CodeCheckFingerprintBuilder:
             ),
             "check_rules_version": CODE_CHECK_RULES_VERSION,
             "component_validation_profile_version": COMPONENT_VALIDATION_PROFILE_VERSION,
-            "audio_capabilities": audio_capability_identity(),
+            "audio_execution": "audio-bus.v1",
         }
         return compute_check_fingerprint(payload)
 

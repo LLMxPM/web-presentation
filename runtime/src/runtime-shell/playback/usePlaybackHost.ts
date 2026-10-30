@@ -13,6 +13,7 @@ import { DeckPlaybackSession } from './playback-controller'
 import { findPlaybackPageElement } from './playback-page-root'
 import { useScreenWakeLock, type WakeLockState } from './useScreenWakeLock'
 import type { DeckPage, DeckSnapshot } from './deck-types'
+import { runtimeAudioBus } from '@/core/audio/runtime-audio-bus'
 
 export { findPlaybackPageElement } from './playback-page-root'
 export interface PlaybackHostOptions { startOnMount?: boolean }
@@ -95,6 +96,7 @@ export function usePlaybackHost(options: PlaybackHostOptions = {}): PlaybackHost
     const root = snapshot.value ? findPlaybackPageElement(snapshot.value.path) : null
     const stopped = deck?.stop() ?? false
     if (root) mediaPlaybackCoordinator.suspend(root)
+    runtimeAudioBus.stopOwner('content'); runtimeAudioBus.stopOwner('deck')
     wakeLock.release()
     return stopped
   }

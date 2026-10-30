@@ -22,7 +22,7 @@ English | [简体中文](./README.zh-CN.md)
 - **Asset Abstraction & Reuse**: Accumulate media, components, themes, styles, and typography in workspace libraries, enabling PPT decks, visual cards, report pages, and display boards to share the same design foundation.
 - **Rapid Visual Feedback**: The Runtime loads pages, components, and configuration bundles using Vue 3 and Vite, powering Editor features including live iframe preview, remote screenshot capture, component preview, and production builds.
 - **Scene 播放（开发分支）**：通过公开 `usePageScene.v1` 组织多条视觉序列与异步任务，支持数字变化、打字机、SVG 描边和 DOM/CSS/Canvas 粒子。正式放映与单页预览已接入，截图和导出使用独立静态呈现；完整实机验收待 C3。参见 [Scene 开发调试](./docs/developer/runtime/scene-development.md)。
-- **放映音频与三维动作**：工作空间资源和配置入口已经具备，正在按 B3/B4/B5 迁移到 Scene 任务、统一音频所有权和新配置；当前 Scene 工程完成不代表这些后续工作包已交付。
+- **放映音频与三维动作（开发分支）**：模型实例正向片段、自动媒体 Scene 任务及窗口 AudioBus 已接入；新配置、Presenter 协议与 AI/CLI 指引由 B5 收敛，真实播放与发声统一留 C3 验收。
 - **Constrained Visual Editing**: Inspect Vue container hierarchies alongside rendered outputs to modify static text, component props, and controlled Tailwind styles via intuitive form controls.
 - **Context Isolation & Injection**: The Backend injects only the essential context (project, page, component, asset specs) into the AI model, allowing it to focus on creative tasks without runtime overhead or implementation leaks.
 - **Workspace-Scoped Content Assistant**: Eliminates the need to switch chat sessions across projects; sessions are workspace-bound, and each Run snapshot locks its current focus and project working set with explicit permission checks per target.

@@ -2,6 +2,7 @@
 export interface SceneMediaRegistration {
   purpose: 'content' | 'narration' | 'automatic'
   gain: number
+  getGain?: () => number
   muted: boolean
   loop: boolean
   signal: AbortSignal

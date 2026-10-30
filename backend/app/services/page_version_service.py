@@ -20,9 +20,7 @@ from app.schemas.page import PageVersionContent, PageVersionListItem
 from app.services.audio_options_gate import (
     AUDIO_ERROR_OPTIONS_INVALID,
     collect_asset_audio_errors,
-    collect_audio_capability_errors,
 )
-from app.services.audio_capability_gate import AUDIO_CAPABILITY_UNAVAILABLE
 from app.services.component_dependency_service import ComponentDependencyService
 from app.services.model3d_acceptance_policy import MODEL3D_ERROR_VIEW_OPTIONS_INVALID
 from app.services.model3d_view_options_gate import collect_model_view_option_errors
@@ -188,13 +186,6 @@ class PageVersionService:
                 status_code=422,
                 code=AUDIO_ERROR_OPTIONS_INVALID,
                 detail="页面源码存在非法的音频组件参数：" + "；".join(errors),
-            )
-        capability_errors = collect_audio_capability_errors(page_content)
-        if capability_errors:
-            raise AppException(
-                status_code=422,
-                code=AUDIO_CAPABILITY_UNAVAILABLE,
-                detail="页面源码依赖尚未开放的音频能力：" + "；".join(capability_errors),
             )
 
     async def list_versions(self, page: Page) -> list[PageVersionListItem]:

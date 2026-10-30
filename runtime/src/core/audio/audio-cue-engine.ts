@@ -1,171 +1,83 @@
-/**
- * 文件功能：实现项目级短音效引擎，提供切页单通道与 interaction 小型实例池。
- *
- * 首版只使用 HTMLAudioElement；缺失绑定、静态上下文、静音、节流和播放失败都
- * 返回稳定结果，不向页面业务事件抛错，也不改变导航或放映状态。
- */
-
-import {
-  resolveAudioCue,
-  resolveCueVolume,
-  type RuntimeAudioConfig,
-} from './audio-config'
+/** 文件功能：维护 Deck 的切页 cue 单通道与有限交互池；播放、静音、音量和许可统一委托 AudioBus。 */
+import { resolveAudioCue, type RuntimeAudioConfig } from './audio-config'
+import type { AudioBus, AudioLease } from './audio-bus'
 
 export type AudioCueResult = 'played' | 'skipped' | 'unavailable'
-
 export interface AudioCueEngineOptions {
-  config: RuntimeAudioConfig
-  /** 把资源逻辑名解析为当前 artifact 的可播放地址；未命中的资源返回空串。 */
-  resolveAssetUrl: (name: string) => string | null
-  /** 是否允许发声；thumbnail/capture/export 等静态上下文为 false。 */
+  bus: AudioBus
+  config: RuntimeAudioConfig | (() => RuntimeAudioConfig)
+  resolveAssetUrl(name: string): string | null
   allowPlayback: boolean
-  /** 读取会话级静音；运行时切换无需重建引擎。 */
-  isMuted?: () => boolean
-  /** 测试替换音频元素工厂；生产环境使用 Audio。 */
   createAudio?: () => HTMLAudioElement | null
-  /** 测试注入单调时钟。 */
   now?: () => number
 }
+interface CueSlot { element: HTMLAudioElement; lease: AudioLease; lastUsedAt: number; request: number }
 
-interface InteractionSlot {
-  element: HTMLAudioElement
-  lastUsedAt: number
-}
-
-const INTERACTION_POOL_SIZE = 4
-const INTERACTION_THROTTLE_MS = 80
-
+/** 此类仅维护 cue 业务的通道选择与 80ms 节流，不拥有独立静音或浏览器许可状态。 */
 export class AudioCueEngine {
-  private readonly config: RuntimeAudioConfig
-  private readonly resolveAssetUrl: (name: string) => string | null
-  private readonly allowPlayback: boolean
-  private readonly isMuted: () => boolean
-  private readonly createAudio: () => HTMLAudioElement | null
-  private readonly now: () => number
-  private transitionElement: HTMLAudioElement | null = null
-  private readonly interactionPool: InteractionSlot[] = []
-  private readonly lastPlayedAt = new Map<string, number>()
-  private disposed = false
+  private transition: CueSlot | null = null
+  private readonly interactions: CueSlot[] = []
+  private readonly lastPlayed = new Map<string, number>()
   private suspended = false
+  private disposed = false
+  constructor(private readonly options: AudioCueEngineOptions) {}
 
-  constructor(options: AudioCueEngineOptions) {
-    this.config = options.config
-    this.resolveAssetUrl = options.resolveAssetUrl
-    this.allowPlayback = options.allowPlayback
-    this.isMuted = options.isMuted ?? (() => false)
-    this.createAudio = options.createAudio ?? (() => (
-      typeof Audio === 'undefined' ? null : new Audio()
-    ))
-    this.now = options.now ?? (() => Date.now())
+  /** 新切页 cue 停止上一 cue，只有真实 play 成功才返回 played。 */
+  async playTransition(key: string): Promise<AudioCueResult> {
+    const cue = this.resolve(key)
+    if (typeof cue === 'string') return cue
+    this.transition ??= this.createSlot()
+    if (!this.transition) return 'unavailable'
+    this.stop(this.transition)
+    return this.start(this.transition, cue)
   }
-
-  /** 播放切页 cue；新 cue 会立即停止并归零上一段，不叠加。 */
-  playTransition(key: string): AudioCueResult {
-    const resolution = this.resolvePlayableCue(key)
-    if (typeof resolution === 'string') return resolution
-    const element = this.transitionElement ?? this.createAudio()
-    if (!element) return 'unavailable'
-    this.transitionElement = element
-    element.preload = 'auto'
-    this.stop(element)
-    if (!this.start(element, resolution.url, resolution.volume)) return 'skipped'
-    return 'played'
-  }
-
-  /** 播放交互 cue；同一 key 80ms 内节流，池满时复用最旧实例。 */
-  playInteraction(key: string): AudioCueResult {
-    const resolution = this.resolvePlayableCue(key)
-    if (typeof resolution === 'string') return resolution
-    const now = this.now()
-    const lastPlayedAt = this.lastPlayedAt.get(key)
-    if (lastPlayedAt !== undefined && now - lastPlayedAt < INTERACTION_THROTTLE_MS) {
-      return 'skipped'
-    }
-    this.lastPlayedAt.set(key, now)
-
-    let slot = this.interactionPool.find(item => item.element.paused || item.element.ended)
-    if (!slot && this.interactionPool.length < INTERACTION_POOL_SIZE) {
-      const element = this.createAudio()
-      if (!element) return 'unavailable'
-      slot = { element, lastUsedAt: now }
-      this.interactionPool.push(slot)
-    }
-    if (!slot) {
-      // 池满：复用最旧的非关键播放，保持元素数量恒定。
-      slot = [...this.interactionPool].sort((left, right) => left.lastUsedAt - right.lastUsedAt)[0]
-      this.stop(slot.element)
-    }
+  /** 交互最多四个实例，池满复用最旧者；缺失绑定与受阻均不影响页面导航或完成。 */
+  async playInteraction(key: string): Promise<AudioCueResult> {
+    const cue = this.resolve(key)
+    if (typeof cue === 'string') return cue
+    const now = this.options.now?.() ?? Date.now(), previous = this.lastPlayed.get(key)
+    if (previous !== undefined && now - previous < 80) return 'skipped'
+    this.lastPlayed.set(key, now)
+    let slot = this.interactions.find(slot => slot.element.paused || slot.element.ended)
+    if (!slot && this.interactions.length < 4) { slot = this.createSlot() ?? undefined; if (slot) this.interactions.push(slot) }
+    if (!slot) { slot = [...this.interactions].sort((a, b) => a.lastUsedAt - b.lastUsedAt)[0]; if (slot) this.stop(slot) }
+    if (!slot) return 'unavailable'
     slot.lastUsedAt = now
-    slot.element.preload = 'auto'
-    if (!this.start(slot.element, resolution.url, resolution.volume)) return 'skipped'
-    return 'played'
+    return this.start(slot, cue)
   }
+  /** 交还当前放映 scope，不补播离开期间错过的 cue。 */
+  suspend(): void { this.suspended = true; if (this.transition) this.stop(this.transition); this.interactions.forEach(slot => this.stop(slot)) }
+  /** 仅恢复新 cue 资格。 */
+  resume(): void { this.suspended = false }
+  /** 释放本 Deck 的租约，不能销毁同窗口内容或 Scene 仍持有的总线通道。 */
+  dispose(): void { if (this.disposed) return; this.disposed = true; this.suspend(); this.transition?.lease.release(); this.interactions.forEach(slot => slot.lease.release()); this.transition = null; this.interactions.length = 0; this.lastPlayed.clear() }
 
-  /** 隐藏、freeze 或离开放映时暂停全部短音效；恢复不补播。 */
-  suspend(): void {
-    this.suspended = true
-    if (this.transitionElement) this.stop(this.transitionElement)
-    for (const slot of this.interactionPool) this.stop(slot.element)
-  }
-
-  /** 恢复新 cue 的播放资格；已经错过的短音效不会重放。 */
-  resume(): void {
-    this.suspended = false
-  }
-
-  /** 释放全部元素与节流记录；重复调用无副作用。 */
-  dispose(): void {
-    if (this.disposed) return
-    this.disposed = true
-    this.suspend()
-    this.transitionElement = null
-    this.interactionPool.length = 0
-    this.lastPlayedAt.clear()
-  }
-
-  /** 校验用途、绑定、静音、静态上下文和音量，返回可播放信息或稳定状态。 */
-  private resolvePlayableCue(
-    key: string,
-  ): { url: string; volume: number } | AudioCueResult {
-    if (this.disposed || !this.allowPlayback || this.suspended) return 'unavailable'
-    const cue = resolveAudioCue(this.config, key)
+  /** 配置按当前项目读取，音量仅由总线计算一次。 */
+  private resolve(key: string): { url: string; gain: number } | AudioCueResult {
+    if (this.disposed || this.suspended || !this.options.allowPlayback || !this.options.bus.canPlay('deck')) return 'unavailable'
+    const config = typeof this.options.config === 'function' ? this.options.config() : this.options.config
+    const cue = resolveAudioCue(config, key)
     if (!cue) return 'unavailable'
-    if (this.isMuted()) return 'skipped'
-    const volume = resolveCueVolume(this.config, cue)
-    if (volume <= 0) return 'skipped'
-    const url = this.resolveAssetUrl(cue.assetName)
-    if (!url) return 'unavailable'
-    return { url, volume }
+    if (this.options.bus.muted.value || config.volume.master * config.volume.effects * cue.gain <= 0) return 'skipped'
+    const url = this.options.resolveAssetUrl(cue.assetName)
+    return url ? { url, gain: cue.gain } : 'unavailable'
   }
-
-  /** 设置源和音量并开始播放；同步拒绝在内部吞掉，不阻塞业务。 */
-  private start(element: HTMLAudioElement, url: string, volume: number): boolean {
-    try {
-      element.muted = false
-      element.volume = Math.min(1, Math.max(0, volume))
-      element.src = url
-      element.currentTime = 0
-      const result = element.play()
-      if (result && typeof result.catch === 'function') {
-        void result.catch(() => {
-          // 浏览器策略或解码失败只影响本次音效；保留元素供后续重试复用。
-          this.stop(element)
-        })
-      }
-      return true
-    } catch {
-      this.stop(element)
-      return false
-    }
+  /** 原生 Audio 只在真正请求 cue 时创建；静态和未绑定场景零创建。 */
+  private createSlot(): CueSlot | null {
+    const element = this.options.createAudio ? this.options.createAudio() : typeof Audio !== 'undefined' ? new Audio() : null
+    return element ? { element, lease: this.options.bus.claim(element, { owner: 'deck', group: 'effects' }), lastUsedAt: 0, request: 0 } : null
   }
-
-  /** 尽量暂停并归零；未加载元数据时忽略 currentTime 写入失败。 */
-  private stop(element: HTMLAudioElement): void {
-    try {
-      element.pause()
-      element.currentTime = 0
-    } catch {
-      // 未加载可定位媒体时浏览器可能拒绝写入 currentTime。
-    }
+  /** cue 不登记自动媒体重试，播放许可失败只跳过本次，不阻塞 Scene。 */
+  private async start(slot: CueSlot, cue: { url: string; gain: number }): Promise<AudioCueResult> {
+    const token = ++slot.request
+    slot.element.preload = 'auto'; slot.element.src = cue.url
+    try { slot.element.currentTime = 0 } catch { /* 无定位数据时允许从资源起点加载。 */ }
+    slot.lease.configure({ gain: cue.gain })
+    const result = await slot.lease.play()
+    if (token !== slot.request || this.disposed) return 'unavailable'
+    if (result === 'played') return 'played'
+    this.stop(slot); return result === 'unavailable' ? 'unavailable' : 'skipped'
   }
+  /** 停止通过持有租约进行，不能抢占 Scene 或普通内容元素。 */
+  private stop(slot: CueSlot): void { slot.request += 1; slot.lease.pause(); try { slot.element.currentTime = 0 } catch { /* 同上，定位失败不影响释放。 */ } }
 }

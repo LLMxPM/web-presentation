@@ -10,11 +10,7 @@
       ".wav": ["audio/wav", "audio/x-wav"]
     }
   },
-  "capabilities": {
-    "m0": ["audio_assets"],
-    "m1": ["audio_assets", "page_narration"],
-    "m2": ["audio_assets", "page_narration", "audio_cues"]
-  },
+  "capabilities": ["audio_assets", "page_narration", "audio_cues"],
   "defaults": {
     "api": {
       "master_volume_percent": 100,

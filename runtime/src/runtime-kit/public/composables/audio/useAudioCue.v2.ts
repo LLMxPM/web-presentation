@@ -10,14 +10,14 @@ import { useInjectedAudioCueService } from '@/core/audio/audio-cue-context'
 import type { AudioCueResult } from '@/core/audio/audio-cue-engine'
 
 export interface UseAudioCueApi {
-  /** 请求播放语义 cue；返回值只表达同步可观察状态，不等待音频结束。 */
-  playCue: (key: string) => AudioCueResult
+  /** 等待真实播放许可回执，不等待短音效结束；此 Promise 是 v2 与旧同步入口的区别。 */
+  playCue: (key: string) => Promise<AudioCueResult>
 }
 
 export function useAudioCue(): UseAudioCueApi {
   const service = useInjectedAudioCueService()
   return {
-    playCue: (key: string): AudioCueResult => {
+    playCue: async (key: string): Promise<AudioCueResult> => {
       if (typeof key !== 'string') return 'unavailable'
       const normalized = key.trim()
       // 公开 API 只允许 interaction.*；系统 transition 通道不向页面开放。

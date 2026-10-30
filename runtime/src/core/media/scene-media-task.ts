@@ -79,7 +79,7 @@ export function createSceneMediaTask(options: SceneMediaTaskOptions, bus: AudioB
       value.onCleanup(cleanup)
       source = element.getAttribute('src') ?? ''
       if (!source || element.error) throw new SceneSessionError('SCENE_MEDIA_UNAVAILABLE', '媒体资源缺失或已加载失败。', spec.id)
-      lease = bus.claim(element, { owner: 'scene', group: registration.purpose === 'narration' || !registration.muted ? 'narration' : 'content', gain: registration.gain, muted: registration.muted })
+      lease = bus.claim(element, { owner: 'scene', group: registration.purpose === 'narration' || !registration.muted ? 'narration' : 'content', gain: registration.getGain?.() ?? registration.gain, muted: registration.muted })
       result = new Promise<void>((yes, no) => { resolve = yes; reject = no }); void result.catch(() => {})
       listen('ended', () => { if (!settled && started) { settled = true; playing = false; bus.setRetry(lease!, null); setBlocked(null); resolve() } })
       listen('error', () => fail('SCENE_MEDIA_PLAY_FAILED', '媒体资源加载或解码失败。'))
@@ -91,7 +91,11 @@ export function createSceneMediaTask(options: SceneMediaTaskOptions, bus: AudioB
       const invalidated = () => fail('SCENE_MEDIA_REPLACED', '媒体组件已经卸载或用途/资源发生变化。')
       registration.signal.addEventListener('abort', invalidated, { once: true })
       unregister = () => registration.signal.removeEventListener('abort', invalidated)
-      stopWatch = watch(() => bus.state.value.suspended, value => { if (!value && blocked === 'buffer') void attempt() }, { flush: 'sync' })
+      stopWatch = watch([() => bus.state.value.suspended, () => registration.getGain?.() ?? registration.gain], ([suspended, gain]) => {
+        lease?.configure({ gain })
+        if (suspended) { playing = false; request += 1 }
+        else if (started && !playing && blocked !== 'permission') void attempt()
+      }, { flush: 'sync' })
     },
     run() {
       if (!result || settled || !element || element.getAttribute('src') !== source) throw new SceneSessionError('SCENE_MEDIA_UNAVAILABLE', '媒体任务尚未准备或资源已经失效。', spec.id)

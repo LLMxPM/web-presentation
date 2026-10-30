@@ -7,7 +7,7 @@ import { resolve } from 'node:path'
 interface AudioFixture {
   schema_version: number
   resource: { extensions: Record<string, string[]> }
-  capabilities: Record<'m0' | 'm1' | 'm2', string[]>
+  capabilities: string[]
   defaults: {
     api: Record<string, unknown>
     runtime: RuntimeAudioConfig
@@ -68,12 +68,8 @@ describe('音频跨模块共享契约', () => {
     })
   })
 
-  it('里程碑能力只递增且 M0 不提前开放旁白或 cue', () => {
-    expect(fixture.capabilities.m0).toEqual(['audio_assets'])
-    expect(fixture.capabilities.m1).toEqual(['audio_assets', 'page_narration'])
-    expect(fixture.capabilities.m2).toEqual(['audio_assets', 'page_narration', 'audio_cues'])
-    expect(new Set(fixture.capabilities.m1)).toEqual(new Set([...fixture.capabilities.m0, 'page_narration']))
-    expect(new Set(fixture.capabilities.m2)).toEqual(new Set([...fixture.capabilities.m1, 'audio_cues']))
+  it('资源、旁白和 cue 默认开放，不再维护里程碑功能门', () => {
+    expect(fixture.capabilities).toEqual(['audio_assets', 'page_narration', 'audio_cues'])
   })
 
   it('所有反例都有明确错误且名称在分组内唯一', () => {
