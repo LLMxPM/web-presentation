@@ -6,7 +6,7 @@
 import { createApp, defineComponent } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { useAudioCue } from './useAudioCue.v2'
+import { useAudioCue } from './useAudioCue.v1'
 
 const mounted: ReturnType<typeof createApp>[] = []
 
@@ -31,7 +31,7 @@ function mountComposable(): ReturnType<typeof useAudioCue> {
   return api!
 }
 
-describe('useAudioCue.v2', () => {
+describe('useAudioCue.v1', () => {
   it('没有 shell provider 时返回 unavailable，不抛异常', async () => {
     const { playCue } = mountComposable()
 

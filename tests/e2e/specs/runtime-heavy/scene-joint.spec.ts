@@ -86,10 +86,10 @@ test('三维动作、旁白和切页 cue 应在同一放映中协作，静态截
 </template>
 <script setup lang="ts">
 import { ref } from 'vue'
-import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v3.vue'
+import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v1.vue'
 import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
 import { createSceneMediaTask } from '@runtime-kit/public/composables/media/createSceneMediaTask.v1'
-import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v2'
+import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v1'
 import { usePageScene } from '@runtime-kit/public/composables/motion/usePageScene.v1'
 import { useStaticPresentation } from '@runtime-kit/public/composables/static/useStaticPresentation.v1'
 const root = ref<HTMLElement | null>(null)

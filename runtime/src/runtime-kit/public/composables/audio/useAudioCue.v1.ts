@@ -1,5 +1,5 @@
 /**
- * 文件功能：公开 Runtime Kit v2 语义音效 API，页面只按 cue key 请求播放。
+ * 文件功能：公开 Runtime Kit 语义音效 API，页面只按 cue key 请求播放。
  *
  * 不存在 shell provider、处于静态上下文、没有绑定或会话静音时返回稳定 no-op，
  * 不暴露 URL、资产 ID、Audio 实例或音量绕过入口。
@@ -10,7 +10,7 @@ import { useInjectedAudioCueService } from '@/core/audio/audio-cue-context'
 import type { AudioCueResult } from '@/core/audio/audio-cue-engine'
 
 export interface UseAudioCueApi {
-  /** 等待真实播放许可回执，不等待短音效结束；此 Promise 是 v2 与旧同步入口的区别。 */
+  /** 等待真实播放许可回执，不等待短音效结束。 */
   playCue: (key: string) => Promise<AudioCueResult>
 }
 

@@ -8,7 +8,7 @@ Runtime Kit 是页面源码、工作空间组件源码和 previewSchema 可以�
 
 - `name = base_name.vN` 是能力标识，`import_path` 是实际模块地址；版本号必须一致，文件基名不要求等于导出符号。例如 `resolveColor.v1` 从 `utils/colors.v1` 导入，调用方不能按名称拼路径。
 - `capability.enabled`、`audiences` 与说明字段控制目录披露。关闭 enabled 后目录与详情隐藏，但 exports 保留的入口及依赖身份继续兼容历史源码；禁止导入需要移除 exports 项。
-- 目录默认按 `kind + base_name` 返回最新版本。旧版本通过版本参数或 `include_all_versions` 查询；AssetModel.v1 用于交互查看，v3 用于 Scene，默认列表返回 v3。
+- 目录默认按 `kind + base_name` 返回最新版本，旧版本通过版本参数或 `include_all_versions` 查询。`AssetModel.v1` 单一条目同时承担静态展示、组件预览与 Scene 实例句柄：非交互实例的 `ref.getHandle()` 可用，`interactive=true` 时句柄为 null。
 - 顶层 `version` 是清单版本，不代替单项 `.vN` 或 `.runtime-build-id` 发布身份。预览票据及版本化资源路径继续核实发布身份。
 - `model3d_engine` 是三维策略的身份快照，测试与 Runtime 的 `MODEL3D_ENGINE_POLICY` 对拍。
 
@@ -39,7 +39,7 @@ Backend 有进程级清单缓存，维护清单后需重启 Backend 刷新目录
 
 - 清单项名称必须使用 `<ExportName>.v<整数版本>`。
 - 公开 import path 必须带 `.vN`。
-- 不兼容演进时新增 v2/v3 文件，不修改仍被依赖的旧版本文件。
+- 不兼容演进时新增更高版本文件，不修改仍被依赖的旧版本文件。当前只保留 `useAudioCue.v1` 与 `AssetModel.v1` 两个入口：`useAudioCue` 与 `AssetModel` 的历史 v2/v3 已合并回 v1，`.v1` 对这两个能力表示当前唯一实现。
 
 ## 禁止暴露
 

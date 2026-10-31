@@ -5,7 +5,7 @@ ANIMATION_AUTHORING_STANDARD = """
 
 ### 能力与写法
 
-- 先查询 runtime_kit list/detail，按真实返回的版本化 import_path 使用 usePageScene.v1、useStaticPresentation.v1、AssetModel.v3、AssetAudio.v1、AssetVideo.v1、createSceneMediaTask.v1 与 useAudioCue.v2。未查询到的路径不可凭记忆导入。
+- 先查询 runtime_kit list/detail，按真实返回的版本化 import_path 使用 usePageScene.v1、useStaticPresentation.v1、AssetModel.v1、AssetAudio.v1、AssetVideo.v1、createSceneMediaTask.v1 与 useAudioCue.v1。未查询到的路径不可凭记忆导入。
 - 一页只声明一次 usePageScene({ root, define(scene) { ... } })，同一 Scene 可登记多条 scene.visual({ id, role, define(tl) { ... } }) 和 scene.task(task)。挂载只登记，点击播放或正式放映才 prepare/start。每条任务 id 唯一，role 为 blocking 或 ambient；startMs 与 afterTrack/offsetMs 分别表达起始延时和前驱实际完成后顺延，不能同时填写。
 - scene.visual 托管 GSAP 的 to/from/fromTo/set/addLabel/call、位置字符串、stagger、回调和页面数值对象，支持 DOM、SVG 和数值驱动。数字滚动用数值对象与 onUpdate；打字机更新本页文本；SVG 描边可直接修改 strokeDashoffset。GSAP 的 duration/位置用秒，Scene 的 startMs/offsetMs 用毫秒。禁止直接 import GSAP、插件或自己创建全局 timeline/ticker；插件包括 DrawSVG、SplitText、ScrollTrigger，不能因为门面支持回调就推断插件已开放。
 - 有限 blocking 实际完成才推动 scene_end；repeat:-1 只允许 ambient，无限任务不可作为依赖前驱。DOM/CSS 无限呼吸、Canvas 粒子可作装饰；有限 Canvas 自定义任务 run 必须返回实际完成的 Promise，不能用估计时长伪造完成。不得依赖 GSAP 粒子插件。自建 RAF、计时器、事件、模型数值和文本变化用 scene.onCleanup 或 task context.onCleanup 恢复；内部冻结时自定义任务必须通过 setSuspended 停止有效推进，恢复不补跑后台积压。
@@ -13,11 +13,11 @@ ANIMATION_AUTHORING_STANDARD = """
 
 ### 模型、媒体与 cue
 
-- AssetModel.v1 展示静态/手动交互，片段使用 AssetModel.v3 的组件 ref.getHandle()；只有真实首帧就绪才有句柄。查询资源 analysis_metadata.model3d.animations，要求 supported=true，使用真实 index、signature 和 duration_ms。动画数据不代表支持动画播放，不能猜片段名称、索引或签名；资源替换后重新查询。
+- AssetModel.v1 同时承担静态/手动交互与片段播放：静态或 interactive=true 的实例只做展示，片段播放使用同一组件非交互实例的 ref.getHandle()；只有真实首帧就绪才有句柄，交互实例的句柄恒为 null。查询资源 analysis_metadata.model3d.animations，要求 supported=true，使用真实 index、signature 和 duration_ms。动画数据不代表支持动画播放，不能猜片段名称、索引或签名；资源替换后重新查询。
 - scene.task(handle.animation({ id:'action-a', role:'blocking', clipIndex, signature })) 注册动作；第二个动作使用 afterTrack:'action-a'。同一模型实例不能同时运行两个动作；并行需不同实例。只支持正向 rate，不能 seek、倒放或采样。handle.transform/camera 是实例数值副本，visual onUpdate 调 handle.invalidate()；scene.onCleanup(handle.reset) 恢复，不能访问共享材质、几何、骨骼或 Three.js 内部实例。
 - AssetAudio.v1 purpose=narration 和 AssetVideo.v1 purpose=automatic 通过 media-ready 暴露目标；显式 scene.task(createSceneMediaTask({ id, role:'blocking', target:()=>mediaElement })) 接管，实际 ended 才完成。purpose=content 仅用户手动播放，不得交给 Scene 自动接管，不在源码写 autoplay。
 - 同页最多一个自动发声主媒体；其它自动视频必须 muted。旁白不循环，无限媒体仅 ambient。总静音不改变主媒体数量约束。播放许可受阻时在当前 Runtime/观众窗口点击允许播放；Editor 或演讲者窗口的点击不能代替该窗口的用户手势。全屏成功不能保证发声成功。资源错误与缓冲应按真实失败/受阻处理，不能按 duration 估计结束。
-- useAudioCue.v2 返回 playCue('interaction.*') 的 Promise，只等待真实 play 许可回执，不等待短音效结束；cue 不作为主媒体或 blocking 完成目标。不存在绑定、无 provider、静态环境或静音时按返回值处理，不伪造成功或直接构造 Audio。
+- useAudioCue.v1 返回 playCue('interaction.*') 的 Promise，只等待真实 play 许可回执，不等待短音效结束；cue 不作为主媒体或 blocking 完成目标。不存在绑定、无 provider、静态环境或静音时按返回值处理，不伪造成功或直接构造 Audio。
 - 项目放映 schema 4 只有 manual/timer/scene_end、delay_ms、completion_delay_ms 与 loop。scene_end 要有 blocking 目标，完成后可停留零毫秒；timer 到点会停止尚未完成的任务。保持/释放只抑制自动翻页，不暂停 Scene、声音或改写项目配置。
 
 ### 独立静态态

@@ -89,9 +89,15 @@ def test_runtime_kit_capability_directory_should_include_doc_only_items() -> Non
     assert len(by_name["usePageSize.v1"]["usage"]) >= 1
     assert len(by_name["usePageSize.v1"]["return_example"]) >= 1
     assert len(by_name["usePageSize.v1"]["constraints"]) >= 1
-    for name in ("usePageScene.v1", "createSceneMediaTask.v1", "useAudioCue.v2", "AssetModel.v3"):
+    for name in ("usePageScene.v1", "createSceneMediaTask.v1", "useAudioCue.v1"):
         assert by_name[name]["previewable"] is False
         assert by_name[name]["usage"]
+    # AssetModel.v1 同时是组件预览项与 Scene 句柄入口，仍必须带 usage 与句柄约束。
+    assert by_name["AssetModel.v1"]["previewable"] is True
+    assert by_name["AssetModel.v1"]["usage"]
+    assert "getHandle" in by_name["AssetModel.v1"]["returns"]
+    assert "AssetModel.v3" not in by_name
+    assert "useAudioCue.v2" not in by_name
     assert "usePageTimeline.v1" not in by_name
     assert "ComponentPreviewSchema" not in by_name
     assert "useComponentPreviewMock" not in by_name

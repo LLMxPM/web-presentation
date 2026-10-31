@@ -13,7 +13,7 @@ import { getRuntimeSession } from '@/core/router/runtime-session'
 import type { RuntimePreloadedConfigBundle } from '@/core/shared/runtime-preview'
 import { loadAudioConfig } from '@/core/utils/config'
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
-import { useAudioCue } from '@/runtime-kit/public/composables/audio/useAudioCue.v2'
+import { useAudioCue } from '@/runtime-kit/public/composables/audio/useAudioCue.v1'
 import { useAudioCues, type RuntimeAudioCues } from './useAudioCues'
 
 /** 记录创建与播放操作的 Audio 替身。 */

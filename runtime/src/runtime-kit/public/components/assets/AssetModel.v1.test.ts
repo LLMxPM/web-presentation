@@ -5,10 +5,11 @@
  * @vitest-environment jsdom
  */
 
-import { createApp, nextTick } from 'vue'
+import { createApp, nextTick, type ComponentPublicInstance } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
+import { MODEL_SCENE_HANDLE_KEY, type ModelSceneHandle } from '@runtime-kit/internal/renderers/model3d/scene-contract'
 import { DEFAULT_MODEL_FALLBACK_MESSAGE } from '@runtime-kit/internal/renderers/model3d/view-options'
 
 import AssetModel from './AssetModel.v1.vue'
@@ -58,15 +59,15 @@ async function flush(rounds = 4): Promise<void> {
 /**
  * 挂载组件并等待渲染。
  * @param props 组件属性
- * @returns 宿主元素与卸载函数
+ * @returns 宿主元素、组件实例与卸载函数
  */
-async function mountAssetModel(props: Record<string, unknown>): Promise<{ host: HTMLElement; unmount: () => void }> {
+async function mountAssetModel(props: Record<string, unknown>): Promise<{ host: HTMLElement; vm: ComponentPublicInstance; unmount: () => void }> {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const app = createApp(AssetModel, props)
-  app.mount(host)
+  const vm = app.mount(host) as ComponentPublicInstance
   await flush()
-  return { host, unmount: () => app.unmount() }
+  return { host, vm, unmount: () => app.unmount() }
 }
 
 afterEach(() => {
@@ -146,6 +147,76 @@ describe('AssetModel 资源解析边界', () => {
     expect(forwarded?.hasAttribute('data-runtime-kit-media')).toBe(false)
     expect(forwarded?.hasAttribute('src')).toBe(false)
     expect(forwarded?.classList.contains('h-80')).toBe(true)
+
+    unmount()
+  })
+})
+
+describe('AssetModel 场景句柄', () => {
+  /** 构造已就绪的受限句柄替身，只覆盖 AssetModel 读取句柄时用到的字段。 */
+  function createReadyHandle(): ModelSceneHandle {
+    return {
+      isReady: () => true,
+      animations: () => [],
+      animation: vi.fn(),
+      transform: { x: 0, y: 0, z: 0, scale: 1, rotationY: 0 },
+      camera: { x: 0, y: 0, z: 4, targetX: 0, targetY: 0, targetZ: 0, fov: 45 },
+      invalidate: vi.fn(),
+      reset: vi.fn(),
+    } as unknown as ModelSceneHandle
+  }
+
+  /** 读取组件暴露的句柄；不存在的句柄一律为 null。 */
+  function readHandle(vm: ComponentPublicInstance): ModelSceneHandle | null {
+    return (vm as unknown as { getHandle: () => ModelSceneHandle | null }).getHandle()
+  }
+
+  /** 把句柄登记到渲染器根元素，模拟首帧完成后的真实登记位置。 */
+  function registerHandle(host: HTMLElement, handle: ModelSceneHandle): void {
+    const root = host.querySelector('.model-viewer-stub')
+    expect(root).not.toBeNull()
+    ;(root as unknown as Record<string, unknown>)[MODEL_SCENE_HANDLE_KEY] = handle
+  }
+
+  it('非交互实例从渲染器根元素读取已就绪句柄', async () => {
+    setRuntimePreloadedConfig({
+      manifest: {
+        assets: { product: 'hash-model' },
+        asset_metadata: { product: { file_hash: 'hash-model', render_type: 'model3d' } },
+        asset_base_url: '/assets/ws',
+      },
+    } as never)
+
+    const handle = createReadyHandle()
+    const { host, vm, unmount } = await mountAssetModel({ name: 'product' })
+    registerHandle(host, handle)
+
+    expect(readHandle(vm)).toBe(handle)
+
+    unmount()
+  })
+
+  it('交互实例不发放句柄，避免 Scene 驱动与查看交互叠加', async () => {
+    setRuntimePreloadedConfig({
+      manifest: {
+        assets: { product: 'hash-model' },
+        asset_metadata: { product: { file_hash: 'hash-model', render_type: 'model3d' } },
+        asset_base_url: '/assets/ws',
+      },
+    } as never)
+
+    const { host, vm, unmount } = await mountAssetModel({ name: 'product', interactive: true })
+    registerHandle(host, createReadyHandle())
+
+    expect(readHandle(vm)).toBeNull()
+
+    unmount()
+  })
+
+  it('渲染兜底分支没有句柄，返回 null 而不是抛错', async () => {
+    const { vm, unmount } = await mountAssetModel({ name: '', fallback: '无法渲染' })
+
+    expect(readHandle(vm)).toBeNull()
 
     unmount()
   })

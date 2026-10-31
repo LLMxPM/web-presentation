@@ -31,7 +31,7 @@ test('三维动作资源替换后旧签名在新放映中报失效', async ({ pa
   </main></template>
 <script setup lang="ts">
 import { ref } from 'vue'
-import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v3.vue'
+import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v1.vue'
 import { usePageScene } from '@runtime-kit/public/composables/motion/usePageScene.v1'
 import { useStaticPresentation } from '@runtime-kit/public/composables/static/useStaticPresentation.v1'
 const root = ref<HTMLElement | null>(null)

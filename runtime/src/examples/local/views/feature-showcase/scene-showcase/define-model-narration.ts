@@ -1,5 +1,5 @@
 /** 文件功能：联合样例的模型与旁白编排，依赖真实句柄片段，不猜索引/签名，不预估媒体完成。 */
-import type { ModelSceneHandle } from '@runtime-kit/public/components/assets/AssetModel.v3.vue'
+import type { ModelSceneHandle } from '@runtime-kit/public/components/assets/AssetModel.v1.vue'
 import type { PageSceneAuthoringContext } from '@runtime-kit/public/composables/motion/usePageScene.v1'
 import { createSceneMediaTask } from '@runtime-kit/public/composables/media/createSceneMediaTask.v1'
 

@@ -546,30 +546,39 @@
       "name": "AssetModel.v1",
       "import_path": "@runtime-kit/public/components/assets/AssetModel.v1.vue",
       "category": "asset",
-      "description": "按资源逻辑名渲染标准 glTF 2.0 / GLB 三维模型，支持多实例独立视角。",
+      "description": "按资源逻辑名渲染标准 glTF 2.0 / GLB 三维模型，支持实例视角配置与 Scene 实例句柄。",
       "capability": {
         "enabled": true,
         "previewable": true,
         "recommendation_level": "default",
         "display_name": "三维模型渲染",
-        "summary": "渲染 render_type=model3d 的自包含 GLB 资源；实例可分别设置场景、相机、背景与交互，同一资源可在多页面、多实例复用。",
-        "tags": ["model3d", "glb", "gltf"],
+        "summary": "渲染 render_type=model3d 的自包含 GLB 资源；实例可分别设置场景、相机、背景与交互，非交互实例可通过 ref.getHandle() 取得受限 Scene 句柄驱动正向片段与实例数值动画。",
+        "tags": ["model3d", "glb", "gltf", "scene"],
         "usage": [
           "import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v1.vue'",
           "布局提示：实际页面中的资源渲染容器必须通过 class 声明明确宽度和高度（如 Tailwind w-full h-80），不要用内联 style 替代 class，避免使用 min-h 或内容自由高度作为尺寸来源。",
           "<AssetModel name=\"product\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />",
           "<AssetModel name=\"product\" :camera-position=\"[0, 1, 4]\" :camera-target=\"[0, 0, 0]\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />",
-          "<AssetModel name=\"product\" :camera-index=\"1\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />"
+          "<AssetModel name=\"product\" :camera-index=\"1\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />",
+          "const model = ref(null)",
+          "<AssetModel ref=\"model\" name=\"product\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />",
+          "const handle = model.value.getHandle() // 只在非交互实例完成真实首帧后返回，交互实例恒为 null"
         ],
-        "returns": "Vue 组件；渲染三维模型的静态视角视图。",
-        "return_example": ["<AssetModel name=\"product\" :camera-position=\"[0, 1, 4]\" :camera-target=\"[0, 0, 0]\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />"],
+        "returns": "Vue 组件；非交互实例的 ref.getHandle() 返回 ModelSceneHandle（animation({ id, role, clipIndex, signature }) 生成 Scene task）；交互实例或首帧未就绪时返回 null。",
+        "return_example": [
+          "<AssetModel name=\"product\" :camera-position=\"[0, 1, 4]\" :camera-target=\"[0, 0, 0]\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />",
+          "scene.task(model.value.getHandle().animation({ id: 'action-a', role: 'blocking', clipIndex, signature }))"
+        ],
         "constraints": [
           "适用于 asset_metadata.render_type=model3d 的资源；首期只接受自包含 GLB（不引用外部文件）。",
           "相机优先级固定为显式 cameraPosition/cameraTarget → cameraIndex → 选中场景中按源索引排序的首个有效相机 → 自动取景；显式无效选择报错。",
           "cameraIndex 与显式 cameraPosition/cameraTarget 互斥；cameraPosition 与 cameraTarget 必须成对提供且不重合。",
           "实例参数不修改几何尺寸与文件材质；每个实例的节点、相机状态独立，卸载一个实例不影响另一个。",
           "Backend/Agent 只选择组件并传入资源名与展示参数，不直接依赖 Three.js 初始化细节。",
-          "实际页面使用时应为资源容器设置明确 width 和 height；避免用 min-h 或内容自由高度作为尺寸来源。"
+          "实际页面使用时应为资源容器设置明确 width 和 height；避免用 min-h 或内容自由高度作为尺寸来源。",
+          "interactive=true 的实例只做查看交互，getHandle() 恒为 null；需要片段播放的实例保持默认 false。",
+          "片段引用必须来自真实资源查询的 index 与 signature；开始前校验，不猜测动作名称；有限片段可 blocking，repeat=-1 仅 ambient。",
+          "数值副本可由 scene.visual 驱动，onUpdate 调用 handle.invalidate；Scene.onCleanup 登记 handle.reset。"
         ],
         "audiences": ["backend", "agent"],
         "preview_schema": {
@@ -1616,9 +1625,9 @@
     {
       "kind": "composable",
       "base_name": "useAudioCue",
-      "version_no": 2,
-      "name": "useAudioCue.v2",
-      "import_path": "@runtime-kit/public/composables/audio/useAudioCue.v2",
+      "version_no": 1,
+      "name": "useAudioCue.v1",
+      "import_path": "@runtime-kit/public/composables/audio/useAudioCue.v1",
       "category": "runtime",
       "description": "按语义 cue key 请求播放项目绑定的交互音效。",
       "capability": {
@@ -1629,7 +1638,7 @@
         "summary": "在页面交互中按语义 cue key 请求播放项目绑定的交互音效，音量、静音与执行上下文由 Runtime 统一处理。",
         "tags": ["audio", "cue", "interaction"],
         "usage": [
-          "import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v2'",
+          "import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v1'",
           "const { playCue } = useAudioCue()",
           "<button @click=\"playCue('interaction.confirm')\">确认</button>"
         ],
@@ -1847,31 +1856,6 @@
           "resolveColor('#0D286A') // '#0D286A'"
         ],
         "constraints": ["用于需要主题变量解析的自定义渲染场景。"],
-        "audiences": ["backend", "agent"]
-      }
-    },
-    {
-      "kind": "component",
-      "base_name": "AssetModel",
-      "version_no": 3,
-      "name": "AssetModel.v3",
-      "import_path": "@runtime-kit/public/components/assets/AssetModel.v3.vue",
-      "category": "asset",
-      "description": "Scene 正向片段与实例数值动画的三维模型。",
-      "capability": {
-        "enabled": true,
-        "previewable": false,
-        "recommendation_level": "advanced",
-        "display_name": "Scene 三维模型",
-        "summary": "每个模型实例独立正向播放真实片段；getHandle() 返回片段任务、整体变换和相机数值副本，不暴露共享材质或骨骼。",
-        "tags": ["scene-model"],
-        "usage": [
-          "import AssetModelV3 from '@runtime-kit/public/components/assets/AssetModel.v3.vue'",
-          "<AssetModelV3 name=\"product\" class=\"w-full h-80 rounded-lg border border-border p-0 bg-transparent overflow-hidden\" />"
-        ],
-        "returns": "Vue 组件；ref.getHandle() 返回 ModelSceneHandle，animation({ id, role, clipIndex, signature }) 生成 Scene task。",
-        "return_example": ["<AssetModelV3 name=\"product\" class=\"w-full h-80\" />"],
-        "constraints": ["片段引用必须来自真实资源查询的 index 与 signature；开始前校验，不猜测动作名称；有限片段可 blocking，repeat=-1 仅 ambient。", "组件固定关闭查看交互；普通可交互模型继续使用 AssetModel.v1。", "数值副本可由 scene.visual 驱动，onUpdate 调用 handle.invalidate；Scene.onCleanup 登记 handle.reset。"],
         "audiences": ["backend", "agent"]
       }
     },

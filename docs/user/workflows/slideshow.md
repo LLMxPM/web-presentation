@@ -28,7 +28,7 @@
 
 在资源库上传音频后，打开项目 **项目设置 → 音频**，调整主音量、旁白音量和音效音量，并按需绑定前进、后退或 `interaction.*` cue。保存后重新进入放映，才能让新快照使用更新后的绑定。
 
-页面旁白由页面中的 `AssetAudio.v1` 以 `purpose="narration"` 引用音频资源，并由页面 Scene 用 `createSceneMediaTask.v1` 显式接管，实际播放结束才算完成；页面交互音效由 `useAudioCue.v2` 触发，只等待真实播放许可回执。自动视频使用 `AssetVideo.v1` 的 `purpose="automatic"`；`purpose="content"` 的媒体只由用户手动播放，放映不会自动接管。同一页最多一个自动发声主媒体，其余自动视频必须静音。
+页面旁白由页面中的 `AssetAudio.v1` 以 `purpose="narration"` 引用音频资源，并由页面 Scene 用 `createSceneMediaTask.v1` 显式接管，实际播放结束才算完成；页面交互音效由 `useAudioCue.v1` 触发，只等待真实播放许可回执。自动视频使用 `AssetVideo.v1` 的 `purpose="automatic"`；`purpose="content"` 的媒体只由用户手动播放，放映不会自动接管。同一页最多一个自动发声主媒体，其余自动视频必须静音。
 
 旁白和 cue 在实际放映时播放；普通预览、截图和静态 PDF/PPTX 导出不会自动播放。浏览器阻止自动播放时，放映会进入「等待页面恢复」，需要在放映窗口本窗口点击允许播放；Editor 或演讲者控制台的点击不能代替该窗口的手势，全屏成功也不保证发声成功。
 

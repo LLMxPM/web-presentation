@@ -10,7 +10,7 @@ import { resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
 
 import AssetAudioV1 from './AssetAudio.v1.vue'
-import AssetModelV3 from './AssetModel.v3.vue'
+import AssetModelV1 from './AssetModel.v1.vue'
 import AssetVideoV1 from './AssetVideo.v1.vue'
 
 vi.mock('@runtime-kit/internal/renderers/ModelViewer.vue', async () => {
@@ -110,12 +110,17 @@ describe('Scene 资源组件', () => {
     expect(audio?.dataset.runtimeMediaPurpose).toBe('narration')
   })
 
-  it('Scene 模型固定关闭交互且不声明旧时间轴目标', async () => {
-    const host = await mount(AssetModelV3, { name: 'product', interactive: true })
+  it('模型实例默认关闭交互且不声明旧时间轴目标，interactive 显式开启查看交互', async () => {
+    const passiveHost = await mount(AssetModelV1, { name: 'product' })
 
-    const stub = host.querySelector<HTMLElement>('.model-viewer-stub')
-    expect(stub?.dataset.runtimeKitMotion).toBeUndefined()
-    expect(stub?.dataset.runtimeAssetName).toBe('product')
-    expect(stub?.querySelector('[data-stub-interactive]')?.getAttribute('data-stub-interactive')).toBe('false')
+    const passiveStub = passiveHost.querySelector<HTMLElement>('.model-viewer-stub')
+    expect(passiveStub?.dataset.runtimeKitMotion).toBeUndefined()
+    expect(passiveStub?.dataset.runtimeAssetName).toBe('product')
+    expect(passiveStub?.querySelector('[data-stub-interactive]')?.getAttribute('data-stub-interactive')).toBe('false')
+
+    const interactiveHost = await mount(AssetModelV1, { name: 'product', interactive: true })
+
+    const interactiveStub = interactiveHost.querySelector<HTMLElement>('.model-viewer-stub')
+    expect(interactiveStub?.querySelector('[data-stub-interactive]')?.getAttribute('data-stub-interactive')).toBe('true')
   })
 })

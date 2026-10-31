@@ -1,9 +1,9 @@
 <!-- 文件功能：通过正式公开入口展示多序列 Scene；静态模板无需动画、Canvas 或采样即可完整呈现。 -->
 <script setup lang="ts">
 import { ref } from 'vue'
-import AssetModel, { type ModelSceneComponent } from '@runtime-kit/public/components/assets/AssetModel.v3.vue'
+import AssetModel, { type ModelSceneComponent } from '@runtime-kit/public/components/assets/AssetModel.v1.vue'
 import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
-import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v2'
+import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v1'
 import { defineModelNarration } from './scene-showcase/define-model-narration'
 import { usePageScene } from '@runtime-kit/public/composables/motion/usePageScene.v1'
 import { useStaticPresentation } from '@runtime-kit/public/composables/static/useStaticPresentation.v1'

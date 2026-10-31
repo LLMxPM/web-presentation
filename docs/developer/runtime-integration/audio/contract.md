@@ -1,6 +1,6 @@
 # 音频统一契约
 
-状态：字段与默认值沿用音频 v1，执行按 B4（2026-10-30）收敛为 AudioBus 与显式 Scene 媒体任务；cue Promise 创作入口为 useAudioCue.v2。本文是音频字段、默认值、引用方式和运行语义的单一事实源。
+状态：字段与默认值沿用音频 v1，执行按 B4（2026-10-30）收敛为 AudioBus 与显式 Scene 媒体任务；cue Promise 创作入口为 useAudioCue.v1。本文是音频字段、默认值、引用方式和运行语义的单一事实源。
 
 ## 1. 资源类型
 
@@ -180,7 +180,7 @@ Runtime 不接收 `asset_id`，也不接收带票据的固定 URL；它通过当
 
 项目 cue 资产必须由 `ProjectArtifactBuilder` 主动加入资源集合，因为它们不一定出现在页面源码中。模板包导出使用逻辑资源名和文件内容表达绑定，导入时在目标工作空间解析/创建资产并重建 ID 绑定。
 
-## 6. `AudioCueEngine` 与 `useAudioCue.v2`
+## 6. `AudioCueEngine` 与 `useAudioCue.v1`
 
 Runtime shell 创建一个项目级 `AudioCueEngine`，首版使用 `HTMLAudioElement`：
 
@@ -193,7 +193,7 @@ Runtime shell 创建一个项目级 `AudioCueEngine`，首版使用 `HTMLAudioEl
 页面源码只使用公开 composable：
 
 ```ts
-import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v2'
+import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v1'
 
 const { playCue } = useAudioCue()
 
@@ -242,7 +242,7 @@ interface PageTransitionStartedEvent {
 ## 9. 兼容与版本
 
 - 没有 `audio_settings_json` 的历史项目读取为默认音量且无 cue 绑定，因此行为完全静默。
-- Runtime Kit 公开路径始终版本化；AssetAudio/Video.v2 已删除，保留 v1 的用途声明并新增显式 Scene 媒体任务。useAudioCue.v2 是 Promise 入口，旧同步 v1 已删除。
+- Runtime Kit 公开路径始终版本化；AssetAudio/Video.v2 已删除，保留 v1 的用途声明并新增显式 Scene 媒体任务。useAudioCue.v1 是唯一的 Promise 入口，旧的同步实现已删除且不保留任何版本分支。
 - 旧客户端省略 audio 设置时，项目更新不得清空现有 cue；显式 `null`、空列表和省略必须在 API 契约中区分。
 - `AssetAudio.v1` 一旦发布不做破坏性修改；未来不兼容演进新增更高版本号，已删除的 `v2` 不复用，避免同名不同语义。
 - 跨页 BGM 若未来立项，应新增独立 ambient channel 和会话模型，不复用 narration 的页面 DOM 生命周期。

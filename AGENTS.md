@@ -158,7 +158,7 @@ Runtime Kit 约束：
 
 页内编排与放映约束：
 
-- `usePageScene.v1` 是唯一页内编排入口；每页一个声明，内部登记多条 `visual`/`task`，只正向播放并按实际完成聚合。旧页内时间轴、`core/motion` 采样链、`Asset*.v2`、`useAudioCue.v1`、`PageMediaSession` 与 Presenter v4 已删除，不得重新引入兼容层或运行时 fallback。
+- `usePageScene.v1` 是唯一页内编排入口；每页一个声明，内部登记多条 `visual`/`task`，只正向播放并按实际完成聚合。旧页内时间轴、`core/motion` 采样链、`Asset*.v2`、旧的同步音效入口、`PageMediaSession` 与 Presenter v4 已删除，不得重新引入兼容层或运行时 fallback；`useAudioCue.v1` 与 `AssetModel.v1` 是当前唯一实现，不保留历史版本分支。
 - GSAP 只能通过 Scene 受管门面使用；页面与工作空间组件直接导入 GSAP 核心包或插件（DrawSVG、SplitText、ScrollTrigger 等）由 Backend 依赖解析、远程预览与构建/诊断插件共同拒绝。
 - 放映配置为 schema 4，翻页模式只有 `manual`、`timer`、`scene_end`，配合 `delay_ms`、`completion_delay_ms` 与 `loop`；不存在暂停、定位或任意时刻状态重建，保持/释放只抑制自动翻页。Backend DTO 与 Editor 配置表单必须同批修改。
 - 自动媒体必须由页面用 `createSceneMediaTask.v1` 显式接管并经窗口 AudioBus 发声；同页最多一个自动发声主媒体。静态执行上下文不创建 Scene、不发声、不推进 Mixer，静态呈现由 `useStaticPresentation.v1` 独立声明，详见[独立静态呈现](./docs/developer/runtime/static-presentation.md)。

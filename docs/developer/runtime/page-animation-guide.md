@@ -11,7 +11,7 @@
 | 数字变化、SVG 路径、自定义动画 | 页面或组件局部 JavaScript、浏览器原生动画 API；卸载时清理计时、动画帧、动画实例和监听 |
 | 图表动效 | `AssetChart` 的真实图表配置契约 |
 | 页内多序列编排 | `usePageScene.v1`：同一页一个声明，内部登记多条 `scene.visual` 与 `scene.task`，按实际完成聚合 |
-| 三维模型 | 静态或手动交互展示用 `AssetModel.v1`；正向片段播放用 `AssetModel.v3` 的实例句柄 |
+| 三维模型 | `AssetModel.v1` 同时承担静态/手动交互展示与正向片段播放：非交互实例用 `ref.getHandle()` 取实例句柄，`interactive=true` 时不发句柄 |
 | 翻页过渡 | 项目或逐页配置的 `none` / `fade` / `push`，与页内动画分别控制 |
 
 页内编排只有正向播放：`usePageScene.v1` 在挂载时登记，宿主准备时才执行 `define`，任务分为有限 `blocking` 与无限 `ambient`，放映按真实完成推进。不存在暂停、定位、任意时刻状态重建或全局播放时钟；放映控制条只提供保持/释放当前页，不暂停 Scene。页面自行实现的播放、暂停和重播只能按自身实际行为说明，不能宣称 Runtime 会自动接管。

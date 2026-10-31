@@ -148,7 +148,7 @@ def test_scene_authoring_standard_and_operation_guide_should_agree() -> None:
 
     for target in ("page", "component"):
         standard = get_default_code_standard(target)
-        for required in ("usePageScene.v1", "AssetModel.v3", "createSceneMediaTask.v1", "useAudioCue.v2",
+        for required in ("usePageScene.v1", "AssetModel.v1", "createSceneMediaTask.v1", "useAudioCue.v1",
                          "blocking", "ambient", "STATIC_PRESENTATION_UNAVAILABLE", "DOM/CSS/Canvas", "signature"):
             assert required in standard
         assert "不提供任意动作时刻截图" in standard

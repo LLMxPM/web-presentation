@@ -68,9 +68,9 @@ Runtime 根元素全屏后由唯一 Deck 启动当前页，过渡与资源就绪
 
 ## 模型与实例数值
 
-模型使用 `AssetModel.v3.vue`，通过组件 ref 的 `getHandle()` 在首帧就绪后取得句柄。`handle.animations()` 读取当前真实片段摘要；将资源查询确认的 `clipIndex/signature` 传入 `handle.animation({ id, role, clipIndex, signature, repeat?, rate? })`，再交给 `scene.task(...)`。有限动作可 blocking；repeat=-1 只能 ambient，同一实例同时仅允许一个动作，连续动作可用 afterTrack；多实例各自独立播放。资源替换后旧句柄失效，不能按名称猜测新片段。
+模型使用 `AssetModel.v1.vue`，通过组件 ref 的 `getHandle()` 在首帧就绪后取得句柄；该组件同时承担静态/可交互展示，`interactive=true` 的实例不发句柄。`handle.animations()` 读取当前真实片段摘要；将资源查询确认的 `clipIndex/signature` 传入 `handle.animation({ id, role, clipIndex, signature, repeat?, rate? })`，再交给 `scene.task(...)`。有限动作可 blocking；repeat=-1 只能 ambient，同一实例同时仅允许一个动作，连续动作可用 afterTrack；多实例各自独立播放。资源替换后旧句柄失效，不能按名称猜测新片段。
 
-`handle.transform` 提供 x/y/z/scale/rotationY（角度），`handle.camera` 提供位置、targetX/Y/Z 与 fov 数值副本；可用 scene.visual 驱动，并在 onUpdate 调用 handle.invalidate()。在 define 中登记 `scene.onCleanup(handle.reset)` 恢复初始视角与整体变换。材质、几何、骨骼与动作混合不通过此句柄开放。静态/可交互展示继续使用 AssetModel.v1；v2 已删除。实际 WebGL 和多模型资源曲线待 C3。
+`handle.transform` 提供 x/y/z/scale/rotationY（角度），`handle.camera` 提供位置、targetX/Y/Z 与 fov 数值副本；可用 scene.visual 驱动，并在 onUpdate 调用 handle.invalidate()。在 define 中登记 `scene.onCleanup(handle.reset)` 恢复初始视角与整体变换。材质、几何、骨骼与动作混合不通过此句柄开放。静态/可交互展示与片段播放共用 AssetModel.v1，历史 v2/v3 已合并删除。实际 WebGL 和多模型资源曲线待 C3。
 
 ## 显式媒体与 cue
 
@@ -87,7 +87,7 @@ usePageScene({ root, define(scene) {
 
 一页最多一个自动发声主媒体，其余自动视频显式 muted；循环只允许 ambient。prepare 不播放，run 才请求许可，ended 才实际完成。播放受阻时在当前 Runtime frame 出现“允许播放”按钮，必须当前窗口的点击恢复；Editor 父窗口和演讲者控制台不能代理用户手势。内容、Scene 媒体与 Deck cue 共用窗口 AudioBus 的静音与分组音量，离页清除重试和旧回执；静态上下文零通道与零播放。
 
-交互 cue 使用 `@runtime-kit/public/composables/audio/useAudioCue.v2`；playCue 返回 Promise，等待真实许可回执后得到 played/skipped/unavailable，不等待 cue 结束，不参与 Scene 完成聚合。旧同步 v1 与 AssetAudio/Video.v2 已删除，旁白/cue 功能门也已删除，默认开放不代表 C3 实机发声通过。完整字段见[音频契约](../runtime-integration/audio/contract.md)。
+交互 cue 使用 `@runtime-kit/public/composables/audio/useAudioCue.v1`；playCue 返回 Promise，等待真实许可回执后得到 played/skipped/unavailable，不等待 cue 结束，不参与 Scene 完成聚合。AssetAudio/Video.v2 已删除，旁白/cue 功能门也已删除，默认开放不代表 C3 实机发声通过。完整字段见[音频契约](../runtime-integration/audio/contract.md)。
 
 ## 合并前收口
 

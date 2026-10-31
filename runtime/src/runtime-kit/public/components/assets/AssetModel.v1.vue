@@ -2,6 +2,7 @@
   文件用途：AssetModel — 基于 manifest 资源名称渲染 Backend 托管的标准 glTF 2.0 / GLB 三维模型。
   传入 name（asset.name）即可，workspaceId、路径解析与 Three.js 引擎加载由内部自动完成。
   name 必须是 manifest 已登记且 render_type=model3d 的逻辑资源名，不接受 URL 或路径。
+  同一组件同时承担静态/可交互展示与 Scene 实例句柄：interactive=true 时只做查看交互，不发放句柄。
 -->
 <template>
   <ModelViewer
@@ -23,40 +24,11 @@
   <div v-else class="asset-model__fallback" v-bind="safeAttrs()" :data-runtime-asset-name="props.name">{{ fallbackMessage }}</div>
 </template>
 
-<script setup lang="ts">
-/**
- * AssetModel
- *
- * 使用示例：
- *   <AssetModel name="product" class="w-full h-80" />
- *   <AssetModel name="product" :camera-position="[0, 1, 4]" :camera-target="[0, 0, 0]" />
- *   <AssetModel name="product" :camera-index="1" :interactive="true" />
- *
- * Props:
- *   name           — 资源逻辑名 `asset.name`（必填、稳定资源名；无 src 时显示 fallback）
- *   sceneIndex     — 源文件场景索引；缺省取 glTF 默认场景，仍缺省时取第一个有效场景
- *   cameraIndex    — 源文件相机索引，须属于选中场景；与显式 position/target 互斥
- *   cameraPosition — 显式相机位置；必须与 cameraTarget 成对提供且两点不重合
- *   cameraTarget   — 显式相机目标；必须与 cameraPosition 成对提供
- *   cameraFov      — 显式透视相机垂直视场角（度），默认 45；仅显式 position/target 可用
- *   background     — 背景色，默认透明；接受 transparent 或 #RGB/#RRGGBB/#RRGGBBAA
- *   lighting       — auto 仅在选中场景无光照时补默认灯光；source 只用源文件光照
- *   interactive    — 是否启用查看交互；默认 false
- *   fallback       — 无法渲染时展示的兜底文案；只作为文案，不作为资源地址
- *
- * 相机优先级固定：显式 position/target → cameraIndex → 选中场景中按源索引排序的首个有效相机 → 自动取景。
- */
-import { computed, useAttrs } from 'vue'
-import { getRuntimePreloadedConfig, resolveResourcePath } from '@/core/utils/path'
-import { normalizeAssetKey } from '@/core/shared/runtime-preview'
-import ModelViewer from '@runtime-kit/internal/renderers/ModelViewer.vue'
-import { resolveAssetFallbackMessage } from '@runtime-kit/internal/utils/asset-fallback'
-import { DEFAULT_MODEL_FALLBACK_MESSAGE } from '@runtime-kit/internal/renderers/model3d/view-options'
+<script lang="ts">
+export type { ModelSceneComponent, ModelSceneHandle, ModelSceneAnimation } from '@/runtime-kit/internal/renderers/model3d/scene-contract'
 
-// attrs 已在双分支模板中显式 v-bind="safeAttrs" 透传，关闭自动 fallthrough 避免重复继承与非单根告警。
-defineOptions({ inheritAttrs: false })
-
-interface Props {
+/** AssetModel 实例展示参数；与 backend/app/core/model_view_options.v1.json 保持一致。 */
+export interface AssetModelProps {
   /** 资源逻辑名 `asset.name` */
   name: string
   /** 源文件场景索引 */
@@ -73,13 +45,49 @@ interface Props {
   background?: string
   /** 光照来源 */
   lighting?: 'auto' | 'source'
-  /** 是否启用查看交互 */
+  /** 是否启用查看交互；开启后只做查看交互，getHandle() 恒为 null */
   interactive?: boolean
   /** 兜底文案 */
   fallback?: string
 }
+</script>
 
-const props = withDefaults(defineProps<Props>(), {
+<script setup lang="ts">
+/**
+ * AssetModel
+ *
+ * 使用示例：
+ *   <AssetModel name="product" class="w-full h-80" />
+ *   <AssetModel name="product" :camera-position="[0, 1, 4]" :camera-target="[0, 0, 0]" />
+ *   <AssetModel name="product" :camera-index="1" :interactive="true" />
+ *   <AssetModel ref="model" name="product" class="w-full h-80" />  // model.getHandle()
+ *
+ * Props:
+ *   name           — 资源逻辑名 `asset.name`（必填、稳定资源名；无 src 时显示 fallback）
+ *   sceneIndex     — 源文件场景索引；缺省取 glTF 默认场景，仍缺省时取第一个有效场景
+ *   cameraIndex    — 源文件相机索引，须属于选中场景；与显式 position/target 互斥
+ *   cameraPosition — 显式相机位置；必须与 cameraTarget 成对提供且两点不重合
+ *   cameraTarget   — 显式相机目标；必须与 cameraPosition 成对提供
+ *   cameraFov      — 显式透视相机垂直视场角（度），默认 45；仅显式 position/target 可用
+ *   background     — 背景色，默认透明；接受 transparent 或 #RGB/#RRGGBB/#RRGGBBAA
+ *   lighting       — auto 仅在选中场景无光照时补默认灯光；source 只用源文件光照
+ *   interactive    — 是否启用查看交互；默认 false。开启后只做查看交互，getHandle() 恒为 null
+ *   fallback       — 无法渲染时展示的兜底文案；只作为文案，不作为资源地址
+ *
+ * 相机优先级固定：显式 position/target → cameraIndex → 选中场景中按源索引排序的首个有效相机 → 自动取景。
+ */
+import { computed, getCurrentInstance, useAttrs } from 'vue'
+import { getRuntimePreloadedConfig, resolveResourcePath } from '@/core/utils/path'
+import { normalizeAssetKey } from '@/core/shared/runtime-preview'
+import ModelViewer from '@runtime-kit/internal/renderers/ModelViewer.vue'
+import { resolveAssetFallbackMessage } from '@runtime-kit/internal/utils/asset-fallback'
+import { DEFAULT_MODEL_FALLBACK_MESSAGE } from '@runtime-kit/internal/renderers/model3d/view-options'
+import { readModelSceneHandle, type ModelSceneHandle } from '@runtime-kit/internal/renderers/model3d/scene-contract'
+
+// attrs 已在双分支模板中显式 v-bind="safeAttrs" 透传，关闭自动 fallthrough 避免重复继承与非单根告警。
+defineOptions({ inheritAttrs: false })
+
+const props = withDefaults(defineProps<AssetModelProps>(), {
   name: '',
   sceneIndex: undefined,
   cameraIndex: undefined,
@@ -146,6 +154,34 @@ function resolveManifestModelSrc(rawName: string): string {
 
 const src = computed(() => resolveManifestModelSrc(props.name))
 const canRender = computed(() => Boolean(src.value))
+
+const instance = getCurrentInstance()
+
+/**
+ * 读取当前实例的根元素；两条模板分支都只渲染一个根节点，句柄挂在渲染器根元素上。
+ * @returns 根 DOM 元素；未挂载或根节点不是元素时返回 null
+ */
+function resolveRootElement(): Element | null {
+  const element = instance?.proxy?.$el
+  return element instanceof Element ? element : null
+}
+
+/**
+ * 返回本次模型完成真实首帧后登记的受限 Scene 句柄。
+ *
+ * 只有非交互实例才发放句柄：interactive=true 时渲染器不登记句柄，此处再显式拦截一次，
+ * 保证「查看交互」与「Scene 驱动」不会同时出现在一个实例上。
+ * 资源替换后旧句柄自动失效，调用方需要重新取；不暴露材质、几何、骨骼或 Three.js 内部实例。
+ * @returns 可用的 ModelSceneHandle；未就绪、交互实例或渲染兜底时返回 null
+ */
+function getHandle(): ModelSceneHandle | null {
+  if (props.interactive) {
+    return null
+  }
+  return readModelSceneHandle(resolveRootElement())
+}
+
+defineExpose({ getHandle })
 </script>
 
 <style scoped>
