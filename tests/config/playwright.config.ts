@@ -87,5 +87,17 @@ export default defineConfig({
         storageState: storageStatePath,
       },
     },
+    {
+      // C3 集中实机验收专用：长稳、A04 资源曲线、多屏授权与受保护媒体慢速传输。
+      // 不进入 test:e2e:all 与全量门禁，只在显式 --project=acceptance 时运行。
+      name: 'acceptance',
+      testDir: resolve(e2eSpecsDir, 'acceptance'),
+      timeout: 30 * 60_000,
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: storageStatePath,
+        viewport: { width: 1600, height: 900 },
+      },
+    },
   ],
 })

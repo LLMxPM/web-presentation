@@ -235,7 +235,6 @@ B3/B4/B5 均工程完成，GB 开发出口关闭。MCP 快照/bindings 因 capab
 C1 工程完成，C3 待实施，GC 尚未通过。未运行真实浏览器/远程 Renderer、生产镜像、独立产物、真实声音/WebGL、长稳和全量主门禁；未重启开发服务、未修改 `.env` 或开发数据、未推送。C2 接续旧入口清零，C3 承接真实像素、静态零播放、不可呈现与取消资源释放证据。
 
 ## C2 旧链路清零与文档（2026-10-31）
-
 基线 `b9d4d6d`，改动记录时仍在工作树。删除 `runtime/src/core/motion/` 整目录（16 个源文件与 7 个测试）、`usePageTimeline.v1.ts` 与 3 个测试、`model3d/motion/motion-contract.ts`，共 28 个 Runtime 文件；B2 的 `core/scene/preview-bridge.ts` 是现行 Scene 预览桥，不是旧模块，保留。`render-ready.ts` 不再等待 motion readiness，`dev-debug.ts` 删除旧句柄冲突探测，`execution-policy.ts` 删除 `allowAutoStart` 与两个已无调用方的判定函数，manifest 删除 `usePageTimeline.v1` 导出。Presenter 残留命名收敛为 v5 意图动作，`presenter-playback-state` 与 `presenter-console__display-status` 是 DOM 标识符而非协议消息类型，保留。
 
 E2E 按「主体存续则移植、主体删除则删断言」处理：七个 `motion-*.spec.ts` 与 `runtime-heavy/pre-motion-joint.spec.ts` 改名为 `scene-*.spec.ts` / `scene-joint.spec.ts`，迁到 `usePageScene.v1` + `useStaticPresentation.v1` + schema 4 + Presenter v5，新增 `scene-page-source.ts` 与三个媒体/模型构造器；`motion-page-source.ts` 删除。Backend 契约测试改为断言旧入口不存在；`test_render_motion_dispatch.py` 改名 `test_render_static_dispatch.py`；`test_code_check.py` 的内容错误样例改为 `MODEL_CLIP_STALE`；`test_project_slideshow_settings.py` 合并两条旧命名重复用例。Editor 能力 mock 从 schema 2 改为 schema 4 单一工厂；投影测试与共享 fixture 同批换成 `scene_end`。
@@ -247,3 +246,15 @@ E2E 按「主体存续则移植、主体删除则删断言」处理：七个 `mo
 开发验证：Runtime 全套 178 文件 1400 通过、3 项既有跳过，check/build 通过；Editor 160 文件 904 通过，check/build 通过；Backend contracts 76 通过、7 项既有 Redis 环境跳过，另有 slideshow/render/code-check/AI/CLI-skill/工具规格定向 75 项通过；Renderer 68、render-contracts 58、根仓契约 129、仓库门禁 63 通过；生成物无漂移（269 paths / 367 schemas）；E2E 收集 40 用例 / 21 文件；相邻 CLI 仓 212 通过，跨仓 OpenAPI 契约未 skip。
 
 C2 工程完成，C3 待实施，GC 尚未通过。未运行浏览器、远程 Renderer、镜像、独立产物、多窗口、长稳或全量主门禁；未启动服务、未重置开发库、未修改 `.env`、未推送。实际命令与未运行项见 [C2 卡片](./work-packages/c2-legacy-zero.md)。
+
+## C3 观测入口补建（2026-10-31）
+
+C2 清零时缺失的四类入口已补建，仍属 C3 实施准备，不代表验收结论。新增独立 `acceptance` project（`tests/e2e/specs/acceptance/`），不进入 `test:e2e:all` 与 `test:all`，只能显式指定；共享观测逻辑在 [c3-probes](../../../../tests/e2e/helpers/c3-probes.ts)，沙箱搭建在 [scene-sandbox](../../../../tests/e2e/helpers/scene-sandbox.ts)。
+
+- 长稳：有头、单 worker、15 秒采样；输入 guard、RAF 间隔/掉帧、CDP `Memory.getDOMCounters().jsEventListeners` 低水位、媒体/WebGL/canvas 计数、Renderer 槽位与进程数；少于 30 分钟需显式允许且只作自检。
+- A04：`next`/`previous` 进出模型页，GC 后采样堆、监听器、上下文创建/丢失/存活与浏览器渲染进程；同文件第二条用例做 `WEBGL_lose_context` 丢失/恢复，丢失后让出一次宏任务再请求恢复（同任务内请求会被 Chromium 忽略）。
+- 多屏与慢速媒体：CDP 授予 `window-management` 后记录 `getScreenDetails()` 与判定；慢速媒体挂起受保护请求复现 `waiting`，断言成立后再放行并验证恢复播放。
+
+自检（缩短版，不作验收证据）：长稳 1 分钟 4 个样本，`noExternalInput=true`、槽位 idle、RAF P95 13.5ms、掉帧 4、保留上下文 1；A04 3 轮堆 33.3→34.9 MiB、监听器 116→146、上下文创建 1 存活 1；WebGL `lost/restored` 均为 true；多屏需有头运行，实取 `screens=1` 并判定单屏不可验证（无头一律 `NotAllowedError`，编辑器预览 iframe 还受 Permissions Policy 限制）；慢速媒体 `waiting=1`、`playing=1`。
+
+实机才暴露、交由 C3 判定的观测项：全幅页面内容会盖住控制条命中区域（`elementFromPoint` 落在页面内容上，演练改用事件派发触发同一处理器），有头运行 `data-wake-lock` 为 `denied`。未执行正式 30 分钟长稳、100 轮 A04、镜像/产物与全量门禁；未修改 `.env` 与开发库。

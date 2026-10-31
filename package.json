@@ -41,6 +41,10 @@
     "test:e2e": "pnpm run test:e2e:prepare && pnpm run test:e2e:run",
     "test:e2e:regression": "pnpm run test:e2e:prepare && playwright test --config tests/config/playwright.config.ts --project=visual-edit --project=ai --project=runtime-heavy",
     "test:e2e:all": "pnpm run test:e2e:prepare && playwright test --config tests/config/playwright.config.ts --project=auth --project=smoke --project=visual-edit --project=ai --project=runtime-heavy",
+    "test:c3:acceptance": "playwright test --config tests/config/playwright.config.ts --project=acceptance",
+    "test:c3:soak": "playwright test --config tests/config/playwright.config.ts --project=acceptance soak.spec.ts --headed --workers=1",
+    "test:c3:a04": "playwright test --config tests/config/playwright.config.ts --project=acceptance model-a04.spec.ts --workers=1",
+    "test:c3:multiscreen": "playwright test --config tests/config/playwright.config.ts --project=acceptance multiscreen.spec.ts --headed --workers=1",
     "test:all": "node ./scripts/testing/run-full-tests.mjs",
     "test:seed:smoke": "node ./scripts/testing/seed-smoke-data.mjs",
     "test:reset:data": "node ./scripts/testing/reset-test-data.mjs"

@@ -26,12 +26,23 @@ C1 已于 2026-10-31 完成工程收口（`5bd6d3f`，见 [C1 接线与验证](.
 | 镜像与三角色 | `python scripts/contracts/check-image-startup.py --image <tag> --variant runtime\|renderer\|lite\|full`、`python scripts/contracts/renderer-image-probe.py`、`pnpm run test:contracts:compose-images`、`python scripts/testing/docker-architecture.py`；分角色模板为 `deploy/compose/compose.runtime-roles.yml` | `docker_architecture_env.py` 真实编排 `preview`/`build`/`check` 三副本；核对 `__runtime_healthz`、`__runtime_readyz`、`runtime_kit_version` 与 `.runtime-build-id` |
 | 全量主门禁 | `pnpm run test:all` | 收口阶段执行；失败回修到责任包后重跑受影响项 |
 
-### 待建入口（旧实现已随 C2 删除，仓库内无替代）
+### 已补建的观测入口（2026-10-31）
 
-- **30 分钟受控长稳**：原入口 `tests/experiments/motion-g1/run.mjs --soak` 已删除。需重建有头运行、全屏透明输入 guard（以 `noExternalInput` 为通过条件）、CDP `Memory.getDOMCounters().jsEventListeners` 低水位、RAF 间隔与 dropped-frame 采集，并区分有头/无头 wake lock 结论。
-- **A04 模型进出保留曲线与 WebGL 恢复**：没有存活的挂载/卸载循环脚本，`WEBGL_lose_context` 丢失与恢复演练也没有入口；先建脚本再取修复或接受结论。
-- **多屏 `getScreenDetails` 授权**：缺观众窗口多屏授权的真实演练入口；当前窗口全屏回退不能记为通过。
-- **Firefox/WebKit 与移动端**：仓库没有对应 project 或设备入口；未验证即在支持矩阵记为明确不作承诺。
+C2 清零时缺失的四类入口已在 `tests/e2e/specs/acceptance/` 补建，作为独立 `acceptance` project 运行；该 project 不在 `test:e2e:all` 与 `test:all` 内，只能显式指定。所有证据同时写入测试附件与 `.tmp/c3-evidence/*.json`。
+
+| 验收范围 | 入口 | 观测与通过条件 |
+| :--- | :--- | :--- |
+| 30 分钟受控长稳 | `pnpm run test:c3:soak`（自带 `--headed --workers=1`，默认 30 分钟；`C3_SKIP_SOAK=1` 跳过，自检可 `C3_SOAK_MINUTES=1 C3_SOAK_ALLOW_SHORT=1`） | 15 秒采样 JS 堆、DOM/节点/`jsEventListeners` 低水位、RAF 间隔与掉帧、媒体/WebGL 计数、Renderer 槽位与进程数；通过条件为全程 `noExternalInput`、无错误覆盖层、保留上下文不超过 B3 有界池上限、槽位回到 idle |
+| A04 保留曲线 | `pnpm run test:c3:a04`（默认 100 轮，`C3_A04_CYCLES` 仅供脚本自检下调） | 每轮进出模型页并在 GC 后采样堆、监听器、上下文创建/丢失/存活、浏览器渲染进程；曲线与 `controlBarHitTest` 一并入证据，结论由 C3 判定修复或接受 |
+| WebGL 丢失/恢复 | 同上入口的第二条用例 | `WEBGL_lose_context` 丢失后让出一次宏任务再请求恢复；断言恢复成功或页面给出明确错误，静默失效不算通过 |
+| 多屏授权 | `pnpm run test:c3:multiscreen`（有头、单 worker） | 在顶层观众窗口经 CDP 授予 `windowManagement` 后调用 `getScreenDetails()`，记录屏幕数量与 `verdict`；无头实例一律 `NotAllowedError`，编辑器预览 iframe 受 Permissions Policy 限制，两者都不作为结论；单屏环境记为不可验证，不以当前窗口全屏回退冒充通过 |
+| 受保护媒体慢速传输 | `... --project=acceptance protected-media-slow.spec.ts` | 挂起受保护媒体请求复现 `waiting`，断言成立后才放行，要求真实恢复播放且页面内容区只有一个视频元素 |
+
+脚本自检（1 分钟长稳、3 轮进出，只证明入口可执行，不作为验收证据）：长稳 4 个样本，`noExternalInput=true`、槽位 `idle`、RAF P95 13.5ms、掉帧 4、媒体 1、保留上下文 1；A04 堆 33.3→34.9 MiB、监听器 116→146、上下文创建 1 存活 1；WebGL `lost=true/restored=true`；多屏在有头实例取到 `screens=1`、判定单屏不可验证；慢速媒体 `waiting=1`、恢复 `playing=1`。
+
+待 C3 判定、本次不预设结论的观测项：全幅页面内容会盖住控制条命中区域（`elementFromPoint` 落在页面内容上，演练用事件派发绕过）；有头运行时 `data-wake-lock` 记录为 `denied`。
+
+Firefox、WebKit 与移动端仍不建入口：仓库没有对应 project 或设备入口，本机虽已安装 Firefox/WebKit 浏览器二进制，但缺少设备与移动端拓扑，按「未验证、不作支持承诺」回填支持矩阵，改动前不得记为通过。
 
 ### 版本与指标记录
 
