@@ -571,7 +571,7 @@
         ],
         "constraints": [
           "适用于 asset_metadata.render_type=model3d 的资源；首期只接受自包含 GLB（不引用外部文件）。",
-          "相机优先级固定为显式 cameraPosition/cameraTarget → cameraIndex → 选中场景中按源索引排序的首个有效相机 → 自动取景；显式无效选择报错。",
+          "相机优先级固定为显式 cameraPosition/cameraTarget → cameraIndex → 选中场景中按源索引排序的首个有效相机 → 自动取景（覆盖可见几何、当前蒙皮姿态与实例变换）；显式无效选择报错。",
           "cameraIndex 与显式 cameraPosition/cameraTarget 互斥；cameraPosition 与 cameraTarget 必须成对提供且不重合。",
           "实例参数不修改几何尺寸与文件材质；每个实例的节点、相机状态独立，卸载一个实例不影响另一个。",
           "Backend/Agent 只选择组件并传入资源名与展示参数，不直接依赖 Three.js 初始化细节。",

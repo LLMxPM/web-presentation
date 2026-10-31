@@ -3,6 +3,7 @@ import type * as ThreeNamespace from 'three'
 import type { Model3dEngine, ParsedModelResource } from './engine'
 import { resizeAutoFitCamera } from './camera-state'
 import { adaptOrthographicFrustum, resolveOrthographicSourceFrustum, type BoundingSphere, type OrthoFrustum } from './camera-fit'
+import { computeVisibleBoundingSphere } from './visible-bounds'
 import { normalizeModelViewOptions } from './view-options'
 
 /** 每个 Viewer 使用独立相机状态，重载时显式重置基线。 */
@@ -159,16 +160,7 @@ export function createModelCameraController() {
    * @returns 包围球
    */
   function computeSceneBoundingSphere(scene: ThreeNamespace.Object3D, engineRef: Model3dEngine): BoundingSphere {
-    const { THREE } = engineRef
-    const box = new THREE.Box3().setFromObject(scene)
-    if (box.isEmpty()) {
-      return { center: { x: 0, y: 0, z: 0 }, radius: 0 }
-    }
-    const sphere = box.getBoundingSphere(new THREE.Sphere())
-    return {
-      center: { x: sphere.center.x, y: sphere.center.y, z: sphere.center.z },
-      radius: sphere.radius,
-    }
+    return computeVisibleBoundingSphere(engineRef.THREE, scene)
   }
 
   /**

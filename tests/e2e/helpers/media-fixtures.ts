@@ -6,36 +6,51 @@ function padTo4(buffer: Buffer, padByte: number): Buffer {
   return remainder === 0 ? buffer : Buffer.concat([buffer, Buffer.alloc(4 - remainder, padByte)])
 }
 
-/** 构造红色无光照三角形，便于通过像素断言模型确实渲染。 */
-export function buildRedModelGlb(): Buffer {
+/** 构造红色无光照三角形；蒙皮版本放大十倍，用于捕获按骨骼位置取景导致的裁切。 */
+export function buildRedModelGlb({ skinned = false }: { skinned?: boolean } = {}): Buffer {
   const positions = Buffer.alloc(9 * 4)
   const values = [0, 0.85, 0, -0.85, -0.75, 0, 0.85, -0.75, 0]
-  values.forEach((value, index) => positions.writeFloatLE(value, index * 4))
+  const scale = skinned ? 10 : 1
+  values.forEach((value, index) => positions.writeFloatLE(value * scale, index * 4))
+  const joints = Buffer.alloc(12)
+  const weights = Buffer.alloc(48)
+  for (let index = 0; index < 3; index += 1) weights.writeFloatLE(1, index * 16)
+  const binary = skinned ? Buffer.concat([positions, joints, weights]) : positions
   const gltf = {
     asset: { version: '2.0', generator: 'e2e-model-screenshot' },
     extensionsUsed: ['KHR_materials_unlit'],
-    buffers: [{ byteLength: positions.length }],
-    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: positions.length }],
+    buffers: [{ byteLength: binary.length }],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: positions.length },
+      ...(skinned ? [
+        { buffer: 0, byteOffset: 36, byteLength: joints.length },
+        { buffer: 0, byteOffset: 48, byteLength: weights.length },
+      ] : []),
+    ],
     accessors: [{
       bufferView: 0,
       componentType: 5126,
       count: 3,
       type: 'VEC3',
-      min: [-0.85, -0.75, 0],
-      max: [0.85, 0.85, 0],
-    }],
+      min: [-0.85 * scale, -0.75 * scale, 0],
+      max: [0.85 * scale, 0.85 * scale, 0],
+    }, ...(skinned ? [
+      { bufferView: 1, componentType: 5121, count: 3, type: 'VEC4' },
+      { bufferView: 2, componentType: 5126, count: 3, type: 'VEC4' },
+    ] : [])],
     materials: [{
       name: 'e2e-red-unlit',
       pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1], metallicFactor: 0, roughnessFactor: 1 },
       extensions: { KHR_materials_unlit: {} },
     }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }],
-    nodes: [{ mesh: 0 }],
-    scenes: [{ nodes: [0] }],
+    meshes: [{ primitives: [{ attributes: skinned ? { POSITION: 0, JOINTS_0: 1, WEIGHTS_0: 2 } : { POSITION: 0 }, material: 0 }] }],
+    nodes: skinned ? [{ mesh: 0, skin: 0 }, { name: 'joint' }] : [{ mesh: 0 }],
+    ...(skinned ? { skins: [{ joints: [1] }] } : {}),
+    scenes: [{ nodes: skinned ? [0, 1] : [0] }],
     scene: 0,
   }
   const jsonBytes = padTo4(Buffer.from(JSON.stringify(gltf), 'utf8'), 0x20)
-  const binBytes = padTo4(positions, 0x00)
+  const binBytes = padTo4(binary, 0x00)
   const jsonHeader = Buffer.alloc(8)
   jsonHeader.writeUInt32LE(jsonBytes.length, 0)
   jsonHeader.writeUInt32LE(0x4e4f534a, 4)
