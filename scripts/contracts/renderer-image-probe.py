@@ -36,9 +36,12 @@ class PreviewFixture(BaseHTTPRequestHandler):
             "data-runtime-route-path='/preview' "
             f"style='width:320px;height:240px;background:rgb(12,34,56)'>"
             f"<div style='height:120px;background:rgb(210,80,30)'></div></div>"
-            f"<script>window.__RENDER_READY__={{protocol:'render-ready.v1',artifactId:'{ARTIFACT}',"
+            f"<script>window.__EDITOR_RUNTIME_WAIT_FOR_VISUAL_ASSETS__=()=>Promise.resolve({{ok:true,failed:[],pending:[]}});"
+            f"window.__RENDER_READY__={{protocol:'render-ready.v1',artifactId:'{ARTIFACT}',"
             f"inputDigest:'{DIGEST}',executionContext:'capture',routePath:'/preview',"
-            f"entryPath:'/preview',mounted:true,fonts:{{ready:true}},visualAssets:{{ready:true}}}}</script>"
+            f"entryPath:'/preview',mounted:true,fonts:{{ready:true}},visualAssets:{{ready:true}},"
+            # C1 起 ready 阶段要求独立静态呈现回执，缺失会被判 RENDER_CONTRACT_MISMATCH。
+            f"staticPresentation:{{status:'ready'}}}}</script>"
         ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
