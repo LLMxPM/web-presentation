@@ -224,7 +224,7 @@ test('受控长稳：多页放映期间堆、监听器与帧间隔保持稳定�
       samples.push({
         elapsedMs: Date.now() - startedAt,
         page: pageLabel,
-        heapMib: toMib(counters.jsHeapUsedBytes),
+        heapMib: toMib(facts.heapUsedBytes),
         documents: counters.documents,
         nodes: counters.nodes,
         listeners: counters.jsEventListeners,
@@ -245,6 +245,18 @@ test('受控长稳：多页放映期间堆、监听器与帧间隔保持稳定�
     const tailFacts = await readC3Facts(frame)
     const tailCounters = await readCdpCounters(cdp)
     const heapValues = samples.map(sample => sample.heapMib as number | null).filter((value): value is number => value !== null)
+    // 不同页面的基线不同，堆趋势必须按页面分别给出；跨页首末值不能直接相减。
+    const heapByPage: Record<string, { samples: number; firstMib: number | null; lastMib: number | null; maxMib: number | null }> = {}
+    for (const sample of samples) {
+      const label = String(sample.page || 'unknown')
+      const heap = sample.heapMib as number | null
+      if (typeof heap !== 'number') continue
+      const entry = (heapByPage[label] ??= { samples: 0, firstMib: null, lastMib: null, maxMib: null })
+      entry.samples += 1
+      if (entry.firstMib === null) entry.firstMib = heap
+      entry.lastMib = heap
+      entry.maxMib = entry.maxMib === null ? heap : Math.max(entry.maxMib, heap)
+    }
     const listenerValues = samples
       .map(sample => sample.listeners as number | null)
       .filter((value): value is number => value !== null)
@@ -258,11 +270,12 @@ test('受控长稳：多页放映期间堆、监听器与帧间隔保持稳定�
       samples,
       summary: {
         sampleCount: samples.length,
+        heapByPage,
         heapFirstMib: heapValues[0] ?? null,
         heapLastMib: heapValues.at(-1) ?? null,
         heapGrowthMib:
           heapValues.length > 1 ? Math.round(((heapValues.at(-1) as number) - (heapValues[0] as number)) * 10) / 10 : null,
-        heapTailAfterGcMib: toMib(tailCounters.jsHeapUsedBytes),
+        heapTailAfterGcMib: toMib(tailFacts.heapUsedBytes),
         listenerMin: listenerValues.length ? Math.min(...listenerValues) : null,
         listenerMax: listenerValues.length ? Math.max(...listenerValues) : null,
         rafP95Avg: rafP95Values.length

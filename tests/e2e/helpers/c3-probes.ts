@@ -26,6 +26,8 @@ export interface C3PageFacts {
   media: { audios: number; videos: number; canvases: number }
   /** WebGL 上下文生命周期计数。 */
   gl: { created: number; lost: number; restored: number; alive: number }
+  /** 运行时帧内的 JS 堆占用；依赖 --enable-precise-memory-info，读取失败为 null。 */
+  heapUsedBytes: number | null
   /** 采样时是否有可见的运行时错误覆盖层。 */
   errorOverlay: boolean
 }
@@ -162,6 +164,10 @@ export async function readC3Facts(target: Page | Frame): Promise<C3PageFacts> {
         restored: gl.restored ?? 0,
         alive,
       },
+      heapUsedBytes:
+        typeof (performance as unknown as { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize === 'number'
+          ? ((performance as unknown as { memory: { usedJSHeapSize: number } }).memory.usedJSHeapSize)
+          : null,
       errorOverlay: Boolean(document.querySelector('[data-runtime-error], .runtime-error-overlay')),
     }
   })

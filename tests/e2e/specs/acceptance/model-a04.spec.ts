@@ -133,7 +133,7 @@ test('A04：模型页进出循环的堆与 WebGL 上下文保留曲线', async (
       curve.push({
         cycle,
         phase,
-        heapMib: toMib(counters.jsHeapUsedBytes),
+        heapMib: toMib(facts.heapUsedBytes),
         documents: counters.documents,
         nodes: counters.nodes,
         listeners: counters.jsEventListeners,

@@ -117,6 +117,7 @@ node .agents/skills/dev-start-test/scripts/full-test.mjs --stop-services
 - 服务异常先看实际地址、端口与日志；端口占用但探针失败时先定位原因，不直接重复启动或要求用户确认。
 - Windows 上 `localhost` 可能优先解析到 `::1`。若 Vite 显示 `ready`，但 `http://localhost:5173/` 无法连接，应检查监听地址与 `http://127.0.0.1:5173/`；Editor 的 `dev` 脚本默认绑定 `127.0.0.1`，重启旧进程后生效。依赖扫描与打包日志本身不是启动错误。
 - E2E 指纹不符或报告“智能体后台执行器正在停止”时，先确认是否经过运行中数据重置，再按第 2 节重建环境；不能据此排除代码回归。
+- Playwright 启动时会清空 `test-results/e2e/artifacts`；该目录累积过多文件时，清理可能被本机删除保护拦截并让整轮测试在启动阶段失败。改用 `--output .tmp/<独立目录>` 复用同一套服务和用例，不必先删历史产物。
 - AI Run 只读诊断：`uv run --project backend python -m app.scripts.diagnose_ai_run --run-id <id> --format summary`。
 - 可复用经验、启动/测试脚本变化维护在本技能；`AGENTS.md` 保留触发条件和总体要求。开发者文档保留入口导航，发现冲突示例时同步修正。
 - 共享逻辑放 `scripts/lib/`，优先包装根仓已有入口；进程规划与系统执行分离。改脚本后验证语法、dry-run 和对应边界测试。真实停止可使用独立临时监听进程验证，不为验证而停止现有开发服务。

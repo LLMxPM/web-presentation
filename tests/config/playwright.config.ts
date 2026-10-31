@@ -97,6 +97,8 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         storageState: storageStatePath,
         viewport: { width: 1600, height: 900 },
+        // C3 需要按运行时帧读取 performance.memory，Chromium 默认会把数值粗化。
+        launchOptions: { args: ['--enable-precise-memory-info'] },
       },
     },
   ],
