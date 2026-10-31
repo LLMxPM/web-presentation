@@ -28,21 +28,15 @@
     </template>
 
     <div class="flex shrink-0 flex-col border-b border-border-muted bg-canvas/80">
-      <div class="space-y-2 px-4 py-3">
-        <LibrarySegmentedControl
-          :model-value="activeGroupKey"
-          :options="assetGroupOptions"
-          :columns="assetGroupOptions.length"
-          @update:model-value="selectAssetGroup"
+      <div class="px-4 py-3">
+        <UiIconSegmented
+          :model-value="activeType"
+          :options="assetTypeIconOptions"
+          size="xs"
+          fluid
+          aria-label="资源类型"
+          @update:model-value="handleSelectAssetType"
         />
-        <div v-if="hasMultipleCurrentAssetTypes" class="rounded-xl border border-border/70 bg-surface p-1 shadow-sm">
-          <LibrarySegmentedControl
-            :model-value="activeType"
-            :options="currentAssetTypes"
-            :columns="currentAssetTypes.length"
-            @update:model-value="handleSelectAssetType"
-          />
-        </div>
       </div>
       <div class="border-t border-border-muted px-4 py-2">
         <LibraryChipFilter v-model="activeTagFilter" :options="availableTagOptions" />
@@ -222,7 +216,7 @@
 
 <script setup lang="ts">
 import { buildFileDownloadUrl } from '@/api/file-urls'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowUpRight,
@@ -234,6 +228,7 @@ import {
   Image,
   Music,
   PenTool,
+  Shapes,
   Sigma,
   Video,
   Workflow,
@@ -248,11 +243,10 @@ import { getErrorMessage } from '@/api/http'
 import type { AssetResponse, AssetType } from '@/types/api'
 import { Message } from '@/utils/message'
 import { buildWorkspaceAssetsPath } from '@/utils/workspace-routes'
-import { ASSET_GROUPS } from './asset-manager'
+import { ASSET_TYPE_OPTIONS } from './asset-manager'
 import AssetAudioPreview from '@/components/project/AssetAudioPreview.vue'
 import AssetPreviewFrame from '@/components/project/AssetPreviewFrame.vue'
 import LibraryChipFilter from '@/components/project/LibraryChipFilter.vue'
-import LibrarySegmentedControl from '@/components/project/LibrarySegmentedControl.vue'
 import DataState from '@/components/patterns/DataState.vue'
 import LibrarySidebarPanel from '@/components/project/LibrarySidebarPanel.vue'
 import BaseCloseButton from '@/components/ui/BaseCloseButton.vue'
@@ -260,7 +254,7 @@ import AssetPreviewBackgroundControl from '@/components/ui/AssetPreviewBackgroun
 import AssetPreviewSurface from '@/components/ui/AssetPreviewSurface.vue'
 import type { AssetPreviewBackground } from '@/components/ui/asset-preview-background'
 import PaginationControl from '@/components/ui/PaginationControl.vue'
-import { UiButton, UiDialog, UiIconButton } from '@/components/ui'
+import { UiButton, UiDialog, UiIconButton, UiIconSegmented, type IconSegmentedOption } from '@/components/ui'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -287,10 +281,20 @@ interface AgentAssetMutationDetail {
   workspaceId?: number | null
   assetId?: number | null
 }
-const assetGroups = ASSET_GROUPS
+/** 资源类型切换使用的图标；图标化后不再受侧栏文字宽度限制。 */
+const ASSET_TYPE_ICONS: Partial<Record<AssetType, Component>> = {
+  icon: Shapes,
+  image: Image,
+  video: Video,
+  audio: Music,
+  drawio: PenTool,
+  mermaid: Workflow,
+  chart: BarChart3,
+  formula: Sigma,
+  model3d: Box,
+}
 
-const activeGroupKey = ref(assetGroups[0]?.key || 'foundation')
-const activeType = ref<AssetType>('icon')
+const activeType = ref<AssetType>(ASSET_TYPE_OPTIONS[0]?.value || 'icon')
 const activeTag = ref<string | null>(null)
 const loading = ref(false)
 const assetDataState = computed<'loading' | 'empty' | 'ready'>(() => (
@@ -340,10 +344,13 @@ watch(
   { immediate: true },
 )
 
-const assetGroupOptions = computed(() => assetGroups.map(group => ({ label: group.label, value: group.key })))
-const currentAssetGroup = computed(() => assetGroups.find(group => group.key === activeGroupKey.value) || assetGroups[0])
-const currentAssetTypes = computed(() => currentAssetGroup.value?.types || [])
-const hasMultipleCurrentAssetTypes = computed(() => currentAssetTypes.value.length > 1)
+const assetTypeIconOptions = computed<IconSegmentedOption<AssetType>[]>(() => (
+  ASSET_TYPE_OPTIONS.map(option => ({
+    value: option.value,
+    label: option.label,
+    icon: ASSET_TYPE_ICONS[option.value] ?? FileText,
+  }))
+))
 
 const availableTagOptions = computed(() => availableTags.value.map(tag => ({ label: tag, value: tag })))
 const activeTagFilter = computed({
@@ -364,23 +371,11 @@ watch(searchKeyword, () => {
 })
 
 /**
- * 切换资源一级分组，并自动选中该分组首个类型。
- * @param groupKey 资源分组标识
- */
-function selectAssetGroup(groupKey: string): void {
-  const nextGroup = assetGroups.find(group => group.key === groupKey)
-  if (!nextGroup || nextGroup.key === activeGroupKey.value) return
-  activeGroupKey.value = nextGroup.key
-  activeType.value = nextGroup.types[0]?.value || activeType.value
-  page.value = 1
-}
-
-/**
  * 处理资源类型选择。
- * @param value 分段控件返回的资源类型字符串
+ * @param value 图标分段控件返回的资源类型字符串
  */
-function handleSelectAssetType(value: string): void {
-  activeType.value = value as AssetType
+function handleSelectAssetType(value: AssetType): void {
+  activeType.value = value
   page.value = 1
 }
 

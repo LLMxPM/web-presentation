@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ASSET_ALLOWED_EXTENSIONS,
-  ASSET_GROUPS,
+  ASSET_TYPE_OPTIONS,
   ASSET_UPLOAD_ACCEPT,
   TEXT_CREATABLE_ASSET_TYPES,
   getAcceptedAssetExtensionText,
@@ -17,10 +17,10 @@ function buildFile(name: string): File {
   return new File([new Uint8Array([0x67, 0x6c, 0x54, 0x46])], name, { type: 'model/gltf-binary' })
 }
 
-describe('asset-manager model3d 配置', () => {
-  it('内容资源分组应包含三维模型类型', () => {
-    const contentGroup = ASSET_GROUPS.find(group => group.key === 'content')
-    expect(contentGroup?.types.map(item => item.value)).toContain('model3d')
+describe('asset-manager 类型选项', () => {
+  it('类型选项应合并分组并包含三维模型类型', () => {
+    expect(ASSET_TYPE_OPTIONS.map(item => item.value)).toContain('model3d')
+    expect(ASSET_TYPE_OPTIONS[0]?.value).toBe('icon')
   })
 
   it('三维模型只接受 .glb 扩展名与 model/gltf-binary MIME', () => {
@@ -42,9 +42,8 @@ describe('asset-manager model3d 配置', () => {
 })
 
 describe('asset-manager audio 配置', () => {
-  it('内容资源分组与上传 accept 应包含音频白名单', () => {
-    const contentGroup = ASSET_GROUPS.find(group => group.key === 'content')
-    expect(contentGroup?.types.map(item => item.value)).toContain('audio')
+  it('类型选项与上传 accept 应包含音频白名单', () => {
+    expect(ASSET_TYPE_OPTIONS.map(item => item.value)).toContain('audio')
     expect(ASSET_ALLOWED_EXTENSIONS.audio).toEqual(['.mp3', '.m4a', '.aac', '.ogg', '.wav'])
     expect(ASSET_UPLOAD_ACCEPT.audio).toContain('audio/mpeg')
   })

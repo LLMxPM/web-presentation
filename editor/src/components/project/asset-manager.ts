@@ -1,31 +1,20 @@
 /**
- * 文件功能：提供资源管理面板的上传格式过滤、文本资源模板与文件构造辅助函数。
+ * 文件功能：提供资源管理面板的资源类型选项、上传格式过滤、文本资源模板与文件构造辅助函数。
  */
 import type { AssetResponse, AssetType } from '@/types/api'
 import { getAnalysisStatusLabel, getIconStyleLabel, getRenderModeLabel, isStrokeWidthEditable } from '@/utils/assetAnalysis'
 
-export const ASSET_GROUPS: { key: string; label: string; types: { label: string; value: AssetType }[] }[] = [
-  {
-    key: 'foundation',
-    label: '图标资源',
-    types: [
-      { label: '图标', value: 'icon' },
-    ],
-  },
-  {
-    key: 'content',
-    label: '内容资源',
-    types: [
-      { label: '图片', value: 'image' },
-      { label: '视频', value: 'video' },
-      { label: '音频', value: 'audio' },
-      { label: 'DrawIO', value: 'drawio' },
-      { label: 'Mermaid', value: 'mermaid' },
-      { label: '图表', value: 'chart' },
-      { label: '公式', value: 'formula' },
-      { label: '三维模型', value: 'model3d' },
-    ],
-  },
+/** 侧栏资源类型选项；不再区分图标/内容分组，图标排在最前以便快速取用。 */
+export const ASSET_TYPE_OPTIONS: { label: string; value: AssetType }[] = [
+  { label: '图标', value: 'icon' },
+  { label: '图片', value: 'image' },
+  { label: '视频', value: 'video' },
+  { label: '音频', value: 'audio' },
+  { label: 'DrawIO', value: 'drawio' },
+  { label: 'Mermaid', value: 'mermaid' },
+  { label: '图表', value: 'chart' },
+  { label: '公式', value: 'formula' },
+  { label: '三维模型', value: 'model3d' },
 ]
 
 export const ASSET_ALLOWED_EXTENSIONS: Record<AssetType, string[]> = {

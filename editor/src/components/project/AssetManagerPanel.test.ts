@@ -78,15 +78,36 @@ describe('AssetManagerPanel', () => {
     expect(screen.queryByText('字体')).toBeNull()
   })
 
-  it('图标资源只有单一类型时不展示冗余二级类型栏', async () => {
+  it('资源类型应合并为单行图标切换，不再展示分组页签', async () => {
     renderPanel()
 
     await waitFor(() => {
       expect(screen.getByText('brand_icon')).toBeInTheDocument()
     })
 
-    expect(screen.getByText('图标资源')).toBeInTheDocument()
-    expect(screen.queryByText('图标')).toBeNull()
+    expect(screen.queryByText('图标资源')).toBeNull()
+    expect(screen.queryByText('内容资源')).toBeNull()
+    expect(screen.getByRole('group', { name: '资源类型' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '图标' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '图片' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '三维模型' })).toBeInTheDocument()
+  })
+
+  it('点击图标类型按钮应按对应资源类型重新拉取列表', async () => {
+    renderPanel()
+
+    await waitFor(() => {
+      expect(screen.getByText('brand_icon')).toBeInTheDocument()
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: '图片' }))
+
+    await waitFor(() => {
+      expect(listWorkspaceAssetsMock).toHaveBeenLastCalledWith(
+        7,
+        expect.objectContaining({ assetType: 'image' }),
+      )
+    })
   })
 
   it('收到智能体资源写入事件后应刷新资源列表和标签', async () => {
