@@ -62,6 +62,8 @@ pnpm build
 
 Runtime 作为独立子项目发布自己的 Docker Hub 镜像。镜像保留 Vite dev server，因为 `/__preview`、诊断接口和构建 Worker 领取循环由 Vite 插件承载：构建只有 Worker 主动向 Backend `claim`/`renew`/`complete` 这一条执行路径，Runtime 不再暴露任何 HTTP 同步派发入口。
 
+Vite serve 同时用于本地开发和镜像中的平台服务，`RUNTIME_ROLE` 另行决定执行面。平台项目发布构建使用 Worker 的独立 Vite 配置，与本地 `pnpm build` 分属不同入口；预览、项目构建及诊断共用 Kit 导入策略。清单字段、快照规则和发布身份投影见 [Runtime Kit 契约](../docs/developer/runtime-integration/runtime-kit-contract.md)。
+
 以下命令从仓库根目录执行，构建时刷新基础镜像以获取 Node 22 的最新补丁版本。
 
 ```bash

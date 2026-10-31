@@ -1061,10 +1061,11 @@ export async function runProjectBuild(params: {
       outDir: distRoot,
       timeoutMs: params.deadline.remainingMs(),
       // 消费 Backend 下发的 runtime_kit_exports 快照作为构建端白名单；
-      // 空数组时 worker 侧回落本地 manifest 门禁。
-      runtimeKitAllowedImports: (params.configBundle.module_resolver?.runtime_kit_exports || []).map(
+      // 缺省时回落本地；显式空数组保持拒绝语义。
+      runtimeKitAllowedImports: params.configBundle.module_resolver?.runtime_kit_exports?.map(
         item => String(item.import_path || ''),
       ).filter(Boolean),
+      runtimeKitManifestVersion: params.configBundle.module_resolver?.runtime_kit_manifest_version,
       // 必须传 signal：租约失守时只有它能让 Vite 子进程真正退出，
       // 否则最耗 CPU/内存的阶段会一直跑到自然结束或 worker 超时。
       signal: params.deadline.signal,
@@ -1205,7 +1206,7 @@ async function runArtifactDiagnostics(params: {
     params.deadline.throwIfExpired()
 
     const viteStartedAt = Date.now()
-    await workspaceLease.runViteBuild('./', params.deadline.remainingMs())
+    await workspaceLease.runViteBuild('./', params.deadline.remainingMs(), params.configBundle.module_resolver)
     logRuntimeBuild('diagnostics.vite.finished', {
       ...diagnosticsContext,
       durationMs: Date.now() - viteStartedAt,

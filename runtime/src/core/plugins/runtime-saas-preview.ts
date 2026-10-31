@@ -34,8 +34,11 @@ import {
   type RuntimePreviewEntryDescriptor,
 } from '../shared/runtime-preview'
 import {
-  createRuntimeKitImportGate,
+  assertRuntimeKitImportAllowed,
   createRuntimeKitGateFromModuleResolver,
+  normalizeRuntimeKitImportPath,
+  normalizeRuntimeLocalModulePath,
+  type RuntimeKitImportGate,
 } from '../shared/runtime-kit-import-gate'
 import {
   buildSnapdomProxyFetchHeaders,
@@ -136,16 +139,63 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
   // 服务令牌缓存只用于加速；缓存缺失/过期时通过内部换票链路恢复，不构成正确性依赖。
   const serviceTokenCache: ServiceTokenCache = new PreviewBoundedCache<ServiceTokenCacheEntry>()
   const tailwindCssCache = new PreviewBoundedCache<string>()
+  const kitGateCache = new PreviewBoundedCache<RuntimeKitImportGate>()
   const caches: PreviewCacheBundle = {
     manifestCache,
     previewTokenCache,
     serviceTokenCache,
     tailwindCssCache,
+    kitGateCache,
   }
   const jwksTimeoutMs = normalizePositiveInteger(options.jwksTimeoutMs, DEFAULT_JWKS_TIMEOUT_MS)
   const backendRequestTimeoutMs = normalizePositiveInteger(options.backendRequestTimeoutMs, DEFAULT_BACKEND_REQUEST_TIMEOUT_MS)
   let basePath = ''
   let assetBase = ''
+  let runtimeRoot = ''
+
+  /** 只使用本次模块 ID 携带的票据恢复访问；缓存不能替代验签或 artifact 归属校验。 */
+  async function accessRemoteArtifact(artifactId: string, previewToken: string) {
+    if (!previewToken) {
+      throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '远程模块请求缺少预览上下文令牌。')
+    }
+    const verified = await verifyPreviewToken(previewToken, {
+      jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
+      audience: options.previewAudience || process.env.RUNTIME_PREVIEW_TOKEN_AUDIENCE || DEFAULT_PREVIEW_AUDIENCE,
+      timeoutMs: jwksTimeoutMs,
+    })
+    if (verified.publicContext.artifactId !== artifactId) {
+      throw new PreviewGatewayError(403, 'ARTIFACT_MISMATCH', '预览 artifact 与远程模块请求不一致。')
+    }
+    rememberPreviewToken(previewTokenCache, artifactId, previewToken)
+    const serviceToken = await ensureRuntimeServiceToken({
+      artifactId, previewToken,
+      backendApiBaseUrl: options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || '',
+      serviceTokenCache, requestTimeoutMs: backendRequestTimeoutMs,
+    })
+    return {
+      verified,
+      backendClient: createBackendClient({
+        backendApiBaseUrl: options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || '',
+        serviceToken, previewToken, requestTimeoutMs: backendRequestTimeoutMs,
+      }),
+    }
+  }
+
+  /** 冷副本凭当前票据恢复不可变快照门禁；每次访问仍独立验签，不依赖 HTML 请求先落到本副本。 */
+  async function resolveArtifactKitGate(artifactId: string, previewToken: string): Promise<RuntimeKitImportGate> {
+    const { verified, backendClient } = await accessRemoteArtifact(artifactId, previewToken)
+    const cacheKey = buildPreviewCacheKey(artifactId, `kit:${verified.publicContext.tenantId}`)
+    const cached = kitGateCache.get(cacheKey)
+    if (cached) return cached
+    const [manifest, bundle] = await Promise.all([
+      fetchArtifactManifest(artifactId, backendClient, manifestCache, caches),
+      backendClient.fetchConfigBundle(artifactId),
+    ])
+    assertManifestMatchesContext(manifest, verified.publicContext)
+    const gate = createRuntimeKitGateFromModuleResolver(bundle.module_resolver, runtimeRoot)
+    kitGateCache.set(cacheKey, gate, { artifactId })
+    return gate
+  }
 
   return {
     name: 'runtime-saas-preview',
@@ -154,6 +204,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
     enforce: 'pre',
 
     configResolved(resolvedConfig) {
+      runtimeRoot = resolvedConfig.root
       basePath = normalizeBasePath(resolvedConfig.base)
       assetBase = resolvedConfig.server?.origin ? resolvedConfig.server.origin + basePath : basePath
     },
@@ -271,6 +322,11 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
           ])
 
           assertManifestMatchesContext(manifest, verified.publicContext)
+          kitGateCache.set(
+            buildPreviewCacheKey(verified.publicContext.artifactId, `kit:${verified.publicContext.tenantId}`),
+            createRuntimeKitGateFromModuleResolver(configBundle.module_resolver, runtimeRoot),
+            { artifactId: verified.publicContext.artifactId },
+          )
 
           sendHtml(res, buildPreviewHtml({
             assetBase: resolvedAssetBase,
@@ -349,6 +405,14 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
         throw new PreviewGatewayError(400, 'SCENE_GSAP_IMPORT_FORBIDDEN', SCENE_GSAP_IMPORT_MESSAGE)
       }
 
+      // Vite alias 早于用户插件执行，必须同时识别展开后的绝对路径和原始/相对入口。
+      const kitPath = normalizeRuntimeKitImportPath(source, runtimeRoot, importerInfo.modulePath)
+      if (kitPath || normalizeRuntimeLocalModulePath(source, runtimeRoot, importerInfo.modulePath)) {
+        const gate = await resolveArtifactKitGate(importerInfo.artifactId, importerInfo.previewToken || '')
+        assertRuntimeKitImportAllowed(source, gate, importerInfo.modulePath)
+        if (kitPath) return null
+      }
+
       const resolveResult = resolveRemoteModuleImport(source, importerInfo.modulePath)
       if (resolveResult.type === 'ignore') {
         return null
@@ -384,35 +448,7 @@ export default function runtimeSaaSPreview(options: RuntimeSaaSPreviewOptions = 
       try {
         // 只认模块 ID 自带的 previewToken（来自本次请求链），绝不从进程内缓存取凭证。
         // 缓存票据可能是其它请求者写入的，用它验签等于替他人鉴权。
-        const effectivePreviewToken = parsed.previewToken || ''
-        if (!effectivePreviewToken) {
-          throw new PreviewGatewayError(401, 'PREVIEW_CONTEXT_REQUIRED', '远程模块请求缺少预览上下文令牌。')
-        }
-
-        const verified = await verifyPreviewToken(effectivePreviewToken, {
-          jwksUrl: options.jwksUrl || process.env.RUNTIME_PREVIEW_JWKS_URL || '',
-          audience: options.previewAudience || process.env.RUNTIME_PREVIEW_TOKEN_AUDIENCE || DEFAULT_PREVIEW_AUDIENCE,
-          timeoutMs: jwksTimeoutMs,
-        })
-        if (verified.publicContext.artifactId !== parsed.artifactId) {
-          throw new PreviewGatewayError(403, 'ARTIFACT_MISMATCH', '预览 artifact 与远程模块请求不一致。')
-        }
-        rememberPreviewToken(previewTokenCache, parsed.artifactId, effectivePreviewToken)
-        // 服务令牌缓存仅加速：任一副本缓存未命中时凭 previewToken 向 Backend 换票恢复。
-        const serviceToken = await ensureRuntimeServiceToken({
-          artifactId: parsed.artifactId,
-          previewToken: effectivePreviewToken,
-          backendApiBaseUrl: options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || '',
-          serviceTokenCache,
-          requestTimeoutMs: backendRequestTimeoutMs,
-        })
-
-        const backendClient = createBackendClient({
-          backendApiBaseUrl: options.backendApiBaseUrl || process.env.RUNTIME_BACKEND_API_BASE_URL || '',
-          serviceToken,
-          previewToken: effectivePreviewToken,
-          requestTimeoutMs: backendRequestTimeoutMs,
-        })
+        const { verified, backendClient } = await accessRemoteArtifact(parsed.artifactId, parsed.previewToken || '')
 
         const manifest = await fetchArtifactManifest(parsed.artifactId, backendClient, manifestCache, caches)
         assertManifestMatchesContext(manifest, verified.publicContext)
@@ -573,6 +609,7 @@ function invalidateArtifactCaches(
   caches.previewTokenCache.invalidateArtifact(artifactId)
   caches.serviceTokenCache.invalidateArtifact(artifactId)
   caches.tailwindCssCache.invalidateArtifact(artifactId)
+  caches.kitGateCache.invalidateArtifact(artifactId)
 }
 
 /**
@@ -583,19 +620,18 @@ interface PreviewCacheBundle {
   previewTokenCache: PreviewBoundedCache<string>
   serviceTokenCache: ServiceTokenCache
   tailwindCssCache: PreviewBoundedCache<string>
+  kitGateCache: PreviewBoundedCache<RuntimeKitImportGate>
 }
 
 /**
  * 根据 `@/views`、`/src/views` 或相对路径计算远程视图导入目标。
  * @param source import 源
  * @param importerPath 导入方逻辑路径
- * @param kitGate Runtime Kit 导入门禁（第二道闸）
  * @returns 目标逻辑路径；非远程视图导入时返回 null
  */
 function resolveRemoteModuleImport(
   source: string,
   importerPath: string,
-  kitGate?: ReturnType<typeof createRuntimeKitImportGate>,
 ): { type: 'remote'; modulePath: string } | { type: 'ignore' } | { type: 'disallowed'; source: string } {
   const normalizedSource = String(source || '').trim().replace(/\\/g, '/')
   if (!normalizedSource) {
@@ -604,16 +640,6 @@ function resolveRemoteModuleImport(
 
   if (normalizedSource.startsWith('@workspace-components/')) {
     return { type: 'remote', modulePath: normalizeRuntimeModulePath(normalizedSource) }
-  }
-
-  if (normalizedSource.startsWith('@runtime-kit/')) {
-    // 第二道闸：即使 Backend 写路径已校验，构建/预览解析仍须按 manifest 白名单强制。
-    const gate = kitGate || defaultRuntimeKitImportGate
-    const decision = gate.decide(normalizedSource)
-    if (!decision.allowed) {
-      return { type: 'disallowed', source: normalizedSource }
-    }
-    return { type: 'ignore' }
   }
 
   if (
@@ -639,16 +665,6 @@ function resolveRemoteModuleImport(
     if (!normalizedModulePath) {
       return { type: 'ignore' }
     }
-    if (normalizedModulePath.startsWith('src/runtime-kit/')) {
-      // 相对路径绕进 runtime-kit 时同样走白名单门禁。
-      const aliasForm = normalizedModulePath.replace(/^src\/runtime-kit\//, '@runtime-kit/')
-      const gate = kitGate || defaultRuntimeKitImportGate
-      const decision = gate.decide(aliasForm)
-      if (!decision.allowed) {
-        return { type: 'disallowed', source: normalizedSource }
-      }
-      return { type: 'ignore' }
-    }
     if (isBuiltinLocalViewPath(normalizedModulePath)) {
       return { type: 'ignore' }
     }
@@ -661,13 +677,6 @@ function resolveRemoteModuleImport(
   return { type: 'ignore' }
 }
 
-/** 本地 manifest 构成的默认门禁；Backend 下发 runtime_kit_exports 时可收紧。 */
-const defaultRuntimeKitImportGate = createRuntimeKitImportGate({})
-
-/**
- * 从 Backend module_resolver 构建收紧后的 Runtime Kit 门禁。
- * 消费 `runtime_kit_exports` 快照，与写路径校验边界保持一致。
- */
 export { createRuntimeKitGateFromModuleResolver }
 
 /**

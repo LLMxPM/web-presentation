@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { projectRuntimeKitExecutionManifest } from './runtime-kit-identity.mjs'
 
 /** 收集全部交付输入；Tailwind 也扫描测试源码，不能把这些文件排除在身份之外。 */
 function collect(root, relative) {
@@ -22,7 +23,10 @@ export function computeRuntimeBuildId(runtimeRoot, lockPath) {
     'package.json', 'vite.config.ts', 'index.html', 'postcss.config.js', 'tailwind.config.js', 'tsconfig.json',
   ].sort()
   for (const path of files) {
-    const content = readFileSync(join(runtimeRoot, path))
+    const raw = readFileSync(join(runtimeRoot, path))
+    const content = path === 'src/runtime-kit/manifest/runtime-kit.manifest.json'
+      ? Buffer.from(JSON.stringify(projectRuntimeKitExecutionManifest(JSON.parse(raw.toString('utf8')))))
+      : raw
     hash.update(`${path}\0${content.length}\0`).update(content)
   }
   hash.update('pnpm-lock.yaml\0').update(readFileSync(lockPath))

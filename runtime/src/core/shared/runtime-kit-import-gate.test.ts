@@ -15,6 +15,40 @@ import {
 } from './runtime-kit-import-gate'
 
 describe('runtime-kit-import-gate', () => {
+  it('缺省快照可回退本地，显式空快照必须拒绝', () => {
+    const path = '@runtime-kit/public/components/primitives/Icon.v1.vue'
+    expect(createRuntimeKitGateFromModuleResolver().decide(path).allowed).toBe(true)
+    const gate = createRuntimeKitGateFromModuleResolver({ runtime_kit_exports: [] })
+    expect(gate.usingBackendSnapshot).toBe(true)
+    expect(gate.decide(path).allowed).toBe(false)
+  })
+
+  it('Backend 快照不能开放真实本地 manifest 中不存在的入口', () => {
+    const path = '@runtime-kit/public/utils/Unknown.v1'
+    const gate = createRuntimeKitGateFromModuleResolver({ runtime_kit_exports: [{ import_path: path }] })
+    expect(gate.decide(path).allowed).toBe(false)
+  })
+
+  it('从 resolver 接入版本校验，本地版本无法读取时同样拒绝', () => {
+    const path = manifest.exports[0].import_path
+    expect(createRuntimeKitGateFromModuleResolver({ runtime_kit_manifest_version: 'other' }).decide(path))
+      .toMatchObject({ allowed: false, reason: expect.stringContaining('版本不匹配') })
+    expect(createRuntimeKitImportGate({ expectedManifestVersion: '1', runtimeKitExports: [{ import_path: path }] })
+      .decide(path).allowed).toBe(false)
+  })
+
+  it.each([
+    ['C:\\runtime', 'C:\\runtime\\src\\runtime-kit\\public\\utils\\colors.v1', 'C:\\runtime\\src\\views\\Page.vue'],
+    ['/runtime', '/runtime/src/runtime-kit/public/utils/colors.v1', '/runtime/src/views/Page.vue'],
+    ['/runtime', '../runtime-kit/public/utils/colors.v1', 'src/views/Page.vue'],
+    ['/runtime', '@/runtime-kit/public/utils/colors.v1', 'src/views/Page.vue'],
+    ['/runtime', '/@fs//runtime/src/runtime-kit/public/utils/colors.v1', 'src/views/Page.vue'],
+  ])('还原展开和相对路径：%s / %s', (root, source, importer) => {
+    const gate = createRuntimeKitGateFromModuleResolver(undefined, root)
+    expect(gate.decide(source, importer)).toMatchObject({ allowed: true, importPath: '@runtime-kit/public/utils/colors.v1' })
+    expect(gate.decide(source.replace(/\\/g, '/').replace('public/utils/colors.v1', 'internal/private.v1'), importer).allowed).toBe(false)
+  })
+
   it('应拒绝 internal、runtime-shell 与未版本化路径', () => {
     const gate = createRuntimeKitImportGate({
       localManifestExports: manifest.exports.map(item => ({ import_path: item.import_path })),

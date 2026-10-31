@@ -2,11 +2,15 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 
 from app.core.runtime_module_policy import (
     build_runtime_module_resolver_config,
     get_runtime_kit_capability_by_import_path,
+    get_runtime_kit_export_paths,
     is_runtime_public_local_module,
     is_runtime_public_local_module_path,
     list_runtime_kit_capabilities,
@@ -14,6 +18,31 @@ from app.core.runtime_module_policy import (
     load_runtime_kit_manifest,
     normalize_runtime_module_path,
 )
+
+
+def test_hidden_capability_should_keep_import_dependency_identity() -> None:
+    """关闭目录披露仍保留公开导入和依赖身份，不影响历史页面及组件。"""
+
+    item = _build_manifest_item("Icon", 1)
+    item["capability"]["enabled"] = False
+    manifest = {"version": "1.0.0", "alias": "@runtime-kit", "exports": [item]}
+    with patch("app.core.runtime_module_policy.load_runtime_kit_manifest", return_value=manifest):
+        assert list_runtime_kit_capabilities() == []
+        assert item["import_path"] in get_runtime_kit_export_paths()
+        dependency = get_runtime_kit_capability_by_import_path(item["import_path"])
+        assert dependency is not None
+        assert dependency.name == "Icon.v1"
+
+
+def test_manifest_should_reject_mismatched_entry_version(tmp_path: Path) -> None:
+    """能力版本与模块后缀必须一致，同时允许符号名与模块文件名不同。"""
+
+    item = _build_manifest_item("resolveColor", 1)
+    item["import_path"] = "@runtime-kit/public/utils/colors.v2"
+    path = tmp_path / "mismatch.json"
+    path.write_text(json.dumps({"alias": "@runtime-kit", "exports": [item]}), encoding="utf8")
+    with pytest.raises(ValueError, match="版本必须与 version_no"):
+        load_runtime_kit_manifest(path)
 
 
 def test_runtime_kit_manifest_loader_should_expose_public_contract() -> None:

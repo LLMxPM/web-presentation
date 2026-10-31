@@ -133,6 +133,7 @@ test:backend
 - **AI 工具规格、披露组或前端工具说明**：补充防漂移测试，确保工具 key、运行时 Tool、披露工具组和 `agent_guide` 一致。
 - **Runtime Kit manifest 或公开 import path**：补充 Backend 契约测试和 Runtime manifest 测试。Scene 是唯一页内编排入口，旧时间轴链路已随 C2 清零；全量与 C3 必需实机验收在合并 main 前收口，不以未完成正式验收阻止开发调试。
 - **预览、截图、构建、资源引用或 Runtime 回源**：补充相关 integration、contract 或 E2E smoke；三维模型渲染改动另补 `runtime-heavy/model3d-screenshot.spec.ts`。
+- **Kit 导入门禁/清单身份**：补跑 Runtime 的 `runtime-kit-preview.integration.test.ts`、`runtime-kit-worker.integration.test.ts`、`runtime-build-id.test.ts` 和 Backend 的 `test_runtime_module_policy.py`、`test_runtime_kit_identity.py`；前两项通过真实 Vite resolver/子进程验证，不需要业务服务或数据库。继续使用 `RUNTIME_ROLE=preview`，不以纯门禁函数测试替代真实 alias/IPC 接线验证。
 - **认证、权限、工作空间隔离**：补充多用户访问或 API 权限测试。
 - **HTTP DTO / OpenAPI**：运行 codegen 后执行 `test:contracts:generated`，并联动 Editor/Runtime/契约测试。
 - **DB 方言、写冲突、后台任务认领**：补充 `test:backend:unit`、`test:backend:integration` 与 `test:backend:pg-claim`。

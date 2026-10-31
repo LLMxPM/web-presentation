@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computeRuntimeBuildId } from '../../../scripts/write-runtime-build-id.mjs'
+import { projectRuntimeKitExecutionManifest } from '../../../scripts/runtime-kit-identity.mjs'
+import identityCase from '../../../../tests/fixtures/runtime-kit-identity-cases.json'
 
 const image = vi.hoisted(() => ({ buildId: undefined as string | undefined }))
 vi.mock('node:fs', async importOriginal => {
@@ -22,6 +24,36 @@ vi.mock('node:fs', async importOriginal => {
 })
 
 const fixtures: string[] = []
+
+it('执行投影与 Backend 共用 fixture，保留未知执行输入且不修改原始清单', () => {
+  const original = structuredClone(identityCase.manifest)
+  expect(projectRuntimeKitExecutionManifest(identityCase.manifest)).toEqual(identityCase.execution)
+  expect(identityCase.manifest).toEqual(original)
+})
+
+it('发布身份忽略目录文案，但覆盖入口、Schema 和引擎参数', () => {
+  const { root, lock } = fixture()
+  const directory = join(root, 'src/runtime-kit/manifest')
+  mkdirSync(directory, { recursive: true })
+  const path = join(directory, 'runtime-kit.manifest.json')
+  const manifest = structuredClone(identityCase.manifest)
+  writeFileSync(path, JSON.stringify(manifest))
+  const baseline = computeRuntimeBuildId(root, lock)
+  manifest.exports[0].description = '修订说明'
+  manifest.exports[0].capability.summary = '修订 Agent 文案'
+  manifest.exports[0].capability.enabled = false
+  writeFileSync(path, JSON.stringify(manifest, null, 2))
+  expect(computeRuntimeBuildId(root, lock)).toBe(baseline)
+  for (const changed of [
+    { ...manifest, exports: [{ ...manifest.exports[0], import_path: '@runtime-kit/public/utils/other.v1' }] },
+    { ...manifest, exports: [{ ...manifest.exports[0], capability: { preview_schema: { changed: true } } }] },
+    { ...manifest, model3d_engine: { changed: true } },
+    { ...manifest, future_execution: { changed: true } },
+  ]) {
+    writeFileSync(path, JSON.stringify(changed))
+    expect(computeRuntimeBuildId(root, lock)).not.toBe(baseline)
+  }
+})
 
 /** 构造两种构建目录都能消费的最小 Runtime 发布输入，不读取工作区私有配置。 */
 function fixture() {

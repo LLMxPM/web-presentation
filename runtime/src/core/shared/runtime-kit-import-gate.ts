@@ -1,11 +1,6 @@
-/**
- * 文件用途：Runtime Kit 导入白名单门禁——构建端与预览端共用的第二道闸。
- *
- * Backend 写路径已按 manifest 校验；本模块在 Runtime 构建/预览解析时再次强制：
- * 拒绝 `internal/`、未版本化路径，以及不在白名单中的 `@runtime-kit` 导入。
- * 白名单优先取 Backend `module_resolver.runtime_kit_exports`（写路径已验证的快照），
- * 缺省时回落到本地 Runtime Kit manifest。
- */
+/** 文件功能：为预览侧提供共享 Kit 导入策略的类型化入口与 Backend 配置适配。 */
+import localManifest from '../../runtime-kit/manifest/runtime-kit.manifest.json'
+import * as policy from './runtime-kit-import-policy.mjs'
 
 export interface RuntimeKitExportEntry {
   kind?: string
@@ -16,164 +11,70 @@ export interface RuntimeKitExportEntry {
 }
 
 export interface RuntimeKitImportGateOptions {
-  /** Backend 下发的 runtime_kit_exports 快照；优先于本地 manifest。 */
+  /** Backend 快照；缺省回退本地，显式空数组拒绝所有 Kit 导入。 */
   runtimeKitExports?: RuntimeKitExportEntry[]
-  /** 本地 manifest exports；无 Backend 快照时使用。 */
   localManifestExports?: RuntimeKitExportEntry[]
-  /** 期望的 manifest 版本；提供时与本地版本比对，不一致则拒绝。 */
   expectedManifestVersion?: string
-  /** 本地 manifest 版本。 */
   localManifestVersion?: string
+  /** Vite 根目录，用于还原 alias 展开后的绝对路径。 */
+  runtimeRoot?: string
 }
 
 export type RuntimeKitImportDecision =
   | { allowed: true; importPath: string; reason?: undefined }
   | { allowed: false; importPath: string; reason: string }
 
-const RUNTIME_KIT_ALIAS = '@runtime-kit'
-const VERSIONED_SUFFIX_PATTERN = /\.v\d+(?:\.[A-Za-z0-9]+)?$/
-/** 永远不得通过 `@runtime-kit` 暴露给页面/组件源码的路径片段。 */
-const FORBIDDEN_PATH_FRAGMENTS = [
-  '/internal/',
-  '/runtime-shell/',
-  '/component-preview',
-  '/PDF',
-]
-
-/**
- * 把 `@runtime-kit/...` 导入路径规范化；非 kit 导入返回空串。
- */
-export function normalizeRuntimeKitImportPath(rawPath: string): string {
-  const normalized = String(rawPath || '').trim().replace(/\\/g, '/')
-  if (!normalized.startsWith(`${RUNTIME_KIT_ALIAS}/`)) {
-    return ''
-  }
-  return normalized
+export interface RuntimeKitImportGate {
+  decide: (source: string, importer?: string) => RuntimeKitImportDecision
+  allowedPaths: Set<string>
+  usingBackendSnapshot: boolean
+  versionMismatch: boolean
 }
 
-/**
- * 判断 import_path 是否带 `.vN` 版本后缀（与 Backend runtime_module_policy 同规则）。
- */
-export function isVersionedRuntimeKitImportPath(importPath: string): boolean {
-  return VERSIONED_SUFFIX_PATTERN.test(String(importPath || '').trim())
+/** 识别当前 Runtime 的本地目录，避免 Kit alias 穿出后被当作普通导入放行。 */
+export function normalizeRuntimeLocalModulePath(source: string, runtimeRoot?: string, importer?: string): string {
+  return policy.normalizeRuntimeLocalModulePath(source, runtimeRoot, importer)
 }
 
-/**
- * 从导出条目收集合法 `@runtime-kit/...` import_path 集合。
- */
-export function collectRuntimeKitAllowedImportPaths(
-  exports: RuntimeKitExportEntry[] | undefined,
-): Set<string> {
-  const allowed = new Set<string>()
-  for (const item of exports || []) {
-    const path = normalizeRuntimeKitImportPath(item?.import_path || '')
-    if (path) {
-      allowed.add(path)
-    }
-  }
-  return allowed
+/** 将原始导入或展开后的路径还原为 Kit 地址，其它模块返回空串。 */
+export function normalizeRuntimeKitImportPath(source: string, runtimeRoot?: string, importer?: string): string {
+  return policy.normalizeRuntimeKitImportPath(source, runtimeRoot, importer)
 }
 
-/**
- * 构建 Runtime Kit 导入门禁。返回对单条 import 的裁决函数。
- */
-export function createRuntimeKitImportGate(options: RuntimeKitImportGateOptions = {}) {
-  const {
-    runtimeKitExports,
-    localManifestExports,
-    expectedManifestVersion,
-    localManifestVersion,
-  } = options
-
-  const usingBackendSnapshot = Array.isArray(runtimeKitExports) && runtimeKitExports.length > 0
-  const allowedPaths = collectRuntimeKitAllowedImportPaths(
-    usingBackendSnapshot ? runtimeKitExports : localManifestExports,
-  )
-
-  // Backend 快照与本地 manifest 版本必须一致，否则白名单可能对不上实际文件。
-  const versionMismatch = Boolean(
-    expectedManifestVersion
-    && localManifestVersion
-    && expectedManifestVersion !== localManifestVersion,
-  )
-
-  function decide(rawImportPath: string): RuntimeKitImportDecision {
-    const importPath = normalizeRuntimeKitImportPath(rawImportPath)
-    if (!importPath) {
-      return { allowed: true, importPath: String(rawImportPath || '') }
-    }
-
-    if (versionMismatch) {
-      return {
-        allowed: false,
-        importPath,
-        reason: `Runtime Kit manifest 版本不匹配：期望 ${expectedManifestVersion}，本地 ${localManifestVersion}`,
-      }
-    }
-
-    for (const fragment of FORBIDDEN_PATH_FRAGMENTS) {
-      if (importPath.includes(fragment)) {
-        return {
-          allowed: false,
-          importPath,
-          reason: `Runtime Kit 不允许导入内部路径：${importPath}`,
-        }
-      }
-    }
-
-    if (!isVersionedRuntimeKitImportPath(importPath)) {
-      return {
-        allowed: false,
-        importPath,
-        reason: `Runtime Kit 导入必须带 .vN 版本后缀：${importPath}`,
-      }
-    }
-
-    if (!allowedPaths.has(importPath)) {
-      return {
-        allowed: false,
-        importPath,
-        reason: `Runtime Kit 导入不在公开白名单中：${importPath}`,
-      }
-    }
-
-    return { allowed: true, importPath }
-  }
-
-  return {
-    decide,
-    allowedPaths,
-    usingBackendSnapshot,
-    versionMismatch,
-  }
+/** 判断入口是否包含受支持的整数版本后缀。 */
+export function isVersionedRuntimeKitImportPath(path: string): boolean {
+  return policy.isVersionedRuntimeKitImportPath(path)
 }
 
-/**
- * 便捷断言：不允许时抛出带错误码的 Error，供 Vite resolveId / load 钩子使用。
- */
-export function assertRuntimeKitImportAllowed(
-  rawImportPath: string,
-  gate: ReturnType<typeof createRuntimeKitImportGate>,
-): string {
-  const decision = gate.decide(rawImportPath)
-  if (decision.allowed === false) {
-    const error = new Error(decision.reason)
-    ;(error as Error & { code?: string }).code = 'RUNTIME_LOCAL_IMPORT_FORBIDDEN'
-    throw error
+/** 收集公开入口；空输入保持为空，交由门禁拒绝。 */
+export function collectRuntimeKitAllowedImportPaths(entries?: RuntimeKitExportEntry[]): Set<string> {
+  return policy.collectRuntimeKitAllowedImportPaths(entries)
+}
+
+/** 创建与 Worker 同源的纯策略裁决器。 */
+export function createRuntimeKitImportGate(options: RuntimeKitImportGateOptions = {}): RuntimeKitImportGate {
+  return policy.createRuntimeKitImportGate(options)
+}
+
+/** 将统一拒绝结果转为 Vite 可携带的稳定错误码。 */
+export function assertRuntimeKitImportAllowed(source: string, gate: RuntimeKitImportGate, importer?: string): string {
+  const decision = gate.decide(source, importer)
+  if (!decision.allowed) {
+    throw Object.assign(new Error(decision.reason), { code: 'RUNTIME_LOCAL_IMPORT_FORBIDDEN' })
   }
   return decision.importPath
 }
 
-/**
- * 从 Backend module_resolver 构建收紧后的 Runtime Kit 门禁。
- * 消费 `runtime_kit_exports` 快照，与写路径校验边界保持一致。
- */
+/** 使用 Backend 快照收紧真实本地清单，并核实其声明的版本。 */
 export function createRuntimeKitGateFromModuleResolver(moduleResolver?: {
   runtime_kit_exports?: RuntimeKitExportEntry[]
-}): ReturnType<typeof createRuntimeKitImportGate> {
-  const options: RuntimeKitImportGateOptions = {}
-  if (moduleResolver?.runtime_kit_exports?.length) {
-    options.runtimeKitExports = moduleResolver.runtime_kit_exports
-  }
-  return createRuntimeKitImportGate(options)
+  runtime_kit_manifest_version?: string
+}, runtimeRoot?: string): RuntimeKitImportGate {
+  return createRuntimeKitImportGate({
+    runtimeKitExports: moduleResolver?.runtime_kit_exports,
+    expectedManifestVersion: moduleResolver?.runtime_kit_manifest_version,
+    localManifestExports: localManifest.exports,
+    localManifestVersion: localManifest.version,
+    runtimeRoot,
+  })
 }

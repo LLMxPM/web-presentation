@@ -71,6 +71,9 @@ def _validate_runtime_kit_manifest_versions(manifest: dict[str, Any]) -> None:
             raise ValueError(f"Runtime Kit capability name 必须为 {expected_name}。")
         if not is_versioned_runtime_kit_import_path(import_path):
             raise ValueError(f"Runtime Kit import_path 必须包含 .v<整数版本>：{import_path}。")
+        path_version = _RUNTIME_KIT_VERSIONED_IMPORT_PATTERN.search(import_path)
+        if path_version is None or int(path_version.group("version_no")) != version_no:
+            raise ValueError(f"Runtime Kit import_path 版本必须与 version_no={version_no} 一致：{import_path}。")
         if name in seen_names:
             raise ValueError(f"Runtime Kit capability name 重复：{name}。")
         base_version_key = (kind, base_name, version_no)
@@ -269,11 +272,11 @@ def get_runtime_kit_capability_by_import_path(
     import_path: str,
     manifest_path: str | Path | None = None,
 ) -> RuntimeKitImportDependency | None:
-    """按版本化 import_path 读取 Runtime Kit 能力依赖元数据。"""
+    """按公开入口读取依赖身份；目录披露开关不影响已有源码的兼容导入。"""
 
     normalized_path = str(import_path or "").strip().replace("\\", "/")
-    for item in list_runtime_kit_capabilities(manifest_path, include_all_versions=True):
-        if item["import_path"] != normalized_path:
+    for item in load_runtime_kit_manifest(manifest_path)["exports"]:
+        if not isinstance(item, dict) or item.get("import_path") != normalized_path:
             continue
         return RuntimeKitImportDependency(
             name=str(item["name"]),

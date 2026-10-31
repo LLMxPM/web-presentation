@@ -1,0 +1,34 @@
+{
+  "manifest": {
+    "version": "1.0.0",
+    "alias": "@runtime-kit",
+    "model3d_engine": { "engineVersion": "fixture" },
+    "future_execution": { "strict": true },
+    "exports": [{
+      "kind": "util", "base_name": "resolveColor", "version_no": 1,
+      "name": "resolveColor.v1", "import_path": "@runtime-kit/public/utils/colors.v1",
+      "category": "runtime", "description": "目录说明", "future_export": 1,
+      "capability": {
+        "enabled": true, "previewable": true, "display_name": "颜色解析", "summary": "摘要",
+        "tags": ["theme"], "usage": ["示例"], "returns": "返回值", "return_example": ["结果"],
+        "constraints": ["文档约束"], "audiences": ["agent"],
+        "preview_schema": { "props": { "size": { "default": 1 } } },
+        "preview_options": { "padding": 0 }, "future_capability": true
+      }
+    }]
+  },
+  "execution": {
+    "version": "1.0.0",
+    "alias": "@runtime-kit",
+    "model3d_engine": { "engineVersion": "fixture" },
+    "future_execution": { "strict": true },
+    "exports": [{
+      "kind": "util", "base_name": "resolveColor", "version_no": 1,
+      "name": "resolveColor.v1", "import_path": "@runtime-kit/public/utils/colors.v1", "future_export": 1,
+      "capability": {
+        "preview_schema": { "props": { "size": { "default": 1 } } },
+        "preview_options": { "padding": 0 }, "future_capability": true
+      }
+    }]
+  }
+}

@@ -17,7 +17,7 @@ import {
 } from 'fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
 
-import { normalizeRuntimeModulePath } from '../shared/runtime-preview'
+import { normalizeRuntimeModulePath, type RuntimeModuleResolverConfig } from '../shared/runtime-preview'
 import {
   RuntimeBuildWorkerProcessError,
   RuntimeDiagnosticsWorker,
@@ -76,7 +76,7 @@ export interface RuntimeDiagnosticsWorkspaceLease {
   tempRoot: string
   taskId: string
   taskRoot: string
-  runViteBuild: (base?: string, timeoutMs?: number) => Promise<void>
+  runViteBuild: (base?: string, timeoutMs?: number, moduleResolver?: RuntimeModuleResolverConfig) => Promise<void>
   release: () => Promise<void>
 }
 
@@ -183,7 +183,7 @@ export class RuntimeDiagnosticsWorkspacePool {
         tempRoot: slot.root,
         taskId,
         taskRoot,
-        runViteBuild: async (base = './', timeoutMs?: number) => {
+        runViteBuild: async (base = './', timeoutMs?: number, moduleResolver?: RuntimeModuleResolverConfig) => {
           try {
             if (this.reuseWorker) {
               slot.worker ||= new RuntimeDiagnosticsWorker({
@@ -191,7 +191,7 @@ export class RuntimeDiagnosticsWorkspacePool {
                 maxOldSpaceMb: this.workerMaxOldSpaceMb,
                 timeoutMs: this.workerTimeoutMs,
               })
-              await slot.worker.run(base, timeoutMs)
+              await slot.worker.run(base, timeoutMs, moduleResolver)
               return
             }
             await runRuntimeViteBuildInWorker({
@@ -199,6 +199,8 @@ export class RuntimeDiagnosticsWorkspacePool {
               taskRoot,
               base,
               mode: 'diagnostics',
+              runtimeKitAllowedImports: moduleResolver?.runtime_kit_exports?.map(item => item.import_path),
+              runtimeKitManifestVersion: moduleResolver?.runtime_kit_manifest_version,
               maxOldSpaceMb: this.workerMaxOldSpaceMb,
               timeoutMs: resolveTaskTimeoutMs(timeoutMs, this.workerTimeoutMs),
             })
