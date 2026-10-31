@@ -47,7 +47,7 @@ pnpm dev
 ### 3. 示例目录分层
 
 - `src/examples/public`：对外示例，面向平台工作空间组件、文档和接入方参考。
-- `src/examples/local`：本地示例，仅服务 `pnpm dev` 默认 fixture 与 Runtime 壳层调试。
+- `src/examples/local`：本地示例，仅服务 `pnpm dev` 默认 fixture 与 Runtime 壳层调试；`local/views/feature-showcase/` 按「能力总览 + 资源渲染 / 页面与路由 / 运行时能力」分章覆盖 Runtime Kit 全部公开能力，入口见 [`src/examples/README.md`](./src/examples/README.md)。
 - `src/views`：运行时入口视图目录，目前保留整页预览入口和组件预览入口。
 
 ### 4. 类型检查、测试与构建

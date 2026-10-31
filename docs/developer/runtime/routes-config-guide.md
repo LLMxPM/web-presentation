@@ -15,16 +15,19 @@
 - **子页面** (child)：作为分组路由下的独立内容页，必须配置 `component`，其父节点只能是“分组路由”
 
 ```
-```
-分组路由: /feature-showcase (无法配置组件，自动重定向到第一个子页面)
-├── 子页面: /feature-showcase/index (独立页面组件)
-├── 子页面: /feature-showcase/theme-showcase (独立页面组件)
-└── 子页面: /feature-showcase/mermaid-showcase (独立页面组件)
+分组路由: /assets (无法配置组件，自动重定向到第一个子页面)
+├── 子页面: /assets/image (独立页面组件)
+├── 子页面: /assets/video (独立页面组件)
+└── 子页面: /assets/mermaid (独立页面组件)
 
-独立页面: /home (独立页面组件，不允许有子页面)
+分组路由: /runtime-kit
+├── 子页面: /runtime-kit/theme (独立页面组件)
+└── 子页面: /runtime-kit/scene (独立页面组件，附带 advance 配置)
+
+独立页面: /capabilities (独立页面组件，不允许有子页面)
 ```
 
-> **注意**：访问分组路由 URL 时，会自动重定向到 `order` 最小的子页面。
+> **注意**：访问分组路由 URL 时，会自动重定向到 `order` 最小的子页面。Runtime 本地 fixture 的完整章节划分见 [`runtime/public/config/routes.config.yaml`](../../../runtime/public/config/routes.config.yaml) 与 [Runtime 示例目录](../../../runtime/src/examples/README.md)。
 
 ### 添加新模块和页面
 

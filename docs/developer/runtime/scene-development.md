@@ -45,7 +45,7 @@ usePageScene({ root, define(scene) {
 
 ## 控制台播放
 
-完整样例位于 `runtime/src/examples/local/views/feature-showcase/SceneShowcase.vue`。Runtime 独立运行时进入 `/feature-showcase/scene-showcase`；公开声明根为 `#scene-showcase`，可执行 `await window.__RUNTIME_SCENE_DEBUG__.play('#scene-showcase')`。本地路由 fixture 为该页设置 `scene_end`，有限数字、文字、描边与 Canvas 任务完成后停留 300ms 再推进，DOM/CSS 无限装饰不阻塞；它不修改平台项目的 Backend 配置。样例已通过类型、构建和真实 GSAP ticker 的假时钟开发回归，像素表现和实际浏览器生命周期待 C3。
+完整样例位于 [`runtime/src/examples/local/views/feature-showcase/runtime/SceneShowcase.vue`](../../../runtime/src/examples/local/views/feature-showcase/runtime/SceneShowcase.vue)。Runtime 独立运行时进入 `/runtime-kit/scene`；公开声明根为 `#scene-showcase`，可执行 `await window.__RUNTIME_SCENE_DEBUG__.play('#scene-showcase')`。本地路由 fixture 为该页设置 `scene_end`，有限数字、文字、描边与 Canvas 任务完成后停留 300ms 再推进，DOM/CSS 无限装饰不阻塞；它不修改平台项目的 Backend 配置。样例已通过类型、构建和真实 GSAP ticker 的假时钟开发回归，像素表现和实际浏览器生命周期待 C3。
 
 复用已运行的 Vite 开发服务，打开页面或 Editor 预览，在浏览器开发者工具中选择 **Runtime 预览 iframe 的执行上下文**。全屏放映退出后执行：
 
@@ -103,6 +103,6 @@ BroadcastChannel 和即时 storage 事件可以重复投递，由同一接收器
 
 ## 联合创作样例
 
-`runtime/src/examples/local/views/feature-showcase/SceneShowcase.vue` 默认展示数字、打字机、SVG 描边和 DOM/CSS/Canvas 粒子。传入真实 `modelName` 与 `narrationName` 后，同一 Scene 增加两个已签名模型动作与旁白；`interaction.scene-finished` 绑定存在时，第二段动作完成可触发 cue。两个资源名必须同时提供，模型必须至少有两个真实、正时长且有签名的片段；不足时明确失败，不猜动作或改成单段。
+[`runtime/src/examples/local/views/feature-showcase/runtime/SceneShowcase.vue`](../../../runtime/src/examples/local/views/feature-showcase/runtime/SceneShowcase.vue) 默认展示数字、打字机、SVG 描边和 DOM/CSS/Canvas 粒子。传入真实 `modelName` 与 `narrationName` 后，同一 Scene 增加两个已签名模型动作与旁白；`interaction.scene-finished` 绑定存在时，第二段动作完成可触发 cue。两个资源名必须同时提供，模型必须至少有两个真实、正时长且有签名的片段；不足时明确失败，不猜动作或改成单段。
 
 C3 使用助手或 CLI 查询工作空间资源及完整动作摘要，绑定真实资源和 cue，再通过页面 Mutation Job 写入等价的完整源码。实际导入页面时将可选 props 替换成工具查询到的真实逻辑名，不导入本仓 examples 私有路径。开发测试使用真实 Mixer 正向更新和媒体 ended 替身，已验证顺序、聚合与离页清理；这些证据不代表资源加载、WebGL 像素或发声通过。

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" role="img" aria-label="Runtime 资源示例图">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#173B5C"/>
+      <stop offset="52%" stop-color="#2D7BB8"/>
+      <stop offset="100%" stop-color="#159A8C"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="url(#grid)"/>
+  <rect width="1200" height="360" fill="url(#glow)"/>
+  <circle cx="930" cy="196" r="132" fill="#ffffff" fill-opacity="0.12"/>
+  <circle cx="930" cy="196" r="86" fill="#ffffff" fill-opacity="0.16"/>
+  <circle cx="930" cy="196" r="42" fill="#ffffff" fill-opacity="0.9"/>
+  <path d="M120 512 L300 396 L470 462 L650 320 L830 372 L1060 214" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#ffffff">
+    <circle cx="120" cy="512" r="9"/>
+    <circle cx="300" cy="396" r="9"/>
+    <circle cx="470" cy="462" r="9"/>
+    <circle cx="650" cy="320" r="9"/>
+    <circle cx="830" cy="372" r="9"/>
+    <circle cx="1060" cy="214" r="9"/>
+  </g>
+  <text x="96" y="140" fill="#ffffff" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="30" letter-spacing="8" opacity="0.85">RUNTIME KIT</text>
+  <text x="92" y="238" fill="#ffffff" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="72" font-weight="700">资源示例图</text>
+  <text x="96" y="292" fill="#ffffff" font-family="'Segoe UI', 'PingFang SC', sans-serif" font-size="28" opacity="0.82">1200 × 675 · 用于 AssetImage 填充与裁剪演示</text>
+</svg>

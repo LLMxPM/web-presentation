@@ -1,4 +1,4 @@
-# 文件功能：Runtime 独立运行路由与整页过渡示例；平台配置入口待接入。
+# 文件功能：Runtime 独立运行的路由 fixture，按能力章节组织本地示例页，覆盖 Runtime Kit 全部公开能力。
 transitionDefaults:
   effect: fade
   durationMs: 400
@@ -16,6 +16,7 @@ routes:
     meta:
       title: 首页
       order: 0
+
   - route: contents
     component: '@/examples/local/views/defaultpage/TableOfContentsPage.vue'
     meta:
@@ -24,85 +25,110 @@ routes:
       transition:
         effect: push
         durationMs: 400
-  - route: feature-showcase
+
+  - route: capabilities
+    component: '@/examples/local/views/feature-showcase/Index.vue'
     meta:
-      title: 功能展示
+      title: 能力总览
       order: 2
+
+  - route: assets
+    meta:
+      title: 资源渲染
+      order: 3
     children:
-      - route: index
-        component: '@/examples/local/views/feature-showcase/Index.vue'
+      - route: image
+        component: '@/examples/local/views/feature-showcase/assets/ImageShowcase.vue'
         meta:
-          title: 功能展示首页
+          title: 图片与资源解析
           order: 0
-      - route: theme-showcase
-        component: '@/examples/local/views/feature-showcase/ThemeShowcase.vue'
+      - route: video
+        component: '@/examples/local/views/feature-showcase/assets/VideoShowcase.vue'
         meta:
-          title: 主题展示
+          title: 视频渲染
           order: 1
-      - route: mermaid-showcase
-        component: '@/examples/local/views/feature-showcase/MermaidShowcase.vue'
+      - route: audio
+        component: '@/examples/local/views/feature-showcase/assets/AudioShowcase.vue'
         meta:
-          title: Mermaid图表
+          title: 音频与音效
           order: 2
-      - route: drawio-chart-showcase
-        component: '@/examples/local/views/feature-showcase/DrawioChartShowcase.vue'
+      - route: chart
+        component: '@/examples/local/views/feature-showcase/assets/ChartShowcase.vue'
         meta:
-          title: Draw.io图表
+          title: ECharts 图表
           order: 3
-      - route: echarts-showcase
-        component: '@/examples/local/views/feature-showcase/EchartsShowcase.vue'
+      - route: mermaid
+        component: '@/examples/local/views/feature-showcase/assets/MermaidShowcase.vue'
         meta:
-          title: ECharts图表
+          title: Mermaid 图表
           order: 4
-      - route: latex-showcase
-        component: '@/examples/local/views/feature-showcase/LatexShowcase.vue'
+      - route: drawio
+        component: '@/examples/local/views/feature-showcase/assets/DrawioShowcase.vue'
         meta:
-          title: LaTeX公式
+          title: Draw.io 图表
           order: 5
-      - route: video-showcase
-        component: '@/examples/local/views/feature-showcase/VideoShowcase.vue'
+      - route: formula
+        component: '@/examples/local/views/feature-showcase/assets/FormulaShowcase.vue'
         meta:
-          title: Video视频
+          title: LaTeX 公式
           order: 6
-      - route: connector-demo
-        component: '@/examples/local/views/feature-showcase/ConnectorDemo.vue'
+      - route: model
+        component: '@/examples/local/views/feature-showcase/assets/ModelShowcase.vue'
         meta:
-          title: 连接线演示
+          title: 三维模型
           order: 7
-      - route: data-table-showcase
-        component: '@/examples/local/views/feature-showcase/DataTableShowcase.vue'
+
+  - route: page-runtime
+    meta:
+      title: 页面与路由
+      order: 4
+    children:
+      - route: canvas
+        component: '@/examples/local/views/feature-showcase/page/CanvasShowcase.vue'
         meta:
-          title: DataTable表格
-          order: 8
-      - route: scene-showcase
-        component: '@/examples/local/views/feature-showcase/SceneShowcase.vue'
+          title: 页面画布
+          order: 0
+      - route: routing
+        component: '@/examples/local/views/feature-showcase/page/RoutingShowcase.vue'
         meta:
-          title: Scene 多序列
-          order: 9
+          title: 路由与导航
+          order: 1
+
+  - route: runtime-kit
+    meta:
+      title: 运行时能力
+      order: 5
+    children:
+      - route: theme
+        component: '@/examples/local/views/feature-showcase/runtime/ThemeShowcase.vue'
+        meta:
+          title: 主题与配色
+          order: 0
+      - route: icons
+        component: '@/examples/local/views/feature-showcase/runtime/IconShowcase.vue'
+        meta:
+          title: 图标与 Logo
+          order: 1
+      - route: data-table
+        component: '@/examples/local/views/feature-showcase/runtime/DataTableShowcase.vue'
+        meta:
+          title: DataTable 表格
+          order: 2
+      - route: connector
+        component: '@/examples/local/views/feature-showcase/runtime/ConnectorShowcase.vue'
+        meta:
+          title: DOM 连线
+          order: 3
+      - route: scene
+        component: '@/examples/local/views/feature-showcase/runtime/SceneShowcase.vue'
+        meta:
+          title: 场景与动效
+          order: 4
           advance:
             mode: scene_end
             delayMs: 5000
             completionDelayMs: 300
-  - route: runtime-kit-capabilities
-    meta:
-      title: Runtime Kit能力说明
-      order: 3
-    children:
-      - route: overview
-        component: '@/examples/local/views/feature-showcase/RuntimeKitOverview.vue'
-        meta:
-          title: Runtime Kit能力边界
-          order: 0
-      - route: page-runtime-shell
-        component: '@/examples/local/views/feature-showcase/PageRuntimeShell.vue'
-        meta:
-          title: 页面画布与缩放
-          order: 1
-      - route: route-system
-        component: '@/examples/local/views/feature-showcase/RouteSystemShowcase.vue'
-        meta:
-          title: 路由系统与导航
-          order: 2
+
   - route: endpage
     component: '@/examples/local/views/defaultpage/EndPage.vue'
     meta:
