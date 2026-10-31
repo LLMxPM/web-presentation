@@ -62,9 +62,9 @@ usePageScene({ root, define(scene) {
     expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
     await page.goto((await artifactResponse.json()).preview_url as string)
     const frame = page.frameLocator('iframe#preview')
-    // 预览同时保留导出打印源副本，必须限定在可见画布内断言。
+    // 预览保留打印副本，限定可见画布；透传 class 与模型数据属性位于同一根元素。
     const canvas = frame.locator('.page-content-wrapper')
-    await expect(canvas.locator(`.scene-model-replace-target [data-runtime-asset-name="${name}"]`)).toHaveAttribute('data-runtime-model-state', 'ready', { timeout: 60_000 })
+    await expect(canvas.locator(`.scene-model-replace-target[data-runtime-asset-name="${name}"]`)).toHaveAttribute('data-runtime-model-state', 'ready', { timeout: 60_000 })
     await frame.getByRole('button', { name: '进入放映' }).click()
     return frame
   }

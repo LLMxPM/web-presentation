@@ -7,29 +7,13 @@ from sqlalchemy import delete, select
 
 from app.ai.code_standards import get_default_code_standard
 from app.ai.content_authoring_standard import CONTENT_AUTHORING_STANDARD
-from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID
+from app.ai.tool_specs import AGENT_COORDINATOR_AGENT_ID, list_agent_tool_specs
 from app.db.session import get_session_factory
 from app.models.ai_agent_config import AiAgentToolUserConfig
 from app.models.enums import UserRole
 from app.models.user import User
 from app.core.security import hash_password
 from app.services.ai_agent_config_service import AiAgentConfigService
-
-
-EXPECTED_TOOL_KEYS = {
-    "get_operation_guide",
-    "get_code_standards",
-    "list_entities",
-    "get_entity",
-    "create_entity",
-    "update_entity",
-    "archive_entity",
-    "validate_entity",
-    "execute_action",
-    "ask_user",
-    "analyze_visuals",
-    "generate_image",
-}
 
 
 async def test_agent_catalog_should_only_expose_unified_content_agent(
@@ -52,7 +36,9 @@ async def test_agent_catalog_should_only_expose_unified_content_agent(
     assert "资源助手" not in coordinator["default_prompt"]
 
     tool_items = [tool for group in coordinator["tool_groups"] for tool in group["tools"]]
-    assert {tool["key"] for tool in tool_items} == EXPECTED_TOOL_KEYS
+    assert {tool["key"] for tool in tool_items} == {
+        spec.key for spec in list_agent_tool_specs(AGENT_COORDINATOR_AGENT_ID)
+    }
     standards_tool = next(tool for tool in tool_items if tool["key"] == "get_code_standards")
     assert standards_tool["configurable"] is False
     assert "standard_type=page" in standards_tool["default_instructions"]

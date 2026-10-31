@@ -7,8 +7,11 @@ import asyncio
 import pytest
 from httpx import AsyncClient
 
+from app.core.audio_defaults import default_audio_volume_payload
 from app.core.config import get_settings
 from app.core.exceptions import AppException
+from app.schemas.project_template import PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION
+from app.schemas.slideshow import default_slideshow_settings
 from app.services.redis_runtime_client import (
     get_redis_runtime_client,
     reset_redis_runtime_client,
@@ -99,7 +102,22 @@ async def test_template_preview_should_not_leave_artifact_when_capacity_rejected
 ) -> None:
     """模板预览的资源 blob 被容量拒绝时，接口不得签发可用 URL，也不得残留 artifact。"""
 
-    _apply_memory_budget(monkeypatch, max_bytes=32_000_000, max_item_bytes=4_096)
+    # 基础配置包需能落库；大资源在后续 blob 阶段超过单项预算，才能覆盖半成品清理。
+    max_item_bytes = 256 * 1024
+    _apply_memory_budget(monkeypatch, max_bytes=32_000_000, max_item_bytes=max_item_bytes)
+    original_put_asset_blobs = RuntimeArtifactStore.put_asset_blobs
+    blob_write_attempted = False
+
+    async def put_asset_blobs_after_artifact(self, *, artifact_id, assets) -> None:
+        """复核 blob 写入前已有完整 artifact，避免测试误落在基础包的容量拒绝分支。"""
+
+        nonlocal blob_write_attempted
+        assert await self.get_manifest(artifact_id) is not None
+        assert assets
+        blob_write_attempted = True
+        await original_put_asset_blobs(self, artifact_id=artifact_id, assets=assets)
+
+    monkeypatch.setattr(RuntimeArtifactStore, "put_asset_blobs", put_asset_blobs_after_artifact)
     workspace_response = await authenticated_client.post(
         "/api/workspaces",
         json={"name": "容量模板预览空间", "status": "active"},
@@ -109,30 +127,44 @@ async def test_template_preview_should_not_leave_artifact_when_capacity_rejected
 
     response = await authenticated_client.post(
         f"/api/workspaces/{workspace_id}/template-packages/preview-artifact",
-        files={"archive": ("template.zip", _build_minimal_template_package(64 * 1024), "application/zip")},
+        # SVG 小于文本资源上限，Base64 编码后的 blob 则超出单项缓存预算。
+        files={"archive": ("template.zip", _build_minimal_template_package(max_item_bytes * 3 // 2), "application/zip")},
     )
 
-    assert response.status_code == 503
+    assert response.status_code == 503, response.text
     body = response.json()
     assert body["code"] == "RUNTIME_STATE_CAPACITY_EXCEEDED"
     assert body["message"].startswith("运行时缓存容量已满")
+    assert blob_write_attempted
     stats = get_redis_runtime_client().stats()
     assert stats.active_keys == 0
     assert stats.approx_bytes == 0
 
 
 def _build_minimal_template_package(binary_size: int) -> bytes:
-    """构造最小可解析模板包：只保留校验必需文件，并携带一个超限二进制资源。"""
+    """按当前协议构造合法模板包，使用大 SVG 资源触发 blob 预算，截图保持有效。"""
 
+    import hashlib
     import io
     import json
     import zipfile
     from datetime import UTC, datetime
 
+    from app.services.project_template_package_service import ProjectTemplatePackageService
+
     exported_at = datetime.now(tz=UTC).isoformat()
+    blob = b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><!--' + b'x' * binary_size + b'--></svg>'
+    file_hash = hashlib.sha256(blob).hexdigest()
+    asset = {
+        "name": "capacity-payload",
+        "original_name": "capacity-payload.svg",
+        "asset_type": "image",
+        "content_type": "image/svg+xml",
+        "file_hash": file_hash,
+    }
     manifest = {
         "package_type": "web-presentation-project-template",
-        "schema_version": 1,
+        "schema_version": PROJECT_TEMPLATE_PACKAGE_SCHEMA_VERSION,
         "exported_at": exported_at,
         "runtime_kit_manifest_version": "1.0.0",
         "template_path": "metadata/template.json",
@@ -141,12 +173,12 @@ def _build_minimal_template_package(binary_size: int) -> bytes:
         "routes_path": "project/routes.json",
         "page_count": 1,
         "component_count": 0,
-        "asset_count": 0,
+        "asset_count": 1,
         "theme_count": 0,
         "font_count": 0,
         "pages": [{"source_page_code": "page_cover", "path": "pages/page_cover"}],
         "components": [],
-        "assets": [],
+        "assets": [{"file_hash": file_hash}],
         "themes": [],
         "fonts": [],
     }
@@ -187,6 +219,8 @@ def _build_minimal_template_package(binary_size: int) -> bytes:
         "icon_default_stroke_width": 2,
         "show_pdf_export_button": True,
         "menu_mode": "preview",
+        "slideshow": default_slideshow_settings().model_dump(mode="json"),
+        "audio_settings": {**default_audio_volume_payload(), "cue_bindings": []},
         "theme_key": None,
         "theme_config_yaml": "themes: {}\n",
         "style_spec_markdown": "",
@@ -214,7 +248,7 @@ def _build_minimal_template_package(binary_size: int) -> bytes:
             }
         ]
     }
-    blob = b"\x89PNG\r\n\x1a\n" + bytes((index * 31 + 7) % 256 for index in range(binary_size))
+    screenshot = ProjectTemplatePackageService._build_placeholder_png(1920, 1080)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(manifest))
@@ -224,8 +258,10 @@ def _build_minimal_template_package(binary_size: int) -> bytes:
         archive.writestr("project/routes.json", json.dumps(routes, ensure_ascii=False))
         archive.writestr("pages/page_cover/page.json", json.dumps(page, ensure_ascii=False))
         archive.writestr("pages/page_cover/index.vue", "<template><main>cover</main></template>")
-        archive.writestr("screenshots/cover.png", blob)
-        archive.writestr("screenshots/pages/page_cover.png", blob)
+        archive.writestr(f"assets/{file_hash}/asset.json", json.dumps(asset))
+        archive.writestr(f"assets/{file_hash}/capacity-payload.svg", blob)
+        archive.writestr("screenshots/cover.png", screenshot)
+        archive.writestr("screenshots/pages/page_cover.png", screenshot)
     return buffer.getvalue()
 
 
