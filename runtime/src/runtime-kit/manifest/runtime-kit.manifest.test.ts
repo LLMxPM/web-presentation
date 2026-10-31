@@ -59,13 +59,25 @@ describe('runtime kit manifest', () => {
     expect(exportNames).toContain('usePageScene.v1')
   })
 
-  it('开发 Scene 公开可发现的版本化入口，调试说明明确仅在 DEV 安装', () => {
+  it('页级 Scene 公开条目应披露创作约束，不暴露开发工具入口', () => {
     const scene = manifest.exports.find(item => item.name === 'usePageScene.v1')!
+    const usage = scene.capability.usage.join('\n')
+    const constraints = scene.capability.constraints.join('\n')
+
     expect(scene.import_path).toBe('@runtime-kit/public/composables/motion/usePageScene.v1')
     expect(scene.capability.enabled).toBe(true)
     expect(scene.capability.previewable).toBe(false)
-    expect(scene.capability.usage.join('\n')).toContain('__RUNTIME_SCENE_DEBUG__')
-    expect(scene.capability.constraints.join('\n')).toContain('Vite DEV')
+    expect(constraints).toContain('每个页面 root 只登记一个 Scene')
+    expect(constraints).toContain('useStaticPresentation.v1')
+    expect(usage).not.toContain('__RUNTIME_SCENE_DEBUG__')
+    expect(constraints).not.toMatch(/__RUNTIME_SCENE_DEBUG__|Vite DEV/)
+  })
+
+  it('公开清单不应披露仅开发环境可用的调试入口', () => {
+    const manifestText = JSON.stringify(manifest.exports)
+
+    expect(manifestText).not.toContain('__RUNTIME_SCENE_DEBUG__')
+    expect(manifestText).not.toContain('Vite DEV')
   })
 
   it('页级编排入口默认向普通能力目录披露，自身不提供组件预览', () => {

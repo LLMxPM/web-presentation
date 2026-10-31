@@ -1878,8 +1878,7 @@
           "import { usePageScene } from '@runtime-kit/public/composables/motion/usePageScene.v1'",
           "const pageRoot = ref<HTMLElement | null>(null)",
           "usePageScene({ root: pageRoot, define(scene) { scene.visual({ id: 'intro', role: 'blocking', define(tl) { tl.fromTo('.title', { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.4 }) } }) } })",
-          "// 同一 root 使用 useStaticPresentation.v1 声明独立静态态。",
-          "// 开发预览 frame 控制台：await window.__RUNTIME_SCENE_DEBUG__.play()；.read() 读取状态，.stop() 停止。"
+          "// 同一 root 使用 useStaticPresentation.v1 声明独立静态态。"
         ],
         "returns": "void；只登记声明，播放与停止由宿主负责。",
         "return_example": ["usePageScene({ root: pageRoot, define(scene) { scene.task({ id: 'finite', role: 'blocking', run(context) { context.onCleanup(() => {}); return Promise.resolve() } }) } })"],
@@ -1889,8 +1888,7 @@
           "视觉支持 DOM/SVG、CSS 属性、数值对象、标签、错峰与同步回调；不支持 GSAP 插件、seek/sampleAt、暂停或历史状态重建。",
           "任务时间用毫秒，GSAP 视觉 duration 用秒；afterTrack 基于实际完成，offsetMs 只能非负。",
           "异步工作使用 task 的 Promise；页面自有监听、计时器和 RAF 必须用 onCleanup 清理并响应 signal。",
-          "capture/export/thumbnail 不执行 define；同一 root 必须另用 useStaticPresentation.v1 声明独立静态呈现。",
-          "同一页只使用 Scene 一种编排；正式放映、单页预览与开发调试共用同一声明，开发调试控制台仅在 Vite DEV 模式安装。"
+          "capture/export/thumbnail 不执行 define；同一 root 必须另用 useStaticPresentation.v1 声明独立静态呈现。"
         ],
         "audiences": ["backend", "agent"]
       }
