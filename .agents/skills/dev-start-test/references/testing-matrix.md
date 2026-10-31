@@ -36,6 +36,8 @@ pnpm run test:runtime
 pnpm run test:runtime:gate     # check + test + build
 ```
 
+无浏览器单测可仅为当前测试进程设置 `RUNTIME_ROLE=preview`，保留 Vue 插件并避免 Vite 启动构建队列领取循环；例如 PowerShell 在调用前执行 `$env:RUNTIME_ROLE='preview'`，勿写入 `.env`。不要以 `check` 角色替代：该角色会裁掉 Vue SFC 插件，导致 `.vue` 测试在 import analysis 阶段失败。测试文件内部仍可显式验证全部角色。
+
 ### 根仓契约、仓库与 workspace
 
 ```bash
