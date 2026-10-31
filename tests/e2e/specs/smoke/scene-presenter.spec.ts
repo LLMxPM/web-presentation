@@ -10,7 +10,9 @@ import { buildScenePage } from '../../helpers/scene-page-source'
 async function installEnvelopeProbe(display: Page): Promise<void> {
   await display.evaluate(() => {
     const target = window as unknown as { __presenterEnvelope?: Record<string, unknown> }
-    const channel = new BroadcastChannel(`web-presentation:presenter:v5:${new URLSearchParams(location.search).get('channel') ?? ''}`)
+    // 演讲窗口的 channel 在 hash 查询里，search 只保留预览 token。
+    const channelId = new URLSearchParams(location.hash.split('?')[1] ?? '').get('channel') ?? ''
+    const channel = new BroadcastChannel(`web-presentation:presenter:v5:${channelId}`)
     channel.onmessage = event => {
       const message = event.data as Record<string, unknown>
       if (message?.protocol === 5 && !target.__presenterEnvelope) target.__presenterEnvelope = message
@@ -68,16 +70,19 @@ test('演讲模式复用观众窗口并按意图同步翻页', async ({ page, co
     const display = await popupPromise
     await expect(runtime.locator('.presenter-console')).toBeVisible()
     await expect(display.locator('.presenter-display-screen')).toBeVisible()
-    // 控制台小窗收紧为缩略图策略，观众窗口才是唯一放映画布。
-    await expect(runtime.locator('.presenter-console')).toHaveAttribute('data-runtime-execution', 'thumbnail')
+    // 控制台根为可交互预览，内部当前/下一页小窗才是缩略图；观众窗口是唯一放映画布。
+    await expect(runtime.locator('.presenter-console')).toHaveAttribute('data-runtime-execution', 'interactive-preview')
+    await expect(
+      runtime.locator('.presenter-console__preview-content').first().locator('[data-runtime-execution="thumbnail"]')
+    ).toBeVisible()
     await expect(display.locator('.presenter-display-screen')).toHaveAttribute('data-runtime-execution', 'presentation')
     await installEnvelopeProbe(display)
 
+    const panel = runtime.locator('.presenter-playback-panel')
+    await expect(panel.locator('[data-testid="presenter-playback-state"]')).toContainText('等待观众窗口全屏')
     await display.getByRole('button', { name: '当前窗口全屏' }).click()
     await expect(runtime.locator('.presenter-console__display-status')).toContainText('全屏中')
-    const panel = runtime.locator('.presenter-playback-panel')
-    await expect(panel.locator('[data-testid="presenter-playback-state"]')).toContainText('未开始')
-    await panel.locator('[data-testid="presenter-playback-primary"]').click()
+    // 全屏即放映：观众窗口进入全屏后自动开始播放，控制台无需再点开始。
     await expect(panel.locator('[data-testid="presenter-playback-state"]')).toContainText('放映中')
     await panel.getByRole('button', { name: '下一页' }).click()
     await expect(display.locator('.presenter-e2e-second')).toBeVisible()
@@ -150,11 +155,12 @@ test('观众窗口独占 Scene 播放，控制台保持静态默认态', async (
 
   await display.getByRole('button', { name: '当前窗口全屏' }).click()
   const panel = runtime.locator('.presenter-playback-panel')
-  await panel.locator('[data-testid="presenter-playback-primary"]').click()
+  // 全屏即放映：观众窗口进入全屏后自动开始播放。
   await expect(panel.locator('[data-testid="presenter-playback-state"]')).toContainText('放映中')
   // 只有观众窗口执行 Scene；控制台缩略图不启动任务，也不构成第二个发声或调度所有者。
   await expect(displayCounter).toHaveText('100', { timeout: 20_000 })
   await expect(consoleCounter).toHaveText('0')
   await expect.poll(() => consoleTitle.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
-  await expect(display.locator('[data-testid="playback-hold-toggle"]')).toBeVisible()
+  // 观众窗口全屏后展示自己的本地控制条，不复用普通放映控制条。
+  await expect(display.locator('[data-testid="presenter-display-play"]')).toBeVisible()
 })

@@ -6,10 +6,21 @@ import { createApp, nextTick } from 'vue'
 
 import BuildReleaseApp from './BuildReleaseApp.vue'
 import { loadThemeConfigs } from './core/composables/useTheme'
+import { initializeRuntimeExecution } from './core/execution/execution-scope'
+import { installMediaPlaybackGuard } from './core/execution/media-playback-guard'
+import { mediaPlaybackMode } from './core/execution/execution-policy'
+import { isStaticExecution } from './core/static-presentation/types'
 import { initializeStaticIcons } from './core/utils/static-icons'
 import { initializeConfig } from './core/utils/config'
 import { initializeRuntimeFaviconSync } from './core/utils/favicon'
 import { initializeRuntimeFontRegistry, waitForRequiredPlatformFonts } from './core/utils/font-registry'
+import {
+  initializeRenderReadyHost,
+  markRenderPreviewMounted,
+  markRenderReadyFailure,
+  resetRenderPreviewReadiness,
+} from './core/utils/render-ready'
+import { registerEditorVisualAssetProbe } from './core/utils/visual-assets'
 import { createProjectRouter } from './core/router/project-router'
 
 import './styles/global.css'
@@ -47,6 +58,14 @@ async function waitForBuildReleaseStabilized(): Promise<void> {
  */
 async function initializeBuildReleaseApp(): Promise<void> {
   setBuildReleaseRuntimeReady(false)
+  // 执行策略必须先于组件挂载确定；构建产物内的截图/导出离屏页依赖 capture 策略提供静态回执。
+  const executionPolicy = initializeRuntimeExecution(window.location.search)
+  const staticExecution = isStaticExecution(executionPolicy.kind)
+  if (staticExecution) {
+    installMediaPlaybackGuard({ fallbackMode: mediaPlaybackMode(executionPolicy) })
+    initializeRenderReadyHost({ executionContext: executionPolicy.kind })
+    registerEditorVisualAssetProbe()
+  }
 
   try {
     await initializeConfig()
@@ -60,11 +79,42 @@ async function initializeBuildReleaseApp(): Promise<void> {
     app.use(router)
 
     await router.isReady()
+    let navigationGeneration = 0
+    if (staticExecution) {
+      // 导出复用 iframe 的 hash 导航；每次换页（含同路径新票据）都必须撤销旧回执。
+      router.beforeEach(() => {
+        navigationGeneration += 1
+        resetRenderPreviewReadiness()
+      })
+      router.afterEach(async (to, _from, failure) => {
+        if (failure) return
+        const generation = navigationGeneration
+        try {
+          await waitForBuildReleaseStabilized()
+          if (generation !== navigationGeneration) return
+          await markRenderPreviewMounted({ executionContext: executionPolicy.kind, routePath: to.path })
+        } catch (error) {
+          if (generation === navigationGeneration) markRenderReadyFailure(String(error))
+        }
+      })
+    }
+    const initialGeneration = navigationGeneration
     app.mount('#app')
     await waitForBuildReleaseStabilized()
-    setBuildReleaseRuntimeReady(true)
+    if (staticExecution) {
+      if (initialGeneration !== navigationGeneration) return
+      // 静态上下文必须等待独立静态呈现回执，导出离屏页据此放行。
+      await markRenderPreviewMounted({
+        executionContext: executionPolicy.kind,
+        routePath: router.currentRoute.value.path,
+      })
+      setBuildReleaseRuntimeReady(window.__EDITOR_RUNTIME_PREVIEW_READY__ !== false)
+    } else {
+      setBuildReleaseRuntimeReady(true)
+    }
   } catch (error) {
     setBuildReleaseRuntimeReady(false)
+    if (staticExecution) markRenderReadyFailure(String(error))
     console.error('Runtime 构建产物初始化失败', error)
     document.body.innerHTML = `
       <div style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:Segoe UI,PingFang SC,sans-serif;background:#f8fafc;">
