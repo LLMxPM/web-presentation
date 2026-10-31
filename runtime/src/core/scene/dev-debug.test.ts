@@ -9,9 +9,8 @@ import { installPageSceneDebug } from './dev-debug'
 import { deferred } from './session-test-helpers'
 import type { SceneTaskContext } from './types'
 
-const { assets, legacy } = vi.hoisted(() => ({ assets: vi.fn(), legacy: vi.fn() }))
+const { assets } = vi.hoisted(() => ({ assets: vi.fn() }))
 vi.mock('@/core/utils/visual-assets', () => ({ waitForEditorVisualAssets: assets }))
-vi.mock('@/core/motion/page-motion-contract', () => ({ findPageMotionHandle: legacy }))
 const READY = { ok: true, failed: [], pending: [], timedOut: false, loaded: 0, total: 0, waitedMs: 0 }
 const cleanups: Array<() => void> = []
 let sequence = 0
@@ -19,7 +18,7 @@ let sequence = 0
 beforeEach(() => {
   gsap.ticker.sleep(); vi.useFakeTimers(); vi.stubEnv('DEV', true)
   initializeRuntimeExecution('?runtimeExecution=interactive-preview')
-  assets.mockReset(); assets.mockResolvedValue(READY); legacy.mockReset(); legacy.mockReturnValue(null)
+  assets.mockReset(); assets.mockResolvedValue(READY)
 })
 afterEach(() => {
   cleanups.splice(0).reverse().forEach(cleanup => cleanup())
@@ -170,13 +169,6 @@ it('正式放映期间拒绝调试，进入全屏会释放已有调试任务', a
   document.dispatchEvent(new Event('fullscreenchange'))
   expect(p.cleanup).toHaveBeenCalledOnce()
   await expect(api.play()).rejects.toMatchObject({ code: 'SCENE_DEBUG_PRESENTING' })
-})
-
-it('同页旧时间轴不会与开发 Scene 重复启动', async () => {
-  const p = page(), api = install()
-  legacy.mockReturnValue({})
-  await expect(api.play()).rejects.toMatchObject({ code: 'SCENE_DEBUG_LEGACY_CONFLICT' })
-  expect(p.define).not.toHaveBeenCalled()
 })
 
 it('导航提交前清理当前调试会话，即使旧 DOM 仍在过渡层中', async () => {

@@ -4,7 +4,7 @@ import { vi } from 'vitest'
 import { setRuntimePreloadedConfig } from '@/core/utils/path'
 import { reloadAllConfigs } from '@/core/utils/config'
 import { usePresenterController } from './usePresenterController'
-import type { PresenterSyncRole, PresenterSyncPlaybackCommandAction } from './presenter-sync-protocol'
+import type { PresenterSyncRole, PresenterSyncIntentAction } from './presenter-sync-protocol'
 export const apps: App[] = []
 export const messages: Array<() => void> = []
 export class FakePresenterChannel {
@@ -27,9 +27,9 @@ export async function preparePresenterFixture(): Promise<void> {
   await reloadAllConfigs()
 }
 /** 在独立 Vue 宿主安装控制器，可注入真实 Deck 动作或观察回调。 */
-export function mountPresenter(role: PresenterSyncRole, ownerEpoch: number, onPlaybackCommand?: (action: PresenterSyncPlaybackCommandAction) => void) {
+export function mountPresenter(role: PresenterSyncRole, ownerEpoch: number, onIntent?: (action: PresenterSyncIntentAction) => void) {
   let controller!: ReturnType<typeof usePresenterController>
-  const app = createApp(defineComponent({ setup() { controller = usePresenterController({ role, channelId: 'test', artifactIdentity: 'artifact', initialPath: '/a', ownerEpoch, onPlaybackCommand }); return () => null } }))
+  const app = createApp(defineComponent({ setup() { controller = usePresenterController({ role, channelId: 'test', artifactIdentity: 'artifact', initialPath: '/a', ownerEpoch, onIntent }); return () => null } }))
   const node = document.createElement('div'); document.body.appendChild(node); app.mount(node); apps.push(app)
   return { controller, app }
 }

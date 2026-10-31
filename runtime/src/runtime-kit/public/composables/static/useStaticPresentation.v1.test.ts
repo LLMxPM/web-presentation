@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, ref } from 'vue'
 import { initializeRuntimeExecution, resetRuntimeExecutionForTests } from '@/core/execution/execution-scope'
 import { initializeRenderReadyHost, markRenderPreviewMounted } from '@/core/utils/render-ready'
 import { settleStaticPresentation } from '@/core/static-presentation/registry'
-import { usePageTimeline } from '../motion/usePageTimeline.v1'
+import { usePageScene } from '../motion/usePageScene.v1'
 import { useStaticPresentation, type UseStaticPresentationOptions } from './useStaticPresentation.v1'
 import captureCases from '../../../../../../tests/fixtures/static-capture-cases.json'
 
@@ -24,16 +24,16 @@ afterEach(() => {
 })
 
 /** 挂载真实 Vue 组合式入口，受托管动画故意抛错以证明静态路径不执行 define。 */
-function mount(options: Omit<UseStaticPresentationOptions, 'root'> | null, timeline = true, context = 'capture') {
+function mount(options: Omit<UseStaticPresentationOptions, 'root'> | null, scene = true, context = 'capture') {
   initializeRuntimeExecution(`?runtimeExecution=${context}`)
   const host = document.createElement('div')
   document.body.append(host)
-  const define = vi.fn(() => { throw new Error('静态模式不能运行时间轴') })
+  const define = vi.fn(() => { throw new Error('静态模式不能运行受托管动画') })
   let api: ReturnType<typeof useStaticPresentation> | undefined
   const app = createApp(defineComponent({ setup() {
     const root = ref<HTMLElement | null>(null)
     if (options) api = useStaticPresentation({ ...options, root })
-    if (timeline) usePageTimeline({ root, bindings: {}, timelineId: 'static-test', define })
+    if (scene) usePageScene({ root, define })
     return () => h('section', { ref: root }, '完整内容')
   } }))
   app.mount(host)

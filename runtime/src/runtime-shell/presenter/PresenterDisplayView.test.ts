@@ -10,22 +10,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import PresenterDisplayView from './PresenterDisplayView.vue'
 
 const presenterFixture = vi.hoisted(() => ({
-  commandHandler: null as null | ((action: string, details?: { autoAdvance?: boolean; positionMs?: number; seekRevision?: number }) => void),
+  commandHandler: null as null | ((action: string) => void),
   postPlaybackState: vi.fn(),
   updatePlayback: vi.fn(),
 }))
 
 const playbackFixture = vi.hoisted(() => ({
-  options: null as null | { autoStart?: boolean; initialAutoAdvance?: boolean },
+  options: null as null | Record<string, unknown>,
   start: vi.fn(),
-  pause: vi.fn(),
-  resume: vi.fn(),
   stop: vi.fn(),
   retry: vi.fn(),
   next: vi.fn(),
   hold: vi.fn(),
   release: vi.fn(),
-  seekMotion: vi.fn().mockResolvedValue(true),
 }))
 
 const routeFixture = vi.hoisted(() => ({
@@ -44,8 +41,8 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/runtime-shell/presenter/usePresenterController', () => ({
-  usePresenterController: (options: { onPlaybackCommand?: (action: string, details?: { autoAdvance?: boolean; positionMs?: number; seekRevision?: number }) => void }) => {
-    presenterFixture.commandHandler = options.onPlaybackCommand ?? null
+  usePresenterController: (options: { onIntent?: (action: string) => void }) => {
+    presenterFixture.commandHandler = options.onIntent ?? null
     return {
       currentPage: {
         path: '/intro',
@@ -54,7 +51,7 @@ vi.mock('@/runtime-shell/presenter/usePresenterController', () => ({
         componentPath: '@/views/intro.vue',
         speakerNotes: '',
       },
-      postDisplayStatus: vi.fn(),
+      postDisplayVisibility: vi.fn(),
       postPlaybackState: presenterFixture.postPlaybackState,
       updatePlayback: presenterFixture.updatePlayback,
     }
@@ -64,19 +61,15 @@ vi.mock('@/runtime-shell/presenter/usePresenterController', () => ({
 vi.mock('@/runtime-shell/playback/usePlaybackHost', async () => {
   const { ref } = await import('vue')
   return {
-    usePlaybackHost: (options: { autoStart?: boolean; initialAutoAdvance?: boolean }) => {
+    usePlaybackHost: (options?: Record<string, unknown>) => {
       playbackFixture.options = options
       return {
         snapshot: ref(null),
         errorMessage: ref(''),
-        motion: ref(null),
         start: playbackFixture.start,
-        pause: playbackFixture.pause,
-        resume: playbackFixture.resume,
         stop: playbackFixture.stop,
         retry: playbackFixture.retry,
         goNext: playbackFixture.next,
-        seekMotion: playbackFixture.seekMotion,
         hold: playbackFixture.hold,
         release: playbackFixture.release,
         refresh: vi.fn(),
@@ -215,7 +208,7 @@ describe('PresenterDisplayView', () => {
     app.unmount()
   })
 
-  it('观众窗口应由控制台命令驱动播放宿主，并在全屏后才开始放映', async () => {
+  it('观众窗口应由控制台意图驱动播放宿主，并在全屏后才开始放映', async () => {
     const { app, host } = mountPresenterDisplayView()
     await flushVueUpdates()
 
@@ -236,21 +229,15 @@ describe('PresenterDisplayView', () => {
     await flushVueUpdates()
     expect(playbackFixture.start).toHaveBeenCalledTimes(1)
 
-    presenterFixture.commandHandler?.('pause')
-    presenterFixture.commandHandler?.('resume')
     presenterFixture.commandHandler?.('next')
     presenterFixture.commandHandler?.('stop')
     presenterFixture.commandHandler?.('hold')
     presenterFixture.commandHandler?.('release')
 
-    expect(playbackFixture.pause).not.toHaveBeenCalled()
-    expect(playbackFixture.resume).not.toHaveBeenCalled()
     expect(playbackFixture.next).toHaveBeenCalledTimes(1)
     expect(playbackFixture.stop).toHaveBeenCalledTimes(1)
     expect(playbackFixture.hold).toHaveBeenCalledOnce()
-
-    presenterFixture.commandHandler?.('seek', { positionMs: 1200, seekRevision: 3 })
-    expect(playbackFixture.seekMotion).not.toHaveBeenCalled()
+    expect(playbackFixture.release).toHaveBeenCalledOnce()
 
     app.unmount()
   })

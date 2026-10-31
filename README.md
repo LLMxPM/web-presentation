@@ -21,8 +21,8 @@ English | [简体中文](./README.zh-CN.md)
 - **Automated Layout Diagnostic**: Performs DOM-based automated detection for common AI layout defects (e.g. overflow, awkward text wrapping, element overlap) to enable autonomous AI self-healing.
 - **Asset Abstraction & Reuse**: Accumulate media, components, themes, styles, and typography in workspace libraries, enabling PPT decks, visual cards, report pages, and display boards to share the same design foundation.
 - **Rapid Visual Feedback**: The Runtime loads pages, components, and configuration bundles using Vue 3 and Vite, powering Editor features including live iframe preview, remote screenshot capture, component preview, and production builds.
-- **Scene 播放（开发分支）**：通过公开 `usePageScene.v1` 组织多条视觉序列与异步任务，支持数字变化、打字机、SVG 描边和 DOM/CSS/Canvas 粒子。正式放映与单页预览已接入，截图和导出使用独立静态呈现；完整实机验收待 C3。参见 [Scene 开发调试](./docs/developer/runtime/scene-development.md)。
-- **放映音频与三维动作（开发分支）**：模型实例正向片段、自动媒体 Scene 任务及窗口 AudioBus 已接入；schema 4 配置、Presenter v5 与 AI/CLI 指引已完成工程适配，真实播放与发声统一留 C3 验收。
+- **Scene 播放**：`usePageScene.v1` 是唯一页内编排入口，声明多条视觉序列与异步任务，支持数字变化、打字机、SVG 描边、DOM/CSS/Canvas 粒子与三维模型片段，只正向播放并按实际完成聚合。正式放映与单页预览共用同一声明，截图、PDF/PPTX 与打印走独立静态呈现；旧页内时间轴与采样链已整链删除。完整实机验收待 C3。参见 [Scene 开发调试](./docs/developer/runtime/scene-development.md)。
+- **放映音频与三维动作**：模型实例正向片段、自动媒体 Scene 任务及窗口 AudioBus 已接入；schema 4 放映配置（手动/定时/本页完成后翻页）、Presenter v5 单向广播与 AI/CLI 指引已完成工程适配，真实播放与发声统一留 C3 验收。
 - **Constrained Visual Editing**: Inspect Vue container hierarchies alongside rendered outputs to modify static text, component props, and controlled Tailwind styles via intuitive form controls.
 - **Context Isolation & Injection**: The Backend injects only the essential context (project, page, component, asset specs) into the AI model, allowing it to focus on creative tasks without runtime overhead or implementation leaks.
 - **Workspace-Scoped Content Assistant**: Eliminates the need to switch chat sessions across projects; sessions are workspace-bound, and each Run snapshot locks its current focus and project working set with explicit permission checks per target.

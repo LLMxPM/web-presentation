@@ -115,7 +115,7 @@ class AssetAudioPropsContract(BaseModel):
 
     @model_validator(mode="after")
     def validate_narration_loop(self) -> AssetAudioPropsContract:
-        """页面旁白不得循环，避免 `media_end` 永不完成。"""
+        """页面旁白不得循环，避免 `scene_end` 永不完成。"""
 
         if self.purpose == "narration" and self.loop:
             raise ValueError("页面旁白不允许 loop=true。")

@@ -170,7 +170,7 @@
     {
       "name": "playback_fields_never_reach_the_projection",
       "routes": [
-        { "route": "a", "component": "@/views/a.vue", "meta": { "title": "A", "order": 0, "hidden": false, "speakerNotes": "不该入目录", "transition": { "effect": "push", "durationMs": 800 }, "advance": { "mode": "media_end", "delayMs": 2000, "mediaTimeoutMs": 120000 } } }
+        { "route": "a", "component": "@/views/a.vue", "meta": { "title": "A", "order": 0, "hidden": false, "speakerNotes": "不该入目录", "transition": { "effect": "push", "durationMs": 800 }, "advance": { "mode": "scene_end", "delayMs": 2000, "completionDelayMs": 300 } } }
       ],
       "expected": {
         "catalog": [

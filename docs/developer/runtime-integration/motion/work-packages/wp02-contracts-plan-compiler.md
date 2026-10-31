@@ -2,6 +2,8 @@
 
 状态：完成（纯逻辑层）。主责：跨模块契约 / Runtime core。前置：[WP01](./wp01-baseline-engine-spike.md)。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../../playback-redesign-proposal.md)与[收敛工作包清单](../../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 输入与落点
 
 消费[G0 决定](../g0-decision.md)与[创作方向](../authoring-contract.md)，由本包形成正式的单一字段基线。资源定义/规范计划需要 Schema、类型与共享正反例，视觉保留受控 GSAP 填充函数；不照旧 JSON 草案建立完整视觉 DSL。

@@ -2,6 +2,8 @@
 
 日期：2026-10-21。状态：**WP01 完成，G0 功能选型通过；WP02–WP12 待实施，G1/G2 未关闭。** 用户已明确确认许可没有问题，本轮不再设许可确认阻塞。当前尚未开放任何新 Runtime Kit import。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 选定的主线
 
 | 决定 | 首期选择 |

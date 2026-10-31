@@ -16,7 +16,6 @@ export type MediaPlaybackMode = 'allow' | 'gesture' | 'block'
 
 export interface ExecutionPolicy {
   kind: ExecutionContextKind
-  allowAutoStart: boolean
   allowAutoAdvance: boolean
   allowMediaPlayback: boolean
   allowAutoplay: boolean
@@ -24,17 +23,17 @@ export interface ExecutionPolicy {
 
 /**
  * 各上下文的基准策略。
- * - presentation：主画布/观众窗口，允许后续接入自动开始与媒体播放。
- * - interactive-preview：单页/组件/资源预览，禁止自动开始与自动翻页，媒体只允许用户手势触发。
+ * - presentation：主画布/观众窗口，允许自动翻页与媒体播放。
+ * - interactive-preview：单页/组件/资源预览，禁止自动翻页，媒体只允许用户手势触发。
  * - thumbnail：缩略图、演讲者小窗、卡片，禁止自动推进与任何媒体播放。
  * - capture/export：截图与导出，全部禁用以保证静态结果。
  */
 export const EXECUTION_POLICIES: Record<ExecutionContextKind, ExecutionPolicy> = {
-  presentation: { kind: 'presentation', allowAutoStart: true, allowAutoAdvance: true, allowMediaPlayback: true, allowAutoplay: true },
-  'interactive-preview': { kind: 'interactive-preview', allowAutoStart: false, allowAutoAdvance: false, allowMediaPlayback: true, allowAutoplay: false },
-  thumbnail: { kind: 'thumbnail', allowAutoStart: false, allowAutoAdvance: false, allowMediaPlayback: false, allowAutoplay: false },
-  capture: { kind: 'capture', allowAutoStart: false, allowAutoAdvance: false, allowMediaPlayback: false, allowAutoplay: false },
-  export: { kind: 'export', allowAutoStart: false, allowAutoAdvance: false, allowMediaPlayback: false, allowAutoplay: false },
+  presentation: { kind: 'presentation', allowAutoAdvance: true, allowMediaPlayback: true, allowAutoplay: true },
+  'interactive-preview': { kind: 'interactive-preview', allowAutoAdvance: false, allowMediaPlayback: true, allowAutoplay: false },
+  thumbnail: { kind: 'thumbnail', allowAutoAdvance: false, allowMediaPlayback: false, allowAutoplay: false },
+  capture: { kind: 'capture', allowAutoAdvance: false, allowMediaPlayback: false, allowAutoplay: false },
+  export: { kind: 'export', allowAutoAdvance: false, allowMediaPlayback: false, allowAutoplay: false },
 }
 
 const KIND_RANK: Record<ExecutionContextKind, number> = {
@@ -82,21 +81,10 @@ export function isExecutionContextKind(value: unknown): value is ExecutionContex
 export function mergeExecutionPolicies(parent: ExecutionPolicy, child: ExecutionPolicy): ExecutionPolicy {
   return {
     kind: KIND_RANK[child.kind] > KIND_RANK[parent.kind] ? child.kind : parent.kind,
-    allowAutoStart: parent.allowAutoStart && child.allowAutoStart,
     allowAutoAdvance: parent.allowAutoAdvance && child.allowAutoAdvance,
     allowMediaPlayback: parent.allowMediaPlayback && child.allowMediaPlayback,
     allowAutoplay: parent.allowAutoplay && child.allowAutoplay,
   }
-}
-
-/** 项目/页面配置的 auto_start 只有执行策略同时允许时才生效。 */
-export function shouldStartAutomatically(policy: ExecutionPolicy, configuredAutoStart: boolean): boolean {
-  return Boolean(configuredAutoStart && policy.allowAutoStart)
-}
-
-/** 自动翻页只在允许自动推进的上下文生效。 */
-export function shouldAdvanceAutomatically(policy: ExecutionPolicy): boolean {
-  return policy.allowAutoAdvance
 }
 
 /** 将策略映射为媒体守卫可执行的三档模式。 */

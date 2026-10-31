@@ -1147,7 +1147,7 @@ _COORDINATOR_TOOL_SPECS = (
     _tool("get_entity", "读取业务对象", "generic_business", "通用业务", "按真实数字 ID 读取详情、共享配置、源码、路由、历史版本和依赖。",
           default_instructions="使用真实 target_id 和匹配的 view；Runtime Kit 详情使用 get_runtime_kit_capability。"),
     _tool("get_runtime_kit_capability", "读取 Runtime Kit 能力", "generic_business", "通用业务", "按版本化 name 读取单个 Runtime Kit 能力及其导入契约；没有数字 ID。",
-          default_instructions="先用 list_entities 查询 runtime_kit 列表，再传返回的 name；例如 name=usePageTimeline.v1。"),
+          default_instructions="先用 list_entities 查询 runtime_kit 列表，再传返回的 name；例如 name=usePageScene.v1。"),
     _tool("create_project_page", "创建当前项目页面", "generic_business", "通用业务", "以必填 title 和 page_content 在当前焦点项目创建 Vue 页面，持久化任务自动校验并可写入路由。",
           default_instructions="先读取页面规范、项目 configuration 与相关 Runtime Kit/资源契约；仅在目标项目为当前焦点时调用。page_content 必须是完整 Vue SFC。调用后等待页面 Mutation Job 终态。", risk_level="write", sequential=True),
     _tool("create_entity", "创建业务对象", "generic_business", "通用业务", "按 new、copy 或 upload 模式创建项目、页面、组件、资源、主题或样式。",

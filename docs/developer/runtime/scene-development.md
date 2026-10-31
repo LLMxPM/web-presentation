@@ -1,6 +1,6 @@
 # Scene 开发调试
 
-`usePageScene.v1` 已进入 Runtime Kit manifest 和 Backend/Agent 能力目录，页面可以使用公开路径导入。正式全屏放映与 Editor 单页预览已使用 Scene，开发控制台复用同一套预览执行逻辑。B3 模型正向动作与 B4 显式媒体/AudioBus 已接入；schema 4 配置、Presenter v5 和 AI/CLI 适配已完成工程回归。开发分支暂保留旧时间轴供已有页面手动调试，旧入口清除与完整验收在合并 `main` 前完成。
+`usePageScene.v1` 已进入 Runtime Kit manifest 和 Backend/Agent 能力目录，页面可以使用公开路径导入。正式全屏放映与 Editor 单页预览已使用 Scene，开发控制台复用同一套预览执行逻辑。B3 模型正向动作与 B4 显式媒体/AudioBus 已接入；schema 4 配置、Presenter v5 和 AI/CLI 适配已完成工程回归。旧页内时间轴入口与采样链已随 C2 清零，Scene 是唯一页内编排入口；完整实机验收在合并 `main` 前由 [C3](../runtime-integration/playback-redesign/work-packages/c3-acceptance-release.md) 收口。
 
 已运行的 Backend 会缓存 manifest；首次拉取本批改动后需重启 Backend 才能刷新能力目录与导入白名单。页面源码改动继续使用 Vite HMR。启动与重启入口见[本地开发指南](../getting-started.md)。
 
@@ -58,13 +58,13 @@ debug.stop()
 
 当前 frame 只有一个声明时可省略选择器：`await debug.play()`。多个画布时必须传入包含声明根的元素或选择器。read 返回当前 generation、phase、hasBlocking、blockedTaskIds 和 issue；准备/执行失败在 issue 中给出原因。每次 play 都先释放上一轮，再创建新的会话；stop 返回停止后的快照，随后 read 为 null。
 
-该调试入口只在 Vite `DEV` 模式安装，生产构建不包含它。导航、页面卸载、HMR 或进入正式全屏放映会取消调试任务；capture/export/thumbnail 及嵌套静态画布不播放。同页同时登记旧时间轴时会报冲突，避免两个所有者一起启动。开发调试没有自动翻页，也不代表实际媒体、Renderer 或产物验收已经通过。
+该调试入口只在 Vite `DEV` 模式安装，生产构建不包含它。导航、页面卸载、HMR 或进入正式全屏放映会取消调试任务；capture/export/thumbnail 及嵌套静态画布不播放。同一声明在调试入口与正式宿主之间互斥，不会形成两个所有者。开发调试没有自动翻页，也不代表实际媒体、Renderer 或产物验收已经通过。
 
 ## 正式预览与放映
 
 Editor 单页预览与放大预览提供播放、停止和完整 Scene 状态，不再提供时间轴位置、暂停或重播控件。有限任务 completed 后仍可停止，以清理继续运行的 ambient；停止后可以显式创建下一轮播放。放大时先停止原 iframe，关闭时释放弹窗预览；状态消息只接受当前 iframe 和已验证的 origin。
 
-Runtime 根元素全屏后由唯一 Deck 启动当前页，过渡与资源就绪前不运行任务。manual 等待手动翻页，timer 到点取消未完成任务，scene_end 等全部 blocking 实际完成后再停留；保持/释放只阻止自动翻页，不暂停动画。冻结恢复按剩余预算继续，计时严重迟到时保持当前页等待释放。Runtime 内部配置已识别 scene_end 与 completionDelayMs；Backend DTO 和 Editor 配置表单升级由 B5 同批完成，旧 media_end/timeline_end 在正式宿主明确报错。
+Runtime 根元素全屏后由唯一 Deck 启动当前页，过渡与资源就绪前不运行任务。manual 等待手动翻页，timer 到点取消未完成任务，scene_end 等全部 blocking 实际完成后再停留；保持/释放只阻止自动翻页，不暂停动画。冻结恢复按剩余预算继续，计时严重迟到时保持当前页等待释放。Runtime、Backend DTO 与 Editor 配置表单统一为 schema 4，旧 media_end/timeline_end 在正式宿主明确报错。
 
 ## 模型与实例数值
 

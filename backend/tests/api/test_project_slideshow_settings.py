@@ -55,38 +55,26 @@ async def test_project_create_should_accept_complete_slideshow(authenticated_cli
     assert project["slideshow"] == TIMER_SLIDESHOW
 
 
-async def test_project_create_should_accept_media_end_advance(authenticated_client: AsyncClient) -> None:
-    """能力开放后 media_end 可写入，省略超时补默认值，显式超时按提交值保存。"""
+async def test_project_create_should_accept_scene_end_advance(authenticated_client: AsyncClient) -> None:
+    """scene_end 省略完成后停留时补默认值，显式提交按原值保存。"""
 
-    workspace_id = await _create_workspace(authenticated_client, "媒体放映空间")
-    default_timeout = await _create_project(
+    workspace_id = await _create_workspace(authenticated_client, "完成放映空间")
+    default_completion = await _create_project(
         authenticated_client,
         workspace_id,
-        "媒体默认超时",
+        "完成默认停留",
         slideshow={'transition': {'effect': 'none', 'duration_ms': 0}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000}, 'loop': False},
     )
-    assert default_timeout["slideshow"]["advance"] == {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 300}
+    assert default_completion["slideshow"]["advance"] == {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 300}
 
-    explicit_timeout = await _create_project(
+    explicit_completion = await _create_project(
         authenticated_client,
         workspace_id,
-        "媒体显式超时",
+        "完成显式停留",
         slideshow={'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 6000, 'completion_delay_ms': 120000}, 'loop': True},
     )
-    assert explicit_timeout["slideshow"]["advance"] == {'mode': 'scene_end', 'delay_ms': 6000, 'completion_delay_ms': 120000}
-
-
-async def test_project_create_should_accept_timeline_end_advance(authenticated_client: AsyncClient) -> None:
-    """时间轴结束模式通过项目 API 写入后保留独立等待上限。"""
-
-    workspace_id = await _create_workspace(authenticated_client, "时间轴放映空间")
-    project = await _create_project(
-        authenticated_client,
-        workspace_id,
-        "时间轴放映项目",
-        slideshow={'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 120000}, 'loop': False},
-    )
-    assert project["slideshow"]["advance"] == {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 120000}
+    assert explicit_completion["slideshow"]["advance"] == {'mode': 'scene_end', 'delay_ms': 6000, 'completion_delay_ms': 120000}
+    assert explicit_completion["slideshow"]["loop"] is True
 
 
 async def test_project_patch_should_preserve_or_replace_slideshow(authenticated_client: AsyncClient) -> None:

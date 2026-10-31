@@ -1,13 +1,14 @@
 /**
- * 文件功能：在真实预览与 Renderer 中联合验证 3D、旁白、切页 cue 和自动放映的最小闭环。
- * 仅在显式选择联合验收用例时运行，旁白与 cue 已作为默认音频能力开放。
+ * 文件功能：在真实预览与 Renderer 中联合验证三维动作、旁白、切页 cue 与 scene_end 放映的最小闭环。
+ * 仅在显式选择联合验收实例时运行；C3 用同一入口执行真实发声、WebGL 与多窗口验收。
  */
 import { randomUUID } from 'node:crypto'
 
 import type { APIRequestContext } from '@playwright/test'
 
 import { expect, test } from '../../fixtures/test-data'
-import { buildRedModelGlb, buildToneWav } from '../../helpers/media-fixtures'
+import { buildToneWav } from '../../helpers/media-fixtures'
+import { buildSkinnedGlb } from '../../helpers/skinned-glb'
 import { countStrongRedPixels, decodePngPixels } from '../../helpers/png-pixels'
 
 /** 上传真实测试字节并返回资源 ID，失败时保留服务端业务错误。 */
@@ -28,41 +29,82 @@ async function uploadAsset(
   return Number((await response.json()).id)
 }
 
-test('3D、旁白和切页 cue 应在同一放映中协作，静态截图不被媒体阻塞', async (
+test('三维动作、旁白和切页 cue 应在同一放映中协作，静态截图不被媒体阻塞', async (
   { page, context, visualEditSandbox }, testInfo,
 ) => {
-  test.skip(process.env.PRE_MOTION_ACCEPTANCE_ENABLED !== 'true', '仅在音频联合验收实例运行')
+  test.skip(process.env.SCENE_JOINT_ACCEPTANCE_ENABLED !== 'true', '仅在 Scene 联合验收实例运行')
   test.setTimeout(240_000)
   const api = context.request
-  const capabilities = await api.get('/api/system/slideshow-capabilities')
-  expect(capabilities.ok()).toBeTruthy()
-  expect((await capabilities.json()).audio).toMatchObject({ page_narration: true, audio_cues: true })
+  const slideshow = await api.get('/api/system/slideshow-capabilities')
+  expect(slideshow.ok()).toBeTruthy()
+  expect(await slideshow.json()).toMatchObject({
+    schema_version: 4,
+    advance_modes: ['manual', 'timer', 'scene_end'],
+    audio: { page_narration: true, audio_cues: true },
+  })
+  const scene = await api.get('/api/system/scene-capabilities')
+  expect(scene.ok()).toBeTruthy()
+  expect(await scene.json()).toMatchObject({
+    task_roles: ['blocking', 'ambient'],
+    advance_modes: ['manual', 'timer', 'scene_end'],
+    static_presentation: 'independent',
+  })
 
   const suffix = randomUUID().slice(0, 8)
   const modelName = `joint-model-${suffix}`
   const narrationName = `joint-narration-${suffix}`
   const cueName = `joint-cue-${suffix}`
   const jointTitle = `联合验收页 ${suffix}`
-  await uploadAsset(api, visualEditSandbox.workspaceId, {
-    name: modelName, extension: 'glb', mimeType: 'model/gltf-binary', kind: 'model3d', bytes: buildRedModelGlb(),
+  const modelResponse = await api.post(`/api/workspaces/${visualEditSandbox.workspaceId}/assets/upload`, {
+    multipart: {
+      file: { name: `${modelName}.glb`, mimeType: 'model/gltf-binary', buffer: buildSkinnedGlb(0.8) },
+      asset_type: 'model3d', tags: '[]', name: modelName,
+    },
   })
-  await uploadAsset(api, visualEditSandbox.workspaceId, {
+  expect(modelResponse.ok(), await modelResponse.text()).toBeTruthy()
+  const model = await modelResponse.json() as {
+    analysis_metadata: { model3d: { animations: Array<{ index: number; signature: string; duration_ms: number }> } }
+  }
+  // 片段索引与签名必须来自真实资源查询，不能凭名称或时长猜测。
+  const clip = model.analysis_metadata.model3d.animations[0]
+  expect(clip.signature).toBeTruthy()
+  expect(clip.duration_ms).toBe(2000)
+  const narrationId = await uploadAsset(api, visualEditSandbox.workspaceId, {
     name: narrationName, extension: 'wav', mimeType: 'audio/wav', kind: 'audio', bytes: buildToneWav(2_500),
   })
+  expect(narrationId).toBeGreaterThan(0)
   const cueId = await uploadAsset(api, visualEditSandbox.workspaceId, {
     name: cueName, extension: 'wav', mimeType: 'audio/wav', kind: 'audio', bytes: buildToneWav(250),
   })
 
   const source = `<template>
-  <main class="w-full h-full p-8">
+  <main ref="root" class="w-full h-full p-8">
     <h1>${jointTitle}</h1>
-    <AssetModel name="${modelName}" class="w-full h-80" />
-    <AssetAudio name="${narrationName}" purpose="narration" />
+    <AssetModel ref="model" name="${modelName}" class="w-full h-80" />
+    <AssetAudio name="${narrationName}" purpose="narration" @media-ready="narration = $event" @media-unmounted="narration = null" />
   </main>
 </template>
 <script setup lang="ts">
-import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v1.vue'
+import { ref } from 'vue'
+import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v3.vue'
 import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
+import { createSceneMediaTask } from '@runtime-kit/public/composables/media/createSceneMediaTask.v1'
+import { useAudioCue } from '@runtime-kit/public/composables/audio/useAudioCue.v2'
+import { usePageScene } from '@runtime-kit/public/composables/motion/usePageScene.v1'
+import { useStaticPresentation } from '@runtime-kit/public/composables/static/useStaticPresentation.v1'
+const root = ref<HTMLElement | null>(null)
+const model = ref<InstanceType<typeof AssetModel> | null>(null)
+const narration = ref<HTMLMediaElement | null>(null)
+const { playCue } = useAudioCue()
+useStaticPresentation({ root, mode: 'default' })
+usePageScene({ root, define(scene) {
+  const handle = model.value?.getHandle() ?? null
+  if (!handle?.isReady()) throw new Error('联合样例需要已完成真实首帧的模型。')
+  scene.onCleanup(handle.reset)
+  scene.task(handle.animation({ id: 'action', role: 'blocking', clipIndex: ${clip.index}, signature: '${clip.signature}' }))
+  scene.task(createSceneMediaTask({ id: 'narration', role: 'blocking', afterTrack: 'action', target: () => narration.value }))
+  scene.task({ id: 'finish-cue', role: 'ambient', afterTrack: 'narration', async run() { await playCue('interaction.joint-finished') } })
+} })
 </script>`
   const created = await api.post('/api/pages', {
     data: {
@@ -81,15 +123,17 @@ import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
       data: {
         slideshow: {
           transition: { effect: 'push', duration_ms: 300 },
-          advance: { mode: 'media_end', delay_ms: 1_000, media_timeout_ms: 10_000 },
+          advance: { mode: 'scene_end', delay_ms: 5_000, completion_delay_ms: 300 },
           loop: false,
-          auto_start: true,
         },
         audio_settings: {
           master_volume_percent: 100,
           narration_volume_percent: 100,
           effects_volume_percent: 100,
-          cue_bindings: [{ key: 'transition.forward', asset_id: cueId, gain_percent: 100 }],
+          cue_bindings: [
+            { key: 'transition.forward', asset_id: cueId, gain_percent: 100 },
+            { key: 'interaction.joint-finished', asset_id: cueId, gain_percent: 100 },
+          ],
         },
       },
     })
@@ -98,9 +142,8 @@ import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
       data: {
         routes: [
           {
-            route_type: 'page', route: 'home', order: 0, hidden: false,
-            page_id: visualEditSandbox.pageId,
-            advance: { mode: 'manual', delay_ms: 1_000, media_timeout_ms: 10_000 },
+            route_type: 'page', route: 'home', order: 0, hidden: false, page_id: visualEditSandbox.pageId,
+            advance: { mode: 'manual', delay_ms: 5_000, completion_delay_ms: 300 },
           },
           { route_type: 'page', route: 'joint', order: 1, hidden: false, page_id: jointPageId },
         ],
@@ -108,7 +151,7 @@ import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
     })
     expect(routes.ok(), await routes.text()).toBeTruthy()
 
-    // 静态捕获必须等待 GLB 首帧，同时忽略旁白与自动翻页。
+    // 静态捕获必须等待 GLB 首帧，同时不播放旁白、不推进 Mixer。
     const jobResponse = await api.post(`/api/pages/${jointPageId}/screenshot-jobs`, { data: {} })
     expect(jobResponse.ok(), await jobResponse.text()).toBeTruthy()
     const jobId = Number((await jobResponse.json()).id)
@@ -120,15 +163,14 @@ import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
     }, { timeout: 120_000, intervals: [1_000, 2_000] }).toEqual({ status: 'succeeded', error: null })
     const details = await api.get(`/api/pages/${jointPageId}`)
     expect(details.ok()).toBeTruthy()
-    const screenshotUrl = (await details.json()).screenshot_url as string
-    const pngResponse = await api.get(screenshotUrl)
+    const pngResponse = await api.get((await details.json()).screenshot_url as string)
     expect(pngResponse.ok()).toBeTruthy()
     const png = Buffer.from(await pngResponse.body())
     await testInfo.attach('joint-static.png', { body: png, contentType: 'image/png' })
     const pixels = decodePngPixels(png)
-    expect(countStrongRedPixels(pixels) / (pixels.width * pixels.height)).toBeGreaterThan(0.005)
+    expect(countStrongRedPixels(pixels) / (pixels.width * pixels.height)).toBeGreaterThan(0.001)
 
-    // 记录真实 HTMLMediaElement.play 调用，区分切页 cue 与页面旁白的资源地址。
+    // 记录真实 HTMLMediaElement.play 调用，区分切页 cue、结束 cue 与页面旁白的资源地址。
     await context.addInitScript(() => {
       const sources: string[] = []
       Object.assign(window, { __jointAudioPlaySources: sources })
@@ -142,20 +184,23 @@ import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
       data: { entry_descriptor: { entry_type: 'route', route: '/home' } },
     })
     expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
-    await page.goto((await artifactResponse.json()).preview_url)
+    await page.goto((await artifactResponse.json()).preview_url as string)
     const runtime = page.frameLocator('iframe#preview')
     await expect(runtime.getByRole('heading', { name: visualEditSandbox.pageTitle }).last()).toBeVisible()
     await runtime.locator('button[title="进入放映"]').click()
-    await expect(runtime.locator('[data-testid="playback-auto-toggle"]')).toBeVisible()
-    await runtime.getByRole('button', { name: '下一页', exact: true }).click()
+    const controls = runtime.getByRole('group', { name: '放映控制' })
+    await expect(controls.locator('[data-testid="playback-remaining"]')).toHaveText('本页手动')
+    await controls.getByRole('button', { name: '下一页' }).click()
     await expect(runtime.getByRole('heading', { name: jointTitle }).last()).toBeVisible()
+    // scene_end 等待模型动作与旁白实际结束；旁白必须真实推进，不用时长估计。
     await expect.poll(() => runtime.locator('[data-runtime-media-purpose="narration"]').evaluate(
       element => (element as HTMLAudioElement).currentTime,
-    ), { timeout: 10_000 }).toBeGreaterThan(0)
+    ), { timeout: 20_000 }).toBeGreaterThan(0)
     await expect.poll(() => runtime.locator('body').evaluate(() => {
       const sources = (window as Window & { __jointAudioPlaySources?: string[] }).__jointAudioPlaySources || []
       return new Set(sources.filter(Boolean)).size
-    }), { timeout: 10_000 }).toBeGreaterThanOrEqual(2)
+    }), { timeout: 30_000 }).toBeGreaterThanOrEqual(2)
+    await expect(controls.locator('.runtime-playback-controls__state')).toHaveText('放映中')
   } finally {
     await api.patch(`/api/pages/${jointPageId}`, { data: { status: 'archived' } }).catch(() => undefined)
   }

@@ -2,6 +2,8 @@
 
 状态：**完成（2026-10-21），G0 功能选型通过。** 主责：Runtime / 技术验证。前置：无。出口：G0。最终依据为[G0 决定](../g0-decision.md)，前序候选与失败证据保留，不把首轮 WAAPI 判断或历史性能数字当成当前决定。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../../playback-redesign-proposal.md)与[收敛工作包清单](../../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 输入与落点
 
 阅读 [总规划](../README.md)、[创作契约](../authoring-contract.md) 和 [验收目标](../acceptance.md)。复核当前 execution-policy、PageMediaSession、ModelViewer、OffscreenPageStage 与预览版本身份，不以旧规划中的“待实施”代替代码现状。

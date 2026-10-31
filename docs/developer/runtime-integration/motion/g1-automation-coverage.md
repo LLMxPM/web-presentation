@@ -2,6 +2,8 @@
 
 状态：**G1 已关闭（2026-10-23），G2 未关闭**。A01–A16 均有自动化、隔离 Chromium 或跨端 E2E 证据，逐条结论见文末「G1 收口」。隔离 Chromium 直接加载正式 Runtime 入口并使用真实 WebM/WAV/GLB；跨端 E2E 已运行远程 Renderer 默认海报、真实项目放映、双窗口、独立构建播放、有声导出隔离与临时开启的指定状态捕获。MCP 自 2026-10-23 起移出本轮验证与发布范围；跨端混版、生产裁剪镜像最终重建、修正版 30 分钟长测与 B01–B08 模型基准仍属 G2，见 [G2 遗留清单](./g2-followups.md)。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 一句话结论：A01–A16 均有真实浏览器或跨端证据；A04 的残留是 Three.js 库层对渲染器的保留，已转 G2，不影响该场景的功能隔离结论。
 
 ## 阅读顺序
@@ -93,7 +95,7 @@
 
 ## 第二批：隔离 Chromium 真实资源场景
 
-入口为[夹具说明](../../../../tests/experiments/motion-g1/README.md)。2026-10-22 在 Windows x64、Chromium 148.0.7778.96 上运行 `node tests/experiments/motion-g1/run.mjs`：**9/9 场景通过**，未处理页面异常为 0。基准 HEAD 为 `178b7697378a6d5e4db3acf9639e352e8a5e2bf8`，工作区含未提交改动；原始 JSON、逐场景截图、完整素材 SHA-256 保存在本地 `.tmp/motion-g1/`，不随仓库提交。固定视频、WAV、GLB 的 SHA-256 分别为 `97a29cc69cedb70bb1dfde3e4337b4588d5ee68fa793bd5107e682eda3f831a4`、`5227f916fed48c7f187a6864303ff243e9a79da3500c314b8c1f19f8a746d517`、`7a73fb2016dfdb70046c887879a4d1939698f7634c92eb36c0601809757b07eb`。
+入口为 `tests/experiments/motion-g1/`（夹具已随旧时间轴链路在 C2 删除，本文件保留为历史实现记录）。2026-10-22 在 Windows x64、Chromium 148.0.7778.96 上运行 `node tests/experiments/motion-g1/run.mjs`：**9/9 场景通过**，未处理页面异常为 0。基准 HEAD 为 `178b7697378a6d5e4db3acf9639e352e8a5e2bf8`，工作区含未提交改动；原始 JSON、逐场景截图、完整素材 SHA-256 保存在本地 `.tmp/motion-g1/`，不随仓库提交。固定视频、WAV、GLB 的 SHA-256 分别为 `97a29cc69cedb70bb1dfde3e4337b4588d5ee68fa793bd5107e682eda3f831a4`、`5227f916fed48c7f187a6864303ff243e9a79da3500c314b8c1f19f8a746d517`、`7a73fb2016dfdb70046c887879a4d1939698f7634c92eb36c0601809757b07eb`。
 
 | 编号 | 浏览器断言与结果 | 结论边界 |
 | :--- | :--- | :--- |

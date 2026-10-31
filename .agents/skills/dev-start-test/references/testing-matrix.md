@@ -131,7 +131,7 @@ test:backend
 ## 3. 按改动补测映射
 
 - **AI 工具规格、披露组或前端工具说明**：补充防漂移测试，确保工具 key、运行时 Tool、披露工具组和 `agent_guide` 一致。
-- **Runtime Kit manifest 或公开 import path**：补充 Backend 契约测试和 Runtime manifest 测试。Motion 功能分支可先公开已实现的 Scene 入口和调试方式，允许新旧入口暂时并存；旧链清零、全量与 C3 必需验收在合并 main 前收口，不以未完成正式验收阻止开发调试。
+- **Runtime Kit manifest 或公开 import path**：补充 Backend 契约测试和 Runtime manifest 测试。Scene 是唯一页内编排入口，旧时间轴链路已随 C2 清零；全量与 C3 必需实机验收在合并 main 前收口，不以未完成正式验收阻止开发调试。
 - **预览、截图、构建、资源引用或 Runtime 回源**：补充相关 integration、contract 或 E2E smoke；三维模型渲染改动另补 `runtime-heavy/model3d-screenshot.spec.ts`。
 - **认证、权限、工作空间隔离**：补充多用户访问或 API 权限测试。
 - **HTTP DTO / OpenAPI**：运行 codegen 后执行 `test:contracts:generated`，并联动 Editor/Runtime/契约测试。
@@ -140,12 +140,10 @@ test:backend
 - **文档、部署、仓库边界**：运行 `test:repository`；涉及 Docker/compose 时补对应契约测试。
 - **CLI/Gateway 契约**：运行 `test:contracts:gateway` 与 `test:contracts:cli-skill`。
 - **跨多端或发布前**：运行 `pnpm run test:all`，再按上表补未覆盖门禁。
-- **Motion 收敛规划的开发与实机分工**：按[当前工作包清单](../../../../docs/developer/runtime-integration/playback-redesign/work-packages/README.md)执行。A1/A2 只核对现状与准备契约、验收设计；B0–C2 逐包运行单测、无浏览器集成、类型/构建、契约与生成门禁，保持默认截图和导出的接线与开发回归；真实浏览器、远程 Renderer、生产镜像、独立产物、多窗口、发声、WebGL 与长稳统一由 C3 验收。以下旧 motion/G1 实验仅在对应旧实现仍存在时复用，不要求为即将删除的能力补一轮实机基线；新实现的浏览器夹具随责任包适配，C3 正式执行。未运行项明确记录，开发替身和历史证据不得记为新实现实机通过。
+- **Motion 收敛规划的开发与实机分工**：按[当前工作包清单](../../../../docs/developer/runtime-integration/playback-redesign/work-packages/README.md)执行。A1/A2 只核对现状与准备契约、验收设计；B0–C2 已逐包运行单测、无浏览器集成、类型/构建、契约与生成门禁，并保持默认截图和导出的接线与开发回归；真实浏览器、远程 Renderer、生产镜像、独立产物、多窗口、发声、WebGL 与长稳统一由 C3 验收。驱动旧时间轴的 `tests/experiments/motion-g1/`、`motion-regression/` 与 `motion-g2/` 夹具已随旧链路删除；保留的五个选型实验（`motion-authoring`、`motion-wp01`、`motion-story`、`motion-luna`、`motion-final`）不引用平台源码，只作历史决策证据，不再执行。未运行项明确记录，开发替身和历史证据不得记为新实现实机通过。
 - **WP01 动画技术原型**：按 [实验说明](../../../../tests/experiments/motion-wp01/README.md)准备隔离比较依赖，再运行 `node tests/experiments/motion-wp01/run.mjs`；使用独立浏览器、回环随机端口和生成素材，不 prepare E2E、不重置开发库。它不替代产品 Runtime/Renderer 门禁。
-- **Motion 实施回归**：按[回归说明](../../../../tests/experiments/motion-regression/README.md)运行 `node tests/experiments/motion-regression/run.mjs`，直接加载正式 Runtime 入口，覆盖真实视频调度、指定模式采样及 GLB 签名；需要已有 Playwright Chromium/ffmpeg，在回环随机端口运行，结束关闭浏览器与服务。不启动平台、不重置数据，不能替代 G1/G2 或远程 Renderer 验收。
-- **Motion G1 隔离浏览器场景**：按[夹具说明](../../../../tests/experiments/motion-g1/README.md)运行 `node tests/experiments/motion-g1/run.mjs`，覆盖 A03/A04/A06–A10/A12/A13 的本地 Runtime 真实媒体与 WebGL 行为；使用独立 Chromium、临时素材和回环随机端口，不启动平台或重置数据。该夹具不替代远程 Renderer、跨域票据、正式放映/导出或 G2 门禁。
-- **Motion 跨端 E2E**：准备独立 `_e2e` 服务后直接运行 `pnpm exec playwright test --config tests/config/playwright.config.ts --project=smoke tests/e2e/specs/smoke/motion-*.spec.ts`，验证 Editor 预览控制、正式放映推进、受保护媒体 HEAD/Range、双窗口、默认远程截图和部分导出；复用已启动环境时不重复 prepare。新增相关交互后运行 `--project=auth --project=smoke` 检查并行回归。指定状态截图能力关闭时只验证明确拒绝，不把默认截图当作指定状态通过。
-- **Motion 内容校验**：初始化、海报或准备逻辑变化时，运行 Runtime 的 `usePageTimeline.validation.test.ts`、`render-ready.test.ts`，Renderer 的 `test_motion_readiness.py` 与 Backend 的 `test_code_check.py`、缓存/指纹测试。涉及链路变化时，用已授权工作空间内现有页面的只读候选校验确认错误候选拒绝、合法候选通过，核对错误码与字段定位；不以编译成功、静态截图或本项回归代替动态验收，不重置开发数据。
+- **Scene 跨端 E2E**：准备独立 `_e2e` 服务后直接运行 `pnpm exec playwright test --config tests/config/playwright.config.ts --project=smoke tests/e2e/specs/smoke/scene-*.spec.ts tests/e2e/specs/smoke/protected-media.spec.ts`，验证 Editor 预览播放/停止、正式放映三种推进与保持/释放、受保护媒体 HEAD/Range、双窗口 v5 协议、默认远程截图和导出隔离；复用已启动环境时不重复 prepare。新增相关交互后运行 `--project=auth --project=smoke` 检查并行回归。三维动作、旁白与 cue 的联合闭环在 `--project=runtime-heavy scene-joint.spec.ts`，需显式设置 `SCENE_JOINT_ACCEPTANCE_ENABLED=true` 并在有头实例运行。已移除的指定状态截图字段只验证明确拒绝，不把默认截图当作指定状态通过。
+- **Scene 内容校验**：初始化、静态声明或准备逻辑变化时，运行 Runtime 的 `useStaticPresentation.v1.test.ts`、`render-ready.test.ts`、`src/core/scene`，Renderer 的 `test_content_error_diagnostics.py`、`test_static_presentation.py` 与 Backend 的 `test_code_check.py`、缓存/指纹测试。涉及链路变化时，用已授权工作空间内现有页面的只读候选校验确认错误候选拒绝、合法候选通过，核对错误码与字段定位；不以编译成功、静态截图或本项回归代替动态验收，不重置开发数据。
 - **编排与 Vue SFC 创作选型**：按[功能夹具说明](../../../../tests/experiments/motion-authoring/README.md)准备固定候选版本，运行 `node tests/experiments/motion-authoring/run.mjs`；仅类型与功能核对，不采集性能，不运行上面的历史性能实验，也不重置业务数据。
 - **真实资源完整 SFC 创作对照**：按[完整故事夹具](../../../../tests/experiments/motion-story/README.md)运行 `prepare-assets.mjs`、`run.mjs`、`probe-events.mjs`；GSAP/Anime.js 的三路线六组合覆盖真实旁白、裁切视频、骨骼、静态状态和嵌套静默回调。素材可单独重建，不必运行历史性能实验；不启动业务服务或重置业务数据，不替代 Runtime/Renderer 产品验收。
 - **Luna 独立创作小样**：按[评测夹具](../../../../tests/experiments/motion-luna/README.md)使用 `evaluate.mjs` 对指定候选和未占用阶段名做独立类型/浏览器检查，不覆盖本地归档；历史逐阶段源码与评分只保留在本地证据目录，不随仓库提交。首轮真实失败和评测器注入的预期失败必须分开汇报，不算作生产回归。不启动业务服务、不运行性能基准，不替代正式 G2 模型创作验收。

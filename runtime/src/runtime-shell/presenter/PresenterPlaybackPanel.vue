@@ -20,9 +20,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { ChevronLeft, ChevronRight } from '@lucide/vue'
-import type { PresenterStateMessage, PresenterSyncPlaybackCommandAction } from './presenter-sync-protocol'
+import type { PresenterStateMessage, PresenterSyncIntentAction } from './presenter-sync-protocol'
 const props = defineProps<{ playback: PresenterStateMessage | null; displayAvailable: boolean; canGoPrevious: boolean; canGoNext: boolean; pageLabel: string }>()
-const emit = defineEmits<{ command: [action: PresenterSyncPlaybackCommandAction]; previous: []; next: [] }>()
+const emit = defineEmits<{ command: [action: PresenterSyncIntentAction]; previous: []; next: [] }>()
 const active = computed(() => Boolean(props.playback && ['preparing', 'playing', 'blocked'].includes(props.playback.phase)))
 const stateLabel = computed(() => {
   if (!props.displayAvailable) return '等待观众窗口全屏'

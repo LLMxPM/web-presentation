@@ -2,6 +2,8 @@
 
 状态：完成（2026-10-23 首期收口；A12 Editor 预览控件证据见 [G1 映射](../g1-automation-coverage.md)；生产镜像最终重建与 v1 回归转 G2）。主责：Runtime Kit / Editor。前置：[WP08](./wp08-host-slideshow-sync.md)、[WP09](./wp09-capture-export.md)。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../../playback-redesign-proposal.md)与[收敛工作包清单](../../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 输入与落点
 
 以 WP02 定义的内部接口封装 usePageTimeline.v1 与 AssetAudio/AssetVideo/AssetModel.v2，复用内部执行器。Editor UI 实施前完整阅读根 DESIGN。

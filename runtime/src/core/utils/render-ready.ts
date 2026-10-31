@@ -1,7 +1,6 @@
 /**
  * 文件用途：Runtime 强制渲染就绪协议 render-ready.v1/v2 的唯一宿主实现。
  */
-import { settleMotionReadiness } from '@/core/motion/readiness'
 import { waitForMainPreviewContent } from './render-content-ready'
 import { settleStaticPresentation } from '@/core/static-presentation/registry'
 import { isStaticExecution, type StaticPresentationReceipt } from '@/core/static-presentation/types'
@@ -160,14 +159,14 @@ export async function markRenderPreviewMounted(options?: {
   const scope = document.querySelector('.runtime-page-print-source, .runtime-view-preview-source, .component-preview-page') ?? document
   const staticMode = isStaticExecution(context)
   const staticPresentation = staticMode ? await settleStaticPresentation(scope, options?.visualTimeoutMs ?? 25000) : null
-  const motionErrors = [...contentErrors, ...await settleMotionReadiness(scope, false)]
   if (generation !== readinessGeneration) return
+  const contentExceptions = [...contentErrors]
   if (staticPresentation?.status === 'failed') {
-    motionErrors.push({ code: staticPresentation.code!, message: staticPresentation.message! })
+    contentExceptions.push({ code: staticPresentation.code!, message: staticPresentation.message! })
   }
-  if (motionErrors.length) {
+  if (contentExceptions.length) {
     updateRenderReadyHost({
-      contentExceptions: [...(window.__RENDER_READY__?.contentExceptions ?? []), ...motionErrors].slice(-20),
+      contentExceptions: [...(window.__RENDER_READY__?.contentExceptions ?? []), ...contentExceptions].slice(-20),
     })
   }
   let visualAssets: RenderReadyBridge['visualAssets'] = {

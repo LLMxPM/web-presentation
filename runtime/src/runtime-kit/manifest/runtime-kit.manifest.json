@@ -1877,33 +1877,6 @@
     },
     {
       "kind": "composable",
-      "base_name": "usePageTimeline",
-      "version_no": 1,
-      "name": "usePageTimeline.v1",
-      "import_path": "@runtime-kit/public/composables/motion/usePageTimeline.v1",
-      "category": "runtime",
-      "description": "声明页内唯一的动画、音视频与模型时间轴。",
-      "capability": {
-        "enabled": true,
-        "previewable": false,
-        "recommendation_level": "advanced",
-        "display_name": "旧页内时间轴（待清理）",
-        "summary": "开发分支保留的旧入口；正式放映与单页预览使用 usePageScene.v1，旧时间轴随 C2 在合并 main 前清除。",
-        "tags": ["timeline"],
-        "usage": [
-          "import { usePageTimeline, seconds } from '@runtime-kit/public/composables/motion/usePageTimeline.v1'",
-          "const pageRoot = ref<HTMLElement | null>(null)",
-          "const timeline = usePageTimeline({ root: pageRoot, bindings: {}, timelineId: 'intro', applyPoster: true, poster: { atLabel: 'readable' }, define: ctx => ({ plan: ctx.resources().build(), visual(tl) { tl.fromTo('.title', { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: seconds(400) }, 0); tl.addLabel('readable') } }) })",
-          "// 旧入口仅供开发分支已有页面手动调试；新增页面使用 usePageScene.v1。"
-        ],
-        "returns": "对象：plan、state、error、ready 及 prepare/play/pause/resume/restart/seek/sampleAt/setMuted/setVisualMode/dispose。",
-        "return_example": ["timeline.state.value?.positionMs // 400", "timeline.plan.value?.planDigest // 'fnv1a-...'"],
-        "constraints": ["每个页面最多注册一个时间轴；组件片段必须通过填充函数合并，不能创建第二个全局播放者。", "define 仅在非静态上下文挂载时执行一次；原生视觉支持显式 fromTo、addLabel、位置字符串、数值 stagger 和段落函数复用，属性限 opacity/x/y/scale/rotation；禁止回调、插件、无限重复和外部目标。", "资源和捕获统一毫秒，GSAP 原生参数用秒，使用 seconds(ms) 转换；资源 id 自动登记为视觉标签。", "capture/export/thumbnail 不创建或采样时间轴；同一 root 必须另用 useStaticPresentation.v1 声明 default/poster/unsupported，默认截图与导出不使用时间轴 poster。交互预览仍可设置 applyPoster=true。", "动作片段、资源时长与签名必须来自真实资源查询；运行错误带 code、trackId 或 fieldPath。"],
-        "audiences": ["backend", "agent"]
-      }
-    },
-    {
-      "kind": "composable",
       "base_name": "usePageScene",
       "version_no": 1,
       "name": "usePageScene.v1",
@@ -1933,7 +1906,7 @@
           "任务时间用毫秒，GSAP 视觉 duration 用秒；afterTrack 基于实际完成，offsetMs 只能非负。",
           "异步工作使用 task 的 Promise；页面自有监听、计时器和 RAF 必须用 onCleanup 清理并响应 signal。",
           "capture/export/thumbnail 不执行 define；同一 root 必须另用 useStaticPresentation.v1 声明独立静态呈现。",
-          "开发分支暂与 usePageTimeline.v1 并存；同一页只选一种编排。正式宿主切换、旧链清除与实机验收须在合并 main 前完成。开发调试控制台仅在 Vite DEV 模式安装。"
+          "同一页只使用 Scene 一种编排；正式放映、单页预览与开发调试共用同一声明，开发调试控制台仅在 Vite DEV 模式安装。"
         ],
         "audiences": ["backend", "agent"]
       }

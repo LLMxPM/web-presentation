@@ -61,7 +61,7 @@ describe('runtime-backend route page number projection', () => {
           hidden: false,
           speakerNotes: '备注',
           transition: { effect: 'push', durationMs: 800 },
-          advance: { mode: 'media_end', delayMs: 1000, mediaTimeoutMs: 60000 },
+          advance: { mode: 'scene_end', delayMs: 1000, completionDelayMs: 60000 },
         },
       },
     ] as RouteNumberingNode[]

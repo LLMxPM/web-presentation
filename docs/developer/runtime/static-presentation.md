@@ -1,6 +1,6 @@
 # 独立静态呈现
 
-`useStaticPresentation.v1` 是与时间轴、播放进度无关的页面静态声明，公开路径为 `@runtime-kit/public/composables/static/useStaticPresentation.v1`。截图、缩略图、PDF/PPTX 与打印使用同一契约。当前完成开发接线与测试，真实像素、媒体禁播与产物验收由 Motion C3 执行。
+`useStaticPresentation.v1` 是与播放进度无关的页面静态声明，公开路径为 `@runtime-kit/public/composables/static/useStaticPresentation.v1`。截图、缩略图、PDF/PPTX 与打印使用同一契约。当前完成开发接线、旧采样链清零与开发回归，真实像素、媒体禁播与产物验收由 [C3](../runtime-integration/playback-redesign/work-packages/c3-acceptance-release.md) 执行。
 
 ## 页面声明
 
@@ -29,7 +29,7 @@ onMounted(() => {
 
 `isStatic` 在 `capture/export/thumbnail` 为真，交互预览和放映为假。可选 `prepare({ signal })` 只在静态上下文挂载后执行；用于准备图表等静态内容，必须响应取消信号。默认期限 25 秒，`timeoutMs` 只能缩短；卸载与超时都会中止信号。页面自己的 CSS、Canvas、计时器和异步写入须遵守静态分支与取消约束，Runtime 不会拦截任意 JavaScript 副作用。
 
-`usePageScene.v1` 在静态上下文不执行 define、不创建 PageScene；模型保持初始姿态，不推进 Mixer，音频和 cue 不发声。静态声明不得调用 seek、sampleAt 或等待动画终点生成海报。旧 `usePageTimeline.v1` 的清零由 C2 负责，正式静态出口不消费旧采样链。
+`usePageScene.v1` 在静态上下文不执行 define、不创建 PageScene；模型保持初始姿态，不推进 Mixer，音频和 cue 不发声。静态声明不得调用 seek、sampleAt 或等待动画终点生成海报。旧 `usePageTimeline.v1` 与 `core/motion` 采样链已随 C2 删除，静态出口不存在取帧兜底。
 
 ## 就绪与错误
 
@@ -57,4 +57,4 @@ PDF/PPTX 必须有可导航的页面路由，并经过离屏静态舞台；缺�
 
 Renderer 关闭完成前只报告 `cleaning`，不披露成功图片描述符或下载产物。PNG 返回后再次复核期限、取消与图片阶段所有权；取消或图片阶段超时后的迟到结果不得落盘、注册或提升默认指针。成功结果的临时产物保留到消费/TTL，失败与取消清理目录和槽位。真实 Chromium 进程释放与跨产物像素一致性仍由 C3 实测。
 
-指定时刻截图协议已在 B1 移除。截图请求不接受 `motion_snapshot`，结果不再返回 `applied_motion`，能力自省不再披露 `capture_snapshot`。Renderer 控制契约 v1/v2 和 Python DTO 均明确拒绝旧字段，离屏导出也拒绝旧 `motionSnapshot` 参数；旧播放内部 `sampleAt/seek/applyAt` 剩余文件由 C2 删除，不用于静态产物。
+指定时刻截图协议已在 B1 移除。截图请求不接受 `motion_snapshot`，结果不再返回 `applied_motion`，能力自省不再披露 `capture_snapshot`。Renderer 控制契约 v1/v2 和 Python DTO 均明确拒绝旧字段，离屏导出也拒绝旧 `motionSnapshot` 参数；旧播放内部 `sampleAt/seek/applyAt` 已随 C2 删除，仓库内不存在可用于静态产物的采样实现。

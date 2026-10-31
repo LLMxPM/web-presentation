@@ -298,8 +298,6 @@ const currentMenuMode = ref<RuntimeMenuMode>(['text', 'preview', 'bottom-preview
 watch(currentMenuMode, value => writeRuntimePreference('menuMode', value))
 const isBottomStripCollapsed = session.bottomCollapsed
 
-/** 进入放映时的初始自动推进模式，来自项目 auto_start。 */
-
 /**
  * 当前布局实际使用的菜单模式；全屏放映不显示任何预览导航。
  */

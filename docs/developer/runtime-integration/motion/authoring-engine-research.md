@@ -1,5 +1,7 @@
 # 编排引擎与 AI 编写 Vue SFC 的选型补充
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 日期：2026-10-21。本文保留选型调研过程，曾撤回首轮 WAAPI/G0 判断；后续固定模板与交付验证已选定 GSAP、关闭功能 G0，当前结论以[G0 决定](./g0-decision.md)为准。本阶段只比较能力、创作与集成职责，不比较体积、耗时、帧率或内存。
 
 ## 当前判断

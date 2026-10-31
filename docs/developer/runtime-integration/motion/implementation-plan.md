@@ -2,6 +2,8 @@
 
 状态：WP01–WP12 已收口（2026-10-23），[G0 功能选型通过](./g0-decision.md)，G1 已关闭，G2 未关闭；G2 遗留项见 [G2 遗留清单](./g2-followups.md)。2026-10-22 按用户要求默认开放时间轴创作入口与 `timeline_end` 推进，指定状态截图仍关闭；开放不等于 G2 验收完成。MCP 暂不提供服务，已移出本轮 G2。采用 GSAP 与受控原生视觉＋资源 builder；性能不纳入本轮选择依据，首轮数据保留为历史候选。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 分阶段交付
 
 | 阶段 | 工作包 | 阶段结果 |

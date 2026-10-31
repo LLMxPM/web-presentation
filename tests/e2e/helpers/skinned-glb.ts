@@ -12,7 +12,7 @@ function pad4(bytes: Buffer, value: number): Buffer {
  * 构造无光照红色三角网格，三个顶点均由一个实际 joint 驱动；BoneSlide 把 joint 平移 0.8 单位。
  * 顶点权重与 inverse bind matrix 都写入标准 GLB，避免把普通节点变换误当作骨骼测试。
  */
-export function buildSkinnedMotionGlb(translationEndX = 0.8): Buffer {
+export function buildSkinnedGlb(translationEndX = 0.8): Buffer {
   const floats = (values: number[]) => {
     const bytes = Buffer.alloc(values.length * 4)
     values.forEach((value, index) => bytes.writeFloatLE(value, index * 4))
@@ -34,7 +34,7 @@ export function buildSkinnedMotionGlb(translationEndX = 0.8): Buffer {
   }
   const bin = Buffer.concat(chunks)
   const gltf = {
-    asset: { version: '2.0', generator: 'motion-g1-skinned-e2e' },
+    asset: { version: '2.0', generator: 'scene-skinned-e2e' },
     extensionsUsed: ['KHR_materials_unlit'],
     buffers: [{ byteLength: bin.length }],
     bufferViews: chunks.map((chunk, index) => ({ buffer: 0, byteOffset: offsets[index], byteLength: chunk.length })),

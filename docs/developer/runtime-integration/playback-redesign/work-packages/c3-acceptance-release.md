@@ -6,6 +6,37 @@
 
 C1 已于 2026-10-31 完成工程收口（`5bd6d3f`，见 [C1 接线与验证](./c1-static-capture.md)）。静态捕获策略为 `page-static-capture.v3`；本包须对最终候选实测共享视频探针、模型静态帧失败整体中断、组件静态诊断与场景回执、关闭完成前不披露产物、取消/图片超时后的迟到 PNG 拒绝发布。开发替身的临时目录/槽位断言不能作为真实 Chromium 进程已释放的证据。
 
+## C2 整理的执行入口（2026-10-31）
+
+入口按 C2 清零后的实际仓库状态整理。服务探测与复用顺序、E2E 数据纪律、全量门禁与专项矩阵见 [dev-start-test](../../../../../.agents/skills/dev-start-test/SKILL.md) 与[测试矩阵](../../../../../.agents/skills/dev-start-test/references/testing-matrix.md)。C2 只准备入口，未执行任何一项实机验收。
+
+### 已有入口
+
+| 验收范围 | 入口 | 素材与场景 |
+| :--- | :--- | :--- |
+| 放映推进与静态产物 | `pnpm run test:e2e:prepare` 后 `pnpm exec playwright test --config tests/config/playwright.config.ts --project=smoke tests/e2e/specs/smoke/scene-playback.spec.ts` | `tests/e2e/helpers/scene-page-source.ts` 的 blocking 标题＋数字滚动页与 ambient 无限装饰页；`manual/timer/scene_end` 三种推进、完成后停留、ambient 不阻塞、保持/释放、`scene_end` 缺 blocking 任务报错、媒体目标缺失有界错误、指定状态截图字段 422、独立构建后播放并导出 PDF、PPTX/PDF 前后静态一致、远程 PNG 可读默认态 |
+| 双窗口与 v5 协议 | 同上，`scene-presenter.spec.ts` | BroadcastChannel `web-presentation:presenter:v5:*` 探针；protocol 3/4 与旧 `navigate` 伪造包必须被丢弃，只有观众窗口推进 Scene |
+| Editor 预览与资源替换 | 同上，`scene-editor-preview.spec.ts`、`scene-resource-replacement.spec.ts` | 页面详情预览播放/停止；合法替换图片后刷新资源身份与预览像素 |
+| 三维替换后片段失效 | 同上，`scene-model-replacement.spec.ts` | `tests/e2e/helpers/skinned-glb.ts` 的 `buildSkinnedGlb`（真实 joint 驱动、BoneSlide 片段，签名从 `analysis_metadata` 读取） |
+| 受保护媒体 | 同上，`protected-media.spec.ts` | 受保护视频与音频的 HEAD、Range 与视频跳转定位 |
+| 静态跨产物与发声隔离 | 同上，`scene-export-isolation.spec.ts` | `tests/e2e/helpers/media-wav.ts` 的 `toneWavBuffer(30)` 真实旁白＋10 秒位移序列；静态姿态、放映姿态与结束姿态互不重合，远程 PNG → 预览默认态 → 放映发声 → 退出 → PPTX/PDF 全链路 |
+| 联合创作闭环 | `SCENE_JOINT_ACCEPTANCE_ENABLED=true pnpm exec playwright test --config tests/config/playwright.config.ts --project=runtime-heavy scene-joint.spec.ts`（有头实例） | 蒙皮 GLB＋旁白 WAV＋cue WAV；模型动作 → 旁白 `afterTrack` → ambient cue，`audio_settings.cue_bindings` 使用 `transition.forward` 与 `interaction.joint-finished`；同时核对 `/api/system/slideshow-capabilities`（schema 4）与 `/api/system/scene-capabilities` |
+| 三维真实像素与真实构建 | `--project=runtime-heavy model3d-screenshot.spec.ts`、`project-build.spec.ts` | `media-fixtures.ts` 的 `buildRedModelGlb`；沙箱项目真实构建成功 |
+| Renderer 与契约 | `pnpm run test:renderer`、`pnpm run test:render-contracts`；真实链路由上述远程 PNG、诊断附图与取消用例覆盖 | 取消后 attempt 终态、迟到 PNG 拒绝发布需在真实 Renderer 取证，后端单测不能替代 |
+| 镜像与三角色 | `python scripts/contracts/check-image-startup.py --image <tag> --variant runtime\|renderer\|lite\|full`、`python scripts/contracts/renderer-image-probe.py`、`pnpm run test:contracts:compose-images`、`python scripts/testing/docker-architecture.py`；分角色模板为 `deploy/compose/compose.runtime-roles.yml` | `docker_architecture_env.py` 真实编排 `preview`/`build`/`check` 三副本；核对 `__runtime_healthz`、`__runtime_readyz`、`runtime_kit_version` 与 `.runtime-build-id` |
+| 全量主门禁 | `pnpm run test:all` | 收口阶段执行；失败回修到责任包后重跑受影响项 |
+
+### 待建入口（旧实现已随 C2 删除，仓库内无替代）
+
+- **30 分钟受控长稳**：原入口 `tests/experiments/motion-g1/run.mjs --soak` 已删除。需重建有头运行、全屏透明输入 guard（以 `noExternalInput` 为通过条件）、CDP `Memory.getDOMCounters().jsEventListeners` 低水位、RAF 间隔与 dropped-frame 采集，并区分有头/无头 wake lock 结论。
+- **A04 模型进出保留曲线与 WebGL 恢复**：没有存活的挂载/卸载循环脚本，`WEBGL_lose_context` 丢失与恢复演练也没有入口；先建脚本再取修复或接受结论。
+- **多屏 `getScreenDetails` 授权**：缺观众窗口多屏授权的真实演练入口；当前窗口全屏回退不能记为通过。
+- **Firefox/WebKit 与移动端**：仓库没有对应 project 或设备入口；未验证即在支持矩阵记为明确不作承诺。
+
+### 版本与指标记录
+
+每份证据固定记录：候选源码 commit、CLI 与 Skill 版本、`/api/system/slideshow-capabilities` 与 `/api/system/scene-capabilities` 摘要、`editor/src/types/openapi.json` 摘要、Runtime Kit manifest 版本与 `.runtime-build-id`、镜像标签与三角色启动结果。实机指标记录 Chromium 版本、JS 堆、DOM/节点/监听器计数、RAF 间隔与掉帧、媒体元素与 WebGL context 数、Renderer 进程与槽位状态、本地产物路径。历史 G1/G2 数值只作参考，不与本轮混记。
+
 ## 交付
 
 - 固定候选源码版本、CLI/Skill 版本、OpenAPI 摘要、Runtime Kit 与 Runtime 构建身份；按 dev-start-test 探测和准备隔离验证环境。自动化 E2E 只使用独立 `_e2e` 数据，不重置开发库；内置助手真实创作另用受控工作空间，mock 结果不能当成真实模型创作通过。

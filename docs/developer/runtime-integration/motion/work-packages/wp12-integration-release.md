@@ -2,6 +2,8 @@
 
 状态：**已关闭（首期收口，2026-10-23）。** G1 已关闭；G2 未通过，遗留项已登记并移交 [G2 遗留清单](../g2-followups.md)。页内时间轴与 `timeline_end` 已按用户要求提前默认开放，指定状态截图仍关闭；MCP 暂不提供服务，移出本轮范围。主责：联调 / 发布。前置：WP01–WP11 全部交付并可复核。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../../playback-redesign-proposal.md)与[收敛工作包清单](../../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 输入
 
 依据 [验收计划](../acceptance.md) 复核 G0 决策、A01–A16、B01–B08，以及 [运行契约](../runtime-contract.md) 的版本/所有权/身份要求。单元测试和工作包勾选不能替代真实浏览器、远程 Renderer 与客户端证据。
@@ -70,7 +72,7 @@ Firefox/WebKit、移动端或特定编码未完成验收时在支持矩阵中列
 - Backend 模型 GLB、Runtime Kit 与模块边界：86 passed。
 - 仓库文档、环境与开发工具契约：8 files / 63 passed。
 - Renderer 全套与 render-contracts：75 passed；合跑配置有既有 pytest marker 和 Windows subprocess 清理提示，退出码为 0。
-- [隔离 Chromium 回归](../../../../../tests/experiments/motion-regression/README.md)：`node tests/experiments/motion-regression/run.mjs` 通过，Chromium `148.0.7778.96`。真实视频延后播放/暂停/定位/重播/完成、full 250ms 采样 opacity=0.5、三个真实 GLB 签名及卸载通过，未处理页面异常为 0。开发脚本首次曾等待完成超时，随后两次复跑及保存后的脚本均通过；保留此记录，不作为稳定性门禁已完成的证据。
+- 隔离 Chromium 回归（`tests/experiments/motion-regression/`，夹具已随旧链路删除）：`node tests/experiments/motion-regression/run.mjs` 通过，Chromium `148.0.7778.96`。真实视频延后播放/暂停/定位/重播/完成、full 250ms 采样 opacity=0.5、三个真实 GLB 签名及卸载通过，未处理页面异常为 0。开发脚本首次曾等待完成超时，随后两次复跑及保存后的脚本均通过；保留此记录，不作为稳定性门禁已完成的证据。
 - 截图和 JSON 回执保存在本地 `.tmp/motion-fix-browser/`，构建日志为 `.tmp/motion-fix-build.log`；二进制、缓存和构建产物不入库。
 
 本轮未运行完整 E2E、真实远程 Renderer 链路、双窗口、跨域票据/HEAD/Range、生产裁剪镜像、100 次进出、30 分钟循环、Firefox/WebKit 或 G2 模型八任务基准。当时在受限执行环境下远程基础依赖探测返回不可达，本轮使用隔离浏览器且未启动平台服务、未重置数据；2026-10-22 后续以实际服务权限复核发现 PostgreSQL/Redis 均可连通，先前探测不能作为服务故障结论。后续跨端证据见[G1 映射](../g1-automation-coverage.md)。
@@ -144,7 +146,7 @@ Firefox/WebKit、移动端或特定编码未完成验收时在支持矩阵中列
 
 ### 2026-10-22 G1 隔离浏览器场景与构建前置
 
-后续执行了[隔离浏览器夹具](../../../../../tests/experiments/motion-g1/README.md)：Windows x64、Chromium 148.0.7778.96，A03、A04、A06–A10、A12、A13 共 9/9 通过。包括真实视频 Range/seek、慢速传输缓冲、无手势有声 autoplay 拒绝与点击恢复、同 GLB 双实例 WebGL 画面对比、旧媒体会话所有权、降动效与静态作用域、本地捕获桥。完整哈希、断言与未覆盖子条款见[G1 映射](../g1-automation-coverage.md)，原始 JSON 与截图位于本地 `.tmp/motion-g1/`。
+后续执行了隔离浏览器夹具（`tests/experiments/motion-g1/`，夹具已随旧链路删除）：Windows x64、Chromium 148.0.7778.96，A03、A04、A06–A10、A12、A13 共 9/9 通过。包括真实视频 Range/seek、慢速传输缓冲、无手势有声 autoplay 拒绝与点击恢复、同 GLB 双实例 WebGL 画面对比、旧媒体会话所有权、降动效与静态作用域、本地捕获桥。完整哈希、断言与未覆盖子条款见[G1 映射](../g1-automation-coverage.md)，原始 JSON 与截图位于本地 `.tmp/motion-g1/`。
 
 浏览器过程中发现播放/暂停在位置不变时订阅者未收到意图变化，`transport` 现将 intent 纳入状态通知条件；定向 Runtime 单测 3 files / 26 passed，全量 167 files / 1344 passed / 3 skipped，类型检查、修改文件 ESLint 与仓库契约 63 passed。正式 Runtime `vite build` 成功（5478 模块），在本阶段只作为 G2 的开发依赖构建前置。此阶段未启动或重置平台服务；服务探测发现 Backend/Editor/Runtime/Renderer HTTP 就绪，但受限执行环境下 PostgreSQL 与 Redis 探测误报不可达，所以当时没有进行跨端/E2E 与远程任务演练。后续已在实际权限下确认依赖可连通，完成独立 E2E、CLI 链路和生产依赖 Runtime 镜像启动验证，证据及剩余条款见[G1 映射](../g1-automation-coverage.md)。G1/G2 未关闭。
 

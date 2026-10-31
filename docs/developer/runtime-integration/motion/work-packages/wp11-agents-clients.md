@@ -2,6 +2,8 @@
 
 状态：完成（2026-10-23 首期收口；CLI/External API 与指定状态截图证据见 [G1 映射](../g1-automation-coverage.md)；MCP 移出本轮，内置助手联合创作转 G2-01）。主责：Backend AI / CLI（MCP 移出）。前置：[WP07](./wp07-asset-capabilities.md)、[WP08](./wp08-host-slideshow-sync.md)、[WP09](./wp09-capture-export.md)、[WP10](./wp10-runtime-kit-editor.md)。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../../playback-redesign-proposal.md)与[收敛工作包清单](../../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 > 2026-10-23 起 MCP 暂不提供服务，已移出本轮 G2；下文 MCP 相关记录只作历史实施与证据，不作为当前发布要求。
 
 ## 输入与落点

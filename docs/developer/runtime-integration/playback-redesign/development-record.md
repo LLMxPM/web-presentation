@@ -10,8 +10,8 @@
 
 | 范围 | 已核对的源码与事实 | 承接 |
 | :--- | :--- | :--- |
-| 公开编排 | [usePageTimeline.v1](../../../../runtime/src/runtime-kit/public/composables/motion/usePageTimeline.v1.ts) 挂载时执行 define、编译和构造 transport，静态准备调用 posterTimeMs 的 sampleAt | B0 隔离静态执行，B2 替换播放入口 |
-| 静态就绪 | [render-ready](../../../../runtime/src/core/utils/render-ready.ts) 调用 [motion readiness](../../../../runtime/src/core/motion/readiness.ts)，静态态依赖时间轴编译和准备 | B0 独立静态登记与回执 |
+| 公开编排 | `usePageTimeline.v1`（已于 C2 删除）挂载时执行 define、编译和构造 transport，静态准备调用 posterTimeMs 的 sampleAt | B0 隔离静态执行，B2 替换播放入口 |
+| 静态就绪 | [render-ready](../../../../runtime/src/core/utils/render-ready.ts) 调用 `core/motion/readiness`（已于 C2 删除），静态态依赖时间轴编译和准备 | B0 独立静态登记与回执 |
 | 执行策略 | [execution-policy](../../../../runtime/src/core/execution/execution-policy.ts) 区分 capture/export/thumbnail；[execution-scope](../../../../runtime/src/core/execution/execution-scope.ts) 只允许嵌套收紧 | B0 复用，B5 删除死标志 |
 | 导出 | [OffscreenPageStage](../../../../runtime/src/core/services/export/OffscreenPageStage.ts) 固定捕获 iframe，先 finish 原生动画再应用时间轴 snapshot | B0 默认静态态，B1 删除指定时刻入口 |
 | 资源等待 | [visual-assets](../../../../runtime/src/core/utils/visual-assets.ts) 等待有限动画结束，同时已有字体、图片与媒体首帧等待 | B0 静态模式跳过动画等待，保留资源等待 |
@@ -232,4 +232,18 @@ B3/B4/B5 均工程完成，GB 开发出口关闭。MCP 快照/bindings 因 capab
 
 开发验证：Runtime 全套 187 文件 1477 通过、3 项既有跳过，随后修正按导出 354 项、静态接线 38 项及组件 11 项专项复验；最终 check/build 通过。Renderer 68、render-contracts 58、Backend 16 文件 119、根仓契约 129 项通过，生成物无漂移（269 paths / 367 schemas）；仓库门禁及 diff 检查通过。实际命令/文件集合、修复过的测试失败、未运行项均在 [C1 卡片](./work-packages/c1-static-capture.md)。
 
-C1 工程完成，C2/C3 待实施，GC 尚未通过。未运行真实浏览器/远程 Renderer、生产镜像、独立产物、真实声音/WebGL、长稳和全量主门禁；未重启开发服务、未修改 `.env` 或开发数据、未推送。C2 接续旧入口清零，C3 承接真实像素、静态零播放、不可呈现与取消资源释放证据。
+C1 工程完成，C3 待实施，GC 尚未通过。未运行真实浏览器/远程 Renderer、生产镜像、独立产物、真实声音/WebGL、长稳和全量主门禁；未重启开发服务、未修改 `.env` 或开发数据、未推送。C2 接续旧入口清零，C3 承接真实像素、静态零播放、不可呈现与取消资源释放证据。
+
+## C2 旧链路清零与文档（2026-10-31）
+
+基线 `b9d4d6d`，改动记录时仍在工作树。删除 `runtime/src/core/motion/` 整目录（16 个源文件与 7 个测试）、`usePageTimeline.v1.ts` 与 3 个测试、`model3d/motion/motion-contract.ts`，共 28 个 Runtime 文件；B2 的 `core/scene/preview-bridge.ts` 是现行 Scene 预览桥，不是旧模块，保留。`render-ready.ts` 不再等待 motion readiness，`dev-debug.ts` 删除旧句柄冲突探测，`execution-policy.ts` 删除 `allowAutoStart` 与两个已无调用方的判定函数，manifest 删除 `usePageTimeline.v1` 导出。Presenter 残留命名收敛为 v5 意图动作，`presenter-playback-state` 与 `presenter-console__display-status` 是 DOM 标识符而非协议消息类型，保留。
+
+E2E 按「主体存续则移植、主体删除则删断言」处理：七个 `motion-*.spec.ts` 与 `runtime-heavy/pre-motion-joint.spec.ts` 改名为 `scene-*.spec.ts` / `scene-joint.spec.ts`，迁到 `usePageScene.v1` + `useStaticPresentation.v1` + schema 4 + Presenter v5，新增 `scene-page-source.ts` 与三个媒体/模型构造器；`motion-page-source.ts` 删除。Backend 契约测试改为断言旧入口不存在；`test_render_motion_dispatch.py` 改名 `test_render_static_dispatch.py`；`test_code_check.py` 的内容错误样例改为 `MODEL_CLIP_STALE`；`test_project_slideshow_settings.py` 合并两条旧命名重复用例。Editor 能力 mock 从 schema 2 改为 schema 4 单一工厂；投影测试与共享 fixture 同批换成 `scene_end`。
+
+实验产物结论：`motion-g1/`、`motion-regression/`、`motion-g2/` 删除（前两者直接 import 已删除模块，后者 import 已删除的 `motion-g1/fixtures.mjs` 成为悬空孤儿；原始 JSON 与截图按边界只留本地 `.tmp/`）；`motion-authoring`、`motion-wp01`、`motion-story`、`motion-luna`、`motion-final` 保留为自包含的历史选型证据，对平台源码零 import，不再执行。
+
+文档：顶层 `README.md`/`README.zh-CN.md` 去掉「开发分支」限定；`AGENTS.md` 新增「页内编排与放映约束」四条，检查指纹与页码 fixtures 约束复核后确认已按新模型表述、未改动；用户放映文档重写并新增「支持状态」三分法；Runtime/集成/AI/支持矩阵/发布检查表同步，旧 motion 专题 25 个文件加历史横幅；`development-record.md` 指向已删除源文件的两个链接改为行内代码并标注删除。C3 卡片新增执行的已有入口与四类待建入口（长稳、A04 保留曲线与 WebGL 恢复、多屏授权、Firefox/WebKit/移动端）。
+
+开发验证：Runtime 全套 178 文件 1400 通过、3 项既有跳过，check/build 通过；Editor 160 文件 904 通过，check/build 通过；Backend contracts 76 通过、7 项既有 Redis 环境跳过，另有 slideshow/render/code-check/AI/CLI-skill/工具规格定向 75 项通过；Renderer 68、render-contracts 58、根仓契约 129、仓库门禁 63 通过；生成物无漂移（269 paths / 367 schemas）；E2E 收集 40 用例 / 21 文件；相邻 CLI 仓 212 通过，跨仓 OpenAPI 契约未 skip。
+
+C2 工程完成，C3 待实施，GC 尚未通过。未运行浏览器、远程 Renderer、镜像、独立产物、多窗口、长稳或全量主门禁；未启动服务、未重置开发库、未修改 `.env`、未推送。实际命令与未运行项见 [C2 卡片](./work-packages/c2-legacy-zero.md)。

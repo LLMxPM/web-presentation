@@ -508,21 +508,21 @@ async def test_page_code_check_should_append_render_warning_after_runtime_passed
     assert fake_render.calls
 
 
-async def test_page_code_check_motion_initialization_error_must_fail(
+async def test_page_code_check_scene_content_error_must_fail(
     authenticated_client: AsyncClient,
 ) -> None:
-    """编译通过但时间轴初始化失败时拒绝成功，保留模型可修复的字段与时长。"""
-    workspace_id = await _create_workspace(authenticated_client, "Motion 内容错误工作空间")
-    project_id = await _create_project(authenticated_client, workspace_id, "Motion 内容错误项目")
+    """编译通过但 Scene 内容错误时拒绝成功，保留模型可修复的字段与签名信息。"""
+    workspace_id = await _create_workspace(authenticated_client, "Scene 内容错误工作空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "Scene 内容错误项目")
     response = await authenticated_client.post("/api/pages", json={
-        "workspace_id": workspace_id, "project_id": project_id, "title": "时间轴错误页",
+        "workspace_id": workspace_id, "project_id": project_id, "title": "Scene 错误页",
         "page_content": "<template><main>原页面</main></template>", "file_type": "vue", "status": "active",
     })
     assert response.status_code == 200
     diagnostic = {
-        "severity": "error", "code": "TIMELINE_SCHEMA_INVALID",
-        "message": "海报时间 3000 毫秒超出 0–2570 毫秒范围 (field_path=timeline.poster.atMs)",
-        "evidence": {"field_path": "timeline.poster.atMs"},
+        "severity": "error", "code": "MODEL_CLIP_STALE",
+        "message": "模型片段索引或签名已经失效，请重新读取资源片段 (field_path=scene.tracks.model)",
+        "evidence": {"field_path": "scene.tracks.model"},
     }
     async with get_session_factory()() as session:
         result = await CodeCheckService(

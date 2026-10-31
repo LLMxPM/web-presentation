@@ -244,5 +244,5 @@ interface PageTransitionStartedEvent {
 - 没有 `audio_settings_json` 的历史项目读取为默认音量且无 cue 绑定，因此行为完全静默。
 - Runtime Kit 公开路径始终版本化；AssetAudio/Video.v2 已删除，保留 v1 的用途声明并新增显式 Scene 媒体任务。useAudioCue.v2 是 Promise 入口，旧同步 v1 已删除。
 - 旧客户端省略 audio 设置时，项目更新不得清空现有 cue；显式 `null`、空列表和省略必须在 API 契约中区分。
-- `AssetAudio.v1` 一旦发布不做破坏性修改；未来不兼容演进新增 `AssetAudio.v2`。
+- `AssetAudio.v1` 一旦发布不做破坏性修改；未来不兼容演进新增更高版本号，已删除的 `v2` 不复用，避免同名不同语义。
 - 跨页 BGM 若未来立项，应新增独立 ambient channel 和会话模型，不复用 narration 的页面 DOM 生命周期。

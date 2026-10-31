@@ -101,7 +101,7 @@ import { usePlaybackHost } from '@/runtime-shell/playback/usePlaybackHost'
 import PresenterPageStage from './PresenterPageStage.vue'
 import { usePresenterController } from '@/runtime-shell/presenter/usePresenterController'
 import { runtimeAudioBus } from '@/core/audio/runtime-audio-bus'
-import type { PresenterSyncPlaybackCommandAction } from './presenter-sync-protocol'
+import type { PresenterSyncIntentAction } from './presenter-sync-protocol'
 
 interface PresenterDetailedScreen {
   availLeft: number
@@ -159,14 +159,14 @@ const shouldShowFullscreenPrompt = computed(() => !isInFullscreen.value && !isFu
 const isScreenDetectionSupported = computed(() => typeof getScreenDetailsApi() === 'function')
 const {
   currentPage,
-  postDisplayStatus,
+  postDisplayVisibility,
   updatePlayback,
   postPlaybackState,
 } = usePresenterController({
   role: 'display',
   channelId: channelId.value,
   initialPath: initialPath.value,
-  onPlaybackCommand: handlePlaybackCommand,
+  onIntent: handleIntent,
 })
 
 const {
@@ -183,10 +183,10 @@ function syncPlaybackPresentation(): void {
 watch(playbackSnapshot, syncPlaybackPresentation, { immediate: true })
 
 /** 有限控制意图只在唯一观众宿主执行；媒体许可重试必须来自本窗口手势。 */
-function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction): void {
+function handleIntent(action: PresenterSyncIntentAction): void {
   if (action === 'start' && !isInFullscreen.value) {
     fullscreenMessage.value = '请先在观众窗口进入全屏，再开始放映。'
-    postDisplayStatus('windowed', false)
+    postDisplayVisibility('windowed', false)
     return
   }
   switch (action) {
@@ -376,7 +376,7 @@ function updateFullscreenState(): void {
     isFullscreenPromptDismissed.value = false
     if (wasFullscreen) stopPlayback()
   }
-  postDisplayStatus(next ? 'fullscreen' : 'windowed', next)
+  postDisplayVisibility(next ? 'fullscreen' : 'windowed', next)
 }
 
 onMounted(() => {
@@ -388,7 +388,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  postDisplayStatus('closed', false)
+  postDisplayVisibility('closed', false)
   document.removeEventListener('fullscreenchange', updateFullscreenState)
   window.removeEventListener('beforeunload', handleBeforeUnload)
 })
@@ -397,7 +397,7 @@ onUnmounted(() => {
  * 在窗口即将关闭时上报关闭状态。
  */
 function handleBeforeUnload(): void {
-  postDisplayStatus('closed', false)
+  postDisplayVisibility('closed', false)
 }
 </script>
 

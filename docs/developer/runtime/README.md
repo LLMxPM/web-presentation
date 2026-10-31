@@ -9,7 +9,7 @@
 | [页面添加指南](./page-creation-guide.md) | 页面源码、画布与本地开发流程 |
 | [页内动画与减少动态效果](./page-animation-guide.md) | 动效能力、静态基线、偏好适配、排查与模型提示入口 |
 | [独立静态呈现](./static-presentation.md) | 页面静态声明、截图与导出就绪、不可呈现语义 |
-| [Scene 开发调试](./scene-development.md) | usePageScene.v1 公开入口、控制台播放与合并前收口 |
+| [Scene 开发调试](./scene-development.md) | usePageScene.v1 公开入口、控制台播放、正式放映与预览接线 |
 | [路由配置指南](./routes-config-guide.md) | fixture 路由与页面入口配置 |
 | [主题系统使用指南](./theme-usage-guide.md) | 主题变量与页面样式 |
 | [图标系统使用指南](./icon-system-guide.md) | 图标配置与页面引用 |
@@ -28,8 +28,8 @@
 | 文档 | 内容 |
 | :--- | :--- |
 | [预览源站与 artifact 接入](../runtime-integration/preview/README.md) | 跨服务预览入口、票据、资源读取和运行时边界 |
-| [放映运行时接入](../runtime-integration/slideshow/README.md) | 计时与媒体调度、双窗口、静态上下文和代码入口 |
-| [页内动画与时间轴接入](../runtime-integration/motion/README.md) | 统一播放控制、媒体时钟、模型动作与静态采样 |
+| [放映运行时接入](../runtime-integration/slideshow/README.md) | 翻页推进、Scene 完成聚合、双窗口、静态上下文和代码入口 |
+| [页内动画历史记录](../runtime-integration/motion/README.md) | 旧页内时间轴的规划与验收记录；现行编排见 [Scene 开发调试](./scene-development.md) |
 | [Vue 页面资源引用规范](./integration/asset-usage-guide.md) | 资源 URL 与特殊格式渲染 |
 | [三维资源引用规范](./integration/asset-usage-guide.md) | GLB Viewer、资源身份和页面引用入口；后续阶段见[专题工作](../projects/threejs-resource-implementation-plan.md) |
 | [PPTX 导出 DOM 契约](./integration/pptx-export-dom-contract.md) | 表格、媒体与连接线的显式导出属性、版本约定与识别优先级 |

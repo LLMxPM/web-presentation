@@ -1,7 +1,6 @@
 /** 文件功能：在 Vite DEV 提供 Scene 控制台，复用正式单页预览实现，不另建执行器。 */
 import type { Router } from 'vue-router'
 import { getRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
-import { findPageMotionHandle } from '@/core/motion/page-motion-contract'
 import { isStaticExecution } from '@/core/static-presentation/types'
 import { findPageSceneDefinition } from './page-scene-definition'
 import { createPageScenePreview } from './page-scene-preview'
@@ -33,7 +32,6 @@ export function installPageSceneDebug(router?: Pick<Router, 'beforeEach'>): () =
     const definition = findPageSceneDefinition(target, element => !isStaticSceneRoot(element)), root = definition?.root()
     if (!root?.isConnected) throw new SceneSessionError('SCENE_DEBUG_DEFINITION_MISSING', '当前画布没有已挂载的 usePageScene.v1 声明。')
     if (isStaticSceneRoot(root)) return null
-    if (findPageMotionHandle(root)) throw new SceneSessionError('SCENE_DEBUG_LEGACY_CONFLICT', '同一画布不能同时播放 Scene 和旧时间轴，请分别放在不同页面调试。')
     scope = target
     await preview.play()
     return preview.getSnapshot()

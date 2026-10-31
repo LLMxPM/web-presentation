@@ -1,5 +1,7 @@
 # 完整故事编排与 SFC 创作入口对照
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 日期：2026-10-21。属于 WP01 的过程证据，本阶段没有关闭 G0；后续固定模板与交付验证已通过，最终结论见[G0 决定](./g0-decision.md)。这里不比较性能、不开放公共能力，将 GSAP 与 Anime.js 放入同一真实故事；样例由研究作者编写并修正，不构成独立模型生成成功率。
 
 ## 当前建议

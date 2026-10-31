@@ -1,5 +1,7 @@
 # Luna 独立编写 Vue SFC 的验证结果
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 日期：2026-10-21。这是前一轮四上下文过程记录，通过 collaboration 显式指定 `gpt-6-luna`、medium、`fork_turns: none`。当时结论是 GSAP 稍稳、需要固定生命周期模板；本阶段未关闭 G0。后续固定模板的八任务和交付验证已完成，最终结论见[G0 决定](./g0-decision.md)。不比较性能、不开放新 Runtime Kit 能力。
 
 ## 试验方法

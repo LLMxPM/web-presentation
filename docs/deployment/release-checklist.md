@@ -63,15 +63,15 @@ Lite Dockerfile 采用双 venv 独立依赖隔离（D-Dep3），生产流水线�
 
 ## 5. M1 自动放映能力与 Runtime 配套
 
-**状态**：源码能力已开放（2026-10-17），同版部署验证待执行。
+**状态**：源码能力已开放并收敛为 schema 4（2026-10-31），同版部署验证待执行。
 
-Backend `capabilities.slideshow` 已声明 `advance_modes` 为 `manual`/`timer`、`single_window_auto_play` 为 true；`presenter_auto_play` 与 `capture_auto_play` 仍为 false。该声明只对应当前包含 WP13–WP18 播放控制的 Runtime。
+Backend `capabilities.slideshow` 声明 `schema_version=4`、`advance_modes` 为 `manual`/`timer`/`scene_end`、`single_window_auto_play` 与 `presenter_auto_play` 为 true、`capture_auto_play` 为 false；`/api/system/scene-capabilities` 另行声明任务角色与独立静态呈现。能力布尔值只表示开发支持，真实浏览器与产物结论由 C3 回填。该声明只对应包含 Scene/Deck 与 Presenter v5 的 Runtime。
 
 **发布要求**：
 
-- Backend 与 Runtime 使用同版部署；不得把声明 timer/单窗口能力的 Backend 与旧 Runtime 执行池组合后对外宣布支持。
-- 已打开的放映窗口保持创建时的不可变快照；回滚应用不重写历史 artifact，也不保证旧版本可以完整编辑新配置。
-- 部署后执行真实浏览器计时、暂停/循环和 CLI 读改写抽查；MCP 不在当前交付范围。证据记入 [WP21](../archive/developer-work-2026-10/slideshow/work-packages/wp21-m1-integration-release.md)。
+- Backend 与 Runtime 使用同版部署；不得把声明 schema 4 能力的 Backend 与旧 Runtime 执行池组合后对外宣布支持。平台内部服务不保证混版运行，升级时排空旧服务再切换同版服务。
+- 已打开的放映窗口保持创建时的不可变快照；回滚应用不重写历史 artifact。旧 schema 3 及更早配置读取时返回稳定 409，需要按当前版本重建，不保证旧版本可以完整编辑新配置。
+- 部署后执行真实浏览器三种翻页模式、保持/释放、循环和 CLI 读改写抽查；不存在暂停或定位入口。MCP 不在当前交付范围。证据记入 [WP21](../archive/developer-work-2026-10/slideshow/work-packages/wp21-m1-integration-release.md)与 [C3](../developer/runtime-integration/playback-redesign/work-packages/c3-acceptance-release.md)。
 
 **下一步**：在目标部署拓扑执行同版升级与回滚演练，并记录版本矩阵和实际证据。
 
@@ -87,18 +87,18 @@ Backend `capabilities.slideshow` 已声明 `advance_modes` 为 `manual`/`timer`�
 
 ## 7. 页内动画收敛与集中实机验收
 
-**状态**：旧时间轴与 `timeline_end` 已默认开放（2026-10-22）；G1 已关闭（2026-10-23），G2 未关闭。新的[放映动画收敛规划](../developer/runtime-integration/playback-redesign-proposal.md)尚未实施，2026-10-29 已调整为先完成工程替换，再由 C3 集中实机验收。
+**状态**：旧时间轴实现已按[放映动画收敛规划](../developer/runtime-integration/playback-redesign-proposal.md)整体替换。A1/A2、B0–B5、C1 与 C2 工程已完成（2026-10-31），旧 `core/motion`、`usePageTimeline.v1`、`Asset*.v2`、Presenter v4 与 `media_end`/`timeline_end`/`auto_start` 已从源码、manifest、E2E 与当前文档清零；C3 集中实机验收待执行，GC 尚未通过。
 
-首期 WP01–WP12 与 [G1 证据](../developer/runtime-integration/motion/g1-automation-coverage.md)作为可复用实现和风险输入。旧 [G2 清单](../developer/runtime-integration/motion/g2-followups.md)不再是当前执行入口，逐项承接以[收敛工作包清单](../developer/runtime-integration/playback-redesign/work-packages/README.md)为准。指定时刻状态重建与截图已永久放弃；混版矩阵和 B01–B08 模型量化门槛作废，不再等待后续开放。默认 PNG、诊断附图、缩略图和静态导出继续保留，改用独立静态态。MCP 不列入本轮交付。
+首期 WP01–WP12 与 [G1 证据](../developer/runtime-integration/motion/g1-automation-coverage.md)保留为历史实现记录和风险输入，不代表新实现已验收。旧 [G2 清单](../developer/runtime-integration/motion/g2-followups.md)不再是当前执行入口，逐项承接以[收敛工作包清单](../developer/runtime-integration/playback-redesign/work-packages/README.md)为准。指定时刻状态重建与截图已永久放弃；混版矩阵和 B01–B08 模型量化门槛作废，不再等待后续开放。默认 PNG、诊断附图、缩略图和静态导出保留，改用独立静态态。MCP 不列入本轮交付。
 
 **发布要求**：
 
-- A1/A2 仅完成现状核对和验收设计；B0–C2 逐包完成开发测试、契约与生成门禁，不以旧实现的实机验收作为开发前置。
-- [C3 集中验收](../developer/runtime-integration/playback-redesign/work-packages/c3-acceptance-release.md)必须覆盖内置助手/Editor/CLI 联合创作、真实 Renderer、静态跨产物一致性、媒体发声与播放许可、多窗口、WebGL、受保护媒体缓冲、取消清理、最终生产裁剪镜像三角色、独立 ZIP 和至少 30 分钟受控长稳；给出 A04 保留堆的修复或接受结论。
+- A1/A2 已完成现状核对和验收设计；B0–C2 已逐包完成开发测试、契约与生成门禁，未以旧实现的实机验收作为开发前置。
+- [C3 集中验收](../developer/runtime-integration/playback-redesign/work-packages/c3-acceptance-release.md)必须覆盖内置助手/Editor/CLI 联合创作、真实 Renderer、静态跨产物一致性、媒体发声与播放许可、多窗口、WebGL、受保护媒体缓冲、取消清理、最终生产裁剪镜像三角色、独立 ZIP 和至少 30 分钟受控长稳；给出 A04 保留堆的修复或接受结论。执行入口为 `tests/e2e/specs/smoke/scene-*.spec.ts`、`protected-media.spec.ts` 与 `tests/e2e/specs/runtime-heavy/scene-joint.spec.ts`。
 - 最终候选源码、Backend/Runtime/Renderer 与 CLI 的契约和能力一致；失败回修后重验受影响场景并重新确认镜像/产物身份。全量主门禁与相关专项通过后才可宣布 GC 通过或 G2 关闭。
 - 回填用户文档、支持矩阵和证据位置；Firefox/WebKit、移动端、多屏授权及其它未验证环境不作支持承诺。旧 G1/G2 结果不能替代本次新实现验收。
 
-**下一步**：按 `A1 → A2 → B0 → B1 → B2 → B3/B4/B5 → C1 → C2 → C3` 推进；实机任务集中到 C3，不再先验旧链再验新链。
+**下一步**：只剩 C3。按其执行顺序完成全量主门禁、正式服务链路、联合创作、静态跨产物、Renderer 取消、多窗口与媒体/WebGL 异常场景，再从通过验证的候选源码构建最终镜像与独立产物，最后执行受控长稳与 A04 资源曲线观测；不再先验旧链再验新链。
 
 ---
 

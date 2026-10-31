@@ -89,7 +89,7 @@
                 :can-go-previous="canGoPrevious"
                 :can-go-next="canGoNext"
                 :page-label="`${currentPage.pageNumber} / ${pages.length}`"
-                @command="handlePlaybackCommand"
+                @command="handleIntent"
                 @previous="goPrevious"
                 @next="handleTransportNext"
               />
@@ -133,7 +133,7 @@ import PresenterPageGrid from '@/runtime-shell/presenter/PresenterPageGrid.vue'
 import PresenterPlaybackPanel from '@/runtime-shell/presenter/PresenterPlaybackPanel.vue'
 import PresenterTimerPanel from '@/runtime-shell/presenter/PresenterTimerPanel.vue'
 import { usePresenterController } from '@/runtime-shell/presenter/usePresenterController'
-import type { PresenterSyncPlaybackCommandAction } from '@/runtime-shell/presenter/presenter-sync-protocol'
+import type { PresenterSyncIntentAction } from '@/runtime-shell/presenter/presenter-sync-protocol'
 import { openPresenterDisplayWindow } from '@/runtime-shell/presenter/presenter-window'
 
 const route = useRoute()
@@ -167,7 +167,7 @@ const {
   setTileSize,
   postClose,
   postState,
-  sendPlaybackCommand,
+  sendIntent,
 } = usePresenterController({
   role: 'console',
   channelId: channelId.value,
@@ -231,8 +231,8 @@ function exitPresenterMode(): void {
  * 把控制台操作转成观众窗口命令；未连接时面板已禁用按钮。
  * @param action 放映命令动作
  */
-function handlePlaybackCommand(action: PresenterSyncPlaybackCommandAction): void {
-  sendPlaybackCommand(action)
+function handleIntent(action: PresenterSyncIntentAction): void {
+  sendIntent(action)
 }
 
 /**
@@ -253,7 +253,7 @@ function handleKeydown(event: KeyboardEvent): void {
   }
   if (event.key === ' ') {
     event.preventDefault()
-    sendPlaybackCommand(remoteHeld.value ? 'release' : 'hold')
+    sendIntent(remoteHeld.value ? 'release' : 'hold')
     return
   }
   if (event.key === 'PageDown' || event.key === 'ArrowRight') {

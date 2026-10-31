@@ -15,7 +15,7 @@ it('两个实时通道的重复消息只执行一次，重开请求状态，不�
   const actions = vi.fn(), audience = mountPresenter('display', 10, actions), consoleView = mountPresenter('console', 1)
   await flushPresenterMessages()
   expect(consoleView.controller.remotePlayback.value?.phase).toBe('stopped')
-  consoleView.controller.sendPlaybackCommand('next'); await flushPresenterMessages()
+  consoleView.controller.sendIntent('next'); await flushPresenterMessages()
   expect(actions).toHaveBeenCalledTimes(1)
   audience.controller.updatePlayback({ page: '/b', phase: 'failed', held: false, issue: { code: 'PREPARE_FAILED', message: '资源准备失败' } }); await flushPresenterMessages()
   consoleView.app.unmount()

@@ -2,6 +2,8 @@
 
 状态：历史候选，未选为唯一创作入口。2026-10-21 的[G0 决定](./g0-decision.md)已采用原生 GSAP 视觉＋资源 builder；下文只保留此前 JSON tracks 草案，WP02 不应直接照此建立第二套完整视觉 DSL。当前方向见[创作契约](./authoring-contract.md)，执行约束见[运行契约](./runtime-contract.md)。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 入口与定义归属
 
 拟新增 `usePageTimeline.v1`，通过 Runtime Kit manifest 返回真实版本化 import path。一次调用接收 `definition` 与 `bindings`，返回只读状态及 `play/pause/resume/restart/seek/dispose` 控制接口。页面根部仍使用页面组件或 DefaultContainer。

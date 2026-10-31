@@ -12,7 +12,7 @@ import PresenterConsoleView from './PresenterConsoleView.vue'
 const presenterFixture = vi.hoisted(() => ({
   viewMode: 'focus' as 'focus' | 'grid',
   navigateTo: vi.fn(),
-  sendPlaybackCommand: vi.fn(),
+  sendIntent: vi.fn(),
   displayAvailable: true,
   remotePlayback: null as unknown,
 }))
@@ -76,7 +76,7 @@ vi.mock('@/runtime-shell/presenter/usePresenterController', async () => {
       setTileSize: vi.fn(),
       postClose: vi.fn(),
       postState: vi.fn(),
-      sendPlaybackCommand: presenterFixture.sendPlaybackCommand,
+      sendIntent: presenterFixture.sendIntent,
     }),
   }
 })
@@ -107,7 +107,7 @@ vi.mock('@/runtime-shell/preview/ViewPreview.vue', async () => {
 beforeEach(() => {
   presenterFixture.viewMode = 'focus'
   presenterFixture.navigateTo.mockReset()
-  presenterFixture.sendPlaybackCommand.mockReset()
+  presenterFixture.sendIntent.mockReset()
   presenterFixture.displayAvailable = true
   presenterFixture.remotePlayback = null
 })
@@ -166,7 +166,7 @@ describe('PresenterConsoleView', () => {
     primary?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await nextTick()
 
-    expect(presenterFixture.sendPlaybackCommand).toHaveBeenCalledWith('start')
+    expect(presenterFixture.sendIntent).toHaveBeenCalledWith('start')
 
     app.unmount()
   })

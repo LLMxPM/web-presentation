@@ -1,4 +1,4 @@
-/** 文件功能：验证执行上下文解析优先级、静态上下文收紧与自动策略判定。 */
+/** 文件功能：验证执行上下文解析优先级、静态上下文收紧与媒体策略判定。 */
 import { describe, expect, it } from 'vitest'
 import type { RuntimePreviewContext } from '@/core/shared/runtime-preview'
 import {
@@ -6,8 +6,6 @@ import {
   mediaPlaybackMode,
   mergeExecutionPolicies,
   resolveExecutionContext,
-  shouldAdvanceAutomatically,
-  shouldStartAutomatically,
 } from './execution-policy'
 
 function preview(overrides: Partial<RuntimePreviewContext> = {}): Pick<RuntimePreviewContext, 'previewKind' | 'entryDescriptor'> {
@@ -31,7 +29,6 @@ describe('resolveExecutionContext', () => {
       previewContext: preview(),
     })
     expect(policy).toEqual(EXECUTION_POLICIES.capture)
-    expect(policy.allowAutoStart).toBe(false)
     expect(policy.allowMediaPlayback).toBe(false)
   })
 
@@ -41,7 +38,7 @@ describe('resolveExecutionContext', () => {
     expect(resolveExecutionContext({ search: '?runtimeExecution=unknown&runtimeMode=cards' }).kind).toBe('interactive-preview')
   })
 
-  it('单页、组件和资源预览默认禁用自动开始与自动翻页', () => {
+  it('单页、组件和资源预览默认禁用自动翻页', () => {
     expect(resolveExecutionContext({ previewContext: preview({ previewKind: 'page' }) }).kind).toBe('interactive-preview')
     expect(resolveExecutionContext({ previewContext: preview({ previewKind: 'component' }) }).kind).toBe('interactive-preview')
     expect(resolveExecutionContext({ previewContext: preview({ previewKind: 'asset' }) }).kind).toBe('interactive-preview')
@@ -58,24 +55,21 @@ describe('resolveExecutionContext', () => {
 })
 
 describe('执行策略判定', () => {
-  it('静态上下文禁止自动开始、自动翻页、同步与媒体播放', () => {
+  it('静态上下文禁止自动翻页与媒体播放', () => {
     for (const policy of [EXECUTION_POLICIES.capture, EXECUTION_POLICIES.export, EXECUTION_POLICIES.thumbnail]) {
-      expect(shouldStartAutomatically(policy, true)).toBe(false)
-      expect(shouldAdvanceAutomatically(policy)).toBe(false)
+      expect(policy.allowAutoAdvance).toBe(false)
       expect(mediaPlaybackMode(policy)).toBe('block')
     }
   })
 
-  it('交互预览允许手势播放但禁止自动开始与自动播放', () => {
+  it('交互预览允许手势播放但禁止自动翻页与自动播放', () => {
     const policy = EXECUTION_POLICIES['interactive-preview']
-    expect(shouldStartAutomatically(policy, true)).toBe(false)
-    expect(shouldAdvanceAutomatically(policy)).toBe(false)
+    expect(policy.allowAutoAdvance).toBe(false)
     expect(mediaPlaybackMode(policy)).toBe('gesture')
   })
 
-  it('只有 presentation 允许项目 auto_start 生效', () => {
-    expect(shouldStartAutomatically(EXECUTION_POLICIES.presentation, true)).toBe(true)
-    expect(shouldStartAutomatically(EXECUTION_POLICIES.presentation, false)).toBe(false)
+  it('只有 presentation 允许自动翻页与自动播放', () => {
+    expect(EXECUTION_POLICIES.presentation.allowAutoAdvance).toBe(true)
     expect(mediaPlaybackMode(EXECUTION_POLICIES.presentation)).toBe('allow')
   })
 
@@ -83,7 +77,6 @@ describe('执行策略判定', () => {
     const thumbnailInsidePresentation = mergeExecutionPolicies(EXECUTION_POLICIES.presentation, EXECUTION_POLICIES.thumbnail)
     expect(thumbnailInsidePresentation).toMatchObject({
       kind: 'thumbnail',
-      allowAutoStart: false,
       allowAutoAdvance: false,
       allowMediaPlayback: false,
       allowAutoplay: false,
@@ -91,7 +84,7 @@ describe('执行策略判定', () => {
 
     const presentationInsideCapture = mergeExecutionPolicies(EXECUTION_POLICIES.capture, EXECUTION_POLICIES.presentation)
     expect(presentationInsideCapture.kind).toBe('capture')
-    expect(presentationInsideCapture.allowAutoStart).toBe(false)
+    expect(presentationInsideCapture.allowAutoAdvance).toBe(false)
     expect(mediaPlaybackMode(presentationInsideCapture)).toBe('block')
 
     const interactiveInsidePresentation = mergeExecutionPolicies(EXECUTION_POLICIES.presentation, EXECUTION_POLICIES['interactive-preview'])

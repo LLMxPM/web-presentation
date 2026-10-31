@@ -5,14 +5,16 @@
 ## 当前行为
 
 - Backend 保存项目默认放映设置与路由逐页覆盖，并向预览和构建提供只读快照。
-- Runtime 在根元素全屏后开始放映；普通预览不推进。定时、媒体结束、手动翻页及演讲者双窗口按同一会话状态执行。
+- Runtime 在根元素全屏后开始放映；普通预览不推进。手动、定时、本页完成及演讲者双窗口按同一 Deck 会话状态执行。
 - Renderer、截图、PDF、PPTX 和打印使用静态执行上下文，不启动自动推进或媒体播放。
 - 产品级远端无人值守放映尚需独立交付；本地构建产物的历史长稳证据不代表该能力已开放。
 
-## motion 扩展
+## Scene 收敛后的现行契约
 
-- 当前 motion 分支在 schema 2 基础上升级为 schema 3，新增 `timeline_end` 与 `timeline_timeout_ms`；时间轴能力默认开放，G1 已关闭，G2 尚未关闭。
-- 演讲同步协议升级为 v4，增加时间轴状态和 `seek` 命令。详细契约与验收见[页内动画与时间轴](../motion/README.md)。
+- 放映配置为 schema 4：翻页模式只有 `manual`、`timer`、`scene_end`，配合 `delay_ms`、`completion_delay_ms` 与 `loop`；`auto_start`、`media_end`、`timeline_end` 与媒体/时间轴等待上限已删除，旧配置读取时返回稳定 409 并要求重建。
+- 页面编排入口是 `usePageScene.v1`：有限任务实际完成才推动 `scene_end`，`repeat: -1` 只允许 `ambient` 且不阻塞；不存在暂停、定位或任意时刻状态重建。
+- 演讲同步协议为 v5：只有 `request-state`、有限 `intent` 与观众原子 `state`，由 owner 与修订共同拒绝迟到消息；控制台不建立第二份播放时钟。
+- 详细契约与验收见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；旧页内时间轴实现保留在[历史记录](../motion/README.md)。
 
 ## 修改入口
 

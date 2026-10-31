@@ -2,6 +2,8 @@
 
 状态：完成（2026-10-23 首期收口；A13/A15 远程取帧与导出证据见 [G1 映射](../g1-automation-coverage.md)；指定状态截图能力仍关闭）。主责：render-contracts / Renderer / Backend / Runtime。前置：[WP04](./wp04-dom-adapter.md)、[WP05](./wp05-media-adapter.md)、[WP06](./wp06-model-adapter.md)、[WP07](./wp07-asset-capabilities.md)。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../../playback-redesign-proposal.md)与[收敛工作包清单](../../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 输入与落点
 
 复用 render_requests、远程 Worker、render-ready、OffscreenPageStage、模型静态帧与 validation_screenshot_publisher；捕获选择器与身份只以 [运行契约](../runtime-contract.md) 为准。

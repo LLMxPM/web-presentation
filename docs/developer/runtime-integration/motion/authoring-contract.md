@@ -1,6 +1,8 @@
 # 首期编排创作契约方向
 
-状态：G0 已选定 GSAP 与“受控原生视觉＋资源 builder”，详见[G0 决定](./g0-decision.md)。2026-10-21 评审修复已将该形状接入 `usePageTimeline.v1`；2026-10-22 起公开入口默认开放，G1 已于 2026-10-23 关闭，G2 未关闭。[此前 JSON 草案](./authoring-json-draft.md)不作为默认创作入口；内部旧 `definition` 仅为既有夹具兼容。
+状态：历史实现记录，原 `usePageTimeline.v1` 公开入口已随旧链路删除；G0 已选定 GSAP 与“受控原生视觉＋资源 builder”，详见[G0 决定](./g0-decision.md)。2026-10-21 评审修复已将该形状接入 `usePageTimeline.v1`；2026-10-22 起公开入口默认开放，G1 已于 2026-10-23 关闭，G2 未关闭。[此前 JSON 草案](./authoring-json-draft.md)不作为默认创作入口；内部旧 `definition` 仅为既有夹具兼容。
+
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
 
 ## 一份 SFC，两类定义
 

@@ -29,13 +29,3 @@ export function toneWavBuffer(seconds: number): Buffer {
 export function shortWavBuffer(): Buffer {
   return toneWavBuffer(0.7)
 }
-
-/** 生成可直接嵌入页面的短 WAV URL。 */
-export function shortWavDataUri(): string {
-  return `data:audio/wav;base64,${shortWavBuffer().toString('base64')}`
-}
-
-/** 生成覆盖长导出窗口的一次性 WAV URL。 */
-export function longWavDataUri(seconds = 30): string {
-  return `data:audio/wav;base64,${toneWavBuffer(seconds).toString('base64')}`
-}

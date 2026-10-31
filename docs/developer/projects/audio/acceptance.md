@@ -1,6 +1,6 @@
 # 音频联调与验收计划
 
-状态（2026-10-25）：资源、旁白和 cue 已默认开放。主仓与 CLI 已实现，动画前联合验收已补充 Chromium 实机、独立构建及 cue 长稳证据；本页 A01–A20 是原阶段验收矩阵，尚未逐项全数关闭。真实 M4A/OGG、Firefox/WebKit、部分旁白生命周期与浏览器布局场景仍未覆盖；MCP 已移出当前交付范围。测试命令和环境准备遵循 [`dev-start-test`](../../../../.agents/skills/dev-start-test/SKILL.md)。
+状态（2026-10-31）：资源、旁白和 cue 已默认开放。主仓与 CLI 已实现，动画前联合验收已补充 Chromium 实机、独立构建及 cue 长稳证据；本页 A01–A20 是原阶段验收矩阵，尚未逐项全数关闭。放映收敛（B4/C2）已把执行层改为窗口 AudioBus 与显式 Scene 媒体任务，翻页模式只剩 `manual`/`timer`/`scene_end`，cue 创作入口为 `useAudioCue.v2`；本矩阵中的实机项按当前实现由 [C3](../../runtime-integration/playback-redesign/work-packages/c3-acceptance-release.md) 重新执行，收敛前证据只代表旧媒体实现。真实 M4A/OGG、Firefox/WebKit、部分旁白生命周期与浏览器布局场景仍未覆盖；MCP 已移出当前交付范围。测试命令和环境准备遵循 [`dev-start-test`](../../../../.agents/skills/dev-start-test/SKILL.md)。
 
 [联合验收记录](../../../archive/developer-work-2026-10/pre-motion-joint-acceptance.md)已确认：CLI 上传/下载/替换 WAV，受保护读取 Range/HEAD/304 与拒绝路径，MP3 手动播放及离页停播，旁白与 cue 用户实听、自动播放受阻重试、双窗口观众唯一发声，静态 PDF/PPTX 禁播，以及独立 ZIP 中 30 分 55 秒的 1000 次 interaction cue、1000 次前进 cue、2000 次导航。后者是 cue 长稳；旁白只承诺已实测的播放、恢复和离页停声，不要求 30 分钟循环。后续播放收敛规划在 `feature/motion` 分支接续尚未覆盖的场景。
 
@@ -10,7 +10,7 @@
 | :--- | :--- |
 | Backend 单元/API | 枚举、扩展名/MIME、严格音量、cue key、同工作空间/类型校验、引用保护、旧客户端省略语义 |
 | 契约 | OpenAPI 生成类型、Runtime Kit manifest、共享正反例、artifact camelCase、模板包往返 |
-| Runtime 单元 | AssetAudio props、purpose 收集、generation 清理、media_end、cue pool、节流、静态 no-op、transition started |
+| Runtime 单元 | AssetAudio props、purpose 登记与清理、Scene 媒体任务完成/受阻/替换、cue pool、节流、静态 no-op、transition started |
 | Editor 单元 | 类型选项、accept、试听不自动播、cue 表单映射、错误与清空 |
 | Renderer/导出 | 静态上下文不播放、不等待、不泄露票据，PDF/PPTX 报告语义稳定 |
 | 真实浏览器 | autoplay blocked、格式播放、Range、页面切换、双窗口、全局静音、快速点击与长稳 |
@@ -56,7 +56,7 @@ thumbnail、截图、PDF、PPTX、打印和 code check 不开始播放、不等�
 
 - manual：旁白结束不翻页。
 - timer：计时到达可中断旁白翻页，Editor 显示短时长警告。
-- media_end：旁白与其它参与媒体全部结束后翻页；loop 媒体不阻塞；无媒体按 delay 回退。
+- scene_end：旁白与其它已登记的有限媒体任务全部实际结束后翻页；循环媒体只能作 ambient，不阻塞推进。
 
 ### A10：受阻与错误恢复
 
@@ -86,7 +86,7 @@ thumbnail、截图、PDF、PPTX、打印和 code check 不开始播放、不等�
 
 ### A16：点击 cue
 
-页面按钮显式调用 `useAudioCue.v1` 后才发声；事件冒泡、嵌套按钮、拖拽和 Runtime shell 控件不会被全局捕获。未绑定 key 稳定 no-op，业务动作不等待声音。
+页面按钮显式调用 `useAudioCue.v2` 后才发声，返回的 Promise 只等待真实播放许可回执，不等待短音效结束；事件冒泡、嵌套按钮、拖拽和 Runtime shell 控件不会被全局捕获。未绑定 key 稳定 no-op，业务动作不等待声音。
 
 ### A17：并发与节流
 
@@ -114,6 +114,6 @@ Backend、Editor、preview/build、模板包、External API 和 CLI 对三段音
 
 ## 6. 发布门槛
 
-- 当前资源、`purpose="narration"` 与项目 cue/`useAudioCue.v1` 已默认开放；此处保留原 A01–A20 矩阵作后续补证清单，不再以全矩阵通过作为已开放能力的前置条件。
+- 当前资源、`purpose="narration"` 与项目 cue/`useAudioCue.v2` 已默认开放；此处保留原 A01–A20 矩阵作后续补证清单，不再以全矩阵通过作为已开放能力的前置条件。
 - 对外文档只声明已验证的 Chromium 场景；M4A/OGG、Firefox/WebKit、长时间旁白循环和其它未测路径不列为已验收。MCP 不作为当前交付门槛。
 - 任一阶段若只验证 Chromium，用户文档必须明确浏览器范围；不能用单元测试替代真实媒体策略证据。

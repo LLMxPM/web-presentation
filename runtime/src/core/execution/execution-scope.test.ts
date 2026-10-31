@@ -50,7 +50,7 @@ describe('执行作用域传播', () => {
 
   it('缩略图作用域收紧主画布策略并输出禁播属性', () => {
     const policy = mountNestedScope('presentation', 'thumbnail')
-    expect(policy).toMatchObject({ kind: 'thumbnail', allowAutoStart: false, allowMediaPlayback: false })
+    expect(policy).toMatchObject({ kind: 'thumbnail', allowAutoAdvance: false, allowMediaPlayback: false })
     expect(executionAttributes(policy)).toEqual({
       'data-runtime-execution': 'thumbnail',
       'data-runtime-media': 'block',
@@ -60,7 +60,7 @@ describe('执行作用域传播', () => {
   it('捕获作用域内的 presentation 不能重新放宽', () => {
     const policy = mountNestedScope('capture', 'presentation')
     expect(policy.kind).toBe('capture')
-    expect(policy.allowAutoStart).toBe(false)
+    expect(policy.allowAutoAdvance).toBe(false)
     expect(executionAttributes(policy)['data-runtime-media']).toBe('block')
   })
 

@@ -5,14 +5,14 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, test } from '../../fixtures/test-data'
-import { shortWavBuffer } from '../../helpers/motion-media'
+import { shortWavBuffer } from '../../helpers/media-wav'
 
 test('受保护视频和音频支持 HEAD、Range 与视频跳转定位', async ({ page, context, visualEditSandbox }) => {
   test.setTimeout(180_000)
   const api = context.request
   const suffix = randomUUID().slice(0, 8)
-  const videoName = `motion-video-${suffix}`
-  const audioName = `motion-audio-${suffix}`
+  const videoName = `protected-video-${suffix}`
+  const audioName = `protected-audio-${suffix}`
   const videoBytes = readFileSync(resolve('runtime/public/video/runtime-video-showcase.webm'))
   for (const asset of [
     { name: videoName, type: 'video', mime: 'video/webm', file: `${videoName}.webm`, bytes: videoBytes },
@@ -28,13 +28,13 @@ test('受保护视频和音频支持 HEAD、Range 与视频跳转定位', async 
     })
     expect(uploaded.ok(), await uploaded.text()).toBeTruthy()
   }
-  const source = `<template><main class="motion-protected-media">
-  <AssetVideo name="${videoName}" class="motion-protected-video" />
-  <AssetAudio name="${audioName}" class="motion-protected-audio" />
+  const source = `<template><main class="protected-media-page">
+  <AssetVideo name="${videoName}" class="protected-media-video" />
+  <AssetAudio name="${audioName}" class="protected-media-audio" />
 </main></template>
 <script setup lang="ts">
-import AssetVideo from '@runtime-kit/public/components/assets/AssetVideo.v2.vue'
-import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v2.vue'
+import AssetVideo from '@runtime-kit/public/components/assets/AssetVideo.v1.vue'
+import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
 </script>`
   const updated = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: source } })
   expect(updated.ok(), await updated.text()).toBeTruthy()
@@ -43,8 +43,8 @@ import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v2.vue'
   const artifact = await artifactResponse.json() as { preview_url: string }
   await page.goto(artifact.preview_url)
   const runtime = page.frameLocator('iframe#preview')
-  const video = runtime.locator('.page-content-wrapper .motion-protected-media video')
-  const audio = runtime.locator('.page-content-wrapper .motion-protected-media audio')
+  const video = runtime.locator('.page-content-wrapper .protected-media-page video')
+  const audio = runtime.locator('.page-content-wrapper .protected-media-page audio')
   await expect(video).toBeVisible()
   await expect.poll(() => video.evaluate(element => (element as HTMLVideoElement).currentSrc)).not.toBe('')
   await expect.poll(() => audio.evaluate(element => (element as HTMLAudioElement).currentSrc)).not.toBe('')

@@ -155,6 +155,13 @@ Runtime Kit 约束：
 - 需要不兼容演进时新增 v2/v3 文件，不修改仍被依赖的旧版本文件。
 - Runtime shell 内部组件、component-preview 宿主页及其辅助类型/组合式能力、PDF 导出、侧栏/缩略图、Toast 与 ErrorBoundary 不应通过 `@runtime-kit` 暴露给页面源码、工作空间组件源码或智能体能力目录。
 
+页内编排与放映约束：
+
+- `usePageScene.v1` 是唯一页内编排入口；每页一个声明，内部登记多条 `visual`/`task`，只正向播放并按实际完成聚合。旧页内时间轴、`core/motion` 采样链、`Asset*.v2`、`useAudioCue.v1`、`PageMediaSession` 与 Presenter v4 已删除，不得重新引入兼容层或运行时 fallback。
+- GSAP 只能通过 Scene 受管门面使用；页面与工作空间组件直接导入 GSAP 核心包或插件（DrawSVG、SplitText、ScrollTrigger 等）由 Backend 依赖解析、远程预览与构建/诊断插件共同拒绝。
+- 放映配置为 schema 4，翻页模式只有 `manual`、`timer`、`scene_end`，配合 `delay_ms`、`completion_delay_ms` 与 `loop`；不存在暂停、定位或任意时刻状态重建，保持/释放只抑制自动翻页。Backend DTO 与 Editor 配置表单必须同批修改。
+- 自动媒体必须由页面用 `createSceneMediaTask.v1` 显式接管并经窗口 AudioBus 发声；同页最多一个自动发声主媒体。静态执行上下文不创建 Scene、不发声、不推进 Mixer，静态呈现由 `useStaticPresentation.v1` 独立声明，详见[独立静态呈现](./docs/developer/runtime/static-presentation.md)。
+
 多部署 / 多副本约束（与代码保持一致，禁止只改文档宣称）：
 
 - **私有文件与预览源站**：浏览器与 Renderer 浏览器使用 artifact 预览票据 P 读取素材，Runtime / 构建 Worker 使用内部服务票据 S 回源，不得混用端点或恢复 public fallback。用户 HTML 必须在 `RUNTIME_PUBLIC_BASE_URL` 的独立主机名执行；Backend 预览入口仅返回可信桥接宿主页，业务 Cookie 保持 host-only，预览域不得加入业务 CORS。文件鉴权先于缓存、304、HEAD 和 Range；截图内容 URL 绑定 hash，旧可变 key 仅按 latest 兼容。实施边界见[文件存储鉴权规划](docs/developer/projects/file-storage-auth-cache-plan.md)。

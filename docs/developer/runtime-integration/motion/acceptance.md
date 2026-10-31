@@ -2,6 +2,8 @@
 
 状态：**G1 已关闭（2026-10-23），G2 未关闭。** G1 的 A01–A16 已取得自动化、隔离 Chromium 与跨端 E2E 证据，逐条见[自动化覆盖映射](./g1-automation-coverage.md)；A04 的 100 次挂载保留堆根因为 Three.js 模块级 DFG LUT 通过纹理监听持有渲染器，记为 G2 性能/清理后续项，不影响 A04 功能结论。G2 尚缺 Editor + 内置助手 + CLI 联合创作验收、生产依赖裁剪镜像最终重建、混版/回滚、修正版 30 分钟长测与 B01–B08 模型基准，当前差距与关闭条件见 [G2 遗留清单](./g2-followups.md)；MCP 自 2026-10-23 起移出本轮验证与发布范围（暂不提供服务）。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 验证历史（按时间保留，当前结论见状态行）
 
 2026-10-22：完成 G1 第一批自动化覆盖（A01、A02、A05、A14），在隔离 Chromium 中补测 A03、A04、A06–A10、A12、A13 的本地 Runtime 行为，并在测试专用 E2E 服务中验证 A11 的 `timeline_end`、manual、timer 与无媒体 `media_end`，含时间轴页的远程默认海报 PNG、部分 PPTX/PDF 静态隔离，以及 A16 的双窗口播放所有权和基本同步。加入 PDF 用例前 auth + smoke 全套 **20/20 通过**，PDF 定向 **1/1 通过**，见[自动化覆盖映射](./g1-automation-coverage.md)。G2 的同版本 CLI 隔离 E2E 链路覆盖创建、编辑、等待、回读和默认截图；生产依赖 Runtime 镜像的 `preview`、`check` 与配置后的 `build` 角色均实际启动且就绪。Backend 补齐 `x-wp-operation v1` 后，MCP motion 定向契约 4/4 通过，但完整套件保留 9 个跨仓基线失败。A15 剩余分支、A16 晚到与旧协议、A05/A13 的指定状态跨端链路及完整 G2 仍待验证。2026-10-22 按用户要求默认开放时间轴创作和 `timeline_end` 推进，指定状态截图仍关闭；这不改变当时的 G1/G2 验收状态。2026-10-21 采用 GSAP 与受控原生视觉＋资源 builder，详见[G0 决定](./g0-decision.md)。本轮不比较性能；第一轮数字保留为历史候选。以上为当时结论，G1 随后于 2026-10-23 关闭。

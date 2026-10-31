@@ -2,6 +2,8 @@
 
 状态：完成（2026-10-23 首期收口；真实 Chromium 帧比对见 [G1 映射](../g1-automation-coverage.md)）。主责：Runtime。前置：[WP03](./wp03-transport-targets.md)。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../../playback-redesign-proposal.md)与[收敛工作包清单](../../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 ## 输入与落点
 
 消费 WP02 的轨道与适配接口，以及 WP01 选定的单一 DOM 执行器。新增 core/motion DOM 适配器，图标、图片和 SVG 容器继续使用现有资产能力。

@@ -2,6 +2,8 @@
 
 状态：**WP01–WP12 已收口（2026-10-23），共 12 个工作包。** G1 已关闭；G2 未通过，遗留项见 [G2 遗留清单](../g2-followups.md)。WP12 作为首期交付单元关闭，不等于 G2 验收通过。页内时间轴与 `timeline_end` 已按用户要求提前默认开放，指定状态截图仍关闭；MCP 暂不提供服务，移出本轮 G2。每包对应一个可独立评审的提交或 PR；领取和完成记录写在本仓卡片，不自动派发智能体或创建新的用户聊天。
 
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../../playback-redesign-proposal.md)与[收敛工作包清单](../../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
+
 字段事实源为 [创作契约](../authoring-contract.md)，执行事实源为 [运行契约](../runtime-contract.md)。测试场景见 [验收计划](../acceptance.md)，实际命令选择遵守 [dev-start-test](../../../../../.agents/skills/dev-start-test/SKILL.md)。
 
 ## 工作包与依赖

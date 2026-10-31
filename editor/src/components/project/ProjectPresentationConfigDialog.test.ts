@@ -9,24 +9,29 @@ vi.mock('@/api/styles', () => ({
 vi.mock('@/api/system', () => ({
   fetchDefaultStyleSpec: vi.fn().mockResolvedValue({ style_spec_markdown: '' }),
   fetchSystemSettings: vi.fn().mockResolvedValue({ app_timezone: 'Asia/Shanghai' }),
-  fetchSlideshowCapabilities: vi.fn().mockResolvedValue({
-    schema_version: 2,
+  fetchSlideshowCapabilities: vi.fn(),
+}))
+
+import type { ProjectItem, SlideshowCapabilities } from '@/types/api'
+import { fetchSlideshowCapabilities } from '@/api/system'
+import { resetSlideshowCapabilitiesForTests } from '@/composables/useSlideshowCapabilities'
+import ProjectPresentationConfigDialog from './ProjectPresentationConfigDialog.vue'
+
+/** 构造 schema 4 放映能力；audioCues 为 false 时用于验证音频分区隐藏与不提交音频配置。 */
+function slideshowCapabilities(audioCues = true): SlideshowCapabilities {
+  return {
+    schema_version: 4,
     transition_effects: ['none', 'fade', 'push'],
-    advance_modes: ['manual', 'timer', 'media_end'],
+    advance_modes: ['manual', 'timer', 'scene_end'],
     single_window_auto_play: true,
     presenter_auto_play: false,
     capture_auto_play: false,
     transition_duration_ms: { min: 100, max: 2000, none: 0 },
     delay_ms: { min: 1000, max: 3600000 },
-    media_timeout_ms: { min: 1000, max: 3600000 },
-    audio: { schema_version: 1, audio_assets: true, page_narration: false, audio_cues: true },
-  }),
-}))
-
-import type { ProjectItem } from '@/types/api'
-import { fetchSlideshowCapabilities } from '@/api/system'
-import { resetSlideshowCapabilitiesForTests } from '@/composables/useSlideshowCapabilities'
-import ProjectPresentationConfigDialog from './ProjectPresentationConfigDialog.vue'
+    completion_delay_ms: { min: 0, max: 3600000 },
+    audio: { schema_version: 1, audio_assets: true, page_narration: true, audio_cues: audioCues },
+  }
+}
 
 const project = {
   id: 8,
@@ -84,18 +89,7 @@ const dialogStubs = {
 describe('ProjectPresentationConfigDialog', () => {
   beforeEach(() => {
     resetSlideshowCapabilitiesForTests()
-    vi.mocked(fetchSlideshowCapabilities).mockResolvedValue({
-      schema_version: 2,
-      transition_effects: ['none', 'fade', 'push'],
-      advance_modes: ['manual', 'timer', 'media_end'],
-      single_window_auto_play: true,
-      presenter_auto_play: false,
-      capture_auto_play: false,
-      transition_duration_ms: { min: 100, max: 2000, none: 0 },
-      delay_ms: { min: 1000, max: 3600000 },
-      media_timeout_ms: { min: 1000, max: 3600000 },
-      audio: { schema_version: 1, audio_assets: true, page_narration: false, audio_cues: true },
-    })
+    vi.mocked(fetchSlideshowCapabilities).mockResolvedValue(slideshowCapabilities())
   })
 
   it('分区包含展示、放映与已开放音频', async () => {
@@ -173,18 +167,7 @@ describe('ProjectPresentationConfigDialog', () => {
   })
 
   it('能力关闭时隐藏音频分区且保存不提交音频配置', async () => {
-    vi.mocked(fetchSlideshowCapabilities).mockResolvedValueOnce({
-      schema_version: 2,
-      transition_effects: ['none', 'fade', 'push'],
-      advance_modes: ['manual', 'timer', 'media_end'],
-      single_window_auto_play: true,
-      presenter_auto_play: false,
-      capture_auto_play: false,
-      transition_duration_ms: { min: 100, max: 2000, none: 0 },
-      delay_ms: { min: 1000, max: 3600000 },
-      media_timeout_ms: { min: 1000, max: 3600000 },
-      audio: { schema_version: 1, audio_assets: true, page_narration: false, audio_cues: false },
-    })
+    vi.mocked(fetchSlideshowCapabilities).mockResolvedValueOnce(slideshowCapabilities(false))
     const { emitted } = render(ProjectPresentationConfigDialog, {
       props: { modelValue: true, project, workspaceId: 3, defaultThemeKey: null },
       global: { stubs: dialogStubs },

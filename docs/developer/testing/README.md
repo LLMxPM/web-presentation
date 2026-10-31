@@ -10,7 +10,7 @@
 | [测试命令](./commands.md) | 根仓 `pnpm`、Backend `uv` 和 Runtime 委托命令 |
 | [契约测试](./contract-tests.md) | 跨模块协议、E2E 集合与仓库边界检查 |
 | [放映接入](../runtime-integration/slideshow/README.md) | 当前放映行为与代码入口；阶段验收证据在[归档](../../archive/developer-work-2026-10/slideshow/acceptance.md) |
-| [页内动画与时间轴验收](../runtime-integration/motion/acceptance.md) | 动画、媒体、三维协同、指定状态取帧及 G0/G1/G2 验收 |
+| [页内动画历史验收](../runtime-integration/motion/acceptance.md) | 旧页内时间轴的动画、媒体、三维协同与 G0/G1/G2 验收记录；现行 Scene 验收见[收敛工作包](../runtime-integration/playback-redesign/work-packages/README.md) |
 | [E2E smoke](./e2e-smoke.md) | Playwright smoke、测试数据和报告目录 |
 | [本地 Docker 架构演练](./docker-architecture-drill.md) | 隔离多副本、Run 故障回收、旧 ORM、浏览器版本、实际截图/构建与凭证负例 |
 | [E2E 治理设计记录](../../archive/developer-work-2026-10/e2e-redesign.md) | 旧测试套件的问题盘点和重设计背景；现行操作以本目录和 `dev-start-test` 为准 |

@@ -626,17 +626,17 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
     assert detail.status_code == 200
     assert detail.json()["slideshow"] == slideshow
 
-    media_end = {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 120000}, 'loop': False}
-    media_updated = await tools["update_entity"].entrypoint(
+    scene_completion = {'transition': {'effect': 'fade', 'duration_ms': 400}, 'advance': {'mode': 'scene_end', 'delay_ms': 5000, 'completion_delay_ms': 120000}, 'loop': False}
+    scene_updated = await tools["update_entity"].entrypoint(
         context,
         "project",
         project_id,
-        {"slideshow": media_end},
+        {"slideshow": scene_completion},
         "slideshow",
     )
-    assert media_updated["effect"] == "update"
-    media_detail = await authenticated_client.get(f"/api/projects/{project_id}")
-    assert media_detail.json()["slideshow"] == media_end
+    assert scene_updated["effect"] == "update"
+    scene_detail = await authenticated_client.get(f"/api/projects/{project_id}")
+    assert scene_detail.json()["slideshow"] == scene_completion
 
     with pytest.raises(AppException) as error:
         await tools["update_entity"].entrypoint(
@@ -651,7 +651,7 @@ async def test_project_slideshow_action_should_use_http_dto_and_validate_modes(
     assert error.value.code == "AI_OPERATION_ARGUMENTS_INVALID"
 
     unchanged = await authenticated_client.get(f"/api/projects/{project_id}")
-    assert unchanged.json()["slideshow"] == media_end
+    assert unchanged.json()["slideshow"] == scene_completion
 
 
 async def test_project_create_should_accept_slideshow_payload(authenticated_client: AsyncClient) -> None:

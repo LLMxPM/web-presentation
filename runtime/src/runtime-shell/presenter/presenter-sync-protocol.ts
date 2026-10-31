@@ -4,7 +4,7 @@ import { getRuntimePreloadedConfig, getRuntimePreviewContext } from '@/core/util
 export const PRESENTER_SYNC_PROTOCOL_VERSION = 5
 export type PresenterSyncViewMode = 'focus' | 'grid'
 export type PresenterSyncRole = 'console' | 'display'
-export type PresenterSyncPlaybackCommandAction = 'start' | 'next' | 'stop' | 'hold' | 'release' | 'retry' | 'navigate' | 'close'
+export type PresenterSyncIntentAction = 'start' | 'next' | 'stop' | 'hold' | 'release' | 'retry' | 'navigate' | 'close'
 export type PresenterPhase = 'stopped' | 'preparing' | 'playing' | 'blocked' | 'failed' | 'ended' | 'closed'
 export interface PresenterIssue { code: string; message: string }
 export interface PresenterPlaybackState {
@@ -26,7 +26,7 @@ export interface PresenterSyncEnvelope extends PresenterSyncIdentity { protocol:
 export type PresenterSyncMessageBody =
   | { type: 'request-state' }
   | ({ type: 'state'; ownerId: string } & PresenterPlaybackState)
-  | { type: 'intent'; ownerId: string; action: PresenterSyncPlaybackCommandAction; page?: string }
+  | { type: 'intent'; ownerId: string; action: PresenterSyncIntentAction; page?: string }
 export type PresenterSyncMessage = PresenterSyncEnvelope & PresenterSyncMessageBody
 export type PresenterStateMessage = Extract<PresenterSyncMessage, { type: 'state' }>
 

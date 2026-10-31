@@ -43,7 +43,8 @@ async def test_runtime_kit_component_capability_list_should_expose_enabled_compo
     assert "ThemeLogo.v1" in names
     assert "DefaultContainer.v1" in names
     assert "Connector.v1" in names
-    assert {"AssetModel.v3", "useAudioCue.v2", "createSceneMediaTask.v1", "usePageTimeline.v1", "usePageScene.v1"} <= names
+    assert {"AssetModel.v3", "useAudioCue.v2", "createSceneMediaTask.v1", "usePageScene.v1"} <= names
+    assert "usePageTimeline.v1" not in names
     assert "composable" in kinds
     assert payload["manifest_version"] == "1.0.0"
     assert all(item["name"] == f"{item['base_name']}.v{item['version_no']}" for item in payload["items"])

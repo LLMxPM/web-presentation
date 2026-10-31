@@ -53,23 +53,23 @@ describe('runtime kit manifest', () => {
     expect(exportNames).not.toContain('AssetVideo.v2')
     expect(exportNames).not.toContain('AssetAudio.v2')
     expect(exportNames).toContain('AssetModel.v3')
-    expect(exportNames).toContain('usePageTimeline.v1')
+    expect(exportNames).not.toContain('usePageTimeline.v1')
     expect(exportNames).toContain('usePageScene.v1')
   })
 
-  it('开发 Scene 公开可发现的版本化入口，调试说明明确宿主仍在接线', () => {
+  it('开发 Scene 公开可发现的版本化入口，调试说明明确仅在 DEV 安装', () => {
     const scene = manifest.exports.find(item => item.name === 'usePageScene.v1')!
     expect(scene.import_path).toBe('@runtime-kit/public/composables/motion/usePageScene.v1')
     expect(scene.capability.enabled).toBe(true)
     expect(scene.capability.previewable).toBe(false)
     expect(scene.capability.usage.join('\n')).toContain('__RUNTIME_SCENE_DEBUG__')
-    expect(scene.capability.constraints.join('\n')).toContain('合并 main 前')
+    expect(scene.capability.constraints.join('\n')).toContain('Vite DEV')
   })
 
-  it('时间轴入口默认向普通能力目录披露，但组件不单独预览', () => {
+  it('Scene 编排入口默认向普通能力目录披露，但组件不单独预览', () => {
     const motion = manifest.exports.filter(item => (
       item.name === 'AssetModel.v3'
-      || item.name === 'usePageTimeline.v1'
+      || item.name === 'usePageScene.v1'
     ))
 
     expect(motion).toHaveLength(2)

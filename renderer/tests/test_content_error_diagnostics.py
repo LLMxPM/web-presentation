@@ -1,4 +1,4 @@
-"""文件功能：回归 Runtime 时间轴内容错误到 Renderer 诊断/捕获失败的映射及清理。"""
+"""文件功能：回归 Runtime 页面内容错误到 Renderer 诊断/捕获失败的映射及清理。"""
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -10,10 +10,10 @@ from wp_renderer.engine.render_ready import content_diagnostics_from_ready
 
 
 def _ready_error() -> dict:
-    """构造真实桥接形状的越界海报错误。"""
+    """构造真实桥接形状的模型片段失效错误。"""
     return {"ok": False, "contentErrors": [{
-        "code": "TIMELINE_SCHEMA_INVALID", "message": "海报时间 3000 毫秒超出 0–2570 毫秒范围。",
-        "fieldPath": "timeline.poster.atMs", "trackId": None,
+        "code": "MODEL_CLIP_STALE", "message": "模型片段索引或签名已经失效，请重新读取资源片段。",
+        "fieldPath": None, "trackId": "model",
     }]}
 
 
@@ -41,9 +41,9 @@ async def test_content_error_fails_validation_or_capture_and_always_cleans_up(tm
     if operation == "page.diagnose":
         result = await executor.execute(artifact_dir=tmp_path)
         assert result.diagnostics[0].severity == "error"
-        assert result.diagnostics[0].code == "TIMELINE_SCHEMA_INVALID"
-        assert result.diagnostics[0].evidence["field_path"] == "timeline.poster.atMs"
-        assert "2570" in result.diagnostics[0].message
+        assert result.diagnostics[0].code == "MODEL_CLIP_STALE"
+        assert result.diagnostics[0].evidence["track_id"] == "model"
+        assert "签名已经失效" in result.diagnostics[0].message
         assert result.screenshot.status == "skipped"
         assert not result.artifacts
     else:
@@ -51,15 +51,15 @@ async def test_content_error_fails_validation_or_capture_and_always_cleans_up(tm
             await executor.execute(artifact_dir=tmp_path)
         assert caught.value.error.code == ERROR_CODE_CONTENT_ERROR
         assert caught.value.error.retryable is False
-        assert "timeline.poster.atMs" in caught.value.error.message
+        assert "track_id=model" in caught.value.error.message
     page.screenshot.assert_not_awaited()
     executor.shutdown.assert_awaited_once()
 
 
 def test_content_errors_are_bounded_and_keep_track_location() -> None:
-    """不将任意长页面内容带进诊断，同时保留模型准备失败的具体轨道。"""
-    ready = {"contentErrors": [{"code":"MODEL_ANIMATION_REFERENCE_STALE","message":"x"*1000,
-        "fieldPath":"timeline.tracks.model.clip","trackId":"model"}]*25}
+    """不将任意长页面内容带进诊断，同时保留失败任务的具体定位。"""
+    ready = {"contentErrors": [{"code":"MODEL_CLIP_STALE","message":"x"*1000,
+        "fieldPath":"scene.task.model.clip","trackId":"model"}]*25}
     diagnostics = content_diagnostics_from_ready(ready)
     assert len(diagnostics) == 20
     assert len(diagnostics[0].message) < 600

@@ -1,6 +1,8 @@
 # 首期编排运行与捕获契约
 
-状态：拟实施；[G0 已选择 GSAP](./g0-decision.md)与受控原生视觉＋资源 builder。创作方向见[创作契约](./authoring-contract.md)，正式 Schema 由 WP02 定义。性能/规模阈值后置复核，不把首轮历史数值视为已冻结输入。本契约不改变现有未注册页面行为。
+状态：历史实现记录，原拟实施方案已随旧链路删除；[G0 已选择 GSAP](./g0-decision.md)与受控原生视觉＋资源 builder。创作方向见[创作契约](./authoring-contract.md)，正式 Schema 由 WP02 定义。性能/规模阈值后置复核，不把首轮历史数值视为已冻结输入。本契约不改变现有未注册页面行为。
+
+> **历史实现记录**：本文描述已被替换的旧页内时间轴实现，仅保留为实施历史，不是当前创作或接口指南。当前方案见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；当前创作入口为 `usePageScene.v1` + `useStaticPresentation.v1`，放映配置为 schema 4 的 `manual`/`timer`/`scene_end`。任意时刻状态重建（seek/sampleAt、状态证明、指定状态截图）已永久放弃。
 
 ## 计划与状态
 

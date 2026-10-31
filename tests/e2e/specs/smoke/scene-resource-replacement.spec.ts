@@ -1,5 +1,5 @@
 /**
- * 文件功能：验证时间轴页面引用的资源被合法替换后，新预览刷新内容身份和真实像素。
+ * 文件功能：验证 Scene 页面引用的资源被合法替换后，新预览刷新内容身份和真实像素。
  */
 import { randomUUID } from 'node:crypto'
 import { expect, test } from '../../fixtures/test-data'
@@ -10,10 +10,10 @@ function solidSvg(color: string): Buffer {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="${color}"/></svg>`)
 }
 
-test('时间轴页面合法替换图片后刷新资源身份和预览像素', async ({ page, context, visualEditSandbox }) => {
+test('Scene 页面合法替换图片后刷新资源身份和预览像素', async ({ page, context, visualEditSandbox }) => {
   test.setTimeout(120_000)
   const api = context.request
-  const name = `motion-replace-${randomUUID().slice(0, 8)}`
+  const name = `scene-replace-${randomUUID().slice(0, 8)}`
   const workspaceId = visualEditSandbox.workspaceId
   const upload = await api.post(`/api/workspaces/${workspaceId}/assets/upload`, {
     multipart: {
@@ -25,17 +25,21 @@ test('时间轴页面合法替换图片后刷新资源身份和预览像素', as
   })
   expect(upload.ok(), await upload.text()).toBeTruthy()
   const created = await upload.json() as { id: number; file_hash: string }
-  const source = `<template><main ref="root" class="motion-replace-page"><AssetImage name="${name}" alt="替换验证" class="motion-replace-image" /></main></template>
+  const source = `<template><main ref="root" class="scene-replace-page"><AssetImage name="${name}" alt="替换验证" class="scene-replace-image" /></main></template>
 <script setup lang="ts">
 import { ref } from 'vue'
 import AssetImage from '@runtime-kit/public/components/assets/AssetImage.v1.vue'
-import { usePageTimeline } from '@runtime-kit/public/composables/motion/usePageTimeline.v1'
+import { usePageScene } from '@runtime-kit/public/composables/motion/usePageScene.v1'
+import { useStaticPresentation } from '@runtime-kit/public/composables/static/useStaticPresentation.v1'
 const root = ref<HTMLElement | null>(null)
-usePageTimeline({ root, bindings: { image: '.motion-replace-image' }, applyPoster: true,
-  definition: { schemaVersion: 1, timelineId: 'replace-image', poster: { atMs: 100 },
-    tracks: [{ type: 'dom', id: 'image', target: 'image', preset: 'fade', durationMs: 100 }] } })
+useStaticPresentation({ root, mode: 'default' })
+usePageScene({ root, define(scene) {
+  scene.visual({ id: 'image', role: 'blocking', define(timeline) {
+    timeline.fromTo('.scene-replace-image', { opacity: 0 }, { opacity: 1, duration: 0.1, ease: 'none' })
+  } })
+} })
 </script>
-<style scoped>.motion-replace-page{width:100%;height:100%;display:grid;place-items:center;background:#fff}.motion-replace-image{width:256px;height:256px;object-fit:fill}</style>`
+<style scoped>.scene-replace-page{width:100%;height:100%;display:grid;place-items:center;background:#fff}.scene-replace-image{width:256px;height:256px;object-fit:fill}</style>`
   const updated = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: source } })
   expect(updated.ok(), await updated.text()).toBeTruthy()
 
@@ -43,8 +47,7 @@ usePageTimeline({ root, bindings: { image: '.motion-replace-image' }, applyPoste
   async function previewImage() {
     const artifactResponse = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
     expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
-    const artifact = await artifactResponse.json() as { preview_url: string }
-    await page.goto(artifact.preview_url)
+    await page.goto((await artifactResponse.json()).preview_url as string)
     const image = page.frameLocator('iframe#preview').locator('.page-content-wrapper img[alt="替换验证"]')
     await expect(image).toBeVisible()
     await expect(image).toHaveJSProperty('naturalWidth', 256)

@@ -10,12 +10,13 @@
 | 点击展开、内容切换、列表过渡 | Vue 状态与 `Transition` / `TransitionGroup`；首次挂载过渡需设置 `appear` |
 | 数字变化、SVG 路径、自定义动画 | 页面或组件局部 JavaScript、浏览器原生动画 API；卸载时清理计时、动画帧、动画实例和监听 |
 | 图表动效 | `AssetChart` 的真实图表配置契约 |
-| 三维模型 | 以 `AssetModel` 当前契约为准，当前只显示静态姿态 |
+| 页内多序列编排 | `usePageScene.v1`：同一页一个声明，内部登记多条 `scene.visual` 与 `scene.task`，按实际完成聚合 |
+| 三维模型 | 静态或手动交互展示用 `AssetModel.v1`；正向片段播放用 `AssetModel.v3` 的实例句柄 |
 | 翻页过渡 | 项目或逐页配置的 `none` / `fade` / `push`，与页内动画分别控制 |
 
-当前没有统一的页内步骤时间轴、“下一步逐项出现”或任意页内动画的全局暂停契约。页面自行实现的播放、暂停和重播，只能按自身实际行为说明，不能宣称 Runtime 放映控制条会自动接管。
+页内编排只有正向播放：`usePageScene.v1` 在挂载时登记，宿主准备时才执行 `define`，任务分为有限 `blocking` 与无限 `ambient`，放映按真实完成推进。不存在暂停、定位、任意时刻状态重建或全局播放时钟；放映控制条只提供保持/释放当前页，不暂停 Scene。页面自行实现的播放、暂停和重播只能按自身实际行为说明，不能宣称 Runtime 会自动接管。
 
-不要假设 GSAP、Motion、Lottie 等依赖或未登记的 Runtime Kit 动画组件可用；依赖与公开 import path 以真实运行环境和能力契约为准。
+GSAP 只能通过 `scene.visual` 的受管门面使用，禁止页面或组件直接导入 GSAP 核心包与插件（含 DrawSVG、SplitText、ScrollTrigger），也不得自建全局 timeline 或 ticker；Motion、Lottie 等其它动画依赖同样未开放。依赖与公开 import path 以真实运行环境和能力契约为准。
 
 ## 减少动态效果是偏好信号
 
@@ -89,6 +90,6 @@
 
 主提示只保留查询入口，详细规则不在多个提示中重复维护。用户已自定义整类型代码规范时，仍按原有覆盖规则生效；本次默认规则更新不会覆写自定义内容，需由用户合并新章节或恢复默认。
 
-## 后续编排规划
+## 编排实现与历史记录
 
-[页内动画三维动作与媒体编排首期规划](../runtime-integration/motion/README.md) 定义统一播放控制、音视频同步、模型动作和指定状态取帧的后续契约与工作包。该专题尚未实施，本文上方的当前能力边界不因此改变。
+现行 Scene 编排、模型正向动作、显式媒体与独立静态态的实现说明见 [Scene 开发调试](./scene-development.md)与[独立静态呈现](./static-presentation.md)；契约责任与验收设计见[放映动画能力收敛规划](../runtime-integration/playback-redesign-proposal.md)。旧页内时间轴的规划与验收保留在[历史实现记录](../runtime-integration/motion/README.md)，其中的暂停、定位与指定状态取帧已永久放弃，不作为当前能力或后续目标。
