@@ -1,4 +1,4 @@
-"""文件功能：验证页面渲染导航固定 capture 上下文，组件诊断不被误标为静态捕获。"""
+"""文件功能：验证远程页面与组件诊断都固定 capture 上下文，交互预览不经过该路径。"""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ from render_contracts.constants import (
 pytestmark = pytest.mark.unit
 
 
-def test_static_capture_operation_only_covers_page_operations() -> None:
+def test_static_capture_operation_covers_all_remote_render_operations() -> None:
     assert is_static_capture_operation(OPERATION_PAGE_CAPTURE) is True
     assert is_static_capture_operation(OPERATION_PAGE_DIAGNOSE) is True
-    assert is_static_capture_operation(OPERATION_COMPONENT_DIAGNOSE) is False
+    assert is_static_capture_operation(OPERATION_COMPONENT_DIAGNOSE) is True
 
 
 def test_existing_preview_url_gets_runtime_capture_and_identity_params() -> None:
@@ -36,15 +36,15 @@ def test_existing_preview_url_gets_runtime_capture_and_identity_params() -> None
     assert _ensure_render_identity_query(url, input_digest="digest-1", artifact_id="rt_1", static_capture=True) == url
 
 
-def test_component_diagnose_navigation_is_not_marked_as_capture() -> None:
+def test_component_diagnose_navigation_is_marked_as_capture() -> None:
     url = _ensure_render_identity_query(
         "http://runtime.local/__preview",
         input_digest="digest-1",
         artifact_id="rt_1",
-        static_capture=False,
+        static_capture=is_static_capture_operation(OPERATION_COMPONENT_DIAGNOSE),
     )
 
-    assert "runtimeCapture" not in url
+    assert "runtimeCapture=1" in url
 
 
 def test_generated_preview_navigation_url_includes_capture_flag() -> None:

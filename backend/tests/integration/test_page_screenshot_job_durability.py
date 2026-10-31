@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+from unittest.mock import AsyncMock
 
 from httpx import AsyncClient
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session_factory
+from app.core.exceptions import AppException
 from app.services.capture_viewport_resolver import CaptureViewport
 from app.services.page_screenshot_job_service import (
     PAGE_SCREENSHOT_JOB_STALE_CODE,
@@ -92,6 +94,35 @@ async def _claim_job(job_id: int) -> str:
         job = await service.get_job_by_id(job_id)
         assert job.worker_id
         return str(job.worker_id)
+
+
+async def test_static_unavailable_is_terminal_and_preserves_previous_default(authenticated_client, monkeypatch):
+    """新版本不可呈现不得重试或提升空图片，旧版本默认指针保留为过期截图。"""
+    page = await _create_screenshot_page(authenticated_client, "静态不可呈现")
+    _install_capture_stubs(monkeypatch)
+    response = await authenticated_client.post(f"/api/pages/{page['id']}/screenshot-jobs", json={})
+    first_id = response.json()["id"]
+    await run_page_screenshot_job(first_id, worker_id=await _claim_job(first_id), session_factory=get_session_factory())
+    previous_url = (await authenticated_client.get(f"/api/pages/{page['id']}")).json()["screenshot_url"]
+    assert previous_url
+    response = await authenticated_client.patch(f"/api/pages/{page['id']}", json={"page_content": "<template><div>新的交互内容</div></template>"})
+    assert response.status_code == 200
+    response = await authenticated_client.post(f"/api/pages/{page['id']}/screenshot-jobs", json={})
+    job_id = response.json()["id"]
+    assert job_id != first_id
+    capture = AsyncMock(side_effect=AppException(status_code=422, code="STATIC_PRESENTATION_UNAVAILABLE", detail="需要独立海报"))
+    monkeypatch.setattr("app.services.page_screenshot_job_service.PageScreenshotService.capture_page_screenshot_artifact", capture)
+    await run_page_screenshot_job(job_id, worker_id=await _claim_job(job_id), session_factory=get_session_factory())
+    status = (await authenticated_client.get(f"/api/page-screenshot-jobs/{job_id}")).json()
+    assert status["status"] == "failed"
+    assert status["error_code"] == "STATIC_PRESENTATION_UNAVAILABLE"
+    assert status["attempt_count"] == 1
+    assert status["result_screenshot_id"] is None
+    async with get_session_factory()() as session:
+        assert not await PageScreenshotJobService(session)._claim_specific_pending_job(job_id)
+    current = (await authenticated_client.get(f"/api/pages/{page['id']}")).json()
+    assert current["screenshot_url"] == previous_url
+    capture.assert_awaited_once()
 
 
 async def test_screenshot_job_final_sqlite_retry_should_not_recapture(

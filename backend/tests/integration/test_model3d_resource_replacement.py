@@ -339,10 +339,39 @@ async def test_render_snapshot_digest_should_follow_model3d_file_identity(
 
     first_digest = await build_digest()
     assert first_digest == await build_digest()
+    first_screenshot_hash = await _build_screenshot_config_hash(page_id)
 
     replaced = await _replace_model3d(authenticated_client, workspace_id, asset, marker=2.0)
     assert replaced["file_hash"] != asset["file_hash"]
     assert await build_digest() != first_digest
+    assert await _build_screenshot_config_hash(page_id) != first_screenshot_hash
+
+
+async def test_static_screenshot_identity_follows_model_camera_and_video_poster(authenticated_client: AsyncClient) -> None:
+    """源码相机/海报声明与海报文件身份分别影响像素身份，不需要 Renderer 或真实素材解码。"""
+    workspace_id = await _create_workspace(authenticated_client, "C1静态身份空间")
+    project_id = await _create_project(authenticated_client, workspace_id, "C1静态身份项目")
+    await _upload_model3d(authenticated_client, workspace_id)
+    hero = await _upload_image(authenticated_client, workspace_id)
+
+    def source(camera: int, poster: str) -> str:
+        """合法的模型相机对与显式海报引用组成静态源码。"""
+        return f'''<template><section><AssetModel name="product" :camera-position="[{camera}, 0, 5]" :camera-target="[0, 0, 0]" />
+          <AssetVideo name="film" posterName="{poster}" /></section></template>'''
+
+    response = await authenticated_client.post("/api/pages", json={"workspace_id": workspace_id, "project_id": project_id,
+        "title": "C1静态身份", "page_content": source(0, "hero")})
+    assert response.status_code == 200, response.text
+    page_id = response.json()["id"]
+    hashes = [await _build_screenshot_config_hash(page_id)]
+    for content in (source(1, "hero"), source(1, "other-poster"), source(1, "hero")):
+        response = await authenticated_client.patch(f"/api/pages/{page_id}", json={"page_content": content})
+        assert response.status_code == 200, response.text
+        hashes.append(await _build_screenshot_config_hash(page_id))
+    assert hashes[0] != hashes[1] != hashes[2]
+    assert hashes[1] == hashes[3]
+    await _replace_image(authenticated_client, workspace_id, hero, name="hero", payload=b"C1-new-poster")
+    assert await _build_screenshot_config_hash(page_id) != hashes[3]
 
 
 async def test_screenshot_fingerprint_should_follow_image_replace(

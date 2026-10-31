@@ -5,7 +5,6 @@
 import type PptxGenJS from 'pptxgenjs'
 import { appendEditablePptxPage, appendRasterizedPptxPage, PptxPageExtractionError } from './pptx/PptxPageAssembler'
 import { runWithExportDeadline } from './export/ExportCancellation'
-import { nextTick } from 'vue'
 import type { Router } from 'vue-router'
 import { elementRasterizer } from '@/core/services/export/ElementRasterizer'
 import { ExportTaskRunner } from '@/core/services/export/ExportTaskRunner'
@@ -47,11 +46,9 @@ import type {
   PptxExportResult,
 } from '@/core/types/pptx-export'
 import { appConfig as runtimeAppConfig, appPageConfig } from '@/core/utils/config'
-import { findRuntimePageSource } from '@/core/utils/export-dom'
 import { collectAllExportPages } from '@/core/utils/export-pages'
 import { PptxResourceSession, type PptxCanvasSnapshot } from '@/core/services/pptx/session/PptxResourceSession'
 
-const DEFAULT_CAPTURE_TIMEOUT = 15000
 const DEFAULT_RASTER_SCALE = 2
 const PPTX_FILE_EXTENSION = '.pptx'
 
@@ -90,7 +87,7 @@ export class PPTXExportService {
 
   /**
    * 导出当前页面为可编辑 PPTX。
-   * 有路由的页面统一在离屏静态舞台采集；未绑定路由时仅采集普通静态 DOM。
+   * 必须通过路由建立离屏静态舞台，禁止回退到可能正在放映的主窗口 DOM。
    * @param options 导出选项
    */
   async exportCurrentPage(options?: PptxExportOptions): Promise<PptxExportResult> {
@@ -111,18 +108,12 @@ export class PPTXExportService {
 
     try {
       const startedAt = Date.now()
-      let pageElement: HTMLElement | null = null
-
-      if (routeLocation) {
-        const stage = createOffscreenPageStage()
-        offscreenStage = stage
-        const prepared = await stage.preparePage(routeLocation, { signal: this.taskRunner.getSignal(task.id) ?? undefined })
-        pageElement = prepared.element
-        cleanupPreparedPage = prepared.cleanup
-      } else {
-        await runWithExportDeadline(() => this.waitForPageReady(routePath, task.id), resourceSession.signal, 30000)
-        pageElement = findRuntimePageSource(routePath)
-      }
+      if (!routeLocation) throw new Error('导出缺少页面路由，无法建立独立静态舞台。')
+      const stage = createOffscreenPageStage()
+      offscreenStage = stage
+      const prepared = await stage.preparePage(routeLocation, { signal: this.taskRunner.getSignal(task.id) ?? undefined })
+      const pageElement = prepared.element
+      cleanupPreparedPage = prepared.cleanup
 
       if (this.taskRunner.isTaskCancelled(task.id)) {
         throw new Error('用户取消导出')
@@ -531,102 +522,6 @@ export class PPTXExportService {
    */
   private async getAllPages(): Promise<PageInfo[]> {
     return collectAllExportPages(this.router)
-  }
-
-  /**
-   * 等待目标页面渲染、图片和字体就绪（用于非项目模式或单测当前 DOM 回退）。
-   * @param expectedRoutePath 期望路由路径
-   */
-  private async waitForPageReady(expectedRoutePath?: string, taskId?: string): Promise<void> {
-    const startedAt = Date.now()
-
-    for (;;) {
-      if (taskId && this.taskRunner.isTaskCancelled(taskId)) {
-        return
-      }
-
-      await nextTick()
-      await this.waitForAnimationFrame()
-
-      const hasRouteMarkers = !!document.querySelector('.runtime-page-print-source')
-      if (!expectedRoutePath || findRuntimePageSource(expectedRoutePath) || !hasRouteMarkers) {
-        break
-      }
-
-      if (Date.now() - startedAt > 8000) {
-        console.warn(`等待页面 ${expectedRoutePath} 渲染超时，将尝试使用当前页面内容`)
-        break
-      }
-
-      await new Promise(resolve => window.setTimeout(resolve, 50))
-    }
-
-    if (taskId && this.taskRunner.isTaskCancelled(taskId)) {
-      return
-    }
-
-    const pageElement = findRuntimePageSource(expectedRoutePath) ?? document.body
-    await this.waitForImages(pageElement, taskId)
-
-    if (taskId && this.taskRunner.isTaskCancelled(taskId)) {
-      return
-    }
-
-    if (document.fonts?.ready) {
-      try {
-        await Promise.race([
-          document.fonts.ready,
-          new Promise(resolve => window.setTimeout(resolve, 5000)),
-        ])
-      } catch (error) {
-        console.warn('等待字体加载失败:', error)
-      }
-    }
-
-    await this.waitForAnimationFrame()
-    await this.waitForAnimationFrame()
-  }
-
-  /**
-   * 等待一帧浏览器绘制。
-   */
-  private async waitForAnimationFrame(): Promise<void> {
-    await new Promise(resolve => {
-      if (typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(() => resolve(undefined))
-        return
-      }
-      window.setTimeout(resolve, 16)
-    })
-  }
-
-  /**
-   * 等待图片加载完成。
-   * @param root 查询根节点
-   * @param taskId 可选任务 ID
-   */
-  private async waitForImages(root: HTMLElement, taskId?: string): Promise<void> {
-    const images = Array.from(root.querySelectorAll('img'))
-
-    await Promise.all(images.map(img => {
-      if (taskId && this.taskRunner.isTaskCancelled(taskId)) {
-        return Promise.resolve()
-      }
-      if (img.complete && img.naturalWidth > 0) {
-        return Promise.resolve()
-      }
-
-      return new Promise<void>((resolve) => {
-        const timer = window.setTimeout(resolve, 5000)
-        const finish = () => {
-          window.clearTimeout(timer)
-          resolve()
-        }
-
-        img.addEventListener('load', finish, { once: true })
-        img.addEventListener('error', finish, { once: true })
-      })
-    }))
   }
 }
 

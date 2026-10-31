@@ -77,6 +77,12 @@
       "allOf": [{
         "if": { "type": "object", "properties": { "status": { "const": "unavailable" } } },
         "then": { "properties": { "reason_code": { "const": "STATIC_PRESENTATION_UNAVAILABLE" }, "retryable": { "const": false } } }
+      }, {
+        "if": { "type": "object", "properties": { "reason_code": { "const": "STATIC_PRESENTATION_UNAVAILABLE" } } },
+        "then": { "properties": { "status": { "const": "unavailable" } } }
+      }, {
+        "if": { "type": "object", "properties": { "status": { "const": "available" } } },
+        "then": { "properties": { "reason_code": { "type": "null" }, "retryable": { "const": false } } }
       }]
     },
     "scenarios": { "type": "array" },

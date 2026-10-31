@@ -8,7 +8,7 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
 from render_contracts.constants import (
@@ -193,8 +193,8 @@ class RenderExecutor:
                 )
         navigation_url = str(request.preview_access.navigation_base_url or "")
         assert_safe_navigation_url(navigation_url)
-        await self._launch_browser(request)
         try:
+            await self._launch_browser(request)
             self._check_cancel(stage="navigate")
             self._navigation_count += 1
             self.slot.navigations_total = getattr(self.slot, "navigations_total", 0) + 1
@@ -385,6 +385,13 @@ class RenderExecutor:
     async def _prepare_static_capture(self, request: Any, ready: Any, *, capture: bool = False) -> None:
         """页面操作先确认捕获上下文与目标路由，再固定单层画布和视频静态帧。"""
 
+        if request.operation == OPERATION_COMPONENT_DIAGNOSE:
+            bridge = ready.get("bridge") if isinstance(ready, dict) else None
+            if not isinstance(bridge, dict) or bridge.get("executionContext") != "capture":
+                raise RenderExecutionError(RenderError.from_code(
+                    ERROR_CODE_CONTRACT_MISMATCH, message="组件诊断必须使用静态捕获上下文。", stage="ready",
+                ))
+            return
         if request.operation not in {OPERATION_PAGE_CAPTURE, OPERATION_PAGE_DIAGNOSE}:
             return
         bridge = ready.get("bridge") if isinstance(ready, dict) else None
@@ -462,11 +469,18 @@ class RenderExecutor:
                 )
             )
 
-    async def _capture_page(self, artifact_dir: Path) -> ExecutionResult:
+    async def _capture_page(self, artifact_dir: Path, *, is_current: Callable[[], bool] | None = None) -> ExecutionResult:
         """捕获静态 PNG；字体/资源未就绪不能输出成功图片。"""
 
-        await self._page.wait_for_timeout(150)
+        self._check_cancel(stage="capture")
         png_bytes = await self._page.screenshot(type="png", animations="allow", full_page=False)
+        self._check_cancel(stage="capture")
+        if self._deadline is not None:
+            self._deadline.check(stage="capture")
+        if self._shutdown_started or (is_current is not None and not is_current()):
+            raise RenderExecutionError(RenderError.from_code(
+                ERROR_CODE_CANCELLED, message="截图阶段已结束，丢弃迟到 PNG。", stage="capture",
+            ))
         if len(png_bytes) > self.settings.max_png_bytes:
             raise RenderExecutionError(
                 RenderError.from_code(ERROR_CODE_OUTPUT_LIMIT_EXCEEDED, message="PNG 超过 32MiB 上限。")

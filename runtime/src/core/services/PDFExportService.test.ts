@@ -172,6 +172,12 @@ afterEach(() => {
 })
 
 describe('PDFExportService', () => {
+  it('未绑定页面路由时拒绝捕获播放中的主窗口，不下载 PDF', async () => {
+    const service = new PDFExportService()
+    await expect(service.exportCurrentPage()).rejects.toThrow('导出缺少页面路由')
+    expect(mockCaptureCurrentPage).not.toHaveBeenCalled()
+    expect(mockPdfRuntime.instances).toHaveLength(0)
+  })
   it('任一页静态不可呈现时整体失败，不下载缺页 PDF', async () => {
     const service = new PDFExportService()
     service.setRouter(createRouterStub('/origin') as unknown as Router)

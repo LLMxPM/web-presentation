@@ -4,6 +4,7 @@
 import { getRuntimeExecutionPolicy } from '@/core/execution/execution-scope'
 import { isStaticExecution } from '@/core/static-presentation/types'
 import { collectVisualAssetTasks, type VisualAssetTask } from './visual-asset-images'
+import { collectStaticVideoTasks } from './visual-asset-media'
 import { createVisualAssetWaitScope, type VisualAssetWaitScope } from './visual-asset-wait'
 export { extractCssUrls } from './visual-asset-images'
 
@@ -14,13 +15,15 @@ export interface EditorVisualAssetWaitOptions {
   root?: ParentNode
   /** 是否等待有限动画结束；放映页就绪由过渡信号负责时可关闭。 */
   includeAnimations?: boolean
+  /** 静态宿主显式启用视频海报/首帧准备；交互预览默认不改变媒体状态。 */
+  staticMedia?: boolean
   /** 离页或退出时撤销探测；取消以 AbortError 拒绝，不记为资源失败。 */
   signal?: AbortSignal
 }
 
 export interface EditorVisualAssetIssue {
   /** 资源类型，用于 Backend 压缩错误详情。 */
-  type: 'view-preview' | 'drawio' | 'mermaid' | 'model3d' | 'image' | 'background' | 'font'
+  type: 'view-preview' | 'drawio' | 'mermaid' | 'model3d' | 'image' | 'background' | 'font' | 'video'
   /** 资源地址；非 URL 类问题可为空。 */
   url?: string
   /** 面向诊断的简短信息。 */
@@ -151,7 +154,8 @@ async function waitForVisualAssetsInScope(options: EditorVisualAssetWaitOptions,
     timedOut = timedOut || diagramResult.timedOut
   }
 
-  const tasks = collectVisualAssetTasks(root)
+  const tasks = [...collectVisualAssetTasks(root), ...(options.staticMedia ?? isStaticExecution(getRuntimeExecutionPolicy().kind)
+    ? collectStaticVideoTasks(root) : [])]
   const taskResult = await waitForTasks(tasks, deadlineAt, scope)
   failed.push(...taskResult.failed)
   pending.push(...taskResult.pending)

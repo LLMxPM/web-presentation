@@ -91,6 +91,18 @@ afterEach(() => {
 })
 
 describe('静态帧准备与清理', () => {
+  it.each(['missing', 'describe', 'capture'])('正式导出 %s 失败时整体中断并清理已准备模型', failure => {
+    const good = createStubModelRoot()
+    const bad = createStubModelRoot({}, { describeNull: failure === 'describe', captureThrow: failure === 'capture' })
+    if (failure === 'missing') delete (bad.root as unknown as Record<string, unknown>)[MODEL_STATIC_FRAME_HANDLE_KEY]
+    expect(() => prepareModelStaticFrames(document.body, { required: true, cache: null })).toThrow('MODEL_STATIC_FRAME_UNAVAILABLE')
+    expect(overlayOf(good.root)).toBeNull()
+    expect(good.canvas.style.visibility).toBe('')
+    expect(bad.canvas.style.visibility).toBe('')
+    const retry = prepareModelStaticFrames(good.root, { required: true, cache: null })
+    expect(retry.preparedCount).toBe(1)
+    retry.cleanup()
+  })
   it('应插入同尺寸覆盖图并隐藏 canvas，cleanup 后无残留且幂等', () => {
     const { root, canvas } = createStubModelRoot()
 

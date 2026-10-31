@@ -85,4 +85,5 @@ async def test_prepare_static_capture_passes_expected_route_and_bounded_timeout(
 
     assert result["ok"] is True
     assert calls[0]["payload"] == {"timeoutMs": MIN_STATIC_MEDIA_TIMEOUT_MS, "expectedRoute": "/cover"}
-    assert "videos" in calls[0]["script"]
+    assert "staticMedia: true" in calls[0]["script"]
+    assert "includeAnimations: false" in calls[0]["script"]

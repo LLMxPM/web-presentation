@@ -164,6 +164,8 @@ export async function runWithModelStaticFrameSpan<T>(task: () => Promise<T>): Pr
 }
 
 export interface ModelStaticFramePrepareOptions {
+  /** 正式静态导出必须逐实例成功；失败即整体中止，禁止输出空白模型。 */
+  required?: boolean
   /**
    * 任务级缓存：同一导出任务内复用同视角的帧。
    * 传 null 可显式禁用缓存；缺省使用模块级默认缓存。
@@ -189,7 +191,7 @@ interface PreparedOverlayEntry {
  *
  * 流程：查找 model3d 根节点 → 读取实例采集句柄 → 命中缓存或同步重绘读回 PNG →
  * 插入同尺寸覆盖 `<img>` 并隐藏 canvas。任何一步失败（未就绪、无句柄、采集失败）
- * 都跳过该实例，保留 canvas 交由既有截图路径兜底。
+ * 默认跳过该实例；正式离屏静态导出传 required，失败时撤销已准备覆盖图并报错。
  * @param root 查询根节点（页面节点、截图沙箱或模型根自身）
  * @param options 准备选项
  * @returns 清理句柄；必须由调用方在 finally 中 cleanup
@@ -201,19 +203,25 @@ export function prepareModelStaticFrames(
   const cache = options.cache === undefined ? resolveDefaultModelStaticFrameCache() : options.cache
   const entries: PreparedOverlayEntry[] = []
 
-  for (const target of collectModelRoots(root)) {
-    if (preparedModelRoots.has(target)) {
-      // 已由外层流程准备：本 handle 不接管，cleanup 不得移除他人创建的覆盖层。
-      continue
+  try {
+    for (const target of collectModelRoots(root)) {
+      if (preparedModelRoots.has(target)) {
+        // 已由外层流程准备：本 handle 不接管，cleanup 不得移除他人创建的覆盖层。
+        continue
+      }
+      const handle = readModelStaticFrameHandle(target)
+      if (!handle) {
+        if (options.required) throw new Error('MODEL_STATIC_FRAME_UNAVAILABLE：三维模型缺少静态帧句柄。')
+        continue
+      }
+      const entry = prepareSingleModelRoot(target, handle, cache)
+      if (entry) {
+        entries.push(entry)
+      } else if (options.required) throw new Error('MODEL_STATIC_FRAME_UNAVAILABLE：三维模型静态帧采集失败。')
     }
-    const handle = readModelStaticFrameHandle(target)
-    if (!handle) {
-      continue
-    }
-    const entry = prepareSingleModelRoot(target, handle, cache)
-    if (entry) {
-      entries.push(entry)
-    }
+  } catch (error) {
+    for (const entry of entries) releasePreparedOverlay(entry)
+    throw error
   }
 
   let cleaned = false

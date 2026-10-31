@@ -17,6 +17,7 @@ MAX_IMAGE_PHASE_SECONDS = 10.0
 async def append_screenshot(executor: Any, result: Any, *, ready: dict, artifact_dir: Path):
     """只在布局成功后捕获，预算不超过原硬期限；取消始终向上传播。"""
     started = time.perf_counter()
+    image_phase_open = True
     if not executor.execution.request.operation_options.get("capture_screenshot", False):
         return result
     executor._check_cancel(stage="capture")
@@ -27,7 +28,7 @@ async def append_screenshot(executor: Any, result: Any, *, ready: dict, artifact
     async def capture():
         """固定静态画面后捕获；不再次导航或启动 Chromium。"""
         await executor._prepare_static_capture(executor.execution.request, ready, capture=True)
-        return await executor._capture_page(artifact_dir)
+        return await executor._capture_page(artifact_dir, is_current=lambda: image_phase_open)
 
     try:
         image = await executor._await_without_cancelling(capture(), timeout=min(MAX_IMAGE_PHASE_SECONDS, remaining - 0.1))
@@ -48,5 +49,6 @@ async def append_screenshot(executor: Any, result: Any, *, ready: dict, artifact
         retryable = exc.error.retryable if isinstance(exc, RenderExecutionError) else True
         return replace(result, artifacts=[], screenshot=ScreenshotPhaseResult("unavailable" if unavailable else "failed", code, retryable))
     finally:
+        image_phase_open = False
         logger.info("附带截图阶段结束。", extra={"event": "render.screenshot.finished", "attempt_id": executor.execution.request.attempt_id,
                     "duration_ms": round((time.perf_counter() - started) * 1000, 2)})

@@ -6,8 +6,14 @@ import { initializeRenderReadyHost, markRenderPreviewMounted } from '@/core/util
 import { settleStaticPresentation } from '@/core/static-presentation/registry'
 import { usePageTimeline } from '../motion/usePageTimeline.v1'
 import { useStaticPresentation, type UseStaticPresentationOptions } from './useStaticPresentation.v1'
+import captureCases from '../../../../../../tests/fixtures/static-capture-cases.json'
 
 const unmounts: Array<() => void> = []
+it.each(captureCases.filter(item => item.receipt))('跨端静态回执：$name', async candidate => {
+  const page = mount({ mode: candidate.mode as UseStaticPresentationOptions['mode'], reason: '需要独立静态海报',
+    prepare: () => { if (candidate.failure) throw new Error('静态失败') } }, false)
+  expect(await page.api?.ready).toEqual(candidate.receipt)
+})
 afterEach(() => {
   unmounts.splice(0).forEach(unmount => unmount())
   document.body.innerHTML = ''

@@ -56,6 +56,7 @@ import { createRafResizeObserver } from '@/core/utils/resize-observer'
 import { importViewModule } from '@/core/utils/view-module'
 import { settleStaticPresentation } from '@/core/static-presentation/registry'
 import { isStaticExecution } from '@/core/static-presentation/types'
+import { waitForEditorVisualAssets } from '@/core/utils/visual-assets'
 
 interface Props {
   filePath: string
@@ -93,6 +94,7 @@ const previewState = ref<'loading' | 'ready' | 'error' | 'empty'>('loading')
 const previewStateMessage = ref('')
 const staticIssue = ref('')
 let previewGeneration = 0
+let visualController: AbortController | null = null
 let resizeObserver: ResizeObserver | null = null
 
 /**
@@ -156,6 +158,9 @@ function computeScale(): void {
  */
 async function loadPreviewComponent(): Promise<void> {
   const generation = ++previewGeneration
+  visualController?.abort()
+  visualController = new AbortController()
+  const signal = visualController.signal
   staticIssue.value = ''
   setPreviewState('loading')
   emitPreviewState()
@@ -190,6 +195,15 @@ async function loadPreviewComponent(): Promise<void> {
       if (generation !== previewGeneration) return
       if (execution.value.kind === 'thumbnail' && receipt.status !== 'ready') {
         staticIssue.value = receipt.message || '页面无法静态呈现'
+      } else if (execution.value.kind === 'thumbnail') {
+        try {
+          const result = await waitForEditorVisualAssets({ root: containerRef.value, staticMedia: true, includeAnimations: false, signal })
+          if (generation !== previewGeneration) return
+          if (!result.ok) staticIssue.value = [...result.failed, ...result.pending][0]?.message || '静态资源未就绪'
+        } catch (error) {
+          if (signal.aborted || generation !== previewGeneration) return
+          staticIssue.value = error instanceof Error ? error.message : '静态资源准备失败'
+        }
       }
     }
     computeScale()
@@ -226,6 +240,7 @@ watch([effectiveDesignWidth, effectiveDesignHeight], () => {
 
 onUnmounted(() => {
   previewGeneration += 1
+  visualController?.abort()
   resizeObserver?.disconnect()
   resizeObserver = null
 })

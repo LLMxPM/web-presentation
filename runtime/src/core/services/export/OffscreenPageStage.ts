@@ -98,14 +98,16 @@ export function createOffscreenPageStage(): OffscreenPageStage {
           await doc?.fonts?.ready
           const probe = win.__EDITOR_RUNTIME_WAIT_FOR_VISUAL_ASSETS__
           if (probe) {
-            const result = await probe({ timeoutMs: options?.timeoutMs ?? 15000, includeAnimations: false })
-            if (!result.ok) throw new Error('导出页面视觉资源未就绪')
+            const result = await probe({ timeoutMs: options?.timeoutMs ?? 15000, includeAnimations: false, staticMedia: true, root: target })
+            if (!result.ok) throw new Error(`${pageLabel}：导出页面视觉资源未就绪：${[...result.failed, ...result.pending].map(issue => issue.message).slice(0, 3).join('；')}`)
           }
           throwIfExportAborted(signal)
           pauseOffscreenMedia(target)
           // 页面就绪后逐实例准备静态帧：克隆与转换阶段看到的是 PNG 覆盖图，而不是空白 WebGL 画布。
-          const staticFrames = prepareModelStaticFrames(target, { cache: staticFrameCache })
           cleanupModelStaticFrames(activeStaticFrameHandle)
+          let staticFrames: ModelStaticFramesHandle
+          try { staticFrames = prepareModelStaticFrames(target, { cache: staticFrameCache, required: true }) }
+          catch (error) { throw new Error(`${pageLabel}：${error instanceof Error ? error.message : '模型静态帧采集失败'}`) }
           activeStaticFrameHandle = staticFrames
           return { element: target, cleanup: () => cleanupModelStaticFrames(staticFrames) }
         }

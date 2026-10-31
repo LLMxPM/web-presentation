@@ -53,7 +53,6 @@ interface PptxExportServicePrivate {
       bodyFontFace?: string
     }
   }
-  waitForPageReady: (expectedRoutePath?: string) => Promise<void>
 }
 
 afterEach(() => {
@@ -125,24 +124,12 @@ describe('PPTXExportService', () => {
     }))
   })
 
-  it('普通静态 DOM 就绪不等待有限入场动画结束', async () => {
-    const service = new PPTXExportService() as unknown as PptxExportServicePrivate
-    let animationFinished = false
-    const animation = {
-      playState: 'running',
-      effect: {
-        getTiming: () => ({ iterations: 1 }),
-      },
-      get finished() { animationFinished = true; return new Promise<void>(() => {}) },
-    } as unknown as Animation
-    Object.defineProperty(document, 'getAnimations', {
-      value: () => [animation],
-      configurable: true,
-    })
-
-    await service.waitForPageReady()
-
-    expect(animationFinished).toBe(false)
+  it('未绑定页面路由时拒绝采集播放中的主窗口，不生成 PPTX', async () => {
+    const service = createServiceWithConverterAndWriter()
+    await expect((service as unknown as PPTXExportService).exportCurrentPage()).rejects.toThrow('导出缺少页面路由')
+    expect(service.converter.extractSlideIR).not.toHaveBeenCalled()
+    expect(service.packageWriter.writePresentationFile).not.toHaveBeenCalled()
+    expect(mockPreparePage).not.toHaveBeenCalled()
   })
 
   it.each([true, false])('单页路由统一通过独立静态舞台采集（runtimeProject=%s）', async runtimeProject => {

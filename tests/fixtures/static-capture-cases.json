@@ -1,0 +1,11 @@
+[
+  {"name":"可读默认态","mode":"default","receipt":{"status":"ready","code":null,"message":null},"error":null,"phase":{"status":"available","reason_code":null,"retryable":false}},
+  {"name":"显式静态海报","mode":"poster","receipt":{"status":"ready","code":null,"message":null},"error":null,"phase":{"status":"available","reason_code":null,"retryable":false}},
+  {"name":"内容不可呈现","mode":"unsupported","receipt":{"status":"unsupported","code":"STATIC_PRESENTATION_UNAVAILABLE","message":"需要独立静态海报"},"error":"STATIC_PRESENTATION_UNAVAILABLE","phase":{"status":"unavailable","reason_code":"STATIC_PRESENTATION_UNAVAILABLE","retryable":false}},
+  {"name":"静态准备异常","mode":"poster","failure":true,"receipt":{"status":"failed","code":"STATIC_PRESENTATION_FAILED","message":"静态呈现准备失败。"},"error":"RENDER_ASSET_NOT_READY","phase":{"status":"failed","reason_code":"RENDER_ASSET_NOT_READY","retryable":true}},
+  {"name":"附图预算不足","phase":{"status":"skipped","reason_code":"SCREENSHOT_BUDGET_EXHAUSTED","retryable":true}},
+  {"name":"错误跳过不可呈现","invalid":true,"phase":{"status":"skipped","reason_code":"STATIC_PRESENTATION_UNAVAILABLE","retryable":false}},
+  {"name":"错误重试不可呈现","invalid":true,"phase":{"status":"unavailable","reason_code":"STATIC_PRESENTATION_UNAVAILABLE","retryable":true}},
+  {"name":"资源失败不能假装不可呈现","invalid":true,"phase":{"status":"unavailable","reason_code":"RENDER_ASSET_NOT_READY","retryable":true}},
+  {"name":"成功图片不能带失败原因","invalid":true,"phase":{"status":"available","reason_code":"PNG_FAILED","retryable":false}}
+]

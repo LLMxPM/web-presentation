@@ -5,7 +5,6 @@
 
 import jsPDF from 'jspdf'
 import type { Router } from 'vue-router'
-import { pageCaptureService } from './PageCaptureService'
 import {
   createOffscreenPageStage,
   type OffscreenPageStage,
@@ -103,11 +102,10 @@ export class PDFExportService {
       const routePath = currentRoute?.path
       const routeLocation = currentRoute?.fullPath || routePath
       const signal = this.taskRunner.getSignal(task.id) ?? undefined
-      const stage = routeLocation ? createOffscreenPageStage() : undefined
+      if (!routeLocation) throw new Error('导出缺少页面路由，无法建立独立静态舞台。')
+      const stage = createOffscreenPageStage()
       offscreenStage = stage
-      const canvas = stage && routeLocation
-        ? await stage.capture(routeLocation, this.buildCaptureOptions(routePath, signal))
-        : await pageCaptureService.captureCurrentPage(this.buildCaptureOptions(routePath, signal))
+      const canvas = await stage.capture(routeLocation, this.buildCaptureOptions(routePath, signal))
 
       if (this.taskRunner.isTaskCancelled(task.id)) {
         throw new Error('用户取消导出')

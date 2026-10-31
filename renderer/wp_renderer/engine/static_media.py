@@ -42,63 +42,18 @@ async ({ timeoutMs, expectedRoute }) => {
     if (!element.paused) element.pause();
     if (element.hasAttribute('autoplay')) element.removeAttribute('autoplay');
   }
-  const hasFrame = (video) => video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0;
-  const videos = Array.from(document.querySelectorAll('video')).filter((video) => {
-    if (video.getClientRects().length === 0) return false;
-    return Boolean(video.currentSrc || video.src || video.querySelector('source'));
-  });
-  const pending = [];
-  let posterVideos = 0;
-  for (const video of videos) {
-    const poster = String(video.getAttribute('poster') || '').trim();
-    if (poster) {
-      posterVideos += 1;
-      // 浏览器预加载首帧后会隐藏 poster；重置到未加载资源状态以恢复静态海报。
-      try {
-        video.pause();
-        video.removeAttribute('autoplay');
-        video.preload = 'none';
-        video.load();
-      } catch (error) {}
-      continue;
-    }
-    if (hasFrame(video)) continue;
-    try {
-      if (video.preload === 'none') video.preload = 'auto';
-      if (video.readyState < 1) video.load();
-    } catch (error) {}
-    pending.push(video);
-  }
-  if (pending.length > 0) {
-    await new Promise((resolve) => {
-      let settled = false;
-      const events = ['loadeddata', 'canplay', 'seeked', 'error'];
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve();
-      };
-      const check = () => {
-        if (pending.every(hasFrame)) finish();
-      };
-      const timer = setTimeout(finish, Math.max(0, timeoutMs));
-      const cleanup = () => {
-        clearTimeout(timer);
-        for (const video of pending) {
-          for (const name of events) video.removeEventListener(name, check);
-        }
-      };
-      for (const video of pending) {
-        for (const name of events) video.addEventListener(name, check, { once: true });
+  // 视频海报解码/首帧与字体、图片、模型共用 Runtime 探针，避免各出口各写一份准备逻辑。
+  const probe = window.__EDITOR_RUNTIME_WAIT_FOR_VISUAL_ASSETS__;
+  if (typeof probe !== 'function') {
+    issues.push('Runtime 缺少静态资源就绪探针。');
+  } else if (!layerIssue) {
+    const result = await probe({ root: layers[0], timeoutMs, staticMedia: true, includeAnimations: false });
+    if (!result || !result.ok) {
+      for (const issue of [...(result?.failed || []), ...(result?.pending || [])].slice(0, 3)) {
+        issues.push(String(issue.message || '静态资源未就绪。'));
       }
-      check();
-    });
-  }
-  for (const video of pending) {
-    if (hasFrame(video)) continue;
-    const src = String(video.currentSrc || video.src || '(source)');
-    issues.push(video.error ? `视频加载失败：${src}` : `视频首帧在限定时间内不可用：${src}`);
+      if (issues.length === 0) issues.push('静态资源未就绪。');
+    }
   }
   // 事件回调期间页面脚本可能再次拉起媒体，截图前做最终闸门。
   for (const element of media) {
@@ -109,10 +64,6 @@ async ({ timeoutMs, expectedRoute }) => {
     layerIssue,
     routePath,
     totalMedia: media.length,
-    videos: videos.length,
-    posterVideos,
-    frameVideos: videos.filter(hasFrame).length,
-    pendingVideos: pending.length,
     issues,
   };
 }

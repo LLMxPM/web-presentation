@@ -3,6 +3,30 @@
 from app.services.resource_reference_parser import DYNAMIC_RESOURCE_NAME, ResourceReferenceParser
 
 
+def test_video_poster_is_a_resource_reference_including_scoped_and_dynamic_names():
+    """海报与源视频分别进入闭包，URL 海报及普通组件同名属性不误收集。"""
+    source = '''<script setup>const items = [{ cover: 'loop-poster' }]</script>
+    <template>
+      <AssetVideo name="film" posterName="hero" />
+      <asset-video name="film" :poster-name="'quoted'" />
+      <AssetVideo v-for="item in items" name="film" v-bind:posterName="item.cover" />
+      <AssetVideo name="film" :posterName="unknown" poster="https://example.org/poster.png" />
+      <AssetImage name="image" posterName="not-a-video" />
+    </template>'''
+    result = ResourceReferenceParser.collect_vue_asset_references(source)
+    assert result.asset_names == ["film", "hero", "image", "loop-poster", "quoted"]
+    assert result.has_dynamic is True
+
+
+def test_preview_schema_video_poster_is_a_resource_reference():
+    """组件 slot 与 preset 海报同样参与资源闭包和身份。"""
+    import json
+    node = lambda poster: {"type": "component", "component": "AssetVideo.v1", "props": {"name": "film", "posterName": poster}}
+    schema = {"slots": {"default": {"default": [node("hero")]}},
+              "presets": [{"slots": {"default": [node("alternate")]}}]}
+    assert ResourceReferenceParser.collect_preview_schema_asset_references(json.dumps(schema)).asset_names == ["alternate", "film", "hero"]
+
+
 def test_collect_vue_asset_references_should_ignore_plain_text_asset_names() -> None:
     """普通文案或注释中出现资源名时，不应被识别为资源引用。"""
 

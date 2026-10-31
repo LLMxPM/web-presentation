@@ -55,6 +55,7 @@ import {
   initializeRenderReadyHost,
   markRenderPreviewMounted,
   markRenderReadyFailure,
+  resetRenderPreviewReadiness,
 } from '@/core/utils/render-ready'
 import {
   buildPlacementContainerStyle,
@@ -188,11 +189,12 @@ function notifyParentReady(): void {
 /**
  * 解析 render-ready.v1 元数据；input_digest 来自导航查询串，供 Renderer 硬核对。
  */
-function resolveRenderReadyMeta(): { artifactId: string | null; inputDigest: string | null } {
+function resolveRenderReadyMeta() {
   const params = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search)
   return {
     artifactId: previewContext.value?.artifactId || params.get('artifact'),
     inputDigest: params.get('input_digest'),
+    executionContext: execution.value.kind,
   }
 }
 
@@ -266,9 +268,14 @@ async function applyRenderScenario(input: {
 }): Promise<{ requestId: string; ok: boolean; scenarioKey: string }> {
   const scenarioKey = input.scenarioKey || 'default'
   try {
+    resetRenderPreviewReadiness()
     previewState.value = resolveScenarioState(scenarioKey, input)
     await waitForRenderSettled()
-    const ok = !errorMessage.value
+    await markRenderPreviewMounted(resolveRenderReadyMeta())
+    const bridge = window.__RENDER_READY__
+    const ok = !errorMessage.value && Boolean(bridge?.visualAssets.ready) && !bridge?.contentExceptions.length
+      && bridge?.staticPresentation?.status !== 'failed' && bridge?.staticPresentation?.status !== 'unsupported'
+    notifyParentRenderSettled(input.requestId)
     ackRenderScenario({ requestId: input.requestId, scenarioKey, ok })
     return { requestId: input.requestId, ok, scenarioKey }
   } catch {

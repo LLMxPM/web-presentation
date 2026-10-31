@@ -157,7 +157,7 @@ export async function markRenderPreviewMounted(options?: {
     ? await document.fonts.ready.then(() => true).catch(() => false)
     : true
   const context = options?.executionContext ?? window.__RENDER_READY__?.executionContext
-  const scope = document.querySelector('.runtime-page-print-source, .runtime-view-preview-source') ?? document
+  const scope = document.querySelector('.runtime-page-print-source, .runtime-view-preview-source, .component-preview-page') ?? document
   const staticMode = isStaticExecution(context)
   const staticPresentation = staticMode ? await settleStaticPresentation(scope, options?.visualTimeoutMs ?? 25000) : null
   const motionErrors = [...contentErrors, ...await settleMotionReadiness(scope, false)]
@@ -181,6 +181,8 @@ export async function markRenderPreviewMounted(options?: {
     const result = await waitForVisualAssets({
       timeoutMs: options?.visualTimeoutMs ?? 25000,
       includeAnimations: !staticMode,
+      staticMedia: staticMode,
+      root: scope,
     })
     const failed = Array.isArray(result?.failed) ? result.failed.length : 0
     const timedOut = Boolean(result?.timedOut)

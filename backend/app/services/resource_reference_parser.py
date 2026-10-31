@@ -481,7 +481,8 @@ class ResourceReferenceParser:
             component_name = cls.normalize_component_name(raw_tag)
             component_names.add(component_name)
             if cls.needs_name_resource_index(component_name):
-                for resource_name in cls.extract_name_resources(attrs_text, scoped_resource_values):
+                resource_attrs = cls._resource_reference_attributes(component_name, attrs_text)
+                for resource_name in cls.extract_name_resources(resource_attrs, scoped_resource_values):
                     resource_item = (component_name, resource_name)
                     if resource_item not in resource_names:
                         resource_names.append(resource_item)
@@ -489,6 +490,21 @@ class ResourceReferenceParser:
                 scope_stack.append((normalized_tag, own_scope))
 
         return component_names, resource_names
+
+    @staticmethod
+    def _resource_reference_attributes(component_name: str, attrs_text: str) -> str:
+        """将视频海报名并入同一资源解析路径，复用字面量、v-for 与动态标记语义；URL poster 不索引。"""
+        if component_name.lower() != "assetvideo":
+            return attrs_text
+        poster_attrs: list[str] = []
+        for match in _TEMPLATE_ATTR_PATTERN.finditer(attrs_text):
+            raw_name = match.group("name")
+            field = raw_name.removeprefix(":").removeprefix("v-bind:")
+            if field.lower() not in {"postername", "poster-name"}:
+                continue
+            alias = raw_name[:-len(field)] + "name"
+            poster_attrs.append(match.group(0).replace(raw_name, alias, 1))
+        return " ".join([attrs_text, *poster_attrs])
 
     @classmethod
     def collect_vue_asset_references(cls, source: str) -> ResourceReferenceResult:
@@ -1011,17 +1027,19 @@ class ResourceReferenceParser:
 
     @classmethod
     def _collect_schema_component_node(cls, node: dict[str, Any], names: list[str]) -> None:
-        """从 schema component 节点的 props.name 读取资源组件引用。"""
+        """从 schema 资源属性读取引用，视频同时纳入 posterName，海报独立变化也须使截图失效。"""
 
         component_name = cls._resolve_schema_component_name(str(node.get("component") or ""))
         if not component_name or not cls.needs_name_resource_index(component_name):
             return
         props = node.get("props")
-        if not isinstance(props, dict) or "name" not in props:
+        if not isinstance(props, dict):
             return
-        raw_name = props.get("name")
-        if isinstance(raw_name, str) and raw_name.strip():
-            names.append(raw_name.strip())
+        fields = ("name", "posterName", "poster-name") if component_name.lower() == "assetvideo" else ("name",)
+        for field in fields:
+            raw_name = props.get(field)
+            if isinstance(raw_name, str) and raw_name.strip():
+                names.append(raw_name.strip())
 
     @staticmethod
     def _resolve_schema_component_name(component_path: str) -> str | None:

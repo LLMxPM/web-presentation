@@ -32,6 +32,28 @@ describe('resolveRuntimeCaptureRoute', () => {
 })
 
 describe('OffscreenPageStage 静态帧准备', () => {
+  it('正式离屏出口向资源探针传静态视频选项和目标节点', async () => {
+    const stage = createOffscreenPageStage()
+    const pending = stage.preparePage('/static-page')
+    const { win, doc } = mountStaticPage(document.querySelector('iframe')!, '/static-page', 'ready')
+    const probe = vi.fn().mockResolvedValue({ ok: true, failed: [], pending: [] })
+    Object.assign(win, { __EDITOR_RUNTIME_WAIT_FOR_VISUAL_ASSETS__: probe })
+    const prepared = await pending
+    expect(probe).toHaveBeenCalledWith(expect.objectContaining({ root: doc.querySelector('.runtime-page-print-source'), staticMedia: true, includeAnimations: false }))
+    prepared.cleanup()
+    stage.dispose()
+  })
+
+  it.each(['resource', 'model'])('%s 失败整体中止并保留页码和原因', async reason => {
+    const stage = createOffscreenPageStage()
+    const pending = stage.preparePage('/static-page', { pageLabel: '第 3 页「三维视频」' })
+    const { win, doc } = mountStaticPage(document.querySelector('iframe')!, '/static-page', 'ready')
+    Object.assign(win, { __EDITOR_RUNTIME_WAIT_FOR_VISUAL_ASSETS__: vi.fn().mockResolvedValue({ ok: reason !== 'resource', failed: [{ message: '视频海报加载失败' }], pending: [] }) })
+    if (reason === 'model') doc.querySelector('.runtime-page-print-source')!.innerHTML = '<div data-runtime-kit-media="v1" data-runtime-kit-media-kind="model3d"><canvas /></div>'
+    await expect(pending).rejects.toThrow('第 3 页「三维视频」')
+    await expect(pending).rejects.toThrow(reason === 'resource' ? '视频海报加载失败' : 'MODEL_STATIC_FRAME_UNAVAILABLE')
+    stage.dispose()
+  })
   it('旧 JavaScript 调用显式传入时刻选择器时明确拒绝', async () => {
     const stage = createOffscreenPageStage()
     const obsolete = { motionSnapshot: { atMs: 300 } }

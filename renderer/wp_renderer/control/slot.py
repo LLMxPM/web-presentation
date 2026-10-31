@@ -253,6 +253,8 @@ class SlotController:
         if execution is None:
             return None
         self._maybe_expire_artifacts(execution)
+        if execution.stage != ATTEMPT_STATUS_TERMINAL or execution.result is None or execution.error is not None:
+            return None
         return execution.artifacts.get(name)
 
     def build_receipt(self, execution: SlotExecution) -> ExecutionReceipt:
@@ -300,7 +302,7 @@ class SlotController:
         """
 
         result_descriptor = None
-        if execution.result is not None:
+        if execution.stage == ATTEMPT_STATUS_TERMINAL and execution.result is not None and execution.error is None:
             result_descriptor = {
                 "result": execution.result.to_dict(),
                 "artifacts": [item.to_dict() for item in execution.result.artifacts],
@@ -328,6 +330,8 @@ class SlotController:
     def _resolve_receipt_status(execution: SlotExecution) -> str:
         """按错误/结果推导回执业务状态，失败与取消不得伪装成成功。"""
 
+        if execution.stage != ATTEMPT_STATUS_TERMINAL:
+            return execution.stage
         if execution.error is not None:
             code = str(execution.error.get("code") or "")
             if code == ERROR_CODE_CANCELLED or execution.cancel_requested:
@@ -388,7 +392,14 @@ class SlotController:
                 ).to_dict()
         finally:
             # 独立监督流程关闭资源：不依赖对 Playwright Task 的 cancel()。
+            execution.stage = ATTEMPT_STATUS_CLEANING
             await self._shutdown_executor(executor)
+            # 取消可能恰好发生在 PNG 返回后或浏览器清理期间；终态发布前必须再过围栏。
+            if execution.cancel_requested:
+                execution.result = None
+                execution.error = RenderError.from_code(
+                    ERROR_CODE_CANCELLED, message="执行在终态发布前已取消，丢弃迟到产物。", stage="cleaning",
+                ).to_dict()
             if self._executor is executor:
                 self._executor = None
             now = datetime.now(UTC)

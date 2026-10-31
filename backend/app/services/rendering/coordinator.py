@@ -12,6 +12,7 @@ from typing import Any
 
 from render_contracts.constants import (
     OPERATION_PAGE_CAPTURE,
+    OPERATION_COMPONENT_DIAGNOSE,
     OPERATION_PAGE_DIAGNOSE,
     PROTOCOL_VERSION,
     PROTOCOL_VERSION_V2,
@@ -766,9 +767,9 @@ class RenderCoordinator:
 
 
 def is_static_capture_operation(operation: str) -> bool:
-    """页面截图/诊断必须固定 capture 上下文；组件诊断保留交互预览语义。"""
+    """所有远程截图/诊断固定 capture 上下文；Editor 的手势交互预览不经过此路径。"""
 
-    return operation in {OPERATION_PAGE_CAPTURE, OPERATION_PAGE_DIAGNOSE}
+    return operation in {OPERATION_PAGE_CAPTURE, OPERATION_PAGE_DIAGNOSE, OPERATION_COMPONENT_DIAGNOSE}
 
 
 def _ensure_render_identity_query(
