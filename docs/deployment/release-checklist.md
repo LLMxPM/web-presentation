@@ -87,7 +87,7 @@ Backend `capabilities.slideshow` 声明 `schema_version=4`、`advance_modes` 为
 
 ## 7. 页内动画收敛与集中实机验收
 
-**状态**：旧时间轴实现已按[放映动画收敛规划](../developer/runtime-integration/playback-redesign-proposal.md)整体替换。A1/A2、B0–B5、C1 与 C2 工程已完成（2026-10-31），旧 `core/motion`、`usePageTimeline.v1`、`Asset*.v2`、Presenter v4 与 `media_end`/`timeline_end`/`auto_start` 已从源码、manifest、E2E 与当前文档清零；C3 集中实机验收待执行，GC 尚未通过。
+**状态**：旧时间轴实现已按[放映动画收敛规划](../developer/runtime-integration/playback-redesign-proposal.md)整体替换。A1/A2、B0–B5、C1 与 C2 工程已完成（2026-10-31），旧 `core/motion`、`usePageTimeline.v1`、`Asset*.v2`、Presenter v4 与 `media_end`/`timeline_end`/`auto_start` 已从源码、manifest、E2E 与当前文档清零；C3 集中实机验收主体已完成（2026-11-01，候选 `b0300b3`），全量主门禁、`compose-images`、Renderer 取消清理专项与独立 ZIP 产物核对未执行，GC 尚未通过。
 
 首期 WP01–WP12 与 [G1 证据](../developer/runtime-integration/motion/g1-automation-coverage.md)保留为历史实现记录和风险输入，不代表新实现已验收。旧 [G2 清单](../developer/runtime-integration/motion/g2-followups.md)不再是当前执行入口，逐项承接以[收敛工作包清单](../developer/runtime-integration/playback-redesign/work-packages/README.md)为准。指定时刻状态重建与截图已永久放弃；混版矩阵和 B01–B08 模型量化门槛作废，不再等待后续开放。默认 PNG、诊断附图、缩略图和静态导出保留，改用独立静态态。MCP 不列入本轮交付。
 
@@ -98,7 +98,7 @@ Backend `capabilities.slideshow` 声明 `schema_version=4`、`advance_modes` 为
 - 最终候选源码、Backend/Runtime/Renderer 与 CLI 的契约和能力一致；失败回修后重验受影响场景并重新确认镜像/产物身份。全量主门禁与相关专项通过后才可宣布 GC 通过或 G2 关闭。
 - 回填用户文档、支持矩阵和证据位置；Firefox/WebKit、移动端、多屏授权及其它未验证环境不作支持承诺。旧 G1/G2 结果不能替代本次新实现验收。
 
-**下一步**：只剩 C3。按其执行顺序完成全量主门禁、正式服务链路、联合创作、静态跨产物、Renderer 取消、多窗口与媒体/WebGL 异常场景，再从通过验证的候选源码构建最终镜像与独立产物，最后执行受控长稳与 A04 资源曲线观测；不再先验旧链再验新链。
+**下一步**：按 C3 卡片补齐四项未执行内容——全量主门禁 `test:all`、`test:contracts:compose-images`（当前 Docker Hub 持续 EOF）、Renderer 取消/超时/迟到 PNG 专项（`docker-architecture.py render-cancel*` 与 `render-timeout`/`render-late`）、独立 ZIP 产物核对；已完成项见 C3 卡片的执行记录，不再重跑。
 
 ---
 

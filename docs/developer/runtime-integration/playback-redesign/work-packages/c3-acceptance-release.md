@@ -1,6 +1,6 @@
 # C3 集中实机验收与交付
 
-状态：待实施。主责：跨模块验证。前置：[C2](./c2-legacy-zero.md)。出口：GC。
+状态：进行中（实机验收已完成，缺全量主门禁与 compose-images 核对，未判定 GC）。主责：跨模块验证。前置：[C2](./c2-legacy-zero.md)。出口：GC。
 
 本包统一执行原 A1/A2 及 B0–C2 移交的实机任务，只验证最终收敛实现。A/B/C1/C2 的开发测试不能代替本包证据；本包通过前不宣称新模型已交付或 G2 已关闭。
 
@@ -47,6 +47,30 @@ Firefox、WebKit 与移动端仍不建入口：仓库没有对应 project 或设
 ### 版本与指标记录
 
 每份证据固定记录：候选源码 commit、CLI 与 Skill 版本、`/api/system/slideshow-capabilities` 与 `/api/system/scene-capabilities` 摘要、`editor/src/types/openapi.json` 摘要、Runtime Kit manifest 版本与 `.runtime-build-id`、镜像标签与三角色启动结果。实机指标记录 Chromium 版本、JS 堆、DOM/节点/监听器计数、RAF 间隔与掉帧、媒体元素与 WebGL context 数、Renderer 进程与槽位状态、本地产物路径。历史 G1/G2 数值只作参考，不与本轮混记。
+
+## 执行记录（2026-10-31 至 11-01）
+
+候选提交 `b0300b3`（产品代码同 `db68ff2`，`0cf71ae`/`b0300b3` 只改 C3 入口与镜像探针）。环境为 Windows 11 + 本地 `_e2e` 服务（`AI_TEST_MODE=mock`）与开发栈（真实模型）两套，未改动 `.env` 与开发库既有数据。
+
+| 验收项 | 命令 | 结果 |
+| :--- | :--- | :--- |
+| smoke 全套 | `--project=smoke` 单 worker 跑 scene-* 与 protected-media | **21/21 通过**；2 worker 并行时「无限 ambient 装饰不阻塞 scene_end 推进」因 CPU 抢占动画变慢超时，单跑 13/13，非回归 |
+| 联合闭环 | `SCENE_JOINT_ACCEPTANCE_ENABLED=true --project=runtime-heavy scene-joint.spec.ts --headed` | 通过（34.8s），三维动作、旁白、切页 cue 同一放映协作，静态截图不被媒体阻塞 |
+| 三维像素与真实构建 | `--project=runtime-heavy model3d-screenshot.spec.ts project-build.spec.ts` | 3/3 通过（普通模型、蒙皮模型、沙箱项目真实构建） |
+| A04 保留曲线 | `C3_A04_CYCLES=100 --project=acceptance model-a04.spec.ts` | 通过：堆 75.6→78.4 MiB（10/25/50/75/100 轮为 77.5/77.7/78.0/78.3/78.4，趋于平坦）、监听器 116→136 稳定、上下文创建 1 存活 1、残留画布 0 |
+| WebGL 丢失恢复 | 同上第二条用例 | `lost=true`、`restored=true`、恢复后上下文可用 |
+| 30 分钟长稳 | `pnpm run test:c3:soak`（有头） | 通过：119 个采样、`noExternalInput=true`、槽位全程 idle、RAF P95 13.4ms、媒体元素 1、Renderer 服务进程 2、保留上下文 1、无错误覆盖层。**堆指标不采用**：当时 CDP 口径跨 iframe 抖动，已改为运行时帧内 `performance.memory`，未重跑 |
+| 多屏授权 | `pnpm run test:c3:multiscreen`（有头） | 有头取到 `screens=1`，判定 `single-display-not-verifiable`；无头实例一律 `NotAllowedError`，编辑器预览 iframe 受 Permissions Policy 限制 |
+| 受保护媒体慢速传输 | `--project=acceptance protected-media-slow.spec.ts` | 通过：挂起请求后 `waiting=1`，放行后 `playing=1`，页面内容区视频元素 1 |
+| 镜像构建 | `docker build -f runtime/Dockerfile`、`renderer/Dockerfile`、`deploy/docker/Dockerfile.platform`、`Dockerfile.lite` | 四类镜像均构建成功（tag `c3-0cf71ae`，runtime 2.29GB / renderer 1.6GB / platform 659MB / lite 2.77GB）。Docker Hub 持续 EOF，改用本地缓存基础镜像离线构建；platform/lite 的 `# syntax=docker/dockerfile:1.7` 前端镜像不可拉取，用去掉该 parser 指令的本地副本构建（两文件无 heredoc/mount/network 语法，指令等价） |
+| 镜像启动校验 | `check-image-startup.py --variant runtime/renderer/lite/full` | 四类全部通过：runtime `runtime_version_guard_passed`、renderer `renderer_control_api_capture_passed`、lite `runtime_version_and_renderer_capture_passed`、full 健康通过 |
+| 三角色编排 | `docker-architecture.py setup --backend-image wp-platform:c3-0cf71ae --runtime-image wp-runtime:c3-0cf71ae --renderer-image wp-renderer:c3-0cf71ae` | preview_a/b、build_a/b、check 全部 `healthy`；`healthz` role 正确、`readyz` 全 ok、build 的 `buildWorker.ready=true`；五个实例 `build_id` 均为 `sha256-fb1a46b4fe10…`，`runtime_kit_version=1.0.0`；演练环境已 `cleanup` |
+| 真实模型创作 | 受控工作空间 + `agent-coordinator` 真实 Run（非 mock） | Run `24c1cab3…` 完成（68s），页面 783 生成 v2 并插入日期行；回读源码确认；默认截图任务 708 `succeeded`，PNG 17019 字节，sha256 与 `result_screenshot_id` 一致 |
+| CLI 读写 | `wp --json -w 61 project get` → `wp project update --payload-file` → 回读 | CLI 0.4.1 通过 PAT（workspace:read / project:read,write / page:read,write）连本地 Backend，描述由空回写为「C3 CLI 回写 2026-11-01」并回读一致 |
+
+证据目录：`.tmp/c3-evidence/`（`a04-100cycles-*.json`、`soak-30m-*.json`、`webgl-restore-*.json`、`three-role-image.json`、`real-creation-*.json`、`cli-readwrite.json`、`image-startup-*`）；Playwright 产物在 `test-results/`，镜像启动证据在各 `image-startup-*` 子目录。
+
+**未执行，不得记为通过**：全量主门禁 `test:all`；`test:contracts:compose-images`（Docker Hub 拉取持续 EOF，无法核对远端镜像可拉取性）；Renderer 取消/超时/迟到 PNG 专项（`docker-architecture.py render-cancel`、`render-timeout`、`render-late`）；独立 ZIP 产物核对；Firefox/WebKit 与移动端（无 project 与设备拓扑）；操作系统真实睡眠与恢复；无人值守长期放映。长稳堆指标因口径修正未重跑，若需引用堆趋势，请以 A04 的 100 轮曲线为准，或按新口径重跑一次长稳。
 
 ## 交付
 

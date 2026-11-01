@@ -258,3 +258,15 @@ C2 清零时缺失的四类入口已补建，仍属 C3 实施准备，不代表�
 自检（缩短版，不作验收证据）：长稳 1 分钟 4 个样本，`noExternalInput=true`、槽位 idle、RAF P95 13.5ms、掉帧 4、保留上下文 1；A04 3 轮堆 33.3→34.9 MiB、监听器 116→146、上下文创建 1 存活 1；WebGL `lost/restored` 均为 true；多屏需有头运行，实取 `screens=1` 并判定单屏不可验证（无头一律 `NotAllowedError`，编辑器预览 iframe 还受 Permissions Policy 限制）；慢速媒体 `waiting=1`、`playing=1`。
 
 实机才暴露、交由 C3 判定的观测项：全幅页面内容会盖住控制条命中区域（`elementFromPoint` 落在页面内容上，演练改用事件派发触发同一处理器），有头运行 `data-wake-lock` 为 `denied`。未执行正式 30 分钟长稳、100 轮 A04、镜像/产物与全量门禁；未修改 `.env` 与开发库。
+
+## C3 集中实机验收（2026-10-31 至 11-01）
+
+候选提交 `b0300b3`。实机结果与证据路径统一记录在 [C3 卡片](./work-packages/c3-acceptance-release.md#执行记录2026-10-31-至-11-01)，本节只记口径与结论。
+
+- 浏览器矩阵：smoke 单 worker 21/21；runtime-heavy 4/4（含联合闭环与真实构建）。2 worker 并行会让动画用例因 CPU 抢占超时，实机证据统一单 worker。
+- 资源与长稳：A04 100 轮堆 75.6→78.4 MiB 后趋平、监听器稳定 136、保留上下文恒为 1，按「接受」结论记录；30 分钟长稳 119 样本通过，堆指标因 CDP 跨 iframe 口径作废，改用运行时帧内 `performance.memory` 后未重跑。
+- 镜像与部署：四类镜像从候选源码离线构建并通过隔离启动校验；preview/build/check 三角色 `healthz`/`readyz` 全通过且 `build_id` 一致（`sha256-fb1a46b4…`）。
+- 创作链：受控工作空间真实模型 Run 完成（68s），页面生成 v2 并回读一致，默认截图任务成功且 PNG 哈希与 `result_screenshot_id` 相同；CLI 0.4.1 经 PAT 完成读 → 写 → 回读。
+- 顺带修复：镜像探针的静态呈现/资源就绪回执滞后于 C1 契约（`b0300b3`），修复后 renderer 与 lite 变体启动校验通过。
+
+未执行：`test:all`、`compose-images`、Renderer 取消/超时/迟到 PNG 专项、独立 ZIP、Firefox/WebKit 与移动端、真实睡眠。GC 未判定，C3 状态改为「进行中」。
