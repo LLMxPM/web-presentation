@@ -1,6 +1,6 @@
 # C1 静态捕获契约与回归收口
 
-状态：**完成（2026-10-31，工程与开发回归；实机待 C3）**。主责：Runtime / Renderer / render-contracts。前置：[B3](./b3-model-forward-playback.md)、[B4](./b4-audio-ownership.md)、[B5](./b5-config-and-clients.md)。出口：GC 的工程前置；GC 尚未通过。实现提交：`5bd6d3f`。
+状态：**完成（2026-10-31，工程与开发回归；实机待 C3）**。主责：Runtime / Renderer / render-contracts。前置：[B3](./b3-model-forward-playback.md)、[B4](./b4-audio-ownership.md)、[B5](./b5-config-and-clients.md)。出口：GC 的工程前置；GC 已于 2026-11-01 通过。实现提交：`5bd6d3f`。
 
 静态态、默认截图替代与不可呈现语义已在 B0 落地。本包在三维、音频、配置和客户端替换完毕后收口跨端契约与开发回归，防止 B 段重新引入播放态取帧或各出口语义漂移；真实产物一致性统一在 C3 验证。
 

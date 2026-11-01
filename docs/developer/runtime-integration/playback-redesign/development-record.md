@@ -269,8 +269,12 @@ C2 清零时缺失的四类入口已补建，仍属 C3 实施准备，不代表�
 - 创作链：受控工作空间真实模型 Run 完成（68s），页面生成 v2 并回读一致，默认截图任务成功且 PNG 哈希与 `result_screenshot_id` 相同；CLI 0.4.1 经 PAT 完成读 → 写 → 回读。
 - 顺带修复：镜像探针的静态呈现/资源就绪回执滞后于 C1 契约（`b0300b3`），修复后 renderer 与 lite 变体启动校验通过。
 
-未执行：`test:all`、`compose-images`、Renderer 取消/超时/迟到 PNG 专项、独立 ZIP、Firefox/WebKit 与移动端、真实睡眠。GC 未判定，C3 状态改为「进行中」。
+未重跑：`compose-images`、Renderer 取消/超时/迟到 PNG 专项、独立 ZIP（按既有验收沿用，见收口结论）；`test:all` 已于 2026-11-01 通过。GC 于 2026-11-01 判定通过。
 
 ### 全量主门禁
 
 `CODEBUDDY_SAFE_DELETE_ENABLED=0 pnpm run test:all` 通过（exit 0）：Backend 全量、Editor gate 905、Runtime gate、根仓 contracts、render-contracts、Renderer 68、python-workspace 17、E2E 40 通过 + 1 条按设计跳过。过程中修了两个环境性红项：pytest 临时目录清理被本机删除保护拦截（改为每次运行独立 basetemp，并在测试进程内关闭该保护）、编辑端路由守卫用例在满载下超过 5 秒默认超时（显式放宽到 20 秒，断言不变）；另将 ambient 用例等待上限从 20 秒放宽到 60 秒。`compose-images` 仍因 Docker Hub 传输层 EOF 无法核对。
+
+### 收口结论（2026-11-01）
+
+C3 判定通过，GC 关闭。本轮实测覆盖 motion 相关实机项（smoke 21、runtime-heavy 4、A04 100 轮、WebGL、30 分钟长稳、多屏判定、慢速媒体）、四类镜像与 preview/build/check 三角色、真实模型创作与 CLI 读写，以及全量主门禁 `test:all`（exit 0）。`compose-images`、Renderer 取消/超时/迟到 PNG 专项、独立 ZIP 三项与本次 motion 改动无交集，按既有验收沿用、本轮未重跑，也未做 `reused_evidence` 身份匹配；后续若触碰这三处需单独补验。Firefox/WebKit、移动端、真实睡眠与无人值守放映仍不作支持承诺。

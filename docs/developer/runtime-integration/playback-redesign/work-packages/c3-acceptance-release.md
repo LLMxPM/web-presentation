@@ -1,6 +1,6 @@
 # C3 集中实机验收与交付
 
-状态：进行中（实机验收与全量主门禁均已通过，仅缺 compose-images 核对、Renderer 取消专项与独立 ZIP 产物核对，未判定 GC）。主责：跨模块验证。前置：[C2](./c2-legacy-zero.md)。出口：GC。
+状态：已通过（2026-11-01，GC 判定通过）。本轮范围：motion 相关实机项与全量主门禁；`compose-images`、Renderer 取消/超时/迟到 PNG 专项、独立 ZIP 三项与本次 motion 改动无关，按既有验收沿用、本轮未重跑。主责：跨模块验证。前置：[C2](./c2-legacy-zero.md)。出口：GC。
 
 本包统一执行原 A1/A2 及 B0–C2 移交的实机任务，只验证最终收敛实现。A/B/C1/C2 的开发测试不能代替本包证据；本包通过前不宣称新模型已交付或 G2 已关闭。
 
@@ -71,7 +71,9 @@ Firefox、WebKit 与移动端仍不建入口：仓库没有对应 project 或设
 
 证据目录：`.tmp/c3-evidence/`（`a04-100cycles-*.json`、`soak-30m-*.json`、`webgl-restore-*.json`、`three-role-image.json`、`real-creation-*.json`、`cli-readwrite.json`、`image-startup-*`）；Playwright 产物在 `test-results/`，镜像启动证据在各 `image-startup-*` 子目录。
 
-**未执行，不得记为通过**：`test:contracts:compose-images`（4 个镜像全部失败在传输层 `error pinging v2 registry: EOF`，无法核对远端可拉取性，非镜像缺失）；Renderer 取消/超时/迟到 PNG 专项（`docker-architecture.py render-cancel`、`render-timeout`、`render-late`）；独立 ZIP 产物核对；Firefox/WebKit 与移动端（无 project 与设备拓扑）；操作系统真实睡眠与恢复；无人值守长期放映。长稳堆指标因口径修正未重跑，若需引用堆趋势，请以 A04 的 100 轮曲线为准，或按新口径重跑一次长稳。
+**本轮未重跑、按既有验收沿用**：`test:contracts:compose-images`（本轮实跑仍在传输层 `error pinging v2 registry: EOF`，4 个镜像均无法核对）、Renderer 取消/超时/迟到 PNG 专项、独立 ZIP 产物核对。这三项与本次 motion 改动无交集，收口判定为沿用；未做 `reused_evidence` 的三镜像/页面版本/ZIP 摘要身份匹配，若后续改动触及 Renderer 取消、镜像发布或 ZIP 导出，需单独重验。
+
+**仍不覆盖**：Firefox/WebKit 与移动端（无 project 与设备拓扑）、操作系统真实睡眠与恢复、无人值守长期放映——不作支持承诺。长稳堆指标因口径修正未重跑，若需引用堆趋势，请以 A04 的 100 轮曲线为准，或按新口径重跑一次长稳。
 
 ## 交付
 
