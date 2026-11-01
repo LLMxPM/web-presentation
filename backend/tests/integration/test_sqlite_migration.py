@@ -6,9 +6,9 @@ import os
 import re
 import runpy
 import sqlite3
-import subprocess
-import sys
 from pathlib import Path
+
+from tests.fixtures.migrations import run_alembic as _run_alembic
 
 
 def test_ai_attachment_lifecycle_foreign_key_names_fit_postgresql_limit() -> None:
@@ -353,17 +353,3 @@ def test_pat_flexible_authorization_migration_preserves_old_tokens_and_downgrade
         assert connection.execute(
             "SELECT expires_at IS NOT NULL FROM api_access_tokens WHERE token_public_id = 'long-token-public'"
         ).fetchone() == (1,)
-
-
-def _run_alembic(backend_root: Path, env: dict[str, str], revision: str, *, command: str = "upgrade") -> None:
-    """运行指定 Alembic 升降级，并在失败时输出完整诊断。"""
-
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", "alembic.ini", command, revision],
-        cwd=backend_root,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr or result.stdout

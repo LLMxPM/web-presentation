@@ -4,29 +4,19 @@
  * 依据 scripts/testing/run-full-tests.mjs：
  * - test:all = backend + editor gate + runtime gate + contracts + render-contracts + renderer + python-workspace + e2e:all；
  * - test:all 自动注入 TESTING_START_* 与 AI_TEST_MODE=mock，要求端口空闲，并在 E2E 阶段重置/播种 _e2e 数据；
- * - 任一阶段失败即中止；本脚本只做预检与收尾提示，不复制测试编排。
+ * - 内部受控并行，失败后停止派发并等待已启动阶段；本脚本只做预检与收尾提示，不复制测试编排。
  */
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 
 import { runCommandSync } from '../../../../scripts/testing/process-utils.mjs'
+import { resolveTestBudget, TEST_PLAN_DESCRIPTION } from '../../../../scripts/testing/full-test-plan.mjs'
 import {
   readStatus,
   REPO_ROOT,
 } from './lib/e2e-env.mjs'
 import { preflightE2e } from './lib/e2e-preflight.mjs'
 import { buildPrepareEnv, parseWorkflowArgs } from './lib/workflow-options.mjs'
-
-const TEST_ALL_STEPS = [
-  'test:backend',
-  'test:editor:gate',
-  'test:runtime:gate',
-  'test:contracts',
-  'test:render-contracts',
-  'test:renderer',
-  'test:python-workspace',
-  'test:e2e:all',
-]
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   main().catch((error) => {
@@ -45,19 +35,21 @@ export async function main(argv = process.argv.slice(2), { preflight = preflight
 
   console.log(`[full-test] 仓库：${REPO_ROOT}${options.dryRun ? '（dry-run）' : ''}`)
   const prepareEnv = buildPrepareEnv()
+  const budget = resolveTestBudget(prepareEnv)
+  console.log(`[full-test] 并发通道 ${budget.concurrency}，Vitest workers ${budget.workers}`)
   await preflight(options, { logPrefix: '[full-test]' })
 
   if (options.dryRun) {
     console.log('[full-test] dry-run 完成：未停止服务、未安装浏览器、未运行测试')
     console.log('[full-test] 将执行：pnpm run test:all')
-    console.log(`  阶段：${TEST_ALL_STEPS.join(' → ')}`)
+    console.log(`  阶段：${TEST_PLAN_DESCRIPTION}`)
     console.log('  注意：test:all 的 E2E 阶段会重置并播种 _e2e 数据，并在结束后保留 E2E 服务。')
     return
   }
 
   console.log('[full-test] 即将执行 pnpm run test:all')
-  console.log(`  阶段：${TEST_ALL_STEPS.join(' → ')}`)
-  console.log('  注意：E2E 阶段会重置并播种 _e2e 数据；任一阶段失败会中止后续阶段。')
+  console.log(`  阶段：${TEST_PLAN_DESCRIPTION}`)
+  console.log('  注意：E2E 阶段会重置并播种 _e2e 数据；失败后停止派发，等待已启动阶段结束。')
   const code = run('pnpm', ['run', 'test:all'], { cwd: REPO_ROOT, env: prepareEnv })
   printResult(code, status)
   if (code !== 0) process.exitCode = code
@@ -114,11 +106,12 @@ function printHelp() {
   -h, --help          显示帮助
 
 test:all 阶段：
-  ${TEST_ALL_STEPS.join(' → ')}
+  ${TEST_PLAN_DESCRIPTION}
 
 注意：
   - test:all 自动设置 TESTING_START_* 与 AI_TEST_MODE=mock，不需要手工注入。
   - E2E 阶段会重置并播种 _e2e 数据，并在结束后保留 E2E 服务。
+  - TEST_ALL_CONCURRENCY=1 可强制串行；VITEST_MAX_WORKERS 可设置前端 worker 上限。
   - test:all 不包含 repository、docker-context、compose-images、gateway、cli-skill、generated、
     pg-claim、runtime-state-parity、lite drill 与 test:render-e2e，需按改动补跑。
   - 全量测试耗时较长，请使用足够的命令超时；不要把 test:all 与其它测试并行执行。`)

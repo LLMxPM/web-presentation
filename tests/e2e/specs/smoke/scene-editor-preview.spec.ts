@@ -5,13 +5,13 @@
 import { expect, test } from '../../fixtures/test-data'
 import { buildScenePage } from '../../helpers/scene-page-source'
 
-test('页面详情预览可播放和停止页内 Scene', async ({ page, context, visualEditSandbox }) => {
+test('页面详情预览可播放和停止页内 Scene', async ({ page, context, projectSandbox }) => {
   test.setTimeout(120_000)
-  const update = await context.request.patch(`/api/pages/${visualEditSandbox.pageId}`, {
+  const update = await context.request.patch(`/api/pages/${projectSandbox.pageId}`, {
     data: { page_content: buildScenePage() },
   })
   expect(update.ok(), await update.text()).toBeTruthy()
-  await page.goto(`/workspaces/${visualEditSandbox.workspaceId}/projects/${visualEditSandbox.projectId}/pages/${visualEditSandbox.pageId}`)
+  await page.goto(`/workspaces/${projectSandbox.workspaceId}/projects/${projectSandbox.projectId}/pages/${projectSandbox.pageId}`)
   const controls = page.getByTestId('preview-scene-controls')
   await expect(controls).toBeVisible({ timeout: 45_000 })
   const preview = page.frameLocator('iframe[title="runtime-preview"]').frameLocator('iframe#preview')

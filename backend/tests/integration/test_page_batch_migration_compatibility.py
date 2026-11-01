@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -13,16 +11,14 @@ from sqlalchemy import Column, Integer, MetaData, create_engine, inspect, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, registry
 
+from tests.fixtures.migrations import run_alembic
+
 
 def _migrate(path: Path, revision: str, *, command: str = "upgrade") -> None:
     """在独立临时库执行真实迁移，不读取开发数据库。"""
 
     env = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{path.as_posix()}", "REDIS_URL": "memory://batch-compat"}
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", "alembic.ini", command, revision],
-        cwd=Path(__file__).resolve().parents[2], env=env, capture_output=True, text=True, check=False,
-    )
-    assert result.returncode == 0, result.stderr or result.stdout
+    run_alembic(Path(__file__).resolve().parents[2], env, revision, command=command)
 
 
 def _legacy_batch_model() -> type:

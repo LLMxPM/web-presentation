@@ -57,7 +57,7 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 asyncio_default_test_loop_scope = "function"
-addopts = "-p no:doctest"
+addopts = "-p no:doctest --durations=15"
 markers = [
     "unit: 后端纯函数、仓储和小范围模块测试。",
     "api: 面向 FastAPI 路由与 BFF 接口的测试。",

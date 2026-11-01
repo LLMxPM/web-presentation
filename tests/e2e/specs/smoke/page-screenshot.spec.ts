@@ -3,9 +3,9 @@
  */
 import { expect, test } from '../../fixtures/test-data'
 
-test('页面截图应通过远程 Renderer 生成可下载 PNG', async ({ page, context, visualEditSandbox }, testInfo) => {
+test('页面截图应通过远程 Renderer 生成可下载 PNG', async ({ page, context, projectSandbox }, testInfo) => {
   test.setTimeout(180_000)
-  const { workspaceId, projectId, pageId, pageTitle } = visualEditSandbox
+  const { workspaceId, projectId, pageId, pageTitle } = projectSandbox
   await page.goto(`/workspaces/${workspaceId}/projects/${projectId}/pages`)
   await expect(page.locator('[data-testid="batch-refresh-routed-page-screenshots"]')).toBeVisible()
 

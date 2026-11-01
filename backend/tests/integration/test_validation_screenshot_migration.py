@@ -1,11 +1,11 @@
 """文件功能：验证截图候选编码与产物表在临时 SQLite 库上的升级、回滚及再次升级。"""
 
 import os
-import subprocess
-import sys
 from pathlib import Path
 
 from sqlalchemy import create_engine, inspect
+
+from tests.fixtures.migrations import run_alembic
 
 
 def test_candidate_screenshot_migration_roundtrip(tmp_path):
@@ -14,9 +14,7 @@ def test_candidate_screenshot_migration_roundtrip(tmp_path):
     database = tmp_path / "validation_e2e.db"
     env = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{database.as_posix()}", "REDIS_URL": "memory://validation-migration"}
     for action, revision in (("upgrade", "head"), ("downgrade", "20261018_0100"), ("upgrade", "head")):
-        result = subprocess.run([sys.executable, "-m", "alembic", "-c", "alembic.ini", action, revision], cwd=root,
-                                env=env, capture_output=True, text=True, check=False)
-        assert result.returncode == 0, result.stderr
+        run_alembic(root, env, revision, command=action)
         engine = create_engine(f"sqlite:///{database.as_posix()}")
         try:
             inspector = inspect(engine)

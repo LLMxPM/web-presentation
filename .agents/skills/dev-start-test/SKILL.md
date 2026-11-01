@@ -108,7 +108,7 @@ node .agents/skills/dev-start-test/scripts/full-test.mjs --stop-services
 # 首次环境按需追加 --start-infra --install-browsers
 ```
 
-包装器共享 E2E 预检并调用 `pnpm run test:all`；除 `--dry-run` 外会真正执行测试。不要先 prepare 再执行全量，准备好的 E2E 服务会占用所需端口；也不要与其它测试并行执行。阶段失败后中止，报告失败阶段与未运行项。
+包装器共享 E2E 预检并调用 `pnpm run test:all`；除 `--dry-run` 外会真正执行测试。不要先 prepare 再执行全量，准备好的 E2E 服务会占用所需端口；也不要从外部同时运行其它测试。全量入口内部最多并行两个通道，E2E 最后独立执行；失败后停止派发，等待已启动阶段结束，报告失败阶段与未运行项。资源预算与日志位置见测试矩阵。
 
 `test:all` 不是全部专项门禁；阶段、未覆盖项和按改动补测规则只在[测试矩阵](references/testing-matrix.md)维护。
 

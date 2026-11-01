@@ -9,6 +9,9 @@ import { expect, test } from '../../fixtures/test-data'
 import { countStrongRedPixels, decodePngPixels } from '../../helpers/png-pixels'
 import { buildSceneAmbientPage, buildScenePage } from '../../helpers/scene-page-source'
 
+// 每项使用独立项目、页面和浏览器 Context；允许同文件用例分发到现有两个 worker，消除串行长尾。
+test.describe.configure({ mode: 'parallel' })
+
 /** 为沙箱项目写入 schema 4 放映配置；旧模式与旧预算字段一律不提交。 */
 async function configureAdvance(
   api: APIRequestContext,
@@ -52,14 +55,14 @@ async function publishTwoPages(api: APIRequestContext, projectId: number, firstP
   return (await artifact.json()).preview_url as string
 }
 
-test('正式项目放映在有限任务实际完成后停留并推进一次', async ({ page, context, visualEditSandbox }) => {
+test('正式项目放映在有限任务实际完成后停留并推进一次', async ({ page, context, projectSandbox }) => {
   test.setTimeout(180_000)
   const api = context.request
-  const { projectId } = visualEditSandbox
-  const scenePageId = await createPage(api, visualEditSandbox, 'Scene 第一页', buildScenePage())
+  const { projectId } = projectSandbox
+  const scenePageId = await createPage(api, projectSandbox, 'Scene 第一页', buildScenePage())
   try {
     await configureAdvance(api, projectId, 'scene_end', 5000, { completionDelayMs: 3000 })
-    await page.goto(await publishTwoPages(api, projectId, scenePageId, visualEditSandbox.pageId))
+    await page.goto(await publishTwoPages(api, projectId, scenePageId, projectSandbox.pageId))
     const runtime = page.frameLocator('iframe#preview')
     await expect(runtime.locator('.page-content-wrapper .scene-e2e-title')).toBeVisible()
     await runtime.getByRole('button', { name: '进入放映' }).click()
@@ -71,7 +74,7 @@ test('正式项目放映在有限任务实际完成后停留并推进一次', as
     await expect(runtime.locator('.page-content-wrapper .scene-e2e-counter')).toHaveText('100', { timeout: 20_000 })
     await expect(controls.locator('.runtime-playback-controls__page')).toHaveText('1 / 2')
     await expect(controls.locator('.runtime-playback-controls__page')).toHaveText('2 / 2', { timeout: 15_000 })
-    await expect(runtime.locator('.page-content-wrapper').getByText(visualEditSandbox.pageTitle)).toBeVisible({ timeout: 15_000 })
+    await expect(runtime.locator('.page-content-wrapper').getByText(projectSandbox.pageTitle)).toBeVisible({ timeout: 15_000 })
     // 末页不循环，结束后继续停留。
     await page.waitForTimeout(1500)
     await expect(controls.locator('.runtime-playback-controls__page')).toHaveText('2 / 2')
@@ -80,20 +83,31 @@ test('正式项目放映在有限任务实际完成后停留并推进一次', as
   }
 })
 
-test('无限 ambient 装饰不阻塞 scene_end 推进', async ({ page, context, visualEditSandbox }) => {
+test('无限 ambient 装饰不阻塞 scene_end 推进', async ({ page, context, projectSandbox }) => {
   test.setTimeout(180_000)
   const api = context.request
-  const { projectId } = visualEditSandbox
-  const scenePageId = await createPage(api, visualEditSandbox, 'Scene 装饰页', buildSceneAmbientPage())
+  const { projectId } = projectSandbox
+  const scenePageId = await createPage(api, projectSandbox, 'Scene 装饰页', buildSceneAmbientPage())
   try {
     await configureAdvance(api, projectId, 'scene_end', 5000, { completionDelayMs: 300 })
-    await page.goto(await publishTwoPages(api, projectId, scenePageId, visualEditSandbox.pageId))
+    await page.goto(await publishTwoPages(api, projectId, scenePageId, projectSandbox.pageId))
     const runtime = page.frameLocator('iframe#preview')
+    // 完成态仅保留 300ms 后就翻页；在浏览器内记录，避免轮询错过后白等 60 秒。
+    await runtime.locator('.page-content-wrapper .scene-e2e-counter').evaluate(counter => {
+      document.documentElement.dataset.e2eFiniteCompleted = 'false'
+      const observer = new MutationObserver(() => {
+        if (counter.textContent === '100') {
+          document.documentElement.dataset.e2eFiniteCompleted = 'true'
+          observer.disconnect()
+        }
+      })
+      observer.observe(counter, { childList: true, characterData: true, subtree: true })
+    })
     await runtime.getByRole('button', { name: '进入放映' }).click()
     const controls = runtime.getByRole('group', { name: '放映控制' })
     // 并行跑多个 project 时 CPU 抢占会让有限动画变慢；这里等的是「计数到 100 且随后推进」，
     // 放宽等待上限只容忍慢速执行，不改变断言语义。
-    await expect(runtime.locator('.page-content-wrapper .scene-e2e-counter')).toHaveText('100', { timeout: 60_000 })
+    await expect(runtime.locator('html')).toHaveAttribute('data-e2e-finite-completed', 'true', { timeout: 60_000 })
     // 装饰序列仍在无限重复，有限任务完成即推进。
     await expect(controls.locator('.runtime-playback-controls__page')).toHaveText('2 / 2', { timeout: 15_000 })
   } finally {
@@ -102,18 +116,18 @@ test('无限 ambient 装饰不阻塞 scene_end 推进', async ({ page, context, 
 })
 
 for (const mode of ['manual', 'timer', 'scene_end'] as const) {
-  test(`Scene 页面沿用 ${mode} 放映推进语义`, async ({ page, context, visualEditSandbox }) => {
+  test(`Scene 页面沿用 ${mode} 放映推进语义`, async ({ page, context, projectSandbox }) => {
     test.setTimeout(120_000)
     const api = context.request
-    const { projectId } = visualEditSandbox
-    const update = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: buildScenePage() } })
+    const { projectId } = projectSandbox
+    const update = await api.patch(`/api/pages/${projectSandbox.pageId}`, { data: { page_content: buildScenePage() } })
     expect(update.ok(), await update.text()).toBeTruthy()
-    const secondPageId = await createPage(api, visualEditSandbox, `放映 ${mode} 第二页`,
+    const secondPageId = await createPage(api, projectSandbox, `放映 ${mode} 第二页`,
       `<template><main class="scene-advance-second">放映 ${mode} 第二页</main></template>`)
     try {
       const routes = await api.put(`/api/projects/${projectId}/routes`, {
         data: { routes: [
-          { route_type: 'page', route: 'scene', order: 0, hidden: false, page_id: visualEditSandbox.pageId },
+          { route_type: 'page', route: 'scene', order: 0, hidden: false, page_id: projectSandbox.pageId },
           { route_type: 'page', route: 'second', order: 1, hidden: false, page_id: secondPageId },
         ] },
       })
@@ -142,18 +156,18 @@ for (const mode of ['manual', 'timer', 'scene_end'] as const) {
   })
 }
 
-test('已移除的指定状态截图字段返回校验错误', async ({ context, visualEditSandbox }) => {
-  const response = await context.request.post(`/api/pages/${visualEditSandbox.pageId}/screenshot-jobs`, {
+test('已移除的指定状态截图字段返回校验错误', async ({ context, projectSandbox }) => {
+  const response = await context.request.post(`/api/pages/${projectSandbox.pageId}/screenshot-jobs`, {
     data: { motion_snapshot: { timeline_id: 'e2e-advance', at_ms: 500, visual_mode: 'full' } },
   })
   expect(response.status()).toBe(422)
 })
 
-test('scene_end 页面没有有限 blocking 任务时明确报错', async ({ page, context, visualEditSandbox }) => {
+test('scene_end 页面没有有限 blocking 任务时明确报错', async ({ page, context, projectSandbox }) => {
   test.setTimeout(120_000)
   const api = context.request
-  await configureAdvance(api, visualEditSandbox.projectId, 'scene_end')
-  const artifact = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
+  await configureAdvance(api, projectSandbox.projectId, 'scene_end')
+  const artifact = await api.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, { data: {} })
   expect(artifact.ok(), await artifact.text()).toBeTruthy()
   await page.goto((await artifact.json()).preview_url as string)
   const runtime = page.frameLocator('iframe#preview')
@@ -162,7 +176,7 @@ test('scene_end 页面没有有限 blocking 任务时明确报错', async ({ pag
   await expect(runtime.getByRole('group', { name: '放映控制' }).locator('.runtime-playback-controls__page')).toHaveText('1 / 1')
 })
 
-test('媒体目标缺失在正式放映界面显示有界错误', async ({ page, context, visualEditSandbox }) => {
+test('媒体目标缺失在正式放映界面显示有界错误', async ({ page, context, projectSandbox }) => {
   test.setTimeout(120_000)
   const api = context.request
   // 显式媒体任务点名不存在的目标：必须按真实失败处理，不能用时长估计伪造完成。
@@ -178,10 +192,10 @@ usePageScene({ root, define(scene) {
   scene.task(createSceneMediaTask({ id: 'narration', role: 'blocking', target: () => null }))
 } })
 </script>`
-  const update = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: source } })
+  const update = await api.patch(`/api/pages/${projectSandbox.pageId}`, { data: { page_content: source } })
   expect(update.ok(), await update.text()).toBeTruthy()
-  await configureAdvance(api, visualEditSandbox.projectId, 'manual')
-  const artifact = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
+  await configureAdvance(api, projectSandbox.projectId, 'manual')
+  const artifact = await api.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, { data: {} })
   expect(artifact.ok(), await artifact.text()).toBeTruthy()
   await page.goto((await artifact.json()).preview_url as string)
   const runtime = page.frameLocator('iframe#preview')
@@ -194,17 +208,17 @@ usePageScene({ root, define(scene) {
   await expect(runtime.getByRole('group', { name: '放映控制' }).locator('.runtime-playback-controls__page')).toHaveText('1 / 1')
 })
 
-test('保持当前页抑制自动推进，释放后继续', async ({ page, context, visualEditSandbox }) => {
+test('保持当前页抑制自动推进，释放后继续', async ({ page, context, projectSandbox }) => {
   test.setTimeout(120_000)
   const api = context.request
-  const { projectId } = visualEditSandbox
-  const update = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: buildScenePage() } })
+  const { projectId } = projectSandbox
+  const update = await api.patch(`/api/pages/${projectSandbox.pageId}`, { data: { page_content: buildScenePage() } })
   expect(update.ok(), await update.text()).toBeTruthy()
-  const secondPageId = await createPage(api, visualEditSandbox, '保持第二页', '<template><main class="scene-hold-second">保持第二页</main></template>')
+  const secondPageId = await createPage(api, projectSandbox, '保持第二页', '<template><main class="scene-hold-second">保持第二页</main></template>')
   try {
     const routes = await api.put(`/api/projects/${projectId}/routes`, {
       data: { routes: [
-        { route_type: 'page', route: 'scene', order: 0, hidden: false, page_id: visualEditSandbox.pageId },
+        { route_type: 'page', route: 'scene', order: 0, hidden: false, page_id: projectSandbox.pageId },
         { route_type: 'page', route: 'second', order: 1, hidden: false, page_id: secondPageId },
       ] },
     })
@@ -232,10 +246,10 @@ test('保持当前页抑制自动推进，释放后继续', async ({ page, conte
   }
 })
 
-test('Scene 页面独立构建后仍能播放和导出静态 PDF', async ({ page, context, visualEditSandbox }) => {
+test('Scene 页面独立构建后仍能播放和导出静态 PDF', async ({ page, context, projectSandbox }) => {
   test.setTimeout(360_000)
   const api = context.request
-  const { projectId, pageId } = visualEditSandbox
+  const { projectId, pageId } = projectSandbox
   const update = await api.patch(`/api/pages/${pageId}`, { data: { page_content: buildScenePage() } })
   expect(update.ok(), await update.text()).toBeTruthy()
   await configureAdvance(api, projectId, 'manual')
@@ -268,12 +282,12 @@ test('Scene 页面独立构建后仍能播放和导出静态 PDF', async ({ page
 })
 
 for (const target of ['pptx', 'canvas-pdf'] as const) {
-  test(`Scene 页面导出 ${target} 前后静态内容保持一致`, async ({ page, context, visualEditSandbox }) => {
+  test(`Scene 页面导出 ${target} 前后静态内容保持一致`, async ({ page, context, projectSandbox }) => {
     test.setTimeout(180_000)
     const api = context.request
-    const update = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: buildScenePage() } })
+    const update = await api.patch(`/api/pages/${projectSandbox.pageId}`, { data: { page_content: buildScenePage() } })
     expect(update.ok(), await update.text()).toBeTruthy()
-    const artifact = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
+    const artifact = await api.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, { data: {} })
     expect(artifact.ok(), await artifact.text()).toBeTruthy()
     await page.goto((await artifact.json()).preview_url as string)
     const runtime = page.frameLocator('iframe#preview')
@@ -304,12 +318,12 @@ for (const target of ['pptx', 'canvas-pdf'] as const) {
   })
 }
 
-test('远程 Renderer 为 Scene 页面生成可读静态默认态', async ({ context, visualEditSandbox }, testInfo) => {
+test('远程 Renderer 为 Scene 页面生成可读静态默认态', async ({ context, projectSandbox }, testInfo) => {
   test.setTimeout(180_000)
   const api = context.request
-  const update = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: buildScenePage() } })
+  const update = await api.patch(`/api/pages/${projectSandbox.pageId}`, { data: { page_content: buildScenePage() } })
   expect(update.ok(), await update.text()).toBeTruthy()
-  const jobResponse = await api.post(`/api/pages/${visualEditSandbox.pageId}/screenshot-jobs`, { data: {} })
+  const jobResponse = await api.post(`/api/pages/${projectSandbox.pageId}/screenshot-jobs`, { data: {} })
   expect(jobResponse.ok(), await jobResponse.text()).toBeTruthy()
   const jobId = Number((await jobResponse.json()).id)
   await expect.poll(async () => {
@@ -318,7 +332,7 @@ test('远程 Renderer 为 Scene 页面生成可读静态默认态', async ({ con
     const status = await response.json() as { status: string; error_code: string | null }
     return { status: status.status, error: status.error_code }
   }, { timeout: 120_000, intervals: [1_000, 2_000] }).toEqual({ status: 'succeeded', error: null })
-  const detailResponse = await api.get(`/api/pages/${visualEditSandbox.pageId}`)
+  const detailResponse = await api.get(`/api/pages/${projectSandbox.pageId}`)
   expect(detailResponse.ok()).toBeTruthy()
   const imageResponse = await api.get((await detailResponse.json()).screenshot_url as string)
   expect(imageResponse.ok()).toBeTruthy()

@@ -10,7 +10,7 @@ import { countStrongRedPixels, decodePngPixels } from '../../helpers/png-pixels'
 for (const skinned of [false, true]) {
   test(`${skinned ? '单骨骼蒙皮' : '普通'}模型页面截图应包含完整模型像素`, async ({
     context,
-    visualEditSandbox,
+    projectSandbox,
   }, testInfo) => {
     test.setTimeout(180_000)
     const api = context.request
@@ -20,7 +20,7 @@ for (const skinned of [false, true]) {
 
     // 上传红色 unlit 模型：渲染结果与光照/色调映射无关，像素断言基色稳定。
     const uploadResponse = await api.post(
-      `/api/workspaces/${visualEditSandbox.workspaceId}/assets/upload`,
+      `/api/workspaces/${projectSandbox.workspaceId}/assets/upload`,
       {
         multipart: {
           file: {
@@ -48,8 +48,8 @@ import AssetModel from '@runtime-kit/public/components/assets/AssetModel.v1.vue'
 `
     const pageResponse = await api.post('/api/pages', {
       data: {
-        workspace_id: visualEditSandbox.workspaceId,
-        project_id: visualEditSandbox.projectId,
+        workspace_id: projectSandbox.workspaceId,
+        project_id: projectSandbox.projectId,
         title: modelPageTitle,
         file_type: 'vue',
         page_content: pageContent,

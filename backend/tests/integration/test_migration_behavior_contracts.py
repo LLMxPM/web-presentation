@@ -5,29 +5,17 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, inspect
 
+from tests.fixtures.migrations import run_alembic as _run_alembic
+from tests.fixtures.migrations import run_alembic_cli
+
 
 def _backend_root() -> Path:
     return Path(__file__).resolve().parents[2]
-
-
-def _run_alembic(backend_root: Path, env: dict[str, str], revision: str | None = None) -> None:
-    args = [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", revision or "head"]
-    result = subprocess.run(
-        args,
-        cwd=backend_root,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr or result.stdout
 
 
 def _sqlite_env(database_path: Path) -> dict[str, str]:
@@ -42,7 +30,7 @@ def test_upgrade_head_sqlite_preserves_partial_unique_contracts(tmp_path: Path) 
 
     backend_root = _backend_root()
     database_path = tmp_path / "p4-head.db"
-    _run_alembic(backend_root, _sqlite_env(database_path))
+    run_alembic_cli(backend_root, _sqlite_env(database_path))
 
     with sqlite3.connect(database_path) as connection:
         tables = {

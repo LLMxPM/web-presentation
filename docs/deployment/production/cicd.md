@@ -32,6 +32,8 @@
   - `cli-contract` 依赖同级 `web-presentation-cli` 仓库，仅在定时与手动触发。
 - 并发分组：`schedule` 使用独立 group 且 `cancel-in-progress=false`，避免定时全量被随后的 main push 中途杀掉；其余事件按 PR 号或 ref 分组并自动取消。
 - E2E 在 CI 下允许一次重试（`tests/config/playwright.config.ts` 的 `retries: process.env.CI ? 1 : 0`）：单条用例的定位抖动应在 job 内自愈，不能放大成整套门禁重跑；本地保持 `0` 以暴露真实不稳定。
+- Backend 的 unit、api、integration 使用独立矩阵 job 并行执行，`fail-fast=false` 保留各组结果；快速范围仅运行 unit/api。E2E 自行安装依赖、准备数据和启动服务，与其它测试 job 同时开始；所有 job 的结果仍共同决定 `quality` 与发布前置门禁。
+- Backend 输出最慢 20 项与各组 JUnit artifact；E2E 输出 `test-results/e2e/results.xml`，记录逐用例耗时。继续提速应依据这些数据定位长尾，不减少断言或仅以重试通过替代排障。
 
 ### Release 流水线
 

@@ -10,11 +10,11 @@ function solidSvg(color: string): Buffer {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="${color}"/></svg>`)
 }
 
-test('Scene 页面合法替换图片后刷新资源身份和预览像素', async ({ page, context, visualEditSandbox }) => {
+test('Scene 页面合法替换图片后刷新资源身份和预览像素', async ({ page, context, projectSandbox }) => {
   test.setTimeout(120_000)
   const api = context.request
   const name = `scene-replace-${randomUUID().slice(0, 8)}`
-  const workspaceId = visualEditSandbox.workspaceId
+  const workspaceId = projectSandbox.workspaceId
   const upload = await api.post(`/api/workspaces/${workspaceId}/assets/upload`, {
     multipart: {
       file: { name: `${name}.svg`, mimeType: 'image/svg+xml', buffer: solidSvg('#e11d48') },
@@ -40,12 +40,12 @@ usePageScene({ root, define(scene) {
 } })
 </script>
 <style scoped>.scene-replace-page{width:100%;height:100%;display:grid;place-items:center;background:#fff}.scene-replace-image{width:256px;height:256px;object-fit:fill}</style>`
-  const updated = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: source } })
+  const updated = await api.patch(`/api/pages/${projectSandbox.pageId}`, { data: { page_content: source } })
   expect(updated.ok(), await updated.text()).toBeTruthy()
 
   /** 构建独立预览并读取真实 img 来源和图像像素。 */
   async function previewImage() {
-    const artifactResponse = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
+    const artifactResponse = await api.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, { data: {} })
     expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
     await page.goto((await artifactResponse.json()).preview_url as string)
     const image = page.frameLocator('iframe#preview').locator('.page-content-wrapper img[alt="替换验证"]')

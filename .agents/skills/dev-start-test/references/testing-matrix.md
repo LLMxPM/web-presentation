@@ -16,6 +16,8 @@ pnpm run test:backend:runtime-state-parity
 ```
 
 - Backend 测试默认 `REDIS_URL=memory://test`，不依赖 Redis。
+- 分组入口沿用 marker 筛选，保留 `contracts/` 中显式标记的 unit 用例，不用目录过滤缩小门禁。默认报告最慢 15 项；定向排障可执行 `uv run --project backend pytest -c backend/pyproject.toml <测试文件> -k <名称>`，失败重跑可追加 `--lf`，提交前仍按改动范围补足门禁。
+- 迁移行为测试通过进程内 Alembic API 执行真实 `env.py`、DDL 与事务，仅复用 Python 导入缓存，每个用例仍独立建库。空库到 head 的 CLI、`os._exit` 崩溃回滚与真实 PG 对拍保留；不得用 stamp 或共享可写数据库替代。
 - `test:backend:pg-claim` 执行 PostgreSQL 认领形态与双库迁移对拍；提供 `P4_POSTGRES_DATABASE_URL` 时跑真实 PG，CI 以 `P4_POSTGRES_REQUIRED=1` 强制缺配置失败。
 - `test:backend:runtime-state-parity` 校验 Runtime 状态适配契约。
 - `test:lite:runtime-state-drill` 执行 lite 运行态演练（不在 `test:all` 内）。
@@ -93,21 +95,19 @@ pnpm run test:reset:data
 `pnpm run test:all` 是主全量门禁，固定执行：
 
 ```text
-test:backend
-→ test:editor:gate
-→ test:runtime:gate
-→ test:contracts
-→ test:render-contracts
-→ test:renderer
-→ test:python-workspace
-→ test:e2e:all
+Python 通道：test:backend → test:render-contracts → test:renderer → test:python-workspace
+前端通道：  test:editor:gate → test:runtime:gate → test:contracts
+两通道全部成功 → test:e2e:all（独立运行）
 ```
 
 行为：
 
 - 未配置时注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock`，不需要手工设置；技能包装器会提前拒绝继承的冲突值。
 - 启动前要求服务端口空闲；`assert-ports-free.mjs` 只检查 127.0.0.1，技能包装脚本会额外检查 `::1`。
-- 任一阶段失败立即中止，后续阶段视为未运行，退出码透传。
+- 先执行一次 `uv sync --all-packages --all-groups --all-extras --locked`；后续子进程固定 `UV_NO_SYNC=true`，避免并发裁剪共享 `.venv`。
+- 至少 4 个逻辑 CPU 时默认两个通道，否则串行；`TEST_ALL_CONCURRENCY=1` 可强制串行。Vitest 默认最多 `min(4, CPU数-1)` 个 worker，最少 1 个，可用正整数 `VITEST_MAX_WORKERS` 覆盖。Playwright 仍默认 2 workers。
+- 任一阶段失败停止派发新阶段，等待已启动阶段结束；E2E 只有在全部前置门禁成功后才运行。首个失败退出码透传，未启动项明确记录。
+- 独立阶段日志和耗时汇总写入 `test-results/full/*.log`、`test-results/full/results.json`；并发时控制台只报告阶段开始/结束，失败输出日志末尾。
 - 最后的 E2E 阶段会重置并播种 `_e2e` 数据，结束后保留 E2E 服务。
 - 不包含下列专项门禁，按改动补跑：
 
@@ -177,7 +177,7 @@ test:backend
 ## 5. 汇报与产物
 
 - 最终说明必须写清楚：实际运行的命令、通过/失败数量、失败摘要、未运行项及原因。
-- 全量测试失败时报告失败阶段与退出码，后续阶段标记为未运行；不要跳过失败阶段直接重跑全量。
+- 全量测试失败时报告失败阶段与退出码，区分已启动并完成的阶段与未运行项；不要跳过失败阶段直接重跑全量。
 - 服务日志：开发服务在 `.tmp/dev-logs/`；E2E 服务在 `test-results/e2e/services/`。
 - E2E 报告与失败产物：`test-results/e2e/html-report/`、`test-results/e2e/artifacts/`。
 

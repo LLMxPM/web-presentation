@@ -77,16 +77,16 @@ pnpm run test:e2e:prepare
 pnpm run test:all
 ```
 
-`test:all` 是本地全量入口，依次执行 Backend pytest（全部 marker）、Editor gate、Runtime gate、根仓 contracts、渲染契约、Renderer、Python workspace 共装验证和全部 E2E project（auth + smoke + visual-edit + ai + runtime-heavy）。
+`test:all` 是本地全量入口，执行 Backend pytest（全部 marker）、Editor gate、Runtime gate、根仓 contracts、渲染契约、Renderer、Python workspace 共装验证和全部 E2E project（auth + smoke + visual-edit + ai + runtime-heavy）。Python 与前端各自串行、两通道受控并行，全部成功后独立运行 E2E。共享虚拟环境只同步一次，阶段日志和耗时写入 `test-results/full/`；资源预算与失败语义见[测试矩阵](../../../.agents/skills/dev-start-test/references/testing-matrix.md)。
 
 脚本会自动完成环境准备，无需手动设置环境变量：
 
 - 先校验 Backend/Editor/Runtime/Renderer 端口（默认 8000/5173/7373/7400）未被占用，并检查本地 PostgreSQL/Redis 依赖（`docker compose -f scripts/dev/compose.infra.yml up -d --wait`）；
 - 校验失败立即报错并提示处理方式，不会进入任何测试阶段；
 - 校验通过后自动注入 `TESTING_START_BACKEND/EDITOR/RUNTIME/RENDERER=true` 与 `AI_TEST_MODE=mock` 并自启服务；
-- 任一阶段失败即中止后续阶段。
+- 任一阶段失败后停止派发，等待已启动阶段结束，并记录未运行项。
 
-若确实想复用已在运行的 Backend，可设置 `TESTING_REUSE_BACKEND=true` 跳过其端口校验，但该服务必须满足 E2E 测试指纹。
+复用已准备好的 E2E 环境时直接运行 `test:e2e:run` 或 Playwright 定向命令；全量入口会重新准备数据，不能与 `TESTING_REUSE_BACKEND=true` 混用。
 
 全量测试耗时较长（含真实构建与完整 E2E），通常用于大范围改动或发布前验证。
 

@@ -6,11 +6,11 @@ import { randomUUID } from 'node:crypto'
 import { expect, test } from '../../fixtures/test-data'
 import { buildSkinnedGlb } from '../../helpers/skinned-glb'
 
-test('三维动作资源替换后旧签名在新放映中报失效', async ({ page, context, visualEditSandbox }) => {
+test('三维动作资源替换后旧签名在新放映中报失效', async ({ page, context, projectSandbox }) => {
   test.setTimeout(180_000)
   const api = context.request
   const name = `scene-model-replace-${randomUUID().slice(0, 8)}`
-  const workspaceId = visualEditSandbox.workspaceId
+  const workspaceId = projectSandbox.workspaceId
   const upload = await api.post(`/api/workspaces/${workspaceId}/assets/upload`, {
     multipart: {
       file: { name: `${name}.glb`, mimeType: 'model/gltf-binary', buffer: buildSkinnedGlb(0.8) },
@@ -45,9 +45,9 @@ usePageScene({ root, define(scene) {
 } })
 </script>
 <style scoped>.scene-model-replace-page{width:100%;height:100%;display:grid;place-items:center;background:#fff}.scene-model-replace-target{width:720px;height:480px}</style>`
-  const updated = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: source } })
+  const updated = await api.patch(`/api/pages/${projectSandbox.pageId}`, { data: { page_content: source } })
   expect(updated.ok(), await updated.text()).toBeTruthy()
-  const advance = await api.patch(`/api/projects/${visualEditSandbox.projectId}`, {
+  const advance = await api.patch(`/api/projects/${projectSandbox.projectId}`, {
     data: { slideshow: {
       transition: { effect: 'none', duration_ms: 0 },
       advance: { mode: 'manual', delay_ms: 5000, completion_delay_ms: 300 },
@@ -58,7 +58,7 @@ usePageScene({ root, define(scene) {
 
   /** 每次重新签发预览并进入放映，让 Scene 在真实首帧之后注册动作。 */
   async function playFreshPresentation() {
-    const artifactResponse = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
+    const artifactResponse = await api.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, { data: {} })
     expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
     await page.goto((await artifactResponse.json()).preview_url as string)
     const frame = page.frameLocator('iframe#preview')

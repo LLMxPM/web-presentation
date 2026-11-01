@@ -190,6 +190,7 @@ PR 执行 Backend unit/api、PostgreSQL 认领对拍、Runtime 运行态对拍�
 - 镜像构建与实际启动 smoke 只覆盖受影响变体：平台镜像构建输入变化重建常规平台与 SQLite 轻量版，`runtime/` 变化重建 Runtime 与轻量版，`renderer/`、`packages/` 与 `uv.lock` 变化重建 Renderer。`main` push 与 PR 只验证 `linux/amd64`。
 - 每周一定时任务和手动 `full_tests=true` 是全量入口：运行 `test:e2e:all`，并对四类镜像执行多架构构建 smoke。跨仓 CLI 契约只在定时与手动任务中运行。
 - E2E 在 CI 下允许一次重试，避免单条用例的定位抖动把整套门禁拖进下一次重跑。
+- Backend 按 unit/api/integration 矩阵并行，E2E 独立准备服务并与其它门禁同时启动；不消费其它测试 job 的构建产物。所有 job 仍共同决定质量结论，分组失败不会取消其它组。具体资源与报告约定见 [CI/CD 文档](../../deployment/production/cicd.md)。
 
 GitHub Release 的 `published` 事件或手动发布任务触发后，`verify-main-gate` 校验该提交是否已有通过的 `platform-test` 运行，不再重复执行整套质量门禁与 E2E；通过后按 Runtime、Renderer、常规平台、SQLite 轻量的顺序构建、检查并推送镜像。具体触发条件、镜像标签及发布顺序以 [CI/CD 文档](../../deployment/production/cicd.md) 和 `.github/workflows/` 为准。
 

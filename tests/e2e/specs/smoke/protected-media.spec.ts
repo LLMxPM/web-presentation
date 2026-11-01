@@ -7,7 +7,7 @@ import { resolve } from 'node:path'
 import { expect, test } from '../../fixtures/test-data'
 import { shortWavBuffer } from '../../helpers/media-wav'
 
-test('受保护视频和音频支持 HEAD、Range 与视频跳转定位', async ({ page, context, visualEditSandbox }) => {
+test('受保护视频和音频支持 HEAD、Range 与视频跳转定位', async ({ page, context, projectSandbox }) => {
   test.setTimeout(180_000)
   const api = context.request
   const suffix = randomUUID().slice(0, 8)
@@ -18,7 +18,7 @@ test('受保护视频和音频支持 HEAD、Range 与视频跳转定位', async 
     { name: videoName, type: 'video', mime: 'video/webm', file: `${videoName}.webm`, bytes: videoBytes },
     { name: audioName, type: 'audio', mime: 'audio/wav', file: `${audioName}.wav`, bytes: shortWavBuffer() },
   ]) {
-    const uploaded = await api.post(`/api/workspaces/${visualEditSandbox.workspaceId}/assets/upload`, {
+    const uploaded = await api.post(`/api/workspaces/${projectSandbox.workspaceId}/assets/upload`, {
       multipart: {
         file: { name: asset.file, mimeType: asset.mime, buffer: asset.bytes },
         asset_type: asset.type,
@@ -36,9 +36,9 @@ test('受保护视频和音频支持 HEAD、Range 与视频跳转定位', async 
 import AssetVideo from '@runtime-kit/public/components/assets/AssetVideo.v1.vue'
 import AssetAudio from '@runtime-kit/public/components/assets/AssetAudio.v1.vue'
 </script>`
-  const updated = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: source } })
+  const updated = await api.patch(`/api/pages/${projectSandbox.pageId}`, { data: { page_content: source } })
   expect(updated.ok(), await updated.text()).toBeTruthy()
-  const artifactResponse = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
+  const artifactResponse = await api.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, { data: {} })
   expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
   const artifact = await artifactResponse.json() as { preview_url: string }
   await page.goto(artifact.preview_url)

@@ -20,10 +20,10 @@ const ZIP_LOCAL_HEADER = Buffer.from([0x50, 0x4b, 0x03, 0x04])
 /** 单页 PPTX 的体积下限；低于该值说明只写出了空壳包。 */
 const MIN_PPTX_BYTES = 4 * 1024
 
-test('页面导出应产出可下载的真实 PPTX 产物', async ({ page, context, visualEditSandbox }, testInfo) => {
+test('页面导出应产出可下载的真实 PPTX 产物', async ({ page, context, projectSandbox }, testInfo) => {
   test.setTimeout(180_000)
 
-  const artifactResponse = await context.request.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, {
+  const artifactResponse = await context.request.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, {
     data: {},
   })
   expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()

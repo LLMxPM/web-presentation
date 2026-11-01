@@ -264,13 +264,13 @@ async function addStaticPages(api: APIRequestContext, workspaceId: number, proje
   return { pageIds, routeResponse }
 }
 
-test('PNG/PDF/PPTX 使用独立静态呈现，放映与导出取消都互不干扰', async ({ page, context, visualEditSandbox }, testInfo) => {
+test('PNG/PDF/PPTX 使用独立静态呈现，放映与导出取消都互不干扰', async ({ page, context, projectSandbox }, testInfo) => {
   test.setTimeout(360_000)
   const api = context.request
   const observers = await installCaptureObserver(context)
   // 一次性 30 秒真实旁白覆盖放映、两次导出与取消窗口，避免用重复片段干扰隔离判断。
   const narrationName = `scene-export-voice-${randomUUID().slice(0, 8)}`
-  const narration = await api.post(`/api/workspaces/${visualEditSandbox.workspaceId}/assets/upload`, {
+  const narration = await api.post(`/api/workspaces/${projectSandbox.workspaceId}/assets/upload`, {
     multipart: {
       file: { name: `${narrationName}.wav`, mimeType: 'audio/wav', buffer: toneWavBuffer(30) },
       asset_type: 'audio',
@@ -279,11 +279,11 @@ test('PNG/PDF/PPTX 使用独立静态呈现，放映与导出取消都互不干�
     },
   })
   expect(narration.ok(), await narration.text()).toBeTruthy()
-  const pageUpdate = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, {
+  const pageUpdate = await api.patch(`/api/pages/${projectSandbox.pageId}`, {
     data: { page_content: buildSceneExportPage(narrationName) },
   })
   expect(pageUpdate.ok(), await pageUpdate.text()).toBeTruthy()
-  const advance = await api.patch(`/api/projects/${visualEditSandbox.projectId}`, {
+  const advance = await api.patch(`/api/projects/${projectSandbox.projectId}`, {
     data: { slideshow: {
       transition: { effect: 'none', duration_ms: 0 },
       advance: { mode: 'manual', delay_ms: 5000, completion_delay_ms: 300 },
@@ -293,13 +293,13 @@ test('PNG/PDF/PPTX 使用独立静态呈现，放映与导出取消都互不干�
   expect(advance.ok(), await advance.text()).toBeTruthy()
   const { pageIds, routeResponse } = await addStaticPages(
     api,
-    visualEditSandbox.workspaceId,
-    visualEditSandbox.projectId,
-    visualEditSandbox.pageId,
+    projectSandbox.workspaceId,
+    projectSandbox.projectId,
+    projectSandbox.pageId,
   )
   try {
     expect(routeResponse.ok(), await routeResponse.text()).toBeTruthy()
-    const png = await captureDefaultPng(api, visualEditSandbox.pageId)
+    const png = await captureDefaultPng(api, projectSandbox.pageId)
     const decoded = decodePngPixels(png)
     const pngSummary = summarizePixels(decoded.width, decoded.height, decoded.channels, decoded.pixels)
     expect(pngSummary.green, '远程 PNG 应显示捕获时静音标记').toBeGreaterThan(500)
@@ -308,7 +308,7 @@ test('PNG/PDF/PPTX 使用独立静态呈现，放映与导出取消都互不干�
     expect(pngSummary.blueCentroidX).not.toBeNull()
     await testInfo.attach('scene-static-presentation.png', { body: png, contentType: 'image/png' })
 
-    const artifactResponse = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
+    const artifactResponse = await api.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, { data: {} })
     expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
     await page.goto((await artifactResponse.json()).preview_url as string)
     const runtime = page.frameLocator('iframe#preview')
@@ -404,8 +404,8 @@ test('PNG/PDF/PPTX 使用独立静态呈现，放映与导出取消都互不干�
   }
 })
 
-test('截图入口明确拒绝已移除的动画时刻选择器', async ({ context, visualEditSandbox }) => {
-  const response = await context.request.post(`/api/pages/${visualEditSandbox.pageId}/screenshot-jobs`, {
+test('截图入口明确拒绝已移除的动画时刻选择器', async ({ context, projectSandbox }) => {
+  const response = await context.request.post(`/api/pages/${projectSandbox.pageId}/screenshot-jobs`, {
     data: { motion_snapshot: { timeline_id: 'scene-export-isolation', at_ms: 6000, visual_mode: 'full' } },
   })
   expect(response.status()).toBe(422)

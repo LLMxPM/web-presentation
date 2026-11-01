@@ -27,7 +27,7 @@ pnpm run test:e2e:all
 pnpm run test:e2e:run
 ```
 
-`test:e2e:run` 不修改数据库，只适合已执行过 prepare 的快速重跑。globalSetup 会校验 Backend 的 E2E 数据库、Redis、seed 版本和 smoke 数据；不匹配时快速失败并给出 prepare 提示。
+`test:e2e:run` 不再重置数据库，适合已执行过 prepare 的快速重跑；写型用例仍会创建、归档各自的临时实体。globalSetup 会校验 Backend 的 E2E 数据库、Redis、seed 版本和 smoke 数据；不匹配时快速失败并给出 prepare 提示。
 
 ## Project 分层
 
@@ -41,6 +41,10 @@ pnpm run test:e2e:run
 
 `auth` 与 `smoke` 没有 project dependency，可以并行执行；登录态由 globalSetup 生成。
 
+写型用例每项创建独立项目/页面并在结束时归档。`projectSandbox` 只准备 API 数据；需要自动进入 Editor 页面详情的可视化编辑用例使用 `visualEditSandbox`。Runtime 预览、截图、导出和自行导航的用例不再先加载一次无关的页面详情。
+
+默认仍是 2 workers、文件内顺序执行。`scene-playback.spec.ts` 的数据与 Context 按项隔离，因此单独开启文件内并行，避免一个长文件占住最后一个 worker；不对共享可写数据的套件全局开启 `fullyParallel`。
+
 ## 服务启动
 
 E2E 入口默认由脚本自启服务：未显式设置 `TESTING_START_*` 时，`prepare` 会先校验 Backend、Editor、Runtime、Renderer 的 8000/5173/7373/7400 端口与本地 PostgreSQL/Redis 依赖，端口被占用时立即报错并给出提示；校验通过后自动注入 `TESTING_START_*` 与 `AI_TEST_MODE=mock` 并启动服务。
@@ -49,16 +53,18 @@ E2E 入口默认由脚本自启服务：未显式设置 `TESTING_START_*` 时，
 
 Runtime 存活检查通过后，还必须通过 `/__runtime_readyz`，并明确返回 `checks.buildWorker.ready=true`。Worker 缺失、未启动或其他执行面未就绪时，`prepare` 直接失败并输出原因，避免真实构建用例等待 `pending` 超时。复用 Runtime 时也执行同样的检查。
 
-复用已在运行的服务时，显式设置任一 `TESTING_START_*` 或 `TESTING_REUSE_BACKEND` 会跳过端口校验：
+复用已准备且指纹正确的服务时，直接执行测试，不再 prepare：
 
 ```powershell
-$env:TESTING_REUSE_BACKEND='true'   # 复用 Backend（必须满足 E2E 测试指纹）
-pnpm run test:e2e
+pnpm run test:e2e:run
+# 或定向重跑（只执行指定文件）
+pnpm exec playwright test --config tests/config/playwright.config.ts --project=smoke scene-playback.spec.ts
 ```
 
 ## 报告目录
 
 - `test-results/e2e/html-report/`：Playwright HTML 报告。
+- `test-results/e2e/results.xml`：JUnit 报告，含每个用例耗时，供定位长尾与比较改动前后结果。
 - `test-results/e2e/artifacts/`：trace、截图、视频和 `.last-run.json`。
 - `test-results/e2e/services/`：测试脚本启动的 Backend、Editor、Runtime、Renderer 日志。
 - 失败用例会附加 API 4xx/5xx/requestfailed 摘要；AI run 失败时附加只读诊断 CLI 输出。

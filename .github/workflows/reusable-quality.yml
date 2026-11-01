@@ -29,6 +29,10 @@ jobs:
   backend-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(inputs.full && '["unit","api","integration"]' || '["unit","api"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -38,10 +42,13 @@ jobs:
         with:
           version: 10.30.3
       - run: uv sync --project backend --group dev --locked
-      - run: pnpm run test:backend:unit
-      - run: pnpm run test:backend:api
-      - if: inputs.full
-        run: pnpm run test:backend:integration
+      - run: pnpm run test:backend:${{ matrix.suite }} --durations=20 --junitxml=test-results/backend-${{ matrix.suite }}.xml
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-backend-${{ matrix.suite }}
+          retention-days: 14
+          path: test-results/backend-${{ matrix.suite }}.xml
 
   # CP3 的 PostgreSQL 认领分支与双库迁移对拍必须在真实 PG 上执行。
   # 缺少连接串时脚本内显式失败（P4_POSTGRES_REQUIRED），不以 skip 冒充通过。
@@ -218,22 +225,8 @@ jobs:
   e2e-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs:
-      - backend-tests
-      - editor-tests
-      - contracts
-      - runtime-gate
-    # E2E 只依赖浏览器链路的真实前置；pg-claim、runtime-state-parity、render-contracts、
-    # renderer-tests、python-workspace、gateway-contract 与其并行，任一失败仍会让 quality 汇总为红，
-    # 但无关抖动不会把一次 E2E 放大成「整套门禁 + E2E」的下一次重跑。
-    # runtime-gate 被跳过时仍视为可进入 E2E。
-    if: |
-      always() &&
-      inputs.full &&
-      needs.backend-tests.result == 'success' &&
-      needs.editor-tests.result == 'success' &&
-      needs.contracts.result == 'success' &&
-      (needs.runtime-gate.result == 'success' || needs.runtime-gate.result == 'skipped')
+    # E2E 独立安装依赖并启动整套服务，不消费其它测试 job 的产物；全部 job 仍共同决定 quality 结果。
+    if: inputs.full
     steps:
       - uses: actions/checkout@v4
         with:

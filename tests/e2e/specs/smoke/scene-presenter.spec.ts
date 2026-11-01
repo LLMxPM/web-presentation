@@ -38,13 +38,13 @@ async function postForged(display: Page, messages: Array<Record<string, unknown>
   }, messages)
 }
 
-test('演讲模式复用观众窗口并按意图同步翻页', async ({ page, context, visualEditSandbox }) => {
+test('演讲模式复用观众窗口并按意图同步翻页', async ({ page, context, projectSandbox }) => {
   test.setTimeout(180_000)
   const api = context.request
   const secondResponse = await api.post('/api/pages', {
     data: {
-      workspace_id: visualEditSandbox.workspaceId,
-      project_id: visualEditSandbox.projectId,
+      workspace_id: projectSandbox.workspaceId,
+      project_id: projectSandbox.projectId,
       title: '演讲第二页',
       file_type: 'vue',
       page_content: '<template><main class="presenter-e2e-second">演讲第二页</main></template>',
@@ -53,14 +53,14 @@ test('演讲模式复用观众窗口并按意图同步翻页', async ({ page, co
   expect(secondResponse.ok(), await secondResponse.text()).toBeTruthy()
   const secondPage = await secondResponse.json() as { id: number }
   try {
-    const routeResponse = await api.put(`/api/projects/${visualEditSandbox.projectId}/routes`, {
+    const routeResponse = await api.put(`/api/projects/${projectSandbox.projectId}/routes`, {
       data: { routes: [
-        { route_type: 'page', route: 'home', order: 0, hidden: false, page_id: visualEditSandbox.pageId },
+        { route_type: 'page', route: 'home', order: 0, hidden: false, page_id: projectSandbox.pageId },
         { route_type: 'page', route: 'second', order: 1, hidden: false, page_id: secondPage.id },
       ] },
     })
     expect(routeResponse.ok(), await routeResponse.text()).toBeTruthy()
-    const artifactResponse = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
+    const artifactResponse = await api.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, { data: {} })
     expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
     await page.goto((await artifactResponse.json()).preview_url as string)
     const runtime = page.frameLocator('iframe#preview')
@@ -130,12 +130,12 @@ test('演讲模式复用观众窗口并按意图同步翻页', async ({ page, co
   }
 })
 
-test('观众窗口独占 Scene 播放，控制台保持静态默认态', async ({ page, context, visualEditSandbox }) => {
+test('观众窗口独占 Scene 播放，控制台保持静态默认态', async ({ page, context, projectSandbox }) => {
   test.setTimeout(180_000)
   const api = context.request
-  const update = await api.patch(`/api/pages/${visualEditSandbox.pageId}`, { data: { page_content: buildScenePage() } })
+  const update = await api.patch(`/api/pages/${projectSandbox.pageId}`, { data: { page_content: buildScenePage() } })
   expect(update.ok(), await update.text()).toBeTruthy()
-  const artifactResponse = await api.post(`/api/projects/${visualEditSandbox.projectId}/preview-artifacts`, { data: {} })
+  const artifactResponse = await api.post(`/api/projects/${projectSandbox.projectId}/preview-artifacts`, { data: {} })
   expect(artifactResponse.ok(), await artifactResponse.text()).toBeTruthy()
   await page.goto((await artifactResponse.json()).preview_url as string)
   const runtime = page.frameLocator('iframe#preview')

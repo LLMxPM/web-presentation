@@ -107,3 +107,17 @@ it('门禁范围由 test-scope job 调用分级脚本产出', () => {
   // dorny/paths-filter 在 push/schedule 事件没有 base 时恒为真，已被脚本取代，不得回归。
   expect(JSON.stringify(job)).not.toContain('paths-filter')
 })
+
+it('Backend 分组并行且不互相取消，E2E 独立启动并共同参与质量门禁', () => {
+  const workflow = yaml('.github/workflows/reusable-quality.yml')
+  const jobs = workflow.jobs
+  expect(jobs['backend-tests'].strategy['fail-fast']).toBe(false)
+  const matrix = jobs['backend-tests'].strategy.matrix.suite
+  expect(matrix).toContain('["unit","api","integration"]')
+  expect(matrix).toContain('["unit","api"]')
+  expect(jobs['backend-tests'].steps.some((step: any) => String(step.run).includes('test:backend:${{ matrix.suite }}'))).toBe(true)
+  expect(jobs['e2e-smoke'].needs).toBeUndefined()
+  expect(jobs['e2e-smoke'].if).toBe('inputs.full')
+  expect(jobs['e2e-smoke'].steps.some((step: any) => step.uses === './.github/actions/setup-e2e')).toBe(true)
+  expect(yaml('.github/workflows/platform-test.yml').jobs.quality.uses).toBe('./.github/workflows/reusable-quality.yml')
+})

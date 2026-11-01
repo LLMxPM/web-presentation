@@ -1,5 +1,5 @@
 /**
- * 文件功能：为写型 E2E 用例提供用例级独立项目/页面夹具，通过真实 Backend API 创建并在 teardown 最佳努力归档。
+ * 文件功能：通过真实 API 提供用例级独立项目/页面；按需叠加 Editor 导航，结束后最佳努力归档。
  *
  * 依据 docs/archive/developer-work-2026-10/e2e-redesign.md §3.1：写型可视化编辑用例不得修改全局 Smoke 数据，
  * 每个用例创建专属项目/页面（名称包含 workerIndex + UUID），teardown 归档失败仅记录附件，
@@ -17,7 +17,7 @@ export const VISUAL_EDIT_NAMESPACE = 'E2E-VisualEdit'
 /** 全局 smoke 工作空间名称：夹具只读引用，不对其做任何写操作。 */
 const SMOKE_WORKSPACE_NAME = 'Smoke Workspace'
 
-export interface VisualEditSandbox {
+export interface ProjectSandbox {
   workspaceId: number
   projectId: number
   pageId: number
@@ -124,9 +124,9 @@ async function bestEffortArchive(
   }
 }
 
-/** 扩展 Playwright test：提供写型可视化编辑用例的隔离项目/页面沙箱。 */
-export const test = base.extend<{ visualEditSandbox: VisualEditSandbox }>({
-  visualEditSandbox: async ({ page, context }, use, testInfo) => {
+/** 数据夹具只创建与归档实体；Runtime/API 用例无需为取数据先打开 Editor。 */
+export const test = base.extend<{ projectSandbox: ProjectSandbox; visualEditSandbox: ProjectSandbox }>({
+  projectSandbox: async ({ context }, use, testInfo) => {
     const api = context.request
     const created: { projectId?: number; pageId?: number } = {}
     try {
@@ -181,19 +181,23 @@ export const test = base.extend<{ visualEditSandbox: VisualEditSandbox }>({
         throw new Error(`夹具项目路由创建失败：HTTP ${routeResponse.status()} ${await routeResponse.text()}`)
       }
 
-      const sandbox: VisualEditSandbox = {
+      const sandbox: ProjectSandbox = {
         workspaceId,
         projectId: project.id,
         pageId: createdPage.id,
         pageTitle,
         pageUrl: `/workspaces/${workspaceId}/projects/${project.id}/pages/${createdPage.id}`,
       }
-      await page.goto(sandbox.pageUrl)
-      await expect(page.locator('[data-testid="page-detail-view"]')).toBeVisible()
       await use(sandbox)
     } finally {
       await bestEffortArchive(api, created, testInfo)
     }
+  },
+  /** 可视化编辑用例复用相同数据，并显式要求进入页面详情。 */
+  visualEditSandbox: async ({ page, projectSandbox }, use) => {
+    await page.goto(projectSandbox.pageUrl)
+    await expect(page.locator('[data-testid="page-detail-view"]')).toBeVisible()
+    await use(projectSandbox)
   },
 })
 
