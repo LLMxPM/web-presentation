@@ -40,7 +40,8 @@ describe('router guard', () => {
     await router.push('/settings?returnTo=/workspaces/1/home')
     expect(router.currentRoute.value.name).toBe('users')
     expect(router.currentRoute.value.query.returnTo).toBe('/workspaces/1/home')
-  })
+    // 首次导航会触发路由组件懒加载；整套测试并行执行时 5 秒默认超时不够，这里显式放宽。
+  }, 20_000)
   beforeEach(async () => {
     setActivePinia(createPinia())
     const store = useAuthStore()

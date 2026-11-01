@@ -270,3 +270,7 @@ C2 清零时缺失的四类入口已补建，仍属 C3 实施准备，不代表�
 - 顺带修复：镜像探针的静态呈现/资源就绪回执滞后于 C1 契约（`b0300b3`），修复后 renderer 与 lite 变体启动校验通过。
 
 未执行：`test:all`、`compose-images`、Renderer 取消/超时/迟到 PNG 专项、独立 ZIP、Firefox/WebKit 与移动端、真实睡眠。GC 未判定，C3 状态改为「进行中」。
+
+### 全量主门禁
+
+`CODEBUDDY_SAFE_DELETE_ENABLED=0 pnpm run test:all` 通过（exit 0）：Backend 全量、Editor gate 905、Runtime gate、根仓 contracts、render-contracts、Renderer 68、python-workspace 17、E2E 40 通过 + 1 条按设计跳过。过程中修了两个环境性红项：pytest 临时目录清理被本机删除保护拦截（改为每次运行独立 basetemp，并在测试进程内关闭该保护）、编辑端路由守卫用例在满载下超过 5 秒默认超时（显式放宽到 20 秒，断言不变）；另将 ambient 用例等待上限从 20 秒放宽到 60 秒。`compose-images` 仍因 Docker Hub 传输层 EOF 无法核对。

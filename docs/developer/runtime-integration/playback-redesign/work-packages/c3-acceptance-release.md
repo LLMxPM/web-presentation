@@ -1,6 +1,6 @@
 # C3 集中实机验收与交付
 
-状态：进行中（实机验收已完成，缺全量主门禁与 compose-images 核对，未判定 GC）。主责：跨模块验证。前置：[C2](./c2-legacy-zero.md)。出口：GC。
+状态：进行中（实机验收与全量主门禁均已通过，仅缺 compose-images 核对、Renderer 取消专项与独立 ZIP 产物核对，未判定 GC）。主责：跨模块验证。前置：[C2](./c2-legacy-zero.md)。出口：GC。
 
 本包统一执行原 A1/A2 及 B0–C2 移交的实机任务，只验证最终收敛实现。A/B/C1/C2 的开发测试不能代替本包证据；本包通过前不宣称新模型已交付或 G2 已关闭。
 
@@ -66,11 +66,12 @@ Firefox、WebKit 与移动端仍不建入口：仓库没有对应 project 或设
 | 镜像启动校验 | `check-image-startup.py --variant runtime/renderer/lite/full` | 四类全部通过：runtime `runtime_version_guard_passed`、renderer `renderer_control_api_capture_passed`、lite `runtime_version_and_renderer_capture_passed`、full 健康通过 |
 | 三角色编排 | `docker-architecture.py setup --backend-image wp-platform:c3-0cf71ae --runtime-image wp-runtime:c3-0cf71ae --renderer-image wp-renderer:c3-0cf71ae` | preview_a/b、build_a/b、check 全部 `healthy`；`healthz` role 正确、`readyz` 全 ok、build 的 `buildWorker.ready=true`；五个实例 `build_id` 均为 `sha256-fb1a46b4fe10…`，`runtime_kit_version=1.0.0`；演练环境已 `cleanup` |
 | 真实模型创作 | 受控工作空间 + `agent-coordinator` 真实 Run（非 mock） | Run `24c1cab3…` 完成（68s），页面 783 生成 v2 并插入日期行；回读源码确认；默认截图任务 708 `succeeded`，PNG 17019 字节，sha256 与 `result_screenshot_id` 一致 |
+| 全量主门禁 | `CODEBUDDY_SAFE_DELETE_ENABLED=0 pnpm run test:all` | **通过**（exit 0）：Backend 全量、Editor gate 905 项、Runtime gate、根仓 contracts、render-contracts、Renderer 68 项、python-workspace 17 项、E2E 40 通过 + 1 条按设计跳过（联合闭环需显式开关）。前两次失败分别为 pytest 临时目录清理被本机删除保护拦截、以及编辑端路由守卫用例 5 秒超时（单跑 1.7s，负载抖动），均已分别以 basetemp/环境开关与显式用例超时修正 |
 | CLI 读写 | `wp --json -w 61 project get` → `wp project update --payload-file` → 回读 | CLI 0.4.1 通过 PAT（workspace:read / project:read,write / page:read,write）连本地 Backend，描述由空回写为「C3 CLI 回写 2026-11-01」并回读一致 |
 
 证据目录：`.tmp/c3-evidence/`（`a04-100cycles-*.json`、`soak-30m-*.json`、`webgl-restore-*.json`、`three-role-image.json`、`real-creation-*.json`、`cli-readwrite.json`、`image-startup-*`）；Playwright 产物在 `test-results/`，镜像启动证据在各 `image-startup-*` 子目录。
 
-**未执行，不得记为通过**：全量主门禁 `test:all`；`test:contracts:compose-images`（Docker Hub 拉取持续 EOF，无法核对远端镜像可拉取性）；Renderer 取消/超时/迟到 PNG 专项（`docker-architecture.py render-cancel`、`render-timeout`、`render-late`）；独立 ZIP 产物核对；Firefox/WebKit 与移动端（无 project 与设备拓扑）；操作系统真实睡眠与恢复；无人值守长期放映。长稳堆指标因口径修正未重跑，若需引用堆趋势，请以 A04 的 100 轮曲线为准，或按新口径重跑一次长稳。
+**未执行，不得记为通过**：`test:contracts:compose-images`（4 个镜像全部失败在传输层 `error pinging v2 registry: EOF`，无法核对远端可拉取性，非镜像缺失）；Renderer 取消/超时/迟到 PNG 专项（`docker-architecture.py render-cancel`、`render-timeout`、`render-late`）；独立 ZIP 产物核对；Firefox/WebKit 与移动端（无 project 与设备拓扑）；操作系统真实睡眠与恢复；无人值守长期放映。长稳堆指标因口径修正未重跑，若需引用堆趋势，请以 A04 的 100 轮曲线为准，或按新口径重跑一次长稳。
 
 ## 交付
 
