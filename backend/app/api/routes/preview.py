@@ -1,4 +1,4 @@
-"""文件功能：提供预览 artifact 创建接口，并生成隔离 Runtime 源站的可信宿主页。"""
+"""文件功能：提供预览 artifact 创建接口，并按部署隔离策略生成 Runtime 预览的可信宿主页。"""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ async def preview_artifact_proxy(
     request: Request,
     token: str,
 ):
-    """校验预览上下文并返回跨主机名 iframe 宿主页，不在业务源站执行用户 HTML。"""
+    """校验预览上下文并返回 iframe 宿主页，用户 HTML 的源站遵循部署隔离策略。"""
 
     try:
         preview_claims = TokenService.verify_preview_context_token(token)

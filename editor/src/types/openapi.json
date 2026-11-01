@@ -25920,7 +25920,7 @@
           "preview"
         ],
         "summary": "返回隔离 Runtime 预览的可信宿主页",
-        "description": "校验预览上下文并返回跨主机名 iframe 宿主页，不在业务源站执行用户 HTML。",
+        "description": "校验预览上下文并返回 iframe 宿主页，用户 HTML 的源站遵循部署隔离策略。",
         "operationId": "preview_artifact_proxy_preview_artifacts__artifact_id__get",
         "parameters": [
           {

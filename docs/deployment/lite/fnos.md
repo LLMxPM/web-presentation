@@ -36,6 +36,7 @@
      - `BACKEND_PUBLIC_BASE_URL` = `http://192.168.1.20:8080`
      - `RUNTIME_PUBLIC_BASE_URL` = `http://preview.home.arpa:8080/runtime`（局域网 DNS / hosts 解析到 `192.168.1.20`，预览与业务使用不同主机名）
      - `CORS_ORIGINS` = `["http://192.168.1.20:8080"]`
+   - 没有域名或局域网 DNS 时，受信私有部署也可使用[单 IP 配置](README.md#局域网单-ip-访问无域名)：添加 `PREVIEW_ORIGIN_ISOLATION_ENABLED=false`，并将 `RUNTIME_PUBLIC_BASE_URL` 改为 `http://192.168.1.20:8080/runtime`。此时用户代码将共享业务源站权限；更改已有容器的环境变量后需重建容器。
 6. 点击“完成”，系统将自动创建并启动容器。
 
 ## 4. 获取管理员密码并登录

@@ -171,4 +171,4 @@ Renderer 仍是唯一浏览器执行角色；扩容使用不同 `worker_id` 与�
 
 ## 访问关系
 
-浏览器通过业务和独立预览主机名访问同一 Gateway。Gateway 代理 `/api`、受保护 `/build-artifacts`、可信 `/preview` 宿主页到 Backend，并代理 `/runtime/` 到 Runtime。`RUNTIME_PUBLIC_BASE_URL` 使用预览主机名，预览域不加入业务 CORS，业务 Cookie 保持 host-only。旧 `/media`、`/public` 由 Gateway 返回 404，Backend 也不再挂载这些目录。
+默认隔离模式下，浏览器通过业务和独立预览主机名访问同一 Gateway。Gateway 代理 `/api`、受保护 `/build-artifacts`、可信 `/preview` 宿主页到 Backend，并代理 `/runtime/` 到 Runtime。`RUNTIME_PUBLIC_BASE_URL` 使用预览主机名，预览域不加入业务 CORS，业务 Cookie 保持 host-only。受信私有部署可在 Backend 设 `PREVIEW_ORIGIN_ISOLATION_ENABLED=false` 使用同主机名，用户代码将共享业务源站权限，详见[单 IP 配置](../lite/README.md#局域网单-ip-访问无域名)。旧 `/media`、`/public` 由 Gateway 返回 404，Backend 也不再挂载这些目录。

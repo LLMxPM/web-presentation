@@ -50,9 +50,25 @@ docker logs web-presentation
 | 配置 | 默认值 / 示例 | 作用 |
 | :--- | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | `http://127.0.0.1:8080`（局域网示例：`http://192.168.1.20:8080`） | 浏览器访问平台的外部入口，系统用它生成平台链接 |
-| `RUNTIME_PUBLIC_BASE_URL` | `http://preview.localhost:8080/runtime`（本机）；局域网可用 `http://preview.home.arpa:8080/runtime` | 独立预览主机名，需通过局域网 DNS / hosts 解析到同一 Gateway；不能复用业务 IP 或主机名 |
+| `RUNTIME_PUBLIC_BASE_URL` | `http://preview.localhost:8080/runtime`（本机）；局域网可用 `http://preview.home.arpa:8080/runtime` | 默认要求独立预览主机名，通过局域网 DNS / hosts 解析到同一 Gateway；关闭隔离后可用业务 IP 加 `/runtime` |
+| `PREVIEW_ORIGIN_ISOLATION_ENABLED` | `true` | 是否校验预览与私有构建的主机名隔离；受信私有部署可设为 `false`，使用下方单 IP 配置 |
 | `CORS_ORIGINS` | `'["http://127.0.0.1:8080","http://localhost:8080"]'`（局域网示例：`'["http://192.168.1.20:8080"]'`） | 允许访问平台的浏览器来源，必须填写平台外部入口；业务写接口（含登录）要求浏览器来源精确命中该列表或 `BACKEND_PUBLIC_BASE_URL` |
 | `DEFAULT_ADMIN_PASSWORD` | 留空（自动生成随机密码）或自定义强密码 | 首次建库时的管理员初始口令 |
+
+### 局域网单 IP 访问（无域名）
+
+仅在信任全部用户、页面源码及 AI 生成代码的私有部署中，可显式关闭预览源站隔离。假设 NAS 的固定 IP 为 `192.168.1.20`，将以下内容合并到 `platform-lite` 的 `environment` 中：
+
+```yaml
+BACKEND_PUBLIC_BASE_URL: "http://192.168.1.20:8080"
+RUNTIME_PUBLIC_BASE_URL: "http://192.168.1.20:8080/runtime"
+PREVIEW_ORIGIN_ISOLATION_ENABLED: "false"
+CORS_ORIGINS: '["http://192.168.1.20:8080"]'
+```
+
+重建容器后，局域网设备直接访问 `http://192.168.1.20:8080`，无需配置 DNS 或 hosts。NAS 容器管理界面也可添加这四项环境变量。仅关闭开关不会自动替换已经配置的 `preview.localhost`，必须同时修改公开地址；`CORS_ORIGINS` 仍只填写实际工作台来源。
+
+关闭后，预览与私有构建页面可以使用业务登录权限读写 API；票据与文件鉴权、版本绑定和消息来源检查仍然执行，但同源页面已不具备浏览器权限隔离。公开服务或多人不互信的部署应保留默认 `true`。恢复隔离时，重新配置独立的预览主机名、设为 `true` 并重建容器。
 
 ### 容器内地址与端口映射说明
 

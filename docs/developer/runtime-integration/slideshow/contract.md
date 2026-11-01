@@ -23,7 +23,7 @@ scene_end 必须有 blocking 完成目标；无限 ambient 不计入完成。没
 
 项目省略 slideshow 采用默认值；PATCH 省略保留，提供完整对象整体替换，顶层 null 拒绝。叶子路由 `transition/advance` 按组覆盖，null 恢复继承；组内不逐字段继承。整树 PUT 的既有节点省略字段，按完整路由路径和页面绑定保留原覆盖；新节点省略则继承。分组禁止非 null 覆盖。只读 `effective_slideshow` 由 Backend 计算。应用样式不修改放映配置。
 
-所有整数拒绝布尔、字符串、浮点、显式 null 和越界值；未知字段拒绝。删除的 auto_start、media_end、timeline_end、media_timeout_ms、timeline_timeout_ms 不做映射。播放由显式 start 开始，hold/release 只影响自动推进，不暂停 Scene，也不改写配置。
+所有整数拒绝布尔、字符串、浮点、显式 null 和越界值；未知字段拒绝。写入和 Runtime 读取不接受已删除的 auto_start、media_end、timeline_end、media_timeout_ms、timeline_timeout_ms；历史数据库仅在升级迁移时按下述规则转换。播放由显式 start 开始，hold/release 只影响自动推进，不暂停 Scene，也不改写配置。
 
 ## API 与版本
 
@@ -31,7 +31,9 @@ Editor 使用 `/api/projects`、`/api/projects/{id}`、`/api/projects/{id}/route
 
 `GET /api/system/slideshow-capabilities` 与 External 工作空间 capabilities 的 `slideshow` 声明 schema_version=4、三种推进模式、delay_ms 范围及 completion_delay_ms 的零下限。`slideshow.audio` 三项固定描述已实现的资源、旁白和 cue 能力，不再作为阶段门禁。`GET /api/system/scene-capabilities` 及 External `scene` 声明 blocking/ambient、visual/model3d/media/custom 与独立静态呈现；旧 timeline-capabilities 和 timeline 字段已删除。
 
-Backend 读取旧项目/路由配置返回 409 `SLIDESHOW_CONFIG_UNSUPPORTED`，要求按 schema 4 重新保存。数据库迁移只改变新行默认值，不转换既有 JSON。模板包版本为 schema 5，旧 1–4 包明确拒绝，须重新导出；当前包仍验证 cue 资源、逐路由覆盖与完整设置。
+数据库升级到 `20261101_0100` 时强制迁移所有项目与路由放映配置：保留合法的动画、循环、手动/定时模式与时长；已删除的 `media_end` / `timeline_end` 以及未知模式改为 `manual`；删除 `auto_start` 和旧等待超时字段，补齐默认 `completion_delay_ms=300`。现行 `scene_end` 与合法的零停留保留，异常配置值恢复固定默认值。路由的 null 覆盖保持继承，分组清空覆盖。迁移不会改页面源码、历史 artifact 或构建快照；旧产物需重新生成。旧模式重置后可在项目或单页配置中手动调整。
+
+正常升级后的旧项目可直接读取，无需逐个重新保存。Backend 仍对未迁移或损坏的持久化配置返回 409 `SLIDESHOW_CONFIG_UNSUPPORTED`，新写入保持严格 422；迁移不会恢复已删除的旧播放引擎，数据降级需还原备份。模板包版本仍为 schema 5，旧 1–4 包明确拒绝，须重新导出；当前包仍验证 cue 资源、逐路由覆盖与完整设置。
 
 Runtime 下发结构：
 

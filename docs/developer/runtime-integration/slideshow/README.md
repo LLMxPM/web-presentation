@@ -11,7 +11,7 @@
 
 ## Scene 收敛后的现行契约
 
-- 放映配置为 schema 4：翻页模式只有 `manual`、`timer`、`scene_end`，配合 `delay_ms`、`completion_delay_ms` 与 `loop`；`auto_start`、`media_end`、`timeline_end` 与媒体/时间轴等待上限已删除，旧配置读取时返回稳定 409 并要求重建。
+- 放映配置为 schema 4：翻页模式只有 `manual`、`timer`、`scene_end`，配合 `delay_ms`、`completion_delay_ms` 与 `loop`；数据库升级会强制迁移旧项目和路由配置，旧媒体/时间轴模式改为手动，删除 auto_start 和旧超时字段。严格写入与执行边界保留，旧 artifact 和构建快照需重新生成，详见[迁移规则](contract.md#api-与版本)。
 - 页面编排入口是 `usePageScene.v1`：有限任务实际完成才推动 `scene_end`，`repeat: -1` 只允许 `ambient` 且不阻塞；不存在暂停、定位或任意时刻状态重建。
 - 演讲同步协议为 v5：只有 `request-state`、有限 `intent` 与观众原子 `state`，由 owner 与修订共同拒绝迟到消息；控制台不建立第二份播放时钟。
 - 详细契约与验收见[放映动画能力收敛规划](../playback-redesign-proposal.md)与[收敛工作包清单](../playback-redesign/work-packages/README.md)；旧页内时间轴实现保留在[历史记录](../motion/README.md)。

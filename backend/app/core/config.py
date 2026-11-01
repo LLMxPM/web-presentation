@@ -130,6 +130,8 @@ class AppSettings(BaseSettings):
     runtime_check_max_inflight: int = 16
     runtime_light_max_inflight: int = 16
     runtime_public_base_url: str | None = None
+    # 默认隔离用户代码源站；受信私有部署可显式关闭，允许与业务入口共用主机名。
+    preview_origin_isolation_enabled: bool = True
     runtime_shared_secret: str = "change-me"
     runtime_service_token_audience: str = "runtime-backend"
     # Runtime RS256 签名身份：多 Backend 必须共享同一私钥；轮换期用 previous_keys 保留旧钥验签。

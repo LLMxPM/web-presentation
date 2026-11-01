@@ -143,7 +143,7 @@ def test_remote_render_migration_behavior_clears_screenshot_pointers(tmp_path: P
 
 
 def test_slideshow_migration_backfills_defaults_and_keeps_route_overrides_empty(tmp_path: Path) -> None:
-    """升级放映配置迁移：旧项目获得完整默认值，旧叶子路由保持继承，新项目仍可用库默认值。"""
+    """完整升级链验证列默认、路由继承，以及已部署旧放映数据的强制转换。"""
 
     backend_root = _backend_root()
     database_path = tmp_path / "p4-slideshow.db"
@@ -176,7 +176,7 @@ def test_slideshow_migration_backfills_defaults_and_keeps_route_overrides_empty(
         )
         connection.commit()
 
-    _run_alembic(backend_root, env, "head")
+    _run_alembic(backend_root, env, "20261030_0100")
 
     with sqlite3.connect(database_path) as connection:
         row = connection.execute(
@@ -200,6 +200,38 @@ def test_slideshow_migration_backfills_defaults_and_keeps_route_overrides_empty(
             "SELECT slideshow_config_json FROM projects WHERE code='p4ss-new'"
         ).fetchone()
         assert json.loads(default_row[0]) == payload
+
+        # 模拟已经部署到仅改默认值版本的旧库；下一 revision 必须转换真实历史 JSON。
+        legacy_project = {
+            "transition": {"effect": "push", "duration_ms": 700},
+            "advance": {"mode": "timer", "delay_ms": 9000, "media_timeout_ms": 300000},
+            "loop": True, "auto_start": False,
+        }
+        connection.execute("UPDATE projects SET slideshow_config_json=? WHERE code='p4ss'", (json.dumps(legacy_project),))
+        connection.execute(
+            "UPDATE project_routes SET advance_json=? WHERE project_id=1",
+            (json.dumps({"mode": "timeline_end", "delay_ms": 8000, "timeline_timeout_ms": 300000}),),
+        )
+        connection.commit()
+
+    _run_alembic(backend_root, env, "head")
+
+    from app.schemas.slideshow import (
+        load_route_advance_override,
+        load_slideshow_settings,
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        migrated = load_slideshow_settings(json.loads(connection.execute(
+            "SELECT slideshow_config_json FROM projects WHERE code='p4ss'",
+        ).fetchone()[0]))
+        assert migrated.transition.effect == "push" and migrated.transition.duration_ms == 700
+        assert migrated.advance.mode == "timer" and migrated.advance.delay_ms == 9000
+        assert migrated.advance.completion_delay_ms == 300 and migrated.loop is True
+        route = load_route_advance_override(json.loads(connection.execute(
+            "SELECT advance_json FROM project_routes WHERE project_id=1",
+        ).fetchone()[0]))
+        assert route.mode == "manual" and route.delay_ms == 8000 and route.completion_delay_ms == 300
 
 
 def test_migration_versions_have_no_bare_dialect_name() -> None:

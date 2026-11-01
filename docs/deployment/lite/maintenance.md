@@ -101,6 +101,8 @@ docker run --rm \
 
 > **提示**：`RUNTIME_BASE_URL`、`RUNTIME_PREVIEW_JWKS_URL` 和 `RUNTIME_BACKEND_API_BASE_URL` 是容器内部回源地址，保持镜像内置的 `127.0.0.1` 即可，**绝对不要**改成公网域名或局域网 IP。
 
+上述表格描述默认隔离模式。受信私有部署没有域名或局域网 DNS 时，可显式设 `PREVIEW_ORIGIN_ISOLATION_ENABLED=false`，将 `RUNTIME_PUBLIC_BASE_URL` 改为业务地址加 `/runtime` 后重建容器；预览和私有构建代码将共享业务权限。完整示例见[局域网单 IP 访问](README.md#局域网单-ip-访问无域名)。
+
 ### 3.2 使用 Nginx / NPM 反向代理与 HTTPS
 
 如果你在平台前端挂载了 Nginx Proxy Manager (NPM)、Caddy 或群晖反向代理并开启了 HTTPS：

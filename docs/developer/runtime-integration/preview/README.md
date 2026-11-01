@@ -5,11 +5,13 @@
 ## 入口与身份
 
 1. Editor 通过 Backend 创建短期 preview artifact；Backend 在创建时校验用户和工作空间权限，并签发绑定 artifact 的短期预览票据 P。
-2. 浏览器打开 Backend 的 `/preview/artifacts/{artifact_id}?token=...`。该入口验签、核对 artifact 并绑定 Runtime 构建版本，返回可信桥接宿主页；用户页面 HTML 在 `RUNTIME_PUBLIC_BASE_URL` 指定的**独立主机名**内执行。
+2. 浏览器打开 Backend 的 `/preview/artifacts/{artifact_id}?token=...`。该入口验签、核对 artifact 并绑定 Runtime 构建版本，返回可信桥接宿主页；默认用户页面 HTML 在 `RUNTIME_PUBLIC_BASE_URL` 指定的**独立主机名**内执行。
 3. Runtime 的 `/__preview` 消费已绑定版本的 P。Renderer 浏览器也使用本次 attempt 的 P；受控初始文档请求可使用预览请求头。Runtime 和构建 Worker 回源 Backend 内部接口时使用服务票据 S。P 与 S 不得混用。
 4. 浏览器读取预览素材使用 artifact 范围的 P。Backend 在处理缓存、`304`、`HEAD`、`Range` 之前校验身份、artifact、资源版本；用户业务 Cookie 保持 host-only，预览域不得加入业务 CORS。
 
 预览票据是短期持有式授权，不能描述为“只有原登录用户可访问”。Editor 的续签重新检查当前权限；artifact 过期或运行态清空后需要创建新预览，不能把旧 artifact 指向新内容。
+
+`PREVIEW_ORIGIN_ISOLATION_ENABLED` 默认 `true`；受信私有部署可显式设为 `false`，使预览和私有构建使用配置的同主机名地址，不再改写回环地址。此时用户代码共享业务源站权限；票据、文件鉴权、版本绑定和消息来源检查继续生效。部署步骤见[单 IP 访问](../../../deployment/lite/README.md#局域网单-ip-访问无域名)，公开服务保留默认隔离。
 
 ## artifact 与运行时
 

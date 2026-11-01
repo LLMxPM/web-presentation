@@ -7,12 +7,15 @@ production env 版通过 `deploy/.env` 管理环境变量，模板来自 `deploy
 | 变量 | 说明 |
 | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | 平台对外访问地址 |
-| `RUNTIME_PUBLIC_BASE_URL` | 独立预览主机名的浏览器访问地址，例如 `https://preview.example.com/runtime`；与业务主机名相同会拒绝预览 |
+| `RUNTIME_PUBLIC_BASE_URL` | 浏览器访问预览的地址，例如 `https://preview.example.com/runtime`；默认要求与业务入口使用不同主机名 |
+| `PREVIEW_ORIGIN_ISOLATION_ENABLED` | 默认 `true`，校验预览及私有构建的主机名隔离；受信私有部署可设为 `false` 允许同主机名，且不再自动改写回环地址。仅由 Backend 读取，修改后需重启 Backend；用户代码将共享业务源站权限 |
 | `CORS_ORIGINS` | 允许访问 Backend 的前端源；业务写接口（含登录）要求浏览器来源精确命中该列表或 `BACKEND_PUBLIC_BASE_URL`，否则 403 |
 | `SESSION_SECURE` | HTTPS 部署应设为 `true` |
 | `APP_TIMEZONE` | 业务时区，默认 `Asia/Shanghai`；Editor 启动时自动读取，无需重建前端 |
 
 数据库与接口统一使用 UTC，历史无时区值直接补 UTC。业务时区只影响展示和业务日期生成，详见[时间存储与展示](../../developer/backend/time-handling.md)。
+
+受信局域网单 IP 的完整配置见[快速部署](../lite/README.md#局域网单-ip-访问无域名)。关闭隔离不关闭预览/构建票据、私有文件鉴权、版本绑定或消息来源校验；公开服务保持默认隔离。
 
 ## 数据与缓存
 

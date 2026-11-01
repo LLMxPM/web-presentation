@@ -5,7 +5,7 @@
 
 2026-10-16 文件鉴权修复新增发布条件，详见[文件存储鉴权规划](../developer/projects/file-storage-auth-cache-plan.md)：
 
-- 配置独立预览主机名的 DNS / TLS，验证 `/runtime/` 与受保护 `/build-artifacts/`；业务 Cookie 不设置父域 Domain，预览域不加入业务 CORS。
+- 默认保持 `PREVIEW_ORIGIN_ISOLATION_ENABLED=true`，配置独立预览主机名的 DNS / TLS，验证 `/runtime/` 与受保护 `/build-artifacts/`；业务 Cookie 不设置父域 Domain，预览域不加入业务 CORS。受信私有部署可显式关闭隔离使用单 IP，不能将其作为隔离验收证据，详见[配置边界](production/env-vars.md#对外访问)。
 - 旧字体桶关闭匿名 ACL / policy，保留 Backend 服务身份迁移读取权限；检查历史绝对 public URL，不能通过重新开放旧入口回滚。
 - 排空不兼容 Runtime / Renderer 和构建 attempt；新截图使用内容 hash，旧截图 latest 兼容，不宣称历史表已回填。
 - 补齐真实 S3 兼容服务、跨副本、浏览器导出与外部客户端矩阵；采集成本与回源指标后再决定 CDN。
@@ -64,6 +64,8 @@ Lite Dockerfile 采用双 venv 独立依赖隔离（D-Dep3），生产流水线�
 ## 5. M1 自动放映能力与 Runtime 配套
 
 **状态**：源码能力已开放并收敛为 schema 4（2026-10-31），同版部署验证待执行。
+
+2026-11-01 补充：升级到 `20261101_0100` 会强制迁移项目和路由放映配置，旧媒体/时间轴模式改为手动、清理旧字段，现行配置和路由继承保留。部署验证需覆盖带旧配置的数据库升级和项目列表读取；旧 artifact/构建快照仍需重新生成，完整规则见[放映契约](../developer/runtime-integration/slideshow/contract.md#api-与版本)。
 
 Backend `capabilities.slideshow` 声明 `schema_version=4`、`advance_modes` 为 `manual`/`timer`/`scene_end`、`single_window_auto_play` 与 `presenter_auto_play` 为 true、`capture_auto_play` 为 false；`/api/system/scene-capabilities` 另行声明任务角色与独立静态呈现。能力布尔值只表示开发支持，真实浏览器与产物结论由 C3 回填。该声明只对应包含 Scene/Deck 与 Presenter v5 的 Runtime。
 

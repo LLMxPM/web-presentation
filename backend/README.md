@@ -140,6 +140,7 @@ Backend 统一采用以下时间语义：
 
 - `RUNTIME_BASE_URL`：Runtime 开发服务地址，例如 `http://127.0.0.1:7373`
 - `RUNTIME_PUBLIC_BASE_URL`：浏览器访问预览页时应直连的 Runtime 地址；未配置时回退到 `RUNTIME_BASE_URL`
+- `PREVIEW_ORIGIN_ISOLATION_ENABLED`：默认 `true`，预览和私有构建使用独立主机名；受信私有部署可显式关闭以共用业务入口，用户代码将共享业务权限，详见[单 IP 部署](../docs/deployment/lite/README.md#局域网单-ip-访问无域名)。修改后需重启 Backend。
 - `RUNTIME_SHARED_SECRET`：Backend 与 Runtime 约定的共享密钥
 - `RUNTIME_SERVICE_TOKEN_AUDIENCE`：Backend 为 Runtime 内部 artifact 接口签发短期服务令牌时使用的 audience
 - `RUNTIME_REQUEST_TIMEOUT_SECONDS`：Backend 调用 Runtime 内网接口的超时时间（秒）

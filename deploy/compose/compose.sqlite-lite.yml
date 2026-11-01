@@ -16,6 +16,9 @@ services:
     environment:
       BACKEND_PUBLIC_BASE_URL: "http://127.0.0.1:8080"
       RUNTIME_PUBLIC_BASE_URL: "http://preview.localhost:8080/runtime"
+      # 受信局域网单 IP 部署可设为 "false"，并将上方两项改为实际 IP 与其 /runtime 地址。
+      # 关闭后预览和构建用户代码可使用业务登录权限；默认仍校验独立主机名。
+      PREVIEW_ORIGIN_ISOLATION_ENABLED: "true"
       # 回环别名同时放行：浏览器访问 http://localhost:8080 与 http://127.0.0.1:8080 均可正常写入。
       # 业务写接口要求浏览器来源精确命中 BACKEND_PUBLIC_BASE_URL 或 CORS_ORIGINS，其它主机名会被拒绝。
       CORS_ORIGINS: '["http://127.0.0.1:8080","http://localhost:8080"]'

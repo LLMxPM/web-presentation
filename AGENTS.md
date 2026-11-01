@@ -160,12 +160,12 @@ Runtime Kit 约束：
 
 - `usePageScene.v1` 是唯一页内编排入口；每页一个声明，内部登记多条 `visual`/`task`，只正向播放并按实际完成聚合。旧页内时间轴、`core/motion` 采样链、`Asset*.v2`、旧的同步音效入口、`PageMediaSession` 与 Presenter v4 已删除，不得重新引入兼容层或运行时 fallback；`useAudioCue.v1` 与 `AssetModel.v1` 是当前唯一实现，不保留历史版本分支。
 - GSAP 只能通过 Scene 受管门面使用；页面与工作空间组件直接导入 GSAP 核心包或插件（DrawSVG、SplitText、ScrollTrigger 等）由 Backend 依赖解析、远程预览与构建/诊断插件共同拒绝。
-- 放映配置为 schema 4，翻页模式只有 `manual`、`timer`、`scene_end`，配合 `delay_ms`、`completion_delay_ms` 与 `loop`；不存在暂停、定位或任意时刻状态重建，保持/释放只抑制自动翻页。Backend DTO 与 Editor 配置表单必须同批修改。
+- 放映配置为 schema 4，翻页模式只有 `manual`、`timer`、`scene_end`，配合 `delay_ms`、`completion_delay_ms` 与 `loop`；数据库升级强制迁移既有项目与路由配置，已删除模式改为手动并清理旧字段，不增加运行时兼容层。不存在暂停、定位或任意时刻状态重建，保持/释放只抑制自动翻页。Backend DTO 与 Editor 配置表单必须同批修改。
 - 自动媒体必须由页面用 `createSceneMediaTask.v1` 显式接管并经窗口 AudioBus 发声；同页最多一个自动发声主媒体。静态执行上下文不创建 Scene、不发声、不推进 Mixer，静态呈现由 `useStaticPresentation.v1` 独立声明，详见[独立静态呈现](./docs/developer/runtime/static-presentation.md)。
 
 多部署 / 多副本约束（与代码保持一致，禁止只改文档宣称）：
 
-- **私有文件与预览源站**：浏览器与 Renderer 浏览器使用 artifact 预览票据 P 读取素材，Runtime / 构建 Worker 使用内部服务票据 S 回源，不得混用端点或恢复 public fallback。用户 HTML 必须在 `RUNTIME_PUBLIC_BASE_URL` 的独立主机名执行；Backend 预览入口仅返回可信桥接宿主页，业务 Cookie 保持 host-only，预览域不得加入业务 CORS。文件鉴权先于缓存、304、HEAD 和 Range；截图内容 URL 绑定 hash，旧可变 key 仅按 latest 兼容。实施边界见[文件存储鉴权规划](docs/developer/projects/file-storage-auth-cache-plan.md)。
+- **私有文件与预览源站**：浏览器与 Renderer 浏览器使用 artifact 预览票据 P 读取素材，Runtime / 构建 Worker 使用内部服务票据 S 回源，不得混用端点或恢复 public fallback。默认 `PREVIEW_ORIGIN_ISOLATION_ENABLED=true`，用户 HTML 在 `RUNTIME_PUBLIC_BASE_URL` 的独立主机名执行；受信私有部署可显式设为 `false` 使用同主机名，此时用户代码共享业务源站权限，不能宣称仍有源站隔离。Backend 预览入口仅返回可信桥接宿主页，业务 Cookie 保持 host-only，隔离部署的预览域不得加入业务 CORS。开关不关闭预览/构建票据、文件鉴权或消息来源校验。文件鉴权先于缓存、304、HEAD 和 Range；截图内容 URL 绑定 hash，旧可变 key 仅按 latest 兼容。实施边界见[文件存储鉴权规划](docs/developer/projects/file-storage-auth-cache-plan.md)。
 - **Runtime 角色**：`preview` / `build` / `check` / `all` 由 `runtime-role.ts` 与 `vite.config.ts` 真实注销端点；分角色 compose 见 `deploy/compose/compose.runtime-roles.yml`。角色独立执行预算与健康输出以 Runtime 插件为准，不得把死配置写成已达成门槛。
 - **构建 attempt 围栏**：产物提升必须匹配 Job 当前 `attempt_id`（INV-5）；租约过期/回收一律作废 attempt，禁止迟到上传提升旧产物。
 - **检查指纹缓存**：`CodeCheckFingerprintBuilder` 覆盖源码、依赖版本、引用资源身份、Runtime Kit 清单执行投影 hash、主题/字体与规则版本；目录文案排除，公开入口、预览 Schema、引擎及未知字段保留，Python/发布脚本使用共享 fixture 对拍。新增会影响检查结果的输入必须进指纹，否则缓存会返回陈旧结果。截图/诊断身份只收会改变静态像素的输入：模型资源、静态相机/海报声明和海报资源身份必须纳入；源码闭包仍整体参与 hash，播放进度、运行期回调实例与 Scene/Deck 状态不进入身份。捕获策略由 `render_contracts.screenshot.CAPTURE_POLICY_VERSION` 统一驱动 Backend 指纹/请求和 Renderer 能力，静态出口不得通过推进 Scene、媒体或 Mixer 取帧。路由仅经 `page_render_identity` 的页码目录投影进入，且只在页面闭包引用 `vue-router` 或 `useCurrentPage`/`useRouteCatalog`/`usePageNavigation` 时纳入；`transition`/`advance`/`playback` 与模块入口不渲染的 `app` 展示字段不得进入身份。页码分配规则两侧共用 `tests/fixtures/route-page-number-cases.json` 对拍，改任一侧必须同步另一侧。

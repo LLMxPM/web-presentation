@@ -1,4 +1,4 @@
-"""文件功能：解析不携带业务 Cookie 的预览源站，并生成只包含可信桥接代码的预览宿主页。"""
+"""文件功能：按部署开关解析预览源站，默认隔离业务 Cookie，并生成可信桥接宿主页。"""
 
 from __future__ import annotations
 
@@ -14,9 +14,11 @@ from app.core.exceptions import AppException
 
 
 def isolated_preview_base_url() -> str:
-    """复用 Runtime 公开地址；本地同主机名自动使用 preview.localhost，远程同主机名拒绝执行。"""
+    """默认校验主机名并改写本地回环地址；显式关闭隔离时原样使用公开基址。"""
     settings = get_settings()
     base = str(settings.runtime_public_base_url or settings.runtime_base_url).rstrip("/")
+    if not settings.preview_origin_isolation_enabled:
+        return base
     parsed = urlsplit(base)
     business_hosts = {urlsplit(settings.backend_public_base_url).hostname}
     business_hosts.update(urlsplit(item).hostname for item in settings.cors_origins)
@@ -33,13 +35,13 @@ def isolated_preview_base_url() -> str:
 
 
 def isolated_preview_origin() -> str:
-    """返回私有构建使用的隔离源站根地址，不携带 Runtime 路径前缀。"""
+    """按相同隔离策略返回私有构建的源站根地址，不携带 Runtime 路径前缀。"""
     parsed = urlsplit(isolated_preview_base_url())
     return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
 
 
 def preview_shell(*, artifact_id: str, token: str, workbench_url: str, parameters: dict[str, str] | None = None) -> HTMLResponse:
-    """在业务源站只运行固定桥接代码；用户源码始终在另一主机名的 iframe 中执行。"""
+    """宿主页只运行固定桥接代码；iframe 源站遵循部署隔离开关，消息始终核对来源。"""
     base = isolated_preview_base_url()
     target = f"{base}/__preview?{urlencode({**(parameters or {}), 'token': token})}"
     target_origin = isolated_preview_origin()

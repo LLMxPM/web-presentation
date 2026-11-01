@@ -80,7 +80,8 @@ production env 版至少修改：
 | 变量 | 要求 |
 | :--- | :--- |
 | `BACKEND_PUBLIC_BASE_URL` | Backend 对外公开地址，用于生成资源、截图、构建产物和预览入口链接 |
-| `RUNTIME_PUBLIC_BASE_URL` | 独立预览主机名，例如 `https://preview.example.com/runtime`；不得与业务主机名相同 |
+| `RUNTIME_PUBLIC_BASE_URL` | 默认使用独立预览主机名，例如 `https://preview.example.com/runtime` |
+| `PREVIEW_ORIGIN_ISOLATION_ENABLED` | 默认 `true`；受信私有部署可显式关闭以使用同主机名预览和私有构建，用户代码将共享业务权限 |
 | `RUNTIME_SERVER_BASE_PATH` | Runtime Vite 资源挂载路径，应与 `RUNTIME_PUBLIC_BASE_URL` 的 URL path 一致；例如 `/runtime/` 或 `/` |
 | `CORS_ORIGINS` | JSON 数组字符串，应包含浏览器访问平台的公网地址 |
 | `DATABASE_URL` | 已有 PostgreSQL 连接串，数据库和用户需要提前创建 |
@@ -102,7 +103,7 @@ SQLite 轻量单容器版和简化版默认使用 `http://127.0.0.1:8080` 和 `S
 
 ## 公网 URL 配置
 
-平台与预览使用不同主机名，两者均可转发到同一 `platform:80` 或 `gateway:80`。预览域的 `/runtime/` 和 `/build-artifacts/` 必须可达；旧 `/public` 与 `/media` 保持关闭。业务登录 Cookie 不设置父域 Domain，预览域不加入业务 CORS。Backend 在业务域仅返回可信桥接宿主页，用户代码实际运行于预览域 iframe。
+默认 `PREVIEW_ORIGIN_ISOLATION_ENABLED=true`，平台与预览使用不同主机名，两者均可转发到同一 `platform:80` 或 `gateway:80`。预览域的 `/runtime/` 和 `/build-artifacts/` 必须可达；旧 `/public` 与 `/media` 保持关闭。业务登录 Cookie 不设置父域 Domain，预览域不加入业务 CORS。Backend 在业务域仅返回可信桥接宿主页，用户代码实际运行于预览域 iframe。
 
 ```text
 BACKEND_PUBLIC_BASE_URL=https://presentation.example.com
@@ -112,6 +113,8 @@ CORS_ORIGINS=["https://presentation.example.com"]
 ```
 
 为两个主机名配置 DNS 与 TLS 后转发到同一 Gateway。Gateway 会把预览域的 `/runtime/` 转发到 `runtime:7373` 并保留前缀，`/build-artifacts/` 转给 Backend 逐文件鉴权。Runtime Vite 按 `RUNTIME_SERVER_BASE_PATH=/runtime/` 解析资源路径。同一业务主机名仅换端口不能隔离 Cookie，远程同主机名配置将返回 `PREVIEW_ORIGIN_NOT_ISOLATED`。
+
+受信私有部署没有可用域名时，可显式设置 `PREVIEW_ORIGIN_ISOLATION_ENABLED=false`，将 `RUNTIME_PUBLIC_BASE_URL` 改为业务地址加 `/runtime`，并在重建容器或重启 Backend 后使用单 IP 入口。关闭后同源用户代码可携带业务登录权限读写 API；票据、文件鉴权、版本绑定和消息来源校验仍保留，公开服务保持默认隔离。完整示例见[局域网单 IP 访问](../lite/README.md#局域网单-ip-访问无域名)。
 
 如果要把 Backend 或 Runtime 单独暴露成独立域名，可以改成：
 

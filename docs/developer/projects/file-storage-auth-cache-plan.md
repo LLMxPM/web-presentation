@@ -210,7 +210,9 @@ P 属于持有即可使用的短期授权；拿到完整链接的人在有效期
 
 现有 Backend 预览入口检查 P 并绑定版本后，只返回带严格 CSP 的可信桥接宿主页，内部 iframe 加载独立主机名的 Runtime。Runtime 接收查询 P 并验签；Renderer 继续支持受控初始文档请求头，冲突的 header / query 票据拒绝。宿主页与 Editor、Runtime 双向消息都校验精确 origin 和 source；续签更新 iframe 地址，会重新加载预览上下文。
 
-`RUNTIME_PUBLIC_BASE_URL` 必须使用不同于 Backend 和业务 CORS 主机的域名。仅本地回环地址可自动改写为 `preview.localhost`；远程同主机名配置返回 `PREVIEW_ORIGIN_NOT_ISOLATED`。生产为预览域配置 DNS / TLS，并把 `/runtime/` 与 `/build-artifacts/` 路由到现有 Gateway；根路径 Runtime 部署也需保留私有构建代理。业务会话使用 host-only Cookie，不设置父域 Domain，不把预览域加入业务 API 的 CORS 白名单。
+默认 `PREVIEW_ORIGIN_ISOLATION_ENABLED=true`，`RUNTIME_PUBLIC_BASE_URL` 必须使用不同于 Backend 和业务 CORS 主机的域名。仅本地回环地址可自动改写为 `preview.localhost`；远程同主机名配置返回 `PREVIEW_ORIGIN_NOT_ISOLATED`。生产为预览域配置 DNS / TLS，并把 `/runtime/` 与 `/build-artifacts/` 路由到现有 Gateway；根路径 Runtime 部署也需保留私有构建代理。业务会话使用 host-only Cookie，不设置父域 Domain，不把预览域加入业务 API 的 CORS 白名单。
+
+受信私有部署可显式设为 `false` 使用同主机名预览与私有构建，不再执行上述拒绝或回环地址改写；用户代码将共享业务源站权限，不能宣称此模式实现了源站隔离。预览/构建票据、文件鉴权、版本绑定和消息来源检查不受开关影响。完整配置见[局域网单 IP 访问](../../deployment/lite/README.md#局域网单-ip-访问无域名)。
 
 独立 origin 与 host-only Cookie 仍不足以阻止预览脚本主动向 Editor origin 发起带凭证请求。管理 API 的写入必须校验受信 Origin / CSRF，不能仅依赖 SameSite 或 CORS；同站点的不同子域也要验证。受信来源白名单由 `app.api.business_origin.trusted_business_origins()` 统一提供（业务公开基址 ∪ CORS 白名单），全局中间件与 Web 控制台端点级校验共用同一份定义，不额外信任请求自身 Host；部署必须让浏览器访问地址精确命中该白名单，否则写接口（含登录）一律 403。Backend 到 Runtime 的代理头使用允许列表，不透传浏览器的业务 Cookie、Authorization 或客户端自填的服务凭证。
 

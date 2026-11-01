@@ -1,4 +1,4 @@
-"""文件功能：提供隔离预览主机名下按构建票据鉴权的静态产物代理入口。"""
+"""文件功能：按部署预览源站策略和构建票据鉴权提供静态产物代理入口。"""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ async def proxy_project_build_artifact(
     from urllib.parse import urlsplit
     preview_origin = isolated_preview_origin()
     if request.url.hostname != urlsplit(preview_origin).hostname:
-        # 业务源站不能执行用户构建 HTML；有效票据只能跳转至隔离源站。
+        # 有效票据只在配置的预览主机名提供 HTML；默认隔离，可显式选择同主机名部署。
         return RedirectResponse(
             f"{preview_origin}{request.url.path}?token={token}", status_code=307,
             headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},

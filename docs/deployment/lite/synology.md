@@ -35,7 +35,8 @@
      - **极简体验可完全留空！** 平台所有密钥（含 AI 凭据 Fernet 密钥）与内部通信凭证均由系统启动时自动生成并持久化保存在上述数据文件夹中。
      - 若希望直接从局域网内其它设备访问群晖（假设群晖局域网 IP 为 `192.168.1.30`），可按需添加以下 3 个外部入口变量：
        - `BACKEND_PUBLIC_BASE_URL` = `http://192.168.1.30:8080`
-       - `RUNTIME_PUBLIC_BASE_URL` = `http://preview.home.arpa:8080/runtime`（局域网 DNS / hosts 解析到 `192.168.1.30`，预览与业务使用不同主机名）
+       - `RUNTIME_PUBLIC_BASE_URL` = `http://preview.home.arpa:8080/runtime`（默认隔离模式，局域网 DNS / hosts 解析到 `192.168.1.30`）
+       - 无域名的受信私有部署可加 `PREVIEW_ORIGIN_ISOLATION_ENABLED` = `false`，同时将 `RUNTIME_PUBLIC_BASE_URL` 改为 `http://192.168.1.30:8080/runtime`，详见[单 IP 配置](README.md#局域网单-ip-访问无域名)。此时用户代码共享业务源站权限；修改后需重建容器。
        - `CORS_ORIGINS` = `["http://192.168.1.30:8080"]`
 4. 确认配置无误，点击 **“下一步”** 并完成容器创建与启动。
 

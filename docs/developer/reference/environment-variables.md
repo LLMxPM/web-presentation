@@ -38,6 +38,7 @@
 ### 2. Backend 后台变量
 - 对应模块：`backend/`（统一模板：根目录 `.env.example`）。
 - 关键变量：`DATABASE_URL`、`REDIS_URL`、`DEFAULT_ADMIN_*`、`SESSION_*`、`RUNTIME_BASE_URL`、`AI_*` 与本地端口配置。
+- `PREVIEW_ORIGIN_ISOLATION_ENABLED`：默认 `true`，预览与私有构建要求独立主机名；受信私有部署可显式关闭并将 `RUNTIME_PUBLIC_BASE_URL` 配为同地址入口，用户代码将共享业务权限。修改后重启 Backend，详见[单 IP 部署](../../deployment/lite/README.md#局域网单-ip-访问无域名)。
 
 ### 3. Editor 编辑器变量
 - 对应模块：`editor/`（统一模板：根目录 `.env.example`）。

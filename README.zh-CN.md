@@ -89,7 +89,7 @@ docker logs web-presentation
 
 服务启动后访问 `http://127.0.0.1:8080`，使用账号 `admin` 和首次启动日志中的随机密码登录。数据库、上传资源、截图、构建产物及持久化密钥保存在 `web-presentation-lite-data` 数据卷中，升级或迁移时请保留并备份该卷。
 
-局域网或域名访问可使用仓库中的 [Compose 模板](./deploy/compose/compose.sqlite-lite.yml)，将 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL` 和 `CORS_ORIGINS` 改为实际访问地址。Docker Compose、飞牛 fnOS、群晖的详细步骤见官网[快速部署](https://wp.llmxpm.com/docs/user/quick-deployment/)；HTTPS、PostgreSQL/Redis、多实例和运维配置见官网[生产部署指南](https://wp.llmxpm.com/docs/developer/deployment/)。
+局域网或域名访问可使用仓库中的 [Compose 模板](./deploy/compose/compose.sqlite-lite.yml)，将 `BACKEND_PUBLIC_BASE_URL`、`RUNTIME_PUBLIC_BASE_URL` 和 `CORS_ORIGINS` 改为实际访问地址。默认启用预览主机名隔离；受信私有部署可设 `PREVIEW_ORIGIN_ISOLATION_ENABLED=false` 使用[无域名的单 IP 入口](./docs/deployment/lite/README.md#局域网单-ip-访问无域名)，此时用户代码共享业务源站权限。Docker Compose、飞牛 fnOS、群晖的详细步骤见官网[快速部署](https://wp.llmxpm.com/docs/user/quick-deployment/)；HTTPS、PostgreSQL/Redis、多实例和运维配置见官网[生产部署指南](https://wp.llmxpm.com/docs/developer/deployment/)。
 
 ## 文档导航
 
