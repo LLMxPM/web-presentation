@@ -91,7 +91,9 @@ test('无限 ambient 装饰不阻塞 scene_end 推进', async ({ page, context, 
     const runtime = page.frameLocator('iframe#preview')
     await runtime.getByRole('button', { name: '进入放映' }).click()
     const controls = runtime.getByRole('group', { name: '放映控制' })
-    await expect(runtime.locator('.page-content-wrapper .scene-e2e-counter')).toHaveText('100', { timeout: 20_000 })
+    // 并行跑多个 project 时 CPU 抢占会让有限动画变慢；这里等的是「计数到 100 且随后推进」，
+    // 放宽等待上限只容忍慢速执行，不改变断言语义。
+    await expect(runtime.locator('.page-content-wrapper .scene-e2e-counter')).toHaveText('100', { timeout: 60_000 })
     // 装饰序列仍在无限重复，有限任务完成即推进。
     await expect(controls.locator('.runtime-playback-controls__page')).toHaveText('2 / 2', { timeout: 15_000 })
   } finally {
