@@ -236,6 +236,9 @@ jobs:
       (needs.runtime-gate.result == 'success' || needs.runtime-gate.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 受保护媒体 smoke 用例会上传仓库内 LFS 视频素材，缺省 checkout 只能拿到指针文件。
+          lfs: true
       - uses: ./.github/actions/setup-e2e
       - name: 执行分层 E2E
         run: |
