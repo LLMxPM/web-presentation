@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppException
 from app.core.text_normalizer import normalize_text_to_lf
 from app.core.time_utils import format_in_app_timezone, utc_now
+from app.db.tx import acquire_row_write_lock
 from app.models.enums import PageFileType, PageVersionStorageType
 from app.models.page import Page
 from app.models.page_version import PageVersion
@@ -48,6 +49,20 @@ class PageVersionService:
         """为普通保存版本生成年月日加时分秒的展示版号，时间基于业务时区。"""
 
         return format_in_app_timezone(dt, "%Y%m%d-%H%M%S")
+
+    async def lock_page_version_chain(self, page: Page) -> None:
+        """锁定页面版本链并刷新页面基线，确保后续判断不使用加锁前的过期状态。
+
+        新版本保存会改写旧最新版本的存储形态，重点快照标记会改写同一行的存储形态、
+        展示版号与名称。页面行是二者共同的串行化锚点；获得锁后必须重新加载页面，
+        否则并发事务仍会按旧源码、旧备注或旧版本号构造写入。具体加锁方式交由
+        `app.db.tx` 统一处理，业务代码不判断数据库方言。
+        """
+
+        if page.id is None:
+            return
+        await acquire_row_write_lock(self.session, Page, page.id)
+        await self.session.refresh(page)
 
     async def initialize_page_version(self, page: Page, operator_id: int, change_note: str | None = "初始版本") -> PageVersion:
         """为新页面创建第一个完整快照版本。"""
@@ -97,6 +112,7 @@ class PageVersionService:
     ) -> PageVersion | None:
         """保存页面新版本，并将旧最新版本降级为向后 diff 或保留为重点快照。"""
 
+        await self.lock_page_version_chain(page)
         normalized_page_content = normalize_text_to_lf(page_content)
         normalized_existing_content = normalize_text_to_lf(page.page_content)
         normalized_existing_speaker_notes = (
@@ -111,7 +127,6 @@ class PageVersionService:
         normalized_file_type = file_type.value
         self._ensure_model_view_options_valid(normalized_page_content)
         self._ensure_audio_options_valid(normalized_page_content)
-        latest_version = await self.repository.get_latest_by_page_id(page.id)
         if (
             normalized_existing_content == normalized_page_content
             and page.file_type == normalized_file_type
@@ -119,6 +134,7 @@ class PageVersionService:
         ):
             return None
 
+        latest_version = await self.repository.get_latest_by_page_id(page.id)
         if latest_version is None:
             latest_version = await self.initialize_page_version(page, operator_id)
 
@@ -261,6 +277,7 @@ class PageVersionService:
     ) -> PageVersionContent:
         """将指定版本提升为重点快照，必要时把 diff 物化为完整内容。"""
 
+        await self.lock_page_version_chain(page)
         versions = await self.repository.list_by_page_id(page.id, descending=True)
         materialized = self._materialize_contents(versions)
         target = next((item for item in versions if item.version_no == version_no), None)

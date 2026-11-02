@@ -271,6 +271,8 @@ class PageService:
 
         page_model = await self._get_page_or_raise(page_id)
         await self._ensure_page_access(page_model, user_id=operator_id)
+        # 部分字段未传时会继承当前页面值，必须在锁内刷新后再派生，避免并发更新被旧基线覆盖。
+        await self.version_service.lock_page_version_chain(page_model)
 
         next_page_content = (
             normalize_text_to_lf(payload.page_content)
