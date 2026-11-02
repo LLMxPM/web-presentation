@@ -244,9 +244,33 @@ class ProjectArtifactBuilder:
             asset_metadata=asset_metadata,
             modules_metadata=modules_metadata,
             modules_data=modules_data,
-            entry_page=({"code": standalone_entry_page.code, "title": standalone_entry_page.title,
-                         "speaker_notes": standalone_entry_page.speaker_notes} if standalone_entry_page else None),
+            entry_page=self._build_entry_page_payload(
+                standalone_entry_page,
+                page_module_overrides or {},
+            ),
         )
+
+    @classmethod
+    def _build_entry_page_payload(
+        cls,
+        standalone_entry_page: Page | None,
+        page_module_overrides: dict[str, ProjectPageModuleOverride],
+    ) -> dict[str, object] | None:
+        """构建单页面入口元数据；历史版本预览时用 override 的备注替换当前页面备注。"""
+
+        if standalone_entry_page is None:
+            return None
+        speaker_notes = standalone_entry_page.speaker_notes
+        override = (page_module_overrides or {}).get(
+            f"src/views/{standalone_entry_page.code}.{standalone_entry_page.file_type}"
+        )
+        if override is not None and override.override_speaker_notes:
+            speaker_notes = override.speaker_notes
+        return {
+            "code": standalone_entry_page.code,
+            "title": standalone_entry_page.title,
+            "speaker_notes": speaker_notes,
+        }
 
     async def collect_project_build_asset_reference_summary(
         self,

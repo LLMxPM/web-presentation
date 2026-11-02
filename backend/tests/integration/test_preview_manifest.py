@@ -293,6 +293,84 @@ async def test_page_version_preview_artifact_should_use_historical_page_content(
     assert config_bundle_response.json()["routes"]["routes"][0]["meta"]["speakerNotes"] == "历史版本 V1 备注"
 
 
+async def test_page_version_preview_should_use_version_file_type_when_type_changed(
+    authenticated_client: AsyncClient,
+    runtime_service_headers,
+) -> None:
+    """历史版本文件类型与当前版本不同时，入口、模块内容与备注都按目标版本类型构建。"""
+
+    workspace_response = await authenticated_client.post(
+        "/api/workspaces",
+        json={"name": "跨类型历史预览空间", "status": "active"},
+    )
+    assert workspace_response.status_code == 200
+    workspace_id = workspace_response.json()["id"]
+
+    project_response = await authenticated_client.post(
+        "/api/projects",
+        json={"workspace_id": workspace_id, "name": "跨类型历史预览项目", "status": "active"},
+    )
+    assert project_response.status_code == 200
+    project_id = project_response.json()["id"]
+
+    page_response = await authenticated_client.post(
+        "/api/pages",
+        json={
+            "page_content": "<template><div>历史 Vue 版本</div></template>",
+            "file_type": "vue",
+            "title": "跨类型历史页面",
+            "speaker_notes": "历史 Vue 备注",
+            "status": "active",
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+        },
+    )
+    assert page_response.status_code == 200
+    page = page_response.json()
+
+    update_response = await authenticated_client.patch(
+        f"/api/pages/{page['id']}",
+        json={
+            "page_content": "export default { name: 'CurrentTsPage' }",
+            "file_type": "ts",
+            "speaker_notes": "当前 TS 备注",
+            "change_note": "切换到 TS",
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+
+    preview_response = await authenticated_client.post(
+        f"/api/pages/{page['id']}/versions/1/preview-artifact",
+    )
+    assert preview_response.status_code == 200, preview_response.text
+    preview_data = preview_response.json()
+    artifact_id = preview_data["artifact_id"]
+    version_module_path = f"src/views/{page['code']}.vue"
+
+    assert preview_data["preview_kind"] == "page"
+    assert preview_data["entry_descriptor"] == {
+        "entry_type": "module",
+        "module_path": version_module_path,
+    }
+
+    manifest_response = await authenticated_client.get(
+        f"/internal/runtime/preview-artifacts/{artifact_id}/manifest",
+        headers=runtime_service_headers(artifact_id),
+    )
+    assert manifest_response.status_code == 200
+    manifest = manifest_response.json()
+    assert manifest["entry_descriptor"]["module_path"] == version_module_path
+    assert manifest["entry_page"]["speaker_notes"] == "历史 Vue 备注"
+
+    module_response = await authenticated_client.get(
+        f"/internal/runtime/preview-artifacts/{artifact_id}/modules",
+        params={"path": version_module_path},
+        headers=runtime_service_headers(artifact_id),
+    )
+    assert module_response.status_code == 200, module_response.text
+    assert module_response.text == "<template><div>历史 Vue 版本</div></template>"
+
+
 async def test_asset_upload_should_generate_default_name_and_support_manual_override(
     authenticated_client: AsyncClient,
 ) -> None:

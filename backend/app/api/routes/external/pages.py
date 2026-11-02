@@ -1,4 +1,4 @@
-"""文件功能：提供 External API v1 页面管理接口（列表、详情、源码、版本历史、版本恢复、归档与批量归档）。"""
+"""文件功能：提供 External API v1 页面管理接口（列表、详情、源码、版本历史、重点快照、归档与批量归档）。"""
 
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ from app.schemas.page import (
     PageCurrentModuleDependencies,
     PageItem,
     PageListQuery,
+    PageSnapshotCreateRequest,
     PageVersionContent,
     PageVersionListItem,
 )
@@ -504,6 +505,39 @@ async def get_page_version(
     page = await PageService(session).get(page_id, user_id=auth.user.id)
     await auth.ensure_workspace_access(page.workspace_id, session)
     return await PageService(session).get_version_content(page_id, version_no, user_id=auth.user.id)
+
+
+@router.post("/pages/{page_id}/versions/{version_no}/snapshot", response_model=PageVersionContent)
+async def create_page_version_snapshot(
+    request: Request,
+    page_id: int,
+    version_no: int,
+    payload: PageSnapshotCreateRequest,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.version.snapshot"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> PageVersionContent:
+    """把指定版本标记为重点快照；同版本重复提交只重命名，不新增版本节点。"""
+
+    page = await PageService(session).get_model(page_id, user_id=auth.user.id)
+    await auth.ensure_workspace_access(page.workspace_id, session)
+    fingerprint = IdempotencyService.calculate_request_fingerprint(
+        http_method="POST", path=request.url.path, json_data=payload.model_dump(mode="json")
+    )
+
+    async def _operation(record_id: int | None) -> tuple[int, PageVersionContent]:
+        snapshot = await PageService(session).create_snapshot(page_id, version_no, payload, commit=False)
+        return 200, snapshot
+
+    _, result = await IdempotencyService(session).execute_idempotent_operation(
+        user_id=auth.user.id,
+        workspace_id=page.workspace_id,
+        idempotency_key=idempotency_key,
+        operation="page.version.snapshot",
+        fingerprint=fingerprint,
+        operation_func=_operation,
+    )
+    return result if isinstance(result, PageVersionContent) else PageVersionContent.model_validate(result)
 
 
 @router.post("/pages/{page_id}/archive")

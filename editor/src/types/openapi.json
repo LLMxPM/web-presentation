@@ -4907,6 +4907,127 @@
         }
       }
     },
+    "/api/v1/pages/{page_id}/versions/{version_no}/snapshot": {
+      "post": {
+        "tags": [
+          "External Pages"
+        ],
+        "summary": "Create Page Version Snapshot",
+        "description": "把指定版本标记为重点快照；同版本重复提交只重命名，不新增版本节点。",
+        "operationId": "create_page_version_snapshot_api_v1_pages__page_id__versions__version_no__snapshot_post",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "version_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version No"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Workspace-Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageSnapshotCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageVersionContent"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "workspace_header_required": false,
+          "idempotency_key_required": true,
+          "key": "page.version.snapshot",
+          "required_scopes": [
+            "page:write"
+          ],
+          "scope_mode": "all",
+          "public": false
+        }
+      }
+    },
     "/api/v1/pages/{page_id}/archive": {
       "post": {
         "tags": [
@@ -5432,6 +5553,118 @@
           "workspace_header_required": false,
           "idempotency_key_required": false,
           "key": "page.preview",
+          "required_scopes": [
+            "page:read",
+            "preview:run"
+          ],
+          "scope_mode": "all",
+          "public": false
+        }
+      }
+    },
+    "/api/v1/pages/{page_id}/versions/{version_no}/preview-artifact": {
+      "post": {
+        "tags": [
+          "External Preview"
+        ],
+        "summary": "Create Page Version Preview Artifact",
+        "description": "创建指定历史版本的短期预览 artifact；不修改当前页面与默认截图指针。",
+        "operationId": "create_page_version_preview_artifact_api_v1_pages__page_id__versions__version_no__preview_artifact_post",
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Id"
+            }
+          },
+          {
+            "name": "version_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version No"
+            }
+          },
+          {
+            "name": "X-Workspace-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Workspace-Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewArtifactResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-wp-operation": {
+          "version": 1,
+          "workspace_header_required": false,
+          "idempotency_key_required": false,
+          "key": "page.version.preview",
           "required_scopes": [
             "page:read",
             "preview:run"

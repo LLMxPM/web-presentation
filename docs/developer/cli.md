@@ -86,6 +86,10 @@ POST /api/v1/pages
 POST /api/v1/pages/{page_id}/copy
 POST /api/v1/pages/{page_id}/edits
 GET  /api/v1/pages/{page_id}/dependencies
+GET  /api/v1/pages/{page_id}/versions
+GET  /api/v1/pages/{page_id}/versions/{version_no}
+POST /api/v1/pages/{page_id}/versions/{version_no}/snapshot
+POST /api/v1/pages/{page_id}/versions/{version_no}/preview-artifact
 POST /api/v1/components/{component_id}/edits
 GET  /api/v1/components/{component_id}/dependencies
 POST /api/v1/assets/content

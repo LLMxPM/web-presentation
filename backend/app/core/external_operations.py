@@ -213,6 +213,21 @@ OPERATION_REGISTRY: dict[str, ExternalOperationSpec] = {
     "page.validate": ExternalOperationSpec(
         "page.validate", ("page:read",), description="校验页面当前或候选源码",
     ),
+    "page.version.snapshot": ExternalOperationSpec(
+        "page.version.snapshot",
+        ("page:write",),
+        requires_idempotency_key=True,
+        description="将页面版本标记为重点快照或重命名已有重点快照",
+        http_method="POST",
+        path_template="/pages/{page_id}/versions/{version_no}/snapshot",
+    ),
+    "page.version.preview": ExternalOperationSpec(
+        "page.version.preview",
+        ("page:read", "preview:run"),
+        description="基于页面历史版本创建短期预览地址",
+        http_method="POST",
+        path_template="/pages/{page_id}/versions/{version_no}/preview-artifact",
+    ),
 
 
     # Component
@@ -432,6 +447,8 @@ _OPERATION_HTTP_CONTRACTS: dict[str, tuple[str, str]] = {
     "page.edit": ("POST", "/pages/{page_id}/edits"),
     "page.dependencies": ("GET", "/pages/{page_id}/dependencies"),
     "page.validate": ("POST", "/pages/{page_id}/validate"),
+    "page.version.snapshot": ("POST", "/pages/{page_id}/versions/{version_no}/snapshot"),
+    "page.version.preview": ("POST", "/pages/{page_id}/versions/{version_no}/preview-artifact"),
     "page.archive": ("POST", "/pages/{page_id}/archive"),
     "page.screenshot.latest": ("GET", "/pages/{page_id}/screenshot"),
     "page.screenshot.content": ("GET", "/pages/{page_id}/screenshots/{screenshot_id}/content"),

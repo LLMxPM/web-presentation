@@ -1,4 +1,4 @@
-"""文件功能：提供 External API v1 项目与页面预览地址接口，并复用统一 PreviewService。"""
+"""文件功能：提供 External API v1 项目、页面与页面历史版本预览地址接口，并复用统一 PreviewService。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app.core.exceptions import AppException
 from app.db.session import get_db_session
 from app.schemas.external_api import ExternalPreviewArtifactCreateRequest
 from app.schemas.release import PreviewArtifactResponse, PreviewEntryDescriptor
+from app.services.page_preview_service import PagePreviewService
 from app.services.page_service import PageService
 from app.services.preview_service import PreviewService
 from app.services.project_service import ProjectService
@@ -92,4 +93,34 @@ async def create_page_preview_artifact(
         project_id=page.project_id,
         workspace_id=page.workspace_id,
         entry_descriptor=entry_descriptor,
+    )
+
+
+@router.post(
+    "/pages/{page_id}/versions/{version_no}/preview-artifact",
+    response_model=PreviewArtifactResponse,
+    response_model_exclude_none=True,
+)
+async def create_page_version_preview_artifact(
+    page_id: int,
+    version_no: int,
+    auth: Annotated[ExternalAuthContext, Depends(require_external_operation("page.version.preview"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PreviewArtifactResponse:
+    """创建指定历史版本的短期预览 artifact；不修改当前页面与默认截图指针。"""
+
+    page = await PageService(session).get_model(page_id, user_id=auth.user.id)
+    # 先完成页面所属工作空间授权，再判断项目绑定，避免未授权 PAT 通过 409/403 差异探测对象状态。
+    if page.workspace_id is not None:
+        await auth.ensure_workspace_access(page.workspace_id, session)
+    if page.project_id is None or page.workspace_id is None:
+        raise AppException(
+            status_code=409,
+            code="PAGE_PROJECT_REQUIRED",
+            detail="页面必须归属于项目后才能创建预览地址。",
+        )
+    return await PagePreviewService(session).create_page_version_preview_artifact(
+        page=page,
+        version_no=version_no,
+        user_id=auth.user.id,
     )

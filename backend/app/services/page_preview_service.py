@@ -93,14 +93,31 @@ class PagePreviewService:
             raise AppException(status_code=404, code="PAGE_VERSION_NOT_FOUND", detail="页面版本不存在。")
 
         version_content = await self.page_version_service.get_version_content(page, version_no)
-        module_path = self._build_page_module_path(page)
+        # 历史版本的入口路径与内容都按目标版本的文件类型构建；页面当前类型可能在版本间发生变化。
+        module_path = f"src/views/{page.code}.{version_content.file_type.value}"
         tenant_id = f"tenant_{user_id}"
+        # 以未落库的临时页面承载目标版本的文件类型与备注，保证入口解析和 entry_page 元数据不被当前版本覆盖。
+        transient_history_page = Page(
+            code=page.code,
+            page_content=version_content.resolved_content,
+            current_version_no=page.current_version_no,
+            file_type=version_content.file_type.value,
+            title=page.title,
+            summary=page.summary,
+            speaker_notes=version_content.speaker_notes,
+            status=page.status,
+            workspace_id=page.workspace_id,
+            project_id=page.project_id,
+            created_by=page.created_by,
+            updated_by=page.updated_by,
+        )
 
         return await self.preview_service.create_preview_artifact(
             project_id=page.project_id,
             entry_descriptor=PreviewEntryDescriptor(entry_type="module", module_path=module_path),
             tenant_id=tenant_id,
             asset_delivery_mode="public",
+            transient_pages=[transient_history_page],
             page_module_overrides={
                 module_path: ProjectPageModuleOverride(
                     content=version_content.resolved_content,

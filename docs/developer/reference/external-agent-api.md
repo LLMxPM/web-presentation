@@ -151,6 +151,10 @@ POST     /api/v1/pages
 POST     /api/v1/pages/{page_id}/copy
 POST     /api/v1/pages/{page_id}/edits
 GET      /api/v1/pages/{page_id}/dependencies
+GET      /api/v1/pages/{page_id}/versions
+GET      /api/v1/pages/{page_id}/versions/{version_no}
+POST     /api/v1/pages/{page_id}/versions/{version_no}/snapshot
+POST     /api/v1/pages/{page_id}/versions/{version_no}/preview-artifact
 GET      /api/v1/components/{component_id}/dependencies
 POST     /api/v1/components/{component_id}/edits
 POST     /api/v1/assets/content
@@ -302,7 +306,7 @@ GET  /api/v1/pages/{page_id}/screenshot-jobs/{job_id}/content
 - 内容接口仅在任务成功后返回 PNG，未成功返回 409 `PAGE_SCREENSHOT_JOB_NOT_READY`，不回退默认最新截图。响应携带 `X-Page-ID`、`X-Page-Version-No` 与 `X-Screenshot-Id`。
 - 静态图片不证明声音已播放或动画已在用户设备上验证；播放效果需真实预览或放映观察。
 
-### 5.4 幂等和归档
+### 5.5 幂等和归档
 
 - 所有会改变业务数据或创建、取消、人工重试任务的请求必须遵守 operation 注册表中的 `Idempotency-Key` 要求。相同 key、operation 和请求指纹重放首次响应；不同请求复用 key 返回 409；首个请求仍在执行时返回 409、`Retry-After` 和可重试标记。
 - 校验等纯只读请求不应伪造写入幂等语义。
@@ -311,6 +315,29 @@ GET  /api/v1/pages/{page_id}/screenshot-jobs/{job_id}/content
 - 页面与项目归档统一写入 `status=archived`，不设置 `deleted_at`；单项与批量接口采用相同语义，归档对象仍可在 Editor 归档列表查询和恢复。
 - 页面归档清理其路由绑定及因此产生的空分组，保留源码和版本；项目归档不级联归档或删除页面、路由及工作空间共享资产。
 - 归档后的对象退出默认查询和操作边界；首版不提供 Restore operation。
+
+### 5.6 页面版本历史与重点快照
+
+同一页面的历史版本共用一套读取视图，导出、比较与预览都必须取服务端还原后的完整内容：
+
+```text
+GET  /api/v1/pages/{page_id}/versions
+GET  /api/v1/pages/{page_id}/versions/{version_no}
+POST /api/v1/pages/{page_id}/versions/{version_no}/snapshot
+POST /api/v1/pages/{page_id}/versions/{version_no}/preview-artifact
+```
+
+- 前两条继续使用 `page.get` / `page:read`，返回 `list[PageVersionListItem]` 与 `PageVersionContent`，契约与字段保持不变。
+- `POST .../snapshot`（operation `page.version.snapshot`，scope `page:write`）把已有版本标记为重点快照，请求体为 `{"snapshot_name": "内容确认版"}`，响应 `PageVersionContent`（HTTP 200）。必须携带非空 `Idempotency-Key`。
+- `POST .../preview-artifact`（operation `page.version.preview`，scope `page:read` + `preview:run`）基于目标版本源码、备注和依赖索引创建短期预览 artifact，无业务请求字段，响应统一 `PreviewArtifactResponse`（含 `expires_at`）。该调用沿用派生 artifact 的非幂等语义。
+- `content` 在普通历史节点上是供历史查看的差异文本；导出、比较与预览必须使用 `resolved_content`，客户端不得自行解析存储 patch。
+- 版本身份只用 `page_id` 与正整数 `version_no`：`version_label` 会因标记为重点快照而改变，`snapshot_name` 不唯一。
+- 重点快照是对已有版本的标记与完整内容物化：不新增版本、不切换当前版本、不改源码与演讲备注、不触发编译或截图。同版本重复提交保持同一版本节点与既有展示版号，只允许重命名；名称可空（沿用内部 DTO），CLI 侧要求非空且不超过 128 字符。
+- 幂等指纹覆盖目标路径与名称：同键同载荷重放首次结果；同键异载荷返回 409 `IDEMPOTENCY_KEY_REUSE_WITH_DIFFERENT_PAYLOAD`；旧键重放只返回当时结果，不会撤销之后用其它键完成的重命名。
+- 与页面新版本保存并发时，两条写路径共用页面行作为串行化锚点（`app.db.tx.acquire_row_write_lock`），不允许丢失重点标记、重复分配展示版号或破坏反向差异链。
+- 历史预览使用目标版本的源码、备注和依赖索引，不更改当前页面与默认截图指针。项目配置、主题、字体、资源身份与 Runtime 执行环境沿用现有预览规则，因此不能描述为“完整还原当时环境”。
+- 历史预览边界：页面未关联项目返回 409 `PAGE_PROJECT_REQUIRED`；授权页面内版本不存在返回 404 `PAGE_VERSION_NOT_FOUND`；依赖不可用或 Runtime 无法处理历史源码时明确失败，不回退当前页面源码或其他版本。
+- 本轮不新增历史恢复 operation；沿用“读取历史内容 → 基于当前版本提交编辑”的既有流程。
 
 ## 6. 错误和状态
 
