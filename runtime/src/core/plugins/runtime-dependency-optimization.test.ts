@@ -8,8 +8,16 @@ import { createServer, type ViteDevServer } from 'vite'
 import { runtimeDependencyOptimization } from './runtime-dependency-optimization'
 import runtimeVersionGuard from './runtime-version-guard'
 import { withRuntimeVersionBase } from './runtime-version-identity'
+import { MATHJAX_SVG_DYNAMIC_FONT_MODULES } from '../../runtime-kit/internal/renderers/mathjax-font-modules'
 
 describe('Runtime 显式依赖优化', () => {
+  it('MathJax 动态字体模块必须全部进入预打包名单', () => {
+    const include = (runtimeDependencyOptimization().include ?? []) as string[]
+    const missing = MATHJAX_SVG_DYNAMIC_FONT_MODULES.filter(id => !include.includes(id))
+
+    expect(missing).toEqual([])
+  })
+
   it('两个全新优化器的 Vue URL 相同且无需关闭 Vite 的陈旧依赖校验', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wp-cold-deps-'))
     const cache = join(root, '.cache')

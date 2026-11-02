@@ -12,6 +12,8 @@ import '@mathjax/src/js/input/tex/ams/AmsConfiguration.js'
 import '@mathjax/src/js/input/tex/configmacros/ConfigMacrosConfiguration.js'
 import '@mathjax/src/js/input/tex/noundefined/NoUndefinedConfiguration.js'
 
+import type { MathjaxSvgDynamicFontModule } from './mathjax-font-modules'
+
 export type MathStrictMode = boolean | 'ignore' | 'warn' | 'error'
 
 const BLOCK_ENVIRONMENT_RE = /^\\begin\{(?:equation|equation\*|align|align\*|gather|gather\*|multline|multline\*)\}/
@@ -45,7 +47,15 @@ export interface RenderLatexOptions {
   trust?: boolean
 }
 
-const svgFontLoaders: Record<string, () => Promise<unknown>> = {
+/**
+ * MathJax NewCM 动态字体加载器表。
+ *
+ * 键与值都必须保持字面量：Vite/Rollup 只能对静态可分析的 `import()` 拆分字体 chunk。键集合由
+ * `MATHJAX_SVG_DYNAMIC_FONT_MODULES` 经 `satisfies` 精确约束，且该清单同时进入 Vite 预打包
+ * 名单——字体模块一旦落到预打包边界之外，会重新实例化字体基类，动态字形就注册不到真正的
+ * OutputJax 实例上。
+ */
+export const svgFontLoaders = {
   '@mathjax/mathjax-newcm-font/js/svg/dynamic/accents-b-i.js': () => import('@mathjax/mathjax-newcm-font/js/svg/dynamic/accents-b-i.js'),
   '@mathjax/mathjax-newcm-font/js/svg/dynamic/accents.js': () => import('@mathjax/mathjax-newcm-font/js/svg/dynamic/accents.js'),
   '@mathjax/mathjax-newcm-font/js/svg/dynamic/arabic.js': () => import('@mathjax/mathjax-newcm-font/js/svg/dynamic/arabic.js'),
@@ -86,10 +96,20 @@ const svgFontLoaders: Record<string, () => Promise<unknown>> = {
   '@mathjax/mathjax-newcm-font/js/svg/dynamic/symbols-b-i.js': () => import('@mathjax/mathjax-newcm-font/js/svg/dynamic/symbols-b-i.js'),
   '@mathjax/mathjax-newcm-font/js/svg/dynamic/symbols.js': () => import('@mathjax/mathjax-newcm-font/js/svg/dynamic/symbols.js'),
   '@mathjax/mathjax-newcm-font/js/svg/dynamic/variants.js': () => import('@mathjax/mathjax-newcm-font/js/svg/dynamic/variants.js'),
+} satisfies Record<MathjaxSvgDynamicFontModule, () => Promise<unknown>>
+
+/**
+ * 按字体模块标识查表。
+ *
+ * @param file MathJax 传入的动态字体文件标识
+ * @returns 已登记的加载器；未登记时返回 undefined
+ */
+function resolveFontLoader(file: string): (() => Promise<unknown>) | undefined {
+  return (svgFontLoaders as Record<string, () => Promise<unknown>>)[file]
 }
 
 mathjax.asyncLoad = (file: string) => {
-  const loader = svgFontLoaders[file]
+  const loader = resolveFontLoader(file)
   if (!loader) {
     return Promise.reject(new Error(`未注册 MathJax 动态字体文件：${file}`))
   }
