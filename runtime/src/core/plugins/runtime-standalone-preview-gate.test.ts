@@ -91,7 +91,6 @@ describe('runtime standalone preview gate', () => {
       '/node_modules/vue/dist/vue.runtime.esm-bundler.js',
       '/config/routes.config.yaml',
       '/img/logo/runtime_icon.svg',
-      '/fonts/Monaco.woff2',
     ]
 
     for (const url of allowedUrls) {

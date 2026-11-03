@@ -240,7 +240,7 @@ function formatElapsedTime(elapsedMs: number): string {
 
 .presenter-timer-panel__value {
   color: #0f172a;
-  font-family: Monaco, 'Source Code Pro', monospace;
+  font-family: 'Web Presentation Mono', 'SourceCodePro', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 1.0625rem;
   font-weight: 800;
   line-height: 1.1;

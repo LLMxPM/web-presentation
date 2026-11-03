@@ -168,4 +168,7 @@ Backend 触发整项目构建时，Runtime 会使用专用的 `build-release-mai
 
 ## 许可证
 
-本项目遵循 `AGPL-3.0-or-later` 许可协议。
+本项目遵循 `AGPL-3.0-or-later` 许可协议，见 [LICENSE](./LICENSE)。
+
+内置字体（思源黑体、思源宋体、Source Code Pro）以 `OFL-1.1` 授权，许可证全文与版权声明见
+[public/fonts/OFL.txt](./public/fonts/OFL.txt)；该文件随构建产物一同分发，不得在打包时剔除。
