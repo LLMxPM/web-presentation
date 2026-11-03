@@ -18,6 +18,10 @@ runs:
     - uses: astral-sh/setup-uv@v6
       with:
         version: ${{ inputs.uv-version }}
+        # 关闭 post 阶段的 `uv cache prune --ci`：E2E 会用 `uv run uvicorn` 拉起 Backend/Renderer 并保留到作业结束，
+        # prune 需要独占缓存锁，会与常驻进程抢锁直到 300s 超时而让整个 e2e-smoke 作业判失败。
+        # 缓存本身照常保存与恢复，只是不再在作业末尾裁剪。
+        prune-cache: false
 
     - uses: pnpm/action-setup@v4
       with:
