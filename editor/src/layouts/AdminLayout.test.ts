@@ -156,17 +156,15 @@ describe('AdminLayout', () => {
     expect(screen.getByTestId('admin-layout-restricted-notice').textContent).toContain('至少 960px')
   })
 
-  it('应在后台框架底栏展示仓库、许可证与 Runtime 子模块信息', () => {
+  it('应在顶栏展示 GitHub 仓库入口，并移除底栏开源披露', () => {
     renderLayout()
 
-    const projectLink = screen.getByRole('link', { name: 'Web-Presentation' })
-    const runtimeLink = screen.getByRole('link', { name: 'web-runtime-vue' })
-    expect(screen.getByText('Apache License 2.0')).toBeTruthy()
-    expect(screen.getByText('runtime')).toBeTruthy()
-    expect(screen.getByText('submodule')).toBeTruthy()
-    expect(screen.getByText('AGPL-3.0-or-later')).toBeTruthy()
-    expect(projectLink).toHaveAttribute('href', 'https://github.com/LLMxPM/web-presentation')
-    expect(runtimeLink).toHaveAttribute('href', 'https://github.com/LLMxPM/web-runtime-vue')
+    const repoLink = screen.getByRole('link', { name: '在 GitHub 上查看源代码' })
+    expect(repoLink).toHaveAttribute('href', 'https://github.com/LLMxPM/web-presentation')
+    expect(repoLink).toHaveAttribute('target', '_blank')
+    // 底栏已移除，过期的 runtime 子模块表述不得回流。
+    expect(screen.queryByText('submodule')).toBeNull()
+    expect(screen.queryByText('Apache License 2.0')).toBeNull()
   })
 
   it('点击 Dock 完整页面入口应切换主路由', async () => {

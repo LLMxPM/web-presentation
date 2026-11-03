@@ -19,7 +19,9 @@
       class="outline-none"
       :class="contentClass"
     >
-      <slot :name="item.value" />
+      <slot :name="item.value">
+        <slot name="panel" :item="item" />
+      </slot>
     </TabsContent>
   </TabsRoot>
 </template>

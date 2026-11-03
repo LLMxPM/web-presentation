@@ -75,6 +75,7 @@
         </div>
 
         <div class="admin-layout-user-menu flex shrink-0 items-center justify-end gap-2">
+          <GithubRepoLink />
           <ThemeModeMenu />
           <UserMenu />
         </div>
@@ -111,8 +112,6 @@
           @navigate="handleDockNavigate"
         />
       </div>
-
-      <OpenSourceFooter />
     </div>
 
     <LibraryDrawerHost :workspace-id="workspaceId" />
@@ -131,12 +130,12 @@ import { ArrowLeft, ChevronRight } from '@lucide/vue'
 import { getPage, getProject, getWorkspace } from '@/api/catalog'
 import UserMenu from '@/components/nav/UserMenu.vue'
 import ThemeModeMenu from '@/components/nav/ThemeModeMenu.vue'
+import GithubRepoLink from '@/components/nav/GithubRepoLink.vue'
 import WorkspaceSwitcher from '@/components/nav/WorkspaceSwitcher.vue'
 import ProjectQuickSwitcher from '@/components/nav/ProjectQuickSwitcher.vue'
 import WorkspaceDock from '@/components/nav/WorkspaceDock.vue'
 import AgentGlobalSidebar from '@/components/agent/AgentGlobalSidebar.vue'
 import AgentFloatingTrigger from '@/components/agent/AgentFloatingTrigger.vue'
-import OpenSourceFooter from '@/components/layout/OpenSourceFooter.vue'
 import LibraryDrawerHost from '@/components/project/LibraryDrawerHost.vue'
 import { UiButton } from '@/components/ui'
 import { agentSidebarExpandedKey } from '@/composables/agent-sidebar-state'

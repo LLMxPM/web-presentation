@@ -17,19 +17,21 @@
         </div>
       </template>
     </UiDropdownMenu>
+    <OpenSourceInfoDialog v-model:open="openSourceDialogOpen" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown, LogOut, Settings } from '@lucide/vue'
+import { ChevronDown, Info, LogOut, Settings } from '@lucide/vue'
 
 import { useAuthStore } from '@/stores/auth'
 import { Message } from '@/utils/message'
 import { resolveGlobalReturnPath } from '@/utils/global-page-navigation'
 import { UiDropdownMenu } from '@/components/ui'
 import type { DropdownMenuEntry } from '@/components/ui'
+import OpenSourceInfoDialog from './OpenSourceInfoDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -37,12 +39,15 @@ const authStore = useAuthStore()
 
 const user = computed(() => authStore.user)
 const initials = computed(() => user.value?.display_name?.charAt(0)?.toUpperCase() || 'A')
+/** 控制"开源与许可"说明弹窗的可见性。 */
+const openSourceDialogOpen = ref(false)
 
 /**
  * 用户下拉菜单项列表，收敛为统一的设置与管理入口及登出操作。
  */
 const menuItems = computed<DropdownMenuEntry[]>(() => [
   { label: '设置与管理', value: 'settings', icon: Settings },
+  { label: '开源与许可', value: 'open-source', icon: Info },
   { separator: true },
   { label: '退出登录', value: 'logout', icon: LogOut, danger: true },
 ])
@@ -59,6 +64,8 @@ async function handleCommand(command: string) {
   } else if (command === 'settings') {
     const returnTo = resolveGlobalReturnPath(route.fullPath)
     void router.push(returnTo ? { path: '/settings', query: { returnTo } } : { path: '/settings' })
+  } else if (command === 'open-source') {
+    openSourceDialogOpen.value = true
   }
 }
 </script>
