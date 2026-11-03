@@ -223,7 +223,11 @@ jobs:
       - run: pnpm run test:contracts:docker-context
 
   e2e-smoke:
-    runs-on: ubuntu-latest
+    # 固定 Ubuntu 24 镜像：GitHub 自 2026-10-19 起把 ubuntu-latest 迁到 Ubuntu 26，而锁定版本
+    # @playwright/test 1.60.0 的浏览器注册表还不认识 ubuntu26.04，setup-e2e 的
+    # `playwright install chromium` 会以 "Playwright does not support chromium on ubuntu26.04-x64" 失败。
+    # 后续把 Playwright 升到已支持 ubuntu26.04 的版本（playwright-core 1.64.1 起）后可回退 ubuntu-latest。
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     # E2E 独立安装依赖并启动整套服务，不消费其它测试 job 的产物；全部 job 仍共同决定 quality 结果。
     if: inputs.full
