@@ -37,10 +37,7 @@ from app.services.component_validation_profile import (
 )
 from app.services.font_normalization import collect_declared_font_asset_names, normalize_font_asset_names
 from app.services.model3d_acceptance_policy import build_model3d_support_matrix
-from app.services.page_render_identity import (
-    project_route_catalog,
-    routes_need_screenshot_identity,
-)
+from app.services.page_render_identity import routes_need_screenshot_identity
 from app.services.page_screenshot_fingerprint_service import (
     PageScreenshotFingerprintService,
 )
@@ -78,30 +75,28 @@ class PageFingerprint:
 
 @dataclass(frozen=True, slots=True)
 class ProjectRenderIdentity:
-    """项目级渲染身份快照：同一项目内所有页面共用，避免逐页重复解析路由与配置。
+    """项目级渲染身份快照：同一项目内所有页面共用，避免逐页重复查询。
 
     只覆盖「页面在静态截图里真正能读到」的项目级输入：
     - ``app_title``：项目名会被写成 ``document.title``，页面无需任何导入即可读取；
-    - ``route_catalog``：页码目录投影，仅在页面闭包可读路由上下文时进入身份；
     - ``renderer_profile`` / ``capture_policy``：捕获环境与策略版本。
+
+    路由目录不在此列：页码由 Runtime 在捕获时按 artifact 路由配置单点解析，Backend 不再
+    复算第二套，重排/增删/隐藏路由都不会使已有截图过期。
     """
 
     app_title: str
-    route_catalog: dict[str, object] | None
     renderer_profile: str
     capture_policy: str
 
-    def build_render_context(self, *, reads_route_context: bool) -> dict[str, object]:
-        """按页面可达性输出渲染上下文身份片段。"""
+    def build_render_context(self) -> dict[str, object]:
+        """输出项目级渲染上下文身份片段。"""
 
-        context: dict[str, object] = {
+        return {
             "app_title": self.app_title,
             "renderer_profile": self.renderer_profile,
             "capture_policy": self.capture_policy,
         }
-        if reads_route_context and self.route_catalog is not None:
-            context["routes"] = self.route_catalog
-        return context
 
 
 def capture_check_fingerprint(diagnostic_fingerprint: str) -> str:
@@ -166,7 +161,6 @@ class CodeCheckFingerprintBuilder:
         source: str,
         importer_module_path: str,
         page_metadata: dict[str, object] | None = None,
-        runtime_routes_override: dict[str, object] | None = None,
         render_identity: ProjectRenderIdentity | None = None,
     ) -> PageFingerprint:
         """页面检查指纹：源码 + 依赖版本 + 引用资源 + Kit/编译器 + 主题样式 + 规则版本。
@@ -194,10 +188,7 @@ class CodeCheckFingerprintBuilder:
             workspace_id=workspace_id,
             asset_names=graph.asset_names,
         )
-        resolved_identity = render_identity or await self.build_project_render_identity(
-            project_id,
-            runtime_routes_override,
-        )
+        resolved_identity = render_identity or await self.build_project_render_identity(project_id)
         pixel_payload = {
             "kind": "page",
             "source": normalize_text_to_lf(source),
@@ -207,9 +198,7 @@ class CodeCheckFingerprintBuilder:
             # 页面标题与备注只经 vue-router 的 route.meta 或 useCurrentPage 暴露；
             # 不读取路由上下文的页面拿不到它们，变化不应让旧截图过期。
             **({"page_metadata": page_metadata} if graph.reads_route_context and page_metadata else {}),
-            "render_context": resolved_identity.build_render_context(
-                reads_route_context=graph.reads_route_context,
-            ),
+            "render_context": resolved_identity.build_render_context(),
             "dependency_identity": graph.dependency_tokens,
             "referenced_assets": referenced_assets,
             "theme_style": theme_style_hash,
@@ -230,38 +219,20 @@ class CodeCheckFingerprintBuilder:
             }),
         )
 
-    async def build_project_render_identity(
-        self,
-        project_id: int,
-        runtime_routes_override: dict[str, object] | None = None,
-    ) -> ProjectRenderIdentity:
+    async def build_project_render_identity(self, project_id: int) -> ProjectRenderIdentity:
         """按项目解析渲染身份，供同项目多页面批量复用以避免逐页重复查询。
 
         只纳入静态截图真正能读到的项目级输入：项目名（写入 ``document.title``）、
-        页码目录投影（仅对可读路由上下文的页面生效）、渲染档案与捕获策略。
+        渲染档案与捕获策略。页码目录由 Runtime 在捕获时单点解析，不进入 Backend 身份。
         画布尺寸、字号、描边与主题已由主题样式 hash 覆盖，不再重复计入。
         """
         from app.core.config import get_settings
         from app.models.workspace import Project
-        from app.services.project_route_service import ProjectRouteService
 
         settings = get_settings()
         project = await self.session.get(Project, project_id)
-        if project is None:
-            return ProjectRenderIdentity(
-                app_title="",
-                route_catalog=None,
-                renderer_profile=settings.render_profile_digest,
-                capture_policy=CAPTURE_POLICY_VERSION,
-            )
-        raw_routes = (
-            runtime_routes_override
-            if runtime_routes_override is not None
-            else await ProjectRouteService(self.session).build_runtime_route_config(project_id)
-        )
         return ProjectRenderIdentity(
-            app_title=str(project.name or ""),
-            route_catalog=project_route_catalog(raw_routes).to_identity_payload(),
+            app_title=str(project.name or "") if project is not None else "",
             renderer_profile=settings.render_profile_digest,
             capture_policy=CAPTURE_POLICY_VERSION,
         )
@@ -325,8 +296,8 @@ class CodeCheckFingerprintBuilder:
         """按 artifact 构建相同规则遍历模块图，输出依赖身份 token、引用资源名、显式字体声明与路由可达性。
 
         路由可达性来自整个闭包（入口源码 + 递归组件 + 递归页面模块）的 import：
-        只要其中任一处引用 ``vue-router`` 或路由类 Runtime Kit 能力，页面就可能读取
-        当前路由、页码或路由目录，此时页码目录投影必须进入截图身份。
+        只要其中任一处引用 ``vue-router`` 或路由类 Runtime Kit 能力，页面就能读到自己的
+        标题与备注，此时 ``page_metadata`` 才进入截图身份。页码与路由目录不进身份。
         """
 
         tokens: set[str] = set()

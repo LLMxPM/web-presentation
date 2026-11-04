@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "description": "运行时路由页码分配与目录投影的跨端对拍用例；Runtime 与 Backend 必须对同一输入得到完全相同的投影。",
+  "description": "运行时路由页码分配与目录投影用例；只约束 Runtime 自身，截图身份不再由 Backend 复算这套规则。",
   "field_policy": {
     "included": ["path", "title", "order", "pageNumber", "parentPath", "hidden"],
     "excluded": [
-      "component: 只决定 artifact 模块白名单，不改变单页静态输出",
+      "component: 不进目录投影，只被单页 module 入口反查页码使用，不改变目录内容",
       "speakerNotes: 演讲台与 PPTX 导出专用",
       "transition/advance: 捕获上下文禁用播放，不改变静态画面",
       "playback/transitionDefaults: 项目级放映默认值，同上"

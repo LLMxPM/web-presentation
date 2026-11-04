@@ -225,7 +225,11 @@ async def test_created_route_context_matches_candidate(authenticated_client, pla
 
 @pytest.mark.parametrize("placement", ["root", "group"])
 async def test_candidate_capture_identity_matches_saved_page(authenticated_client, placement):
-    """候选捕获身份必须等于保存后复算的身份，否则附图会被判为输入变化而丢弃。"""
+    """候选捕获身份必须等于保存后复算的身份，否则附图会被判为输入变化而丢弃。
+
+    候选路由结构仍要进 artifact，但不再进截图身份：页码由 Runtime 在捕获时解析，
+    保存后路由目录的变化不会使候选图失效。
+    """
     user = (await authenticated_client.get("/api/auth/me")).json()["id"]
     ws = (await authenticated_client.post("/api/workspaces", json={"name": "候选身份测试"})).json()["id"]
     project = (await authenticated_client.post("/api/projects", json={"workspace_id": ws, "name": "候选身份项目"})).json()["id"]
@@ -246,7 +250,6 @@ async def test_candidate_capture_identity_matches_saved_page(authenticated_clien
             options["parent_route_id"] = parent.id
         draft = Page(code="PG20261019993", project_id=project, workspace_id=ws, title="候选身份标题",
                      speaker_notes="备注", file_type="vue")
-        candidate = await candidate_runtime_routes(session, page=draft, options=options)
         created = await PageService(session).create(
             PageCreateRequest(workspace_id=ws, project_id=project, title=draft.title,
                               speaker_notes=draft.speaker_notes, page_content=page_source),
@@ -264,7 +267,6 @@ async def test_candidate_capture_identity_matches_saved_page(authenticated_clien
             source=page_source,
             importer_module_path=f"src/views/{draft.code}.vue",
             page_metadata={"code": draft.code, "title": draft.title, "speaker_notes": draft.speaker_notes},
-            runtime_routes_override=candidate,
         )
         saved_identity = await builder.build_page_fingerprint(
             workspace_id=ws,

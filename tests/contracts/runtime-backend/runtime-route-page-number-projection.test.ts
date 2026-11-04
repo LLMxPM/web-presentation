@@ -1,8 +1,8 @@
 /**
- * 文件功能：校验 Runtime 页码分配与 Backend 复算的截图身份投影完全一致。
+ * 文件功能：校验 Runtime 页码分配与路由目录投影规则。
  *
- * 两侧共用同一份 fixture：Runtime 侧直接调用 page-numbers.ts 的纯函数，
- * Backend 侧在 pytest 中读取同一文件。任何一侧规则漂移都会让其中一端失败。
+ * 这是 Runtime 单侧回归：截图身份不再由 Backend 复算页码目录，fixture 只约束 Runtime
+ * 自身的分配与投影口径。单页预览与截图的 module 入口反查见 runtime/src/core/utils/page-numbers.test.ts。
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -28,14 +28,14 @@ const fixture = JSON.parse(
   readFileSync(resolve(process.cwd(), 'tests/fixtures/route-page-number-cases.json'), 'utf-8'),
 ) as { schema_version: number; cases: ExpectedCase[] }
 
-describe('runtime-backend route page number projection', () => {
+describe('runtime route page number projection', () => {
   it('fixture 结构版本应为 1 且用例非空', () => {
     expect(fixture.schema_version).toBe(1)
     expect(fixture.cases.length).toBeGreaterThan(0)
   })
 
   for (const testCase of fixture.cases) {
-    it(`应与 Backend 复算结果一致：${testCase.name}`, () => {
+    it(`应与 fixture 声明的投影一致：${testCase.name}`, () => {
       expect(buildRouteCatalogProjection(testCase.routes)).toEqual(testCase.expected)
     })
   }

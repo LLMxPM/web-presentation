@@ -1323,9 +1323,10 @@ async def test_screenshot_should_stay_latest_when_other_route_title_changes(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """调整其他页面标题不应让本页截图过期；目录项变化仍会反映在目录读取页上。
+    """其他页面改名与目录条目增减都不影响本页截图。
 
-    本页只渲染自身内容，不读取路由上下文，因此路由目录的任何变化都与它无关。
+    本页只渲染自身内容，不读取路由上下文；即便是读取路由上下文的页面，路由目录变化也不再判旧
+    （页码由 Runtime 在捕获时解析），只有页面自身 meta 变化才会过期。
     """
 
     workspace_id, project_id = await _create_workspace_project(authenticated_client, "跨页标题截图")
@@ -1406,13 +1407,17 @@ async def test_screenshot_should_follow_project_name_but_ignore_display_features
     assert await _screenshot_is_latest(authenticated_client, page_data["id"]) is False
 
 
-async def test_screenshot_should_track_page_number_changes_only_for_route_readers(
+async def test_screenshot_should_stay_latest_when_route_catalog_changes(
     authenticated_client: AsyncClient,
     monkeypatch,
 ) -> None:
-    """页码变化只对读取路由目录的页面生效，纯内容页面保持最新。"""
+    """路由目录变化不再使任何页面截图过期：页码由 Runtime 在捕获时单点解析，Backend 不复算目录。
 
-    workspace_id, project_id = await _create_workspace_project(authenticated_client, "页码截图")
+    重排、新增、改名和隐藏路由后，已存截图上的页码与总页数保持捕获时的旧值（产品已接受的假新鲜）；
+    一旦因其他真实变化重截，新截图才显示当时的正确页码。页面自身标题只按能否读到路由 meta 判定。
+    """
+
+    workspace_id, project_id = await _create_workspace_project(authenticated_client, "目录出身份")
     reader_page = await _create_page_with_route_and_screenshot(
         authenticated_client,
         monkeypatch,
@@ -1441,8 +1446,8 @@ async def test_screenshot_should_track_page_number_changes_only_for_route_reader
     assert plain_screenshot.status_code == 200, plain_screenshot.text
     assert plain_screenshot.json()["screenshot_is_latest"] is True
 
-    # 在目录页面之前插入一个新页面，使目录页面的页码从 1 变为 2。
-    route_response = await authenticated_client.put(
+    # 在目录页面之前插入一个新页面：目录页页码从 1 变 2，两个页面都不因此判旧。
+    inserted = await authenticated_client.put(
         f"/api/projects/{project_id}/routes",
         json={
             "routes": [
@@ -1451,9 +1456,31 @@ async def test_screenshot_should_track_page_number_changes_only_for_route_reader
             ]
         },
     )
-    assert route_response.status_code == 200, route_response.text
+    assert inserted.status_code == 200, inserted.text
+    assert await _screenshot_is_latest(authenticated_client, reader_page["id"]) is True
+    assert await _screenshot_is_latest(authenticated_client, plain_page["id"]) is True
 
-    # 目录页面能读到页码与目录变化，必须重截。
+    # 重排 order、隐藏首页并给其他页改名：目录文字、页码与总页数都会变，仍不触发重截。
+    reordered = await authenticated_client.put(
+        f"/api/projects/{project_id}/routes",
+        json={
+            "routes": [
+                {"route_type": "page", "route": "reader", "order": 5, "hidden": False, "page_id": reader_page["id"]},
+                {"route_type": "page", "route": "intro", "order": 0, "hidden": True, "page_id": plain_page["id"]},
+            ]
+        },
+    )
+    assert reordered.status_code == 200, reordered.text
+    renamed = await authenticated_client.patch(f"/api/pages/{plain_page['id']}", json={"title": "改名的其他页"})
+    assert renamed.status_code == 200, renamed.text
+    assert await _screenshot_is_latest(authenticated_client, reader_page["id"]) is True
+    assert await _screenshot_is_latest(authenticated_client, plain_page["id"]) is True
+
+    # 页面自身标题只经 route.meta 暴露：读取路由上下文的页面判旧，非读者继续复用旧截图。
+    reader_rename = await authenticated_client.patch(f"/api/pages/{reader_page['id']}", json={"title": "目录页改名"})
+    assert reader_rename.status_code == 200, reader_rename.text
     assert await _screenshot_is_latest(authenticated_client, reader_page["id"]) is False
-    # 纯内容页面读不到任何路由信息，保持最新。
+
+    plain_rename = await authenticated_client.patch(f"/api/pages/{plain_page['id']}", json={"title": "纯内容页改名"})
+    assert plain_rename.status_code == 200, plain_rename.text
     assert await _screenshot_is_latest(authenticated_client, plain_page["id"]) is True

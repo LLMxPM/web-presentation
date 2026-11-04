@@ -322,7 +322,6 @@ class CodeCheckService:
             execute_check=execute_check,
             capture_screenshot=capture_screenshot,
             page_metadata={"code": draft_page.code, "title": draft_page.title, "speaker_notes": draft_page.speaker_notes},
-            runtime_routes_override=runtime_routes_override,
         )
 
     async def check_component_code(
@@ -448,7 +447,6 @@ class CodeCheckService:
         component_type_value: str = "",
         profile_key: str = "",
         page_metadata: dict[str, object] | None = None,
-        runtime_routes_override: dict[str, object] | None = None,
         capture_screenshot: bool = False,
     ) -> dict[str, object]:
         """鉴权之后按完整输入指纹复用检查结果，并对并发相同检查做 in-flight 合并。
@@ -480,7 +478,6 @@ class CodeCheckService:
                     source=source,
                     importer_module_path=importer_module_path or "",
                     **({"page_metadata": page_metadata} if capture_screenshot else {}),
-                    **({"runtime_routes_override": runtime_routes_override} if runtime_routes_override is not None else {}),
                 )
                 fingerprint = page_fingerprint.check
                 page_screenshot_identity = page_fingerprint.screenshot

@@ -475,7 +475,7 @@ function getDefaultRouteRecords(): RouteRecordRaw[] {
 }
 
 /**
- * 计算并分配页码；规则实现在 page-numbers.ts，供 Backend 复算截图身份时共用。
+ * 计算并分配页码；规则实现在 page-numbers.ts，是平台唯一的页码分配口径。
  * @param yamlRoutes YAML 路由配置
  * @returns 带页码的路由配置副本
  */
