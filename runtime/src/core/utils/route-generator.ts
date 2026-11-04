@@ -9,6 +9,7 @@ import type { RouteConfig, NavigationItem, BaseRouteConfig } from '@/core/types'
 import type { PageAdvanceConfig } from '@/core/types/page-transition'
 import type { MenuItem, MenuConfig } from '@/core/types/menu'
 import { routeConfigs } from '@/core/utils/config'
+import { findPageNumberByModuleEntry } from './page-numbers'
 import { buildFullPath } from './path'
 import {
   buildRelativePath,
@@ -401,7 +402,7 @@ export function getAllRouteInfos(): RouteInfo[] {
         order: parentConfig.order || parentConfig.meta?.order || 0,
         pageNumber: parentConfig.pageNumber || parentConfig.meta?.pageNumber,
         hidden: parentConfig.meta?.hidden || false,
-        component: parentConfig.component ? 'parent-component' : undefined,
+        component: readRouteComponentPath(parentConfig.meta),
         speakerNotes: typeof parentConfig.meta?.speakerNotes === 'string' ? parentConfig.meta.speakerNotes : null,
         advance: readPageAdvance(parentConfig.meta)
       })
@@ -422,7 +423,7 @@ export function getAllRouteInfos(): RouteInfo[] {
           pageNumber: childConfig.pageNumber || childConfig.meta?.pageNumber,
           parentPath: `/${parentConfig.path}`,
           hidden: childConfig.meta?.hidden || false,
-          component: childConfig.component ? 'child-component' : 'unknown',
+          component: readRouteComponentPath(childConfig.meta),
           speakerNotes: typeof childConfig.meta?.speakerNotes === 'string' ? childConfig.meta.speakerNotes : null,
           advance: readPageAdvance(childConfig.meta)
         })
@@ -439,7 +440,17 @@ function readPageAdvance(meta: unknown): PageAdvanceConfig | undefined {
   return value && typeof value === 'object' ? value as PageAdvanceConfig : undefined
 }
 
-// ... 文件中其他的函数 (getRouteInfoByPath, getRouteInfoByName 等) 保持不变 ...
+/**
+ * 读取路由配置里的真实组件路径。
+ *
+ * RouteConfig.component 在 config.ts 里已被换成异步 loader，YAML 原始的 `@/views/<code>.vue`
+ * 只保存在 meta.componentPath，目录项需要的是后者。
+ */
+function readRouteComponentPath(meta: unknown): string | undefined {
+  if (!meta || typeof meta !== 'object') return undefined
+  const value = (meta as { componentPath?: unknown }).componentPath
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
 
 /**
  * 根据路径获取路由信息
@@ -530,6 +541,19 @@ export function getPageNumberByPath(path: string): number | undefined {
   const routeInfo = getRouteInfoByPath(path)
   // console.log('当前页码', routeInfo?.pageNumber)
   return routeInfo?.pageNumber
+}
+
+/**
+ * 按单页预览与截图的 module 入口路径反查真实页码。
+ *
+ * 单页捕获的导航路径是 `/src/views/<code>.vue`，不会命中目录里的路由 path，
+ * 只能与同份目录的 component 归一后比对。
+ *
+ * @param entryPath 当前导航路径或 module 入口路径
+ * @returns 页码；入口不是页面模块、未挂路由或只有隐藏路由时返回 undefined
+ */
+export function getPageNumberByModuleEntryPath(entryPath: string): number | undefined {
+  return findPageNumberByModuleEntry(getAllRouteInfos(), entryPath)
 }
 
 /**

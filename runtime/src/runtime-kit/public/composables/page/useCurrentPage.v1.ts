@@ -7,6 +7,7 @@ import { useRoute } from 'vue-router'
 
 import {
   getMaxPageNumber,
+  getPageNumberByModuleEntryPath,
   getPageNumberByPath,
   getRouteInfoByPath,
 } from '@/core/utils/route-generator'
@@ -18,7 +19,8 @@ import {
 export function useCurrentPage() {
   const route = useRoute()
   const routeInfo = computed(() => getRouteInfoByPath(route.path) ?? null)
-  const currentPage = computed(() => getPageNumberByPath(route.path) ?? 0)
+  // 单页预览与截图按 module 入口挂载，路由 path 匹配不到时按入口路径反查同一份目录。
+  const currentPage = computed(() => getPageNumberByPath(route.path) ?? getPageNumberByModuleEntryPath(route.path) ?? 0)
   const totalPages = computed(() => Math.max(1, getMaxPageNumber()))
   const title = computed(() => String(routeInfo.value?.name || route.meta?.title || route.name || ''))
 

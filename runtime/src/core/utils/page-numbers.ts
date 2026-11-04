@@ -1,11 +1,17 @@
 /**
  * 文件用途：以不依赖 Vue 的纯函数分配运行时路由页码，并投影出页面可读取的路由目录。
  *
- * config.ts 与跨端契约测试共用本模块：Backend 侧按同一规则复算页码目录，用于判断
- * 静态截图是否仍然匹配；两侧规则必须逐字节一致，否则会出现截图反复失效或错误复用。
+ * 页码只有这一套实现：放映、预览、截图与诊断都从同一份 artifact 路由配置算号，Backend 不再
+ * 复算第二套，因此路由目录不参与截图新鲜度判定。回归由 config.ts 与
+ * tests/contracts/runtime-backend/runtime-route-page-number-projection.test.ts 约束。
  *
  * 目录投影只保留「静态截图中真正会变像素」的字段，逐项口径见 buildCatalogItem。
+ *
+ * findPageNumberByModuleEntry 服务另一个场景：单页预览与截图按 module 入口挂载，
+ * 导航路径不是路由 path，只能把入口路径与路由 component 归一后反查同一份目录。
  */
+
+import { normalizeViewModulePath } from '../shared/runtime-preview'
 
 /** 路由节点结构：只声明页码分配与目录投影真正读取的字段。 */
 export interface RouteNumberingNode {
@@ -167,4 +173,35 @@ function buildCatalogItem(
     item.parentPath = parentPath
   }
   return item
+}
+
+/** 反查所需的最小目录项形状：只读 component 与 pageNumber。 */
+export interface RouteEntryLookupItem {
+  component?: string
+  pageNumber?: number
+}
+
+/**
+ * 按单页预览/截图的 module 入口路径反查路由目录里的真实页码。
+ *
+ * 单页捕获走 module 入口，导航路径形如 `/src/views/<code>.vue`，与目录里的路由 path
+ * 不同域，因此把两侧都归一成 `src/views/...` 逻辑路径后与路由 component 比对。
+ * 隐藏路由不占页码（assignPageNumbers 跳过），只会在命中项里挑出真正分配过页码的那一条。
+ *
+ * @param routes 已分配页码的目录项（route-generator.getAllRouteInfos 的输出即可）
+ * @param entryPath 当前导航路径或 module 入口路径
+ * @returns 真实页码；入口不是页面模块、未挂路由或只有隐藏路由时返回 undefined
+ */
+export function findPageNumberByModuleEntry<T extends RouteEntryLookupItem>(
+  routes: T[],
+  entryPath: string,
+): number | undefined {
+  const normalizedEntry = normalizeViewModulePath(entryPath)
+  if (!normalizedEntry.startsWith('src/views/')) {
+    return undefined
+  }
+  const matched = routes.filter(
+    route => typeof route.component === 'string' && normalizeViewModulePath(route.component) === normalizedEntry,
+  )
+  return matched.find(route => typeof route.pageNumber === 'number')?.pageNumber
 }
