@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from render_contracts.screenshot import CAPTURE_POLICY_VERSION
@@ -34,6 +35,7 @@ from app.services.component_dependency_service import ComponentDependencyService
 from app.services.component_validation_profile import (
     COMPONENT_VALIDATION_PROFILE_VERSION,
 )
+from app.services.font_normalization import collect_declared_font_asset_names, normalize_font_asset_names
 from app.services.model3d_acceptance_policy import build_model3d_support_matrix
 from app.services.page_render_identity import (
     project_route_catalog,
@@ -51,11 +53,27 @@ _PAGE_MODULE_PATH_PATTERN = re.compile(r"^src/views/(?P<code>[A-Za-z0-9_-]+)\.(?
 
 @dataclass(frozen=True, slots=True)
 class ModuleGraphIdentity:
-    """源码闭包身份：依赖 token、引用资源名，以及闭包是否能读到路由上下文。"""
+    """源码闭包身份：依赖 token、引用资源名、显式声明的字体资源名，以及闭包是否能读到路由上下文。"""
 
     dependency_tokens: list[str]
     asset_names: list[str]
+    font_asset_names: list[str]
     reads_route_context: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PageFingerprint:
+    """页面身份的两种方案。
+
+    - ``check``：完整检查身份，含检查规则版本、组件校验档案版本、能力集合与 Runtime 发布构建，
+      只用于检查结果缓存；发布构建变化必须让旧的诊断结论失效。
+    - ``screenshot``：静态像素身份，只保留真正会改变截图画面的输入。发布构建号来自进程级探针，
+      同版本副本取值可能不同，规则版本只影响判定不影响画面，两者都不进入截图身份，
+      否则页面会在没有任何可视变化的情况下被判定为「截图过期」。
+    """
+
+    check: str
+    screenshot: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +139,16 @@ def _collect_source_asset_names(*sources: str | None) -> list[str]:
     return sorted({name for name in names if name and name != "__DYNAMIC__"})
 
 
+def _collect_declared_font_names(source: str | None) -> list[str]:
+    """收集模块源码里显式声明的字体资源名，与 Runtime 字体包的下发口径一致。
+
+    只取 ``useAssetFontFamily`` / ``resolveAssetFontFamily`` 的静态字面量；未注册的名字
+    不影响画面（构建本身会失败），因此不进入字体引用集合。
+    """
+
+    return normalize_font_asset_names(collect_declared_font_asset_names([source or ""]))
+
+
 class CodeCheckFingerprintBuilder:
     """按页面/组件代码检查真实输入组装完整指纹。"""
 
@@ -140,8 +168,10 @@ class CodeCheckFingerprintBuilder:
         page_metadata: dict[str, object] | None = None,
         runtime_routes_override: dict[str, object] | None = None,
         render_identity: ProjectRenderIdentity | None = None,
-    ) -> str:
+    ) -> PageFingerprint:
         """页面检查指纹：源码 + 依赖版本 + 引用资源 + Kit/编译器 + 主题样式 + 规则版本。
+
+        返回检查缓存身份与截图新鲜度身份两种方案，二者共用同一次闭包解析。
 
         ``render_identity`` 允许调用方按项目预算一次并逐页复用；为空时本方法自行解析。
         """
@@ -158,6 +188,7 @@ class CodeCheckFingerprintBuilder:
             workspace_id=workspace_id,
             project_id=project_id,
             for_component=False,
+            declared_font_asset_names=graph.font_asset_names,
         )
         referenced_assets = await self._resolve_workspace_asset_tokens(
             workspace_id=workspace_id,
@@ -167,7 +198,7 @@ class CodeCheckFingerprintBuilder:
             project_id,
             runtime_routes_override,
         )
-        payload = {
+        pixel_payload = {
             "kind": "page",
             "source": normalize_text_to_lf(source),
             "workspace_id": int(workspace_id),
@@ -181,14 +212,23 @@ class CodeCheckFingerprintBuilder:
             ),
             "dependency_identity": graph.dependency_tokens,
             "referenced_assets": referenced_assets,
-            "compiler_identity": _compiler_identity(),
             "theme_style": theme_style_hash,
-            "check_rules_version": CODE_CHECK_RULES_VERSION,
-            "component_validation_profile_version": COMPONENT_VALIDATION_PROFILE_VERSION,
-            # 能力集合变化必须使旧的 valid 结果失效，避免复用关闭能力期间的缓存。
-            "audio_execution": "audio-bus.v1",
         }
-        return compute_check_fingerprint(payload)
+        compiler_identity = _compiler_identity()
+        return PageFingerprint(
+            check=compute_check_fingerprint({
+                **pixel_payload,
+                "compiler_identity": compiler_identity,
+                "check_rules_version": CODE_CHECK_RULES_VERSION,
+                "component_validation_profile_version": COMPONENT_VALIDATION_PROFILE_VERSION,
+                # 能力集合变化必须使旧的 valid 结果失效，避免复用关闭能力期间的缓存。
+                "audio_execution": "audio-bus.v1",
+            }),
+            screenshot=compute_check_fingerprint({
+                **pixel_payload,
+                "compiler_identity": _pixel_compiler_identity(compiler_identity),
+            }),
+        )
 
     async def build_project_render_identity(
         self,
@@ -249,6 +289,12 @@ class CodeCheckFingerprintBuilder:
             workspace_id=workspace_id,
             asset_names=graph.asset_names,
         )
+        theme_style_hash = await self._build_theme_style_hash(
+            workspace_id=workspace_id,
+            project_id=None,
+            for_component=True,
+            declared_font_asset_names=graph.font_asset_names,
+        )
         payload = {
             "kind": "component",
             "source": normalize_text_to_lf(source),
@@ -259,11 +305,7 @@ class CodeCheckFingerprintBuilder:
             "dependency_identity": graph.dependency_tokens,
             "referenced_assets": referenced_assets,
             "compiler_identity": _compiler_identity(),
-            "theme_style": await self._build_theme_style_hash(
-                workspace_id=workspace_id,
-                project_id=None,
-                for_component=True,
-            ),
+            "theme_style": theme_style_hash,
             "check_rules_version": CODE_CHECK_RULES_VERSION,
             "component_validation_profile_version": COMPONENT_VALIDATION_PROFILE_VERSION,
             "audio_execution": "audio-bus.v1",
@@ -280,7 +322,7 @@ class CodeCheckFingerprintBuilder:
         allow_page_module_imports: bool,
         extra_asset_sources: list[str | None],
     ) -> ModuleGraphIdentity:
-        """按 artifact 构建相同规则遍历模块图，输出依赖身份 token、引用资源名与路由可达性。
+        """按 artifact 构建相同规则遍历模块图，输出依赖身份 token、引用资源名、显式字体声明与路由可达性。
 
         路由可达性来自整个闭包（入口源码 + 递归组件 + 递归页面模块）的 import：
         只要其中任一处引用 ``vue-router`` 或路由类 Runtime Kit 能力，页面就可能读取
@@ -289,6 +331,7 @@ class CodeCheckFingerprintBuilder:
 
         tokens: set[str] = set()
         asset_names: set[str] = set()
+        font_names: set[str] = set()
         kit_capability_names: set[str] = set()
         bare_import_specifiers: set[str] = set()
         visited_component_version_ids: set[int] = set()
@@ -298,6 +341,7 @@ class CodeCheckFingerprintBuilder:
 
         for name in _collect_source_asset_names(*extra_asset_sources):
             asset_names.add(name)
+        font_names.update(_collect_declared_font_names(entry_content))
 
         def record_parsed(parsed: object) -> None:
             """把一次解析结果并入闭包身份：组件、页面模块、Kit 能力与裸导入。"""
@@ -354,6 +398,7 @@ class CodeCheckFingerprintBuilder:
             # 依赖组件自身引用的资源也进入指纹，替换资源不得复用旧检查结果。
             for name in _collect_source_asset_names(version.content, version.preview_schema):
                 asset_names.add(name)
+            font_names.update(_collect_declared_font_names(version.content))
             # 组件的 import 同样决定页面闭包能读到什么，必须参与路由可达性判定。
             enqueue_parsed(version.content or "", None)
             for dependency_version_id in await self.module_dependency_repository.list_component_dependency_version_ids(
@@ -374,11 +419,13 @@ class CodeCheckFingerprintBuilder:
             if page_content is not None:
                 for name in _collect_source_asset_names(page_content):
                     asset_names.add(name)
+                font_names.update(_collect_declared_font_names(page_content))
                 enqueue_parsed(page_content, page_path)
 
         return ModuleGraphIdentity(
             dependency_tokens=sorted(tokens),
             asset_names=sorted(asset_names),
+            font_asset_names=sorted(font_names),
             reads_route_context=routes_need_screenshot_identity(
                 kit_capability_names=kit_capability_names,
                 bare_import_specifiers=bare_import_specifiers,
@@ -436,17 +483,26 @@ class CodeCheckFingerprintBuilder:
         workspace_id: int,
         project_id: int | None,
         for_component: bool,
+        declared_font_asset_names: Sequence[str] = (),
     ) -> str:
-        """主题/样式输入 hash：项目主题或工作空间默认主题 + 画布配置 + 字体签名。"""
+        """主题/样式输入 hash：项目主题或工作空间默认主题 + 画布配置 + 实际引用的字体签名。
+
+        字体只统计 Runtime 字体包真正会下发的部分，口径与
+        ``WorkspaceFontService.build_font_bundle_for_project`` 一致：主题绑定的字体族，
+        加上源码用 ``useAssetFontFamily`` 等显式声明命中的字体族。工作空间里注册但没人引用的字体
+        不会改变任何像素，不能进身份，否则注册一个新字体就把全仓截图判成过期。
+        """
 
         from app.models.workspace import Project
 
         fingerprint_service = PageScreenshotFingerprintService(self.session)
         project = await self.session.get(Project, project_id) if project_id is not None else None
+        effective_theme_key: str | None = None
         if project is not None:
             snapshot = await fingerprint_service.build_project_snapshot(project)
             page_config_hash = snapshot.config_hash
             theme_config = snapshot.theme_config
+            effective_theme_key = project.theme_key
             theme_identity: dict[str, object] = {
                 "mode": "project",
                 "theme_key": project.theme_key,
@@ -469,6 +525,7 @@ class CodeCheckFingerprintBuilder:
                 theme_key=theme_key,
                 theme_config=theme_config,
             )
+            effective_theme_key = theme_key
             theme_identity = {
                 "mode": "workspace_default",
                 "theme_key": theme_key,
@@ -489,7 +546,11 @@ class CodeCheckFingerprintBuilder:
             .where(WorkspaceFontConfig.status == RecordStatus.ACTIVE.value)
             .order_by(WorkspaceFontConfig.asset_name.asc())
         )
-        font_configs = font_rows.scalars().all()
+        font_configs = _referenced_font_configs(
+            font_rows.scalars().all(),
+            theme_tokens=await self._bound_theme_font_tokens(workspace_id, effective_theme_key),
+            declared_asset_names=normalize_font_asset_names(declared_font_asset_names),
+        )
         font_signatures = [
             {
                 "asset_name": row.asset_name,
@@ -509,6 +570,65 @@ class CodeCheckFingerprintBuilder:
                 self.session, workspace_id=workspace_id, theme_config=theme_config, fonts=font_configs,
             ),
         })
+
+    async def _bound_theme_font_tokens(self, workspace_id: int, theme_key: str | None) -> list[str]:
+        """取主题真正绑定的字体族名，口径与字体包下发完全一致。
+
+        只用主题文档里的 typography 值会多算：未绑定字体族时该槽回退成预设标签
+        （`heading_font_label` 等），而字体包只按已绑定族名下发。标签恰好等于某个已注册族名时，
+        按文档取值会把那个族的文件 hash 算进身份，替换字体文件就把页面判成过期。
+        主题缺失或 key 为空时字体包不下发任何主题字体，这里同样返回空。
+        """
+
+        normalized_key = str(theme_key or "").strip()
+        if not normalized_key:
+            return []
+        try:
+            return await self.theme_service.get_theme_font_reference_tokens_by_key(workspace_id, normalized_key)
+        except Exception:  # noqa: BLE001 - 主题不可用时字体包为空，不进身份
+            return []
+
+
+def _referenced_font_configs(
+    font_configs: Sequence[WorkspaceFontConfig],
+    *,
+    theme_tokens: Sequence[str],
+    declared_asset_names: Sequence[str],
+) -> list[WorkspaceFontConfig]:
+    """按引用保留字体 face：命中字体族名带整族，命中资源名带该 face 所在族，与字体包下发口径一致。"""
+
+    by_family: dict[str, list[WorkspaceFontConfig]] = {}
+    by_asset_name: dict[str, WorkspaceFontConfig] = {}
+    for row in font_configs:
+        by_family.setdefault(row.font_family, []).append(row)
+        # 配置行的 asset_name 可信：字体包构建会比对资产当前 name，不一致直接 409 FONT_ASSET_NAME_MISMATCH。
+        asset_name = str(row.asset_name or "").strip()
+        if asset_name:
+            by_asset_name.setdefault(asset_name, row)
+
+    referenced_families: set[str] = set()
+    for token in theme_tokens:
+        if token in by_family:
+            referenced_families.add(token)
+        matched = by_asset_name.get(token)
+        if matched is not None:
+            referenced_families.add(matched.font_family)
+    for asset_name in declared_asset_names:
+        matched = by_asset_name.get(asset_name)
+        if matched is not None:
+            referenced_families.add(matched.font_family)
+    return [row for row in font_configs if row.font_family in referenced_families]
+
+
+def _pixel_compiler_identity(compiler_identity: dict[str, object]) -> dict[str, object]:
+    """截图身份用的编译输入投影：剔除 Runtime 发布构建号。
+
+    ``runtime_build`` 由进程级探针得到，只标识「哪个发布副本渲染」，不标识「画面是什么」；
+    副本重建或探针尚未刷新都会改变它，把它计入截图身份会让同版本页面出现多个截图 hash，
+    并在没有任何可视变化的情况下把全仓截图判成过期。
+    """
+
+    return {key: value for key, value in compiler_identity.items() if key != "runtime_build"}
 
 
 def _compiler_identity() -> dict[str, object]:

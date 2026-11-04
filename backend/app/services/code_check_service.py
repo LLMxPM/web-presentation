@@ -451,8 +451,13 @@ class CodeCheckService:
         runtime_routes_override: dict[str, object] | None = None,
         capture_screenshot: bool = False,
     ) -> dict[str, object]:
-        """鉴权之后按完整输入指纹复用检查结果，并对并发相同检查做 in-flight 合并。"""
+        """鉴权之后按完整输入指纹复用检查结果，并对并发相同检查做 in-flight 合并。
 
+        检查结果缓存使用完整检查身份（含规则版本与 Runtime 发布构建），而返回给发布环节的
+        ``_capture_identity`` 只带静态像素身份，与 ``page.screenshot_config_hash`` 同源。
+        """
+
+        page_screenshot_identity = ""
         try:
             if capture_screenshot:
                 from app.services.runtime_release_identity import (
@@ -469,7 +474,7 @@ class CodeCheckService:
                     profile_key=profile_key,
                 )
             else:
-                fingerprint = await self.fingerprint_builder.build_page_fingerprint(
+                page_fingerprint = await self.fingerprint_builder.build_page_fingerprint(
                     workspace_id=workspace_id,
                     project_id=int(project_id or 0),
                     source=source,
@@ -477,6 +482,8 @@ class CodeCheckService:
                     **({"page_metadata": page_metadata} if capture_screenshot else {}),
                     **({"runtime_routes_override": runtime_routes_override} if runtime_routes_override is not None else {}),
                 )
+                fingerprint = page_fingerprint.check
+                page_screenshot_identity = page_fingerprint.screenshot
         except AppException as exc:
             if kind == "component":
                 return ComponentValidationService.contract_failed_result(
@@ -499,7 +506,7 @@ class CodeCheckService:
             "patch_repaired": candidate.patch_repaired,
             "canonical_diff": candidate.canonical_diff,
             "_code_check_cache": cache_source,
-            **({"_capture_identity": fingerprint, "_capture_metadata": page_metadata} if capture_screenshot else {}),
+            **({"_capture_identity": page_screenshot_identity, "_capture_metadata": page_metadata} if capture_screenshot else {}),
         }
 
     async def _dispatch_diagnostics(

@@ -179,7 +179,10 @@ class PageScreenshotFingerprintService:
         *,
         render_identity: ProjectRenderIdentity | None = None,
     ) -> PageScreenshotConfigSnapshot:
-        """叠加源码闭包、路由身份、Kit/Runtime 构建与捕获策略，供所有截图入口共用。
+        """叠加源码闭包、路由身份、Kit 编译输入与捕获策略，供所有截图入口共用。
+
+        只取 ``PageFingerprint.screenshot``：检查规则版本与 Runtime 发布构建会影响诊断结论，
+        但不会改变静态画面，混进来会让截图在没有可视变化时被判定为过期。
 
         ``render_identity`` 由 ``build_page_snapshots_from_project`` 按项目算一次后逐页传入；
         单页入口不传时按页面自行解析。
@@ -193,7 +196,7 @@ class PageScreenshotFingerprintService:
             page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes},
             render_identity=render_identity)
         return PageScreenshotConfigSnapshot(page_config=snapshot.page_config,
-            config_hash=hashlib.sha256(f"{snapshot.config_hash}|{identity}|{CAPTURE_POLICY_VERSION}|dpr=1".encode()).hexdigest(),
+            config_hash=hashlib.sha256(f"{snapshot.config_hash}|{identity.screenshot}|{CAPTURE_POLICY_VERSION}|dpr=1".encode()).hexdigest(),
             theme_key=snapshot.theme_key, theme_config=snapshot.theme_config)
 
     def _apply_resource_tokens(

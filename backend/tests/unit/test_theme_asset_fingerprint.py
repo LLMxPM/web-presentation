@@ -53,3 +53,69 @@ async def test_theme_file_replacement_changes_only_relevant_render_identity(app_
     await session.commit()
     changed = await fingerprint()
     assert (changed != original) is (target in {"font", "logo", "invert"})
+
+
+PALETTE = {
+    "text": {"primary": "#111111", "secondary": "#222222", "invert": "#ffffff"},
+    "background": {"default": "#ffffff", "invert": "#111111"},
+    "border": {"default": "#aaaaaa", "subtle": "#bbbbbb"},
+    "link": {"default": "#111111", "hover": "#222222", "visited": "#333333"},
+    "accent": ["#123456"],
+}
+
+
+async def test_unreferenced_workspace_font_should_not_enter_render_identity(app_session) -> None:
+    """注册但未使用的字体不进身份；只有主题绑定或源码显式声明的字体族才可能改变画面。"""
+
+    session = app_session
+    workspace = Workspace(code="font-ref", name="字体引用指纹", default_theme_key="ref")
+    session.add(workspace)
+    await session.flush()
+    assets = {name: WorkspaceAsset(
+        workspace_id=workspace.id, name=name, file_name=name + ".bin", original_name=name + ".bin",
+        file_size=1, file_hash="a" * 64, asset_type="font",
+    ) for name in ("bound.woff2", "idle.woff2")}
+    session.add_all(assets.values())
+    families: dict[str, WorkspaceFontFamily] = {}
+    for asset_name, family_name in (("bound.woff2", "Bound Font"), ("idle.woff2", "Idle Font")):
+        family = WorkspaceFontFamily(workspace_id=workspace.id, name=family_name)
+        session.add(family)
+        await session.flush()
+        families[asset_name] = family
+        session.add(WorkspaceFontConfig(
+            workspace_id=workspace.id, family_id=family.id, asset_id=assets[asset_name].id,
+            asset_name=asset_name, font_format="woff2", font_weight="400", font_style="normal",
+            font_display="swap",
+        ))
+    session.add(WorkspaceTheme(
+        workspace_id=workspace.id, key="ref", name="Ref",
+        body_font_family_id=families["bound.woff2"].id,
+        heading_font_label="platform-sans", body_font_label="Bound Font", code_font_label="platform-mono",
+        palette=PALETTE,
+    ))
+    project = Project(
+        workspace_id=workspace.id, code="font-ref-project", name="FontRef",
+        theme_key="ref", theme_config_yaml="{}",
+    )
+    session.add(project)
+    await session.commit()
+    builder = CodeCheckFingerprintBuilder(session)
+
+    async def fingerprint(**kwargs) -> str:
+        """按可选的源码字体声明复算主题输入指纹。"""
+
+        return await builder._build_theme_style_hash(
+            workspace_id=workspace.id, project_id=project.id, for_component=False, **kwargs,
+        )
+
+    baseline = await fingerprint()
+    assets["idle.woff2"].file_hash = "b" * 64
+    await session.commit()
+    # 字体包不会下发未引用的族，替换文件内容不得让截图判为过期。
+    assert await fingerprint() == baseline
+    # 源码显式声明后该族才真正进入渲染输入。
+    declared = await fingerprint(declared_font_asset_names=["idle.woff2"])
+    assert declared != baseline
+    assets["idle.woff2"].file_hash = "c" * 64
+    await session.commit()
+    assert await fingerprint(declared_font_asset_names=["idle.woff2"]) != declared

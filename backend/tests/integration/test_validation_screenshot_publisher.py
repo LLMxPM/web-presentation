@@ -1,19 +1,19 @@
-"""文件功能：验证校验附图发布、候选变化拒绝、跨空间及过期对象回收。"""
+"""文件功能：验证校验附图发布、候选变化拒绝、跨空间及过期对象回收，并回归页面截图身份的引用闭包口径。"""
 
 from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
-from render_contracts.screenshot import CAPTURE_POLICY_VERSION
 from app.core.exceptions import AppException
 from app.core.time_utils import utc_now
 from app.db.session import get_session_factory
+from app.models.asset import WorkspaceAsset
+from app.models.font import WorkspaceFontConfig, WorkspaceFontFamily
 from app.models.page import Page
 from app.models.page_screenshot_artifact import PageScreenshotArtifact
 from app.models.project_route import ProjectRoute
 from app.schemas.page import PageCopyToProjectRequest, PageCreateRequest
 from app.services.code_check_fingerprint import CodeCheckFingerprintBuilder
-from app.services.code_check_result_cache import compute_check_fingerprint
 from app.services.page_candidate_routes import candidate_runtime_routes
 from app.services.page_screenshot_fingerprint_service import (
     PageScreenshotFingerprintService,
@@ -53,7 +53,7 @@ async def test_publish_only_matching_candidate(authenticated_client, drift):
         base = await CodeCheckFingerprintBuilder(session).build_page_fingerprint(workspace_id=ws, project_id=project,
             source=page.page_content, importer_module_path=f"src/views/{page.code}.vue",
             page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes})
-        identity = compute_check_fingerprint({"diagnostics": base, "capture_screenshot": True, "capture_policy": CAPTURE_POLICY_VERSION})
+        identity = base.screenshot
         snapshot = await PageScreenshotFingerprintService(session).build_page_snapshot(page)
         expires = utc_now() + timedelta(minutes=-1 if drift == "expired" else 10)
         artifact = PageScreenshotArtifact(artifact_id="candidate", workspace_id=ws, sha256="a" * 64,
@@ -70,6 +70,103 @@ async def test_publish_only_matching_candidate(authenticated_client, drift):
         assert result["status"] == ("ready" if drift is None else "pending")
         assert (page.screenshot_storage_key is not None) == (drift is None)
         await session.commit()
+
+
+async def test_screenshot_hash_should_survive_runtime_release_change(authenticated_client, monkeypatch):
+    """Runtime 换发布副本只使检查缓存失效，页面截图 hash 必须保持不变。
+
+    ``runtime_build`` 是进程级探针值：副本重建、探针未刷新或多副本取值不同，过去会把同一版本
+    页面算出多个 config_hash，让截图在没有可视变化时被判定为过期。
+    """
+    ws = (await authenticated_client.post("/api/workspaces", json={"name": "发布身份测试"})).json()["id"]
+    project = (await authenticated_client.post("/api/projects", json={"workspace_id": ws, "name": "发布身份项目"})).json()["id"]
+    page_id = (await authenticated_client.post("/api/pages", json={
+        "workspace_id": ws, "project_id": project, "title": "发布身份页面",
+        "page_content": "<template><main>稳定内容</main></template>"})).json()["id"]
+    async with get_session_factory()() as session:
+        page = await session.get(Page, page_id)
+        assert page is not None
+        builder = CodeCheckFingerprintBuilder(session)
+
+        async def fingerprint():
+            """同时取出页面两种身份与页面当前截图 hash。"""
+
+            identity = await builder.build_page_fingerprint(
+                workspace_id=ws, project_id=project, source=page.page_content,
+                importer_module_path=f"src/views/{page.code}.{page.file_type}",
+                page_metadata={"code": page.code, "title": page.title, "speaker_notes": page.speaker_notes})
+            snapshot = await PageScreenshotFingerprintService(session).build_page_snapshot(page)
+            return identity, snapshot.config_hash
+
+        monkeypatch.setattr("app.services.runtime_release_identity._identity", "kit+build-a")
+        first_identity, first_config_hash = await fingerprint()
+        monkeypatch.setattr("app.services.runtime_release_identity._identity", "kit+build-b")
+        second_identity, second_config_hash = await fingerprint()
+
+        assert first_identity.check != second_identity.check
+        assert first_identity.screenshot == second_identity.screenshot
+        assert first_config_hash == second_config_hash
+
+
+async def test_closure_declared_font_should_reach_screenshot_identity(authenticated_client):
+    """页面闭包里显式声明的字体才属于截图身份：引用只写在被导入的模块里也必须生效。
+
+    未引用的字体换文件不得判过期，否则注册一个新字体就把整个工作空间的截图作废；
+    子页面声明后该字体真正参与渲染，替换文件必须让身份变化。
+    """
+    ws = (await authenticated_client.post("/api/workspaces", json={"name": "闭包字体测试"})).json()["id"]
+    project = (await authenticated_client.post(
+        "/api/projects", json={"workspace_id": ws, "name": "闭包字体项目"})).json()["id"]
+    parent_source = (
+        "<template><main><Child /></main></template>\n"
+        "<script setup>\n"
+        "import Child from './closure-child.vue'\n"
+        "</script>"
+    )
+    child_source = (
+        "<template><p :style=\"{ fontFamily: brandFont }\">品牌字</p></template>\n"
+        "<script setup>\n"
+        "import { useAssetFontFamily } from '@runtime-kit/public/composables/assets/useAssetFontFamily.v1'\n"
+        "const brandFont = useAssetFontFamily('brand.woff2')\n"
+        "</script>"
+    )
+    async with get_session_factory()() as session:
+        assets = {name: WorkspaceAsset(
+            workspace_id=ws, name=name, file_name=name, original_name=name,
+            file_size=1, file_hash="a" * 64, asset_type="font",
+        ) for name in ("brand.woff2", "idle.woff2")}
+        session.add_all(assets.values())
+        await session.flush()
+        for asset_name, asset in assets.items():
+            family = WorkspaceFontFamily(workspace_id=ws, name=asset_name.split(".")[0].title() + " Font")
+            session.add(family)
+            await session.flush()
+            session.add(WorkspaceFontConfig(
+                workspace_id=ws, family_id=family.id, asset_id=asset.id,
+                asset_name=asset_name, font_format="woff2", font_weight="400",
+                font_style="normal", font_display="swap",
+            ))
+        session.add(Page(code="closure-child", project_id=project, workspace_id=ws, title="子页面",
+                         file_type="vue", page_content=child_source))
+        await session.commit()
+        builder = CodeCheckFingerprintBuilder(session)
+
+        async def identity() -> str:
+            """按父页面源码复算静态像素身份，闭包通过页面模块导入展开。"""
+
+            fingerprint = await builder.build_page_fingerprint(
+                workspace_id=ws, project_id=project, source=parent_source,
+                importer_module_path="src/views/closure-parent.vue",
+            )
+            return fingerprint.screenshot
+
+        baseline = await identity()
+        assets["idle.woff2"].file_hash = "b" * 64
+        await session.commit()
+        assert await identity() == baseline
+        assets["brand.woff2"].file_hash = "b" * 64
+        await session.commit()
+        assert await identity() != baseline
 
 
 async def test_cleanup_only_unpublished_expired_candidates(authenticated_client, monkeypatch):
