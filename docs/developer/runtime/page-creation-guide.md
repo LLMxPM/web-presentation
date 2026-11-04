@@ -77,6 +77,18 @@ const { currentPage, totalPages, title } = useCurrentPage()
 </template>
 ```
 
+`currentPage`、`totalPages` 和 `useRouteCatalog` 的目录数据只有一个来源：Runtime 按当前项目 artifact 的路由配置
+（`runtime/src/core/utils/page-numbers.ts`）先按 `meta.order` 稳定排序，再对可见叶子路由连续编号。放映、整项目预览、
+单页预览、截图和诊断共用同一套算法，Backend 不复算第二套。
+
+- 单页预览与截图按页面模块入口挂载（导航路径形如 `/src/views/<code>.vue`），此时按模块入口与路由 `component`
+  归一后反查同一份目录，因此截图上的页码与放映一致。
+- 页面没有挂到路由，或所在路由 `meta.hidden=true` 时，`currentPage` 为 `0`。允许用 `v-if="currentPage > 0"` 隐藏页码，
+  **不要**写 `currentPage > 0 ? currentPage : <常量>` 之类把序号烘进源码的兜底：那会在真实页码之外再造一套值。
+- 页码、总页数和目录文字属于**捕获时快照**。重排、新增、删除或隐藏路由都不会改变截图身份，也不会触发自动重截，
+  旧截图、封面和缩略图上的这些数字会保持原值；调整路由后请主动重截目录页与带页码的页面。
+  因此不能用截图 hash 断言「截图里的页码一定正确」，需要断言时在捕获侧校验。
+
 ### 路由目录
 
 ```vue

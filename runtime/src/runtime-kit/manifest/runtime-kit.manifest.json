@@ -1721,8 +1721,19 @@
         "tags": ["route", "page-number"],
         "usage": ["import { useCurrentPage } from '@runtime-kit/public/composables/page/useCurrentPage.v1'", "const { currentPage, totalPages, title } = useCurrentPage()"],
         "returns": "对象：route、routeInfo、currentPage、totalPages、title。",
-        "return_example": ["const page = useCurrentPage()", "page.currentPage.value // 3", "page.totalPages.value // 12", "page.title.value // '方案设计'"],
-        "constraints": ["仅在 Vue Router 上下文内可用。", "只提供数据，页码 UI 由 Backend/Agent 在页面源码中生成。"],
+        "return_example": [
+          "const page = useCurrentPage()",
+          "page.currentPage.value // 当前页在路由目录中的序号；未挂路由或路由被隐藏时为 0",
+          "page.totalPages.value // 目录中的可见页总数",
+          "page.title.value // '方案设计'"
+        ],
+        "constraints": [
+          "仅在 Vue Router 上下文内可用。",
+          "只提供数据，页码 UI 由 Backend/Agent 在页面源码中生成。",
+          "currentPage 与 totalPages 由 Runtime 按当前项目的路由目录解析：放映、预览、截图和诊断共用同一套规则，单页预览与截图按页面模块入口反查同一份目录。",
+          "页面未挂到路由，或所在路由 meta.hidden=true 时 currentPage 为 0；此时用 v-if=\"currentPage > 0\" 隐藏页码，禁止 currentPage > 0 ? currentPage : <常量> 这类把序号烘进源码的兜底。",
+          "路由目录变化不会重算历史截图：截图与封面上的页码是捕获时快照，路由重排后需要主动重截。"
+        ],
         "audiences": ["backend", "agent"]
       }
     },
@@ -1748,7 +1759,13 @@
           "catalog.catalogItems.value // [{ id: '首页', title: '首页', path: '/', order: 1, pageNumber: 1 }]",
           "catalog.getRouteInfoByPath('/') // RouteInfo | undefined"
         ],
-        "constraints": ["依赖 Runtime 路由生成配置。", "只提供目录数据，不提供目录 UI、双列布局或连接线样式。"],
+        "constraints": [
+          "依赖 Runtime 路由生成配置。",
+          "只提供目录数据，不提供目录 UI、双列布局或连接线样式。",
+          "catalogItems 的 id、title、path、order、pageNumber、parentPath 全部来自当前项目的路由目录：按 meta.order 稳定排序后由 Runtime 连续编号，分组路由自身不占页码。",
+          "hidden=true 的路由不参与编号，也不会出现在 catalogItems 里；页面未挂到路由时目录中同样没有它。",
+          "路由目录变化不会重算历史截图：截图与封面上的目录文字和页码是捕获时快照，重排或增删路由后需要主动重截。"
+        ],
         "audiences": ["backend", "agent"]
       }
     },
@@ -1775,7 +1792,12 @@
           "navigation.nextPage.value // { name: '下一页', path: '/next', pageNumber: 4, ... }",
           "await navigation.goToNextPage() // 跳转到下一页"
         ],
-        "constraints": ["依赖 Runtime 路由体系。", "不负责导航按钮、页脚、快捷键或其他页面样式。"],
+        "constraints": [
+          "依赖 Runtime 路由体系。",
+          "不负责导航按钮、页脚、快捷键或其他页面样式。",
+          "当前页码来自 Runtime 路由目录：按 meta.order 稳定排序后连续编号，未挂路由或路由被隐藏时读不到页码，上一页/下一页归一为空。",
+          "跳转依赖完整 Router 上下文；单页预览与截图按页面模块入口挂载，导航只在全项目预览和放映中生效。"
+        ],
         "audiences": ["backend", "agent"]
       }
     },

@@ -40,6 +40,17 @@ def test_analyze_visuals_spec_should_require_concrete_style_definition() -> None
     assert "不得只引用名称" in instructions
 
 
+def test_analyze_visuals_spec_should_treat_screenshot_page_numbers_as_capture_snapshot() -> None:
+    """页面截图身份已不含路由目录：模型不得据截图页码反推源码，再烘死页码常量。"""
+
+    spec = get_agent_tool_spec("agent-coordinator", "analyze_visuals")
+    assert spec is not None
+    instructions = spec.default_instructions or ""
+    assert "页码、总页数和目录文字是捕获时快照" in instructions
+    assert "不得据截图页码反推源码有误" in instructions
+    assert "捕获时的快照值" in (spec.response_notes or "")
+
+
 def test_image_understanding_prompt_should_forbid_ungrounded_style_confirmation() -> None:
     """图片理解系统提示必须禁止对缺少定义的具名风格做出验证结论。"""
 
