@@ -11,7 +11,7 @@
 | [CLI OAuth](./cli-oauth-implementation-plan.md) | 主仓授权方案待实施；CLI 客户端在独立仓规划 |
 | [CLI 页面版本管理](./cli-page-version-management-plan.md) | 查询与导出、版本比较、重点快照和历史预览已实施；契约、并发边界与真实流程证据见计划第 9 节 |
 | [PPTX 导出升级](./pptx-export-upgrade-plan.md) | 各阶段退出条件与产物验收 |
-| [页面截图真实页码与路由目录身份收敛](./page-screenshot-page-number-plan.md) | WP1–WP4 已落地（第 8 节门禁，含真实截图链）；同批发布与 WP5 批量重截待授权 |
+| [页面截图真实页码与路由目录身份收敛](./page-screenshot-page-number-plan.md) | WP1–WP4 已落地（第 8 节门禁，含真实截图链）；开发库重截已完成，同批发布与生产库重截待执行 |
 
 专题完成后，将稳定契约和操作说明留在相应开发文档，将计划、工作包及验收记录移到[开发过程归档](../../archive/developer-work-2026-10/README.md)，并修复仓内链接。
 
