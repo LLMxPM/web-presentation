@@ -1,8 +1,8 @@
 # 页面截图真实页码与路由目录身份收敛规划
 
-规划日期：2026-11-04。状态：WP1–WP4 代码与门禁已落地（2026-11-04），待真实截图链证据与同批发布；WP5 批量重截属写操作，尚未执行。实施记录见第 8 节。本轮不含 MCP 交付。
+规划日期：2026-11-04。状态：WP1–WP4 代码与门禁已落地（含真实截图链证据，2026-11-04），待同批发布；WP5 批量重截属写操作，尚未执行。实施记录见第 8 节。本轮不含 MCP 交付。
 
-基线：主仓 `dev` 的 `cd96e0a`，加上尚未提交的一轮身份改动（`runtime_build` 出截图身份、字体按实际引用过滤、检查身份与截图身份拆两套，见第 7 节）。跨仓项需要 `web-presentation-cli` 单独提交与发版。
+基线：主仓 `dev` 的 `cd96e0a`，加上随后提交的身份改动 `6266189`（`runtime_build` 出截图身份、字体按实际引用过滤、检查身份与截图身份拆两套，见第 7 节）。跨仓项需要 `web-presentation-cli` 单独提交与发版。
 
 ## 1. 目标与接受面
 
@@ -66,8 +66,8 @@
 
 - `pnpm run test:runtime`（含 `preview-entry-meta.test.ts`、`usePageNavigation.test.ts`、`export-pages.test.ts`、`BrowserPrintService.test.ts`、`PDFExportService.test.ts` 对 `RouteInfo` 的既有断言）全绿；新增用例覆盖 module 入口反查命中、隐藏页返回 0、路径命中优先于反查。
 - `pnpm run test:render-e2e`：真实 PNG 截图 smoke 通过。
-- 人工核对一组证据：同一 deck 里第 1 页与最后一张页的页脚数字不同且与放映一致；该对截图作为证据保留在本地，不入库。
-- 回滚：Runtime 单文件级改动，revert 即恢复 0 语义；但注意第 7 节改动生效后 `runtime_build` 已进入截图身份，回滚再发布会再次改变 `runtime_build` 并触发全量失配，回滚须与发布策略（见 WP5/R4）一并评估。
+- 真实截图链证据：已由 `page-screenshot.spec.ts` 的 DOM 断言覆盖（PNG 内文字不可机读，改在捕获宿主的 iframe 上断言页脚文本：同一页面在两种路由顺序下分别为 `2 / 2` 与 `1 / 2`），不再单独安排人工证据对。
+- 回滚：Runtime 单文件级改动，revert 即恢复 0 语义。`runtime_build` 已被第 7 节摘出截图身份（`_pixel_compiler_identity`），回滚不会改变任何截图 hash、也不会触发重截；代价是回滚后新截图回到「0 或常量」语义，而存量截图仍显示真实页码，两者不一致只能靠一次性重截纠正，回滚须与发布策略（见 WP5/R4）一并评估。
 
 ### WP2 路由目录出截图身份（Backend）
 
@@ -108,7 +108,7 @@
 
 ### WP5 存量收敛与发布
 
-- 与 WP1 及第 7 节那轮未提交改动**三者合并为同一次发布**：第 7 节已把 `runtime_build` 放入截图身份，WP1 的 Runtime 发布会改变 `runtime_build`，WP2 改变 hash 公式，任何一项单独上线都会额外触发一波全量重截。
+- 与 WP1 及第 7 节那轮改动**合并为同一次发布**：第 7 节已把 `runtime_build` 摘出截图身份，所以 WP1 的 Runtime 发布本身不改变任何截图 hash——它改变的是画面内容（页码从常量变成真实值），平台无法感知，重截前存量截图会一直「假新鲜」地显示旧值；WP2 改变 hash 公式，会让读路由的页面整批失配。分开发布只是把同一批重截拆成两次，并多出一段「截图显示错误页码却被判定最新」的窗口，因此仍要求同批。
 - 上线后执行一次限定范围批量重截，使 85 页存量封面/缩略图刷新为真实页码；属写操作，需单独授权，并只用验收账号复核。
 - 用只读诊断 CLI 复核：`uv run --project backend python -m app.scripts.diagnose_screenshot_freshness --format json`，确认 `同版本多 config_hash` 计数不再随时间继续增长，且路由变更后不出现新的 hash 漂移。
 
@@ -127,7 +127,7 @@
 - R1 `RouteInfo.component` 语义变化：已 grep 确认无读取方，但仍有测试构造体可能断言占位值，由 `test:runtime` 兜住；若发现真实依赖，改为新增 `componentPath` 字段而不动 `component`。实施时只改 `route-generator.ts:404/:425` 的 RouteInfo 侧，注意 `convertToRouteRecord`（`:144`）把 string 类型的 `config.component` 直接写入 vue-router `component` 字段，是与本计划无关的既有行为，不要触碰该链路。
 - R2 隐藏页与未挂路由仍返回 0：文档必须写清楚，否则模型会另找新兜底。
 - R3 假新鲜固化：若将来产品要求「页码必须对」，只能在捕获侧加校验（Runtime `render-ready` 已有 entry 身份校验先例），不得回滚 WP2。
-- R4 重截波动：第 7 节改动（`runtime_build` 入身份）、WP1（Runtime 发布改变 `runtime_build`）、WP2（hash 公式变化）若分开发布，会各触发一波全量失配；要求三者同批（见 WP5）。
+- R4 重截窗口与批次：`6266189`（字体按实际引用过滤）与 WP2（hash 公式去掉路由段）会各自让一部分页面失配，WP1 不改变身份只改变画面。分开发布会把重截拆成多次，并延长「截图显示旧页码却被判定为最新」的窗口；要求三者同批并在同一次批量重截里收口（见 WP5）。
 - R5 删除 Backend 投影后，Backend 若再需要独立页码（例如导出目录页码）必须显式重新决策，不得悄悄复刻第二套算法。
 - R6 `component` 路径格式约定漂移：反查算法隐含依赖「component 值 = `@/views/<code>.<ext>`」，该格式目前由 `project_route_service.py:513` 与 `project_template_package_service.py:1286` 两个写入点维持；任一侧形态变化会让反查静默失效、页码回到 0（85 页兜底场景重演）。可在 Runtime render-ready 入口身份校验处（R3 先例）增加 component 路径形态断言，作为防漂移门禁。
 
@@ -160,13 +160,14 @@
 | `pnpm run test:contracts:cli-skill` | 通过（4 passed，未 skip，相邻 CLI 仓存在） |
 | CLI 仓 `uv run pytest packages/api-client/tests packages/cli/tests` | 通过（232 passed） |
 | 只读诊断 `diagnose_screenshot_freshness --format summary --max-pages 12 --no-probe` | 通过：开发库 12 页中 11 页本就无截图，唯一 `hash_mismatch` 是 2026-09-28 的历史截图（`项目层` 与 stored 相同、差异在页面身份层，符合 hash 公式变更预期） |
+| `test:render-e2e`（`prepare-e2e --stop-services` + `playwright --project=smoke page-screenshot.spec.ts`） | 通过（2 passed / 1.1m）：远程 Renderer PNG 链路与新增的真实页码用例。E2E 服务于本轮结束后停止，未恢复开发服务 |
 
-新增覆盖：`page-numbers.test.ts`（反查命中、前缀形态、隐藏页、非模块入口）、`route-generator-entry.test.ts`（真实 artifact 配置下目录携带组件路径、放映 path 与 module 入口反查得到同一页码）、`useCurrentPage.v1.test.ts`（path 命中优先、反查回退、归一为 0、`routeInfo`/`title` 不变）、`test_page_screenshot.py::test_screenshot_should_stay_latest_when_route_catalog_changes`（插入/重排/隐藏/其他页改名都不判旧；自身改名对读者判旧、对非读者不判旧）、`test_visual_tool_contracts.py` 的 `analyze_visuals` 快照措辞防漂移。
+新增覆盖：`page-numbers.test.ts`（反查命中、前缀形态、隐藏页、非模块入口）、`route-generator-entry.test.ts`（真实 artifact 配置下目录携带组件路径、放映 path 与 module 入口反查得到同一页码）、`useCurrentPage.v1.test.ts`（path 命中优先、反查回退、归一为 0、`routeInfo`/`title` 不变）、`test_page_screenshot.py::test_screenshot_should_stay_latest_when_route_catalog_changes`（插入/重排/隐藏/其他页改名都不判旧；自身改名对读者判旧、对非读者不判旧）、`test_visual_tool_contracts.py` 的 `analyze_visuals` 快照措辞防漂移、`tests/e2e/specs/smoke/page-screenshot.spec.ts::单页预览与截图宿主应按路由目录解析真实页码`（页脚渲染 `useCurrentPage`，同一页面在两个路由顺序下分别断言 `2 / 2` 与 `1 / 2`）。
 
 ### 未闭环项
 
-- `pnpm run test:render-e2e` 与 WP1 的人工页码证据对（第 1 页与末页页脚数字不同且与放映一致）：2026-11-04 明确决策「都不跑，留到发布前」。执行时需要 `test:e2e:prepare` 先停 Backend、按 E2E 拓扑重启四服务并重置播种 `_e2e` 库；证据对建议在同一 E2E 栈里用一次性账号建两个带页脚页码的页面拍摄，事后清理数据行与对象存储目录，不并入开发库。
-- WP5 批量重截与同批发布：2026-11-04 明确决策「暂不执行，只交执行清单」，见第 9 节。`runtime_build` 入身份已随 `6266189` 落地，WP1 Runtime 发布与 WP2 hash 公式变化仍必须与它同批上线，否则会各触发一波全量失配。
+- 真实截图链证据已闭环（2026-11-04）：`test:render-e2e` 通过，并在 `page-screenshot.spec.ts` 增补 DOM 断言——PNG 内文字不可机读，改在同一捕获宿主的 iframe 上断言页脚文本，路由换序后从 `2 / 2` 变 `1 / 2`，证明页码来自当前路由目录而非源码常量。原计划的「人工证据对」不再单独执行，需要复核像素时直接看该用例的截图附件。
+- WP5 批量重截与同批发布：2026-11-04 明确决策「暂不执行，只交执行清单」，见第 9 节。`runtime_build` 已随 `6266189` 摘出截图身份，因此它和 WP1 都不再改变截图 hash；要求本轮三件同批的理由是「WP1 改变画面但身份不动 + WP2 改变公式」，分开只会把重截拆成多次并留下旧页码被判最新的窗口，不是三波全量失配。
 - R6 现状：主写入方 `project_route_service.py:513` 的 `@/views/<code>.<file_type>` 已被 `backend/tests/integration/test_preview_manifest.py:507` 逐字段钉住；模板写入方 `project_template_package_service.py:1286`（固定 `.vue`）没有等价断言。Runtime 侧 `normalizeViewModulePath` 已兼容 `@/`、`/src/`、`src/`、`views/` 四种形态，并在入口不是 `src/views/` 时直接放弃反查，不会误命中。未在 render-ready 增加断言：未挂路由与格式漂移在捕获侧不可区分，加断言会把合法状态也判失败。
 - 顺带发现：`projectRouteCatalog`/`buildRouteCatalogProjection`/`RouteCatalogItem` 在 WP2 之后只被契约测试消费（生产链路是 `assignPageNumbers` → `getAllRouteInfos`）。按计划保留 fixture 对 Runtime 的约束；若要按「确认无用即整链删除」处理，需要把 fixture 的期望改为页码分配结果，属另一次决策。
 - `docs/developer/runtime-integration/playback-redesign/work-packages/b0-static-presentation.md:21` 仍写着「路由仍按现有可达性门控和页码目录投影纳入」，是当时的验收记录而非现行规范，未改写历史记录。
@@ -184,7 +185,7 @@
 ### 执行顺序
 
 1. 发布前排空旧副本，Backend/Runtime/Renderer 切同版（平台内部服务不保证混版）。摘除 Renderer 前先跑 `python -m app.scripts.check_render_worker_removal`。
-2. 升级后先跑只读诊断，确认桶分布：此轮大面积 `hash_mismatch` 是新公式的预期起点，不是缺陷。
+2. 升级后先跑只读诊断，确认桶分布：`hash_mismatch` 的预期范围是**读路由的页面**（旧公式带 `routes` 段）加上 `6266189` 字体过滤影响到的页面，不是全仓；明显超出该范围要先查原因，不要直接归因为公式变更。
 
    ```bash
    uv run --project backend python -m app.scripts.diagnose_screenshot_freshness --format json --max-pages 25

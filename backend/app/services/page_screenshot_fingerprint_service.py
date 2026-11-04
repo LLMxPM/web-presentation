@@ -135,8 +135,8 @@ class PageScreenshotFingerprintService:
             workspace_id=workspace_id,
             page_version_ids=owner_version_ids,
         )
-        # 项目级渲染身份（项目名 + 页码目录 + 渲染档案）按项目算一次，逐页复用；
-        # 否则列表页会对每个页面重复解析路由树与项目配置。
+        # 项目级渲染身份（项目名 + 渲染档案 + 捕获策略）按项目算一次，逐页复用；
+        # 否则列表页会对每个页面重复解析项目配置。
         render_identity = await self._resolve_project_render_identity(pages[0])
         snapshots: dict[int, PageScreenshotConfigSnapshot] = {}
         for page in pages:
@@ -179,7 +179,7 @@ class PageScreenshotFingerprintService:
         *,
         render_identity: ProjectRenderIdentity | None = None,
     ) -> PageScreenshotConfigSnapshot:
-        """叠加源码闭包、路由身份、Kit 编译输入与捕获策略，供所有截图入口共用。
+        """叠加源码闭包、页面元数据、Kit 编译输入与捕获策略，供所有截图入口共用。
 
         只取 ``PageFingerprint.screenshot``：检查规则版本与 Runtime 发布构建会影响诊断结论，
         但不会改变静态画面，混进来会让截图在没有可视变化时被判定为过期。
