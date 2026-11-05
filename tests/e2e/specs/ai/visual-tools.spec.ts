@@ -1,17 +1,19 @@
 /**
- * 文件功能：串行覆盖内容助手普通对话与视觉链路，避免共享工作空间的活动会话在并行用例间切换；
+ * 文件功能：串行覆盖内容助手普通对话与视觉链路；每个用例使用专属工作空间沙箱，
+ * 避免工作空间级的会话、模型绑定与在途 Run 串台到其它 project 的被测页面；
  * 会话、运行、工具调用、图片理解与固定 PNG 生成资源落库全部走真实 Backend。
  */
 import type { Page } from '@playwright/test'
 
-import { expect, test } from '../../fixtures/base'
+import { expect, test } from '../../fixtures/agent-workspace'
 
 import { AGENT_HELLO_CASE, AGENT_PAGE_EXTERNAL_CASE, AGENT_VISUAL_CASE, buildReferenceImage } from '../../fixtures/ai-cases'
 import { expandToolDetails, openAgentPanel, prepareIsolatedAgentPanel, waitForVisualCapability } from '../../helpers/ai-panel'
-import { gotoWorkspaceHome, openSmokePage, openSmokeProject } from '../../helpers/navigation'
+import { waitForWorkspaceHome } from '../../helpers/navigation'
 
-test('内容助手普通对话应走真实会话链路并返回确定性终态文本', async ({ page }) => {
-  await gotoWorkspaceHome(page)
+test('内容助手普通对话应走真实会话链路并返回确定性终态文本', async ({ page, agentWorkspace }) => {
+  await page.goto(agentWorkspace.homeUrl)
+  await waitForWorkspaceHome(page)
   const panel = await prepareIsolatedAgentPanel(page)
 
   await panel.locator('textarea').fill(AGENT_HELLO_CASE.input)
@@ -20,27 +22,16 @@ test('内容助手普通对话应走真实会话链路并返回确定性终态�
   await expect(panel.getByText(AGENT_HELLO_CASE.finalText).last()).toBeVisible({ timeout: 30_000 })
 })
 
-test('页面创建应经过 external job 并直接恢复父 Run', async ({ page }) => {
-  await gotoWorkspaceHome(page)
-  await openSmokeProject(page)
-  await openSmokePage(page)
+test('页面创建应经过 external job 并直接恢复父 Run', async ({ page, agentWorkspace }) => {
+  await page.goto(agentWorkspace.pageUrl)
+  await expect(page.locator('[data-testid="page-detail-view"]')).toBeVisible()
   const panel = await prepareIsolatedAgentPanel(page)
 
   await panel.locator('textarea').fill(AGENT_PAGE_EXTERNAL_CASE.input)
   await panel.getByRole('button', { name: /发送/ }).click()
 
-  // 并发运行其它写型夹具时，目标项目可能落在当前焦点之外，从而进入 HITL；
-  // 单独运行时则会直接进入 external job，兼容这两种合法路径。
-  const confirmation = panel.getByText('允许执行 创建页面 吗？', { exact: true })
-  const finalText = panel.getByText(AGENT_PAGE_EXTERNAL_CASE.finalText).last()
-  try {
-    await confirmation.waitFor({ state: 'visible', timeout: 15_000 })
-    await panel.getByRole('button', { name: '提交', exact: true }).click()
-  } catch {
-    // 未触发 HITL 确认，直接等待终态输出
-  }
-
-  await expect(finalText).toBeVisible({ timeout: 90_000 })
+  // 专属空间内只有夹具项目，创建目标不会落到当前焦点之外，因此始终直接进入 external job。
+  await expect(panel.getByText(AGENT_PAGE_EXTERNAL_CASE.finalText).last()).toBeVisible({ timeout: 90_000 })
   const toolGroup = panel.locator('[data-testid="tool-call-group"]').last()
   await expect(toolGroup).toBeVisible()
   await expect(panel.getByRole('button', { name: `新增页面：${AGENT_PAGE_EXTERNAL_CASE.pageTitle}` })).toBeVisible()
@@ -51,10 +42,9 @@ test('页面创建应经过 external job 并直接恢复父 Run', async ({ page 
   await expect(panel.getByText(AGENT_PAGE_EXTERNAL_CASE.finalText).last()).toBeVisible({ timeout: 30_000 })
 })
 
-test('视觉链路应真实经历理解、生成与保存并可在刷新后恢复', async ({ page }) => {
-  await gotoWorkspaceHome(page)
-  await openSmokeProject(page)
-  await openSmokePage(page)
+test('视觉链路应真实经历理解、生成与保存并可在刷新后恢复', async ({ page, agentWorkspace }) => {
+  await page.goto(agentWorkspace.pageUrl)
+  await expect(page.locator('[data-testid="page-detail-view"]')).toBeVisible()
   const panel = await prepareIsolatedAgentPanel(page)
   await waitForVisualCapability(panel)
 
@@ -79,8 +69,9 @@ test('视觉链路应真实经历理解、生成与保存并可在刷新后恢�
   await expectVisualToolResult(panel, { timeout: 30_000 })
 })
 
-test('内容助手在资源库页面仍应展示视觉能力并允许上传参考图', async ({ page }) => {
-  await gotoWorkspaceHome(page)
+test('内容助手在资源库页面仍应展示视觉能力并允许上传参考图', async ({ page, agentWorkspace }) => {
+  await page.goto(agentWorkspace.homeUrl)
+  await waitForWorkspaceHome(page)
   await page.locator('[data-testid="workspace-dock-assets"]').click()
   await expect(page.locator('[data-testid="assets-view"]')).toBeVisible()
   const panel = await openAgentPanel(page)

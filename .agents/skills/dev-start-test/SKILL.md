@@ -92,8 +92,8 @@ node .agents/skills/dev-start-test/scripts/prepare-e2e.mjs --stop-services --sta
 
 ```bash
 pnpm run test:e2e:run
-# 全部 project，只执行测试，不再次 prepare
-pnpm exec playwright test --config tests/config/playwright.config.ts
+# 五个正式 project，只执行测试，不再次 prepare（省略 --project 会把 acceptance 也收进来）
+pnpm exec playwright test --config tests/config/playwright.config.ts --project=auth --project=smoke --project=visual-edit --project=ai --project=runtime-heavy
 # 定向重跑
 pnpm exec playwright test --config tests/config/playwright.config.ts --project=ai
 ```

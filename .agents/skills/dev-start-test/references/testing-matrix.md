@@ -85,8 +85,10 @@ pnpm run test:reset:data
 - 三维模型真实像素截图在 `runtime-heavy/model3d-screenshot.spec.ts`；已准备好 E2E 环境时，可用 `pnpm exec playwright test --config tests/config/playwright.config.ts --project=runtime-heavy model3d-screenshot.spec.ts` 定向验证。
 - E2E 服务拓扑包含 Backend、Editor、Runtime、Renderer；报告与失败产物写入 `test-results/e2e/`。
 - E2E 使用独立数据库（库名含 `_e2e`）、Redis DB 15 和 `AI_TEST_MODE=mock`；`prepare` 会重置并播种 E2E 数据。
+- `ai` project 用例走 `tests/e2e/fixtures/agent-workspace.ts` 的专属工作空间夹具：内容助手是工作空间级智能体，与 Smoke Workspace 共用会把会话、模型绑定和在途 Run 串台到其它 project 的被测页面；夹具的专属项目名沿用 mock 场景锚定的 `Smoke Project`（`list_entities` 只在本会话工作空间内检索）。
+- 工作空间首页统一由 `gotoWorkspaceHome()` 按名称显式解析 ID 进入：Editor 的 `/` 取「最后打开」的工作空间，而 PostgreSQL 下 `last_opened_at DESC` 会把新建空间的空值排在最前，任何用例新建空间都不能依赖 `/` 落回 Smoke Workspace。
 - 每次重新 prepare 前必须先停 Backend，再让 prepare 启动；复用运行中的 Backend 可能因数据重置停止后台执行器。`prepare-e2e.mjs --stop-services` 已内置该顺序，并在副作用前拒绝禁用自启、非 mock 或 `TESTING_REUSE_BACKEND=true` 等冲突配置。
-- 准备完成后运行 `test:e2e:run`；全部 project 使用 `pnpm exec playwright test --config tests/config/playwright.config.ts`，定向重跑追加 `--project=...`。这些命令不重置数据。`test:e2e:all` / `test:e2e:regression` 会再次 prepare，不用于直接复用已启动的环境。
+- 准备完成后运行 `test:e2e:run`；五个正式 project 用 `pnpm exec playwright test --config tests/config/playwright.config.ts --project=auth --project=smoke --project=visual-edit --project=ai --project=runtime-heavy`，定向重跑追加或替换 `--project=...`。不要省略 project 参数：不带 project 的配置默认收集会把 `acceptance` 也算进来，而它只应在显式指定并带 C3 开关时运行。这些命令不重置数据。`test:e2e:all` / `test:e2e:regression` 会再次 prepare，不用于直接复用已启动的环境。
 - `TESTING_REUSE_BACKEND=true` 不应与数据重置混用；只执行 Playwright 时不需要设置该变量，globalSetup 会校验指纹。
 - 首次运行安装 Node 与 Renderer 两套 Chromium。
 
